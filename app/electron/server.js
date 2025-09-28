@@ -11,6 +11,7 @@ import { createCNCRoutes } from './routes/cnc-routes.js';
 import { createCommandHistoryRoutes } from './routes/command-history-routes.js';
 import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
+import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -137,6 +138,7 @@ export async function createServer() {
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
+  app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

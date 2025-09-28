@@ -14,6 +14,9 @@
       <ToolpathViewport
         :view="viewport"
         :theme="theme"
+        :connected="status.connected"
+        :machine-state="status.machineState"
+        :loaded-g-code-program="serverState.loadedGCodeProgram"
         @change-view="viewport = $event"
       />
       <RightPanel
@@ -86,6 +89,12 @@ const jogConfig = reactive({
   stepOptions: [0.1, 1, 10]
 });
 
+const serverState = reactive({
+  loadedGCodeProgram: null as string | null,
+  online: false,
+  machineState: null as any
+});
+
 type ConsoleStatus = 'pending' | 'success' | 'error';
 type ConsoleLine = {
   id: string | number;
@@ -116,8 +125,8 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
     return;
   }
 
-  if (report.machineState) {
-    status.machineState = report.machineState as typeof status.machineState;
+  if (report.status) {
+    status.machineState = report.status as typeof status.machineState;
   }
 
   if (report.WCO) {
@@ -154,7 +163,8 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 onMounted(async () => {
   // Fetch initial server state
   try {
-    const serverState = await api.getServerState();
+    const initialServerState = await api.getServerState();
+    Object.assign(serverState, initialServerState);
     status.connected = serverState.online;
     if (serverState.machineState && serverState.online) {
       applyStatusReport(serverState.machineState);
@@ -166,7 +176,8 @@ onMounted(async () => {
   }
 
   // Listen for server state updates (includes machine state)
-  api.onServerStateUpdated((serverState) => {
+  api.onServerStateUpdated((newServerState) => {
+    Object.assign(serverState, newServerState);
     status.connected = serverState.online;
     if (serverState.machineState && serverState.online) {
       applyStatusReport(serverState.machineState);

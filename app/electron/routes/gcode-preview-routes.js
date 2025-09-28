@@ -13,10 +13,8 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
       // Clear the loaded program from server state
       serverState.loadedGCodeProgram = null;
 
-      // Broadcast clear event to all connected clients
-      broadcast('gcode-cleared', {
-        timestamp: new Date().toISOString()
-      });
+      // Broadcast server state update to all connected clients
+      broadcast('server-state-updated', serverState);
 
       log('G-code preview cleared and clients notified');
 

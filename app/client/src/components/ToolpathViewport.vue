@@ -45,13 +45,28 @@
 
       <!-- Control buttons - bottom center -->
       <div class="control-buttons">
-        <button class="control-btn control-btn--primary" :disabled="true" @click="handleCycle">
-          ▶ Cycle
+        <button
+          class="control-btn control-btn--primary"
+          :disabled="!canStartOrResume"
+          @click="handleCycle"
+          :title="isOnHold ? 'Resume Job' : 'Start Job'"
+        >
+          {{ isOnHold ? '▶ Resume' : '▶ Cycle' }}
         </button>
-        <button class="control-btn control-btn--secondary" :disabled="true" @click="handlePause">
+        <button
+          class="control-btn control-btn--secondary"
+          :disabled="!canPause"
+          @click="handlePause"
+          title="Pause Job"
+        >
           ⏸ Pause
         </button>
-        <button class="control-btn control-btn--danger" :disabled="true" @click="handleStop">
+        <button
+          class="control-btn control-btn--danger"
+          :disabled="!canStop"
+          @click="handleStop"
+          title="Stop Job"
+        >
           ⏹ Stop
         </button>
       </div>
@@ -60,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels } from '../lib/visualizer/helpers.js';
@@ -75,14 +90,53 @@ const presets = [
 const props = withDefaults(defineProps<{
   view: 'top' | 'front' | 'iso';
   theme: 'light' | 'dark';
+  connected?: boolean;
+  machineState?: 'idle' | 'running' | 'paused' | 'alarm' | 'offline';
+  loadedGCodeProgram?: string | null;
 }>(), {
   view: 'iso', // Default to 3D view
-  theme: 'dark' // Default to dark theme
+  theme: 'dark', // Default to dark theme
+  connected: false
 });
 
 const emit = defineEmits<{
   (e: 'change-view', value: 'top' | 'front' | 'iso'): void;
 }>();
+
+// Job control computed properties
+const isOnHold = computed(() => {
+  const state = props.machineState?.toLowerCase();
+  return state === 'hold' || state === 'door';
+});
+
+const canStartOrResume = computed(() => {
+  if (!props.connected) return false;
+  const state = props.machineState?.toLowerCase();
+
+  // Condition 1: Can start new job if we have a loaded program and machine is idle
+  if (props.loadedGCodeProgram && state === 'idle') {
+    return true;
+  }
+
+  // Condition 2: Can resume job if machine is on hold or door (regardless of loadedGCodeProgram)
+  if (state === 'hold' || state === 'door') {
+    return true;
+  }
+
+  return false;
+});
+
+const canPause = computed(() => {
+  if (!props.connected || !props.loadedGCodeProgram) return false;
+  const state = props.machineState?.toLowerCase();
+  return state === 'run';
+});
+
+const canStop = computed(() => {
+  if (!props.connected || !props.loadedGCodeProgram) return false;
+  const state = props.machineState?.toLowerCase();
+  return state === 'run' || state === 'hold' || state === 'door';
+});
 
 // Template refs
 const canvas = ref<HTMLElement>();
@@ -391,7 +445,6 @@ const clearFile = async () => {
   try {
     // Clear on server and notify all clients
     await api.clearGCode();
-    console.log('G-code cleared successfully');
   } catch (error) {
     console.error('Error clearing G-code:', error);
     // Fallback to local clear if API fails
@@ -400,7 +453,6 @@ const clearFile = async () => {
 };
 
 const handleGCodeClear = () => {
-  console.log('Clearing G-code visualization');
   if (gcodeVisualizer) {
     gcodeVisualizer.clear();
   }
@@ -425,19 +477,40 @@ const toggleCutting = () => {
 };
 
 // Control button handlers
-const handleCycle = () => {
-  console.log('Cycle started');
-  // TODO: Implement cycle start logic
+const handleCycle = async () => {
+  if (!props.loadedGCodeProgram && !isOnHold.value) return;
+
+  try {
+    if (isOnHold.value) {
+      // Resume job
+      await api.controlGCodeJob('resume');
+      console.log('Job resumed');
+    } else {
+      // Start new job
+      await api.startGCodeJob(props.loadedGCodeProgram!);
+      console.log('Job started:', props.loadedGCodeProgram);
+    }
+  } catch (error) {
+    console.error('Error controlling job:', error);
+  }
 };
 
-const handlePause = () => {
-  console.log('Pause requested');
-  // TODO: Implement pause logic
+const handlePause = async () => {
+  try {
+    await api.controlGCodeJob('pause');
+    console.log('Job paused');
+  } catch (error) {
+    console.error('Error pausing job:', error);
+  }
 };
 
-const handleStop = () => {
-  console.log('Stop requested');
-  // TODO: Implement stop logic
+const handleStop = async () => {
+  try {
+    await api.stopGCodeJob();
+    console.log('Job stopped');
+  } catch (error) {
+    console.error('Error stopping job:', error);
+  }
 };
 
 const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
@@ -644,7 +717,14 @@ onMounted(() => {
   // Set up WebSocket listeners for G-code events
   console.log('Setting up G-code event listeners');
   api.onGCodeUpdated(handleGCodeUpdate);
-  api.onGCodeCleared(handleGCodeClear);
+
+  // Watch for loadedGCodeProgram changes to handle clearing
+  watch(() => props.loadedGCodeProgram, (newValue, oldValue) => {
+    if (oldValue && !newValue) {
+      // Program was cleared
+      handleGCodeClear();
+    }
+  });
 
   // Set initial 3D view with Z-up orientation
   setTimeout(() => {

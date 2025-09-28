@@ -30,7 +30,7 @@ export class CNCController extends EventEmitter {
     const newStatus = { ...this.lastStatus };
 
     // Update machine state (always present)
-    newStatus.machineState = parts[0];
+    newStatus.status = parts[0];
 
     // Parse and update only the fields present in this report
     parts.slice(1).forEach(part => {
@@ -47,7 +47,7 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['machineState', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'Pn', 'Bf'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'Pn', 'Bf'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

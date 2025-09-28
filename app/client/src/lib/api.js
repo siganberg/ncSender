@@ -364,9 +364,6 @@ class NCClient {
     return this.on('gcode-updated', callback);
   }
 
-  onGCodeCleared(callback) {
-    return this.on('gcode-cleared', callback);
-  }
 
   onServerStateUpdated(callback) {
     return this.on('server-state-updated', callback);
@@ -404,6 +401,54 @@ class NCClient {
     } catch (error) {
       console.error('Error checking current program:', error);
     }
+  }
+
+  // G-code Job Control Methods
+  async startGCodeJob(filename) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filename }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start G-code job');
+    }
+
+    return response.json();
+  }
+
+  async controlGCodeJob(action) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `Failed to ${action} G-code job`);
+    }
+
+    return response.json();
+  }
+
+  async stopGCodeJob() {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to stop G-code job');
+    }
+
+    return response.json();
   }
 }
 

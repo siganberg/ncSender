@@ -58,6 +58,7 @@ const machineStateText = computed(() => {
   }
 });
 
+
 const handleConnectClick = async () => {
   if (props.connected) {
     api.disconnectCNC();
@@ -75,6 +76,7 @@ const handleConnectClick = async () => {
     }
   }
 };
+
 </script>
 
 <style scoped>

@@ -29,18 +29,18 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Update server state
       serverState.loadedGCodeProgram = originalName;
 
-      // Broadcast to all connected clients
-      const message = {
-        type: 'gcode-updated',
-        data: {
-          filename: originalName,
-          content: content,
-          timestamp: new Date().toISOString()
-        }
+      // Broadcast G-code content to all connected clients for visualization
+      const gcodeMessage = {
+        filename: originalName,
+        content: content,
+        timestamp: new Date().toISOString()
       };
+      broadcast('gcode-updated', gcodeMessage);
 
-      broadcast('gcode-updated', message.data);
-      log('Broadcasting gcode-updated for file:', originalName);
+      // Broadcast server state update for button logic
+      broadcast('server-state-updated', serverState);
+
+      log('Broadcasting gcode-updated and server-state-updated for file:', originalName);
 
       res.json({
         success: true,
