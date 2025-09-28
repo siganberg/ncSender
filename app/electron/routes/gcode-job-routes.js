@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { FakeCNCController } from '../fake-cnc-controller.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -12,16 +11,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
 
   let jobProcessor = null;
 
-  // Use fake CNC controller if environment variable is set
-  const useFakeCNC = process.env.USE_FAKE_CNC === 'true';
+  // Use real CNC controller
   let actualCNCController = cncController;
-
-  if (useFakeCNC) {
-    log('Using Fake CNC Controller for testing');
-    actualCNCController = new FakeCNCController();
-    // Auto-connect the fake controller
-    actualCNCController.connect('/dev/fake-cnc', 115200);
-  }
 
   // Start a G-code Job
   router.post('/', async (req, res) => {
@@ -242,12 +233,14 @@ class GCodeJobProcessor {
       }
 
       try {
-        // Broadcast that we're about to execute this line
-        this.broadcast('cnc-command-result', {
-          id: `line-${lineData.lineNumber}`,
+        // Generate unique command ID
+        const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        // Broadcast pending command first (cnc-command pattern)
+        this.broadcast('cnc-command', {
+          id: commandId,
           command: lineData.cleanLine,
           displayCommand: lineData.cleanLine,
-          status: 'pending',
           timestamp: new Date().toISOString(),
           meta: { lineNumber: lineData.lineNumber }
         });
@@ -255,9 +248,9 @@ class GCodeJobProcessor {
         // Send command to CNC
         await this.cncController.sendCommand(lineData.cleanLine);
 
-        // Broadcast success
+        // Broadcast success result
         this.broadcast('cnc-command-result', {
-          id: `line-${lineData.lineNumber}`,
+          id: commandId,
           command: lineData.cleanLine,
           displayCommand: lineData.cleanLine,
           status: 'success',
@@ -271,7 +264,7 @@ class GCodeJobProcessor {
       } catch (error) {
         // Broadcast error and stop job
         this.broadcast('cnc-command-result', {
-          id: `line-${lineData.lineNumber}`,
+          id: commandId,
           command: lineData.cleanLine,
           displayCommand: lineData.cleanLine,
           status: 'error',

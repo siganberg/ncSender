@@ -247,7 +247,10 @@ onMounted(async () => {
 
   // Listen for command responses
   api.onData((data) => {
-    consoleLines.value.push({ id: Date.now(), level: 'info', message: data, timestamp: '', type: 'response' });
+    const responseLine = { id: Date.now(), level: 'info', message: data, timestamp: '', type: 'response' };
+    const newIndex = consoleLines.value.length;
+    consoleLines.value.push(responseLine);
+    commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
   });
 
   // Auto-clear console when a new job starts (detect by line number 1)
@@ -274,13 +277,16 @@ onMounted(async () => {
     const updateResult = addOrUpdateCommandLine(result);
 
     if (result.status === 'error' && result.error?.message) {
-      consoleLines.value.push({
+      const errorLine = {
         id: `${result.id ?? Date.now()}-error-${Math.random().toString(16).slice(2)}`,
         level: 'error',
         message: `${result.error.message}${result.error.code ? ` (code: ${result.error.code})` : ''}`,
         timestamp: '',
         type: 'response'
-      });
+      };
+      const newIndex = consoleLines.value.length;
+      consoleLines.value.push(errorLine);
+      commandLinesMap.set(errorLine.id, { line: errorLine, index: newIndex });
     }
   });
 
