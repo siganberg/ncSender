@@ -1,0 +1,59 @@
+{
+  "name": "ncsender",
+  "version": "0.1.0",
+  "description": "ncSender - Unified CNC Controller Electron App",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "predev": "lsof -ti:3001 | xargs -r kill -9 2>/dev/null || true",
+    "dev": "npm run build:client && cross-env NODE_ENV=development electron .",
+    "dev:hot": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\"",
+    "dev:kiosk": "npm run build:client && cross-env NODE_ENV=development electron . --kiosk",
+    "server:dev": "cross-env NODE_ENV=development node electron/server-standalone.js",
+    "client:dev": "cd client && npm run dev",
+    "build": "npm run build:client",
+    "build:client": "cd client && npm run build",
+    "start": "npm run build && electron .",
+    "start:kiosk": "npm run build && electron . --kiosk",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "install:all": "npm install && cd client && npm install"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "cors": "^2.8.5",
+    "electron": "^29.3.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "serialport": "^12.0.0",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.ncsender.app",
+    "productName": "ncSender",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "client/dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Office"
+    }
+  }
+}

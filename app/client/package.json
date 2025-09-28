@@ -1,0 +1,29 @@
+{
+  "name": "ncsender-client",
+  "version": "0.1.0",
+  "description": "ncSender Client - Vue app that can run in browser or Electron",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "dev:electron": "concurrently -k \"npm:dev\" \"npm:electron:dev\"",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "build": "vite build",
+    "build:electron": "npm run build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "three": "^0.146.0",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^29.3.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4"
+  }
+}

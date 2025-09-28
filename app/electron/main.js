@@ -1,0 +1,105 @@
+import { app, BrowserWindow, nativeTheme, ipcMain } from 'electron';
+import path from 'node:path';
+import url from 'node:url';
+import { createServer } from './server.js';
+
+const isDev = process.env.NODE_ENV === 'development';
+const isKiosk = process.argv.includes('--kiosk');
+
+let mainWindow = null;
+let server = null;
+
+async function startServer() {
+  try {
+    console.log('Starting embedded server...');
+    server = await createServer();
+    console.log(`Server running on http://localhost:${server.port}`);
+    console.log(`Remote access available at http://[your-ip]:${server.port}`);
+    return server.port;
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    throw error;
+  }
+}
+
+async function createWindow() {
+  // Start the embedded server first
+  const serverPort = await startServer();
+
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 720,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111720' : '#F7F9FC',
+    autoHideMenuBar: true,
+    kiosk: isKiosk,
+    fullscreen: isKiosk,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: !isDev
+    }
+  });
+
+  // Load the UI from the embedded server
+  const appUrl = `http://localhost:${serverPort}`;
+
+  try {
+    await mainWindow.loadURL(appUrl);
+    console.log(`Electron app loaded: ${appUrl}`);
+
+    if (isDev) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+  } catch (error) {
+    console.error('Failed to load app URL:', error);
+    // Fallback to loading a basic error page
+    mainWindow.loadURL('data:text/html,<h1>Server starting...</h1><p>Please wait...</p>');
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  // Handle kiosk mode toggle
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Press F11 to toggle fullscreen/kiosk mode
+    if (input.key === 'F11' && input.type === 'keyDown') {
+      const isFullScreen = mainWindow.isFullScreen();
+      mainWindow.setFullScreen(!isFullScreen);
+      mainWindow.setKiosk(!isFullScreen);
+    }
+    // Press Ctrl+Alt+Q to quit in kiosk mode
+    if (input.key === 'q' && input.control && input.alt && input.type === 'keyDown') {
+      app.quit();
+    }
+  });
+}
+
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (mainWindow === null) {
+    createWindow();
+  }
+});
+
+app.on('before-quit', () => {
+  if (server && server.close) {
+    console.log('Shutting down embedded server...');
+    server.close();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});

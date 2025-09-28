@@ -1,0 +1,33 @@
+# Claude Development Preferences
+
+This file contains development preferences and patterns to follow when working on the ncSender project.
+
+## Architecture Patterns
+
+### Vertical/Feature Architecture
+- **Preference**: Follow vertical/feature architecture patterns by organizing code into feature-based modules with clear separation of concerns
+- **Avoid**: Horizontal/layer-based organization that spreads feature logic across multiple files
+- **Implementation**: Each feature area should have its own module that can be developed and tested independently
+- **Example**: The server.js refactoring that separated routes into feature-based modules:
+  - `cnc-routes.js` - CNC connection and control
+  - `command-history-routes.js` - Command history management
+  - `gcode-routes.js` - G-code file operations
+  - `system-routes.js` - Health and server state
+
+## Naming Conventions
+
+### JavaScript/Node.js Files
+- **File names**: Use kebab-case (e.g., `cnc-controller.js`, `gcode-visualizer.js`)
+- **Avoid**: PascalCase for file names (e.g., `CNCController.js`, `GCodeVisualizer.js`)
+- **Rationale**: Follows Node.js community standards and prevents case-sensitivity issues
+
+## Code Quality
+
+### Comments
+- **Preference**: Avoid adding comments unless explicitly requested
+- **Focus**: Write self-documenting code with clear naming and structure
+
+### Security
+- **Critical**: Never introduce code that exposes or logs secrets and keys
+- **Required**: Always follow security best practices
+- **Prohibited**: Never commit secrets or keys to the repository

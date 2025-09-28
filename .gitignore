@@ -1,0 +1,43 @@
+# Dependencies
+**/node_modules/
+package-lock.json
+**/package-lock.json
+
+# Build output
+app/dist/
+**/dist/
+**/dist-ssr/
+
+# Logs and reports
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sw?
+
+# macOS metadata
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+
+# Electron cache
+/.webpack/
+/out/
+
+# G-code files storage
+app/electron/files/
+app/electron/data/command-history.json
