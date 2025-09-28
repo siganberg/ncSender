@@ -29,8 +29,8 @@ export class CNCController extends EventEmitter {
     // Start with previous status to preserve all fields
     const newStatus = { ...this.lastStatus };
 
-    // Update machine state (always present)
-    newStatus.status = parts[0];
+    // Update machine state (always present) - extract state name before colon
+    newStatus.status = parts[0].split(':')[0];
 
     // Parse and update only the fields present in this report
     parts.slice(1).forEach(part => {
@@ -199,7 +199,7 @@ export class CNCController extends EventEmitter {
             console.error('Failed to send recovery newline:', error);
           }
         } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
-          log('CNC controller responded: Ok');
+          log('CNC controller responded:', trimmedData);
           const command = this.commandQueue.shift();
           if (command) {
             command.resolve();

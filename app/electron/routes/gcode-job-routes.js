@@ -105,6 +105,9 @@ export class GCodeJobProcessor {
     this.isStopped = true;
     this.isRunning = false;
     this.isPaused = false;
+
+    // Trigger completion callbacks when manually stopped
+    this.triggerCompletion();
   }
 
   onComplete(callback) {
@@ -187,10 +190,10 @@ export class GCodeJobProcessor {
         continue;
       }
 
-      try {
-        // Generate unique command ID
-        const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      // Generate unique command ID outside try block
+      const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+      try {
         // Broadcast pending command first (cnc-command pattern)
         this.broadcast('cnc-command', {
           id: commandId,
@@ -217,7 +220,7 @@ export class GCodeJobProcessor {
         // await new Promise(resolve => setTimeout(resolve, 50));
 
       } catch (error) {
-        // Broadcast error and stop job
+        // Broadcast error and stop job (commandId is now accessible)
         this.broadcast('cnc-command-result', {
           id: commandId,
           command: lineData.cleanLine,
@@ -247,9 +250,9 @@ export class GCodeJobProcessor {
         timestamp: new Date().toISOString(),
         meta: { jobComplete: true }
       });
-    }
 
-    // Trigger completion callbacks for both success and stop
-    this.triggerCompletion();
+      // Only trigger completion callbacks for successful completion
+      this.triggerCompletion();
+    }
   }
 }

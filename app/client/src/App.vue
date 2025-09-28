@@ -73,7 +73,7 @@ const clearConsole = () => {
 
 const status = reactive({
   connected: false,
-  machineState: 'idle' as 'idle' | 'running' | 'paused' | 'alarm' | 'offline',
+  machineState: 'idle' as 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool',
   machineCoords: { x: 0, y: 0, z: 0, a: 0 },
   workCoords: { x: 0, y: 0, z: 0, a: 0 },
   wco: { x: 0, y: 0, z: 0, a: 0 },

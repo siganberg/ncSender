@@ -91,7 +91,7 @@ const props = withDefaults(defineProps<{
   view: 'top' | 'front' | 'iso';
   theme: 'light' | 'dark';
   connected?: boolean;
-  machineState?: 'idle' | 'running' | 'paused' | 'alarm' | 'offline';
+  machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
   loadedGCodeProgram?: string | null;
 }>(), {
   view: 'iso', // Default to 3D view

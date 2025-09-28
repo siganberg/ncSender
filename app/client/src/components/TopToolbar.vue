@@ -28,7 +28,7 @@ import { api } from '../lib/api.js';
 const props = defineProps<{
   workspace: string;
   connected?: boolean;
-  machineState?: 'idle' | 'running' | 'paused' | 'alarm' | 'offline';
+  machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
   onShowSettings: () => void;
 }>();
 
