@@ -8,6 +8,7 @@ class NCClient {
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
     this.clientId = this.ensureClientId();
+    this.jogAckTimeoutMs = 1500;
   }
 
   ensureClientId() {
@@ -176,26 +177,182 @@ class NCClient {
     }
   }
 
-  async startContinuousJog(command) {
-    const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const response = await this.sendCommand(command, {
-      commandId,
-      meta: {
-        continuous: true,
-        recordHistory: false
-      }
+  async startJogSession({ jogId, command, displayCommand, axis, direction, feedRate }) {
+    if (!jogId) {
+      throw new Error('startJogSession requires a jogId');
+    }
+
+    if (typeof command !== 'string' || command.trim() === '') {
+      throw new Error('startJogSession requires a command');
+    }
+
+    await this.ensureWebSocketReady();
+
+    const payload = {
+      jogId,
+      command,
+      displayCommand,
+      axis,
+      direction,
+      feedRate,
+      clientId: this.clientId
+    };
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timer);
+        if (offStarted) offStarted();
+        if (offFailed) offFailed();
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          cleanup();
+          reject(new Error('Timed out waiting for jog start acknowledgement'));
+        }
+      }, this.jogAckTimeoutMs);
+
+      const offStarted = this.on('jog:started', (data) => {
+        if (!data || data.jogId !== jogId || settled) {
+          return;
+        }
+        cleanup();
+        resolve(data);
+      });
+
+      const offFailed = this.on('jog:start-failed', (data) => {
+        if (!data || data.jogId !== jogId || settled) {
+          return;
+        }
+        cleanup();
+        reject(new Error(data?.message || 'Jog start failed'));
+      });
+
+      this.sendWebSocketMessage('jog:start', payload, { skipReadyCheck: true }).catch((error) => {
+        if (!settled) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Failed to send jog start'));
+        }
+      });
     });
-    return { commandId, response };
   }
 
-  async stopContinuousJog(commandId) {
-    return await this.sendCommand(REALTIME_JOG_CANCEL, {
-      commandId,
-      meta: {
-        completesCommandId: commandId,
-        recordHistory: false
-      },
-      completesCommandId: commandId
+  async stopJogSession(jogId, reason = 'client-stop') {
+    if (!jogId) {
+      return null;
+    }
+
+    await this.ensureWebSocketReady();
+
+    const payload = { jogId, reason, clientId: this.clientId };
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timer);
+        if (offStopped) offStopped();
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          cleanup();
+          reject(new Error('Timed out waiting for jog stop acknowledgement'));
+        }
+      }, this.jogAckTimeoutMs);
+
+      const offStopped = this.on('jog:stopped', (data) => {
+        if (!data || data.jogId !== jogId || settled) {
+          return;
+        }
+        cleanup();
+        resolve(data);
+      });
+
+      this.sendWebSocketMessage('jog:stop', payload, { skipReadyCheck: true }).catch((error) => {
+        if (!settled) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Failed to send jog stop'));
+        }
+      });
+    });
+  }
+
+  sendJogHeartbeat(jogId) {
+    if (!jogId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    try {
+      this.ws.send(JSON.stringify({ type: 'jog:heartbeat', data: { jogId } }));
+    } catch (error) {
+      console.error('Failed to send jog heartbeat:', error);
+    }
+  }
+
+  async sendJogStep({ command, displayCommand, axis, direction, feedRate, distance, commandId }) {
+    if (typeof command !== 'string' || command.trim() === '') {
+      throw new Error('sendJogStep requires a command');
+    }
+
+    const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    await this.ensureWebSocketReady();
+
+    const payload = {
+      command,
+      displayCommand,
+      axis,
+      direction,
+      feedRate,
+      distance,
+      commandId: resolvedCommandId,
+      clientId: this.clientId
+    };
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timer);
+        if (offAck) offAck();
+        if (offFailed) offFailed();
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          cleanup();
+          reject(new Error('Timed out waiting for jog step acknowledgement'));
+        }
+      }, this.jogAckTimeoutMs);
+
+      const offAck = this.on('jog:step-ack', (data) => {
+        if (!data || data.commandId !== resolvedCommandId || settled) {
+          return;
+        }
+        cleanup();
+        resolve(data);
+      });
+
+      const offFailed = this.on('jog:step-failed', (data) => {
+        if (!data || data.commandId !== resolvedCommandId || settled) {
+          return;
+        }
+        cleanup();
+        reject(new Error(data?.message || 'Jog step failed'));
+      });
+
+      this.sendWebSocketMessage('jog:step', payload, { skipReadyCheck: true }).catch((error) => {
+        if (!settled) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Failed to send jog step'));
+        }
+      });
     });
   }
 
@@ -256,6 +413,62 @@ class NCClient {
 
   onCommandHistoryAppended(callback) {
     return this.on('command-history-appended', callback);
+  }
+
+  async ensureWebSocketReady(timeoutMs = this.jogAckTimeoutMs) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    this.connect();
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timer);
+        if (offConnected) offConnected();
+        if (offError) offError();
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          cleanup();
+          reject(new Error('WebSocket connection timed out'));
+        }
+      }, timeoutMs);
+
+      const offConnected = this.on('connected', () => {
+        if (!settled) {
+          cleanup();
+          resolve();
+        }
+      });
+
+      const offError = this.on('error', (error) => {
+        if (!settled) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('WebSocket connection error'));
+        }
+      });
+    });
+  }
+
+  async sendWebSocketMessage(type, data, { skipReadyCheck = false } = {}) {
+    if (!skipReadyCheck) {
+      await this.ensureWebSocketReady();
+    }
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket is not connected');
+    }
+
+    this.ws.send(JSON.stringify({ type, data }));
   }
 
   // WebSocket real-time communication (auto-connects, always retries)

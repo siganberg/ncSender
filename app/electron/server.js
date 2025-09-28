@@ -7,6 +7,7 @@ import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import { CNCController } from './cnc-controller.js';
+import { JogSessionManager } from './jog-session-manager.js';
 import { createCNCRoutes } from './routes/cnc-routes.js';
 import { createCommandHistoryRoutes } from './routes/command-history-routes.js';
 import { createGCodeRoutes } from './routes/gcode-routes.js';
@@ -32,6 +33,7 @@ export async function createServer() {
 
   // Store connected clients
   const clients = new Set();
+  let jogManager;
 
   // Command history storage (in-memory for now, persists until server restart)
   let commandHistory = [];
@@ -77,14 +79,34 @@ export async function createServer() {
     log('Client connected');
     clients.add(ws);
 
+    ws.on('message', (data) => {
+      if (!jogManager) {
+        return;
+      }
+
+      jogManager.handleMessage(ws, data).catch((error) => {
+        log('Error handling jog message', error?.message || error);
+      });
+    });
+
     ws.on('close', () => {
       log('Client disconnected');
       clients.delete(ws);
+      if (jogManager) {
+        jogManager.handleDisconnect(ws).catch((error) => {
+          log('Error handling jog disconnect', error?.message || error);
+        });
+      }
     });
 
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
       clients.delete(ws);
+      if (jogManager) {
+        jogManager.handleDisconnect(ws).catch((disconnectError) => {
+          log('Error handling jog disconnect after error', disconnectError?.message || disconnectError);
+        });
+      }
     });
 
     // Send initial status
@@ -109,6 +131,12 @@ export async function createServer() {
       }
     });
   }
+
+  jogManager = new JogSessionManager({
+    cncController,
+    broadcast,
+    log
+  });
 
   // CNC Controller event forwarding to all clients
   cncController.on('status', (data) => {
