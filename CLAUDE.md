@@ -31,3 +31,11 @@ This file contains development preferences and patterns to follow when working o
 - **Critical**: Never introduce code that exposes or logs secrets and keys
 - **Required**: Always follow security best practices
 - **Prohibited**: Never commit secrets or keys to the repository
+
+## Git Commit Preferences
+
+### Commit Messages
+- **Required**: Use clean, descriptive commit messages without attribution or metadata
+- **Avoid**: Adding "🤖 Generated with [Claude Code]" or "Co-Authored-By: Claude" lines
+- **Format**: Use standard git commit format with summary line and bullet points for details
+- **Focus**: Describe what was changed and why, not who made the change
