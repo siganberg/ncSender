@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { jobManager } from '../job-processor-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -240,6 +241,25 @@ export function createCNCRoutes(cncController, broadcast) {
       } else {
         if (!isJogCancel) {
           broadcastPendingCommand(commandMeta, isLongRunning);
+        }
+
+        // Check for real-time commands that should signal the job processor
+        const realTimeCommands = ['!', '~', '\x18'];
+        if (realTimeCommands.includes(commandValue) && jobManager.hasActiveJob()) {
+          try {
+            if (commandValue === '!') {
+              jobManager.pause();
+              log('Job paused via send-command');
+            } else if (commandValue === '~') {
+              jobManager.resume();
+              log('Job resumed via send-command');
+            } else if (commandValue === '\x18') {
+              jobManager.stop();
+              log('Job stopped via send-command');
+            }
+          } catch (jobError) {
+            log('Job processor error:', jobError.message);
+          }
         }
 
         await cncController.sendCommand(commandValue);

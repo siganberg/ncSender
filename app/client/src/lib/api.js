@@ -423,33 +423,29 @@ class NCClient {
   }
 
   async controlGCodeJob(action) {
-    const response = await fetch(`${this.baseUrl}/api/gcode-job`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action }),
-    });
+    // Use send-command API with real-time commands
+    const commandMap = {
+      'pause': '!',     // Feed hold
+      'resume': '~'     // Resume
+    };
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || `Failed to ${action} G-code job`);
+    const command = commandMap[action];
+    if (!command) {
+      throw new Error(`Invalid action: ${action}`);
     }
 
-    return response.json();
+    return await this.sendCommand(command, {
+      displayCommand: `Job ${action}`,
+      meta: { jobControl: true }
+    });
   }
 
   async stopGCodeJob() {
-    const response = await fetch(`${this.baseUrl}/api/gcode-job`, {
-      method: 'DELETE',
+    // Use send-command API with soft reset
+    return await this.sendCommand('\\x18', {
+      displayCommand: 'Stop job (soft reset)',
+      meta: { jobControl: true }
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to stop G-code job');
-    }
-
-    return response.json();
   }
 }
 

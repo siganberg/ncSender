@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { jobManager } from '../job-processor-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -8,8 +9,6 @@ const log = (...args) => {
 
 export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast) {
   const router = Router();
-
-  let jobProcessor = null;
 
   // Use real CNC controller
   let actualCNCController = cncController;
@@ -42,9 +41,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         return res.status(400).json({ error: `Cannot start job. Machine state is: ${machineStatus}` });
       }
 
-      // Start the job processor
-      jobProcessor = new GCodeJobProcessor(filePath, filename, actualCNCController, broadcast);
-      await jobProcessor.start();
+      // Start the job processor using singleton manager
+      await jobManager.startJob(filePath, filename, actualCNCController, broadcast);
 
       log('G-code job started:', filename);
       res.json({ success: true, message: 'G-code job started', filename });
@@ -54,56 +52,11 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
     }
   });
 
-  // Pause/Resume G-code Job
-  router.patch('/', async (req, res) => {
-    try {
-      const { action } = req.body;
-
-      if (!action || !['pause', 'resume'].includes(action)) {
-        return res.status(400).json({ error: 'Action must be "pause" or "resume"' });
-      }
-
-      if (!jobProcessor) {
-        return res.status(400).json({ error: 'No active G-code job' });
-      }
-
-      if (action === 'pause') {
-        await jobProcessor.pause();
-        log('G-code job paused');
-        res.json({ success: true, message: 'G-code job paused' });
-      } else if (action === 'resume') {
-        await jobProcessor.resume();
-        log('G-code job resumed');
-        res.json({ success: true, message: 'G-code job resumed' });
-      }
-    } catch (error) {
-      console.error('Error controlling G-code job:', error);
-      res.status(500).json({ error: 'Failed to control G-code job' });
-    }
-  });
-
-  // Stop G-code Job
-  router.delete('/', async (_req, res) => {
-    try {
-      if (!jobProcessor) {
-        return res.status(400).json({ error: 'No active G-code job' });
-      }
-
-      await jobProcessor.stop();
-      jobProcessor = null;
-
-      log('G-code job stopped');
-      res.json({ success: true, message: 'G-code job stopped' });
-    } catch (error) {
-      console.error('Error stopping G-code job:', error);
-      res.status(500).json({ error: 'Failed to stop G-code job' });
-    }
-  });
 
   return router;
 }
 
-class GCodeJobProcessor {
+export class GCodeJobProcessor {
   constructor(filePath, filename, cncController, broadcast) {
     this.filePath = filePath;
     this.filename = filename;
@@ -114,6 +67,7 @@ class GCodeJobProcessor {
     this.isRunning = false;
     this.isPaused = false;
     this.isStopped = false;
+    this.completionCallbacks = [];
   }
 
   async start() {
@@ -130,41 +84,42 @@ class GCodeJobProcessor {
     this.processLines();
   }
 
-  async pause() {
+  pause() {
     if (!this.isRunning || this.isPaused) {
       throw new Error('Job is not running or already paused');
     }
 
-    // Send pause command to CNC
-    await this.cncController.sendCommand('!');
     this.isPaused = true;
   }
 
-  async resume() {
+  resume() {
     if (!this.isRunning || !this.isPaused) {
       throw new Error('Job is not paused');
     }
 
-    // Send resume command to CNC
-    await this.cncController.sendCommand('~');
     this.isPaused = false;
-
     // The loop-based processor will automatically continue when isPaused becomes false
   }
 
-  async stop() {
+  stop() {
     this.isStopped = true;
     this.isRunning = false;
     this.isPaused = false;
+  }
 
-    // Send stop command to CNC
+  onComplete(callback) {
+    this.completionCallbacks.push(callback);
+  }
 
-    await this.cncController.sendCommand('!');
-
-    // Wait 700ms before sending soft reset (Ctrl+X) to give controller time to process the stop
-    await new Promise((resolve) => setTimeout(resolve, 700));
-
-    await this.cncController.sendCommand('\x18'); // Ctrl+X (soft reset)
+  triggerCompletion() {
+    this.completionCallbacks.forEach(callback => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in job completion callback:', error);
+      }
+    });
+    this.completionCallbacks = [];
   }
 
   parseGCodeLines(content) {
@@ -293,5 +248,8 @@ class GCodeJobProcessor {
         meta: { jobComplete: true }
       });
     }
+
+    // Trigger completion callbacks for both success and stop
+    this.triggerCompletion();
   }
 }
