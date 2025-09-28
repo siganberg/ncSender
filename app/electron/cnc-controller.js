@@ -253,7 +253,7 @@ export class CNCController extends EventEmitter {
     const cleanCommand = command.split(';')[0].trim();
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
-    const realTimeCommands = ['!', '~', '?'];
+    const realTimeCommands = ['!', '~', '?', '\x18'];
     const isRealTimeCommand = cleanCommand.length === 1 &&
       (realTimeCommands.includes(cleanCommand) || cleanCommand.charCodeAt(0) >= 0x80);
 

@@ -18,7 +18,7 @@ export function createCNCRoutes(cncController, broadcast) {
     // Clean up command - remove semicolon comments first
     const trimmed = rawCommand.split(';')[0].trim();
 
-    const hexMatch = /^0x([0-9a-fA-F]{2})$/i.exec(trimmed);
+    const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(trimmed);
     if (hexMatch) {
       const charCode = parseInt(hexMatch[1], 16);
       return {
