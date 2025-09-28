@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { FakeCNCController } from '../fake-cnc-controller.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -10,6 +11,17 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
   const router = Router();
 
   let jobProcessor = null;
+
+  // Use fake CNC controller if environment variable is set
+  const useFakeCNC = process.env.USE_FAKE_CNC === 'true';
+  let actualCNCController = cncController;
+
+  if (useFakeCNC) {
+    log('Using Fake CNC Controller for testing');
+    actualCNCController = new FakeCNCController();
+    // Auto-connect the fake controller
+    actualCNCController.connect('/dev/fake-cnc', 115200);
+  }
 
   // Start a G-code Job
   router.post('/', async (req, res) => {
@@ -40,7 +52,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Start the job processor
-      jobProcessor = new GCodeJobProcessor(filePath, filename, cncController, broadcast);
+      jobProcessor = new GCodeJobProcessor(filePath, filename, actualCNCController, broadcast);
       await jobProcessor.start();
 
       log('G-code job started:', filename);
@@ -80,7 +92,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
   });
 
   // Stop G-code Job
-  router.delete('/', async (req, res) => {
+  router.delete('/', async (_req, res) => {
     try {
       if (!jobProcessor) {
         return res.status(400).json({ error: 'No active G-code job' });
@@ -123,8 +135,8 @@ class GCodeJobProcessor {
     this.isStopped = false;
     this.currentLine = 0;
 
-    // Start processing lines
-    this.processNextLine();
+    // Start processing lines with loop-based approach
+    this.processLines();
   }
 
   async pause() {
@@ -146,8 +158,7 @@ class GCodeJobProcessor {
     await this.cncController.sendCommand('~');
     this.isPaused = false;
 
-    // Continue processing
-    this.processNextLine();
+    // The loop-based processor will automatically continue when isPaused becomes false
   }
 
   async stop() {
@@ -197,83 +208,97 @@ class GCodeJobProcessor {
     return parsedLines;
   }
 
-  async processNextLine() {
-    if (this.isStopped || this.isPaused || this.currentLine >= this.lines.length) {
+  async processLines() {
+    while (this.currentLine < this.lines.length && !this.isStopped) {
+      // Wait while paused
+      while (this.isPaused && !this.isStopped) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Check if stopped while waiting for pause
+      if (this.isStopped) {
+        break;
+      }
+
+      // Check if we've reached the end
       if (this.currentLine >= this.lines.length) {
-        // Job completed
-        this.isRunning = false;
+        break;
+      }
+
+      const lineData = this.lines[this.currentLine];
+      this.currentLine++;
+
+      // Skip comment/empty lines but track them
+      if (lineData.isComment) {
+        // this.broadcast('cnc-command-result', {
+        //   id: `line-${lineData.lineNumber}`,
+        //   command: lineData.originalLine,
+        //   displayCommand: lineData.originalLine,
+        //   status: 'skipped',
+        //   timestamp: new Date().toISOString(),
+        //   meta: { lineNumber: lineData.lineNumber, skipped: true }
+        // });
+        continue;
+      }
+
+      try {
+        // Broadcast that we're about to execute this line
         this.broadcast('cnc-command-result', {
-          id: `job-${Date.now()}`,
-          command: 'JOB_COMPLETED',
-          displayCommand: `Job completed: ${this.filename}`,
+          id: `line-${lineData.lineNumber}`,
+          command: lineData.cleanLine,
+          displayCommand: lineData.cleanLine,
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          meta: { lineNumber: lineData.lineNumber }
+        });
+
+        // Send command to CNC
+        await this.cncController.sendCommand(lineData.cleanLine);
+
+        // Broadcast success
+        this.broadcast('cnc-command-result', {
+          id: `line-${lineData.lineNumber}`,
+          command: lineData.cleanLine,
+          displayCommand: lineData.cleanLine,
           status: 'success',
           timestamp: new Date().toISOString(),
-          meta: { jobComplete: true }
+          meta: { lineNumber: lineData.lineNumber }
         });
+
+        // Small delay between commands
+        // await new Promise(resolve => setTimeout(resolve, 50));
+
+      } catch (error) {
+        // Broadcast error and stop job
+        this.broadcast('cnc-command-result', {
+          id: `line-${lineData.lineNumber}`,
+          command: lineData.cleanLine,
+          displayCommand: lineData.cleanLine,
+          status: 'error',
+          error: { message: `Failed to execute on Line: ${lineData.lineNumber}. ${error.message}` },
+          timestamp: new Date().toISOString(),
+          meta: { lineNumber: lineData.lineNumber }
+        });
+
+        this.isStopped = true;
+        this.isRunning = false;
+        break;
       }
-      return;
     }
 
-    const lineData = this.lines[this.currentLine];
-    this.currentLine++;
+    // Job completed or stopped
+    this.isRunning = false;
 
-    // Skip comment/empty lines but track them
-    if (lineData.isComment) {
+    if (!this.isStopped && this.currentLine >= this.lines.length) {
+      // Job completed successfully
       this.broadcast('cnc-command-result', {
-        id: `line-${lineData.lineNumber}`,
-        command: lineData.originalLine,
-        displayCommand: lineData.originalLine,
-        status: 'skipped',
-        timestamp: new Date().toISOString(),
-        meta: { lineNumber: lineData.lineNumber, skipped: true }
-      });
-
-      // Continue to next line immediately
-      setImmediate(() => this.processNextLine());
-      return;
-    }
-
-    try {
-      // Broadcast that we're about to execute this line
-      this.broadcast('cnc-command-result', {
-        id: `line-${lineData.lineNumber}`,
-        command: lineData.cleanLine,
-        displayCommand: lineData.cleanLine,
-        status: 'pending',
-        timestamp: new Date().toISOString(),
-        meta: { lineNumber: lineData.lineNumber }
-      });
-
-      // Send command to CNC
-      await this.cncController.sendCommand(lineData.cleanLine);
-
-      // Broadcast success
-      this.broadcast('cnc-command-result', {
-        id: `line-${lineData.lineNumber}`,
-        command: lineData.cleanLine,
-        displayCommand: lineData.cleanLine,
+        id: `job-${Date.now()}`,
+        command: 'JOB_COMPLETED',
+        displayCommand: `Job completed: ${this.filename}`,
         status: 'success',
         timestamp: new Date().toISOString(),
-        meta: { lineNumber: lineData.lineNumber }
+        meta: { jobComplete: true }
       });
-
-      // Continue to next line after a small delay
-      setTimeout(() => this.processNextLine(), 50);
-
-    } catch (error) {
-      // Broadcast error and stop job
-      this.broadcast('cnc-command-result', {
-        id: `line-${lineData.lineNumber}`,
-        command: lineData.cleanLine,
-        displayCommand: lineData.cleanLine,
-        status: 'error',
-        error: { message: `Failed to execute on Line: ${lineData.lineNumber}. ${error.message}` },
-        timestamp: new Date().toISOString(),
-        meta: { lineNumber: lineData.lineNumber }
-      });
-
-      this.isStopped = true;
-      this.isRunning = false;
     }
   }
 }

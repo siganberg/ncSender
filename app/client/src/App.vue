@@ -68,6 +68,7 @@ const openSettings = () => {
 
 const clearConsole = () => {
   consoleLines.value = [];
+  commandLinesMap.clear();
 };
 
 const status = reactive({
@@ -119,6 +120,8 @@ type StatusReport = {
 };
 
 const consoleLines = ref<ConsoleLine[]>([]);
+// Map for O(1) command lookup by ID with array index
+const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
 
 const applyStatusReport = (report: StatusReport | null | undefined) => {
   if (!report) {
@@ -196,16 +199,27 @@ onMounted(async () => {
 
     const message = payload.displayCommand || payload.command || 'Command';
     const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
-    const existingLine = consoleLines.value.find((line) => line.id === payload.id);
 
-    if (existingLine) {
-      existingLine.message = message;
-      existingLine.timestamp = timestamp;
-      existingLine.status = payload.status ?? existingLine.status;
-      existingLine.level = payload.status === 'error' ? 'error' : existingLine.level;
-      existingLine.originId = payload.originId ?? existingLine.originId;
-      existingLine.meta = payload.meta ?? existingLine.meta;
-      return { line: existingLine, timestamp };
+    // Use Map for O(1) lookup instead of array.find()
+    const existingEntry = commandLinesMap.get(payload.id);
+
+    if (existingEntry) {
+      // Create new object to trigger Vue reactivity
+      const updatedLine = {
+        ...existingEntry.line,
+        message,
+        timestamp,
+        status: payload.status ?? existingEntry.line.status,
+        level: payload.status === 'error' ? 'error' : existingEntry.line.level,
+        originId: payload.originId ?? existingEntry.line.originId,
+        meta: payload.meta ?? existingEntry.line.meta
+      };
+
+      // Update both structures with O(1) operations
+      consoleLines.value[existingEntry.index] = updatedLine;
+      commandLinesMap.set(payload.id, { line: updatedLine, index: existingEntry.index });
+
+      return { line: updatedLine, timestamp };
     }
 
     const newLine = {
@@ -218,7 +232,12 @@ onMounted(async () => {
         originId: payload.originId ?? null,
         meta: payload.meta ?? null
       };
+
+    // Add to both array (for reactivity) and map (for fast lookup)
+    const newIndex = consoleLines.value.length;
     consoleLines.value.push(newLine);
+    commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
+
     return { line: newLine, timestamp };
   };
 
@@ -231,12 +250,26 @@ onMounted(async () => {
     consoleLines.value.push({ id: Date.now(), level: 'info', message: data, timestamp: '', type: 'response' });
   });
 
+  // Auto-clear console when a new job starts (detect by line number 1)
+  let lastJobStartTime = 0;
+
   api.on('cnc-command-result', (result) => {
     if (!result) return;
 
     if (api.isJogCancelCommand(result.command)) {
       return;
     }
+
+    // Auto-clear console when starting a new job (line 1)
+    // if (result.meta?.lineNumber === 1 && result.status === 'pending') {
+    //   const now = Date.now();
+    //   // Only clear if it's been more than 2 seconds since last job start (avoid duplicate clears)
+    //   if (now - lastJobStartTime > 2000) {
+    //     console.log('New job detected, clearing console history');
+    //     clearConsole();
+    //     lastJobStartTime = now;
+    //   }
+    // }
 
     const updateResult = addOrUpdateCommandLine(result);
 

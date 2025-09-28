@@ -50,6 +50,20 @@ npm run dev:hot   # Starts Vite dev server on port 5174
 
 Visit `http://localhost:5174` in your browser for the hot reload development server.
 
+### Testing with Fake CNC Controller
+
+For testing G-code job functionality without real hardware:
+```bash
+cd app
+USE_FAKE_CNC=true npm run dev
+```
+
+This enables a simulated CNC controller that:
+- Responds to all commands with success after 50ms delay
+- Simulates machine states (Idle, Run, Hold)
+- Handles pause/resume/stop commands properly
+- Provides realistic status reports
+
 ### Building
 
 Build the client for production:
