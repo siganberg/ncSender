@@ -5,7 +5,7 @@
     </header>
     <div class="coords">
       <div class="axis-grid">
-        <div v-for="(workValue, axis) in status.workCoords" :key="axis" class="axis-display" :class="{ disabled: axis === 'a' }">
+        <div v-for="(workValue, axis) in filteredWorkCoords" :key="axis" class="axis-display">
           <span class="axis-label">{{ axis.toUpperCase() }}</span>
           <div class="coord-values">
             <div class="work-coord">{{ workValue.toFixed(3) }}</div>
@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { api } from '../../lib/api.js';
 
 const props = defineProps<{
@@ -86,6 +86,13 @@ const props = defineProps<{
     spindleOverride: number;
   };
 }>();
+
+// Filter out the A axis from work coordinates
+const filteredWorkCoords = computed(() => {
+  const coords = { ...props.status.workCoords };
+  delete coords.a;
+  return coords;
+});
 
 // Override percentages (100% = normal speed)
 const feedOverride = ref(100);
@@ -227,6 +234,7 @@ const resetSpindleOverride = () => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
+  height: fit-content;
 }
 
 .card__header {
@@ -288,16 +296,6 @@ h2, h3 {
   line-height: 1.2;
 }
 
-.axis-display.disabled {
-  background: var(--color-surface);
-  opacity: 0.5;
-}
-
-.axis-display.disabled .axis-label,
-.axis-display.disabled .work-coord,
-.axis-display.disabled .machine-coord {
-  color: var(--color-text-secondary);
-}
 
 .metrics {
   display: flex;

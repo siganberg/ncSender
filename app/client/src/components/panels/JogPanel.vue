@@ -337,6 +337,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
+  height: fit-content;
 }
 
 .card__header {

@@ -67,14 +67,30 @@ defineProps<{
   .panel-stack {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: auto 1fr;
     gap: var(--gap-sm);
     overflow-y: auto;
     min-height: 0;
     height: 100%;
   }
 
+  /* Jog and Status panels in top row adapt to content with min-height */
+  .panel-stack > :nth-child(1) {
+    /* JogPanel */
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 280px;
+  }
+
+  .panel-stack > :nth-child(2) {
+    /* StatusPanel */
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 280px;
+  }
+
   .panel-stack > :nth-child(3) {
+    /* ConsolePanel - takes remaining space */
     grid-column: 1 / -1;
     grid-row: 2;
   }
