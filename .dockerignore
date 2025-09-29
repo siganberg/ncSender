@@ -1,0 +1,12 @@
+.git
+.vscode
+dist/
+docs/
+.scripts/
+.claude/
+app/node_modules/
+app/dist/
+app/dist-electron/
+app/client/node_modules/
+app/client/dist/
+app/electron/files/

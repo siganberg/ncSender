@@ -2,7 +2,11 @@
   "name": "ncsender",
   "version": "0.1.0",
   "description": "ncSender - Unified CNC Controller Electron App",
-  "author": "Francis Siganberg",
+  "homepage": "https://github.com/siganberg/ncSender",
+  "author": {
+    "name": "Francis Marasigan",
+    "email": "support@franciscreation.com"
+  },
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
@@ -31,8 +35,8 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^29.3.0",
-    "electron-builder": "^24.9.1"
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
   },
   "build": {
     "appId": "com.ncsender.app",
@@ -54,7 +58,12 @@
     },
     "linux": {
       "icon": "assets/icon.png",
-      "category": "Office"
+      "category": "Office",
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "maintainer": "Francis Marasigan <support@franciscreation.com>"
     }
   }
 }

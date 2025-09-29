@@ -44,3 +44,5 @@ coverage/
 app/electron/files/
 app/electron/data/command-history.json
 app/dist-electron/**
+app/package-lock.json
+releases/**
