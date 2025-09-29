@@ -2,7 +2,7 @@ name: Build Release Binaries
 
 on:
   release:
-    types: [created]
+    types: [created, edited]
 
 jobs:
   macos:
