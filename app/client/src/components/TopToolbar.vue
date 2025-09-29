@@ -64,23 +64,26 @@ const machineStateText = computed(() => {
   padding: var(--gap-sm) var(--gap-md);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  position: relative;
   gap: var(--gap-sm);
   border: 1px solid transparent;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .toolbar__center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-grow: 1;
 }
 
 .toolbar__left {
   display: flex;
   align-items: center;
   gap: var(--gap-sm);
+  flex: 1;
 }
 
 .logo {
@@ -99,6 +102,8 @@ const machineStateText = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--gap-xs);
+  flex: 1;
+  justify-content: flex-end;
 }
 
 button {
@@ -333,6 +338,9 @@ button.danger {
   }
 
   .toolbar__center {
+    position: static;
+    transform: none;
+    left: auto;
     order: 1;
   }
 
@@ -341,12 +349,14 @@ button.danger {
     flex-wrap: wrap;
     gap: var(--gap-xs);
     justify-content: center;
+    flex: none;
   }
 
   .toolbar__actions {
     order: 3;
     flex-wrap: wrap;
     justify-content: center;
+    flex: none;
   }
 
   .machine-state {
