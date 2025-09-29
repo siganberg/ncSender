@@ -226,7 +226,7 @@ export class GCodeJobProcessor {
           command: lineData.cleanLine,
           displayCommand: lineData.cleanLine,
           status: 'error',
-          error: { message: `Failed to execute on Line: ${lineData.lineNumber}. ${error.message}` },
+          error: { message: `Failed to execute on Line ${lineData.lineNumber} : ${lineData.cleanLine}. ${error.message}` },
           timestamp: new Date().toISOString(),
           meta: { lineNumber: lineData.lineNumber }
         });
