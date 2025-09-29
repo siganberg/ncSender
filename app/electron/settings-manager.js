@@ -8,7 +8,8 @@ const DEFAULT_SETTINGS = {
   connectionType: 'usb',
   baudRate: 115200,
   ip: '192.168.5.1',
-  port: 23
+  port: 23,
+  serverPort: 8090
 };
 
 function getUserDataDir() {

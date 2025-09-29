@@ -16,6 +16,7 @@ import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
+import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +29,7 @@ export async function createServer() {
   const app = express();
   const server = createHttpServer(app);
   const wss = new WebSocketServer({ server });
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || getSetting('serverPort', DEFAULT_SETTINGS.serverPort);
 
   // Initialize CNC Controller
   const cncController = new CNCController();

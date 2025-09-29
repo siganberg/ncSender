@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
-    "predev": "lsof -ti:3001 | xargs -r kill -9 2>/dev/null || true",
+    "predev": "lsof -ti:8090 | xargs -r kill -9 2>/dev/null || true",
     "dev": "npm run build:client && cross-env NODE_ENV=development electron .",
     "dev:hot": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\"",
     "dev:kiosk": "npm run build:client && cross-env NODE_ENV=development electron . --kiosk",
