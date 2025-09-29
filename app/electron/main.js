@@ -35,6 +35,7 @@ async function createWindow() {
     autoHideMenuBar: true,
     kiosk: isKiosk,
     fullscreen: isKiosk,
+    fullscreenable: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -62,13 +63,12 @@ async function createWindow() {
     mainWindow = null;
   });
 
-  // Handle kiosk mode toggle
+  // Handle fullscreen toggle
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    // Press F11 to toggle fullscreen/kiosk mode
+    // Press F11 to toggle fullscreen (without kiosk mode)
     if (input.key === 'F11' && input.type === 'keyDown') {
       const isFullScreen = mainWindow.isFullScreen();
       mainWindow.setFullScreen(!isFullScreen);
-      mainWindow.setKiosk(!isFullScreen);
     }
     // Press Ctrl+Alt+Q to quit in kiosk mode
     if (input.key === 'q' && input.control && input.alt && input.type === 'keyDown') {
