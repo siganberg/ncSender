@@ -23,8 +23,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install
-          npm install --prefix client
+          npm ci
+          cd client && npm ci
         working-directory: app
 
       - name: Build Client
@@ -61,8 +61,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install
-          npm install --prefix client
+          npm ci
+          cd client && npm ci
         working-directory: app
 
       - name: Build Client
@@ -99,8 +99,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install
-          npm install --prefix client
+          npm ci
+          cd client && npm ci
         working-directory: app
 
       - name: Build Client
@@ -134,8 +134,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install
-          npm install --prefix client
+          npm ci
+          cd client && npm ci
         working-directory: app
 
       - name: Build Client
