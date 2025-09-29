@@ -79,3 +79,24 @@ Run in production mode:
 cd app
 npm run start
 ```
+
+## 📁 Data Storage
+
+ncSender stores user data in platform-specific directories following OS conventions:
+
+### macOS
+- **G-code files**: `~/Library/Application Support/ncSender/gcode-files/`
+- **Settings**: `~/Library/Application Support/ncSender/settings.json`
+- **Command history**: `~/Library/Application Support/ncSender/command-history.json`
+
+### Windows
+- **G-code files**: `%APPDATA%/ncSender/gcode-files/`
+- **Settings**: `%APPDATA%/ncSender/settings.json`
+- **Command history**: `%APPDATA%/ncSender/command-history.json`
+
+### Linux / Raspberry Pi
+- **G-code files**: `~/.config/ncSender/gcode-files/`
+- **Settings**: `~/.config/ncSender/settings.json`
+- **Command history**: `~/.config/ncSender/command-history.json`
+
+These directories are automatically created when the application first runs. Files stored here will persist between app updates and are easily accessible for backup purposes.
