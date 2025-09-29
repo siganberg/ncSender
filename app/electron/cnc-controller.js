@@ -2,6 +2,7 @@ import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 import { EventEmitter } from 'events';
 import { grblErrors } from './grbl-errors.js';
+import { CommandQueue } from './command-queue.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -21,7 +22,35 @@ export class CNCController extends EventEmitter {
     this.statusPollInterval = null;
     this.lastStatus = {};
     this.rawData = '';
-    this.commandQueue = [];
+    this.commandQueue = new CommandQueue({
+      log,
+      sendCommand: async (entry) => {
+        await this.writeToPort(entry.commandToWrite ?? `${entry.rawCommand}\n`, {
+          rawCommand: entry.rawCommand,
+          isRealTime: false
+        });
+      }
+    });
+
+    this.commandQueue.on('send-error', (entry) => {
+      this.emit('command-error', {
+        id: entry.id,
+        command: entry.rawCommand,
+        meta: entry.meta
+      });
+    });
+
+    this.commandQueue.on('queued', (entry) => {
+      this.emit('command-queued', {
+        id: entry.id,
+        command: entry.rawCommand,
+        meta: entry.meta
+      });
+    });
+
+    this.commandQueue.on('ack', (entry) => {
+      this.emit('command-ack', entry);
+    });
   }
 
   parseStatusReport(data) {
@@ -170,6 +199,8 @@ export class CNCController extends EventEmitter {
         this.isConnected = false;
         this.connectionStatus = 'disconnected';
 
+        this.commandQueue.flush('port-close');
+
         this.emit('status', {
           status: 'disconnected',
           isConnected: false,
@@ -185,10 +216,7 @@ export class CNCController extends EventEmitter {
         } else if (trimmedData.toLowerCase().startsWith('error:')) {
           const code = parseInt(trimmedData.split(':')[1]);
           const message = grblErrors[code] || 'Unknown error';
-          const command = this.commandQueue.shift();
-          if (command) {
-            command.reject({ code, message });
-          }
+          this.commandQueue.handleError({ code, message });
           this.emit('cnc-error', { code, message });
 
           // Send newline to clear firmware parser state after error
@@ -198,12 +226,12 @@ export class CNCController extends EventEmitter {
           } catch (error) {
             console.error('Failed to send recovery newline:', error);
           }
+        } else if (trimmedData.toLowerCase().startsWith('alarm')) {
+          this.commandQueue.handleError({ code: 'ALARM', message: trimmedData });
+          this.emit('cnc-error', { code: 'ALARM', message: trimmedData });
         } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
           log('CNC controller responded:', trimmedData);
-          const command = this.commandQueue.shift();
-          if (command) {
-            command.resolve();
-          }
+          this.commandQueue.handleOk();
         } else {
           log('CNC data:', trimmedData);
           this.emit('data', trimmedData);
@@ -221,6 +249,8 @@ export class CNCController extends EventEmitter {
 
   disconnect() {
     this.stopPolling();
+
+    this.commandQueue.flush('disconnect');
 
     if (this.retryInterval) {
       clearInterval(this.retryInterval);
@@ -244,6 +274,36 @@ export class CNCController extends EventEmitter {
     // Log message removed - it will be logged by the 'close' event handler
   }
 
+  writeToPort(commandToSend, { rawCommand, isRealTime } = {}) {
+    if (!this.port || !this.port.isOpen) {
+      return Promise.reject(new Error('Serial port is not open'));
+    }
+
+    return new Promise((resolve, reject) => {
+      this.port.write(commandToSend, (error) => {
+        if (error) {
+          console.error('Error sending command:', error);
+          reject(error);
+          return;
+        }
+
+        if (isRealTime) {
+          if (rawCommand !== '?') {
+            if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
+              log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
+            } else {
+              log('Real-time command sent:', rawCommand);
+            }
+          }
+        } else if (rawCommand && rawCommand.toUpperCase() !== '?') {
+          log('Command sent:', rawCommand.toUpperCase());
+        }
+
+        resolve();
+      });
+    });
+  }
+
   async sendCommand(command) {
     if (!this.isConnected || !this.port || !this.port.isOpen) {
       throw new Error('CNC controller is not connected');
@@ -251,6 +311,9 @@ export class CNCController extends EventEmitter {
 
     // Clean up command - remove semicolon comments
     const cleanCommand = command.split(';')[0].trim();
+    if (!cleanCommand) {
+      throw new Error('Command is empty');
+    }
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
@@ -266,35 +329,22 @@ export class CNCController extends EventEmitter {
       commandToSend = cleanCommand.toUpperCase() + '\n';
     }
 
-    return new Promise((resolve, reject) => {
-      if (!isRealTimeCommand) {
-        this.commandQueue.push({ resolve, reject });
+    if (isRealTimeCommand) {
+      await this.writeToPort(commandToSend, {
+        rawCommand: cleanCommand,
+        isRealTime: true
+      });
+
+      if (cleanCommand === '\x18') {
+        this.commandQueue.flush('soft-reset');
       }
 
+      return;
+    }
 
-      this.port.write(commandToSend, (error) => {
-        if (error) {
-          console.error('Error sending command:', error);
-          if (!isRealTimeCommand) {
-            this.commandQueue.shift(); // Remove the command from the queue
-          }
-          reject(error);
-        } else {
-          if (isRealTimeCommand) {
-            // Don't log '?' commands to reduce noise from polling
-            if (cleanCommand !== '?') {
-              if (cleanCommand.charCodeAt(0) >= 0x80) {
-                log('Real-time command sent:', '0x' + cleanCommand.charCodeAt(0).toString(16).toUpperCase());
-              } else {
-                log('Real-time command sent:', cleanCommand);
-              }
-            }
-            resolve(); // Real-time commands resolve immediately
-          } else if (cleanCommand.toUpperCase() !== '?') {
-            log('Command sent:', cleanCommand.toUpperCase());
-          }
-        }
-      });
+    return this.commandQueue.enqueue({
+      rawCommand: cleanCommand.toUpperCase(),
+      commandToWrite: commandToSend
     });
   }
 
@@ -318,6 +368,8 @@ export class CNCController extends EventEmitter {
   handleConnectionError(error) {
     this.isConnected = false;
     this.connectionStatus = 'error';
+
+    this.commandQueue.flush('connection-error', error);
 
     this.emit('status', {
       status: 'error',
