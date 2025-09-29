@@ -9,6 +9,7 @@ class NCClient {
     this.reconnectDelay = 1000;
     this.clientId = this.ensureClientId();
     this.jogAckTimeoutMs = 1500;
+    this.discoveredPort = null;
   }
 
   ensureClientId() {
@@ -71,7 +72,7 @@ class NCClient {
         const hostname = window.location.hostname;
         return `http://${hostname}:8090`;
       } else {
-        // Production mode: served by embedded server
+        // Production mode: served by embedded server - use same host/port as current page
         return `${window.location.protocol}//${window.location.host}`;
       }
     }

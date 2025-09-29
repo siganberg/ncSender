@@ -38,7 +38,7 @@ This will:
 1. Build the client UI with Vite
 2. Start the Electron app with embedded server
 3. Open the UI in the Electron window
-4. Make the server accessible at `http://localhost:3001`
+4. Make the server accessible at `http://localhost:8090`
 
 ### Client Development
 
