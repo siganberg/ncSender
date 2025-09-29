@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,17 +60,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Setup ARM64 cross-compilation
-        if: matrix.arch == 'arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
-          echo "AR=aarch64-linux-gnu-ar" >> $GITHUB_ENV
-          echo "STRIP=aarch64-linux-gnu-strip" >> $GITHUB_ENV
-          echo "LINK=aarch64-linux-gnu-g++" >> $GITHUB_ENV
 
       - name: Install Dependencies
         run: |
@@ -100,7 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -109,15 +98,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Setup Windows ARM64 build tools
-        if: matrix.arch == 'arm64'
-        shell: pwsh
-        run: |
-          npm config set target_arch arm64
-          npm config set target_platform win32
-          npm config set cache C:\npm-cache --global
-          npm config set msvs_version 2022
 
       - name: Install Dependencies
         run: |
