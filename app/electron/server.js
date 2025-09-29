@@ -65,6 +65,15 @@ export async function createServer() {
 
   // File upload configuration
   const filesDir = path.join(__dirname, 'files');
+
+  // Ensure files directory exists
+  try {
+    await fs.mkdir(filesDir, { recursive: true });
+    log('Files directory created/verified:', filesDir);
+  } catch (error) {
+    console.error('Failed to create files directory:', error);
+  }
+
   const upload = multer({
     dest: filesDir,
     fileFilter: (req, file, cb) => {
