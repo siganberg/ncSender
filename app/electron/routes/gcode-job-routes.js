@@ -2,6 +2,7 @@ import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { jobManager } from '../job-processor-manager.js';
+import { getSetting, DEFAULT_SETTINGS } from '../settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -9,6 +10,7 @@ const log = (...args) => {
 
 export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast) {
   const router = Router();
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Use real CNC controller
   let actualCNCController = cncController;
@@ -49,6 +51,53 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
     } catch (error) {
       console.error('Error starting G-code job:', error);
       res.status(500).json({ error: 'Failed to start G-code job' });
+    }
+  });
+
+  router.post('/stop', async (req, res) => {
+    try {
+      if (!jobManager.hasActiveJob()) {
+        return res.status(400).json({ error: 'No active job to stop' });
+      }
+
+      const rawSetting = getSetting('pauseBeforeStop', DEFAULT_SETTINGS.pauseBeforeStop);
+      let pauseBeforeStop = Number(rawSetting);
+      if (!Number.isFinite(pauseBeforeStop) || pauseBeforeStop < 0) {
+        pauseBeforeStop = DEFAULT_SETTINGS.pauseBeforeStop;
+      }
+
+      if (pauseBeforeStop > 0) {
+        try {
+          await cncController.sendCommand('!', {
+            meta: { jobControl: true }
+          });
+        } catch (error) {
+          log('Failed to send feed hold before stop:', error?.message || error);
+        }
+
+        await delay(pauseBeforeStop);
+      }
+
+      try {
+        await cncController.sendCommand('\x18', {
+          meta: { jobControl: true }
+        });
+      } catch (error) {
+        log('Failed to send soft reset during stop:', error?.message || error);
+        return res.status(500).json({ error: 'Failed to stop G-code job' });
+      }
+
+      try {
+        jobManager.stop();
+      } catch (error) {
+        log('Job manager stop error:', error?.message || error);
+      }
+
+      log(`G-code job stop issued (delay ${pauseBeforeStop}ms)`);
+      return res.json({ success: true, pauseBeforeStop });
+    } catch (error) {
+      console.error('Error stopping G-code job:', error);
+      return res.status(500).json({ error: 'Failed to stop G-code job' });
     }
   });
 
@@ -214,10 +263,12 @@ export class GCodeJobProcessor {
 
     if (!this.isStopped && this.currentLine >= this.lines.length) {
       // Job completed successfully
+      const completionComment = `; Job completed: ${this.filename} (ncSender)`;
+
       this.broadcast('cnc-command-result', {
         id: `job-${Date.now()}`,
-        command: 'JOB_COMPLETED',
-        displayCommand: `Job completed: ${this.filename}`,
+        command: completionComment,
+        displayCommand: completionComment,
         status: 'success',
         timestamp: new Date().toISOString(),
         meta: { jobComplete: true }

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
+const DEFAULT_RESPONSE_TIMEOUT_MS = 0;
 
 const buildTimeoutError = (entry) => {
   const error = new Error(`Command timed out after ${entry.timeoutMs}ms`);
@@ -55,7 +55,7 @@ export class CommandQueue extends EventEmitter {
     return this.pending.length + (this.activeEntry ? 1 : 0);
   }
 
-  enqueue({ rawCommand, commandToWrite, meta, displayCommand, commandId }) {
+  enqueue({ rawCommand, commandToWrite, meta, displayCommand, commandId, timeoutMs }) {
     if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
       throw new Error('CommandQueue.enqueue requires a rawCommand string');
     }
@@ -66,7 +66,7 @@ export class CommandQueue extends EventEmitter {
       commandToWrite,
       meta: meta || null,
       enqueuedAt: Date.now(),
-      timeoutMs: this.responseTimeoutMs,
+      timeoutMs: typeof timeoutMs === 'number' ? timeoutMs : this.responseTimeoutMs,
       resolve: null,
       reject: null,
       timeoutHandle: null,

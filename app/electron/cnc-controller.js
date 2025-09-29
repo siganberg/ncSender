@@ -380,12 +380,15 @@ export class CNCController extends EventEmitter {
     const normalizedCommand = cleanCommand.toUpperCase();
     const display = displayCommand || normalizedCommand;
 
+    const timeoutMs = normalizedMeta?.jobControl ? 0 : undefined;
+
     return this.commandQueue.enqueue({
       rawCommand: normalizedCommand,
       commandToWrite: commandToSend,
       meta: normalizedMeta,
       displayCommand: display,
-      commandId: resolvedCommandId
+      commandId: resolvedCommandId,
+      timeoutMs
     });
   }
 

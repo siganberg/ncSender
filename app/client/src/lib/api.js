@@ -737,11 +737,25 @@ class NCClient {
   }
 
   async stopGCodeJob() {
-    // Use send-command API with soft reset
-    return await this.sendCommandViaWebSocket({
-      command: '\\x18',
-      meta: { jobControl: true }
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
     });
+
+    if (!response.ok) {
+      let message = 'Failed to stop G-code job';
+      try {
+        const errorBody = await response.json();
+        if (errorBody?.error) {
+          message = errorBody.error;
+        }
+      } catch (error) {
+        // Ignore JSON parse errors and use default message
+      }
+      throw new Error(message);
+    }
+
+    return response.json();
   }
 }
 
