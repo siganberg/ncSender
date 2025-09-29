@@ -270,8 +270,15 @@ const stopJog = () => {
   });
 };
 
-const goHome = () => {
-  api.sendCommand('$H');
+const goHome = async () => {
+  try {
+    await api.sendCommandViaWebSocket({
+      command: '$H',
+      displayCommand: 'Home'
+    });
+  } catch (error) {
+    console.error('Failed to execute home command:', error);
+  }
 };
 
 // Helper functions for button visual feedback

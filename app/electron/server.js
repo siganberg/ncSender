@@ -35,6 +35,18 @@ export async function createServer() {
   const clients = new Set();
   let jogManager;
 
+  const WS_READY_STATE_OPEN = 1;
+
+  const sendWsMessage = (ws, type, data) => {
+    try {
+      if (ws && ws.readyState === WS_READY_STATE_OPEN) {
+        ws.send(JSON.stringify({ type, data }));
+      }
+    } catch (error) {
+      log('Failed to send WebSocket payload', error?.message || error);
+    }
+  };
+
   // Command history storage (in-memory for now, persists until server restart)
   let commandHistory = [];
   const MAX_HISTORY_SIZE = 200;
@@ -74,19 +86,147 @@ export async function createServer() {
   app.use(express.static(clientDistPath));
   log('Serving client files from:', clientDistPath);
 
+  const translateCommandInput = (rawCommand) => {
+    if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
+      return {
+        error: { message: 'Command is required', code: 'INVALID_COMMAND' }
+      };
+    }
+
+    const trimmed = rawCommand.split(';')[0].trim();
+
+    const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(trimmed);
+    if (hexMatch) {
+      const charCode = parseInt(hexMatch[1], 16);
+      return {
+        command: String.fromCharCode(charCode),
+        displayCommand: rawCommand.trim()
+      };
+    }
+
+    return { command: trimmed, displayCommand: rawCommand.trim() };
+  };
+
+  async function handleWebSocketCommand(ws, payload) {
+    const {
+      command: rawCommand,
+      commandId,
+      displayCommand,
+      meta,
+      completesCommandId,
+      clientId
+    } = payload || {};
+
+    const translation = translateCommandInput(rawCommand);
+    if (translation.error) {
+      sendWsMessage(ws, 'cnc:command-error', {
+        commandId: commandId ?? null,
+        error: translation.error
+      });
+      return;
+    }
+
+    const normalizedCommandId = commandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const normalizedMeta = meta && typeof meta === 'object' ? meta : null;
+    const commandValue = translation.command;
+
+    const commandMeta = {
+      id: normalizedCommandId,
+      command: commandValue,
+      displayCommand: displayCommand || translation.displayCommand || commandValue,
+      originId: clientId ?? null,
+      timestamp: new Date().toISOString(),
+      meta: normalizedMeta,
+      completesCommandId: completesCommandId ?? null
+    };
+
+    log('WebSocket command received', commandMeta.displayCommand, `id=${normalizedCommandId}`);
+
+    const pendingPayload = { ...commandMeta, status: 'pending' };
+    broadcast('cnc-command', pendingPayload);
+    sendWsMessage(ws, 'cnc:command-ack', { commandId: normalizedCommandId });
+
+    try {
+      await cncController.sendCommand(commandValue);
+
+      broadcast('cnc-command-result', {
+        ...commandMeta,
+        status: 'success',
+        timestamp: new Date().toISOString()
+      });
+
+      log('WebSocket command succeeded', commandMeta.displayCommand, `id=${normalizedCommandId}`);
+    } catch (error) {
+      const errorPayload = {
+        message: error?.message || 'Failed to send command',
+        code: error?.code
+      };
+
+      broadcast('cnc-command-result', {
+        ...commandMeta,
+        status: 'error',
+        error: errorPayload,
+        timestamp: new Date().toISOString()
+      });
+
+      sendWsMessage(ws, 'cnc:command-error', {
+        commandId: normalizedCommandId,
+        error: errorPayload
+      });
+
+      log('WebSocket command failed', commandMeta.displayCommand, `id=${normalizedCommandId}`, errorPayload.message);
+    }
+  }
+
   // WebSocket connection handling
   wss.on('connection', (ws) => {
     log('Client connected');
     clients.add(ws);
 
-    ws.on('message', (data) => {
-      if (!jogManager) {
+    ws.on('message', (rawData) => {
+      let parsed;
+      try {
+        if (typeof rawData === 'string') {
+          parsed = JSON.parse(rawData);
+        } else if (rawData) {
+          parsed = JSON.parse(rawData.toString());
+        }
+      } catch (error) {
+        log('Ignoring invalid WebSocket payload (not JSON)', error?.message || error);
+        sendWsMessage(ws, 'ws:error', { message: 'Invalid payload' });
         return;
       }
 
-      jogManager.handleMessage(ws, data).catch((error) => {
-        log('Error handling jog message', error?.message || error);
-      });
+      if (!parsed || typeof parsed.type !== 'string') {
+        log('Ignoring WebSocket payload with missing type');
+        return;
+      }
+
+      if (parsed.type.startsWith('jog:')) {
+        if (!jogManager) {
+          return;
+        }
+
+        jogManager.handleMessage(ws, parsed).catch((error) => {
+          log('Error handling jog message', error?.message || error);
+        });
+        return;
+      }
+
+      switch (parsed.type) {
+        case 'cnc:command':
+          handleWebSocketCommand(ws, parsed.data).catch((error) => {
+            log('Error handling CNC command', error?.message || error);
+            sendWsMessage(ws, 'cnc:command-error', {
+              commandId: parsed?.data?.commandId ?? null,
+              error: { message: error?.message || 'Command handling failed' }
+            });
+          });
+          break;
+        default:
+          log('Received unsupported WebSocket message type:', parsed.type);
+          break;
+      }
     });
 
     ws.on('close', () => {
@@ -110,23 +250,17 @@ export async function createServer() {
     });
 
     // Send initial status
-    ws.send(JSON.stringify({
-      type: 'cnc-status',
-      data: cncController.getConnectionStatus()
-    }));
+    sendWsMessage(ws, 'cnc-status', cncController.getConnectionStatus());
 
     // Send server state (includes machine state)
-    ws.send(JSON.stringify({
-      type: 'server-state-updated',
-      data: serverState
-    }));
+    sendWsMessage(ws, 'server-state-updated', serverState);
   });
 
   // Broadcast function for real-time updates
   function broadcast(type, data) {
     const message = JSON.stringify({ type, data });
     clients.forEach(client => {
-      if (client.readyState === 1) { // OPEN
+      if (client.readyState === WS_READY_STATE_OPEN) { // OPEN
         client.send(message);
       }
     });

@@ -22,17 +22,19 @@ export class JogSessionManager {
   }
 
   async handleMessage(ws, rawMessage) {
-    let parsed;
-    try {
-      const asString = typeof rawMessage === 'string' ? rawMessage : rawMessage.toString();
-      parsed = JSON.parse(asString);
-    } catch (error) {
-      this.log('Ignoring invalid WebSocket payload (not JSON)', error?.message || error);
-      this.sendSafe(ws, {
-        type: 'jog:error',
-        data: { message: 'Invalid jog payload. Expecting JSON structure.' }
-      });
-      return;
+    let parsed = rawMessage;
+    if (!parsed || typeof parsed !== 'object' || !parsed.type) {
+      try {
+        const asString = typeof rawMessage === 'string' ? rawMessage : rawMessage?.toString();
+        parsed = JSON.parse(asString);
+      } catch (error) {
+        this.log('Ignoring invalid WebSocket payload (not JSON)', error?.message || error);
+        this.sendSafe(ws, {
+          type: 'jog:error',
+          data: { message: 'Invalid jog payload. Expecting JSON structure.' }
+        });
+        return;
+      }
     }
 
     const { type, data } = parsed || {};

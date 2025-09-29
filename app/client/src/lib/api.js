@@ -177,6 +177,89 @@ class NCClient {
     }
   }
 
+  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
+    if (typeof command !== 'string' || command.trim() === '') {
+      throw new Error('sendCommandViaWebSocket requires a command');
+    }
+
+    const normalizedCommandId = commandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    await this.ensureWebSocketReady();
+
+    const payload = {
+      command,
+      commandId: normalizedCommandId,
+      displayCommand,
+      meta,
+      completesCommandId,
+      clientId: this.clientId
+    };
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let ackReceived = false;
+
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(ackTimer);
+        clearTimeout(resultTimer);
+        if (offAck) offAck();
+        if (offError) offError();
+        if (offResult) offResult();
+      };
+
+      const rejectWith = (error) => {
+        if (!settled) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error(error?.message || 'Command failed'));
+        }
+      };
+
+      const ackTimer = setTimeout(() => {
+        if (!ackReceived) {
+          rejectWith(new Error('Timed out waiting for command acknowledgement'));
+        }
+      }, this.jogAckTimeoutMs);
+
+      const resultTimeoutMs = Math.max(this.jogAckTimeoutMs * 4, 6000);
+      const resultTimer = setTimeout(() => {
+        rejectWith(new Error('Timed out waiting for command result'));
+      }, resultTimeoutMs);
+
+      const offAck = this.on('cnc:command-ack', (data) => {
+        if (!data || data.commandId !== normalizedCommandId || settled) {
+          return;
+        }
+        ackReceived = true;
+      });
+
+      const offError = this.on('cnc:command-error', (data) => {
+        if (!data || data.commandId !== normalizedCommandId || settled) {
+          return;
+        }
+        rejectWith(new Error(data?.error?.message || 'Command failed'));
+      });
+
+      const offResult = this.on('cnc-command-result', (result) => {
+        if (!result || result.id !== normalizedCommandId || settled) {
+          return;
+        }
+
+        cleanup();
+        if (result.status === 'success') {
+          resolve(result);
+        } else {
+          const errorMessage = result.error?.message || 'Command failed';
+          reject(new Error(errorMessage));
+        }
+      });
+
+      this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true }).catch((error) => {
+        rejectWith(error instanceof Error ? error : new Error('Failed to send command via WebSocket'));
+      });
+    });
+  }
+
   async startJogSession({ jogId, command, displayCommand, axis, direction, feedRate }) {
     if (!jogId) {
       throw new Error('startJogSession requires a jogId');
