@@ -45,47 +45,47 @@ jobs:
           name: macos-${{ matrix.arch }}-artifacts
           path: app/dist-electron/**
 
-  # linux:
-  #   name: Linux Builds
-  #   runs-on: ubuntu-22.04
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       arch: [x64, arm64]
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  linux:
+    name: Linux Builds
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Setup Node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  #     - name: Install Dependencies
-  #       run: |
-  #         npm ci
-  #         cd client && npm ci
-  #       working-directory: app
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
 
-  #     - name: Build Client
-  #       run: npm run build:client
-  #       working-directory: app
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
 
-  #     - name: Build Electron (${{ matrix.arch }})
-  #       run: |
-  #         rm -rf dist-electron
-  #         npm run dist -- --linux --${{ matrix.arch }}
-  #       working-directory: app
+      - name: Build Electron (${{ matrix.arch }})
+        run: |
+          rm -rf dist-electron
+          npm run dist -- --linux --${{ matrix.arch }}
+        working-directory: app
 
-  #     - name: Upload Linux Artifact (${{ matrix.arch }})
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: linux-${{ matrix.arch }}-artifacts
-  #         path: app/dist-electron/**
+      - name: Upload Linux Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-artifacts
+          path: app/dist-electron/**
 
   windows:
     name: Windows Builds
-    runs-on: windows-2022
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
