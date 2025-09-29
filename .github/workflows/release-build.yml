@@ -12,9 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64, arm64]
-    env:
-      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,9 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64, arm64]
-    env:
-      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,9 +84,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64, arm64]
-    env:
-      ELECTRON_CACHE: ${{ runner.temp }}\electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}\electron-builder-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -126,9 +117,6 @@ jobs:
   raspberry-pi:
     name: Raspberry Pi Build
     runs-on: ubuntu-22.04
-    env:
-      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
