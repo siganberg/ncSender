@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
@@ -15,6 +16,7 @@ import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
+import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,7 +29,7 @@ export async function createServer() {
   const app = express();
   const server = createHttpServer(app);
   const wss = new WebSocketServer({ server });
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || getSetting('serverPort', DEFAULT_SETTINGS.serverPort);
 
   // Initialize CNC Controller
   const cncController = new CNCController();
@@ -63,8 +65,35 @@ export async function createServer() {
   app.use(express.json());
   app.use(cors());
 
+  // Get user data directory based on OS
+  function getUserDataDir() {
+    const platform = os.platform();
+    const appName = 'ncSender';
+
+    switch (platform) {
+      case 'win32':
+        return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+      case 'darwin':
+        return path.join(os.homedir(), 'Library', 'Application Support', appName);
+      case 'linux':
+        return path.join(os.homedir(), '.config', appName);
+      default:
+        return path.join(os.homedir(), `.${appName}`);
+    }
+  }
+
   // File upload configuration
-  const filesDir = path.join(__dirname, 'files');
+  const userDataDir = getUserDataDir();
+  const filesDir = path.join(userDataDir, 'gcode-files');
+
+  // Ensure files directory exists
+  try {
+    await fs.mkdir(filesDir, { recursive: true });
+    log('Files directory created/verified:', filesDir);
+  } catch (error) {
+    console.error('Failed to create files directory:', error);
+  }
+
   const upload = multer({
     dest: filesDir,
     fileFilter: (req, file, cb) => {

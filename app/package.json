@@ -2,10 +2,11 @@
   "name": "ncsender",
   "version": "0.1.0",
   "description": "ncSender - Unified CNC Controller Electron App",
+  "author": "Francis Siganberg",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
-    "predev": "lsof -ti:3001 | xargs -r kill -9 2>/dev/null || true",
+    "predev": "lsof -ti:8090 | xargs -r kill -9 2>/dev/null || true",
     "dev": "npm run build:client && cross-env NODE_ENV=development electron .",
     "dev:hot": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\"",
     "dev:kiosk": "npm run build:client && cross-env NODE_ENV=development electron . --kiosk",
@@ -22,7 +23,6 @@
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",
     "cors": "^2.8.5",
-    "electron": "^29.3.0",
     "express": "^5.1.0",
     "multer": "^2.0.2",
     "serialport": "^12.0.0",
@@ -31,6 +31,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
+    "electron": "^29.3.0",
     "electron-builder": "^24.9.1"
   },
   "build": {

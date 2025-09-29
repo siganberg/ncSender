@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_SETTINGS = {
@@ -7,16 +8,34 @@ const DEFAULT_SETTINGS = {
   connectionType: 'usb',
   baudRate: 115200,
   ip: '192.168.5.1',
-  port: 23
+  port: 23,
+  serverPort: 8090
 };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const SETTINGS_PATH = path.join(__dirname, 'settings.json');
+function getUserDataDir() {
+  const platform = os.platform();
+  const appName = 'ncSender';
+
+  switch (platform) {
+    case 'win32':
+      return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Application Support', appName);
+    case 'linux':
+      return path.join(os.homedir(), '.config', appName);
+    default:
+      return path.join(os.homedir(), `.${appName}`);
+  }
+}
+
+const SETTINGS_PATH = path.join(getUserDataDir(), 'settings.json');
 
 function ensureSettingsFile() {
   if (!fs.existsSync(SETTINGS_PATH)) {
     try {
+      // Ensure directory exists
+      const settingsDir = path.dirname(SETTINGS_PATH);
+      fs.mkdirSync(settingsDir, { recursive: true });
       fs.writeFileSync(SETTINGS_PATH, JSON.stringify(DEFAULT_SETTINGS, null, 2), 'utf8');
     } catch (error) {
       console.error('Failed to create default settings file:', error);

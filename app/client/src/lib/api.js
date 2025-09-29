@@ -9,6 +9,7 @@ class NCClient {
     this.reconnectDelay = 1000;
     this.clientId = this.ensureClientId();
     this.jogAckTimeoutMs = 1500;
+    this.discoveredPort = null;
   }
 
   ensureClientId() {
@@ -65,17 +66,17 @@ class NCClient {
     if (typeof window !== 'undefined' && window.location) {
       if (window.location.protocol === 'file:') {
         // Electron app loading from file:// - connect to server
-        return 'http://localhost:3001';
+        return 'http://localhost:8090';
       } else if (window.location.port === '5174') {
         // Development mode: Connect directly to backend server
         const hostname = window.location.hostname;
-        return `http://${hostname}:3001`;
+        return `http://${hostname}:8090`;
       } else {
-        // Production mode: served by embedded server
+        // Production mode: served by embedded server - use same host/port as current page
         return `${window.location.protocol}//${window.location.host}`;
       }
     }
-    return 'http://localhost:3001';
+    return 'http://localhost:8090';
   }
 
   getWebSocketUrl() {
@@ -83,10 +84,10 @@ class NCClient {
       if (window.location.port === '5174') {
         // Development mode: connect to backend server using same hostname
         const hostname = window.location.hostname;
-        return `ws://${hostname}:3001`;
+        return `ws://${hostname}:8090`;
       } else if (window.location.protocol === 'file:') {
         // Electron app loading from file:// - connect directly to server
-        return 'ws://localhost:3001';
+        return 'ws://localhost:8090';
       }
     }
 
