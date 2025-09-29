@@ -10,7 +10,6 @@
       </div>
     </div>
     <div class="toolbar__actions">
-      <button class="primary" @click="handleConnectClick" :disabled="isConnecting">{{ connected ? 'Disconnect' : (isConnecting ? 'Connecting...' : 'Connect') }}</button>
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
         <span class="theme-icon">🌙</span>
       </button>
@@ -22,8 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { api } from '../lib/api.js';
+import { computed } from 'vue';
 
 const props = defineProps<{
   workspace: string;
@@ -36,47 +34,26 @@ const emit = defineEmits<{
   (e: 'toggle-theme'): void;
 }>();
 
-const isConnecting = ref(false);
-
 const machineStateText = computed(() => {
-  if (!props.connected) return 'Offline';
-  if (!props.machineState) return 'Unknown';
+  if (!props.connected) return 'Connecting...';
+  if (!props.machineState || props.machineState === 'offline') return 'Connected';
 
   const state = props.machineState.toLowerCase();
   switch (state) {
     case 'idle': return 'Idle';
-    case 'run': return 'Run';
+    case 'run': return 'Running';
     case 'hold': return 'Hold';
-    case 'jog': return 'Jog';
+    case 'jog': return 'Jogging';
     case 'alarm': return 'Alarm';
-    case 'door': return 'Door';
+    case 'door': return 'Door Open';
     case 'check': return 'Check';
-    case 'home': return 'Home';
+    case 'home': return 'Homing';
     case 'sleep': return 'Sleep';
-    case 'tool': return 'Tool';
-    default: return 'Unknown';
+    case 'tool': return 'Tool Change';
+    case 'offline': return 'Connecting...';
+    default: return 'Connected';
   }
 });
-
-
-const handleConnectClick = async () => {
-  if (props.connected) {
-    api.disconnectCNC();
-  } else {
-    isConnecting.value = true;
-    const timeout = setTimeout(() => {
-      isConnecting.value = false;
-    }, 4000);
-
-    try {
-      await api.connectToCNC();
-    } finally {
-      clearTimeout(timeout);
-      isConnecting.value = false;
-    }
-  }
-};
-
 </script>
 
 <style scoped>

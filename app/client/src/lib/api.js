@@ -104,30 +104,6 @@ class NCClient {
     return await response.json();
   }
 
-  async connectToCNC(port, baudRate) {
-    const body = port && baudRate ? { port, baudRate } : {};
-    const response = await fetch(`${this.baseUrl}/api/connect`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!response.ok) throw new Error('Failed to connect to CNC');
-    return await response.json();
-  }
-
-  async disconnectCNC() {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/disconnect`, {
-        method: 'POST'
-      });
-      if (!response.ok) {
-        throw new Error('Failed to disconnect from CNC');
-      }
-      console.log('Successfully disconnected CNC');
-    } catch (error) {
-      console.error('Error during CNC disconnect:', error);
-    }
-  }
 
   async getStatus() {
     const response = await fetch(`${this.baseUrl}/api/status`);

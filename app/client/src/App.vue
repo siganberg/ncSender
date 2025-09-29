@@ -3,7 +3,7 @@
     <template #top-toolbar>
       <TopToolbar
         :workspace="workspace"
-        :connected="status.connected"
+        :connected="status.connected && websocketConnected"
         :machine-state="status.machineState"
         @toggle-theme="toggleTheme"
         :on-show-settings="openSettings"
@@ -14,13 +14,13 @@
       <ToolpathViewport
         :view="viewport"
         :theme="theme"
-        :connected="status.connected"
+        :connected="status.connected && websocketConnected"
         :machine-state="status.machineState"
         :loaded-g-code-program="serverState.loadedGCodeProgram"
         @change-view="viewport = $event"
       />
       <RightPanel
-        :status="status"
+        :status="{ ...status, connected: status.connected && websocketConnected }"
         :console-lines="consoleLines"
         :jog-config="jogConfig"
         @update:jog-step="jogConfig.stepSize = $event"
@@ -84,6 +84,9 @@ const status = reactive({
   rapidOverride: 100,
   spindleOverride: 100
 });
+
+// Track WebSocket connection state separately
+const websocketConnected = ref(false);
 
 const jogConfig = reactive({
   stepSize: 1,
@@ -164,6 +167,29 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 };
 
 onMounted(async () => {
+  // Listen for WebSocket connection events
+  api.on('connected', () => {
+    console.log('WebSocket connected');
+    websocketConnected.value = true;
+  });
+
+  api.on('disconnected', () => {
+    console.log('WebSocket disconnected');
+    websocketConnected.value = false;
+  });
+
+  api.on('error', () => {
+    console.log('WebSocket connection error');
+    websocketConnected.value = false;
+  });
+
+  // Set initial WebSocket state - check if already connected or connecting
+  if (api.ws) {
+    websocketConnected.value = api.ws.readyState === 1; // WebSocket.OPEN = 1
+  } else {
+    websocketConnected.value = false;
+  }
+
   // Fetch initial server state
   try {
     const initialServerState = await api.getServerState();

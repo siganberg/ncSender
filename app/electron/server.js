@@ -325,6 +325,60 @@ export async function createServer() {
   });
 
   const longRunningCommands = new Map();
+  let autoConnectActive = false;
+
+  // Auto-connect function with retry logic
+  async function startAutoConnect() {
+    // Prevent multiple concurrent auto-connect attempts
+    if (autoConnectActive) {
+      log('Auto-connect already in progress, skipping...');
+      return;
+    }
+
+    autoConnectActive = true;
+    log('Starting automatic CNC connection...');
+
+    const attemptConnection = async () => {
+      try {
+        const success = await cncController.autoConnect();
+        if (success) {
+          log('Auto-connect successful');
+          return true;
+        } else {
+          log('Auto-connect failed - no suitable connection found, retrying in 5 seconds...');
+          return false;
+        }
+      } catch (error) {
+        log('Auto-connect error:', error.message);
+        log('Retrying connection in 5 seconds...');
+        return false;
+      }
+    };
+
+    // Initial connection attempt
+    const initialSuccess = await attemptConnection();
+
+    // If initial connection failed, start retry loop
+    if (!initialSuccess) {
+      const retryInterval = setInterval(async () => {
+        // Only retry if not already connected
+        if (!cncController.isConnected) {
+          const success = await attemptConnection();
+          if (success) {
+            clearInterval(retryInterval);
+            autoConnectActive = false;
+            log('Auto-connect retry successful, stopping retry attempts');
+          }
+        } else {
+          clearInterval(retryInterval);
+          autoConnectActive = false;
+          log('CNC already connected, stopping retry attempts');
+        }
+      }, 5000); // Retry every 5 seconds
+    } else {
+      autoConnectActive = false;
+    }
+  }
 
   const formatCommandText = (value) => {
     if (typeof value !== 'string') {
@@ -429,6 +483,12 @@ export async function createServer() {
     if (serverState.online !== newOnlineStatus) {
       serverState.online = newOnlineStatus;
       log(`CNC controller connection status changed. Server state 'online' is now: ${serverState.online}`);
+
+      // Start reconnection attempts if disconnected
+      if (!newOnlineStatus) {
+        log('Connection lost, starting reconnection attempts...');
+        startAutoConnect();
+      }
     }
 
     // Broadcast the status and server state update
@@ -489,6 +549,9 @@ export async function createServer() {
     log(`ncSender Server listening on port ${port}`);
     log(`HTTP API: http://localhost:${port}/api`);
     log(`WebSocket: ws://localhost:${port}`);
+
+    // Start automatic connection attempts
+    startAutoConnect();
   });
 
   return {
