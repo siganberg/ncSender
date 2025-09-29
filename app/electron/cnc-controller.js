@@ -354,7 +354,7 @@ export class CNCController extends EventEmitter {
         });
 
         if (cleanCommand === '\x18') {
-          this.commandQueue.flush('soft-reset');
+          this.commandQueue.flush('');
         }
 
         const ackPayload = {

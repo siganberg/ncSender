@@ -197,8 +197,14 @@ onMounted(async () => {
       return null;
     }
 
-    const message = payload.displayCommand || payload.command || 'Command';
+    let message = payload.displayCommand || payload.command || 'Command';
     const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+    // Format error messages specially
+    if (payload.status === 'error' && payload.error?.message) {
+      const lineInfo = payload.meta?.lineNumber ? ` (Line: ${payload.meta.lineNumber})` : '';
+      message = `${message}; --> ${payload.error.message}${lineInfo}`;
+    }
 
     // Use Map for O(1) lookup instead of array.find()
     const existingEntry = commandLinesMap.get(payload.id);
@@ -275,19 +281,6 @@ onMounted(async () => {
     // }
 
     const updateResult = addOrUpdateCommandLine(result);
-
-    if (result.status === 'error' && result.error?.message) {
-      const errorLine = {
-        id: `${result.id ?? Date.now()}-error-${Math.random().toString(16).slice(2)}`,
-        level: 'error',
-        message: `${result.error.message}${result.error.code ? ` (code: ${result.error.code})` : ''}`,
-        timestamp: '',
-        type: 'response'
-      };
-      const newIndex = consoleLines.value.length;
-      consoleLines.value.push(errorLine);
-      commandLinesMap.set(errorLine.id, { line: errorLine, index: newIndex });
-    }
   });
 
 
