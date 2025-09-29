@@ -1,19 +1,32 @@
 import { Router } from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-// Get the data directory path
+// Get the user data directory path
+function getUserDataDir() {
+  const platform = os.platform();
+  const appName = 'ncSender';
+
+  switch (platform) {
+    case 'win32':
+      return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Application Support', appName);
+    case 'linux':
+      return path.join(os.homedir(), '.config', appName);
+    default:
+      return path.join(os.homedir(), `.${appName}`);
+  }
+}
+
 const getDataDir = () => {
-  const dataDir = path.join(__dirname, '..', 'data');
-  return dataDir;
+  return getUserDataDir();
 };
 
 const getHistoryFilePath = () => {

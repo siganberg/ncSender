@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
@@ -63,8 +64,26 @@ export async function createServer() {
   app.use(express.json());
   app.use(cors());
 
+  // Get user data directory based on OS
+  function getUserDataDir() {
+    const platform = os.platform();
+    const appName = 'ncSender';
+
+    switch (platform) {
+      case 'win32':
+        return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+      case 'darwin':
+        return path.join(os.homedir(), 'Library', 'Application Support', appName);
+      case 'linux':
+        return path.join(os.homedir(), '.config', appName);
+      default:
+        return path.join(os.homedir(), `.${appName}`);
+    }
+  }
+
   // File upload configuration
-  const filesDir = path.join(__dirname, 'files');
+  const userDataDir = getUserDataDir();
+  const filesDir = path.join(userDataDir, 'gcode-files');
 
   // Ensure files directory exists
   try {
