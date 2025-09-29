@@ -8,6 +8,10 @@ app/dist/
 **/dist/
 **/dist-ssr/
 
+# Vite build cache and temporary files
+**/.vite/
+**/vite.config.*.timestamp-*
+
 # Logs and reports
 logs/
 *.log
@@ -41,3 +45,4 @@ coverage/
 # G-code files storage
 app/electron/files/
 app/electron/data/command-history.json
+app/dist-electron/**
