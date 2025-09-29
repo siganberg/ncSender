@@ -83,44 +83,44 @@ jobs:
   #         name: linux-${{ matrix.arch }}-artifacts
   #         path: app/dist-electron/**
 
-  # windows:
-  #   name: Windows Builds
-  #   runs-on: windows-2022
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       arch: [x64, arm64]
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  windows:
+    name: Windows Builds
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Setup Node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  #     - name: Install Dependencies
-  #       run: |
-  #         npm ci
-  #         cd client && npm ci
-  #       working-directory: app
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
 
-  #     - name: Build Client
-  #       run: npm run build:client
-  #       working-directory: app
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
 
-  #     - name: Build Electron (${{ matrix.arch }})
-  #       shell: pwsh
-  #       run: |
-  #         if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
-  #         npm run dist -- --win --${{ matrix.arch }}
-  #       working-directory: app
+      - name: Build Electron (${{ matrix.arch }})
+        shell: pwsh
+        run: |
+          if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
+          npm run dist -- --win --${{ matrix.arch }}
+        working-directory: app
 
-  #     - name: Upload Windows Artifact (${{ matrix.arch }})
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: windows-${{ matrix.arch }}-artifacts
-  #         path: app/dist-electron/**
+      - name: Upload Windows Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-artifacts
+          path: app/dist-electron/**
 
   # raspberry-pi:
   #   name: Raspberry Pi Build
