@@ -273,8 +273,7 @@ const stopJog = () => {
 const goHome = async () => {
   try {
     await api.sendCommandViaWebSocket({
-      command: '$H',
-      displayCommand: 'Home'
+      command: '$H'
     });
   } catch (error) {
     console.error('Failed to execute home command:', error);
