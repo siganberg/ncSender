@@ -182,7 +182,7 @@ watch(() => props.lines, async () => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
-  min-height: 240px;
+  min-height: 300px !important;
   height: 100%;
 }
 

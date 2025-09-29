@@ -1,8 +1,10 @@
 import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 import { EventEmitter } from 'events';
+import net from 'net';
 import { grblErrors } from './grbl-errors.js';
 import { CommandQueue } from './command-queue.js';
+import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -12,9 +14,11 @@ export class CNCController extends EventEmitter {
   constructor() {
     super();
     this.port = null;
+    this.socket = null;
     this.parser = null;
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
+    this.connectionType = null;
     this.retryInterval = null;
     this.retryAttempts = 0;
     this.maxRetryAttempts = 5;
@@ -117,27 +121,137 @@ export class CNCController extends EventEmitter {
   async autoConnect() {
     try {
       log('Attempting auto-connect to CNC controller...');
-      const ports = await this.listAvailablePorts();
 
-      if (ports.length === 0) {
-        log('No suitable USB ports found for CNC connection');
-        return false;
+      const connectionType = getSetting('connectionType', DEFAULT_SETTINGS.connectionType);
+
+      if (connectionType === 'ethernet') {
+        const ip = getSetting('ip', DEFAULT_SETTINGS.ip);
+        const port = getSetting('port', DEFAULT_SETTINGS.port);
+        log(`Auto-connecting via ethernet to: ${ip}:${port}`);
+        await this.connectEthernet(ip, port);
+        return true;
+      } else {
+        // USB connection (existing logic)
+        const ports = await this.listAvailablePorts();
+
+        if (ports.length === 0) {
+          log('No suitable USB ports found for CNC connection');
+          return false;
+        }
+
+        // Find the first USB port that looks like a CNC controller
+        const suitablePort = ports.find(port => {
+          const path = port.path.toLowerCase();
+          // Look for common USB serial patterns, avoid virtual ports
+          return (path.includes('usb') || path.includes('tty.usbserial') || path.includes('ttyusb')) &&
+                 !path.includes('virtual');
+        }) || ports[0]; // Fallback to first available port
+
+        const baudRate = getSetting('baudRate', DEFAULT_SETTINGS.baudRate);
+        log(`Auto-connecting to: ${suitablePort.path} (${suitablePort.manufacturer || 'Unknown'}) at ${baudRate} baud`);
+        await this.connect(suitablePort.path, baudRate);
+        return true;
       }
-
-      // Find the first USB port that looks like a CNC controller
-      const suitablePort = ports.find(port => {
-        const path = port.path.toLowerCase();
-        // Look for common USB serial patterns, avoid virtual ports
-        return (path.includes('usb') || path.includes('tty.usbserial') || path.includes('ttyusb')) &&
-               !path.includes('virtual');
-      }) || ports[0]; // Fallback to first available port
-
-      log(`Auto-connecting to: ${suitablePort.path} (${suitablePort.manufacturer || 'Unknown'})`);
-      await this.connect(suitablePort.path, 115200);
-      return true;
     } catch (error) {
       console.error('Auto-connect failed:', error);
       return false;
+    }
+  }
+
+  async connectEthernet(ip, port) {
+    if (this.isConnected) {
+      log('Already connected to CNC controller');
+      return;
+    }
+
+    try {
+      log(`Connecting to CNC controller via ethernet at ${ip}:${port}`);
+
+      this.connectionStatus = 'connecting';
+      this.connectionType = 'ethernet';
+      this.emit('status', {
+        status: 'connecting',
+        isConnected: false,
+        retryAttempts: this.retryAttempts
+      });
+
+      this.socket = new net.Socket();
+      this.parser = new ReadlineParser({ delimiter: '\n' });
+      this.socket.pipe(this.parser);
+
+      return new Promise((resolve, reject) => {
+        this.socket.connect(port, ip, () => {
+          log('CNC controller connected via ethernet');
+          this.isConnected = true;
+          this.connectionStatus = 'connected';
+          this.retryAttempts = 0;
+
+          this.emit('status', {
+            status: 'connected',
+            isConnected: true,
+            retryAttempts: 0
+          });
+
+          // Start status polling
+          this.startPolling();
+          resolve();
+        });
+
+        this.socket.on('error', (error) => {
+          console.error('CNC controller ethernet connection error:', error);
+          this.handleConnectionError(error);
+          reject(error);
+        });
+
+        this.socket.on('close', () => {
+          log('CNC controller disconnected (ethernet)');
+          this.isConnected = false;
+          this.connectionStatus = 'disconnected';
+
+          this.commandQueue.flush('socket-close');
+
+          this.emit('status', {
+            status: 'disconnected',
+            isConnected: false,
+            retryAttempts: this.retryAttempts
+          });
+        });
+
+        this.parser.on('data', (data) => {
+          const trimmedData = data.trim();
+          if (trimmedData.startsWith('<') && trimmedData.endsWith('>')) {
+            this.rawData = trimmedData;
+            this.parseStatusReport(trimmedData);
+          } else if (trimmedData.toLowerCase().startsWith('error:')) {
+            const code = parseInt(trimmedData.split(':')[1]);
+            const message = grblErrors[code] || 'Unknown error';
+            this.commandQueue.handleError({ code, message });
+            this.emit('cnc-error', { code, message });
+
+            // Send newline to clear firmware parser state after error
+            try {
+              this.socket.write('\n');
+              log('Sent newline to reset firmware parser state after error');
+            } catch (error) {
+              console.error('Failed to send recovery newline:', error);
+            }
+          } else if (trimmedData.toLowerCase().startsWith('alarm')) {
+            this.commandQueue.handleError({ code: 'ALARM', message: trimmedData });
+            this.emit('cnc-error', { code: 'ALARM', message: trimmedData });
+          } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
+            log('CNC controller responded:', trimmedData);
+            this.commandQueue.handleOk();
+          } else {
+            log('CNC data:', trimmedData);
+            this.emit('data', trimmedData);
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('Failed to connect to CNC controller via ethernet:', error);
+      this.handleConnectionError(error);
+      throw error;
     }
   }
 
@@ -151,6 +265,7 @@ export class CNCController extends EventEmitter {
       log(`Connecting to CNC controller on ${portPath} at ${baudRate} baud`);
 
       this.connectionStatus = 'connecting';
+      this.connectionType = 'usb';
       this.emit('status', {
         status: 'connecting',
         isConnected: false,
@@ -249,12 +364,19 @@ export class CNCController extends EventEmitter {
       this.retryInterval = null;
     }
 
-    if (this.port && this.port.isOpen) {
-      this.port.close();
+    if (this.connectionType === 'ethernet') {
+      if (this.socket && !this.socket.destroyed) {
+        this.socket.destroy();
+      }
+    } else if (this.connectionType === 'usb') {
+      if (this.port && this.port.isOpen) {
+        this.port.close();
+      }
     }
 
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
+    this.connectionType = null;
     this.retryAttempts = 0;
 
     this.emit('status', {
@@ -267,38 +389,77 @@ export class CNCController extends EventEmitter {
   }
 
   writeToPort(commandToSend, { rawCommand, isRealTime } = {}) {
-    if (!this.port || !this.port.isOpen) {
-      return Promise.reject(new Error('Serial port is not open'));
-    }
+    if (this.connectionType === 'ethernet') {
+      if (!this.socket || this.socket.destroyed) {
+        return Promise.reject(new Error('Ethernet socket is not connected'));
+      }
 
-    return new Promise((resolve, reject) => {
-      this.port.write(commandToSend, (error) => {
-        if (error) {
-          console.error('Error sending command:', error);
-          reject(error);
-          return;
-        }
-
-        if (isRealTime) {
-          if (rawCommand !== '?') {
-            if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
-              log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
-            } else {
-              log('Real-time command sent:', rawCommand);
-            }
+      return new Promise((resolve, reject) => {
+        this.socket.write(commandToSend, (error) => {
+          if (error) {
+            console.error('Error sending command via ethernet:', error);
+            reject(error);
+            return;
           }
-        } else if (rawCommand && rawCommand.toUpperCase() !== '?') {
-          log('Command sent:', rawCommand.toUpperCase());
-        }
 
-        resolve();
+          if (isRealTime) {
+            if (rawCommand !== '?') {
+              if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
+                log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
+              } else {
+                log('Real-time command sent:', rawCommand);
+              }
+            }
+          } else if (rawCommand && rawCommand.toUpperCase() !== '?') {
+            log('Command sent:', rawCommand.toUpperCase());
+          }
+
+          resolve();
+        });
       });
-    });
+    } else {
+      // USB/Serial connection
+      if (!this.port || !this.port.isOpen) {
+        return Promise.reject(new Error('Serial port is not open'));
+      }
+
+      return new Promise((resolve, reject) => {
+        this.port.write(commandToSend, (error) => {
+          if (error) {
+            console.error('Error sending command:', error);
+            reject(error);
+            return;
+          }
+
+          if (isRealTime) {
+            if (rawCommand !== '?') {
+              if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
+                log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
+              } else {
+                log('Real-time command sent:', rawCommand);
+              }
+            }
+          } else if (rawCommand && rawCommand.toUpperCase() !== '?') {
+            log('Command sent:', rawCommand.toUpperCase());
+          }
+
+          resolve();
+        });
+      });
+    }
   }
 
   async sendCommand(command, options = {}) {
-    if (!this.isConnected || !this.port || !this.port.isOpen) {
+    if (!this.isConnected) {
       throw new Error('CNC controller is not connected');
+    }
+
+    if (this.connectionType === 'ethernet' && (!this.socket || this.socket.destroyed)) {
+      throw new Error('Ethernet connection is not available');
+    }
+
+    if (this.connectionType === 'usb' && (!this.port || !this.port.isOpen)) {
+      throw new Error('Serial port is not open');
     }
 
     // Clean up command - remove semicolon comments

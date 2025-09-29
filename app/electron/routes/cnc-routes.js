@@ -80,12 +80,16 @@ export function createCNCRoutes(cncController, broadcast) {
 
   // Connect to CNC
   router.post('/connect', async (req, res) => {
-    const { port, baudRate } = req.body;
+    const { port, baudRate, ip, ethernetPort } = req.body;
     try {
-      if (port && baudRate) {
-        // Manual connect
+      if (ip && ethernetPort) {
+        // Manual ethernet connect
+        await cncController.connectEthernet(ip, ethernetPort);
+        res.json({ success: true, message: 'Ethernet connection successful' });
+      } else if (port && baudRate) {
+        // Manual USB connect
         await cncController.connect(port, baudRate);
-        res.json({ success: true });
+        res.json({ success: true, message: 'USB connection successful' });
       } else {
         // Auto connect
         const success = await cncController.autoConnect();

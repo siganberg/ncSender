@@ -1,3 +1,7 @@
 {
-  "pauseBeforeStop": 500
+  "pauseBeforeStop": 500,
+  "connectionType": "ethernet",
+  "baudRate": 115200,
+  "ip": "192.168.5.1",
+  "port": 23
 }
