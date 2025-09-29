@@ -23,6 +23,17 @@ const buildFlushError = (entry, reason, details) => {
   return error;
 };
 
+const toEventPayload = (entry, overrides = {}) => ({
+  id: entry.id,
+  command: entry.rawCommand,
+  displayCommand: entry.displayCommand ?? entry.rawCommand,
+  meta: entry.meta,
+  enqueuedAt: entry.enqueuedAt,
+  sentAt: entry.sentAt,
+  timeoutMs: entry.timeoutMs,
+  ...overrides
+});
+
 export class CommandQueue extends EventEmitter {
   constructor({ sendCommand, log = console.log, responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS } = {}) {
     super();
@@ -44,13 +55,13 @@ export class CommandQueue extends EventEmitter {
     return this.pending.length + (this.activeEntry ? 1 : 0);
   }
 
-  enqueue({ rawCommand, commandToWrite, meta }) {
+  enqueue({ rawCommand, commandToWrite, meta, displayCommand, commandId }) {
     if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
       throw new Error('CommandQueue.enqueue requires a rawCommand string');
     }
 
     const entry = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       rawCommand,
       commandToWrite,
       meta: meta || null,
@@ -58,7 +69,8 @@ export class CommandQueue extends EventEmitter {
       timeoutMs: this.responseTimeoutMs,
       resolve: null,
       reject: null,
-      timeoutHandle: null
+      timeoutHandle: null,
+      displayCommand: displayCommand || rawCommand
     };
 
     const promise = new Promise((resolve, reject) => {
@@ -67,7 +79,7 @@ export class CommandQueue extends EventEmitter {
     });
 
     this.pending.push(entry);
-    this.emit('queued', { ...entry });
+    this.emit('queued', toEventPayload(entry, { status: 'pending', timestamp: new Date().toISOString() }));
     this.log('Queued CNC command', rawCommand, `queueSize=${this.pending.length}`);
 
     this.dispatchNext();
@@ -88,12 +100,17 @@ export class CommandQueue extends EventEmitter {
       entry.sentAt = Date.now();
       this.activeEntry = entry;
       this.startTimeout(entry);
-      this.emit('sent', { ...entry });
+      this.emit('sent', toEventPayload(entry, { status: 'sent', timestamp: new Date().toISOString() }));
       this.log('Sent CNC command', entry.rawCommand);
     } catch (error) {
       this.log('Failed to send CNC command', entry.rawCommand, error?.message || error);
-      entry.reject(error instanceof Error ? error : new Error(String(error)));
-      this.emit('send-error', { ...entry, error });
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      entry.reject(normalizedError);
+      this.emit('send-error', toEventPayload(entry, {
+        status: 'error',
+        error: normalizedError,
+        timestamp: new Date().toISOString()
+      }));
       // Attempt to send the next command in queue
       this.isDispatching = false;
       this.dispatchNext();
@@ -133,8 +150,12 @@ export class CommandQueue extends EventEmitter {
     this.clearTimeout(entry);
     this.activeEntry = null;
 
-    entry.resolve();
-    this.emit('ack', { ...entry, status: 'success' });
+    const payload = toEventPayload(entry, {
+      status: 'success',
+      timestamp: new Date().toISOString()
+    });
+    entry.resolve(payload);
+    this.emit('ack', payload);
 
     // Move on to the next command immediately
     this.dispatchNext();
@@ -165,7 +186,11 @@ export class CommandQueue extends EventEmitter {
     this.activeEntry = null;
 
     entry.reject(error);
-    this.emit('ack', { ...entry, status: 'error', error });
+    this.emit('ack', toEventPayload(entry, {
+      status: 'error',
+      error,
+      timestamp: new Date().toISOString()
+    }));
 
     this.dispatchNext();
     return entry;
@@ -175,7 +200,11 @@ export class CommandQueue extends EventEmitter {
     const rejectEntry = (entry) => {
       this.clearTimeout(entry);
       entry.reject(buildFlushError(entry, reason, details));
-      this.emit('ack', { ...entry, status: 'flushed', reason });
+      this.emit('ack', toEventPayload(entry, {
+        status: 'flushed',
+        reason,
+        timestamp: new Date().toISOString()
+      }));
     };
 
     if (this.activeEntry) {

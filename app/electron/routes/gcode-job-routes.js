@@ -194,43 +194,15 @@ export class GCodeJobProcessor {
       const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
       try {
-        // Broadcast pending command first (cnc-command pattern)
-        this.broadcast('cnc-command', {
-          id: commandId,
-          command: lineData.cleanLine,
+        await this.cncController.sendCommand(lineData.cleanLine, {
+          commandId,
           displayCommand: lineData.cleanLine,
-          timestamp: new Date().toISOString(),
-          meta: { lineNumber: lineData.lineNumber }
+          meta: {
+            lineNumber: lineData.lineNumber,
+            job: { filename: this.filename }
+          }
         });
-
-        // Send command to CNC
-        await this.cncController.sendCommand(lineData.cleanLine);
-
-        // Broadcast success result
-        this.broadcast('cnc-command-result', {
-          id: commandId,
-          command: lineData.cleanLine,
-          displayCommand: lineData.cleanLine,
-          status: 'success',
-          timestamp: new Date().toISOString(),
-          meta: { lineNumber: lineData.lineNumber }
-        });
-
-        // Small delay between commands
-        // await new Promise(resolve => setTimeout(resolve, 50));
-
       } catch (error) {
-        // Broadcast error and stop job (commandId is now accessible)
-        this.broadcast('cnc-command-result', {
-          id: commandId,
-          command: lineData.cleanLine,
-          displayCommand: lineData.cleanLine,
-          status: 'error',
-          error: { message: `Failed to execute on Line ${lineData.lineNumber} : ${lineData.cleanLine}. ${error.message}` },
-          timestamp: new Date().toISOString(),
-          meta: { lineNumber: lineData.lineNumber }
-        });
-
         this.isStopped = true;
         this.isRunning = false;
         break;

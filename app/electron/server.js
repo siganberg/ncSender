@@ -127,7 +127,7 @@ export async function createServer() {
     }
 
     const normalizedCommandId = commandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const normalizedMeta = meta && typeof meta === 'object' ? meta : null;
+    const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const commandValue = translation.command;
 
     const commandMeta = {
@@ -142,32 +142,37 @@ export async function createServer() {
 
     log('WebSocket command received', commandMeta.displayCommand, `id=${normalizedCommandId}`);
 
-    const pendingPayload = { ...commandMeta, status: 'pending' };
-    broadcast('cnc-command', pendingPayload);
-    sendWsMessage(ws, 'cnc:command-ack', { commandId: normalizedCommandId });
+    const metaPayload = commandMeta.meta ? { ...commandMeta.meta } : {};
+    if (commandMeta.completesCommandId) {
+      metaPayload.completesCommandId = commandMeta.completesCommandId;
+    }
+    if (commandMeta.originId) {
+      metaPayload.originId = commandMeta.originId;
+    }
 
     try {
-      await cncController.sendCommand(commandValue);
-
-      broadcast('cnc-command-result', {
-        ...commandMeta,
-        status: 'success',
-        timestamp: new Date().toISOString()
+      sendWsMessage(ws, 'cnc:command-ack', {
+        commandId: normalizedCommandId,
+        status: 'accepted'
       });
 
-      log('WebSocket command succeeded', commandMeta.displayCommand, `id=${normalizedCommandId}`);
+      await cncController.sendCommand(commandValue, {
+        commandId: normalizedCommandId,
+        displayCommand: commandMeta.displayCommand,
+        meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
+      });
+
+      if (commandValue === '?') {
+        const rawData = cncController.getRawData();
+        if (rawData) {
+          broadcast('cnc-data', rawData);
+        }
+      }
     } catch (error) {
       const errorPayload = {
         message: error?.message || 'Failed to send command',
         code: error?.code
       };
-
-      broadcast('cnc-command-result', {
-        ...commandMeta,
-        status: 'error',
-        error: errorPayload,
-        timestamp: new Date().toISOString()
-      });
 
       sendWsMessage(ws, 'cnc:command-error', {
         commandId: normalizedCommandId,
@@ -268,9 +273,75 @@ export async function createServer() {
 
   jogManager = new JogSessionManager({
     cncController,
-    broadcast,
     log
   });
+
+  const longRunningCommands = new Map();
+
+  const toCommandPayload = (event, overrides = {}) => ({
+    id: event.id,
+    command: event.displayCommand || event.command,
+    displayCommand: event.displayCommand || event.command,
+    status: event.status || 'pending',
+    timestamp: event.timestamp || new Date().toISOString(),
+    originId: event.meta?.originId ?? null,
+    meta: event.meta || null,
+    ...overrides
+  });
+
+  const broadcastQueuedCommand = (event) => {
+    const payload = toCommandPayload(event, { status: 'pending' });
+    broadcast('cnc-command', payload);
+
+    if (event.meta?.continuous) {
+      longRunningCommands.set(event.id, payload);
+    }
+  };
+
+  const broadcastCommandResult = (event) => {
+    if (event.status === 'success' && event.meta?.continuous) {
+      // Keep long-running command pending until a completion command arrives
+      return;
+    }
+
+    let status = event.status || 'success';
+    const payload = toCommandPayload(event);
+
+    if (status === 'flushed') {
+      status = 'error';
+      payload.status = 'error';
+      payload.error = { message: event.reason || 'Command cancelled' };
+    } else if (status === 'error') {
+      payload.error = {
+        message: event.error?.message || 'Command failed',
+        code: event.error?.code
+      };
+    } else {
+      payload.status = status;
+    }
+
+    broadcast('cnc-command-result', payload);
+
+    const completionId = event.meta?.completesCommandId;
+    if (completionId) {
+      const tracked = longRunningCommands.get(completionId) || { ...payload, id: completionId };
+      const completionPayload = {
+        ...tracked,
+        status: status === 'success' ? 'success' : 'error',
+        timestamp: payload.timestamp,
+        error: payload.error
+      };
+      broadcast('cnc-command-result', completionPayload);
+      longRunningCommands.delete(completionId);
+    }
+
+    if (event.meta?.continuous) {
+      longRunningCommands.delete(event.id);
+    }
+  };
+
+  cncController.on('command-queued', broadcastQueuedCommand);
+  cncController.on('command-ack', broadcastCommandResult);
 
   // CNC Controller event forwarding to all clients
   cncController.on('status', (data) => {

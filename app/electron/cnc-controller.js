@@ -32,24 +32,16 @@ export class CNCController extends EventEmitter {
       }
     });
 
-    this.commandQueue.on('send-error', (entry) => {
-      this.emit('command-error', {
-        id: entry.id,
-        command: entry.rawCommand,
-        meta: entry.meta
-      });
+    this.commandQueue.on('send-error', (payload) => {
+      this.emit('command-ack', { ...payload, phase: 'send' });
     });
 
-    this.commandQueue.on('queued', (entry) => {
-      this.emit('command-queued', {
-        id: entry.id,
-        command: entry.rawCommand,
-        meta: entry.meta
-      });
+    this.commandQueue.on('queued', (payload) => {
+      this.emit('command-queued', payload);
     });
 
-    this.commandQueue.on('ack', (entry) => {
-      this.emit('command-ack', entry);
+    this.commandQueue.on('ack', (payload) => {
+      this.emit('command-ack', payload);
     });
   }
 
@@ -304,7 +296,7 @@ export class CNCController extends EventEmitter {
     });
   }
 
-  async sendCommand(command) {
+  async sendCommand(command, options = {}) {
     if (!this.isConnected || !this.port || !this.port.isOpen) {
       throw new Error('CNC controller is not connected');
     }
@@ -314,6 +306,10 @@ export class CNCController extends EventEmitter {
     if (!cleanCommand) {
       throw new Error('Command is empty');
     }
+
+    const { meta = null, commandId = null, displayCommand = null } = options || {};
+    const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
+    const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
@@ -330,21 +326,66 @@ export class CNCController extends EventEmitter {
     }
 
     if (isRealTimeCommand) {
-      await this.writeToPort(commandToSend, {
-        rawCommand: cleanCommand,
-        isRealTime: true
-      });
-
-      if (cleanCommand === '\x18') {
-        this.commandQueue.flush('soft-reset');
+      if (cleanCommand === '?') {
+        await this.writeToPort(commandToSend, {
+          rawCommand: cleanCommand,
+          isRealTime: true
+        });
+        return { id: resolvedCommandId, command: cleanCommand, status: 'success' };
       }
 
-      return;
+      const display = displayCommand || cleanCommand;
+      const pendingPayload = {
+        id: resolvedCommandId,
+        command: cleanCommand,
+        displayCommand: display,
+        meta: normalizedMeta,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        realTime: true
+      };
+
+      this.emit('command-queued', pendingPayload);
+
+      try {
+        await this.writeToPort(commandToSend, {
+          rawCommand: cleanCommand,
+          isRealTime: true
+        });
+
+        if (cleanCommand === '\x18') {
+          this.commandQueue.flush('soft-reset');
+        }
+
+        const ackPayload = {
+          ...pendingPayload,
+          status: 'success',
+          timestamp: new Date().toISOString()
+        };
+        this.emit('command-ack', ackPayload);
+        return ackPayload;
+      } catch (error) {
+        const normalizedError = error instanceof Error ? error : new Error(String(error));
+        const ackPayload = {
+          ...pendingPayload,
+          status: 'error',
+          error: normalizedError,
+          timestamp: new Date().toISOString()
+        };
+        this.emit('command-ack', ackPayload);
+        throw normalizedError;
+      }
     }
 
+    const normalizedCommand = cleanCommand.toUpperCase();
+    const display = displayCommand || normalizedCommand;
+
     return this.commandQueue.enqueue({
-      rawCommand: cleanCommand.toUpperCase(),
-      commandToWrite: commandToSend
+      rawCommand: normalizedCommand,
+      commandToWrite: commandToSend,
+      meta: normalizedMeta,
+      displayCommand: display,
+      commandId: resolvedCommandId
     });
   }
 

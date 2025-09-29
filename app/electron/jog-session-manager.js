@@ -3,16 +3,13 @@ const DEFAULT_HEARTBEAT_TIMEOUT_MS = 750;
 const DEFAULT_MAX_JOG_DURATION_MS = 15000;
 const WS_READY_STATE_OPEN = 1;
 
-const noop = () => {};
-
 export class JogSessionManager {
-  constructor({ cncController, broadcast = noop, log = console.log, heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS, maxDurationMs = DEFAULT_MAX_JOG_DURATION_MS } = {}) {
+  constructor({ cncController, log = console.log, heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS, maxDurationMs = DEFAULT_MAX_JOG_DURATION_MS } = {}) {
     if (!cncController || typeof cncController.sendCommand !== 'function') {
       throw new Error('JogSessionManager requires a CNC controller with sendCommand method');
     }
 
     this.cncController = cncController;
-    this.broadcast = broadcast;
     this.log = log;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.maxDurationMs = maxDurationMs;
@@ -94,22 +91,21 @@ export class JogSessionManager {
     this.sessionsBySocket.set(ws, sessionSet);
 
     try {
-      await this.cncController.sendCommand(command);
+      await this.cncController.sendCommand(command, {
+        commandId: jogId,
+        displayCommand: displayCommand || command,
+        meta: {
+          continuous: true,
+          jog: { axis, direction, feedRate },
+          originId: clientId
+        }
+      });
     } catch (error) {
       const message = error?.message || 'Failed to start jog command';
       this.log('Jog start failed', `jogId=${jogId}`, message);
       this.sendSafe(ws, {
         type: 'jog:start-failed',
         data: { jogId, message }
-      });
-      this.broadcast('cnc-command-result', {
-        id: jogId,
-        command,
-        displayCommand: displayCommand || command,
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        originId: clientId,
-        meta: { continuous: true, jog: { axis, direction, feedRate }, error: message }
       });
       return;
     }
@@ -134,18 +130,6 @@ export class JogSessionManager {
 
     this.sessionsById.set(jogId, session);
     sessionSet.add(jogId);
-
-    session.commandEvent = {
-      id: jogId,
-      command,
-      displayCommand: session.displayCommand,
-      status: 'pending',
-      timestamp: new Date().toISOString(),
-      originId: clientId,
-      meta: { continuous: true, jog: { axis, direction, feedRate } }
-    };
-
-    this.broadcast('cnc-command', session.commandEvent);
 
     this.log('Jog started', `jogId=${jogId}`, axis ? `axis=${axis}` : '', direction != null ? `direction=${direction}` : '', feedRate ? `feed=${feedRate}` : '', clientId ? `clientId=${clientId}` : '');
 
@@ -245,23 +229,25 @@ export class JogSessionManager {
       }
     }
 
+    const cancelMeta = {
+      completesCommandId: session.jogId,
+      jog: {
+        axis: session.axis,
+        direction: session.direction,
+        feedRate: session.feedRate
+      },
+      originId: session.clientId,
+      stopReason: reason
+    };
+
     try {
-      await this.cncController.sendCommand(REALTIME_JOG_CANCEL);
+      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
+        displayCommand: 'Jog Cancel',
+        meta: cancelMeta
+      });
     } catch (error) {
       this.log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
     }
-
-    const stopTimestamp = new Date().toISOString();
-
-    const failureReasons = new Set(['error', 'heartbeat-timeout', 'max-duration', 'disconnect']);
-    const status = failureReasons.has(reason) ? 'error' : 'success';
-
-    this.broadcast('cnc-command-result', {
-      ...session.commandEvent,
-      status,
-      timestamp: stopTimestamp,
-      stopReason: reason
-    });
 
     this.log('Jog stopped', `jogId=${session.jogId}`, `reason=${reason}`);
 
@@ -310,24 +296,15 @@ export class JogSessionManager {
     }
 
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const eventBase = {
-      id: resolvedCommandId,
-      command,
-      displayCommand: displayCommand || command,
-      originId: clientId,
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      meta: { continuous: false, jog: { axis, direction, feedRate, distance } }
-    };
-
-    this.broadcast('cnc-command', eventBase);
 
     try {
-      await this.cncController.sendCommand(command);
-      this.broadcast('cnc-command-result', {
-        ...eventBase,
-        status: 'success',
-        timestamp: new Date().toISOString()
+      await this.cncController.sendCommand(command, {
+        commandId: resolvedCommandId,
+        displayCommand: displayCommand || command,
+        meta: {
+          jog: { axis, direction, feedRate, distance },
+          originId: clientId
+        }
       });
       this.sendSafe(ws, {
         type: 'jog:step-ack',
@@ -335,12 +312,6 @@ export class JogSessionManager {
       });
     } catch (error) {
       const message = error?.message || 'Failed to execute jog step';
-      this.broadcast('cnc-command-result', {
-        ...eventBase,
-        status: 'error',
-        error: { message },
-        timestamp: new Date().toISOString()
-      });
       this.sendSafe(ws, {
         type: 'jog:step-failed',
         data: { commandId: resolvedCommandId, message }

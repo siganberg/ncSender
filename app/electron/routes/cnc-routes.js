@@ -7,7 +7,6 @@ const log = (...args) => {
 
 export function createCNCRoutes(cncController, broadcast) {
   const router = Router();
-  const longRunningCommands = new Map();
 
   const translateCommandInput = (rawCommand) => {
     if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
@@ -49,8 +48,6 @@ export function createCNCRoutes(cncController, broadcast) {
     const normalizedCommandId = commandId ?? `${Date.now()}`;
     const normalizedMeta = meta && typeof meta === 'object' ? meta : null;
     const commandValue = translation.command;
-    const isJogCancel = commandValue === '\x85';
-    const isLongRunning = Boolean(normalizedMeta?.continuous);
     const targetCompletionId =
       completesCommandId || normalizedMeta?.completesCommandId || normalizedCommandId;
 
@@ -66,93 +63,8 @@ export function createCNCRoutes(cncController, broadcast) {
     return {
       commandMeta,
       commandValue,
-      isJogCancel,
-      isLongRunning,
       targetCompletionId
     };
-  };
-
-  const broadcastEvent = (event, payload) => {
-    if (typeof broadcast === 'function') {
-      broadcast(event, payload);
-    }
-  };
-
-  const broadcastPendingCommand = (commandMeta, isLongRunning) => {
-    const pendingPayload = { ...commandMeta, status: 'pending' };
-    broadcastEvent('cnc-command', pendingPayload);
-    if (isLongRunning) {
-      longRunningCommands.set(commandMeta.id, pendingPayload);
-    }
-  };
-
-  const resolveTrackedCommand = (commandId, fallback) => {
-    if (!commandId) {
-      return fallback;
-    }
-    const tracked = longRunningCommands.get(commandId) || fallback;
-    longRunningCommands.delete(commandId);
-    return tracked;
-  };
-
-  const broadcastCommandSuccess = ({
-    commandMeta,
-    isJogCancel,
-    isLongRunning,
-    targetCompletionId
-  }) => {
-    if (isJogCancel) {
-      if (!targetCompletionId) {
-        return;
-      }
-      const trackedCommand = resolveTrackedCommand(targetCompletionId, {
-        ...commandMeta,
-        id: targetCompletionId
-      });
-      broadcastEvent('cnc-command-result', {
-        ...trackedCommand,
-        status: 'success',
-        timestamp: new Date().toISOString()
-      });
-    } else if (!isLongRunning) {
-      broadcastEvent('cnc-command-result', {
-        ...commandMeta,
-        status: 'success'
-      });
-    }
-  };
-
-  const broadcastCommandError = ({
-    commandMeta,
-    isJogCancel,
-    isLongRunning,
-    targetCompletionId,
-    errorPayload
-  }) => {
-    if (isJogCancel) {
-      if (!targetCompletionId) {
-        return;
-      }
-      const trackedCommand = resolveTrackedCommand(targetCompletionId, {
-        ...commandMeta,
-        id: targetCompletionId
-      });
-      broadcastEvent('cnc-command-result', {
-        ...trackedCommand,
-        status: 'error',
-        error: errorPayload,
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      broadcastEvent('cnc-command-result', {
-        ...commandMeta,
-        status: 'error',
-        error: errorPayload
-      });
-      if (isLongRunning) {
-        longRunningCommands.delete(commandMeta.id);
-      }
-    }
   };
 
   // List available serial ports
@@ -223,53 +135,46 @@ export function createCNCRoutes(cncController, broadcast) {
         });
       }
 
-      const { commandMeta, commandValue, isJogCancel, isLongRunning, targetCompletionId } = context;
+      const { commandMeta, commandValue, targetCompletionId } = context;
 
-      // If this is a status query command, just broadcast the latest raw response
-      if (commandValue === '?') {
-        broadcastCommandSuccess({
-          commandMeta,
-          isJogCancel,
-          isLongRunning,
-          targetCompletionId
-        });
-
-        const rawData = cncController.getRawData();
-        if (rawData) {
-          broadcastEvent('cnc-data', rawData);
-        }
-      } else {
-        if (!isJogCancel) {
-          broadcastPendingCommand(commandMeta, isLongRunning);
-        }
-
-        // Check for real-time commands that should signal the job processor
-        const realTimeCommands = ['!', '~', '\x18'];
-        if (realTimeCommands.includes(commandValue) && jobManager.hasActiveJob()) {
-          try {
-            if (commandValue === '!') {
-              jobManager.pause();
-              log('Job paused via send-command');
-            } else if (commandValue === '~') {
-              jobManager.resume();
-              log('Job resumed via send-command');
-            } else if (commandValue === '\x18') {
-              jobManager.stop();
-              log('Job stopped via send-command');
-            }
-          } catch (jobError) {
-            log('Job processor error:', jobError.message);
+      // Check for real-time commands that should signal the job processor
+      const realTimeCommands = ['!', '~', '\x18'];
+      if (realTimeCommands.includes(commandValue) && jobManager.hasActiveJob()) {
+        try {
+          if (commandValue === '!') {
+            jobManager.pause();
+            log('Job paused via send-command');
+          } else if (commandValue === '~') {
+            jobManager.resume();
+            log('Job resumed via send-command');
+          } else if (commandValue === '\x18') {
+            jobManager.stop();
+            log('Job stopped via send-command');
           }
+        } catch (jobError) {
+          log('Job processor error:', jobError.message);
         }
+      }
 
-        await cncController.sendCommand(commandValue);
+      const metaPayload = commandMeta.meta ? { ...commandMeta.meta } : {};
+      if (targetCompletionId) {
+        metaPayload.completesCommandId = targetCompletionId;
+      }
+      if (commandMeta.originId) {
+        metaPayload.originId = commandMeta.originId;
+      }
 
-        broadcastCommandSuccess({
-          commandMeta,
-          isJogCancel,
-          isLongRunning,
-          targetCompletionId
-        });
+      await cncController.sendCommand(commandValue, {
+        commandId: commandMeta.id,
+        displayCommand: commandMeta.displayCommand,
+        meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
+      });
+
+      if (commandValue === '?') {
+        const rawData = cncController.getRawData();
+        if (rawData && typeof broadcast === 'function') {
+          broadcast('cnc-data', rawData);
+        }
       }
 
       res.json({ success: true, commandId: commandMeta.id });
@@ -281,15 +186,7 @@ export function createCNCRoutes(cncController, broadcast) {
       };
 
       if (context && !context.error) {
-        const { commandMeta, isJogCancel, isLongRunning, targetCompletionId } = context;
-        broadcastCommandError({
-          commandMeta,
-          isJogCancel,
-          isLongRunning,
-          targetCompletionId,
-          errorPayload
-        });
-
+        const { commandMeta } = context;
         return res.status(200).json({
           success: false,
           error: errorPayload,
