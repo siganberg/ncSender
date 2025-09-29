@@ -242,7 +242,6 @@ export class JogSessionManager {
 
     try {
       await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
-        displayCommand: 'Jog Cancel',
         meta: cancelMeta
       });
     } catch (error) {

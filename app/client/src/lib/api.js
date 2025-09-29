@@ -730,16 +730,16 @@ class NCClient {
       throw new Error(`Invalid action: ${action}`);
     }
 
-    return await this.sendCommand(command, {
-      displayCommand: `Job ${action}`,
+    return await this.sendCommandViaWebSocket({
+      command,
       meta: { jobControl: true }
     });
   }
 
   async stopGCodeJob() {
     // Use send-command API with soft reset
-    return await this.sendCommand('\\x18', {
-      displayCommand: 'Stop job (soft reset)',
+    return await this.sendCommandViaWebSocket({
+      command: '\\x18',
       meta: { jobControl: true }
     });
   }

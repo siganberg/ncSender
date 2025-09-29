@@ -8,6 +8,7 @@ import multer from 'multer';
 import fs from 'node:fs/promises';
 import { CNCController } from './cnc-controller.js';
 import { JogSessionManager } from './jog-session-manager.js';
+import { jobManager } from './job-processor-manager.js';
 import { createCNCRoutes } from './routes/cnc-routes.js';
 import { createCommandHistoryRoutes } from './routes/command-history-routes.js';
 import { createGCodeRoutes } from './routes/gcode-routes.js';
@@ -156,6 +157,24 @@ export async function createServer() {
         status: 'accepted'
       });
 
+      const realtimeJobCommands = new Set(['!', '~', '\x18']);
+      if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
+        try {
+          if (commandValue === '!') {
+            jobManager.pause();
+            log('Job paused via WebSocket command');
+          } else if (commandValue === '~') {
+            jobManager.resume();
+            log('Job resumed via WebSocket command');
+          } else if (commandValue === '\x18') {
+            jobManager.stop();
+            log('Job stopped via WebSocket command');
+          }
+        } catch (jobError) {
+          log('Job processor error (WebSocket command):', jobError.message);
+        }
+      }
+
       await cncController.sendCommand(commandValue, {
         commandId: normalizedCommandId,
         displayCommand: commandMeta.displayCommand,
@@ -278,16 +297,47 @@ export async function createServer() {
 
   const longRunningCommands = new Map();
 
-  const toCommandPayload = (event, overrides = {}) => ({
-    id: event.id,
-    command: event.displayCommand || event.command,
-    displayCommand: event.displayCommand || event.command,
-    status: event.status || 'pending',
-    timestamp: event.timestamp || new Date().toISOString(),
-    originId: event.meta?.originId ?? null,
-    meta: event.meta || null,
-    ...overrides
-  });
+  const formatCommandText = (value) => {
+    if (typeof value !== 'string') {
+      return '';
+    }
+
+    let needsEscaping = false;
+    for (let i = 0; i < value.length; i += 1) {
+      const code = value.charCodeAt(i);
+      if (code < 0x20 || code === 0x7f) {
+        needsEscaping = true;
+        break;
+      }
+    }
+
+    if (!needsEscaping) {
+      return value;
+    }
+
+    return Array.from(value).map((char) => {
+      const code = char.charCodeAt(0);
+      if (code < 0x20 || code === 0x7f) {
+        return `\\x${code.toString(16).toUpperCase().padStart(2, '0')}`;
+      }
+      return char;
+    }).join('');
+  };
+
+  const toCommandPayload = (event, overrides = {}) => {
+    const command = typeof event.command === 'string' ? event.command : (event.displayCommand || '');
+    const displayCommand = formatCommandText(event.displayCommand ?? command);
+    return {
+      id: event.id,
+      command,
+      displayCommand,
+      status: event.status || 'pending',
+      timestamp: event.timestamp || new Date().toISOString(),
+      originId: event.meta?.originId ?? null,
+      meta: event.meta || null,
+      ...overrides
+    };
+  };
 
   const broadcastQueuedCommand = (event) => {
     const payload = toCommandPayload(event, { status: 'pending' });

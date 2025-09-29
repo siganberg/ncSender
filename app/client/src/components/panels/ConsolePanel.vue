@@ -62,11 +62,15 @@ const sendCommand = async () => {
   // Add to history and save to server
   await api.addCommandToHistory(commandToSend.value);
 
-  api.sendCommand(commandToSend.value, {
+  api.sendCommandViaWebSocket({
+    command: commandToSend.value,
+    displayCommand: commandToSend.value,
     meta: {
       recordHistory: true
     }
-  }).catch(() => {});
+  }).catch((error) => {
+    console.error('Failed to send console command via WebSocket:', error);
+  });
   commandToSend.value = '';
   historyIndex.value = -1;
   currentInput.value = '';

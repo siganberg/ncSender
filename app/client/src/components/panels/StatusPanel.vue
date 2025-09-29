@@ -115,6 +115,12 @@ watch(() => props.status.spindleOverride, (newValue) => {
   }
 }, { immediate: true });
 
+const sendRealtimeCommand = (command: string) => {
+  api.sendCommandViaWebSocket({ command }).catch((error) => {
+    console.error('Failed to send real-time command:', command, error);
+  });
+};
+
 const updateFeedOverride = () => {
   // Clear any existing timeout
   if (feedUpdateTimeout.value) {
@@ -136,13 +142,13 @@ const updateFeedOverride = () => {
       // Increase - use +10% command
       const steps = Math.abs(diff) / 10;
       for (let i = 0; i < steps; i++) {
-        api.sendCommand('\x91'); // Feed rate override +10%
+        sendRealtimeCommand('\\x91'); // Feed rate override +10%
       }
     } else {
       // Decrease - use -10% command
       const steps = Math.abs(diff) / 10;
       for (let i = 0; i < steps; i++) {
-        api.sendCommand('\x92'); // Feed rate override -10%
+        sendRealtimeCommand('\\x92'); // Feed rate override -10%
       }
     }
 
@@ -158,7 +164,7 @@ const handleFeedOverrideComplete = () => {
 };
 
 const resetFeedOverride = () => {
-  api.sendCommand('\x90'); // Feed rate override reset
+  sendRealtimeCommand('\\x90'); // Feed rate override reset
   feedOverride.value = 100;
   previousFeedOverride.value = 100;
 };
@@ -184,13 +190,13 @@ const updateSpindleOverride = () => {
       // Increase - use +10% command
       const steps = Math.abs(diff) / 10;
       for (let i = 0; i < steps; i++) {
-        api.sendCommand('\x9A'); // Spindle speed override +10%
+        sendRealtimeCommand('\\x9A'); // Spindle speed override +10%
       }
     } else {
       // Decrease - use -10% command
       const steps = Math.abs(diff) / 10;
       for (let i = 0; i < steps; i++) {
-        api.sendCommand('\x9B'); // Spindle speed override -10%
+        sendRealtimeCommand('\\x9B'); // Spindle speed override -10%
       }
     }
 
@@ -206,7 +212,7 @@ const handleSpindleOverrideComplete = () => {
 };
 
 const resetSpindleOverride = () => {
-  api.sendCommand('\x99'); // Spindle speed override reset
+  sendRealtimeCommand('\\x99'); // Spindle speed override reset
   spindleOverride.value = 100;
   previousSpindleOverride.value = 100;
 };
