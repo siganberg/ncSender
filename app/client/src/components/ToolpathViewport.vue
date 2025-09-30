@@ -22,8 +22,15 @@
             @change="handleFileLoad"
             style="display: none"
           />
-          <button @click="fileInput?.click()" class="load-button">
-            Load G-code
+          <button @click="fileInput?.click()" class="load-button" title="Upload G-code">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 12V3M8 3L4 7M8 3L12 7M2 13H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="load-button" title="Open Folder">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           </button>
           <button v-if="hasFile" @click="clearFile" class="clear-button">
             Clear
@@ -882,7 +889,8 @@ onUnmounted(() => {
 }
 
 .clear-button {
-  background: #ff6b6b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
 }
 
 .toggle-button {
