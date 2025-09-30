@@ -4,6 +4,7 @@ import path from 'node:path';
 
 export default defineConfig({
   root: path.resolve(__dirname, 'src'),
+  publicDir: path.resolve(__dirname, 'public'),
   plugins: [vue()],
   base: './',
   build: {

@@ -131,6 +131,11 @@ export async function createApp(options = {}) {
     }
   });
 
+  // Serve assets folder BEFORE client dist (to avoid catch-all route)
+  const assetsPath = path.join(__dirname, '../assets');
+  app.use('/assets', express.static(assetsPath));
+  log('Serving assets from:', assetsPath);
+
   // Serve static files for browser clients
   const clientDistPath = path.join(__dirname, '../client/dist');
   app.use(express.static(clientDistPath));

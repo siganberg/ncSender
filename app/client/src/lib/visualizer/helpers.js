@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 
 // Helper functions for the visualizer
 export const getBoundingBox = (object) => {
@@ -23,35 +25,105 @@ export const loadTexture = (url) => new Promise((resolve) => {
 });
 
 export const generateCuttingPointer = () => {
-   const group = new THREE.Group();
+    const group = new THREE.Group();
+
+    // Get accent color from CSS variable
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#1abc9c';
 
     const material = new THREE.MeshStandardMaterial({
-        color: 0xff6b6b,
+        color: accentColor,
         flatShading: true,
         transparent: true,
         opacity: 0.6
     });
 
-    // Define profile (X=radius, Y=height) from tip → upwards
-    const points = [
-        new THREE.Vector2(0, 0),   // tip point
-        new THREE.Vector2(1, 2),   // tapered tool bit
-        new THREE.Vector2(2, 5),   // wider taper
-        new THREE.Vector2(4, 6),   // start of collet
-        new THREE.Vector2(4, 8),   // collet wall
-        new THREE.Vector2(3.5, 9), // slight chamfer
-        new THREE.Vector2(3.5, 11) // nut top
-    ];
+    // Load MTL file first, then OBJ
+    const mtlLoader = new MTLLoader();
+    mtlLoader.load(
+        '/assets/cnc-bit.mtl',
+        (materials) => {
+            materials.preload();
+            console.log('MTL materials loaded');
 
-    // Revolve profile around Z axis
-    const geometry = new THREE.LatheGeometry(points, 64);
-    const mesh = new THREE.Mesh(geometry, material);
+            // Now load OBJ with materials
+            const objLoader = new OBJLoader();
+            objLoader.setMaterials(materials);
+            objLoader.load(
+                '/assets/cnc-bit.obj',
+                (obj) => {
+            console.log('CNC pointer OBJ loaded successfully');
 
-    // Rotate so the pointy end faces -Z
-    mesh.rotation.x = Math.PI / 2;
+            // Get bounding box to check size
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = box.getSize(new THREE.Vector3());
+            console.log('Original OBJ size:', size);
+
+            // Apply transparency and metallic look to all meshes in the loaded object
+            obj.traverse((child) => {
+                if (child.isMesh) {
+                    // Keep original material, add transparency and metallic properties
+                    if (child.material) {
+                        child.material.transparent = true;
+                        child.material.opacity = 1;
+                        child.material.metalness = 0.9;
+                        child.material.roughness = 0.3;
+                    }
+                    child.castShadow = true;
+                }
+            });
+
+            // The OBJ is in meters and very small, scale it up to millimeters
+            // Model is ~0.001m, scale by 500
+            obj.scale.set(500, 500, 500);
+
+            // Rotate to point down along negative Z axis
+            obj.rotation.x = Math.PI / 2; // 90° rotation
+
+            // Center the object
+            const boxScaled = new THREE.Box3().setFromObject(obj);
+            const center = boxScaled.getCenter(new THREE.Vector3());
+            obj.position.sub(center);
 
 
-    group.add(mesh);
+            obj.position.z += 10;
+
+            console.log('Scaled OBJ size:', boxScaled.getSize(new THREE.Vector3()));
+
+            group.add(obj);
+                },
+                (progress) => {
+                    console.log('Loading CNC pointer OBJ:', (progress.loaded / progress.total * 100).toFixed(2) + '%');
+                },
+                (error) => {
+                    console.error('Error loading CNC pointer OBJ:', error);
+                    // Fallback to simple cone if loading fails
+                    const geometry = new THREE.ConeGeometry(1, 10, 8);
+                    const cone = new THREE.Mesh(geometry, material);
+                    cone.rotation.x = Math.PI;
+                    cone.position.z = -5;
+                    group.add(cone);
+                }
+            );
+        },
+        (progress) => {
+            console.log('Loading MTL:', (progress.loaded / progress.total * 100).toFixed(2) + '%');
+        },
+        (error) => {
+            console.error('Error loading MTL file:', error);
+            // Fallback: load OBJ without materials
+            const objLoader = new OBJLoader();
+            objLoader.load('/assets/cnc-bit2.obj', (obj) => {
+                obj.scale.set(500, 500, 500);
+                obj.rotation.x = Math.PI / 2;
+                const boxScaled = new THREE.Box3().setFromObject(obj);
+                const center = boxScaled.getCenter(new THREE.Vector3());
+                obj.position.sub(center);
+                obj.position.z += 11.5;
+                group.add(obj);
+            });
+        }
+    );
+
     return group;
 };
 

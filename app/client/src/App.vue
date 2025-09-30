@@ -20,6 +20,7 @@
         :machine-state="status.machineState"
         :loaded-g-code-program="serverState.loadedGCodeProgram"
         :work-coords="status.workCoords"
+        :spindle-rpm="status.spindleRpm"
         @change-view="viewport = $event"
       />
       <RightPanel

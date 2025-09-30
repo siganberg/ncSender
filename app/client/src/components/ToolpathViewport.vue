@@ -41,6 +41,10 @@
           <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
           <span>Cutting (G1/G2/G3)</span>
         </div>
+        <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
+          <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
+          <span>Spindle</span>
+        </div>
       </div>
 
       <!-- Control buttons - bottom center -->
@@ -94,11 +98,13 @@ const props = withDefaults(defineProps<{
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
   loadedGCodeProgram?: string | null;
   workCoords?: { x: number; y: number; z: number; a: number };
+  spindleRpm?: number;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
   connected: false,
-  workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 })
+  workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
+  spindleRpm: 0
 });
 
 const emit = defineEmits<{
@@ -149,6 +155,7 @@ const hasFile = ref(false);
 const isLoading = ref(false);
 const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
+const showSpindle = ref(true); // Default to shown
 let currentGCodeBounds: any = null; // Store current G-code bounds
 
 // Three.js objects
@@ -230,6 +237,11 @@ const initThreeJS = () => {
 
   // Set initial pointer scale
   updatePointerScale();
+
+  // Set initial pointer opacity after a delay (for async OBJ loading)
+  setTimeout(() => {
+    updatePointerOpacity();
+  }, 500);
 
   // Add mouse/touch controls
   setupControls();
@@ -390,7 +402,16 @@ const updateSceneBackground = () => {
 
 const animate = () => {
   animationId = requestAnimationFrame(animate);
-  
+
+  // Rotate cutting pointer when spindle is spinning
+  if (cuttingPointer && props.spindleRpm > 0) {
+    // Rotate around Z axis (spindle axis after rotation)
+    // Static rotation speed: 10 rotations per second = 10 * 2π radians per second
+    // At 60 fps: (10 * 2π) / 60 radians per frame
+    const rotationSpeed = (10 * 2 * Math.PI) / 60;
+    cuttingPointer.rotation.z += rotationSpeed;
+  }
+
   if (renderer && scene && camera) {
     renderer.render(scene, camera);
   }
@@ -492,6 +513,13 @@ const toggleCutting = () => {
   showCutting.value = !showCutting.value;
   if (gcodeVisualizer) {
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
+  }
+};
+
+const toggleSpindle = () => {
+  showSpindle.value = !showSpindle.value;
+  if (cuttingPointer) {
+    cuttingPointer.visible = showSpindle.value;
   }
 };
 
@@ -708,6 +736,18 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
   camera.lookAt(cameraTarget);
 };
 
+// Update pointer opacity based on view
+const updatePointerOpacity = () => {
+  if (!cuttingPointer) return;
+
+  const opacity = props.view === 'top' ? 0.5 : 1.0;
+  cuttingPointer.traverse((child) => {
+    if (child.isMesh && child.material) {
+      child.material.opacity = opacity;
+    }
+  });
+};
+
 // Watch for view changes
 watch(() => props.view, (newView) => {
   setCameraView(newView);
@@ -715,6 +755,8 @@ watch(() => props.view, (newView) => {
   if (currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds, newView);
   }
+  // Update pointer opacity
+  updatePointerOpacity();
 });
 
 // Watch for theme changes
@@ -946,6 +988,10 @@ h2 {
 
 .dot--cutting {
   background: #3e85c7;
+}
+
+.dot--spindle {
+  background: #ffffff;
 }
 
 @media (max-width: 1279px) and (orientation: portrait) {
