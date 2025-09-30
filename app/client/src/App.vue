@@ -135,8 +135,13 @@
                 @blur="validateMainPort"
               >
             </div>
-            <div class="setting-item">
-              <label class="setting-label">Server Port</label>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
+                <label class="setting-label">Server Port</label>
+                <div class="settings-note">
+                  Changes to connection settings require restarting the application to take effect.
+                </div>
+              </div>
               <input
                 type="number"
                 class="setting-input setting-input--right"
@@ -144,14 +149,6 @@
                 min="1024"
                 max="65535"
               >
-            </div>
-            <div class="setting-item setting-item--action">
-              <div class="settings-note">
-                Changes to connection settings require restarting the application to take effect.
-              </div>
-              <button class="save-button" @click="saveConnectionSettings">
-                Save
-              </button>
             </div>
           </div>
 
@@ -184,14 +181,9 @@
               </select>
             </div>
             <div class="setting-item">
-              <label class="setting-label">Accent Color</label>
+              <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
                 <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)">
-              </div>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Gradient Color</label>
-              <div class="color-picker-container">
                 <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)">
               </div>
             </div>
@@ -202,13 +194,13 @@
             <div class="setting-item">
               <label class="setting-label">Auto-clear console on new job</label>
               <label class="toggle-switch">
-                <input type="checkbox" checked>
+                <input type="checkbox" v-model="consoleSettings.autoClearConsole">
                 <span class="toggle-slider"></span>
               </label>
             </div>
             <div class="setting-item">
               <label class="setting-label">Console buffer size</label>
-              <input type="number" class="setting-input" value="1000" min="100" max="10000" step="100">
+              <input type="number" class="setting-input" v-model="consoleSettings.consoleBufferSize" min="100" max="10000" step="100">
             </div>
           </div>
         </div>
@@ -270,6 +262,9 @@
 
       <!-- Footer with Close Button -->
       <div class="settings-footer">
+        <button class="close-button" @click="saveConnectionSettings">
+          Save
+        </button>
         <button class="close-button" @click="showSettings = false">
           Close
         </button>
@@ -421,6 +416,12 @@ const setupSettings = reactive({
   ipAddress: '192.168.5.1',
   port: 23,
   usbPort: ''
+});
+
+// Console settings
+const consoleSettings = reactive({
+  autoClearConsole: true,
+  consoleBufferSize: 1000
 });
 
 // USB ports
@@ -669,6 +670,17 @@ const loadConnectionSettings = async () => {
       connectionSettings.serverPort = settings.serverPort || 8090;
       connectionSettings.usbPort = settings.usbPort || '';
 
+      // Load application settings
+      if (settings.theme) theme.value = settings.theme;
+      if (settings.workspace) workspace.value = settings.workspace;
+      if (settings.defaultGcodeView) viewport.value = settings.defaultGcodeView;
+      if (settings.accentColor) accentColor.value = settings.accentColor;
+      if (settings.gradientColor) gradientColor.value = settings.gradientColor;
+
+      // Load console settings
+      if (settings.autoClearConsole !== undefined) consoleSettings.autoClearConsole = settings.autoClearConsole;
+      if (settings.consoleBufferSize) consoleSettings.consoleBufferSize = settings.consoleBufferSize;
+
       // Load USB ports if USB connection type
       if (connectionSettings.type === 'USB') {
         await loadMainUsbPorts();
@@ -687,14 +699,21 @@ const saveConnectionSettings = async () => {
   }
 
   try {
-    // Prepare the complete settings object with connection settings
+    // Prepare the complete settings object with all settings
     const settingsToSave = {
       connectionType: connectionSettings.type?.toLowerCase() || 'usb',
       baudRate: parseInt(connectionSettings.baudRate) || 115200,
       ip: connectionSettings.ipAddress || '192.168.5.1',
       port: parseInt(connectionSettings.port) || 23,
       serverPort: parseInt(connectionSettings.serverPort) || 8090,
-      usbPort: connectionSettings.usbPort || ''
+      usbPort: connectionSettings.usbPort || '',
+      theme: theme.value,
+      workspace: workspace.value,
+      defaultGcodeView: viewport.value,
+      accentColor: accentColor.value,
+      gradientColor: gradientColor.value,
+      autoClearConsole: consoleSettings.autoClearConsole,
+      consoleBufferSize: parseInt(consoleSettings.consoleBufferSize) || 1000
     };
 
     const response = await fetch(`${getApiBaseUrl()}/api/settings`, {
@@ -708,6 +727,7 @@ const saveConnectionSettings = async () => {
     if (response.ok) {
       const result = await response.json();
       console.log('Settings saved successfully:', result.message || 'Settings saved');
+      showSettings.value = false;
     } else {
       const error = await response.json();
       console.error('Failed to save settings:', error.error);
@@ -1131,12 +1151,23 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .settings-note {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
-  line-height: 1.4;
-  flex: 1;
+  line-height: 1.3;
   text-align: left;
   font-style: italic;
+  margin-top: 4px;
+}
+
+.setting-item--with-note {
+  align-items: flex-start;
+}
+
+.setting-item-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-right: var(--gap-md);
 }
 
 /* Setting Items */
@@ -1275,7 +1306,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .color-picker-container {
   display: flex;
   align-items: center;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
 }
 
 .color-picker {
@@ -1335,6 +1366,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: var(--gap-md);
   margin-top: auto;
   flex-shrink: 0;
 }

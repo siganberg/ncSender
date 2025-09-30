@@ -10,7 +10,14 @@ const DEFAULT_SETTINGS = {
   ip: '192.168.5.1',
   port: 23,
   serverPort: 8090,
-  usbPort: ''
+  usbPort: '',
+  theme: 'dark',
+  workspace: 'G54',
+  defaultGcodeView: 'iso',
+  accentColor: '#1abc9c',
+  gradientColor: '#34d399',
+  autoClearConsole: true,
+  consoleBufferSize: 1000
 };
 
 function getUserDataDir() {

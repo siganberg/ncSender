@@ -1,0 +1,132 @@
+Code Setting Units Datatype Data format Setting Description Min Max
+0 Step pulse time microseconds float #0.0 Step pulse length in microseconds.\nMinimum depends on the processor and is typically in the range of 1 - 2.5.\n\nThe length has to be reduced from the default value of 5 when max. step rate exceed approximately 140 kHz. 2.0 0 0
+1 Step idle delay milliseconds integer ####0 Sets a short hold delay when stopping to let dynamics settle before disabling steppers. Value 255 keeps motors enabled. 65535 0 0
+2 Step pulse invert mask bitfield axes Inverts the step signals (active low). 0 0
+3 Step direction invert mask bitfield axes Inverts the direction signals (active low). 0 0
+4 Invert stepper enable output(s) mask bitfield axes Inverts the stepper driver enable signals. Most drivers uses active low enable requiring inversion.\n\nNOTE: If the stepper drivers shares the same enable signal only X is used. 0 0
+5 Invert limit inputs mask bitfield axes Inverts the axis limit input signals. 0 0
+6 Invert probe inputs mask bitfield Probe,Toolsetter Inverts the probe input signal(s). 0 0
+8 Ganged axes direction invert mask bitfield N/A,Y-Axis Inverts the direction signals for the second motor used for ganged axes.\n\nNOTE: This inversion will be applied in addition to the inversion from setting $3. 0 0
+10 Status report options mask bitfield Position in machine coordinate,Buffer state,Line numbers,Feed & speed,Pin state,Work coordinate offset,Overrides,Probe coordinates,Buffer sync on WCO change,Parser state,Alarm substatus,Run substatus,Enable when homing,Distance-to-go Specifies optional data included in status reports and if report is sent when homing.\nIf Run substatus is enabled it may be used for simple probe protection.\n\nNOTE: Parser state will be sent separately after the status report and only on changes. 0 0
+11 Junction deviation mm float #####0.000 Sets how fast grblHAL travels through consecutive motions. Lower value slows it down. 0 0
+12 Arc tolerance mm float #####0.000 Sets the G2 and G3 arc tracing accuracy based on radial error. Beware: A very small value may effect performance. 0 0
+13 Report in inches boolean bool Enables inch units when returning any position and rate value that is not a settings value. 0 0
+14 Invert control inputs mask bitfield N/A,N/A,N/A,N/A,N/A,N/A,EStop Inverts the control signals (active low).\nNOTE: Block delete, Optional stop, EStop and Probe connected are optional signals, availability is driver dependent. 0 0
+15 Invert coolant outputs mask bitfield Flood,Mist Inverts the coolant and mist signals (active low). 0 0
+17 Pullup disable control inputs mask bitfield N/A,N/A,N/A,N/A,N/A,N/A,EStop Disable the control signals pullup resistors. Potentially enables pulldown resistor if available.\nNOTE: Block delete, Optional stop and EStop are optional signals, availability is driver dependent. 0 0
+18 Pullup disable limit inputs mask bitfield axes Disable the limit signals pullup resistors. Potentially enables pulldown resistors if available. 0 0
+19 Pullup disable probe inputs mask bitfield Probe,Toolsetter Disable the probe signal pullup resistor(s). Potentially enables pulldown resistor(s) if available. 0 0
+20 Soft limits enable boolean bool Enables soft limits checks within machine travel and sets alarm when exceeded. Requires homing. 0 0
+21 Hard limits enable mask xbitfield Enable,Strict mode,Disable for rotary axes When enabled immediately halts motion and throws an alarm when a limit switch is triggered. In strict mode only homing is possible when a switch is engaged. 0 0
+22 Homing cycle mask xbitfield Enable,Enable single axis commands,Homing on startup required,Set machine origin to 0,Two switches shares one input,Allow manual,Override locks,N/A,N/A,Per axis feedrates,Run startup scripts only on homing completed Enables homing cycle. Requires limit switches on axes to be automatically homed.\n\nWhen `Enable single axis commands` is checked, single axis homing can be performed by $H<axis letter> commands.\n\nWhen `Allow manual` is checked, axes not homed automatically may be homed manually by $H or $H<axis letter> commands.\n\n`Override locks` is for allowing a soft reset to disable `Homing on startup required`. 0 0
+23 Homing direction invert mask bitfield axes Homing searches for a switch in the positive direction. Set axis bit to search in negative direction. 0 0
+24 Homing locate feed rate mm/min float #####0.0 Feed rate to slowly engage limit switch to determine its location accurately. 0 0
+25 Homing search seek rate mm/min float #####0.0 Seek rate to quickly find the limit switch before the slower locating phase. 0 0
+26 Homing switch debounce delay milliseconds integer ##0 Sets a short delay between phases of homing cycle to let a switch debounce. 0 0
+27 Homing switch pull-off distance mm float #####0.000 Retract distance after triggering switch to disengage it. Homing will fail if switch isn't cleared. 0 0
+28 G73 Retract distance mm float #####0.000 G73 retract distance (for chip breaking drilling). 0 0
+29 Pulse delay microseconds float #0.0 Step pulse delay.\n\nWhen set > 0 and less than 2 the value is rounded up to 2 microseconds. 20 0 0
+30 Maximum spindle speed RPM float #####0.000 Maximum spindle speed, can be overridden by spindle plugins. 0 0
+31 Minimum spindle speed RPM float #####0.000 Minimum spindle speed, can be overridden by spindle plugins.\n\nWhen set > 0 $35 (PWM min value) may have to be set to get the configured RPM. 0 0
+32 Mode of operation integer radiobuttons Normal,Laser mode,Lathe mode Laser mode: consecutive G1/2/3 commands will not halt when spindle speed is changed.\nLathe mode: allows use of G7, G8, G96 and G97. 0 0
+37 Steppers to keep enabled mask bitfield axes Specifies which steppers not to disable when stopped. 0 0
+39 Enable legacy RT commands boolean bool Enables "normal" processing of ?, ! and ~ characters when part of $-setting or comment. If disabled then they are added to the input string instead. 0 0
+40 Limit jog commands boolean bool Limit jog commands to machine workspace for homed axes. 0 0
+41 Parking cycle mask xbitfield Enable,Deactivate upon init,Enable parking override control Enables parking cycle, requires parking axis homed. 0 0
+42 Parking axis integer radiobuttons X,Y,Z Define which axis that performs the parking motion. 0 0
+43 Homing passes integer ##0 Number of homing passes. Minimum 1, maximum 128. 1 128 0 0
+44 Axes homing, first phase mask bitfield axes Axes to home in first phase. 0 0
+45 Axes homing, second phase mask bitfield axes Axes to home in second phase. 0 0
+46 Axes homing, third phase mask bitfield axes Axes to home in third phase. 0 0
+47 Axes homing, fourth phase mask bitfield axes Axes to home in fourth phase. 0 0
+56 Parking pull-out distance mm float ###0.0 Spindle pull-out and plunge distance in mm.Incremental distance. 0 0
+57 Parking pull-out rate mm/min float ###0.0 Spindle pull-out/plunge slow feed rate in mm/min. 0 0
+58 Parking target mm float -###0.0 Parking axis target. In mm, as machine coordinate [-max_travel, 0]. -100000 0 0
+59 Parking fast rate mm/min float ###0.0 Parking fast rate to target after pull-out in mm/min. 0 0
+60 Restore overrides boolean bool Restore overrides to default values at program end. 0 0
+62 Sleep enable boolean bool Enable sleep mode. 0 0
+63 Feed hold actions mask bitfield Disable laser during hold,Restore spindle and coolant state on resume Actions taken during feed hold and on resume from feed hold. 0 0
+64 Force init alarm boolean bool Start in alarm mode after a cold reset. 0 0
+65 Probing options mask bitfield Allow feed override,Apply soft limits,N/A,Auto select toolsetter Allow feed override during probing and/or limit probing commands to machine workspace for homed axes. 0 0
+70 Network Services mask bitfield Telnet,Websocket,HTTP,FTP,N/A,mDNS Network services/protocols to enable.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+100 X-axis travel resolution step/mm float #####0.000## Travel resolution in steps per millimeter. 0 0
+101 Y-axis travel resolution step/mm float #####0.000## Travel resolution in steps per millimeter. 0 0
+102 Z-axis travel resolution step/mm float #####0.000## Travel resolution in steps per millimeter. 0 0
+103 A-axis travel resolution step/mm float #####0.000## Travel resolution in steps per millimeter. 0 0
+110 X-axis maximum rate mm/min float #####0.000 Maximum rate. Used as G0 rapid rate. 0 0
+111 Y-axis maximum rate mm/min float #####0.000 Maximum rate. Used as G0 rapid rate. 0 0
+112 Z-axis maximum rate mm/min float #####0.000 Maximum rate. Used as G0 rapid rate. 0 0
+113 A-axis maximum rate mm/min float #####0.000 Maximum rate. Used as G0 rapid rate. 0 0
+120 X-axis acceleration mm/sec^2 float #####0.000 Acceleration. Used for motion planning to not exceed motor torque and lose steps. 0 0
+121 Y-axis acceleration mm/sec^2 float #####0.000 Acceleration. Used for motion planning to not exceed motor torque and lose steps. 0 0
+122 Z-axis acceleration mm/sec^2 float #####0.000 Acceleration. Used for motion planning to not exceed motor torque and lose steps. 0 0
+123 A-axis acceleration mm/sec^2 float #####0.000 Acceleration. Used for motion planning to not exceed motor torque and lose steps. 0 0
+130 X-axis maximum travel mm float #####0.000 Maximum axis travel distance from homing switch. Determines valid machine space for soft-limits and homing search distances. 0 0
+131 Y-axis maximum travel mm float #####0.000 Maximum axis travel distance from homing switch. Determines valid machine space for soft-limits and homing search distances. 0 0
+132 Z-axis maximum travel mm float #####0.000 Maximum axis travel distance from homing switch. Determines valid machine space for soft-limits and homing search distances. 0 0
+133 A-axis maximum travel mm float #####0.000 Maximum axis travel distance from homing switch. Determines valid machine space for soft-limits and homing search distances. 0 0
+170 X-axis dual axis offset mm float -0.000 Offset between sides to compensate for homing switches inaccuracies. -10 10 0 0
+171 Y-axis dual axis offset mm float -0.000 Offset between sides to compensate for homing switches inaccuracies. -10 10 0 0
+172 Z-axis dual axis offset mm float -0.000 Offset between sides to compensate for homing switches inaccuracies. -10 10 0 0
+173 A-axis dual axis offset mm float -0.000 Offset between sides to compensate for homing switches inaccuracies. -10 10 0 0
+300 Hostname string x(64) Network hostname.\n\nNOTE: A hard reset of the controller is required after changing this setting. 64 1 0
+301 IP Mode integer radiobuttons Static,DHCP,AutoIP IP Mode.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+302 IP Address ipv4 Static IP address.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+303 Gateway ipv4 Static gateway address.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+304 Netmask ipv4 Static netmask.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+305 Telnet port integer ####0 (Raw) Telnet port number listening for incoming connections.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 65535 1 0
+306 HTTP port integer ####0 HTTP port number listening for incoming connections.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 65535 1 0
+307 Websocket port integer ####0 Websocket port number listening for incoming connections.\nNOTE: WebUI requires this to be HTTP port number + 1.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 65535 1 0
+308 FTP port integer ####0 FTP port number listening for incoming connections.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 65535 1 0
+340 Spindle at speed tolerance percent float ##0.0 Spindle at speed tolerance as percentage deviation from programmed speed, set to 0 to disable.\nIf not within tolerance after timeout set by spindle on delay ($394) alarm 14 is raised.\nNOTE: if the spindle on delay is set to 0 the timeout defaults to one minute. 0 0
+347 Dual axis length fail percent float ##0.0 Dual axis length fail in percent of axis max travel. 0 100 0 0
+348 Dual axis length fail min mm float #####0.000 Dual axis length fail minimum distance. 0 0
+349 Dual axis length fail max mm float #####0.000 Dual axis length fail maximum distance. 0 0
+370 Invert I/O Port inputs mask bitfield Aux 0,Aux 1,Aux 2,Aux 3,Aux 4,Aux 5,Aux 6,Aux 7,Aux 8,Aux 9 Invert IOPort inputs. 0 0
+372 Invert I/O Port outputs mask bitfield Aux 0,Aux 1,Aux 2,Aux 3,Aux 4,Aux 5,Aux 6,Aux 7,Aux 8,Aux 9 Invert IOPort output. 0 0
+374 ModBus baud rate integer radiobuttons 2400,4800,9600,19200,38400,115200 0 0
+375 ModBus RX timeout milliseconds integer ####0 50 250 0 0
+376 Rotary axes mask bitfield A-Axis Designates axes as rotary, interpretation some other relevant axis settings is changed accordingly. 0 0
+384 Disable G92 persistence boolean bool Disables save/restore of G92 offset to non-volatile storage (NVS). 0 0
+392 Spindle on delay s float #0.0 Delay to allow spindle to spin up after safety door is closed or on resume from park. 0.5 20 0 1
+393 Coolant on delay s float #0.0 Delay to allow coolant to restart after safety door is closed or on resume from park. 0.5 20 0 1
+394 Spindle on delay s float #0.0 Delay to allow spindle to spin up. 0 or 0.5 - 20s\nIf spindle supports "at speed" functionality it is the time to wait before alarm 14 is raised. 0.5 20 0 1
+395 Default spindle integer radiobuttons Huanyang v1,H-100 Spindle selected on startup.\n\nNOTE: A hard reset of the controller is required after changing this setting. 1 0
+396 WebUI timeout minutes integer ##0 WebUI inactivity timeout, set to 0 to disable. 999 0 0
+397 WebUI auto report interval milliseconds integer ###0 WebUI realtime report interval, set to 0 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. 100 9999 1 1
+398 Planner buffer blocks integer ####0 Number of blocks in the planner buffer.\n\nNOTE: A hard reset of the controller is required after changing this setting. 30 1000 1 0
+476 Spindle 1 ModBus address integer ##0 Spindle 1 (default spindle) VFD ModBus address 255 0 0
+481 Autoreport interval ms integer ###0 Interval the real time report will be sent, set to 0 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. 100 1000 1 1
+484 Unlock required after E-Stop boolean bool If set unlock (by sending $X) is required after resetting a cleared E-Stop condition. 0 0
+485 Keep tool number over reboot boolean bool 0 0
+486 Lock coordinate systems mask bitfield G59.1,G59.2,G59.3 Lock coordinate systems against accidental changes. 0 0
+490 Macro 1 string x(127) Macro content, separate blocks (lines) with the vertical bar character |. 0 127 0 0
+491 Macro 2 string x(127) Macro content, separate blocks (lines) with the vertical bar character |. 0 127 0 0
+492 Macro 3 string x(127) Macro content, separate blocks (lines) with the vertical bar character |. 0 127 0 0
+511 Spindle 2 integer radiobuttons Disabled,Huanyang v1,H-100 NOTE: A hard reset of the controller is required after changing this setting. 1 0
+520 Spindle 1 tool number start integer ####0 Start of tool numbers for selecting the spindle.\nNormally leave this at 0 for spindle 1 (default spindle).\n\nNOTE: A hard reset of the controller is required after changing this setting. 0 65535 1 0
+534 Output NGC debug messages boolean bool Example: (debug, metric mode: #<_metric>, coord system: #5220) 0 0
+535 MAC Address string x(17) Optional MAC address. Tip: get from an unused device, e.g an old router.\n\nNOTE: A hard reset of the controller is required after changing this setting. 17 17 1 1
+536 LED strip 1 length integer ##0 Number of LEDS in strip 1. 255 0 0
+537 LED strip 2 length integer ##0 Number of LEDS in strip 2. 255 0 0
+538 Fast rotary go to G28 mask bitfield A-Axis Perform fast move to angle stored in G28 position.\nUse:\n G91G28<axisletter>0\n G90\n 0 0
+539 Spindle off delay s float #0.0 Delay to allow spindle to spin down. 0 or 0.5 - 20s\nIf spindle supports "at speed" functionality it is the time to wait before alarm 14 is raised. 0.5 20 0 1
+590 Button 1 action integer radiobuttons Macro,Cycle start,Feed hold,Park,Reset,Spindle stop (during feed hold),Mist toggle,Flood toggle,Probe connected toggle,Optional stop toggle,Single block mode toggle Action to take when the pin is triggered. 0 0
+591 Button 2 action integer radiobuttons Macro,Cycle start,Feed hold,Park,Reset,Spindle stop (during feed hold),Mist toggle,Flood toggle,Probe connected toggle,Optional stop toggle,Single block mode toggle Action to take when the pin is triggered. 0 0
+592 Button 3 action integer radiobuttons Macro,Cycle start,Feed hold,Park,Reset,Spindle stop (during feed hold),Mist toggle,Flood toggle,Probe connected toggle,Optional stop toggle,Single block mode toggle Action to take when the pin is triggered. 0 0
+650 File systems options mask bitfield Auto mount SD card Auto mount SD card on startup. 0 0
+673 Coolant on delay s float #0.0 Delay to allow coolant to start. 0 or 0.5 - 20s. 0.5 20 0 1
+675 Macro ATC options mask bitfield Execute M6T0,Fail M6 if tc.macro not found Options for ATC macros. 0 0
+676 Reset actions mask bitfield Clear homed status if position was lost,Clear offsets (except G92),Clear rapids override,Clear feed override Controls actions taken on a soft reset. 0 0
+680 Stepper enable delay ms integer ##0 Delay from stepper enable to first step output. The driver typically adds ~2ms to this. 250 0 0
+681 ModBus serial format integer radiobuttons 8-bit no parity, 8-bit even parity, 8-bit odd parity 0 0
+744 Motor fault inputs enable mask bitfield axes 0 0
+745 Invert motor fault inputs mask bitfield axes 0 0
+750 Event 1 trigger integer radiobuttons None,Spindle enable (M3/M4),Laser enable (M3/M4),Mist enable (M7),Flood enable (M8),Feed hold,Alarm,Spindle at speed Event triggering output port change.\n\nNOTE: the port can still be controlled by M62-M65 commands even when bound to an event. 0 0
+751 Event 2 trigger integer radiobuttons None,Spindle enable (M3/M4),Laser enable (M3/M4),Mist enable (M7),Flood enable (M8),Feed hold,Alarm,Spindle at speed Event triggering output port change.\n\nNOTE: the port can still be controlled by M62-M65 commands even when bound to an event. 0 0
+752 Event 3 trigger integer radiobuttons None,Spindle enable (M3/M4),Laser enable (M3/M4),Mist enable (M7),Flood enable (M8),Feed hold,Alarm,Spindle at speed Event triggering output port change.\n\nNOTE: the port can still be controlled by M62-M65 commands even when bound to an event. 0 0
+753 Event 4 trigger integer radiobuttons None,Spindle enable (M3/M4),Laser enable (M3/M4),Mist enable (M7),Flood enable (M8),Feed hold,Alarm,Spindle at speed Event triggering output port change.\n\nNOTE: the port can still be controlled by M62-M65 commands even when bound to an event. 0 0
+760 Event 1 port float -#0 Aux output port number to bind to the associated event trigger. Set to -1 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. -1 9 1 0
+761 Event 2 port float -#0 Aux output port number to bind to the associated event trigger. Set to -1 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. -1 9 1 0
+762 Event 3 port float -#0 Aux output port number to bind to the associated event trigger. Set to -1 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. -1 9 1 0
+763 Event 4 port float -#0 Aux output port number to bind to the associated event trigger. Set to -1 to disable.\n\nNOTE: A hard reset of the controller is required after changing this setting. -1 9 1 0
