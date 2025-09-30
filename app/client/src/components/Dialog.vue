@@ -1,5 +1,5 @@
 <template>
-  <div class="dialog-backdrop" @click.self="$emit('close')">
+  <div class="dialog-backdrop" @click.self="$emit('close')" :style="{ zIndex }">
     <div class="dialog" :class="[size ? `dialog--${size}` : '']">
       <header v-if="showHeader" class="dialog__header">
         <h2 class="dialog__title"><slot name="title">Dialog</slot></h2>
@@ -16,6 +16,7 @@
 defineProps<{
   showHeader?: boolean;
   size?: 'small' | 'small-plus' | 'medium' | 'large';
+  zIndex?: number;
 }>()
 
 defineEmits<{
@@ -62,8 +63,9 @@ defineEmits<{
 
 .dialog--medium {
   max-width: none;
-  width: 80vw;
-  height: 80vh;
+  width: 50vw;
+  min-width: 600px;
+  height: 70vh;
 }
 
 .dialog--large {

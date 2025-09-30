@@ -441,6 +441,23 @@ class NCClient {
     return await response.json();
   }
 
+  async loadGCodeFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error('Failed to load G-code file');
+    return await response.json();
+  }
+
+  async deleteGCodeFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) throw new Error('Failed to delete G-code file');
+    return await response.json();
+  }
+
   async clearGCode() {
     const response = await fetch(`${this.baseUrl}/api/gcode-preview/clear`, {
       method: 'POST',

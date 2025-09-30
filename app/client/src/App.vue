@@ -143,7 +143,7 @@
               <div class="setting-item-content">
                 <label class="setting-label">Remote Control Port</label>
                 <div class="settings-note">
-                  Changes to connection settings require restarting the application to take effect.
+                  Note: Changes this require restarting the application to take effect.
                 </div>
               </div>
               <input

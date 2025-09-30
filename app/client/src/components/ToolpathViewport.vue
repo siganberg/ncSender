@@ -27,7 +27,7 @@
               <path d="M8 12V3M8 3L4 7M8 3L12 7M2 13H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button class="load-button" title="Open Folder">
+          <button @click="showFileManager = true" class="load-button" title="Open Folder">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -83,6 +83,68 @@
       </div>
     </div>
   </section>
+
+  <!-- Delete Confirmation Dialog -->
+  <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
+    <div class="confirm-dialog">
+      <h3 class="confirm-dialog__title">Delete File</h3>
+      <p class="confirm-dialog__message">Are you sure you want to delete "{{ fileToDelete }}"?</p>
+      <div class="confirm-dialog__actions">
+        <button @click="cancelDelete" class="confirm-dialog__btn confirm-dialog__btn--cancel">Cancel</button>
+        <button @click="confirmDelete" class="confirm-dialog__btn confirm-dialog__btn--danger">Delete</button>
+      </div>
+    </div>
+  </Dialog>
+
+  <!-- File Manager Dialog -->
+  <Dialog v-if="showFileManager" @close="showFileManager = false" size="medium">
+    <div class="file-manager">
+      <div class="file-manager__header">
+        <div class="file-manager__icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <h2 class="file-manager__title">File Manager</h2>
+      </div>
+      <div class="file-manager__content">
+        <div v-if="uploadedFiles.length === 0" class="file-manager__empty">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p>No files uploaded yet</p>
+          <p class="file-manager__empty-hint">Upload a G-code file to get started</p>
+        </div>
+        <div v-else class="file-list">
+          <div v-for="file in uploadedFiles" :key="file.name" class="file-item">
+            <div class="file-item__icon">
+              📦
+            </div>
+            <div class="file-item__info">
+              <div class="file-item__name">{{ file.name }}</div>
+              <div class="file-item__meta">{{ formatFileSize(file.size) }} • {{ formatDate(file.uploadedAt) }}</div>
+            </div>
+            <div class="file-item__actions">
+              <button @click="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file">
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 8L8 2L14 8M8 2V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M2 14H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button @click="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file">
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 4H14M6 4V2.5C6 2.22 6.22 2 6.5 2H9.5C9.78 2 10 2.22 10 2.5V4M12.5 4L12 13C12 13.55 11.55 14 11 14H5C4.45 14 4 13.55 4 13L3.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="file-manager__footer">
+        <button @click="showFileManager = false" class="file-manager__close-btn">Close</button>
+      </div>
+    </div>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -91,6 +153,7 @@ import * as THREE from 'three';
 import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
 import { api } from '../lib/api.js';
+import Dialog from './Dialog.vue';
 
 const presets = [
   { id: 'top', label: 'Top' },
@@ -163,6 +226,10 @@ const isLoading = ref(false);
 const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
+const showFileManager = ref(false);
+const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
+const showDeleteConfirm = ref(false);
+const fileToDelete = ref<string | null>(null);
 let currentGCodeBounds: any = null; // Store current G-code bounds
 
 // Three.js objects
@@ -530,6 +597,76 @@ const toggleSpindle = () => {
   }
 };
 
+// File manager helpers
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+
+  return date.toLocaleDateString();
+};
+
+const loadFileFromManager = async (filename: string) => {
+  try {
+    // Load the file - the API should trigger the gcode-updated event
+    await api.loadGCodeFile(filename);
+    showFileManager.value = false;
+  } catch (error) {
+    console.error('Error loading file:', error);
+  }
+};
+
+const deleteFile = (filename: string) => {
+  fileToDelete.value = filename;
+  showDeleteConfirm.value = true;
+};
+
+const confirmDelete = async () => {
+  if (!fileToDelete.value) return;
+
+  console.log('Deleting file:', fileToDelete.value);
+
+  try {
+    const result = await api.deleteGCodeFile(fileToDelete.value);
+    console.log('Delete result:', result);
+    await fetchUploadedFiles();
+    showDeleteConfirm.value = false;
+    fileToDelete.value = null;
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    showDeleteConfirm.value = false;
+    fileToDelete.value = null;
+  }
+};
+
+const cancelDelete = () => {
+  showDeleteConfirm.value = false;
+  fileToDelete.value = null;
+};
+
+const fetchUploadedFiles = async () => {
+  try {
+    const data = await api.listGCodeFiles();
+    uploadedFiles.value = data.files || [];
+  } catch (error) {
+    console.error('Error fetching uploaded files:', error);
+    uploadedFiles.value = [];
+  }
+};
+
 // Control button handlers
 const handleCycle = async () => {
   if (!props.loadedGCodeProgram && !isOnHold.value) return;
@@ -778,6 +915,13 @@ watch(() => props.workCoords, (newCoords) => {
   }
 }, { deep: true });
 
+// Watch for file manager dialog open to fetch files
+watch(() => showFileManager.value, (isOpen) => {
+  if (isOpen) {
+    fetchUploadedFiles();
+  }
+});
+
 onMounted(() => {
   initThreeJS();
   window.addEventListener('resize', handleResize);
@@ -803,6 +947,9 @@ onMounted(() => {
       handleGCodeClear();
     }
   });
+
+  // Fetch uploaded files on mount
+  fetchUploadedFiles();
 
   // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
@@ -1093,5 +1240,259 @@ h2 {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* File Manager Styles */
+.file-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 500px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.file-manager__header {
+  padding: var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.file-manager__icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--color-accent), rgba(26, 188, 156, 0.7));
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.file-manager__title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text-primary);
+}
+
+.file-manager__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--gap-md);
+}
+
+.file-manager__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  color: var(--color-text-secondary);
+}
+
+.file-manager__empty svg {
+  margin-bottom: var(--gap-md);
+  opacity: 0.5;
+}
+
+.file-manager__empty p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.file-manager__empty-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+  margin-top: var(--gap-xs) !important;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  transition: all 0.2s ease;
+}
+
+.file-item:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.file-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  font-size: 32px;
+}
+
+.file-item__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-item__name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item__meta {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.file-item__actions {
+  display: flex;
+  gap: var(--gap-xs);
+  flex-shrink: 0;
+}
+
+.file-item__load-btn {
+  width: 50px;
+  height: 50px;
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-item__load-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(26, 188, 156, 0.3);
+}
+
+.file-item__delete-btn {
+  width: 50px;
+  height: 50px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-item__delete-btn:hover {
+  background: #ff6b6b;
+  color: white;
+  border-color: #ff6b6b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+.file-manager__footer {
+  padding: var(--gap-md);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  background: var(--color-surface);
+}
+
+.file-manager__close-btn {
+  padding: 10px 32px;
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-manager__close-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+/* Confirmation Dialog */
+.confirm-dialog {
+  padding: var(--gap-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+.confirm-dialog__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.confirm-dialog__message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  gap: var(--gap-sm);
+  justify-content: flex-end;
+  margin-top: var(--gap-sm);
+}
+
+.confirm-dialog__btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.confirm-dialog__btn--cancel {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.confirm-dialog__btn--cancel:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.confirm-dialog__btn--danger {
+  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8));
+  color: white;
+}
+
+.confirm-dialog__btn--danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
 }
 </style>
