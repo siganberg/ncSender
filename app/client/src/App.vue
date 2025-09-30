@@ -111,7 +111,7 @@
               </select>
             </div>
             <div class="setting-item">
-              <label class="setting-label">CNC Controller IP Address</label>
+              <label class="setting-label">IP Address</label>
               <input
                 type="text"
                 class="setting-input setting-input--right"
@@ -123,7 +123,7 @@
               >
             </div>
             <div class="setting-item">
-              <label class="setting-label">CNC Controller Port</label>
+              <label class="setting-label">Port</label>
               <input
                 type="number"
                 class="setting-input setting-input--right"
@@ -137,7 +137,7 @@
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
-                <label class="setting-label">Server Port</label>
+                <label class="setting-label">Remote Control Port</label>
                 <div class="settings-note">
                   Changes to connection settings require restarting the application to take effect.
                 </div>
@@ -174,7 +174,7 @@
             </div>
             <div class="setting-item">
               <label class="setting-label">Default View</label>
-              <select class="setting-select" :value="viewport" @change="viewport = $event.target.value">
+              <select class="setting-select" v-model="defaultView">
                 <option value="iso">Isometric</option>
                 <option value="top">Top</option>
                 <option value="front">Front</option>
@@ -381,6 +381,7 @@ import { api } from './lib/api.js';
 const theme = ref<'light' | 'dark'>('dark'); // Default to dark mode
 const workspace = ref('G54');
 const viewport = ref<'top' | 'front' | 'iso'>('iso');
+const defaultView = ref<'top' | 'front' | 'iso'>('iso'); // Track default view from settings
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
 
@@ -673,7 +674,10 @@ const loadConnectionSettings = async () => {
       // Load application settings
       if (settings.theme) theme.value = settings.theme;
       if (settings.workspace) workspace.value = settings.workspace;
-      if (settings.defaultGcodeView) viewport.value = settings.defaultGcodeView;
+      if (settings.defaultGcodeView) {
+        defaultView.value = settings.defaultGcodeView;
+        viewport.value = settings.defaultGcodeView;
+      }
       if (settings.accentColor) accentColor.value = settings.accentColor;
       if (settings.gradientColor) gradientColor.value = settings.gradientColor;
 
@@ -709,7 +713,7 @@ const saveConnectionSettings = async () => {
       usbPort: connectionSettings.usbPort || '',
       theme: theme.value,
       workspace: workspace.value,
-      defaultGcodeView: viewport.value,
+      defaultGcodeView: defaultView.value,
       accentColor: accentColor.value,
       gradientColor: gradientColor.value,
       autoClearConsole: consoleSettings.autoClearConsole,
@@ -880,11 +884,11 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 };
 
 onMounted(async () => {
-  // Initialize colors
-  applyColors();
-
-  // Load connection settings
+  // Load connection settings first (this will load the colors)
   await loadConnectionSettings();
+
+  // Apply colors after settings are loaded
+  applyColors();
 
   // Listen for WebSocket connection events
   api.on('connected', () => {
@@ -925,8 +929,15 @@ onMounted(async () => {
 
   // Listen for server state updates (includes machine state)
   api.onServerStateUpdated((newServerState) => {
+    const previousGCodeProgram = serverState.loadedGCodeProgram;
     Object.assign(serverState, newServerState);
     status.connected = serverState.online;
+
+    // Reset viewport to default view when a new G-code file is loaded
+    if (serverState.loadedGCodeProgram && serverState.loadedGCodeProgram !== previousGCodeProgram) {
+      viewport.value = defaultView.value;
+    }
+
     if (serverState.machineState && serverState.online) {
       applyStatusReport(serverState.machineState);
     } else if (!serverState.online) {
