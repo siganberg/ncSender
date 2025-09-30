@@ -39,10 +39,208 @@
   </AppShell>
 
   <!-- Dialog moved outside AppShell to avoid overflow clipping -->
-  <Dialog v-if="showSettings" @close="showSettings = false">
-    <template #title>Settings</template>
-    <div>
-      <p>Settings content will go here.</p>
+  <Dialog v-if="showSettings" @close="showSettings = false" :show-header="false">
+    <div class="settings-container">
+      <div class="tabs">
+        <button
+          v-for="tab in settingsTabs"
+          :key="tab.id"
+          class="tab-button"
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          <span class="tab-icon">{{ tab.icon }}</span>
+          <span class="tab-label">{{ tab.label }}</span>
+        </button>
+      </div>
+
+      <div class="tab-content">
+        <!-- General Tab -->
+        <div v-if="activeTab === 'general'" class="tab-panel">
+          <div class="settings-section">
+            <h3 class="section-title">Connection Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Connection Type</label>
+              <select class="setting-select setting-input--right" v-model="connectionSettings.type">
+                <option value="USB">USB</option>
+                <option value="Ethernet">Ethernet</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Baud Rate</label>
+              <select class="setting-select setting-input--right" v-model="connectionSettings.baudRate">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+                <option value="230400">230400</option>
+                <option value="460800">460800</option>
+                <option value="921600">921600</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">CNC Controller IP Address</label>
+              <input
+                type="text"
+                class="setting-input setting-input--right"
+                v-model="connectionSettings.ipAddress"
+                :disabled="connectionSettings.type === 'USB'"
+                :class="{ 'invalid': !isValidIP && connectionSettings.type === 'Ethernet' }"
+                placeholder="192.168.5.1"
+                @blur="validateIP"
+              >
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">CNC Controller Port</label>
+              <input
+                type="number"
+                class="setting-input setting-input--right"
+                v-model="connectionSettings.port"
+                :disabled="connectionSettings.type === 'USB'"
+                min="1"
+                max="65535"
+              >
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Server Port</label>
+              <input
+                type="number"
+                class="setting-input setting-input--right"
+                v-model="connectionSettings.serverPort"
+                min="1024"
+                max="65535"
+              >
+            </div>
+            <div class="setting-item setting-item--action">
+              <div class="settings-note">
+                Changes to connection settings require restarting the application to take effect.
+              </div>
+              <button class="save-button" @click="saveConnectionSettings">
+                Save
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="section-title">Application Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Theme</label>
+              <select class="setting-select" :value="theme" @change="theme = $event.target.value">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Default Workspace</label>
+              <select class="setting-select" :value="workspace" @change="workspace = $event.target.value">
+                <option value="G54">G54</option>
+                <option value="G55">G55</option>
+                <option value="G56">G56</option>
+                <option value="G57">G57</option>
+                <option value="G58">G58</option>
+                <option value="G59">G59</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Default View</label>
+              <select class="setting-select" :value="viewport" @change="viewport = $event.target.value">
+                <option value="iso">Isometric</option>
+                <option value="top">Top</option>
+                <option value="front">Front</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Accent Color</label>
+              <div class="color-picker-container">
+                <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)">
+              </div>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Gradient Color</label>
+              <div class="color-picker-container">
+                <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="section-title">Console Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Auto-clear console on new job</label>
+              <label class="toggle-switch">
+                <input type="checkbox" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Console buffer size</label>
+              <input type="number" class="setting-input" value="1000" min="100" max="10000" step="100">
+            </div>
+          </div>
+        </div>
+
+        <!-- Firmware Tab -->
+        <div v-if="activeTab === 'firmware'" class="tab-panel">
+          <div class="settings-section">
+            <h3 class="section-title">Connection Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Baud Rate</label>
+              <select class="setting-select">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+                <option value="230400">230400</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Connection timeout (ms)</label>
+              <input type="number" class="setting-input" value="5000" min="1000" max="30000" step="1000">
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="section-title">GRBL Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Status report interval (ms)</label>
+              <input type="number" class="setting-input" value="200" min="50" max="1000" step="50">
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Enable position reporting</label>
+              <input type="checkbox" class="setting-checkbox" checked>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Enable real-time commands</label>
+              <input type="checkbox" class="setting-checkbox" checked>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="section-title">Safety Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Enable soft limits</label>
+              <input type="checkbox" class="setting-checkbox" checked>
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Enable hard limits</label>
+              <input type="checkbox" class="setting-checkbox">
+            </div>
+            <div class="setting-item">
+              <label class="setting-label">Homing cycle required</label>
+              <input type="checkbox" class="setting-checkbox">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer with Close Button -->
+      <div class="settings-footer">
+        <button class="close-button" @click="showSettings = false">
+          Close
+        </button>
+      </div>
     </div>
   </Dialog>
 </template>
@@ -62,8 +260,119 @@ const workspace = ref('G54');
 const viewport = ref<'top' | 'front' | 'iso'>('iso');
 const showSettings = ref(false);
 
+// Settings tabs configuration
+const activeTab = ref('general');
+const settingsTabs = [
+  { id: 'general', label: 'General', icon: '⚙️' },
+  { id: 'firmware', label: 'Firmware', icon: '🔧' }
+];
+
+// Color customization
+const accentColor = ref('#1abc9c');
+const gradientColor = ref('#34d399');
+
+const currentGradient = computed(() => {
+  return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
+});
+
+// Connection settings
+const connectionSettings = reactive({
+  type: 'USB',
+  baudRate: '115200',
+  ipAddress: '192.168.5.1',
+  port: 23,
+  serverPort: 8090
+});
+
+// IP validation
+const isValidIP = ref(true);
+
 const openSettings = () => {
   showSettings.value = true;
+};
+
+const updateAccentColor = (color: string) => {
+  accentColor.value = color;
+  applyColors();
+};
+
+const updateGradientColor = (color: string) => {
+  gradientColor.value = color;
+  applyColors();
+};
+
+const applyColors = () => {
+  const root = document.documentElement;
+  root.style.setProperty('--color-accent', accentColor.value);
+  root.style.setProperty('--gradient-accent', currentGradient.value);
+};
+
+const validateIP = () => {
+  if (connectionSettings.type === 'USB') {
+    isValidIP.value = true;
+    return;
+  }
+
+  const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+  isValidIP.value = ipRegex.test(connectionSettings.ipAddress);
+};
+
+const getApiBaseUrl = () => {
+  // In development, use the same hostname but port 8090
+  if (import.meta.env.DEV) {
+    return `http://${window.location.hostname}:8090`;
+  }
+  // In production, use relative URLs (same origin)
+  return '';
+};
+
+const loadConnectionSettings = async () => {
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/settings`);
+    if (response.ok) {
+      const settings = await response.json();
+
+      // Map server settings to frontend format
+      connectionSettings.type = settings.connectionType === 'usb' ? 'USB' : 'Ethernet';
+      connectionSettings.baudRate = settings.baudRate?.toString() || '115200';
+      connectionSettings.ipAddress = settings.ip || '192.168.5.1';
+      connectionSettings.port = settings.port || 23;
+      connectionSettings.serverPort = settings.serverPort || 8090;
+    }
+  } catch (error) {
+    console.error('Error loading connection settings:', error);
+  }
+};
+
+const saveConnectionSettings = async () => {
+  try {
+    // Prepare the complete settings object with connection settings
+    const settingsToSave = {
+      connectionType: connectionSettings.type?.toLowerCase() || 'usb',
+      baudRate: parseInt(connectionSettings.baudRate) || 115200,
+      ip: connectionSettings.ipAddress || '192.168.5.1',
+      port: parseInt(connectionSettings.port) || 23,
+      serverPort: parseInt(connectionSettings.serverPort) || 8090
+    };
+
+    const response = await fetch(`${getApiBaseUrl()}/api/settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(settingsToSave)
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('Settings saved successfully:', result.message || 'Settings saved');
+    } else {
+      const error = await response.json();
+      console.error('Failed to save settings:', error.error);
+    }
+  } catch (error) {
+    console.error('Error saving settings:', error);
+  }
 };
 
 const clearConsole = () => {
@@ -167,6 +476,12 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 };
 
 onMounted(async () => {
+  // Initialize colors
+  applyColors();
+
+  // Load connection settings
+  await loadConnectionSettings();
+
   // Listen for WebSocket connection events
   api.on('connected', () => {
     console.log('WebSocket connected');
@@ -327,3 +642,411 @@ const toggleTheme = () => {
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 </script>
+
+<style scoped>
+/* Settings Container */
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
+  padding: var(--gap-sm) var(--gap-md) 0 var(--gap-md);
+  gap: 2px;
+}
+
+.tab-button {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  padding: var(--gap-sm) var(--gap-md);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin-top: var(--gap-xs);
+  position: relative;
+}
+
+.tab-button:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+
+.tab-button.active {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-elevated);
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.tab-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-accent);
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-icon {
+  font-size: 1.1rem;
+}
+
+.tab-label {
+  font-weight: 600;
+}
+
+/* Tab Content */
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+  flex: 1;
+}
+
+/* Settings Sections */
+.settings-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  padding: var(--gap-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.section-title {
+  margin: 0 0 var(--gap-md) 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--gap-xs);
+}
+
+.settings-note {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  flex: 1;
+  text-align: left;
+  font-style: italic;
+}
+
+/* Setting Items */
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--gap-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 1;
+  margin-right: var(--gap-md);
+}
+
+/* Form Controls */
+.setting-select,
+.setting-input {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 8px 12px;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.setting-select:focus,
+.setting-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.setting-select:hover,
+.setting-input:hover {
+  border-color: var(--color-accent);
+}
+
+.setting-input:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.setting-input:disabled:hover {
+  border-color: var(--color-border);
+}
+
+.setting-input.invalid {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+.setting-input.invalid:focus {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.2);
+}
+
+.setting-input--right {
+  text-align: right;
+}
+
+.setting-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.toggle-switch input[type="checkbox"] {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--gradient-accent);
+  border-color: var(--color-accent);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+
+.toggle-switch:hover .toggle-slider {
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+/* Color Picker */
+.color-picker-container {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.color-picker {
+  width: 40px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+}
+
+.color-picker::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-small);
+}
+
+.color-picker::-webkit-color-swatch {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: all 0.2s ease;
+}
+
+.color-picker:hover::-webkit-color-swatch {
+  border-color: var(--color-accent);
+  transform: scale(1.05);
+}
+
+.color-preview {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-elevated);
+}
+
+.gradient-preview {
+  border-radius: var(--radius-small);
+  width: 32px;
+}
+
+.color-value {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-small);
+  min-width: 70px;
+  text-align: center;
+}
+
+/* Settings Footer */
+.settings-footer {
+  padding: var(--gap-md);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.close-button {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 12px 32px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
+}
+
+.close-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.close-button:active {
+  transform: translateY(0);
+}
+
+/* Save Button */
+.setting-item--action {
+  justify-content: flex-end;
+  padding-top: var(--gap-md);
+  border-bottom: none;
+}
+
+.save-button {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 10px 24px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
+}
+
+.save-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.save-button:active {
+  transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .settings-container {
+    max-height: 80vh;
+  }
+
+  .tabs {
+    flex-direction: column;
+    gap: 0;
+    padding: var(--gap-xs);
+  }
+
+  .tab-button {
+    margin-top: 0;
+    margin-bottom: 2px;
+    border-radius: var(--radius-small);
+  }
+
+  .tab-button.active::after {
+    display: none;
+  }
+
+  .tab-button.active {
+    border-left: 3px solid var(--color-accent);
+    border-bottom: none;
+  }
+
+  .setting-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-xs);
+  }
+
+  .setting-label {
+    margin-right: 0;
+    margin-bottom: var(--gap-xs);
+  }
+
+  .setting-select,
+  .setting-input {
+    width: 100%;
+    min-width: unset;
+  }
+}
+</style>

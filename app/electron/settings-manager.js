@@ -76,4 +76,29 @@ export function getSetting(key, fallback) {
   return undefined;
 }
 
+export function saveSettings(newSettings) {
+  ensureSettingsFile();
+
+  try {
+    const currentSettings = readSettings();
+    const updatedSettings = { ...currentSettings, ...newSettings };
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2), 'utf8');
+    return updatedSettings;
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+    throw error;
+  }
+}
+
+export function saveConnectionSettings(connectionSettings) {
+  const settingsToSave = {
+    connectionType: connectionSettings.type?.toLowerCase() || 'usb',
+    baudRate: parseInt(connectionSettings.baudRate) || 115200,
+    ip: connectionSettings.ipAddress || '192.168.5.1',
+    port: parseInt(connectionSettings.port) || 23
+  };
+
+  return saveSettings(settingsToSave);
+}
+
 export { SETTINGS_PATH, DEFAULT_SETTINGS };

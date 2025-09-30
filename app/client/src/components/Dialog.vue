@@ -1,7 +1,7 @@
 <template>
   <div class="dialog-backdrop" @click.self="$emit('close')">
     <div class="dialog">
-      <header class="dialog__header">
+      <header v-if="showHeader" class="dialog__header">
         <h2 class="dialog__title"><slot name="title">Dialog</slot></h2>
         <button class="dialog__close" @click="$emit('close')" aria-label="Close dialog">&times;</button>
       </header>
@@ -13,6 +13,10 @@
 </template>
 
 <script setup lang="ts">
+defineProps<{
+  showHeader?: boolean;
+}>()
+
 defineEmits<{
   (e: 'close'): void;
 }>();
@@ -64,8 +68,10 @@ defineEmits<{
 }
 
 .dialog__content {
-  padding: var(--gap-md);
+  padding: 0;
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 </style>
