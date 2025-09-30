@@ -10,6 +10,7 @@ class NCClient {
     this.clientId = this.ensureClientId();
     this.jogAckTimeoutMs = 1500;
     this.discoveredPort = null;
+    this.lastServerState = null;
   }
 
   ensureClientId() {
@@ -449,12 +450,6 @@ class NCClient {
     return await response.json();
   }
 
-  async getServerState() {
-    const response = await fetch(`${this.baseUrl}/api/server-state`);
-    if (!response.ok) throw new Error('Failed to get server state');
-    return await response.json();
-  }
-
   async getCommandHistory() {
     const response = await fetch(`${this.baseUrl}/api/command-history`);
     if (!response.ok) throw new Error('Failed to get command history');
@@ -552,6 +547,9 @@ class NCClient {
       try {
         const message = JSON.parse(event.data);
         console.log('Parsed message:', message);
+        if (message && message.type === 'server-state-updated' && message.data) {
+          this.lastServerState = message.data;
+        }
         this.emit(message.type, message.data);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error, 'Raw data:', event.data);
@@ -654,7 +652,10 @@ class NCClient {
 
   async checkCurrentProgram() {
     try {
-      const serverState = await this.getServerState();
+      const serverState = this.lastServerState;
+      if (!serverState) {
+        return; // No state available yet; rely on future WS update
+      }
 
       if (serverState.loadedGCodeProgram) {
         // Add small delay to ensure viewport is fully rendered before loading G-code

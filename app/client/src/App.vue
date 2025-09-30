@@ -919,37 +919,44 @@ onMounted(async () => {
     websocketConnected.value = false;
   }
 
-  // Fetch initial server state
+  // Seed UI from last known server state (in case initial WS events were missed)
   try {
-    const initialServerState = await api.getServerState();
-    Object.assign(serverState, initialServerState);
-    status.connected = serverState.online;
-    if (serverState.machineState && serverState.online) {
-      applyStatusReport(serverState.machineState);
-    } else if (!serverState.online) {
-      status.machineState = 'offline';
+    const last = api.lastServerState;
+    if (last && typeof last === 'object') {
+      Object.assign(serverState, last);
+      // Only treat as connected when payload reports online
+      status.connected = !!serverState.online;
+      if (serverState.online && serverState.machineState) {
+        applyStatusReport(serverState.machineState);
+      } else if (!serverState.online) {
+        status.machineState = 'offline';
+      }
     }
-  } catch (error) {
-    console.error('Failed to fetch server state:', error);
+  } catch (e) {
+    console.warn('Unable to seed initial server state:', e);
   }
 
-  // Listen for server state updates (includes machine state)
+  // Initialize purely from WebSocket server-state-updated events
   api.onServerStateUpdated((newServerState) => {
     const previousGCodeProgram = serverState.loadedGCodeProgram;
     Object.assign(serverState, newServerState);
-    status.connected = serverState.online;
+    // Only treat as connected when payload reports online
+    status.connected = !!serverState.online;
 
     // Reset viewport to default view when a new G-code file is loaded
     if (serverState.loadedGCodeProgram && serverState.loadedGCodeProgram !== previousGCodeProgram) {
       viewport.value = defaultView.value;
     }
 
-    if (serverState.machineState && serverState.online) {
+    // Only apply machine state when online
+    if (serverState.online && serverState.machineState) {
       applyStatusReport(serverState.machineState);
     } else if (!serverState.online) {
       status.machineState = 'offline';
     }
   });
+
+  // (Removed duplicate server-state-updated listener)
 
   // Listen for new commands
   const addOrUpdateCommandLine = (payload) => {
