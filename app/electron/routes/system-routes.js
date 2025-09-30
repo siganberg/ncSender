@@ -5,7 +5,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSystemRoutes(serverState) {
+export function createSystemRoutes(serverState, startAutoConnect) {
   const router = Router();
 
   // Health check endpoint
@@ -16,7 +16,15 @@ export function createSystemRoutes(serverState) {
   // Get server state
   router.get('/server-state', (req, res) => {
     try {
-      res.json(serverState);
+      // Create a safe copy of serverState without circular references
+      const safeServerState = {
+        loadedGCodeProgram: serverState.loadedGCodeProgram,
+        online: serverState.online,
+        machineState: serverState.machineState,
+        hasEverConnected: serverState.hasEverConnected
+        // Exclude cncController to avoid circular references
+      };
+      res.json(safeServerState);
     } catch (error) {
       console.error('Error getting server state:', error);
       res.status(500).json({ error: 'Failed to get server state' });
@@ -37,10 +45,31 @@ export function createSystemRoutes(serverState) {
     }
   });
 
+  // Get available USB ports
+  router.get('/usb-ports', async (req, res) => {
+    try {
+      // Get the CNC controller instance from server state
+      const cncController = serverState?.cncController;
+      if (!cncController) {
+        return res.status(503).json({ error: 'CNC controller not available' });
+      }
+
+      const ports = await cncController.listAvailablePorts();
+      res.json(ports);
+    } catch (error) {
+      console.error('Error getting USB ports:', error);
+      res.status(500).json({ error: 'Failed to get USB ports' });
+    }
+  });
+
   // Get all settings
   router.get('/settings', (req, res) => {
     try {
       const settings = readSettings();
+      if (settings === null) {
+        // No settings file exists, return 204 No Content
+        return res.status(204).end();
+      }
       res.json(settings);
     } catch (error) {
       console.error('Error getting settings:', error);
@@ -51,7 +80,7 @@ export function createSystemRoutes(serverState) {
   // Save settings
   router.post('/settings', (req, res) => {
     try {
-      const { connectionType, baudRate, ip, port, serverPort } = req.body;
+      const { connectionType, baudRate, ip, port, serverPort, usbPort } = req.body;
 
       // Validate settings
       if (connectionType && !['usb', 'ethernet'].includes(connectionType)) {
@@ -68,12 +97,41 @@ export function createSystemRoutes(serverState) {
         }
       }
 
+      if (connectionType === 'usb') {
+        if (!usbPort) {
+          return res.status(400).json({ error: 'USB port required for USB connection' });
+        }
+      }
+
       if (serverPort && (isNaN(parseInt(serverPort)) || parseInt(serverPort) < 1024 || parseInt(serverPort) > 65535)) {
         return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
       }
 
       const savedSettings = saveSettings(req.body);
       log('Settings saved:', savedSettings);
+
+      // Cancel any ongoing connection attempts and disconnect current connection
+      if (serverState.cncController) {
+        // Cancel ongoing connection attempts first
+        serverState.cncController.cancelConnection();
+
+        if (serverState.cncController.isConnected) {
+          log('Disconnecting current connection to apply new settings...');
+          serverState.cncController.disconnect();
+        }
+
+        // Give a short delay for cleanup before reconnecting
+        setTimeout(() => {
+          if (startAutoConnect) {
+            startAutoConnect();
+          }
+        }, 100); // Reduced delay since we're cancelling ongoing attempts
+      } else {
+        // Resume auto-connect now that settings exist
+        if (startAutoConnect) {
+          startAutoConnect();
+        }
+      }
 
       res.json({
         success: true,

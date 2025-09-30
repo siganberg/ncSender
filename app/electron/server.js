@@ -29,7 +29,7 @@ export async function createServer() {
   const app = express();
   const server = createHttpServer(app);
   const wss = new WebSocketServer({ server });
-  const port = process.env.PORT || getSetting('serverPort', DEFAULT_SETTINGS.serverPort);
+  const port = process.env.PORT || getSetting('serverPort') || DEFAULT_SETTINGS.serverPort;
 
   // Initialize CNC Controller
   const cncController = new CNCController();
@@ -43,7 +43,30 @@ export async function createServer() {
   const sendWsMessage = (ws, type, data) => {
     try {
       if (ws && ws.readyState === WS_READY_STATE_OPEN) {
-        ws.send(JSON.stringify({ type, data }));
+        // Create a safe copy of data without circular references
+        const safeData = JSON.parse(JSON.stringify(data, (key, value) => {
+          // Filter out circular references and functions
+          if (typeof value === 'object' && value !== null) {
+            // Skip objects that might contain circular references
+            if (value.constructor && (
+              value.constructor.name === 'Timeout' ||
+              value.constructor.name === 'Timer' ||
+              value.constructor.name === 'TimersList' ||
+              value.constructor.name === 'CNCController' ||
+              key.includes('_idle') ||
+              key.includes('_repeat') ||
+              key === 'cncController'
+            )) {
+              return undefined;
+            }
+          }
+          if (typeof value === 'function') {
+            return undefined;
+          }
+          return value;
+        }));
+
+        ws.send(JSON.stringify({ type, data: safeData }));
       }
     } catch (error) {
       log('Failed to send WebSocket payload', error?.message || error);
@@ -58,7 +81,9 @@ export async function createServer() {
   const serverState = {
     loadedGCodeProgram: null, // filename of currently loaded G-code
     online: false, // CNC connection status
-    machineState: null // last known GRBL status report payload
+    machineState: null, // last known GRBL status report payload
+    hasEverConnected: false, // track if we've ever been connected to distinguish from first startup
+    cncController // add cncController to serverState so routes can access it
   };
 
   // Middleware
@@ -311,12 +336,38 @@ export async function createServer() {
 
   // Broadcast function for real-time updates
   function broadcast(type, data) {
-    const message = JSON.stringify({ type, data });
-    clients.forEach(client => {
-      if (client.readyState === WS_READY_STATE_OPEN) { // OPEN
-        client.send(message);
-      }
-    });
+    try {
+      // Create a safe copy of data without circular references
+      const safeData = JSON.parse(JSON.stringify(data, (key, value) => {
+        // Filter out circular references and functions
+        if (typeof value === 'object' && value !== null) {
+          // Skip objects that might contain circular references
+          if (value.constructor && (
+            value.constructor.name === 'Timeout' ||
+            value.constructor.name === 'Timer' ||
+            value.constructor.name === 'TimersList' ||
+            key.includes('_idle') ||
+            key.includes('_repeat')
+          )) {
+            return undefined;
+          }
+        }
+        if (typeof value === 'function') {
+          return undefined;
+        }
+        return value;
+      }));
+
+      const message = JSON.stringify({ type, data: safeData });
+      clients.forEach(client => {
+        if (client.readyState === WS_READY_STATE_OPEN) { // OPEN
+          client.send(message);
+        }
+      });
+    } catch (error) {
+      console.error('Error broadcasting message:', error.message);
+      console.error('Problematic data:', type, typeof data);
+    }
   }
 
   jogManager = new JogSessionManager({
@@ -331,53 +382,62 @@ export async function createServer() {
   async function startAutoConnect() {
     // Prevent multiple concurrent auto-connect attempts
     if (autoConnectActive) {
-      log('Auto-connect already in progress, skipping...');
       return;
     }
 
     autoConnectActive = true;
     log('Starting automatic CNC connection...');
 
-    const attemptConnection = async () => {
+    let previousSettings = null;
+
+    while (autoConnectActive) {
+      // Sleep 1 second
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Check if we have valid settings
+      const connectionType = getSetting('connectionType');
+      if (connectionType === undefined) {
+        // No valid settings, wait and continue
+        continue;
+      }
+
+      // Get current settings
+      const currentSettings = {
+        connectionType,
+        ip: getSetting('ip'),
+        port: getSetting('port'),
+        usbPort: getSetting('usbPort'),
+        baudRate: getSetting('baudRate')
+      };
+
+      // If settings haven't changed and we're connected, break
+      if (previousSettings &&
+          JSON.stringify(currentSettings) === JSON.stringify(previousSettings) &&
+          cncController.isConnected) {
+        break;
+      }
+
+      // Cancel all connections regardless of state
+      cncController.cancelConnection();
+      if (cncController.isConnected) {
+        cncController.disconnect();
+      }
+
+      // Start connection attempt
       try {
-        const success = await cncController.autoConnect();
-        if (success) {
+        await cncController.connectWithSettings(currentSettings);
+        if (cncController.isConnected) {
           log('Auto-connect successful');
-          return true;
-        } else {
-          log('Auto-connect failed - no suitable connection found, retrying in 5 seconds...');
-          return false;
         }
       } catch (error) {
-        log('Auto-connect error:', error.message);
-        log('Retrying connection in 5 seconds...');
-        return false;
+        // Just continue the loop silently
       }
-    };
 
-    // Initial connection attempt
-    const initialSuccess = await attemptConnection();
-
-    // If initial connection failed, start retry loop
-    if (!initialSuccess) {
-      const retryInterval = setInterval(async () => {
-        // Only retry if not already connected
-        if (!cncController.isConnected) {
-          const success = await attemptConnection();
-          if (success) {
-            clearInterval(retryInterval);
-            autoConnectActive = false;
-            log('Auto-connect retry successful, stopping retry attempts');
-          }
-        } else {
-          clearInterval(retryInterval);
-          autoConnectActive = false;
-          log('CNC already connected, stopping retry attempts');
-        }
-      }, 5000); // Retry every 5 seconds
-    } else {
-      autoConnectActive = false;
+      // Update previous settings
+      previousSettings = JSON.parse(JSON.stringify(currentSettings));
     }
+
+    autoConnectActive = false;
   }
 
   const formatCommandText = (value) => {
@@ -484,8 +544,13 @@ export async function createServer() {
       serverState.online = newOnlineStatus;
       log(`CNC controller connection status changed. Server state 'online' is now: ${serverState.online}`);
 
-      // Start reconnection attempts if disconnected
-      if (!newOnlineStatus) {
+      // Track if we've ever been connected
+      if (newOnlineStatus) {
+        serverState.hasEverConnected = true;
+      }
+
+      // Start reconnection attempts only if we had a previous connection (not initial startup)
+      if (!newOnlineStatus && serverState.hasEverConnected) {
         log('Connection lost, starting reconnection attempts...');
         startAutoConnect();
       }
@@ -505,7 +570,7 @@ export async function createServer() {
   cncController.on('response', (response) => broadcast('cnc-response', response));
 
   // Mount feature-based route modules
-  app.use('/api', createSystemRoutes(serverState));
+  app.use('/api', createSystemRoutes(serverState, startAutoConnect));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));

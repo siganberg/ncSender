@@ -9,7 +9,8 @@ const DEFAULT_SETTINGS = {
   baudRate: 115200,
   ip: '192.168.5.1',
   port: 23,
-  serverPort: 8090
+  serverPort: 8090,
+  usbPort: ''
 };
 
 function getUserDataDir() {
@@ -44,7 +45,10 @@ function ensureSettingsFile() {
 }
 
 export function readSettings() {
-  ensureSettingsFile();
+  // Check if settings file exists, but don't create it
+  if (!fs.existsSync(SETTINGS_PATH)) {
+    return null; // Indicate that no settings file exists
+  }
 
   try {
     const raw = fs.readFileSync(SETTINGS_PATH, 'utf8');
@@ -61,6 +65,12 @@ export function readSettings() {
 
 export function getSetting(key, fallback) {
   const settings = readSettings();
+
+  // If no settings file exists, return undefined (no fallbacks)
+  if (settings === null) {
+    return undefined;
+  }
+
   if (Object.prototype.hasOwnProperty.call(settings, key)) {
     const value = settings[key];
     if (value !== undefined) {

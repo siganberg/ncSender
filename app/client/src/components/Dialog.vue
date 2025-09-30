@@ -1,6 +1,6 @@
 <template>
   <div class="dialog-backdrop" @click.self="$emit('close')">
-    <div class="dialog">
+    <div class="dialog" :class="[size ? `dialog--${size}` : '']">
       <header v-if="showHeader" class="dialog__header">
         <h2 class="dialog__title"><slot name="title">Dialog</slot></h2>
         <button class="dialog__close" @click="$emit('close')" aria-label="Close dialog">&times;</button>
@@ -15,6 +15,7 @@
 <script setup lang="ts">
 defineProps<{
   showHeader?: boolean;
+  size?: 'small' | 'medium' | 'large';
 }>()
 
 defineEmits<{
@@ -40,10 +41,30 @@ defineEmits<{
   background: var(--color-surface);
   border-radius: 16px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
-  width: 80vw;
-  height: 80vh;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: auto;
+  height: auto;
   display: flex;
   flex-direction: column;
+}
+
+/* Dialog size variants */
+.dialog--small {
+  max-width: 500px;
+  width: auto;
+}
+
+.dialog--medium {
+  max-width: 1000px;
+  width: 85vw;
+  height: 80vh;
+}
+
+.dialog--large {
+  max-width: 1200px;
+  width: 90vw;
+  height: 90vh;
 }
 
 .dialog__header {
