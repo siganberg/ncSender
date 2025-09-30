@@ -1,5 +1,11 @@
 <template>
-  <div class="toolbar" :class="setupRequired ? 'state--offline' : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting')">
+  <div class="toolbar" :class="
+    setupRequired
+      ? 'state--offline'
+      : (isToolChanging
+          ? 'state--tool'
+          : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting'))
+  ">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
       <div class="workspace">Workspace: {{ workspace }}</div>
@@ -27,6 +33,7 @@ const props = defineProps<{
   workspace: string;
   connected?: boolean;
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
+  isToolChanging?: boolean;
   onShowSettings: () => void;
   setupRequired?: boolean;
 }>();
@@ -38,6 +45,7 @@ const emit = defineEmits<{
 const machineStateText = computed(() => {
   if (props.setupRequired) return 'Setup Required';
   if (!props.connected) return 'Connecting...';
+  if (props.isToolChanging) return 'Tool Change';
   if (!props.machineState || props.machineState === 'offline') return 'Connected';
 
   const state = props.machineState.toLowerCase();

@@ -6,6 +6,7 @@
         :connected="status.connected && websocketConnected"
         :setup-required="showSetupDialog"
         :machine-state="status.machineState"
+        :is-tool-changing="serverState.isToolChanging"
         @toggle-theme="toggleTheme"
         :on-show-settings="openSettings"
       />
@@ -816,11 +817,12 @@ const jogConfig = reactive({
   stepOptions: [0.1, 1, 10]
 });
 
-const serverState = reactive({
-  loadedGCodeProgram: null as string | null,
-  online: false,
-  machineState: null as any
-});
+  const serverState = reactive({
+    loadedGCodeProgram: null as string | null,
+    online: false,
+  machineState: null as any,
+  isToolChanging: false as boolean
+  });
 
 type ConsoleStatus = 'pending' | 'success' | 'error';
 type ConsoleLine = {

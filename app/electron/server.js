@@ -82,6 +82,7 @@ export async function createServer() {
     loadedGCodeProgram: null, // filename of currently loaded G-code
     online: false, // CNC connection status
     machineState: null, // last known GRBL status report payload
+    isToolChanging: false, // whether a tool change (M6) is in progress
     hasEverConnected: false, // track if we've ever been connected to distinguish from first startup
     cncController // add cncController to serverState so routes can access it
   };
@@ -482,9 +483,29 @@ export async function createServer() {
     };
   };
 
+  const setToolChanging = (value) => {
+    if (serverState.isToolChanging !== value) {
+      serverState.isToolChanging = value;
+      broadcast('server-state-updated', serverState);
+    }
+  };
+
+  const isToolChangeCommand = (cmd) => {
+    if (!cmd || typeof cmd !== 'string') return false;
+    // Match any occurrence of M6 not followed by a digit (e.g., matches M6, M6T1, T1M6; excludes M61, M600)
+    return /M6(?!\d)/i.test(cmd);
+  };
+
   const broadcastQueuedCommand = (event) => {
     const payload = toCommandPayload(event, { status: 'pending' });
     broadcast('cnc-command', payload);
+
+    // If an M6 was queued, mark tool-changing true; otherwise, if previously true and next cmd isn't M6, reset
+    if (isToolChangeCommand(payload.command)) {
+      setToolChanging(true);
+    } else if (serverState.isToolChanging) {
+      setToolChanging(false);
+    }
 
     if (event.meta?.continuous) {
       longRunningCommands.set(event.id, payload);
@@ -514,6 +535,11 @@ export async function createServer() {
     }
 
     broadcast('cnc-command-result', payload);
+
+    // When an M6 completes (success or error), clear tool-changing state
+    if (isToolChangeCommand(payload.command)) {
+      setToolChanging(false);
+    }
 
     const completionId = event.meta?.completesCommandId;
     if (completionId) {
