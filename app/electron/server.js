@@ -379,30 +379,26 @@ export async function createServer() {
   const longRunningCommands = new Map();
   let autoConnectActive = false;
 
-  // Auto-connect function with retry logic
+  // Auto-connect function with retry logic (single long-lived loop)
   async function startAutoConnect() {
-    // Prevent multiple concurrent auto-connect attempts
-    if (autoConnectActive) {
-      return;
-    }
+    if (autoConnectActive) return;
 
     autoConnectActive = true;
-    log('Starting automatic CNC connection...');
+    log('Starting automatic CNC connection loop...');
 
     let previousSettings = null;
 
     while (autoConnectActive) {
-      // Sleep 1 second
+      // Sleep 1 second between checks
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Check if we have valid settings
+      // Read connection-related settings
       const connectionType = getSetting('connectionType');
       if (connectionType === undefined) {
-        // No valid settings, wait and continue
+        // No settings; keep waiting
         continue;
       }
 
-      // Get current settings
       const currentSettings = {
         connectionType,
         ip: getSetting('ip'),
@@ -411,34 +407,40 @@ export async function createServer() {
         baudRate: getSetting('baudRate')
       };
 
-      // If settings haven't changed and we're connected, break
-      if (previousSettings &&
-          JSON.stringify(currentSettings) === JSON.stringify(previousSettings) &&
-          cncController.isConnected) {
-        break;
-      }
+      const settingsChanged = !previousSettings || JSON.stringify(currentSettings) !== JSON.stringify(previousSettings);
 
-      // Cancel all connections regardless of state
-      cncController.cancelConnection();
-      if (cncController.isConnected) {
-        cncController.disconnect();
-      }
-
-      // Start connection attempt
-      try {
-        await cncController.connectWithSettings(currentSettings);
+      if (settingsChanged) {
+        // Connection settings changed: restart connection using new settings
+        cncController.cancelConnection();
         if (cncController.isConnected) {
-          log('Auto-connect successful');
+          cncController.disconnect();
         }
-      } catch (error) {
-        // Just continue the loop silently
+
+        try {
+          await cncController.connectWithSettings(currentSettings);
+          if (cncController.isConnected) {
+            log('Auto-connect successful');
+          }
+        } catch (error) {
+          // swallow errors; loop will retry
+        }
+
+        previousSettings = JSON.parse(JSON.stringify(currentSettings));
+        continue;
       }
 
-      // Update previous settings
-      previousSettings = JSON.parse(JSON.stringify(currentSettings));
+      // If not connected and not currently connecting, attempt to connect
+      if (!cncController.isConnected && !cncController.isConnecting) {
+        try {
+          await cncController.connectWithSettings(currentSettings);
+          if (cncController.isConnected) {
+            log('Auto-connect successful');
+          }
+        } catch (error) {
+          // swallow errors; loop will retry
+        }
+      }
     }
-
-    autoConnectActive = false;
   }
 
   const formatCommandText = (value) => {
@@ -596,7 +598,7 @@ export async function createServer() {
   cncController.on('response', (response) => broadcast('cnc-response', response));
 
   // Mount feature-based route modules
-  app.use('/api', createSystemRoutes(serverState, startAutoConnect));
+  app.use('/api', createSystemRoutes(serverState));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));

@@ -5,7 +5,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSystemRoutes(serverState, startAutoConnect) {
+export function createSystemRoutes(serverState) {
   const router = Router();
 
   // Health check endpoint
@@ -107,31 +107,12 @@ export function createSystemRoutes(serverState, startAutoConnect) {
         return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
       }
 
+      // Read settings before save to detect connection-related changes
+      const before = readSettings();
       const savedSettings = saveSettings(req.body);
       log('Settings saved:', savedSettings);
 
-      // Cancel any ongoing connection attempts and disconnect current connection
-      if (serverState.cncController) {
-        // Cancel ongoing connection attempts first
-        serverState.cncController.cancelConnection();
-
-        if (serverState.cncController.isConnected) {
-          log('Disconnecting current connection to apply new settings...');
-          serverState.cncController.disconnect();
-        }
-
-        // Give a short delay for cleanup before reconnecting
-        setTimeout(() => {
-          if (startAutoConnect) {
-            startAutoConnect();
-          }
-        }, 100); // Reduced delay since we're cancelling ongoing attempts
-      } else {
-        // Resume auto-connect now that settings exist
-        if (startAutoConnect) {
-          startAutoConnect();
-        }
-      }
+      // Intentionally no auto-reconnect here; a single background loop manages connection
 
       res.json({
         success: true,
