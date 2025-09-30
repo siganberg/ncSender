@@ -4,6 +4,7 @@
       <TopToolbar
         :workspace="workspace"
         :connected="status.connected && websocketConnected"
+        :setup-required="showSetupDialog"
         :machine-state="status.machineState"
         @toggle-theme="toggleTheme"
         :on-show-settings="openSettings"
