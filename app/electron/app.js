@@ -540,7 +540,24 @@ export async function createApp(options = {}) {
     }
   };
 
+  const handleWorkspaceChange = (event) => {
+    if (event.status === 'success' && event.command) {
+      const workspaceMatch = /^(G5[4-9]|G59\.[1-3])$/i.exec(event.command);
+      if (workspaceMatch) {
+        const newWorkspace = workspaceMatch[1].toUpperCase();
+        log('Workspace changed to:', newWorkspace);
+
+        if (!serverState.machineState) {
+          serverState.machineState = {};
+        }
+        serverState.machineState.workspace = newWorkspace;
+        broadcast('server-state-updated', serverState);
+      }
+    }
+  };
+
   cncController.on('command-queued', broadcastQueuedCommand);
+  cncController.on('command-ack', handleWorkspaceChange);
   cncController.on('command-ack', broadcastCommandResult);
 
   cncController.on('status', (data) => {

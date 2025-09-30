@@ -860,6 +860,10 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
     status.machineState = report.status as typeof status.machineState;
   }
 
+  if (report.workspace) {
+    workspace.value = report.workspace as string;
+  }
+
   if (report.WCO) {
     const [x, y, z] = report.WCO.split(',').map(Number);
     status.wco = { x, y, z, a: 0 };

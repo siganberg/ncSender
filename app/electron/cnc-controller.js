@@ -67,6 +67,9 @@ export class CNCController extends EventEmitter {
     if (trimmedData.startsWith('<') && trimmedData.endsWith('>')) {
       this.rawData = trimmedData;
       this.parseStatusReport(trimmedData);
+    } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
+      this.parseGCodeModes(trimmedData);
+      this.emit('data', trimmedData);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
       const code = parseInt(trimmedData.split(':')[1]);
       const message = grblErrors[code] || 'Unknown error';
@@ -137,6 +140,23 @@ export class CNCController extends EventEmitter {
 
       this.lastStatus = newStatus;
       this.emit('status-report', newStatus);
+    }
+  }
+
+  parseGCodeModes(data) {
+    // Example: [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
+    const content = data.substring(4, data.length - 1); // Remove [GC: and ]
+    const modes = content.split(' ');
+
+    // Find workspace coordinate system (G54-G59.3)
+    const workspaceMode = modes.find(mode => /^G5[4-9]$/.test(mode) || /^G59\.[1-3]$/.test(mode));
+
+    if (workspaceMode) {
+      log('Active workspace detected:', workspaceMode);
+      // Update workspace in lastStatus
+      this.lastStatus.workspace = workspaceMode;
+      // Emit updated status with workspace
+      this.emit('status-report', { ...this.lastStatus });
     }
   }
 
