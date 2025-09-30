@@ -19,6 +19,7 @@
         :connected="status.connected && websocketConnected"
         :machine-state="status.machineState"
         :loaded-g-code-program="serverState.loadedGCodeProgram"
+        :work-coords="status.workCoords"
         @change-view="viewport = $event"
       />
       <RightPanel

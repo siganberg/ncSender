@@ -81,8 +81,7 @@ export async function createApp(options = {}) {
     online: false,
     machineState: null,
     isToolChanging: false,
-    hasEverConnected: false,
-    cncController
+    hasEverConnected: false
   };
 
   // Middleware

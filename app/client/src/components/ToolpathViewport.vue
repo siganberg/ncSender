@@ -78,7 +78,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels } from '../lib/visualizer/helpers.js';
+import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
 import { api } from '../lib/api.js';
 
 const presets = [
@@ -93,10 +93,12 @@ const props = withDefaults(defineProps<{
   connected?: boolean;
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
   loadedGCodeProgram?: string | null;
+  workCoords?: { x: number; y: number; z: number; a: number };
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
-  connected: false
+  connected: false,
+  workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 })
 });
 
 const emit = defineEmits<{
@@ -157,6 +159,7 @@ let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
 let animationId: number;
 let axisLabelsGroup: THREE.Group;
+let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 
 // Mouse/touch controls
@@ -219,6 +222,14 @@ const initThreeJS = () => {
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
   scene.add(gcodeVisualizer.group);
+
+  // Add cutting pointer/spindle
+  cuttingPointer = generateCuttingPointer();
+  cuttingPointer.position.set(0, 0, 0); // Start at origin
+  scene.add(cuttingPointer);
+
+  // Set initial pointer scale
+  updatePointerScale();
 
   // Add mouse/touch controls
   setupControls();
@@ -306,18 +317,27 @@ const onMouseUp = () => {
   isPanning = false;
 };
 
+const updatePointerScale = () => {
+  if (!camera || !cuttingPointer) return;
+
+  // Scale pointer based on frustum size so it remains visible at all zoom levels
+  const frustumWidth = camera.right - camera.left;
+  const scale = frustumWidth * 0.01; // 1% of visible width
+  cuttingPointer.scale.set(scale, scale, scale);
+};
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault();
   if (!camera) return;
 
   // For orthographic camera, zoom by adjusting the frustum size
   const zoomFactor = event.deltaY > 0 ? 1.1 : 0.9;
-  
+
   camera.left *= zoomFactor;
   camera.right *= zoomFactor;
   camera.top *= zoomFactor;
   camera.bottom *= zoomFactor;
-  
+
   // Limit zoom range
   const frustumWidth = camera.right - camera.left;
   if (frustumWidth < 1) {
@@ -335,8 +355,9 @@ const onWheel = (event: WheelEvent) => {
     camera.top *= scale;
     camera.bottom *= scale;
   }
-  
+
   camera.updateProjectionMatrix();
+  updatePointerScale();
 };
 
 // Touch events (simplified)
@@ -572,7 +593,10 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   camera.top = frustumHeight / 2;
   camera.bottom = -frustumHeight / 2;
   camera.updateProjectionMatrix();
-  
+
+  // Update pointer scale after changing frustum
+  updatePointerScale();
+
   // Update camera target and position
   // For 3D view, adjust the target to pan the view up for better centering
   if (currentView === 'iso') {
@@ -697,6 +721,13 @@ watch(() => props.view, (newView) => {
 watch(() => props.theme, () => {
   updateSceneBackground();
 });
+
+// Watch for work coordinate changes to update cutting pointer position
+watch(() => props.workCoords, (newCoords) => {
+  if (cuttingPointer && newCoords) {
+    cuttingPointer.position.set(newCoords.x, newCoords.y, newCoords.z);
+  }
+}, { deep: true });
 
 onMounted(() => {
   initThreeJS();

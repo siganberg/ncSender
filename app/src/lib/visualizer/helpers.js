@@ -24,34 +24,34 @@ export const loadTexture = (url) => new Promise((resolve) => {
 
 export const generateCuttingPointer = () => {
     const group = new THREE.Group();
-    
+
     // Create a simple cutting tool representation
     const geometry = new THREE.ConeGeometry(2, 10, 8);
     const material = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
     const cone = new THREE.Mesh(geometry, material);
-    
+
     cone.position.z = 5;
     cone.rotateX(Math.PI);
-    
+
     group.add(cone);
     return group;
 };
 
 export const createGridLines = () => {
     const group = new THREE.Group();
-    
+
     // Create 1220x1220mm grid with 10mm spacing
     const size = 610; // Half of 1220mm (center at origin)
     const step = 10; // 10mm grid spacing
     const majorStep = 100; // Major grid lines every 100mm
-    
+
     // Regular grid lines
     const material = new THREE.LineBasicMaterial({
         color: 0x77a9d7,
         transparent: true,
         opacity: 0.2
     });
-    
+
     // Major grid lines (every 100mm)
     const majorMaterial = new THREE.LineBasicMaterial({
         color: 0x77a9d7,
@@ -68,7 +68,7 @@ export const createGridLines = () => {
             new THREE.Vector3(-size, i, 0),
             new THREE.Vector3(size, i, 0)
         ];
-        
+
         if (i % majorStep === 0) {
             majorPoints.push(...linePoints);
         } else {
@@ -82,7 +82,7 @@ export const createGridLines = () => {
             new THREE.Vector3(i, -size, 0),
             new THREE.Vector3(i, size, 0)
         ];
-        
+
         if (i % majorStep === 0) {
             majorPoints.push(...linePoints);
         } else {
@@ -96,14 +96,14 @@ export const createGridLines = () => {
         const lines = new THREE.LineSegments(geometry, material);
         group.add(lines);
     }
-    
+
     // Add major grid lines
     if (majorPoints.length > 0) {
         const majorGeometry = new THREE.BufferGeometry().setFromPoints(majorPoints);
         const majorLines = new THREE.LineSegments(majorGeometry, majorMaterial);
         group.add(majorLines);
     }
-    
+
     // Add grid numbers
     const textMaterial = new THREE.SpriteMaterial({
         color: 0x77a9d7,
@@ -114,17 +114,17 @@ export const createGridLines = () => {
     // Add X-axis numbers (every 10mm)
     for (let i = -size; i <= size; i += 10) {
         if (i === 0) continue; // Skip center
-        
+
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         // Higher resolution for sharper text
         const scale = 4; // 4x resolution for crisp text
         canvas.width = 128 * scale;
         canvas.height = 64 * scale;
-        
+
         // Scale the context to match
         context.scale(scale, scale);
-        
+
         context.clearRect(0, 0, 128, 64);
         context.fillStyle = '#cc6666'; // Muted red color for X-axis
         context.font = 'bold 20px Arial'; // Font size 20
@@ -134,14 +134,14 @@ export const createGridLines = () => {
         context.textRenderingOptimization = 'optimizeQuality';
         context.imageSmoothingEnabled = true;
         context.fillText(i.toString(), 64, 32);
-        
+
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         texture.generateMipmaps = false; // Prevent blurring on zoom
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
-        
-        const spriteMaterial = new THREE.SpriteMaterial({ 
+
+        const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
             opacity: 0.5,
@@ -156,17 +156,17 @@ export const createGridLines = () => {
     // Add Y-axis numbers (every 10mm)
     for (let i = -size; i <= size; i += 10) {
         if (i === 0) continue; // Skip center
-        
+
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         // Higher resolution for sharper text
         const scale = 4; // 4x resolution for crisp text
         canvas.width = 128 * scale;
         canvas.height = 64 * scale;
-        
+
         // Scale the context to match
         context.scale(scale, scale);
-        
+
         context.clearRect(0, 0, 128, 64);
         context.fillStyle = '#4d994d'; // Darker green color for Y-axis
         context.font = 'bold 20px Arial'; // Font size 20
@@ -176,14 +176,14 @@ export const createGridLines = () => {
         context.textRenderingOptimization = 'optimizeQuality';
         context.imageSmoothingEnabled = true;
         context.fillText(i.toString(), 64, 32);
-        
+
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         texture.generateMipmaps = false; // Prevent blurring on zoom
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
-        
-        const spriteMaterial = new THREE.SpriteMaterial({ 
+
+        const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
             opacity: 0.5,
@@ -194,7 +194,7 @@ export const createGridLines = () => {
         sprite.scale.set(16, 10, 1); // Scale 20
         group.add(sprite);
     }
-    
+
     group.name = 'grid-with-numbers';
     return group;
 };
@@ -207,19 +207,19 @@ export const createCoordinateAxes = (size = 50) => {
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(size, 0, 0)
     ]);
-    const xMaterial = new THREE.LineBasicMaterial({ 
+    const xMaterial = new THREE.LineBasicMaterial({
         color: 0xff0000,
         linewidth: 3
     });
     const xLine = new THREE.Line(xGeometry, xMaterial);
     group.add(xLine);
 
-    // Y axis (green) - pointing forward in standard CNC orientation  
+    // Y axis (green) - pointing forward in standard CNC orientation
     const yGeometry = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(0, size, 0)
     ]);
-    const yMaterial = new THREE.LineBasicMaterial({ 
+    const yMaterial = new THREE.LineBasicMaterial({
         color: 0x00ff00,
         linewidth: 3
     });
@@ -231,7 +231,7 @@ export const createCoordinateAxes = (size = 50) => {
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(0, 0, size)
     ]);
-    const zMaterial = new THREE.LineBasicMaterial({ 
+    const zMaterial = new THREE.LineBasicMaterial({
         color: 0x0000ff,
         linewidth: 3
     });
@@ -250,31 +250,31 @@ export const createDynamicAxisLabels = (bounds) => {
         const context = canvas.getContext('2d');
         canvas.width = 64;
         canvas.height = 64;
-        
+
         // Set transparent background explicitly
         context.globalAlpha = 1.0;
         context.clearRect(0, 0, 64, 64);
-        
+
         // Create a high contrast outline for better visibility
         const colorStr = `#${color.toString(16).padStart(6, '0')}`;
-        
+
         // Draw text with outline for better contrast
         context.font = 'bold 20px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        
+
         // Black outline
         context.strokeStyle = '#000000';
         context.lineWidth = 3;
         context.strokeText(text, 32, 32);
-        
+
         // Main text
         context.fillStyle = colorStr;
         context.fillText(text, 32, 32);
-        
+
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
-        const spriteMaterial = new THREE.SpriteMaterial({ 
+        const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
             opacity: 0.5,
