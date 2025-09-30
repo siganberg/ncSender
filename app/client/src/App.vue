@@ -173,11 +173,11 @@
               </select>
             </div>
             <div class="setting-item">
-              <label class="setting-label">Default View</label>
+              <label class="setting-label">Default G-Code Preview</label>
               <select class="setting-select" v-model="defaultView">
-                <option value="iso">Isometric</option>
                 <option value="top">Top</option>
-                <option value="front">Front</option>
+                <option value="front">Side</option>
+                <option value="iso">3D</option>
               </select>
             </div>
             <div class="setting-item">
@@ -369,7 +369,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watchEffect, onMounted, onUnmounted } from 'vue';
+import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted } from 'vue';
 import AppShell from './components/AppShell.vue';
 import TopToolbar from './components/TopToolbar.vue';
 import ToolpathViewport from './components/ToolpathViewport.vue';
@@ -391,6 +391,11 @@ const settingsTabs = [
   { id: 'general', label: 'General', icon: '⚙️' },
   { id: 'firmware', label: 'Firmware', icon: '🔧' }
 ];
+
+// Immediately reflect Default G-Code Preview changes in the live viewport
+watch(defaultView, (newView) => {
+  viewport.value = newView;
+});
 
 // Color customization
 const accentColor = ref('#1abc9c');

@@ -416,10 +416,8 @@ const handleGCodeUpdate = (data: { filename: string; content: string; timestamp:
     const bounds = gcodeVisualizer.getBounds();
     if (bounds && bounds.size.length() > 0) {
       currentGCodeBounds = bounds; // Store bounds for later use
+      // Fit to current view (honors user's selection / default)
       fitCameraToBounds(bounds);
-
-      // Emit view change to update UI
-      emit('change-view', 'iso');
     }
 
     hasFile.value = true;
@@ -726,10 +724,10 @@ onMounted(() => {
     }
   });
 
-  // Set initial 3D view with Z-up orientation
+  // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
-    setCameraView('iso');
-    emit('change-view', 'iso');
+    setCameraView(props.view);
+    // No need to emit here; parent already owns the state
 
     // Check for existing G-code program after viewport is fully initialized
     if (api.ws && api.ws.readyState === WebSocket.OPEN) {
