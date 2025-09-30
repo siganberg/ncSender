@@ -1,5 +1,5 @@
 <template>
-  <div class="toolbar" :class="connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--offline'">
+  <div class="toolbar" :class="connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting'">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
       <div class="workspace">Workspace: {{ workspace }}</div>
@@ -221,6 +221,12 @@ button.danger {
   box-shadow: var(--shadow-elevated), 0 0 15px rgba(108, 117, 125, 0.5);
 }
 
+.toolbar.state--connecting {
+  border-color: #fd7e14; /* Orange */
+  box-shadow: var(--shadow-elevated), 0 0 14px rgba(253, 126, 20, 0.85);
+  animation: pulse-glow-orange 1.6s ease-in-out infinite;
+}
+
 .toolbar.state--idle {
   border-color: transparent;
   box-shadow: var(--shadow-elevated);
@@ -280,6 +286,18 @@ button.danger {
 .toolbar.state--unknown {
   border-color: #6c757d;
   box-shadow: var(--shadow-elevated), 0 0 15px rgba(108, 117, 125, 0.5);
+}
+
+/* Subtle pulsing for the Connecting... text */
+.toolbar.state--connecting .machine-state {
+  color: #fd7e14;
+  text-shadow: none;
+  animation: pulse-text-orange 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-text-orange {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
 }
 
 @keyframes pulse-glow-green {

@@ -256,8 +256,14 @@ export class CNCController extends EventEmitter {
 
       return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
-          if (!this.connection.destroyed) {
-            this.connection.destroy();
+          try {
+            const conn = this.connection;
+            if (conn && !conn.destroyed) {
+              conn.removeAllListeners?.();
+              conn.destroy();
+            }
+          } catch (e) {
+            log('Error destroying ethernet connection on timeout:', e?.message || e);
           }
           this.isConnecting = false;
           this.connectionAttempt = null;
