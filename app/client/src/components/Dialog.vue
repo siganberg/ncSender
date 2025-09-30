@@ -15,7 +15,7 @@
 <script setup lang="ts">
 defineProps<{
   showHeader?: boolean;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'small' | 'small-plus' | 'medium' | 'large';
 }>()
 
 defineEmits<{
@@ -52,6 +52,11 @@ defineEmits<{
 /* Dialog size variants */
 .dialog--small {
   max-width: 500px;
+  width: auto;
+}
+
+.dialog--small-plus {
+  max-width: 680px;
   width: auto;
 }
 

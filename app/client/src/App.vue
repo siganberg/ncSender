@@ -273,7 +273,7 @@
   </Dialog>
 
   <!-- Mandatory Setup Dialog (non-dismissible) -->
-  <Dialog v-if="showSetupDialog" :show-header="false" size="small">
+  <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus">
     <div class="setup-container">
       <div class="setup-header">
         <h2 class="setup-title">CNC Controller Setup</h2>
@@ -1488,8 +1488,8 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   display: flex;
   flex-direction: column;
   width: auto;
-  max-width: 480px;
-  min-width: 420px;
+  max-width: 680px; /* Allow a bit more width for setup only */
+  min-width: 480px; /* Ensure dialog is comfortably wider */
   min-height: auto;
   background: var(--color-surface);
   border-radius: var(--radius-medium);
