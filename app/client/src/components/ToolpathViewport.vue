@@ -253,6 +253,7 @@ let animationId: number;
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
+// Local lights are created in initThreeJS
 
 // Mouse/touch controls
 let isDragging = false;
@@ -335,6 +336,8 @@ const initThreeJS = () => {
   };
   window.addEventListener('accent-color-change', onAccentChange);
 
+  // No material shading toggles
+
   // Set initial pointer scale
   updatePointerScale();
 
@@ -349,6 +352,7 @@ const initThreeJS = () => {
   // Start animation loop
   animate();
 };
+
 
 const setupControls = () => {
   if (!canvas.value || !renderer) return;

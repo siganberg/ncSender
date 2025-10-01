@@ -125,6 +125,8 @@ export const generateCuttingPointer = () => {
                     obj.position.z += 10;
 
                     group.add(obj);
+
+                    // No shading toggles; rely on scene lighting only
                 },
                 undefined, // Progress callback removed
                 (error) => {
@@ -151,6 +153,7 @@ export const generateCuttingPointer = () => {
                     obj.traverse((child) => {
                         if (child.isMesh) {
                             meshes.push(child);
+                            
                         }
                     });
 
@@ -178,6 +181,8 @@ export const generateCuttingPointer = () => {
                     obj.position.sub(center);
                     obj.position.z += 11.5;
                     group.add(obj);
+
+                    // No shading helpers in OBJ-only path
                 },
                 undefined,
                 (objError) => {
