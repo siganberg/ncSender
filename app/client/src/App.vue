@@ -6,7 +6,7 @@
         :connected="status.connected && websocketConnected"
         :setup-required="showSetupDialog"
         :machine-state="status.machineState"
-        :is-tool-changing="serverState.isToolChanging"
+        :is-tool-changing="serverState.machineState?.isToolChanging"
         @toggle-theme="toggleTheme"
         :on-show-settings="openSettings"
       />
@@ -818,7 +818,6 @@ const jogConfig = reactive({
 
   const serverState = reactive({
     machineState: null as any,
-    isToolChanging: false as boolean,
     jobLoaded: null as { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null
   });
 

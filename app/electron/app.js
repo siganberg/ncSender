@@ -78,12 +78,14 @@ export async function createApp(options = {}) {
   // Server state
   const serverState = {
     machineState: {
-      connected: false
+      connected: false,
+      isToolChanging: false
     },
-    isToolChanging: false,
-    hasEverConnected: false,
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
+
+  // Track connection history for internal server logic only (not broadcasted to clients)
+  let hasEverConnected = false;
 
   // Middleware
   app.use(express.json());
@@ -509,8 +511,8 @@ export async function createApp(options = {}) {
   };
 
   const setToolChanging = (value) => {
-    if (serverState.isToolChanging !== value) {
-      serverState.isToolChanging = value;
+    if (serverState.machineState.isToolChanging !== value) {
+      serverState.machineState.isToolChanging = value;
       broadcast('server-state-updated', serverState);
     }
   };
@@ -526,7 +528,7 @@ export async function createApp(options = {}) {
 
     if (isToolChangeCommand(payload.command)) {
       setToolChanging(true);
-    } else if (serverState.isToolChanging) {
+    } else if (serverState.machineState.isToolChanging) {
       setToolChanging(false);
     }
 
@@ -605,10 +607,10 @@ export async function createApp(options = {}) {
       log(`CNC controller connection status changed. Server state 'machineState.connected' is now: ${serverState.machineState.connected}`);
 
       if (newOnlineStatus) {
-        serverState.hasEverConnected = true;
+        hasEverConnected = true;
       }
 
-      if (!newOnlineStatus && serverState.hasEverConnected) {
+      if (!newOnlineStatus && hasEverConnected) {
         log('Connection lost, starting reconnection attempts...');
         startAutoConnect();
       }
