@@ -32,7 +32,7 @@
               <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button v-if="hasFile" @click="clearFile" class="clear-button">
+          <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
             Clear
           </button>
         </div>
@@ -253,7 +253,7 @@ let animationId: number;
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
-// Local lights are created in initThreeJS
+let directionalLight: THREE.DirectionalLight;
 
 // Mouse/touch controls
 let isDragging = false;
@@ -301,8 +301,12 @@ const initThreeJS = () => {
   const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(50, 50, 50);
+  directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  if (props.theme === 'dark') {
+    directionalLight.position.set(50, 50, 50);
+  } else {
+    directionalLight.position.set(50, -20, 20);
+  }
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
@@ -325,18 +329,6 @@ const initThreeJS = () => {
   cuttingPointer = generateCuttingPointer();
   cuttingPointer.position.set(0, 0, 0); // Start at origin
   scene.add(cuttingPointer);
-
-  // Listen for accent color changes from app and recolor pointer material index 1
-  const onAccentChange = (e: any) => {
-    // Slightly darker gray instead of accent
-    const newColor = '#4a4a4a';
-    if (cuttingPointer && cuttingPointer.userData && typeof cuttingPointer.userData.recolorPointerMaterialByIndex === 'function') {
-      cuttingPointer.userData.recolorPointerMaterialByIndex(1, newColor);
-    }
-  };
-  window.addEventListener('accent-color-change', onAccentChange);
-
-  // No material shading toggles
 
   // Set initial pointer scale
   updatePointerScale();
@@ -953,8 +945,17 @@ watch(() => props.view, (newView) => {
 });
 
 // Watch for theme changes
-watch(() => props.theme, () => {
+watch(() => props.theme, (newTheme) => {
   updateSceneBackground();
+
+  // Update light position based on theme
+  if (directionalLight) {
+    if (newTheme === 'dark') {
+      directionalLight.position.set(50, 50, 50);
+    } else {
+      directionalLight.position.set(50, -20, 20);
+    }
+  }
 });
 
 // Watch for work coordinate changes to update cutting pointer target position
@@ -1062,8 +1063,6 @@ onUnmounted(() => {
   }
 
   window.removeEventListener('resize', handleResize);
-  // Clean up accent color listener
-  try { window.removeEventListener('accent-color-change', (onAccentChange as any)); } catch {}
 });
 </script>
 
@@ -1115,11 +1114,12 @@ onUnmounted(() => {
 .load-button, .clear-button, .toggle-button {
   border: none;
   border-radius: var(--radius-small);
-  padding: 8px 12px;
+  padding: 10px 12px;
   cursor: pointer;
   font-size: 14px;
   background: var(--color-accent);
   color: white;
+  width: 70px;
 }
 
 .load-button:disabled, .clear-button:disabled, .toggle-button:disabled {
