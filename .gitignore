@@ -1,14 +1,16 @@
 # Dependencies
 **/node_modules/
 
+# Package lock files (except app/ and app/client/ which are tracked for reproducible builds)
+package-lock.json
+**/package-lock.json
+!app/package-lock.json
+!app/client/package-lock.json
+
 # Build output
 app/dist/
 **/dist/
 **/dist-ssr/
-
-# Vite build cache and temporary files
-**/.vite/
-**/vite.config.*.timestamp-*
 
 # Logs and reports
 logs/
@@ -44,5 +46,5 @@ coverage/
 app/electron/files/
 app/electron/data/command-history.json
 app/dist-electron/**
-app/package-lock.json
 releases/**
+app/client/vite.config.ts.timestamp-**

@@ -1,5 +1,11 @@
 <template>
-  <div class="toolbar" :class="connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--offline'">
+  <div class="toolbar" :class="
+    setupRequired
+      ? 'state--offline'
+      : (isToolChanging
+          ? 'state--tool'
+          : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting'))
+  ">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
       <div class="workspace">Workspace: {{ workspace }}</div>
@@ -27,7 +33,9 @@ const props = defineProps<{
   workspace: string;
   connected?: boolean;
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
+  isToolChanging?: boolean;
   onShowSettings: () => void;
+  setupRequired?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -35,7 +43,9 @@ const emit = defineEmits<{
 }>();
 
 const machineStateText = computed(() => {
+  if (props.setupRequired) return 'Setup Required';
   if (!props.connected) return 'Connecting...';
+  if (props.isToolChanging) return 'Tool Change';
   if (!props.machineState || props.machineState === 'offline') return 'Connected';
 
   const state = props.machineState.toLowerCase();
@@ -221,6 +231,12 @@ button.danger {
   box-shadow: var(--shadow-elevated), 0 0 15px rgba(108, 117, 125, 0.5);
 }
 
+.toolbar.state--connecting {
+  border-color: #fd7e14; /* Orange */
+  box-shadow: var(--shadow-elevated), 0 0 14px rgba(253, 126, 20, 0.85);
+  animation: pulse-glow-orange 1.6s ease-in-out infinite;
+}
+
 .toolbar.state--idle {
   border-color: transparent;
   box-shadow: var(--shadow-elevated);
@@ -280,6 +296,18 @@ button.danger {
 .toolbar.state--unknown {
   border-color: #6c757d;
   box-shadow: var(--shadow-elevated), 0 0 15px rgba(108, 117, 125, 0.5);
+}
+
+/* Subtle pulsing for the Connecting... text */
+.toolbar.state--connecting .machine-state {
+  color: #fd7e14;
+  text-shadow: none;
+  animation: pulse-text-orange 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-text-orange {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
 }
 
 @keyframes pulse-glow-green {

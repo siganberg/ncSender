@@ -158,10 +158,6 @@ class NCClient {
   }
 
   // Convenience methods for CNC events
-  onStatus(callback) {
-    return this.on('cnc-status', callback);
-  }
-
   onData(callback) {
     return this.on('cnc-data', callback);
   }

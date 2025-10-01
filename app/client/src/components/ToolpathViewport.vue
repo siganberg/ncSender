@@ -15,15 +15,22 @@
           </button>
         </div>
         <div class="file-controls">
-          <input 
+          <input
             ref="fileInput"
-            type="file" 
+            type="file"
             accept=".nc,.gcode,.tap,.txt"
             @change="handleFileLoad"
             style="display: none"
           />
-          <button @click="fileInput?.click()" class="load-button">
-            Load G-code
+          <button @click="fileInput?.click()" class="load-button" title="Upload G-code" :disabled="isJobRunning">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 12V3M8 3L4 7M8 3L12 7M2 13H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button @click="showFileManager = true" class="load-button" title="Open Folder" :disabled="isJobRunning">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           </button>
           <button v-if="hasFile" @click="clearFile" class="clear-button">
             Clear
@@ -41,13 +48,17 @@
           <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
           <span>Cutting (G1/G2/G3)</span>
         </div>
+        <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
+          <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
+          <span>Spindle</span>
+        </div>
       </div>
 
       <!-- Control buttons - bottom center -->
       <div class="control-buttons">
         <button
           class="control-btn control-btn--primary"
-          :disabled="!canStartOrResume"
+          :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
           @click="handleCycle"
           :title="isOnHold ? 'Resume Job' : 'Start Job'"
         >
@@ -72,14 +83,82 @@
       </div>
     </div>
   </section>
+
+  <!-- Delete Confirmation Dialog -->
+  <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
+    <div class="confirm-dialog">
+      <h3 class="confirm-dialog__title">Delete File</h3>
+      <p class="confirm-dialog__message">Are you sure you want to delete "{{ fileToDelete }}"?</p>
+      <div class="confirm-dialog__actions">
+        <button @click="cancelDelete" class="confirm-dialog__btn confirm-dialog__btn--cancel">Cancel</button>
+        <button @click="confirmDelete" class="confirm-dialog__btn confirm-dialog__btn--danger">Delete</button>
+      </div>
+    </div>
+  </Dialog>
+
+  <!-- File Manager Dialog -->
+  <Dialog v-if="showFileManager" @close="showFileManager = false" size="medium">
+    <div class="file-manager">
+      <div class="file-manager__header">
+        <div class="file-manager__icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <h2 class="file-manager__title">File Manager</h2>
+      </div>
+      <div class="file-manager__content">
+        <div v-if="uploadedFiles.length === 0" class="file-manager__empty">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p>No files uploaded yet</p>
+          <p class="file-manager__empty-hint">Upload a G-code file to get started</p>
+        </div>
+        <div v-else class="file-list">
+          <div
+            v-for="file in uploadedFiles"
+            :key="file.name"
+            class="file-item"
+            @dblclick="loadFileFromManager(file.name)"
+          >
+            <div class="file-item__icon">
+              📦
+            </div>
+            <div class="file-item__info">
+              <div class="file-item__name">{{ file.name }}</div>
+              <div class="file-item__meta">{{ formatFileSize(file.size) }} • {{ formatDate(file.uploadedAt) }}</div>
+            </div>
+            <div class="file-item__actions">
+              <button @click.stop="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file">
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 8L8 2L14 8M8 2V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M2 14H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button @click.stop="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file">
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 4H14M6 4V2.5C6 2.22 6.22 2 6.5 2H9.5C9.78 2 10 2.22 10 2.5V4M12.5 4L12 13C12 13.55 11.55 14 11 14H5C4.45 14 4 13.55 4 13L3.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="file-manager__footer">
+        <button @click="showFileManager = false" class="file-manager__close-btn">Close</button>
+      </div>
+    </div>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels } from '../lib/visualizer/helpers.js';
+import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
 import { api } from '../lib/api.js';
+import Dialog from './Dialog.vue';
 
 const presets = [
   { id: 'top', label: 'Top' },
@@ -92,11 +171,16 @@ const props = withDefaults(defineProps<{
   theme: 'light' | 'dark';
   connected?: boolean;
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
-  loadedGCodeProgram?: string | null;
+  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
+  workCoords?: { x: number; y: number; z: number; a: number };
+  spindleRpm?: number;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
-  connected: false
+  connected: false,
+  workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
+  spindleRpm: 0,
+  jobLoaded: null
 });
 
 const emit = defineEmits<{
@@ -114,11 +198,11 @@ const canStartOrResume = computed(() => {
   const state = props.machineState?.toLowerCase();
 
   // Condition 1: Can start new job if we have a loaded program and machine is idle
-  if (props.loadedGCodeProgram && state === 'idle') {
+  if (props.jobLoaded?.filename && state === 'idle') {
     return true;
   }
 
-  // Condition 2: Can resume job if machine is on hold or door (regardless of loadedGCodeProgram)
+  // Condition 2: Can resume job if machine is on hold or door (regardless of jobLoaded)
   if (state === 'hold' || state === 'door') {
     return true;
   }
@@ -127,15 +211,19 @@ const canStartOrResume = computed(() => {
 });
 
 const canPause = computed(() => {
-  if (!props.connected || !props.loadedGCodeProgram) return false;
+  if (!props.connected || !props.jobLoaded?.filename) return false;
   const state = props.machineState?.toLowerCase();
   return state === 'run';
 });
 
 const canStop = computed(() => {
-  if (!props.connected || !props.loadedGCodeProgram) return false;
+  if (!props.connected || !props.jobLoaded?.filename) return false;
   const state = props.machineState?.toLowerCase();
   return state === 'run' || state === 'hold' || state === 'door';
+});
+
+const isJobRunning = computed(() => {
+  return props.jobLoaded?.status === 'running';
 });
 
 // Template refs
@@ -147,6 +235,12 @@ const hasFile = ref(false);
 const isLoading = ref(false);
 const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
+const showSpindle = ref(true); // Default to shown
+const showFileManager = ref(false);
+const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
+const showDeleteConfirm = ref(false);
+const fileToDelete = ref<string | null>(null);
+const lastExecutedLine = ref<number>(0); // Track the last executed line number
 let currentGCodeBounds: any = null; // Store current G-code bounds
 
 // Three.js objects
@@ -157,6 +251,7 @@ let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
 let animationId: number;
 let axisLabelsGroup: THREE.Group;
+let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 
 // Mouse/touch controls
@@ -165,6 +260,11 @@ let previousMousePosition = { x: 0, y: 0 };
 let isRotating = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
+
+// Spindle position interpolation with exponential smoothing
+let targetSpindlePosition = { x: 0, y: 0, z: 0 };
+let currentSpindlePosition = { x: 0, y: 0, z: 0 };
+const spindleSmoothFactor = 0.2; // Lower = smoother but slower (0.05-0.2 recommended)
 
 const initThreeJS = () => {
   if (!canvas.value) return;
@@ -211,7 +311,7 @@ const initThreeJS = () => {
 
   const axes = createCoordinateAxes(50);
   scene.add(axes);
-  
+
   // Add initial axis labels
   axisLabelsGroup = createDynamicAxisLabels(null);
   scene.add(axisLabelsGroup);
@@ -219,6 +319,19 @@ const initThreeJS = () => {
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
   scene.add(gcodeVisualizer.group);
+
+  // Add cutting pointer/spindle
+  cuttingPointer = generateCuttingPointer();
+  cuttingPointer.position.set(0, 0, 0); // Start at origin
+  scene.add(cuttingPointer);
+
+  // Set initial pointer scale
+  updatePointerScale();
+
+  // Set initial pointer opacity after a delay (for async OBJ loading)
+  setTimeout(() => {
+    updatePointerOpacity();
+  }, 500);
 
   // Add mouse/touch controls
   setupControls();
@@ -236,18 +349,18 @@ const setupControls = () => {
   element.addEventListener('mousedown', onMouseDown);
   element.addEventListener('mousemove', onMouseMove);
   element.addEventListener('mouseup', onMouseUp);
-  element.addEventListener('wheel', onWheel);
+  element.addEventListener('wheel', onWheel, { passive: false });
 
   // Touch events for mobile
-  element.addEventListener('touchstart', onTouchStart);
-  element.addEventListener('touchmove', onTouchMove);
+  element.addEventListener('touchstart', onTouchStart, { passive: false });
+  element.addEventListener('touchmove', onTouchMove, { passive: false });
   element.addEventListener('touchend', onTouchEnd);
 };
 
 const onMouseDown = (event: MouseEvent) => {
   isDragging = true;
   previousMousePosition = { x: event.clientX, y: event.clientY };
-  
+
   // Only allow rotation in 3D view, not in top or side views
   const isOrthographicView = props.view === 'top' || props.view === 'front';
   isRotating = event.button === 0 && !isOrthographicView; // Left click for rotation (3D only)
@@ -264,13 +377,13 @@ const onMouseMove = (event: MouseEvent) => {
     // Rotate camera around scene center maintaining Z-up
     const spherical = new THREE.Spherical();
     spherical.setFromVector3(camera.position.clone().sub(cameraTarget));
-    
+
     spherical.theta -= deltaX * 0.01;
     spherical.phi += deltaY * 0.01;
-    
+
     // Limit vertical rotation (phi from 0.1 to PI-0.1)
     spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
-    
+
     camera.position.setFromSpherical(spherical).add(cameraTarget);
     camera.up.set(0, 0, 1); // Maintain Z-up orientation
     camera.lookAt(cameraTarget);
@@ -279,19 +392,19 @@ const onMouseMove = (event: MouseEvent) => {
     // For orthographic camera, base speed on frustum size instead of distance
     const frustumWidth = camera.right - camera.left;
     const panSpeed = frustumWidth * 0.0005; // Reduced from 0.001 to 0.0005 for slower panning
-    
+
     // Calculate pan vectors based on camera orientation
     const right = new THREE.Vector3();
     const up = new THREE.Vector3();
-    
+
     right.setFromMatrixColumn(camera.matrix, 0); // Get camera's right vector
     up.setFromMatrixColumn(camera.matrix, 1);    // Get camera's up vector
-    
+
     // Apply panning
     const panDelta = new THREE.Vector3()
       .addScaledVector(right, -deltaX * panSpeed)
       .addScaledVector(up, deltaY * panSpeed);
-    
+
     camera.position.add(panDelta);
     cameraTarget.add(panDelta);
     camera.lookAt(cameraTarget);
@@ -306,18 +419,27 @@ const onMouseUp = () => {
   isPanning = false;
 };
 
+const updatePointerScale = () => {
+  if (!camera || !cuttingPointer) return;
+
+  // Scale pointer based on frustum size so it remains visible at all zoom levels
+  const frustumWidth = camera.right - camera.left;
+  const scale = frustumWidth * 0.01; // 1% of visible width
+  cuttingPointer.scale.set(scale, scale, scale);
+};
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault();
   if (!camera) return;
 
   // For orthographic camera, zoom by adjusting the frustum size
   const zoomFactor = event.deltaY > 0 ? 1.1 : 0.9;
-  
+
   camera.left *= zoomFactor;
   camera.right *= zoomFactor;
   camera.top *= zoomFactor;
   camera.bottom *= zoomFactor;
-  
+
   // Limit zoom range
   const frustumWidth = camera.right - camera.left;
   if (frustumWidth < 1) {
@@ -335,8 +457,9 @@ const onWheel = (event: WheelEvent) => {
     camera.top *= scale;
     camera.bottom *= scale;
   }
-  
+
   camera.updateProjectionMatrix();
+  updatePointerScale();
 };
 
 // Touch events (simplified)
@@ -361,35 +484,55 @@ const onTouchEnd = () => {
 
 const updateSceneBackground = () => {
   if (!scene) return;
-  
+
   // Set background color based on theme
   const backgroundColor = props.theme === 'dark' ? 0x111827 : 0xf8fafc; // Dark blue-gray vs light gray
   scene.background = new THREE.Color(backgroundColor);
 };
 
+let lastSpindleUpdateTime = 0;
+const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
+
 const animate = () => {
   animationId = requestAnimationFrame(animate);
-  
+
+  // Smoothly interpolate spindle position with exponential smoothing (no bouncing)
+  if (cuttingPointer) {
+    // Simple exponential moving average - always approaches target, never overshoots
+    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleSmoothFactor;
+    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleSmoothFactor;
+    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleSmoothFactor;
+
+    cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
+
+    // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
+    if (props.spindleRpm > 0) {
+      const now = performance.now();
+      if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
+        // Rotate around Z axis (spindle axis after rotation)
+        // 10 rotations per second at 30 fps = (10 * 2π) / 30 radians per update
+        const rotationSpeed = (10 * 2 * Math.PI) / 30;
+        cuttingPointer.rotation.z += rotationSpeed;
+        lastSpindleUpdateTime = now;
+      }
+    }
+  }
+
   if (renderer && scene && camera) {
     renderer.render(scene, camera);
   }
 };
 
 const handleFileLoad = async (event: Event) => {
-  console.log('File load event triggered');
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) {
-    console.log('No file selected');
     return;
   }
 
-  console.log('Selected file:', file.name, file.size, 'bytes');
   isLoading.value = true;
   try {
     // Upload file to server
-    console.log('Uploading file to server...');
     const result = await api.uploadGCodeFile(file);
-    console.log('Upload result:', result);
     // File content will be received via WebSocket and handled in onGCodeUpdated
 
     // Clear the file input
@@ -403,9 +546,13 @@ const handleFileLoad = async (event: Event) => {
   }
 };
 
-const handleGCodeUpdate = (data: { filename: string; content: string; timestamp: string }) => {
-  console.log('handleGCodeUpdate called with:', data);
+const handleGCodeUpdate = async (data: { filename: string; content: string; timestamp: string }) => {
   try {
+    // Reset completed lines before rendering new G-code
+    if (gcodeVisualizer) {
+      gcodeVisualizer.resetCompletedLines();
+    }
+
     gcodeVisualizer.render(data.content);
 
     // Reset all line type visibility to true when loading new G-code
@@ -416,10 +563,8 @@ const handleGCodeUpdate = (data: { filename: string; content: string; timestamp:
     const bounds = gcodeVisualizer.getBounds();
     if (bounds && bounds.size.length() > 0) {
       currentGCodeBounds = bounds; // Store bounds for later use
+      // Fit to current view (honors user's selection / default)
       fitCameraToBounds(bounds);
-
-      // Emit view change to update UI
-      emit('change-view', 'iso');
     }
 
     hasFile.value = true;
@@ -428,14 +573,22 @@ const handleGCodeUpdate = (data: { filename: string; content: string; timestamp:
     gcodeVisualizer.setRapidVisibility(showRapids.value);
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
 
+    // Check if we have a last executed line (from server state on page load)
+    // and mark all lines up to that point as completed
+    if (lastExecutedLine.value > 0) {
+      const completedLines = [];
+      for (let i = 1; i <= lastExecutedLine.value; i++) {
+        completedLines.push(i);
+      }
+      gcodeVisualizer.markLinesCompleted(completedLines);
+    }
+
     // Update axis labels based on G-code bounds
     if (axisLabelsGroup) {
       scene.remove(axisLabelsGroup);
     }
     axisLabelsGroup = createDynamicAxisLabels(bounds);
     scene.add(axisLabelsGroup);
-
-    console.log(`G-code file "${data.filename}" loaded successfully`);
   } catch (error) {
     console.error('Error rendering G-code:', error);
   }
@@ -476,19 +629,91 @@ const toggleCutting = () => {
   }
 };
 
+const toggleSpindle = () => {
+  showSpindle.value = !showSpindle.value;
+  if (cuttingPointer) {
+    cuttingPointer.visible = showSpindle.value;
+  }
+};
+
+// File manager helpers
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+
+  return date.toLocaleDateString();
+};
+
+const loadFileFromManager = async (filename: string) => {
+  try {
+    // Load the file - the API should trigger the gcode-updated event
+    await api.loadGCodeFile(filename);
+    showFileManager.value = false;
+  } catch (error) {
+    console.error('Error loading file:', error);
+  }
+};
+
+const deleteFile = (filename: string) => {
+  fileToDelete.value = filename;
+  showDeleteConfirm.value = true;
+};
+
+const confirmDelete = async () => {
+  if (!fileToDelete.value) return;
+
+  try {
+    await api.deleteGCodeFile(fileToDelete.value);
+    await fetchUploadedFiles();
+    showDeleteConfirm.value = false;
+    fileToDelete.value = null;
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    showDeleteConfirm.value = false;
+    fileToDelete.value = null;
+  }
+};
+
+const cancelDelete = () => {
+  showDeleteConfirm.value = false;
+  fileToDelete.value = null;
+};
+
+const fetchUploadedFiles = async () => {
+  try {
+    const data = await api.listGCodeFiles();
+    uploadedFiles.value = data.files || [];
+  } catch (error) {
+    console.error('Error fetching uploaded files:', error);
+    uploadedFiles.value = [];
+  }
+};
+
 // Control button handlers
 const handleCycle = async () => {
-  if (!props.loadedGCodeProgram && !isOnHold.value) return;
+  if (!props.jobLoaded?.filename && !isOnHold.value) return;
 
   try {
     if (isOnHold.value) {
       // Resume job
       await api.controlGCodeJob('resume');
-      console.log('Job resumed');
     } else {
       // Start new job
-      await api.startGCodeJob(props.loadedGCodeProgram!);
-      console.log('Job started:', props.loadedGCodeProgram);
+      await api.startGCodeJob(props.jobLoaded.filename);
     }
   } catch (error) {
     console.error('Error controlling job:', error);
@@ -498,7 +723,6 @@ const handleCycle = async () => {
 const handlePause = async () => {
   try {
     await api.controlGCodeJob('pause');
-    console.log('Job paused');
   } catch (error) {
     console.error('Error pausing job:', error);
   }
@@ -507,7 +731,6 @@ const handlePause = async () => {
 const handleStop = async () => {
   try {
     await api.stopGCodeJob();
-    console.log('Job stopped');
   } catch (error) {
     console.error('Error stopping job:', error);
   }
@@ -515,21 +738,21 @@ const handleStop = async () => {
 
 const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   if (!bounds || !camera) return;
-  
+
   // Use current view type if not specified
   const currentView = viewType || props.view;
-  
+
   // For orthographic camera, adjust frustum to fit the G-code bounds
   const padding = 1.01; // 1% padding for very tight fit
   const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
-  
+
   const sizeX = bounds.size.x * padding;
   const sizeY = bounds.size.y * padding;
   const sizeZ = bounds.size.z * padding;
-  
+
   // Set frustum based on the view type
   let frustumWidth, frustumHeight;
-  
+
   switch (currentView) {
     case 'top':
       // Top view: fit X and Y dimensions
@@ -558,7 +781,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       // the apparent size from this viewing angle
       const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY) * 0.9; // XY diagonal scaled
       const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7); // Include Z height
-      
+
       if (projectedWidth / aspect > projectedHeight) {
         frustumWidth = projectedWidth;
         frustumHeight = projectedWidth / aspect;
@@ -568,13 +791,16 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       }
       break;
   }
-  
+
   camera.left = -frustumWidth / 2;
   camera.right = frustumWidth / 2;
   camera.top = frustumHeight / 2;
   camera.bottom = -frustumHeight / 2;
   camera.updateProjectionMatrix();
-  
+
+  // Update pointer scale after changing frustum
+  updatePointerScale();
+
   // Update camera target and position
   // For 3D view, adjust the target to pan the view up for better centering
   if (currentView === 'iso') {
@@ -583,10 +809,10 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
     cameraTarget.copy(bounds.center);
   }
   camera.up.set(0, 0, 1);
-  
+
   // Position camera based on view type
   const distance = Math.max(sizeX, sizeY, sizeZ) * 2; // Safe distance
-  
+
   switch (currentView) {
     case 'top':
       camera.position.set(bounds.center.x, bounds.center.y, bounds.center.z + distance);
@@ -607,7 +833,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       camera.up.set(0, 0, 1);
       break;
   }
-  
+
   camera.lookAt(cameraTarget);
 };
 
@@ -633,19 +859,19 @@ const handleViewButtonClick = (viewType: 'top' | 'front' | 'iso') => {
 
 const handleResize = () => {
   if (!canvas.value || !camera || !renderer) return;
-  
+
   const width = canvas.value.clientWidth;
   const height = canvas.value.clientHeight;
-  
+
   // Update orthographic camera aspect ratio
   const aspect = width / height;
   const frustumHeight = camera.top - camera.bottom;
   const frustumWidth = frustumHeight * aspect;
-  
+
   camera.left = -frustumWidth / 2;
   camera.right = frustumWidth / 2;
   camera.updateProjectionMatrix();
-  
+
   renderer.setSize(width, height);
   renderer.setPixelRatio(window.devicePixelRatio);
 };
@@ -656,10 +882,10 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
 
   const distance = camera.position.distanceTo(cameraTarget);
   const center = currentGCodeBounds ? currentGCodeBounds.center : new THREE.Vector3(0, 0, 0);
-  
+
   // Update camera target
   cameraTarget.copy(center);
-  
+
   switch (viewType) {
     case 'top':
       // Top view - looking down along Z axis with proper CNC orientation
@@ -675,15 +901,27 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
     case 'iso':
       // Isometric 3D view with Z up
       camera.position.set(
-        center.x + distance * 0.7, 
-        center.y - distance * 0.7, 
+        center.x + distance * 0.7,
+        center.y - distance * 0.7,
         center.z + distance * 0.7
       );
       camera.up.set(0, 0, 1); // Z axis points up in 3D view
       break;
   }
-  
+
   camera.lookAt(cameraTarget);
+};
+
+// Update pointer opacity based on view
+const updatePointerOpacity = () => {
+  if (!cuttingPointer) return;
+
+  const opacity = props.view === 'top' ? 0.5 : 1.0;
+  cuttingPointer.traverse((child) => {
+    if (child.isMesh && child.material) {
+      child.material.opacity = opacity;
+    }
+  });
 };
 
 // Watch for view changes
@@ -693,11 +931,36 @@ watch(() => props.view, (newView) => {
   if (currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds, newView);
   }
+  // Update pointer opacity
+  updatePointerOpacity();
 });
 
 // Watch for theme changes
 watch(() => props.theme, () => {
   updateSceneBackground();
+});
+
+// Watch for work coordinate changes to update cutting pointer target position
+watch(() => props.workCoords, (newCoords) => {
+  if (newCoords) {
+    targetSpindlePosition.x = newCoords.x;
+    targetSpindlePosition.y = newCoords.y;
+    targetSpindlePosition.z = newCoords.z;
+
+    // Initialize current position on first coordinate update
+    if (currentSpindlePosition.x === 0 && currentSpindlePosition.y === 0 && currentSpindlePosition.z === 0) {
+      currentSpindlePosition.x = newCoords.x;
+      currentSpindlePosition.y = newCoords.y;
+      currentSpindlePosition.z = newCoords.z;
+    }
+  }
+}, { deep: true, immediate: true });
+
+// Watch for file manager dialog open to fetch files
+watch(() => showFileManager.value, (isOpen) => {
+  if (isOpen) {
+    fetchUploadedFiles();
+  }
 });
 
 onMounted(() => {
@@ -715,21 +978,51 @@ onMounted(() => {
   }
 
   // Set up WebSocket listeners for G-code events
-  console.log('Setting up G-code event listeners');
   api.onGCodeUpdated(handleGCodeUpdate);
 
-  // Watch for loadedGCodeProgram changes to handle clearing
-  watch(() => props.loadedGCodeProgram, (newValue, oldValue) => {
+  // Listen for server state updates to track job progress
+  api.onServerStateUpdated((state) => {
+    if (state.jobLoaded && state.jobLoaded.currentLine && state.jobLoaded.status === 'running') {
+      // Update our tracked last executed line
+      if (state.jobLoaded.currentLine > lastExecutedLine.value) {
+        lastExecutedLine.value = state.jobLoaded.currentLine;
+      }
+    } else if (!state.jobLoaded || state.jobLoaded.status === 'stopped') {
+      // Job finished or stopped, reset visualizer
+      if (lastExecutedLine.value > 0) {
+        lastExecutedLine.value = 0;
+        // Reset the completed lines visual state
+        if (gcodeVisualizer) {
+          gcodeVisualizer.resetCompletedLines();
+        }
+      }
+    }
+  });
+
+  // Listen for command results to mark completed lines
+  // Only mark as completed when status is 'success' (actually executed)
+  api.on('cnc-command-result', (result) => {
+    const lineNumber = result?.meta?.lineNumber;
+    if (lineNumber && result?.status === 'success' && gcodeVisualizer) {
+      gcodeVisualizer.markLineCompleted(lineNumber);
+    }
+  });
+
+  // Watch for jobLoaded changes to handle clearing
+  watch(() => props.jobLoaded?.filename, (newValue, oldValue) => {
     if (oldValue && !newValue) {
       // Program was cleared
       handleGCodeClear();
     }
   });
 
-  // Set initial 3D view with Z-up orientation
+  // Fetch uploaded files on mount
+  fetchUploadedFiles();
+
+  // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
-    setCameraView('iso');
-    emit('change-view', 'iso');
+    setCameraView(props.view);
+    // No need to emit here; parent already owns the state
 
     // Check for existing G-code program after viewport is fully initialized
     if (api.ws && api.ws.readyState === WebSocket.OPEN) {
@@ -742,15 +1035,15 @@ onUnmounted(() => {
   if (animationId) {
     cancelAnimationFrame(animationId);
   }
-  
+
   if (renderer) {
     renderer.dispose();
   }
-  
+
   if (resizeObserver) {
     resizeObserver.disconnect();
   }
-  
+
   window.removeEventListener('resize', handleResize);
 });
 </script>
@@ -810,15 +1103,22 @@ onUnmounted(() => {
   color: white;
 }
 
+.load-button:disabled, .clear-button:disabled, .toggle-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(50%);
+}
+
 .clear-button {
-  background: #ff6b6b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
 }
 
 .toggle-button {
   background: #6c757d;
 }
 
-.load-button:hover, .clear-button:hover, .toggle-button:hover {
+.load-button:hover:not(:disabled), .clear-button:hover:not(:disabled), .toggle-button:hover:not(:disabled) {
   opacity: 0.8;
 }
 
@@ -919,6 +1219,10 @@ h2 {
   background: #3e85c7;
 }
 
+.dot--spindle {
+  background: #ffffff;
+}
+
 @media (max-width: 1279px) and (orientation: portrait) {
   .viewport {
     height: 45vh;
@@ -955,15 +1259,15 @@ h2 {
 .control-btn {
   border: none;
   border-radius: var(--radius-medium);
-  padding: 12px 20px;
-  font-size: 0.95rem;
+  padding: 16px 28px;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 90px;
+  min-width: 110px;
   justify-content: center;
 }
 
@@ -1010,5 +1314,260 @@ h2 {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* File Manager Styles */
+.file-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 500px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.file-manager__header {
+  padding: var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.file-manager__icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--color-accent), rgba(26, 188, 156, 0.7));
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.file-manager__title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text-primary);
+}
+
+.file-manager__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--gap-md);
+}
+
+.file-manager__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  color: var(--color-text-secondary);
+}
+
+.file-manager__empty svg {
+  margin-bottom: var(--gap-md);
+  opacity: 0.5;
+}
+
+.file-manager__empty p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.file-manager__empty-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+  margin-top: var(--gap-xs) !important;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.file-item:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.file-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  font-size: 32px;
+}
+
+.file-item__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-item__name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item__meta {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.file-item__actions {
+  display: flex;
+  gap: var(--gap-xs);
+  flex-shrink: 0;
+}
+
+.file-item__load-btn {
+  width: 50px;
+  height: 50px;
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-item__load-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(26, 188, 156, 0.3);
+}
+
+.file-item__delete-btn {
+  width: 50px;
+  height: 50px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-item__delete-btn:hover {
+  background: #ff6b6b;
+  color: white;
+  border-color: #ff6b6b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+.file-manager__footer {
+  padding: var(--gap-md);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  background: var(--color-surface);
+}
+
+.file-manager__close-btn {
+  padding: 10px 32px;
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-manager__close-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+/* Confirmation Dialog */
+.confirm-dialog {
+  padding: var(--gap-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+.confirm-dialog__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.confirm-dialog__message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  gap: var(--gap-sm);
+  justify-content: flex-end;
+  margin-top: var(--gap-sm);
+}
+
+.confirm-dialog__btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.confirm-dialog__btn--cancel {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.confirm-dialog__btn--cancel:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.confirm-dialog__btn--danger {
+  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8));
+  color: white;
+}
+
+.confirm-dialog__btn--danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
 }
 </style>

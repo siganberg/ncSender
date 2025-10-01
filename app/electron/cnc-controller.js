@@ -21,6 +21,8 @@ export class CNCController extends EventEmitter {
     this.statusPollInterval = null;
     this.lastStatus = {};
     this.rawData = '';
+    this.connectionAttempt = null; // Track ongoing connection attempts
+    this.isConnecting = false; // Track connection state
     this.commandQueue = new CommandQueue({
       log,
       sendCommand: async (entry) => {
@@ -65,6 +67,9 @@ export class CNCController extends EventEmitter {
     if (trimmedData.startsWith('<') && trimmedData.endsWith('>')) {
       this.rawData = trimmedData;
       this.parseStatusReport(trimmedData);
+    } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
+      this.parseGCodeModes(trimmedData);
+      this.emit('data', trimmedData);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
       const code = parseInt(trimmedData.split(':')[1]);
       const message = grblErrors[code] || 'Unknown error';
@@ -94,8 +99,14 @@ export class CNCController extends EventEmitter {
 
   parseStatusReport(data) {
     const parts = data.substring(1, data.length - 1).split('|');
-    // Start with previous status to preserve all fields
-    const newStatus = { ...this.lastStatus };
+    // Start with previous status to preserve all fields, but ensure it's a clean copy
+    let newStatus;
+    try {
+      newStatus = JSON.parse(JSON.stringify(this.lastStatus || {}));
+    } catch (error) {
+      console.warn('Error cloning lastStatus, starting fresh:', error.message);
+      newStatus = {};
+    }
 
     // Update machine state (always present) - extract state name before colon
     newStatus.status = parts[0].split(':')[0];
@@ -132,11 +143,36 @@ export class CNCController extends EventEmitter {
     }
   }
 
+  parseGCodeModes(data) {
+    // Example: [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
+    const content = data.substring(4, data.length - 1); // Remove [GC: and ]
+    const modes = content.split(' ');
+
+    // Find workspace coordinate system (G54-G59.3)
+    const workspaceMode = modes.find(mode => /^G5[4-9]$/.test(mode) || /^G59\.[1-3]$/.test(mode));
+
+    if (workspaceMode) {
+      log('Active workspace detected:', workspaceMode);
+      // Update workspace in lastStatus
+      this.lastStatus.workspace = workspaceMode;
+      // Emit updated status with workspace
+      this.emit('status-report', { ...this.lastStatus });
+    }
+  }
+
   startPolling() {
     if (this.statusPollInterval) return;
     this.statusPollInterval = setInterval(() => {
-      this.sendCommand('?');
-    }, 200);
+      // Only send status requests if connected
+      if (this.isConnected && this.connection) {
+        try {
+          this.sendCommand('?');
+        } catch (error) {
+          console.warn('Status polling failed, stopping polling:', error.message);
+          this.stopPolling();
+        }
+      }
+    }, 50);
   }
 
   stopPolling() {
@@ -161,30 +197,41 @@ export class CNCController extends EventEmitter {
     }
   }
 
-  async autoConnect() {
+  async connectWithSettings(settings) {
     try {
-      log('Attempting auto-connect to CNC controller...');
 
-      const connectionType = getSetting('connectionType', DEFAULT_SETTINGS.connectionType);
+      const { connectionType, ip, port, usbPort, baudRate } = settings;
+
+      // If no connection type, don't attempt connection
+      if (!connectionType) {
+        log('No connection type specified...');
+        return 'no-settings';
+      }
+
+      this.isConnecting = true;
 
       if (connectionType === 'ethernet') {
-        const ip = getSetting('ip', DEFAULT_SETTINGS.ip);
-        const port = getSetting('port', DEFAULT_SETTINGS.port);
-        return await this.connectEthernet(ip, port);
-      } else {
-        const ports = await this.listAvailablePorts();
-        if (ports.length === 0) {
-          log('No suitable USB ports found for CNC connection');
-          return false;
+        if (!ip || !port) {
+          log('Incomplete Ethernet settings...');
+          this.isConnecting = false;
+          return 'no-settings';
         }
 
-        const suitablePort = this.findSuitableUSBPort(ports);
-        const baudRate = getSetting('baudRate', DEFAULT_SETTINGS.baudRate);
-        log(`Auto-connecting to: ${suitablePort.path} (${suitablePort.manufacturer || 'Unknown'}) at ${baudRate} baud`);
-        return await this.connect(suitablePort.path, baudRate);
+        this.connectionAttempt = this.connectEthernet(ip, port);
+        return await this.connectionAttempt;
+      } else {
+        if (!usbPort || !baudRate) {
+          log('Incomplete USB settings...');
+          this.isConnecting = false;
+          return 'no-settings';
+        }
+
+        this.connectionAttempt = this.connect(usbPort, baudRate);
+        return await this.connectionAttempt;
       }
     } catch (error) {
-      console.error('Auto-connect failed:', error);
+      this.isConnecting = false;
+      this.connectionAttempt = null;
       return false;
     }
   }
@@ -220,7 +267,6 @@ export class CNCController extends EventEmitter {
     }
 
     try {
-      log(`Connecting to CNC controller via ethernet at ${ip}:${port}`);
       this.connectionType = 'ethernet';
       this.emitConnectionStatus('connecting', false);
 
@@ -229,13 +275,34 @@ export class CNCController extends EventEmitter {
       this.connection.pipe(this.parser);
 
       return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          try {
+            const conn = this.connection;
+            if (conn && !conn.destroyed) {
+              conn.removeAllListeners?.();
+              conn.destroy();
+            }
+          } catch (e) {
+            log('Error destroying ethernet connection on timeout:', e?.message || e);
+          }
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          reject(new Error('Connection timeout'));
+        }, 1000); // 1 second timeout
+
         this.connection.connect(port, ip, () => {
+          clearTimeout(timeoutId);
+          this.isConnecting = false;
+          this.connectionAttempt = null;
           this.onConnectionEstablished('ethernet');
           resolve(true);
         });
 
         this.connection.on('error', (error) => {
+          clearTimeout(timeoutId);
           console.error('CNC controller ethernet connection error:', error);
+          this.isConnecting = false;
+          this.connectionAttempt = null;
           this.handleConnectionError(error);
           reject(error);
         });
@@ -259,7 +326,6 @@ export class CNCController extends EventEmitter {
     }
 
     try {
-      log(`Connecting to CNC controller on ${portPath} at ${baudRate} baud`);
       this.connectionType = 'usb';
       this.emitConnectionStatus('connecting', false);
 
@@ -272,44 +338,155 @@ export class CNCController extends EventEmitter {
       this.setupDataParser();
       this.connection.pipe(this.parser);
 
-      this.connection.on('open', () => {
-        this.onConnectionEstablished('usb');
-      });
+      return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          if (this.connection && !this.connection.destroyed) {
+            this.connection.removeAllListeners();
+            if (this.connection.isOpen) {
+              this.connection.close();
+            } else {
+              try {
+                this.connection.destroy();
+              } catch (err) {
+                log('Error destroying USB connection on timeout:', err.message);
+              }
+            }
+          }
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          reject(new Error('USB connection timeout'));
+        }, 1000); // 1 second timeout for USB
 
-      this.connection.on('error', (error) => {
-        console.error('CNC controller connection error:', error);
-        this.handleConnectionError(error);
-      });
+        this.connection.on('open', () => {
+          clearTimeout(timeoutId);
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          this.onConnectionEstablished('usb');
+          resolve(true);
+        });
 
-      this.connection.on('close', () => {
-        this.onConnectionClosed('usb');
-      });
+        this.connection.on('error', (error) => {
+          clearTimeout(timeoutId);
+          console.error('CNC controller connection error:', error);
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          this.handleConnectionError(error);
+          reject(error);
+        });
 
-      await this.connection.open();
-      return true;
+        this.connection.on('close', () => {
+          this.onConnectionClosed('usb');
+        });
+
+        // Start the connection attempt
+        this.connection.open((err) => {
+          if (err) {
+            clearTimeout(timeoutId);
+            this.isConnecting = false;
+            this.connectionAttempt = null;
+            reject(err);
+          }
+        });
+      });
 
     } catch (error) {
       console.error('Failed to connect to CNC controller:', error);
+      this.isConnecting = false;
+      this.connectionAttempt = null;
       this.handleConnectionError(error);
       throw error;
     }
   }
 
+  cancelConnection() {
+    if (this.isConnecting || this.connectionAttempt) {
+      log('Cancelling ongoing connection attempt...');
+
+      // Force cleanup of any existing connection objects
+      if (this.connection) {
+        try {
+          if (this.connectionType === 'ethernet') {
+            if (!this.connection.destroyed) {
+              this.connection.removeAllListeners();
+              this.connection.destroy();
+            }
+          } else if (this.connectionType === 'usb') {
+            if (this.connection.isOpen) {
+              this.connection.removeAllListeners();
+              this.connection.close((err) => {
+                if (err) log('Error closing USB port during cancellation:', err.message);
+              });
+            } else if (!this.connection.destroyed) {
+              // Handle case where port is opening but not yet open
+              this.connection.removeAllListeners();
+              try {
+                this.connection.destroy();
+              } catch (err) {
+                log('Error destroying USB connection during cancellation:', err.message);
+              }
+            }
+          }
+        } catch (error) {
+          log('Error during connection cleanup:', error.message);
+        }
+
+        this.connection = null;
+      }
+
+      // Clear parser
+      if (this.parser) {
+        this.parser.removeAllListeners();
+        this.parser = null;
+      }
+
+      this.connectionAttempt = null;
+      this.isConnecting = false;
+      this.connectionStatus = 'cancelled';
+      this.emitConnectionStatus('cancelled', false);
+    }
+  }
+
   disconnect() {
+    this.cancelConnection();
     this.stopPolling();
     this.commandQueue.flush('disconnect');
 
+    // Additional cleanup for any remaining connections
     if (this.connection) {
-      if (this.connectionType === 'ethernet') {
-        !this.connection.destroyed && this.connection.destroy();
-      } else if (this.connectionType === 'usb') {
-        this.connection.isOpen && this.connection.close();
+      try {
+        this.connection.removeAllListeners();
+        if (this.connectionType === 'ethernet') {
+          if (!this.connection.destroyed) {
+            this.connection.destroy();
+          }
+        } else if (this.connectionType === 'usb') {
+          if (this.connection.isOpen) {
+            this.connection.close();
+          } else if (!this.connection.destroyed) {
+            try {
+              this.connection.destroy();
+            } catch (err) {
+              log('Error destroying USB connection during disconnect:', err.message);
+            }
+          }
+        }
+      } catch (error) {
+        log('Error during disconnect cleanup:', error.message);
       }
+      this.connection = null;
+    }
+
+    // Clear parser
+    if (this.parser) {
+      this.parser.removeAllListeners();
+      this.parser = null;
     }
 
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
     this.connectionType = null;
+    this.connectionAttempt = null;
+    this.isConnecting = false;
     this.emitConnectionStatus('disconnected', false);
   }
 
@@ -411,6 +588,11 @@ export class CNCController extends EventEmitter {
 
         if (cleanCommand === '\x18') {
           this.commandQueue.flush('');
+          this.emit('stop');
+        } else if (cleanCommand === '!') {
+          this.emit('pause');
+        } else if (cleanCommand === '~') {
+          this.emit('resume');
         }
 
         const ackPayload = {
@@ -469,6 +651,13 @@ export class CNCController extends EventEmitter {
     this.isConnected = false;
     this.connectionStatus = 'error';
     this.commandQueue.flush('connection-error', error);
-    this.emitConnectionStatus('error', false);
+
+    // Special handling for USB port locking issues
+    if (error.message && error.message.includes('Resource temporarily unavailable')) {
+      log('USB port locked, will retry after delay...');
+      this.connectionStatus = 'port-locked';
+    }
+
+    this.emitConnectionStatus(this.connectionStatus, false);
   }
 }

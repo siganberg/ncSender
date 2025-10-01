@@ -34,7 +34,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Check if machine is in correct state
-      if (!serverState.online) {
+      if (!serverState.machineState?.connected) {
         return res.status(400).json({ error: 'CNC controller not connected' });
       }
 
@@ -50,7 +50,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       res.json({ success: true, message: 'G-code job started', filename });
     } catch (error) {
       console.error('Error starting G-code job:', error);
-      res.status(500).json({ error: 'Failed to start G-code job' });
+      const errorMessage = error.message || 'Failed to start G-code job';
+      res.status(500).json({ error: errorMessage });
     }
   });
 
@@ -263,6 +264,8 @@ export class GCodeJobProcessor {
 
     if (!this.isStopped && this.currentLine >= this.lines.length) {
       // Job completed successfully
+      log('Job processing completed, triggering callbacks');
+
       const completionComment = `; Job completed: ${this.filename} (ncSender)`;
 
       this.broadcast('cnc-command-result', {
@@ -274,8 +277,11 @@ export class GCodeJobProcessor {
         meta: { jobComplete: true }
       });
 
-      // Only trigger completion callbacks for successful completion
-      this.triggerCompletion();
+      // Trigger completion callbacks after a small delay to ensure all state updates propagate
+      setTimeout(() => {
+        log('Triggering job completion callbacks');
+        this.triggerCompletion();
+      }, 100);
     }
   }
 }

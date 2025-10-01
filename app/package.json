@@ -47,7 +47,12 @@
     "files": [
       "electron/**/*",
       "client/dist/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      {
+        "from": "client/dist/assets",
+        "to": "client/dist/assets",
+        "filter": ["*.obj", "*.mtl"]
+      }
     ],
     "mac": {
       "icon": "assets/icon.icns",

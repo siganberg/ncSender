@@ -100,3 +100,45 @@ ncSender stores user data in platform-specific directories following OS conventi
 - **Command history**: `~/.config/ncSender/command-history.json`
 
 These directories are automatically created when the application first runs. Files stored here will persist between app updates and are easily accessible for backup purposes.
+
+## 🌐 Port Architecture
+
+ncSender uses a smart port architecture that works seamlessly in both development and production environments:
+
+### Production (Electron App)
+- **Single Port**: Everything served from one configurable port (default: 8090)
+- **Client Auto-detection**: Frontend automatically uses the current URL's port for API/WebSocket calls
+- **Configuration**: Server port can be changed in `settings.json` → `serverPort` field
+- **URLs**: All API calls use relative URLs (`/api/settings`, `/api/status`, etc.)
+
+### Development (Hot Reload)
+- **Frontend**: Vite dev server runs on port 5174 for hot reload
+- **Backend**: API/WebSocket server runs on port 8090 (development fallback)
+- **Vite Proxy**: Automatically forwards `/api/*` requests from 5174 → 8090
+- **Reason**: Separation needed for hot reload functionality
+
+### API Configuration
+The frontend uses relative URLs in all environments:
+```javascript
+// Works in both development and production
+fetch('/api/settings')           // Development: 5174 → proxy → 8090
+                                // Production: same origin (any port)
+```
+
+### Development Commands
+```bash
+# Start both frontend and backend with hot reload
+npm run dev:hot
+
+# Frontend only (requires backend running separately)
+cd client && npm run dev
+
+# Backend only
+npm run server:dev
+```
+
+This architecture ensures that:
+- Production builds work on any configurable port
+- Development has full hot reload capabilities
+- API calls automatically route to the correct backend
+- No hardcoded URLs in the frontend code

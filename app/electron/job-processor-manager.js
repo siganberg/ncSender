@@ -21,7 +21,14 @@ class JobProcessorManager {
     // Listen for job completion to clear the reference
     this.currentJob.onComplete(() => {
       log('Job completed, clearing reference');
+      const wasRunning = this.currentJob !== null;
       this.currentJob = null;
+
+      // Call external completion callback if set and job was actually running
+      if (wasRunning && this.onJobCompleteCallback) {
+        log('Calling job complete callback');
+        this.onJobCompleteCallback();
+      }
     });
 
     return this.currentJob;
@@ -52,6 +59,19 @@ class JobProcessorManager {
     this.currentJob = null;
   }
 
+  forceReset() {
+    // Force reset the job without validation (used when machine resets externally)
+    if (this.currentJob) {
+      try {
+        this.currentJob.stop();
+      } catch (error) {
+        // Ignore errors during force reset
+      }
+      log('Job force reset');
+      this.currentJob = null;
+    }
+  }
+
   getCurrentJob() {
     return this.currentJob;
   }
@@ -64,14 +84,25 @@ class JobProcessorManager {
     if (!this.currentJob) {
       return null;
     }
+
+    // Determine status: 'running', 'paused', or 'stopped'
+    let status = 'stopped';
+    if (this.currentJob.isRunning) {
+      status = 'running';
+    } else if (this.currentJob.isPaused) {
+      status = 'paused';
+    }
+
     return {
       filename: this.currentJob.filename,
       currentLine: this.currentJob.currentLine,
       totalLines: this.currentJob.lines.length,
-      isRunning: this.currentJob.isRunning,
-      isPaused: this.currentJob.isPaused,
-      isStopped: this.currentJob.isStopped
+      status: status
     };
+  }
+
+  setJobCompleteCallback(callback) {
+    this.onJobCompleteCallback = callback;
   }
 }
 

@@ -18,10 +18,6 @@ contextBridge.exposeInMainWorld('ncSender', {
     sendRealTimeCommand: (command) => ipcRenderer.invoke('cnc-send-realtime-command', command),
     
     // Event listeners
-    onStatus: (callback) => {
-      ipcRenderer.on('cnc-status', (event, data) => callback(data));
-      return () => ipcRenderer.removeAllListeners('cnc-status');
-    },
     onData: (callback) => {
       ipcRenderer.on('cnc-data', (event, data) => callback(data));
       return () => ipcRenderer.removeAllListeners('cnc-data');

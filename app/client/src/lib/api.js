@@ -10,6 +10,7 @@ class NCClient {
     this.clientId = this.ensureClientId();
     this.jogAckTimeoutMs = 1500;
     this.discoveredPort = null;
+    this.lastServerState = null;
   }
 
   ensureClientId() {
@@ -440,18 +441,29 @@ class NCClient {
     return await response.json();
   }
 
+  async loadGCodeFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error('Failed to load G-code file');
+    return await response.json();
+  }
+
+  async deleteGCodeFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) throw new Error('Failed to delete G-code file');
+    return await response.json();
+  }
+
   async clearGCode() {
     const response = await fetch(`${this.baseUrl}/api/gcode-preview/clear`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
     if (!response.ok) throw new Error('Failed to clear G-code preview');
-    return await response.json();
-  }
-
-  async getServerState() {
-    const response = await fetch(`${this.baseUrl}/api/server-state`);
-    if (!response.ok) throw new Error('Failed to get server state');
     return await response.json();
   }
 
@@ -551,7 +563,10 @@ class NCClient {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('Parsed message:', message);
+        console.log('Parsed message:', JSON.stringify(message, null, 2));
+        if (message && message.type === 'server-state-updated' && message.data) {
+          this.lastServerState = message.data;
+        }
         this.emit(message.type, message.data);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error, 'Raw data:', event.data);
@@ -617,10 +632,6 @@ class NCClient {
   }
 
   // Convenience methods for CNC events
-  onStatus(callback) {
-    return this.on('cnc-status', callback);
-  }
-
   onData(callback) {
     return this.on('cnc-data', callback);
   }
@@ -654,14 +665,17 @@ class NCClient {
 
   async checkCurrentProgram() {
     try {
-      const serverState = await this.getServerState();
+      const serverState = this.lastServerState;
+      if (!serverState) {
+        return; // No state available yet; rely on future WS update
+      }
 
-      if (serverState.loadedGCodeProgram) {
+      if (serverState.jobLoaded?.filename) {
         // Add small delay to ensure viewport is fully rendered before loading G-code
         setTimeout(async () => {
           try {
             // Get the file content and emit the gcode-updated event
-            const fileData = await this.getGCodeFile(serverState.loadedGCodeProgram);
+            const fileData = await this.getGCodeFile(serverState.jobLoaded.filename);
             this.emit('gcode-updated', {
               filename: fileData.filename,
               content: fileData.content,
@@ -693,6 +707,12 @@ class NCClient {
     }
 
     return response.json();
+  }
+
+  async getJobStatus() {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/status`);
+    if (!response.ok) throw new Error('Failed to get job status');
+    return await response.json();
   }
 
   async controlGCodeJob(action) {
