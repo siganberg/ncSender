@@ -34,7 +34,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Check if machine is in correct state
-      if (!serverState.online) {
+      if (!serverState.machineState?.connected) {
         return res.status(400).json({ error: 'CNC controller not connected' });
       }
 

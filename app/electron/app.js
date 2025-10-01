@@ -78,8 +78,9 @@ export async function createApp(options = {}) {
   // Server state
   const serverState = {
     loadedGCodeProgram: null,
-    online: false,
-    machineState: null,
+    machineState: {
+      connected: false
+    },
     isToolChanging: false,
     hasEverConnected: false,
     jobStatus: null // Will be populated with current job info
@@ -577,9 +578,9 @@ export async function createApp(options = {}) {
 
   cncController.on('status', (data) => {
     const newOnlineStatus = data.status === 'connected' && data.isConnected;
-    if (serverState.online !== newOnlineStatus) {
-      serverState.online = newOnlineStatus;
-      log(`CNC controller connection status changed. Server state 'online' is now: ${serverState.online}`);
+    if (serverState.machineState.connected !== newOnlineStatus) {
+      serverState.machineState.connected = newOnlineStatus;
+      log(`CNC controller connection status changed. Server state 'machineState.connected' is now: ${serverState.machineState.connected}`);
 
       if (newOnlineStatus) {
         serverState.hasEverConnected = true;
@@ -598,7 +599,7 @@ export async function createApp(options = {}) {
   cncController.on('data', (data) => broadcast('cnc-data', data));
   cncController.on('status-report', (status) => {
     const prevMachineStatus = serverState.machineState?.status;
-    serverState.machineState = { ...status };
+    serverState.machineState = { ...serverState.machineState, ...status };
 
     // If machine enters alarm state and a job is running, force reset the job
     const currentMachineStatus = status?.status?.toLowerCase();

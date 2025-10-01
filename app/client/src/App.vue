@@ -931,11 +931,11 @@ onMounted(async () => {
     const last = api.lastServerState;
     if (last && typeof last === 'object') {
       Object.assign(serverState, last);
-      // Only treat as connected when payload reports online
-      status.connected = !!serverState.online;
-      if (serverState.online && serverState.machineState) {
+      // Only treat as connected when payload reports connected
+      status.connected = !!serverState.machineState?.connected;
+      if (serverState.machineState?.connected && serverState.machineState) {
         applyStatusReport(serverState.machineState);
-      } else if (!serverState.online) {
+      } else if (!serverState.machineState?.connected) {
         status.machineState = 'offline';
       }
     }
@@ -947,18 +947,18 @@ onMounted(async () => {
   api.onServerStateUpdated((newServerState) => {
     const previousGCodeProgram = serverState.loadedGCodeProgram;
     Object.assign(serverState, newServerState);
-    // Only treat as connected when payload reports online
-    status.connected = !!serverState.online;
+    // Only treat as connected when payload reports connected
+    status.connected = !!serverState.machineState?.connected;
 
     // Reset viewport to default view when a new G-code file is loaded
     if (serverState.loadedGCodeProgram && serverState.loadedGCodeProgram !== previousGCodeProgram) {
       viewport.value = defaultView.value;
     }
 
-    // Only apply machine state when online
-    if (serverState.online && serverState.machineState) {
+    // Only apply machine state when connected
+    if (serverState.machineState?.connected && serverState.machineState) {
       applyStatusReport(serverState.machineState);
-    } else if (!serverState.online) {
+    } else if (!serverState.machineState?.connected) {
       status.machineState = 'offline';
     }
   });
