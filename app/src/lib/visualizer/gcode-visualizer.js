@@ -18,6 +18,72 @@ class GCodeVisualizer {
         return this;
     }
 
+    // Compute arc center from R specification choosing short/long per sign(R)
+    _computeCenterFromR(start, end, R, isCW) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const d = Math.hypot(dx, dy);
+        if (d === 0) return null;
+        const r = Math.abs(R);
+        // If chord longer than diameter, invalid arc
+        if (2 * r < d - 1e-6) return null;
+
+        const mx = (start.x + end.x) / 2;
+        const my = (start.y + end.y) / 2;
+        const ux = dx / d;
+        const uy = dy / d;
+        const h = Math.sqrt(Math.max(0, r * r - (d * d) / 4));
+
+        // Two possible centers along the perpendicular
+        const n1x = -uy, n1y = ux;
+        const c1x = mx + n1x * h;
+        const c1y = my + n1y * h;
+        const c2x = mx - n1x * h;
+        const c2y = my - n1y * h;
+
+        const pick = (cx, cy) => {
+            const a0 = Math.atan2(start.y - cy, start.x - cx);
+            const a1 = Math.atan2(end.y - cy, end.x - cx);
+            let delta = isCW ? (a0 - a1) : (a1 - a0);
+            // Normalize to [0, 2PI)
+            while (delta < 0) delta += Math.PI * 2;
+            while (delta >= Math.PI * 2) delta -= Math.PI * 2;
+            return delta; // sweep in [0, 2PI)
+        };
+
+        const d1 = pick(c1x, c1y);
+        const d2 = pick(c2x, c2y);
+
+        const wantLong = R < 0; // R<0 means arc >= 180 deg
+        const isLong1 = d1 > Math.PI + 1e-9;
+        const isLong2 = d2 > Math.PI + 1e-9;
+
+        let cx = c1x, cy = c1y;
+        if (wantLong) {
+            if (isLong1 && !isLong2) {
+                cx = c1x; cy = c1y;
+            } else if (!isLong1 && isLong2) {
+                cx = c2x; cy = c2y;
+            } else {
+                // both same side; pick the longer
+                cx = (d1 >= d2) ? c1x : c2x;
+                cy = (d1 >= d2) ? c1y : c2y;
+            }
+        } else {
+            if (!isLong1 && isLong2) {
+                cx = c1x; cy = c1y;
+            } else if (isLong1 && !isLong2) {
+                cx = c2x; cy = c2y;
+            } else {
+                // both same side; pick the shorter
+                cx = (d1 <= d2) ? c1x : c2x;
+                cy = (d1 <= d2) ? c1y : c2y;
+            }
+        }
+
+        return { x: cx, y: cy };
+    }
+
     clear() {
         // Remove all existing path lines
         this.pathLines.forEach(line => {
@@ -28,17 +94,35 @@ class GCodeVisualizer {
         this.colors = [];
     }
 
+    _closeIfLoop(path) {
+        if (!path || path.length < 2) return path;
+        const first = path[0];
+        const last = path[path.length - 1];
+        const dx = (last.x - first.x);
+        const dy = (last.y - first.y);
+        const eps = 1e-3; // mm tolerance
+        if (Math.hypot(dx, dy) <= eps) {
+            // Ensure exact closure by snapping last to first
+            const closed = path.slice(0, -1);
+            closed.push({ x: first.x, y: first.y, z: last.z });
+            return closed;
+        }
+        return path;
+    }
+
     parseGCode(gcodeString) {
         const lines = gcodeString.split('\n');
         const toolpaths = { rapid: [], cutting: [] };
         let currentPosition = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
         let currentToolpath = [];
-        let safeZ = 2;
-        let isToolDown = false;
+        // Tool-down heuristics are unreliable across files; classify by modal move only
+        let isToolDown = false; // kept for compatibility but not used in classification
         
         lines.forEach(line => {
-            const cleanLine = line.split(';')[0].trim().toUpperCase();
+            // Strip inline comments: both ';' and '( ... )' styles, then normalize
+            const noParenComments = line.replace(/\([^)]*\)/g, '');
+            const cleanLine = noParenComments.split(';')[0].trim().toUpperCase();
             if (!cleanLine) return;
 
             let moveType = lastMoveType;
@@ -73,25 +157,14 @@ class GCodeVisualizer {
                     j: jMatch ? parseFloat(jMatch[1]) : 0
                 };
             } else if (rMatch && (moveType === 'G2' || moveType === 'G3')) {
-                // Convert R format to I/J format
+                // Robust conversion from R to IJ by selecting center
                 const radius = parseFloat(rMatch[1]);
-                const dx = newPosition.x - currentPosition.x;
-                const dy = newPosition.y - currentPosition.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance > 0) {
-                    const h = Math.sqrt(radius * radius - (distance / 2) * (distance / 2));
-                    const mx = (currentPosition.x + newPosition.x) / 2;
-                    const my = (currentPosition.y + newPosition.y) / 2;
-                    
-                    // Choose the center based on clockwise/counter-clockwise and radius sign
-                    const sign = (moveType === 'G2' && radius > 0) || (moveType === 'G3' && radius < 0) ? -1 : 1;
-                    const centerX = mx + sign * h * (-dy / distance);
-                    const centerY = my + sign * h * (dx / distance);
-                    
+                const isCW = moveType === 'G2';
+                const centerXY = this._computeCenterFromR(currentPosition, newPosition, radius, isCW);
+                if (centerXY) {
                     arcCenter = {
-                        i: centerX - currentPosition.x,
-                        j: centerY - currentPosition.y
+                        i: centerXY.x - currentPosition.x,
+                        j: centerXY.y - currentPosition.y
                     };
                 }
             }
@@ -103,17 +176,12 @@ class GCodeVisualizer {
             );
 
             if (hasMovement && moveType) {
-                // Update tool down state
-                if (zMatch) {
-                    isToolDown = newPosition.z <= safeZ;
-                }
-                
-                // Simplified logic: G2/G3 arcs are almost always cutting moves in CNC programs
+                // Classify moves by modal code only; treat G1/G2/G3 with XY change as cutting; G0 as rapid
                 const isArcMove = (moveType === 'G2' || moveType === 'G3');
-                const isCuttingMove = isArcMove ? 
-                    true : // All arcs are cutting moves
-                    (moveType !== 'G0' && isToolDown && currentPosition.z <= safeZ);
-                const isRapidMove = (moveType === 'G0' && !isArcMove);
+                const isRapidMove = (moveType === 'G0');
+                const isLinearMove = (moveType === 'G1');
+                const xyChanged = (newPosition.x !== currentPosition.x || newPosition.y !== currentPosition.y);
+                const isCuttingMove = isArcMove || (isLinearMove && xyChanged);
                 
                 
                 if (isCuttingMove) {
@@ -133,19 +201,20 @@ class GCodeVisualizer {
                     } else {
                         currentToolpath.push({ ...newPosition });
                     }
-                } else if (isRapidMove) {
-                    
-                    // Finish current cutting path
+                } else {
+                    // Finish current cutting path on any non-cutting move
                     if (currentToolpath.length > 1) {
-                        toolpaths.cutting.push([...currentToolpath]);
+                        toolpaths.cutting.push(this._closeIfLoop([...currentToolpath]));
                         currentToolpath = [];
                     }
-                    
-                    // Add ALL rapid moves (including Z moves)
-                    toolpaths.rapid.push([
-                        { ...currentPosition },
-                        { ...newPosition }
-                    ]);
+
+                    // Only record explicit rapids as rapid moves
+                    if (isRapidMove) {
+                        toolpaths.rapid.push([
+                            { ...currentPosition },
+                            { ...newPosition }
+                        ]);
+                    }
                 }
                 
                 currentPosition = newPosition;
@@ -153,7 +222,7 @@ class GCodeVisualizer {
         });
 
         if (currentToolpath.length > 1) {
-            toolpaths.cutting.push(currentToolpath);
+            toolpaths.cutting.push(this._closeIfLoop(currentToolpath));
         }
 
         return toolpaths;
@@ -163,39 +232,55 @@ class GCodeVisualizer {
         const points = [];
         const centerX = start.x + center.i;
         const centerY = start.y + center.j;
-        
+
         // Calculate radius from center offset
         const radius = Math.sqrt(center.i * center.i + center.j * center.j);
-        
+
         // Calculate start and end angles
         let startAngle = Math.atan2(start.y - centerY, start.x - centerX);
         let endAngle = Math.atan2(end.y - centerY, end.x - centerX);
-        
-        // Draw full circle if startAngle and endAngle are both zero
-        if (startAngle === endAngle) {
-            endAngle += (2 * Math.PI);
+
+        // Normalize sweep based on direction (G2=clockwise, G3=ccw)
+        let delta = endAngle - startAngle;
+        if (clockwise && delta > 0) {
+            delta -= 2 * Math.PI;
+        } else if (!clockwise && delta < 0) {
+            delta += 2 * Math.PI;
         }
-        
-        // Use Three.js ArcCurve like gSender does
+        endAngle = startAngle + delta;
+
+        // Sample the arc
         const arcCurve = new ArcCurve(
-            centerX, // aX
-            centerY, // aY
-            radius, // aRadius
-            startAngle, // aStartAngle
-            endAngle, // aEndAngle
-            clockwise // isClockwise
+            centerX,
+            centerY,
+            radius,
+            startAngle,
+            endAngle,
+            clockwise
         );
-        
-        const divisions = 30; // Same as gSender
+
+        // Choose divisions proportional to sweep, with a floor for smoothness
+        const minDiv = 12;
+        const divPerQuarter = 16; // ~16 segments per 90 degrees
+        const divisions = Math.max(minDiv, Math.ceil((Math.abs(delta) / (Math.PI / 2)) * divPerQuarter));
         const curvePoints = arcCurve.getPoints(divisions);
-        
+
         // Convert Three.js Vector2 points to our format and interpolate Z
-        for (let i = 0; i < curvePoints.length; i++) {
+        const n = curvePoints.length;
+        for (let i = 0; i < n; i++) {
+            const t = i / (n - 1);
             const point = curvePoints[i];
-            const z = ((end.z - start.z) / curvePoints.length) * i + start.z;
-            points.push({ x: point.x, y: point.y, z: z });
+            const z = start.z + (end.z - start.z) * t;
+            points.push({ x: point.x, y: point.y, z });
         }
-        
+
+        // Snap last point exactly to end to ensure loop closure
+        if (points.length > 0) {
+            points[points.length - 1].x = end.x;
+            points[points.length - 1].y = end.y;
+            points[points.length - 1].z = end.z;
+        }
+
         return points;
     }
 
