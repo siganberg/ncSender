@@ -197,8 +197,33 @@ class GCodeVisualizer {
     }
 
     markLineCompleted(lineNumber) {
-        // Simplified - just track it
+        if (this.completedLines.has(lineNumber)) {
+            return; // Already marked
+        }
+
         this.completedLines.add(lineNumber);
+
+        // Find the line object
+        const line = this.pathLines[0];
+        if (!line || !line.geometry.attributes.color) return;
+
+        // Get the vertex index range for this line number
+        if (!this.frames || lineNumber - 1 >= this.frames.length) return;
+
+        const startVertexIdx = this.frames[lineNumber - 1];
+        const endVertexIdx = lineNumber < this.frames.length ? this.frames[lineNumber] : line.geometry.attributes.position.count;
+
+        // Update colors for this line's vertices
+        const colors = line.geometry.attributes.color.array;
+        const completedColor = new THREE.Color(this.moveColors.completedCutting);
+
+        for (let i = startVertexIdx; i < endVertexIdx; i++) {
+            colors[i * 3] = completedColor.r;
+            colors[i * 3 + 1] = completedColor.g;
+            colors[i * 3 + 2] = completedColor.b;
+        }
+
+        line.geometry.attributes.color.needsUpdate = true;
     }
 
     markLinesCompleted(lineNumbers) {
@@ -206,6 +231,29 @@ class GCodeVisualizer {
     }
 
     resetCompletedLines() {
+        const line = this.pathLines[0];
+        if (!line || !line.geometry.attributes.color) return;
+
+        // Reset all vertices to original colors
+        const colors = line.geometry.attributes.color.array;
+        const rapidColor = new THREE.Color(this.moveColors.rapid);
+        const cuttingColor = new THREE.Color(this.moveColors.cutting);
+
+        this.completedLines.forEach(lineNumber => {
+            if (!this.frames || lineNumber - 1 >= this.frames.length) return;
+
+            const startVertexIdx = this.frames[lineNumber - 1];
+            const endVertexIdx = lineNumber < this.frames.length ? this.frames[lineNumber] : line.geometry.attributes.position.count;
+
+            // Restore original color (would need to track which type each line is)
+            for (let i = startVertexIdx; i < endVertexIdx; i++) {
+                colors[i * 3] = cuttingColor.r;
+                colors[i * 3 + 1] = cuttingColor.g;
+                colors[i * 3 + 2] = cuttingColor.b;
+            }
+        });
+
+        line.geometry.attributes.color.needsUpdate = true;
         this.completedLines.clear();
     }
 
