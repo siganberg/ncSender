@@ -250,7 +250,8 @@ button.danger {
 
 .toolbar.state--hold {
   border-color: #ffc107;
-  box-shadow: var(--shadow-elevated), 0 0 15px rgba(255, 193, 7, 0.5);
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(255, 193, 7, 0.6);
+  animation: pulse-glow-yellow 2.5s infinite;
 }
 
 .toolbar.state--jog {
@@ -333,6 +334,11 @@ button.danger {
 @keyframes pulse-glow-purple {
   0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(111, 66, 193, 0.6); }
   25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(111, 66, 193, 0.9); }
+}
+
+@keyframes pulse-glow-yellow {
+  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(255, 193, 7, 0.6); }
+  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(255, 193, 7, 0.9); }
 }
 
 /* Theme toggle button */
