@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { saveSettings } from '../settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -33,6 +34,9 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         totalLines: content.split('\n').length,
         status: 'stopped'
       };
+
+      // Save to settings for persistence
+      saveSettings({ lastLoadedFile: originalName });
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
@@ -117,6 +121,9 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         totalLines: content.split('\n').length,
         status: 'stopped'
       };
+
+      // Save to settings for persistence
+      saveSettings({ lastLoadedFile: filename });
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {

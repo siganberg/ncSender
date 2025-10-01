@@ -16,7 +16,7 @@ import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
-import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
+import { getSetting, saveSettings, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -114,6 +114,28 @@ export async function createApp(options = {}) {
     log('Files directory created/verified:', filesDir);
   } catch (error) {
     console.error('Failed to create files directory:', error);
+  }
+
+  // Load last loaded file from settings on server start
+  const lastLoadedFile = getSetting('lastLoadedFile');
+  if (lastLoadedFile) {
+    const filePath = path.join(filesDir, lastLoadedFile);
+    try {
+      // Check if file still exists
+      await fs.access(filePath);
+      const content = await fs.readFile(filePath, 'utf8');
+      serverState.jobLoaded = {
+        filename: lastLoadedFile,
+        currentLine: 0,
+        totalLines: content.split('\n').length,
+        status: 'stopped'
+      };
+      log('Restored last loaded file from settings:', lastLoadedFile);
+    } catch (error) {
+      log('Last loaded file no longer exists, clearing from settings:', lastLoadedFile);
+      // File no longer exists, clear from settings
+      saveSettings({ lastLoadedFile: null });
+    }
   }
 
   const upload = multer({

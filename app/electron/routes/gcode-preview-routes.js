@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { saveSettings } from '../settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -12,6 +13,9 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
     try {
       // Clear the loaded program from server state
       serverState.jobLoaded = null;
+
+      // Clear from settings for persistence
+      saveSettings({ lastLoadedFile: null });
 
       // Broadcast server state update to all connected clients
       broadcast('server-state-updated', serverState);

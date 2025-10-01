@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS = {
   accentColor: '#1abc9c',
   gradientColor: '#34d399',
   autoClearConsole: true,
-  consoleBufferSize: 1000
+  consoleBufferSize: 1000,
+  lastLoadedFile: null
 };
 
 function getUserDataDir() {
