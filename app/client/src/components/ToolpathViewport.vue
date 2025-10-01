@@ -262,6 +262,11 @@ let isRotating = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
 
+// Spindle position interpolation
+let targetSpindlePosition = { x: 0, y: 0, z: 0 };
+let currentSpindlePosition = { x: 0, y: 0, z: 0 };
+const spindleLerpSpeed = 0.2; // Interpolation speed (0-1, higher = faster)
+
 const initThreeJS = () => {
   if (!canvas.value) return;
 
@@ -492,15 +497,25 @@ const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
 const animate = () => {
   animationId = requestAnimationFrame(animate);
 
-  // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
-  if (cuttingPointer && props.spindleRpm > 0) {
-    const now = performance.now();
-    if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
-      // Rotate around Z axis (spindle axis after rotation)
-      // 10 rotations per second at 30 fps = (10 * 2π) / 30 radians per update
-      const rotationSpeed = (10 * 2 * Math.PI) / 30;
-      cuttingPointer.rotation.z += rotationSpeed;
-      lastSpindleUpdateTime = now;
+  // Smoothly interpolate spindle position
+  if (cuttingPointer) {
+    // Lerp (linear interpolation) towards target position
+    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleLerpSpeed;
+    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleLerpSpeed;
+    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleLerpSpeed;
+
+    cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
+
+    // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
+    if (props.spindleRpm > 0) {
+      const now = performance.now();
+      if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
+        // Rotate around Z axis (spindle axis after rotation)
+        // 10 rotations per second at 30 fps = (10 * 2π) / 30 radians per update
+        const rotationSpeed = (10 * 2 * Math.PI) / 30;
+        cuttingPointer.rotation.z += rotationSpeed;
+        lastSpindleUpdateTime = now;
+      }
     }
   }
 
@@ -926,12 +941,21 @@ watch(() => props.theme, () => {
   updateSceneBackground();
 });
 
-// Watch for work coordinate changes to update cutting pointer position
+// Watch for work coordinate changes to update cutting pointer target position
 watch(() => props.workCoords, (newCoords) => {
-  if (cuttingPointer && newCoords) {
-    cuttingPointer.position.set(newCoords.x, newCoords.y, newCoords.z);
+  if (newCoords) {
+    targetSpindlePosition.x = newCoords.x;
+    targetSpindlePosition.y = newCoords.y;
+    targetSpindlePosition.z = newCoords.z;
+
+    // Initialize current position on first coordinate update
+    if (currentSpindlePosition.x === 0 && currentSpindlePosition.y === 0 && currentSpindlePosition.z === 0) {
+      currentSpindlePosition.x = newCoords.x;
+      currentSpindlePosition.y = newCoords.y;
+      currentSpindlePosition.z = newCoords.z;
+    }
   }
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 // Watch for file manager dialog open to fetch files
 watch(() => showFileManager.value, (isOpen) => {

@@ -264,6 +264,8 @@ export class GCodeJobProcessor {
 
     if (!this.isStopped && this.currentLine >= this.lines.length) {
       // Job completed successfully
+      log('Job processing completed, triggering callbacks');
+
       const completionComment = `; Job completed: ${this.filename} (ncSender)`;
 
       this.broadcast('cnc-command-result', {
@@ -275,8 +277,11 @@ export class GCodeJobProcessor {
         meta: { jobComplete: true }
       });
 
-      // Only trigger completion callbacks for successful completion
-      this.triggerCompletion();
+      // Trigger completion callbacks after a small delay to ensure all state updates propagate
+      setTimeout(() => {
+        log('Triggering job completion callbacks');
+        this.triggerCompletion();
+      }, 100);
     }
   }
 }

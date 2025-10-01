@@ -619,6 +619,12 @@ export async function createApp(options = {}) {
     broadcast('server-state-updated', serverState);
   });
 
+  // Set up job completion callback to broadcast state update
+  jobManager.setJobCompleteCallback(() => {
+    log('Job completed, broadcasting server state update');
+    broadcast('server-state-updated', serverState);
+  });
+
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState));
   app.use('/api', createCNCRoutes(cncController, broadcast));

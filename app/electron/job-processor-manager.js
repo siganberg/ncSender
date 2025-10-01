@@ -21,7 +21,14 @@ class JobProcessorManager {
     // Listen for job completion to clear the reference
     this.currentJob.onComplete(() => {
       log('Job completed, clearing reference');
+      const wasRunning = this.currentJob !== null;
       this.currentJob = null;
+
+      // Call external completion callback if set and job was actually running
+      if (wasRunning && this.onJobCompleteCallback) {
+        log('Calling job complete callback');
+        this.onJobCompleteCallback();
+      }
     });
 
     return this.currentJob;
@@ -85,6 +92,10 @@ class JobProcessorManager {
       isPaused: this.currentJob.isPaused,
       isStopped: this.currentJob.isStopped
     };
+  }
+
+  setJobCompleteCallback(callback) {
+    this.onJobCompleteCallback = callback;
   }
 }
 
