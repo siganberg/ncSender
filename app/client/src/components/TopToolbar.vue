@@ -17,10 +17,10 @@
     </div>
     <div class="toolbar__actions">
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
-        <span class="theme-icon">🌙</span>
+        <svg class="theme-icon" width="32" height="32"><use href="#emoji-sun"></use></svg>
       </button>
       <button class="theme-toggle" @click="props.onShowSettings" title="Settings">
-        <span class="theme-icon">⚙️</span>
+        <svg class="theme-icon" width="32" height="32"><use href="#emoji-gear"></use></svg>
       </button>
     </div>
   </div>

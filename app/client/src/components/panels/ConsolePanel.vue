@@ -144,9 +144,9 @@ onBeforeUnmount(() => {
 
 const getStatusIcon = (line) => {
   if (line.status === 'success') {
-    return '✅';
+    return '<svg class="emoji-icon"><use href="#emoji-success"></use></svg>';
   } else if (line.status === 'error') {
-    return '❌';
+    return '<svg class="emoji-icon"><use href="#emoji-error"></use></svg>';
   } else if (line.status === 'pending') {
     return '<span class="spinner"></span>';
   }
@@ -253,7 +253,7 @@ h2 {
   min-height: 160px;
   overflow-y: auto;
   color: #bdc3c7;
-  font-family: 'Monaco', monospace;
+  font-family: 'JetBrains Mono', monospace;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
@@ -305,6 +305,14 @@ h2 {
   -moz-user-select: none !important;
   -ms-user-select: none !important;
   user-select: none !important;
+}
+
+.timestamp :deep(.emoji-icon) {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .message {

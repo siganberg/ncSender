@@ -29,15 +29,11 @@
             @change="handleFileLoad"
             style="display: none"
           />
-          <button @click="fileInput?.click()" class="load-button" title="Upload G-code" :disabled="isJobRunning">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 12V3M8 3L4 7M8 3L12 7M2 13H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          <button @click="fileInput?.click()" class="load-button upload-button" title="Upload G-code" :disabled="isJobRunning">
+            <svg width="26" height="26"><use href="#emoji-upload"></use></svg>
           </button>
-          <button @click="showFileManager = true" class="load-button" title="Open Folder" :disabled="isJobRunning">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
+            <svg width="24" height="24"><use href="#emoji-folder"></use></svg>
           </button>
           <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
             Clear
@@ -75,7 +71,8 @@
           @click="handleCycle"
           :title="isOnHold ? 'Resume Job' : 'Start Job'"
         >
-          {{ isOnHold ? '▶ Resume' : '▶ Cycle' }}
+          <svg class="btn-icon"><use href="#emoji-play"></use></svg>
+          {{ isOnHold ? 'Resume' : 'Cycle' }}
         </button>
         <button
           class="control-btn control-btn--secondary"
@@ -83,7 +80,8 @@
           @click="handlePause"
           title="Pause Job"
         >
-          ⏸ Pause
+          <svg class="btn-icon"><use href="#emoji-pause"></use></svg>
+          Pause
         </button>
         <button
           class="control-btn control-btn--danger"
@@ -91,7 +89,8 @@
           @click="handleStop"
           title="Stop Job"
         >
-          ⏹ Stop
+          <svg class="btn-icon"><use href="#emoji-stop"></use></svg>
+          Stop
         </button>
       </div>
     </div>
@@ -113,18 +112,12 @@
   <Dialog v-if="showFileManager" @close="showFileManager = false" size="medium">
     <div class="file-manager">
       <div class="file-manager__header">
-        <div class="file-manager__icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" fill="currentColor"/>
-          </svg>
-        </div>
+        <svg width="32" height="32"><use href="#emoji-folder"></use></svg>
         <h2 class="file-manager__title">File Manager</h2>
       </div>
       <div class="file-manager__content">
         <div v-if="uploadedFiles.length === 0" class="file-manager__empty">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 7C3 5.89543 3.89543 5 5 5H9L11 7H19C20.1046 7 21 7.89543 21 9V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V7Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <svg width="64" height="64"><use href="#emoji-upload"></use></svg>
           <p>No files uploaded yet</p>
           <p class="file-manager__empty-hint">Upload a G-code file to get started</p>
         </div>
@@ -134,26 +127,18 @@
             :key="file.name"
             class="file-item"
             @dblclick="loadFileFromManager(file.name)"
+            @touchstart="handleFileTouchStart($event, file.name)"
           >
             <div class="file-item__icon">
-              📦
+              <svg width="40" height="40"><use href="#emoji-package"></use></svg>
             </div>
             <div class="file-item__info">
               <div class="file-item__name">{{ file.name }}</div>
               <div class="file-item__meta">{{ formatFileSize(file.size) }} • {{ formatDate(file.uploadedAt) }}</div>
             </div>
             <div class="file-item__actions">
-              <button @click.stop="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file">
-                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2 8L8 2L14 8M8 2V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M2 14H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-              </button>
-              <button @click.stop="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file">
-                <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2 4H14M6 4V2.5C6 2.22 6.22 2 6.5 2H9.5C9.78 2 10 2.22 10 2.5V4M12.5 4L12 13C12 13.55 11.55 14 11 14H5C4.45 14 4 13.55 4 13L3.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+              <svg width="50" height="50" @click.stop="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file"><use href="#emoji-upload"></use></svg>
+              <svg width="45" height="45" @click.stop="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file"><use href="#emoji-trash"></use></svg>
             </div>
           </div>
         </div>
@@ -798,6 +783,26 @@ const deleteFile = (filename: string) => {
   showDeleteConfirm.value = true;
 };
 
+let lastTapTime = 0;
+let lastTapFile = '';
+
+const handleFileTouchStart = (event: TouchEvent, filename: string) => {
+  const currentTime = Date.now();
+  const tapDelay = 300; // Double tap detection window (ms)
+
+  if (currentTime - lastTapTime < tapDelay && lastTapFile === filename) {
+    // Double tap detected
+    event.preventDefault();
+    loadFileFromManager(filename);
+    lastTapTime = 0;
+    lastTapFile = '';
+  } else {
+    // First tap
+    lastTapTime = currentTime;
+    lastTapFile = filename;
+  }
+};
+
 const confirmDelete = async () => {
   if (!fileToDelete.value) return;
 
@@ -1271,7 +1276,7 @@ onUnmounted(() => {
 .load-button, .clear-button, .toggle-button {
   border: none;
   border-radius: var(--radius-small);
-  padding: 10px 12px;
+  padding: 8px;
   cursor: pointer;
   font-size: 14px;
   background: var(--color-accent);
@@ -1286,6 +1291,16 @@ onUnmounted(() => {
 }
 
 .clear-button {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.upload-button {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.folder-button {
   background: var(--color-surface-muted);
   color: var(--color-text-primary);
 }
@@ -1574,6 +1589,14 @@ input:checked + .slider:before {
   transform: none !important;
 }
 
+.btn-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  fill: currentColor;
+}
+
 /* File Manager Styles */
 .file-manager {
   display: flex;
@@ -1651,7 +1674,7 @@ input:checked + .slider:before {
 .file-item {
   display: flex;
   align-items: center;
-  gap: var(--gap-md);
+  gap: var(--gap-sm);
   padding: var(--gap-sm) var(--gap-md);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
@@ -1704,44 +1727,23 @@ input:checked + .slider:before {
 }
 
 .file-item__load-btn {
-  width: 50px;
-  height: 50px;
-  background: var(--gradient-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
   cursor: pointer;
   transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .file-item__load-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(26, 188, 156, 0.3);
+  filter: brightness(1.1);
 }
 
 .file-item__delete-btn {
-  width: 50px;
-  height: 50px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
   cursor: pointer;
   transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .file-item__delete-btn:hover {
-  background: #ff6b6b;
-  color: white;
-  border-color: #ff6b6b;
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+  filter: brightness(1.1);
 }
 
 .file-manager__footer {
