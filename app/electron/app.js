@@ -329,10 +329,7 @@ export async function createApp(options = {}) {
       }
     });
 
-    // Send initial status
-    sendWsMessage(ws, 'cnc-status', cncController.getConnectionStatus());
-
-    // Send server state (includes machine state)
+    // Send server state (includes machine state and connection status)
     sendWsMessage(ws, 'server-state-updated', serverState);
   });
 
@@ -590,25 +587,30 @@ export async function createApp(options = {}) {
         log('Connection lost, starting reconnection attempts...');
         startAutoConnect();
       }
-    }
 
-    broadcast('cnc-status', data);
-    broadcast('server-state-updated', serverState);
+      broadcast('server-state-updated', serverState);
+    }
   });
 
   cncController.on('data', (data) => broadcast('cnc-data', data));
   cncController.on('status-report', (status) => {
-    const prevMachineStatus = serverState.machineState?.status;
+    const prevMachineState = { ...serverState.machineState };
     serverState.machineState = { ...serverState.machineState, ...status };
+
+    // Check if anything actually changed
+    const hasChanged = JSON.stringify(prevMachineState) !== JSON.stringify(serverState.machineState);
 
     // If machine enters alarm state and a job is running, force reset the job
     const currentMachineStatus = status?.status?.toLowerCase();
+    const prevMachineStatus = prevMachineState?.status;
     if (currentMachineStatus === 'alarm' && prevMachineStatus !== 'alarm' && jobManager.hasActiveJob()) {
       log('Machine entered alarm state, resetting job manager');
       jobManager.forceReset();
     }
 
-    broadcast('server-state-updated', serverState);
+    if (hasChanged) {
+      broadcast('server-state-updated', serverState);
+    }
   });
   cncController.on('system-message', (message) => broadcast('cnc-system-message', message));
   cncController.on('response', (response) => broadcast('cnc-response', response));
