@@ -14,7 +14,7 @@
             {{ preset.label }}
           </button>
           <div class="spindle-toggle">
-            <span>Spindle View</span>
+            <span>Spindle</span>
             <label class="switch">
               <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
               <span class="slider"></span>
@@ -537,9 +537,11 @@ const animate = () => {
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
 
-      // Keep camera looking at origin (where spindle is)
-      if (camera) {
+      // Update camera target to origin but maintain camera position relative to it
+      if (camera && cameraTarget.x !== 0 || cameraTarget.y !== 0 || cameraTarget.z !== 0) {
+        const cameraOffset = camera.position.clone().sub(cameraTarget);
         cameraTarget.set(0, 0, 0);
+        camera.position.copy(cameraTarget).add(cameraOffset);
         camera.lookAt(cameraTarget);
       }
     } else {
@@ -1042,6 +1044,11 @@ watch(() => spindleViewMode.value, (isSpindleView) => {
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (axesGroup) axesGroup.position.set(0, 0, 0);
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
+
+    // Auto fit to gcode bounds when exiting spindle view mode
+    if (currentGCodeBounds) {
+      fitCameraToBounds(currentGCodeBounds);
+    }
   }
 });
 

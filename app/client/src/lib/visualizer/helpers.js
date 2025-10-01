@@ -81,16 +81,7 @@ export const generateCuttingPointer = () => {
                     meshes.forEach((m, idx) => { m.userData.pointerIndex = idx; });
 
                     // Log mesh indices and names for debugging/selection
-                    try {
-                        // eslint-disable-next-line no-console
-                        console.info('[Pointer OBJ] mesh count:', meshes.length);
-                        meshes.forEach((m, idx) => {
-                            const mat = Array.isArray(m.material) ? m.material[0] : m.material;
-                            const matName = mat && mat.name ? mat.name : '';
-                            // eslint-disable-next-line no-console
-                            console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
-                        });
-                    } catch {}
+                    // Removed mesh logging - no longer needed
 
                     // Recolor all meshes using selected material index to black (keep accent plumbing for future)
                     const targetMatName = mtlNames[defaultMaterialIndex - 1];
@@ -159,16 +150,7 @@ export const generateCuttingPointer = () => {
 
                     // Tag indices and log inventory for selection
                     meshes.forEach((m, idx) => { m.userData.pointerIndex = idx; });
-                    try {
-                        // eslint-disable-next-line no-console
-                        console.info('[Pointer OBJ] mesh count:', meshes.length);
-                        meshes.forEach((m, idx) => {
-                            const mat = Array.isArray(m.material) ? m.material[0] : m.material;
-                            const matName = mat && mat.name ? mat.name : '';
-                            // eslint-disable-next-line no-console
-                            console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
-                        });
-                    } catch {}
+                    // Removed mesh logging - no longer needed
 
                     // Without MTL, we cannot target by material index; leave materials as-is
                     // eslint-disable-next-line no-console
@@ -245,14 +227,7 @@ export const generateCuttingPointer = () => {
 export const listPointerMeshes = (group) => {
     const meshes = [];
     group.traverse((child) => { if (child.isMesh) meshes.push(child); });
-    // eslint-disable-next-line no-console
-    console.info('[Pointer OBJ] mesh count:', meshes.length);
-    meshes.forEach((m, idx) => {
-        const mat = Array.isArray(m.material) ? m.material[0] : m.material;
-        const matName = mat && mat.name ? mat.name : '';
-        // eslint-disable-next-line no-console
-        console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
-    });
+    // Removed mesh logging - no longer needed
 };
 
 export const createGridLines = () => {

@@ -68,6 +68,20 @@ defineEmits<{
   height: 70vh;
 }
 
+@media (orientation: portrait) {
+  .dialog--medium {
+    width: 85vw !important;
+    min-width: unset !important;
+  }
+}
+
+@media (orientation: landscape) {
+  .dialog--medium {
+    width: 65vw !important;
+    min-width: unset !important;
+  }
+}
+
 .dialog--large {
   max-width: 1200px;
   width: 90vw;

@@ -260,6 +260,7 @@ h2 {
   user-select: text !important;
 }
 
+
 .console-output * {
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
@@ -347,5 +348,12 @@ h2 {
   cursor: pointer;
   background: var(--gradient-accent);
   color: #fff;
+}
+</style>
+
+<style>
+body.theme-light .console-output {
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
 }
 </style>

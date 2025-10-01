@@ -66,6 +66,11 @@ button {
   animation: spin 1s ease-in-out infinite;
 }
 
+body.theme-light .spinner {
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-top-color: #333;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
