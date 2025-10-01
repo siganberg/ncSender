@@ -77,8 +77,12 @@ export const generateCuttingPointer = () => {
                         }
                     });
 
-                    // Tag meshes with a stable traversal index for later reference
-                    meshes.forEach((m, idx) => { m.userData.pointerIndex = idx; });
+                    // Tag meshes with a stable traversal index and set renderOrder
+                    // Start at 1000 and increment to preserve relative order while staying above gcode (999)
+                    meshes.forEach((m, idx) => {
+                        m.userData.pointerIndex = idx;
+                        m.renderOrder = 1000 + idx; // Preserve order relative to each other
+                    });
 
                     // Log mesh indices and names for debugging/selection
                     // Removed mesh logging - no longer needed
@@ -127,6 +131,8 @@ export const generateCuttingPointer = () => {
                     const cone = new THREE.Mesh(geometry, material);
                     cone.rotation.x = Math.PI;
                     cone.position.z = -5;
+                    cone.renderOrder = 1000; // Higher than gcode
+                    material.depthTest = false; // Always render on top
                     group.add(cone);
                 }
             );

@@ -14,7 +14,7 @@
             {{ preset.label }}
           </button>
           <div class="spindle-toggle">
-            <span>Spindle</span>
+            <span>S. Cam</span>
             <label class="switch">
               <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
               <span class="slider"></span>
@@ -387,7 +387,7 @@ const onMouseDown = (event: MouseEvent) => {
   // Only allow rotation in 3D view, not in top or side views
   const isOrthographicView = props.view === 'top' || props.view === 'front';
   isRotating = event.button === 0 && !isOrthographicView; // Left click for rotation (3D only)
-  isPanning = (event.button === 1 && !isOrthographicView) || (event.button === 0 && isOrthographicView); // Middle click in 3D only, left click in ortho views
+  isPanning = event.button === 1 || (event.button === 0 && isOrthographicView); // Middle click for all views, left click in ortho views
 };
 
 const onMouseMove = (event: MouseEvent) => {
@@ -485,11 +485,33 @@ const onWheel = (event: WheelEvent) => {
   updatePointerScale();
 };
 
-// Touch events (simplified)
+// Touch events with two-finger panning support
+let lastTouchDistance = 0;
+let lastTwoFingerCenter = { x: 0, y: 0 };
+
 const onTouchStart = (event: TouchEvent) => {
   if (event.touches.length === 1) {
     const touch = event.touches[0];
     onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
+  } else if (event.touches.length === 2) {
+    // Two fingers - setup for panning
+    isDragging = true;
+    isPanning = true;
+    isRotating = false;
+
+    const touch1 = event.touches[0];
+    const touch2 = event.touches[1];
+
+    lastTwoFingerCenter = {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2
+    };
+    previousMousePosition = lastTwoFingerCenter;
+
+    // Store distance for pinch zoom
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
   }
 };
 
@@ -498,11 +520,60 @@ const onTouchMove = (event: TouchEvent) => {
   if (event.touches.length === 1) {
     const touch = event.touches[0];
     onMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
+  } else if (event.touches.length === 2) {
+    const touch1 = event.touches[0];
+    const touch2 = event.touches[1];
+
+    // Calculate new center for panning
+    const newCenter = {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2
+    };
+
+    // Pan based on center movement
+    onMouseMove({ clientX: newCenter.x, clientY: newCenter.y } as MouseEvent);
+
+    // Handle pinch zoom
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (lastTouchDistance > 0) {
+      const zoomFactor = lastTouchDistance / distance;
+
+      camera.left *= zoomFactor;
+      camera.right *= zoomFactor;
+      camera.top *= zoomFactor;
+      camera.bottom *= zoomFactor;
+
+      // Limit zoom range
+      const frustumWidth = camera.right - camera.left;
+      if (frustumWidth < 1) {
+        const scale = 1 / frustumWidth;
+        camera.left *= scale;
+        camera.right *= scale;
+        camera.top *= scale;
+        camera.bottom *= scale;
+      } else if (frustumWidth > 2000) {
+        const scale = 2000 / frustumWidth;
+        camera.left *= scale;
+        camera.right *= scale;
+        camera.top *= scale;
+        camera.bottom *= scale;
+      }
+
+      camera.updateProjectionMatrix();
+      updatePointerScale();
+    }
+
+    lastTouchDistance = distance;
+    lastTwoFingerCenter = newCenter;
   }
 };
 
 const onTouchEnd = () => {
   onMouseUp();
+  lastTouchDistance = 0;
 };
 
 const updateSceneBackground = () => {
@@ -1254,7 +1325,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 10px 16px;
   background: var(--color-surface-muted);
   border-radius: var(--radius-small);
   color: var(--color-text-secondary);
