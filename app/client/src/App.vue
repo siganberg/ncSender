@@ -555,6 +555,10 @@ const applyColors = () => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
+  // Notify listeners (e.g., 3D viewport) that accent color changed
+  try {
+    window.dispatchEvent(new CustomEvent('accent-color-change', { detail: { color: accentColor.value } }));
+  } catch {}
 };
 
 const validateIP = () => {

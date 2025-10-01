@@ -43,6 +43,13 @@ export const generateCuttingPointer = () => {
         '/assets/cnc-bit.mtl',
         (materials) => {
             materials.preload();
+            // Keep reference to material creator for later helpers
+            group.userData._materialCreator = materials;
+
+            // Build ordered material name list (1-based index from file order)
+            const mtlNames = Object.keys(materials.materialsInfo || {});
+            // Default: recolor material index 1 if present
+            const defaultMaterialIndex = 1;
 
             // Now load OBJ with materials
             const objLoader = new OBJLoader();
@@ -50,19 +57,58 @@ export const generateCuttingPointer = () => {
             objLoader.load(
                 '/assets/cnc-bit.obj',
                 (obj) => {
-                    // Apply transparency and metallic look to all meshes in the loaded object
+                    // Collect meshes in encounter order
+                    const meshes = [];
                     obj.traverse((child) => {
                         if (child.isMesh) {
+                            meshes.push(child);
                             // Keep original material, add transparency and metallic properties
                             if (child.material) {
-                                child.material.transparent = true;
-                                child.material.opacity = 1;
-                                child.material.metalness = 0.9;
-                                child.material.roughness = 0.3;
+                                // Handle single or array materials
+                                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                mats.forEach((m) => {
+                                    m.transparent = true;
+                                    m.opacity = 1;
+                                    if ('metalness' in m) m.metalness = 0.9;
+                                    if ('roughness' in m) m.roughness = 0.3;
+                                });
                             }
                             child.castShadow = true;
                         }
                     });
+
+                    // Tag meshes with a stable traversal index for later reference
+                    meshes.forEach((m, idx) => { m.userData.pointerIndex = idx; });
+
+                    // Log mesh indices and names for debugging/selection
+                    try {
+                        // eslint-disable-next-line no-console
+                        console.info('[Pointer OBJ] mesh count:', meshes.length);
+                        meshes.forEach((m, idx) => {
+                            const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+                            const matName = mat && mat.name ? mat.name : '';
+                            // eslint-disable-next-line no-console
+                            console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
+                        });
+                    } catch {}
+
+                    // Recolor all meshes using selected material index to black (keep accent plumbing for future)
+                    const targetMatName = mtlNames[defaultMaterialIndex - 1];
+                    const targetColor = '#4a4a4a';
+                    if (targetMatName) {
+                        meshes.forEach((mesh) => {
+                            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                            mats.forEach((m) => {
+                                if (m && m.name === targetMatName && m.color) {
+                                    m.color.set(targetColor);
+                                    m.needsUpdate = true;
+                                }
+                            });
+                        });
+                    } else {
+                        // eslint-disable-next-line no-console
+                        console.warn('[Pointer OBJ] Material index out of range:', defaultMaterialIndex);
+                    }
 
                     // The OBJ is in meters and very small, scale it up to millimeters
                     // Model is ~0.001m, scale by 500
@@ -100,6 +146,31 @@ export const generateCuttingPointer = () => {
             objLoader.load(
                 '/assets/cnc-bit.obj',
                 (obj) => {
+                    // Collect meshes first; without MTL, material names are not available
+                    const meshes = [];
+                    obj.traverse((child) => {
+                        if (child.isMesh) {
+                            meshes.push(child);
+                        }
+                    });
+
+                    // Tag indices and log inventory for selection
+                    meshes.forEach((m, idx) => { m.userData.pointerIndex = idx; });
+                    try {
+                        // eslint-disable-next-line no-console
+                        console.info('[Pointer OBJ] mesh count:', meshes.length);
+                        meshes.forEach((m, idx) => {
+                            const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+                            const matName = mat && mat.name ? mat.name : '';
+                            // eslint-disable-next-line no-console
+                            console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
+                        });
+                    } catch {}
+
+                    // Without MTL, we cannot target by material index; leave materials as-is
+                    // eslint-disable-next-line no-console
+                    console.warn('[Pointer OBJ] MTL not loaded; material-index recolor unavailable.');
+
                     obj.scale.set(500, 500, 500);
                     obj.rotation.x = Math.PI / 2;
                     const boxScaled = new THREE.Box3().setFromObject(obj);
@@ -122,7 +193,61 @@ export const generateCuttingPointer = () => {
         }
     );
 
+    // Helper for downstream debug/selection
+    group.userData.recolorPointerParts = (indices = [], color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#1abc9c') => {
+        const meshes = [];
+        group.traverse((child) => { if (child.isMesh && typeof child.userData.pointerIndex === 'number') meshes.push(child); });
+        const colorObj = new THREE.Color(color);
+        meshes.forEach((m) => {
+            if (indices.includes(m.userData.pointerIndex)) {
+                const mats = Array.isArray(m.material) ? m.material : [m.material];
+                mats.forEach((mat) => { if (mat && mat.color) mat.color.copy(colorObj); });
+        }});
+    };
+
+    // Allow recoloring by material index (1-based) when MTL was loaded
+    group.userData.recolorPointerMaterialByIndex = (index1Based = 1, color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#1abc9c') => {
+        const colorObj = new THREE.Color(color);
+        // Try to access MaterialCreator cached on the group (if any)
+        const materialCreator = group.userData._materialCreator;
+        let mtlNames = [];
+        if (materialCreator && materialCreator.materialsInfo) {
+            mtlNames = Object.keys(materialCreator.materialsInfo);
+        }
+        const targetName = mtlNames[index1Based - 1];
+        if (!targetName) {
+            // eslint-disable-next-line no-console
+            console.warn('[Pointer OBJ] Invalid material index:', index1Based);
+            return;
+        }
+        group.traverse((child) => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach((mat) => {
+                    if (mat && mat.name === targetName && mat.color) {
+                        mat.color.copy(colorObj);
+                        mat.needsUpdate = true;
+                    }
+                });
+            }
+        });
+    };
+
     return group;
+};
+
+// Utility: list pointer meshes with indices to the console
+export const listPointerMeshes = (group) => {
+    const meshes = [];
+    group.traverse((child) => { if (child.isMesh) meshes.push(child); });
+    // eslint-disable-next-line no-console
+    console.info('[Pointer OBJ] mesh count:', meshes.length);
+    meshes.forEach((m, idx) => {
+        const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+        const matName = mat && mat.name ? mat.name : '';
+        // eslint-disable-next-line no-console
+        console.info(`  [${idx}] name="${m.name}" material="${matName}"`);
+    });
 };
 
 export const createGridLines = () => {

@@ -325,6 +325,16 @@ const initThreeJS = () => {
   cuttingPointer.position.set(0, 0, 0); // Start at origin
   scene.add(cuttingPointer);
 
+  // Listen for accent color changes from app and recolor pointer material index 1
+  const onAccentChange = (e: any) => {
+    // Slightly darker gray instead of accent
+    const newColor = '#4a4a4a';
+    if (cuttingPointer && cuttingPointer.userData && typeof cuttingPointer.userData.recolorPointerMaterialByIndex === 'function') {
+      cuttingPointer.userData.recolorPointerMaterialByIndex(1, newColor);
+    }
+  };
+  window.addEventListener('accent-color-change', onAccentChange);
+
   // Set initial pointer scale
   updatePointerScale();
 
@@ -1045,6 +1055,8 @@ onUnmounted(() => {
   }
 
   window.removeEventListener('resize', handleResize);
+  // Clean up accent color listener
+  try { window.removeEventListener('accent-color-change', (onAccentChange as any)); } catch {}
 });
 </script>
 
