@@ -81,7 +81,8 @@ export async function createApp(options = {}) {
     online: false,
     machineState: null,
     isToolChanging: false,
-    hasEverConnected: false
+    hasEverConnected: false,
+    jobStatus: null // Will be populated with current job info
   };
 
   // Middleware
@@ -211,7 +212,7 @@ export async function createApp(options = {}) {
         status: 'accepted'
       });
 
-      const realtimeJobCommands = new Set(['!', '~', '\\x18']);
+      const realtimeJobCommands = new Set(['!', '~', '\x18']);
       if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
         try {
           if (commandValue === '!') {
@@ -220,7 +221,7 @@ export async function createApp(options = {}) {
           } else if (commandValue === '~') {
             jobManager.resume();
             log('Job resumed via WebSocket command');
-          } else if (commandValue === '\\x18') {
+          } else if (commandValue === '\x18') {
             jobManager.stop();
             log('Job stopped via WebSocket command');
           }
@@ -334,7 +335,17 @@ export async function createApp(options = {}) {
     sendWsMessage(ws, 'server-state-updated', serverState);
   });
 
+  // Helper function to update job status in serverState
+  const updateJobStatus = () => {
+    serverState.jobStatus = jobManager.getJobStatus();
+  };
+
   function broadcast(type, data) {
+    // Always include current job status in server-state-updated messages
+    if (type === 'server-state-updated') {
+      updateJobStatus();
+    }
+
     try {
       const safeData = JSON.parse(JSON.stringify(data, (key, value) => {
         if (typeof value === 'object' && value !== null) {
@@ -586,11 +597,27 @@ export async function createApp(options = {}) {
 
   cncController.on('data', (data) => broadcast('cnc-data', data));
   cncController.on('status-report', (status) => {
+    const prevMachineStatus = serverState.machineState?.status;
     serverState.machineState = { ...status };
+
+    // If machine enters alarm state and a job is running, force reset the job
+    const currentMachineStatus = status?.status?.toLowerCase();
+    if (currentMachineStatus === 'alarm' && prevMachineStatus !== 'alarm' && jobManager.hasActiveJob()) {
+      log('Machine entered alarm state, resetting job manager');
+      jobManager.forceReset();
+    }
+
     broadcast('server-state-updated', serverState);
   });
   cncController.on('system-message', (message) => broadcast('cnc-system-message', message));
   cncController.on('response', (response) => broadcast('cnc-response', response));
+
+  // Handle soft reset to force reset any active job
+  cncController.on('soft-reset', () => {
+    log('Soft reset detected, resetting job manager');
+    jobManager.forceReset();
+    broadcast('server-state-updated', serverState);
+  });
 
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState));

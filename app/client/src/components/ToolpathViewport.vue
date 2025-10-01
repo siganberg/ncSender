@@ -22,12 +22,12 @@
             @change="handleFileLoad"
             style="display: none"
           />
-          <button @click="fileInput?.click()" class="load-button" title="Upload G-code">
+          <button @click="fileInput?.click()" class="load-button" title="Upload G-code" :disabled="isJobRunning">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M8 12V3M8 3L4 7M8 3L12 7M2 13H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button @click="showFileManager = true" class="load-button" title="Open Folder">
+          <button @click="showFileManager = true" class="load-button" title="Open Folder" :disabled="isJobRunning">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -58,7 +58,7 @@
       <div class="control-buttons">
         <button
           class="control-btn control-btn--primary"
-          :disabled="!canStartOrResume"
+          :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
           @click="handleCycle"
           :title="isOnHold ? 'Resume Job' : 'Start Job'"
         >
@@ -116,7 +116,12 @@
           <p class="file-manager__empty-hint">Upload a G-code file to get started</p>
         </div>
         <div v-else class="file-list">
-          <div v-for="file in uploadedFiles" :key="file.name" class="file-item">
+          <div
+            v-for="file in uploadedFiles"
+            :key="file.name"
+            class="file-item"
+            @dblclick="loadFileFromManager(file.name)"
+          >
             <div class="file-item__icon">
               📦
             </div>
@@ -125,13 +130,13 @@
               <div class="file-item__meta">{{ formatFileSize(file.size) }} • {{ formatDate(file.uploadedAt) }}</div>
             </div>
             <div class="file-item__actions">
-              <button @click="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file">
+              <button @click.stop="loadFileFromManager(file.name)" class="file-item__load-btn" title="Load file">
                 <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M2 8L8 2L14 8M8 2V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                   <path d="M2 14H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
               </button>
-              <button @click="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file">
+              <button @click.stop="deleteFile(file.name)" class="file-item__delete-btn" title="Delete file">
                 <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M2 4H14M6 4V2.5C6 2.22 6.22 2 6.5 2H9.5C9.78 2 10 2.22 10 2.5V4M12.5 4L12 13C12 13.55 11.55 14 11 14H5C4.45 14 4 13.55 4 13L3.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -169,12 +174,14 @@ const props = withDefaults(defineProps<{
   loadedGCodeProgram?: string | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   spindleRpm?: number;
+  jobStatus?: { isRunning: boolean; currentLine?: number; totalLines?: number } | null;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
   connected: false,
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
-  spindleRpm: 0
+  spindleRpm: 0,
+  jobStatus: null
 });
 
 const emit = defineEmits<{
@@ -216,6 +223,10 @@ const canStop = computed(() => {
   return state === 'run' || state === 'hold' || state === 'door';
 });
 
+const isJobRunning = computed(() => {
+  return props.jobStatus?.isRunning === true;
+});
+
 // Template refs
 const canvas = ref<HTMLElement>();
 const fileInput = ref<HTMLInputElement>();
@@ -230,6 +241,7 @@ const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
 const fileToDelete = ref<string | null>(null);
+const lastExecutedLine = ref<number>(0); // Track the last executed line number
 let currentGCodeBounds: any = null; // Store current G-code bounds
 
 // Three.js objects
@@ -474,16 +486,22 @@ const updateSceneBackground = () => {
   scene.background = new THREE.Color(backgroundColor);
 };
 
+let lastSpindleUpdateTime = 0;
+const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
+
 const animate = () => {
   animationId = requestAnimationFrame(animate);
 
-  // Rotate cutting pointer when spindle is spinning
+  // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
   if (cuttingPointer && props.spindleRpm > 0) {
-    // Rotate around Z axis (spindle axis after rotation)
-    // Static rotation speed: 10 rotations per second = 10 * 2π radians per second
-    // At 60 fps: (10 * 2π) / 60 radians per frame
-    const rotationSpeed = (10 * 2 * Math.PI) / 60;
-    cuttingPointer.rotation.z += rotationSpeed;
+    const now = performance.now();
+    if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
+      // Rotate around Z axis (spindle axis after rotation)
+      // 10 rotations per second at 30 fps = (10 * 2π) / 30 radians per update
+      const rotationSpeed = (10 * 2 * Math.PI) / 30;
+      cuttingPointer.rotation.z += rotationSpeed;
+      lastSpindleUpdateTime = now;
+    }
   }
 
   if (renderer && scene && camera) {
@@ -492,20 +510,15 @@ const animate = () => {
 };
 
 const handleFileLoad = async (event: Event) => {
-  console.log('File load event triggered');
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) {
-    console.log('No file selected');
     return;
   }
 
-  console.log('Selected file:', file.name, file.size, 'bytes');
   isLoading.value = true;
   try {
     // Upload file to server
-    console.log('Uploading file to server...');
     const result = await api.uploadGCodeFile(file);
-    console.log('Upload result:', result);
     // File content will be received via WebSocket and handled in onGCodeUpdated
 
     // Clear the file input
@@ -519,8 +532,7 @@ const handleFileLoad = async (event: Event) => {
   }
 };
 
-const handleGCodeUpdate = (data: { filename: string; content: string; timestamp: string }) => {
-  console.log('handleGCodeUpdate called with:', data);
+const handleGCodeUpdate = async (data: { filename: string; content: string; timestamp: string }) => {
   try {
     // Reset completed lines before rendering new G-code
     if (gcodeVisualizer) {
@@ -547,14 +559,22 @@ const handleGCodeUpdate = (data: { filename: string; content: string; timestamp:
     gcodeVisualizer.setRapidVisibility(showRapids.value);
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
 
+    // Check if we have a last executed line (from server state on page load)
+    // and mark all lines up to that point as completed
+    if (lastExecutedLine.value > 0) {
+      const completedLines = [];
+      for (let i = 1; i <= lastExecutedLine.value; i++) {
+        completedLines.push(i);
+      }
+      gcodeVisualizer.markLinesCompleted(completedLines);
+    }
+
     // Update axis labels based on G-code bounds
     if (axisLabelsGroup) {
       scene.remove(axisLabelsGroup);
     }
     axisLabelsGroup = createDynamicAxisLabels(bounds);
     scene.add(axisLabelsGroup);
-
-    console.log(`G-code file "${data.filename}" loaded successfully`);
   } catch (error) {
     console.error('Error rendering G-code:', error);
   }
@@ -642,11 +662,8 @@ const deleteFile = (filename: string) => {
 const confirmDelete = async () => {
   if (!fileToDelete.value) return;
 
-  console.log('Deleting file:', fileToDelete.value);
-
   try {
-    const result = await api.deleteGCodeFile(fileToDelete.value);
-    console.log('Delete result:', result);
+    await api.deleteGCodeFile(fileToDelete.value);
     await fetchUploadedFiles();
     showDeleteConfirm.value = false;
     fileToDelete.value = null;
@@ -680,11 +697,9 @@ const handleCycle = async () => {
     if (isOnHold.value) {
       // Resume job
       await api.controlGCodeJob('resume');
-      console.log('Job resumed');
     } else {
       // Start new job
       await api.startGCodeJob(props.loadedGCodeProgram!);
-      console.log('Job started:', props.loadedGCodeProgram);
     }
   } catch (error) {
     console.error('Error controlling job:', error);
@@ -694,7 +709,6 @@ const handleCycle = async () => {
 const handlePause = async () => {
   try {
     await api.controlGCodeJob('pause');
-    console.log('Job paused');
   } catch (error) {
     console.error('Error pausing job:', error);
   }
@@ -703,7 +717,6 @@ const handlePause = async () => {
 const handleStop = async () => {
   try {
     await api.stopGCodeJob();
-    console.log('Job stopped');
   } catch (error) {
     console.error('Error stopping job:', error);
   }
@@ -942,13 +955,28 @@ onMounted(() => {
   }
 
   // Set up WebSocket listeners for G-code events
-  console.log('Setting up G-code event listeners');
   api.onGCodeUpdated(handleGCodeUpdate);
 
+  // Listen for server state updates to track job progress
+  api.onServerStateUpdated((state) => {
+    if (state.jobStatus && state.jobStatus.currentLine) {
+      // Update our tracked last executed line
+      if (state.jobStatus.currentLine > lastExecutedLine.value) {
+        lastExecutedLine.value = state.jobStatus.currentLine;
+      }
+    } else if (!state.jobStatus || !state.jobStatus.isRunning) {
+      // Job finished or stopped, reset
+      if (lastExecutedLine.value > 0) {
+        lastExecutedLine.value = 0;
+      }
+    }
+  });
+
   // Listen for command results to mark completed lines
+  // Only mark as completed when status is 'success' (actually executed)
   api.on('cnc-command-result', (result) => {
     const lineNumber = result?.meta?.lineNumber;
-    if (lineNumber && gcodeVisualizer) {
+    if (lineNumber && result?.status === 'success' && gcodeVisualizer) {
       gcodeVisualizer.markLineCompleted(lineNumber);
     }
   });
@@ -1048,6 +1076,12 @@ onUnmounted(() => {
   color: white;
 }
 
+.load-button:disabled, .clear-button:disabled, .toggle-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(50%);
+}
+
 .clear-button {
   background: var(--color-surface-muted);
   color: var(--color-text-primary);
@@ -1057,7 +1091,7 @@ onUnmounted(() => {
   background: #6c757d;
 }
 
-.load-button:hover, .clear-button:hover, .toggle-button:hover {
+.load-button:hover:not(:disabled), .clear-button:hover:not(:disabled), .toggle-button:hover:not(:disabled) {
   opacity: 0.8;
 }
 
@@ -1338,6 +1372,7 @@ h2 {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-medium);
   transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 .file-item:hover {

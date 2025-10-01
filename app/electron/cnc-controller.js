@@ -588,6 +588,8 @@ export class CNCController extends EventEmitter {
 
         if (cleanCommand === '\x18') {
           this.commandQueue.flush('');
+          // Emit a specific event for soft reset
+          this.emit('soft-reset');
         }
 
         const ackPayload = {

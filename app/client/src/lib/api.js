@@ -713,6 +713,12 @@ class NCClient {
     return response.json();
   }
 
+  async getJobStatus() {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/status`);
+    if (!response.ok) throw new Error('Failed to get job status');
+    return await response.json();
+  }
+
   async controlGCodeJob(action) {
     // Use send-command API with real-time commands
     const commandMap = {

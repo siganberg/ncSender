@@ -13,8 +13,8 @@ class GCodeVisualizer {
         this.moveColors = {
             rapid: 0x00ff00,  // Rapid moves - Bright Green
             cutting: 0x3e85c7,  // Cutting moves - Light Blue
-            completedRapid: 0x666666,  // Completed rapid - Gray
-            completedCutting: 0x888888  // Completed cutting - Lighter Gray
+            completedRapid: 0x333333,  // Completed rapid - Dark Gray
+            completedCutting: 0x444444  // Completed cutting - Dark Gray
         };
 
         // Track line numbers for each path segment
@@ -50,8 +50,10 @@ class GCodeVisualizer {
         let isToolDown = false;
 
         lines.forEach((line, lineIndex) => {
-            const lineNumber = lineIndex + 1; // 1-based line numbering
+            const lineNumber = lineIndex + 1; // 1-based line numbering (actual file line number)
             const cleanLine = line.split(';')[0].trim().toUpperCase();
+
+            // Skip empty lines but keep line numbering consistent
             if (!cleanLine) return;
 
             let moveType = lastMoveType;
@@ -232,15 +234,25 @@ class GCodeVisualizer {
 
         const toolpaths = this.parseGCode(gcodeString);
 
-        // Render cutting toolpaths (continuous lines)
+        // Render cutting toolpaths (continuous lines with vertex colors)
         toolpaths.cutting.forEach((segment, index) => {
             if (segment.path.length < 2) return;
 
             const points = segment.path.map(point => new THREE.Vector3(point.x, point.y, point.z));
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
 
+            // Create vertex colors (initially all set to cutting color)
+            const colors = new Float32Array(points.length * 3);
+            const cuttingColor = new THREE.Color(this.moveColors.cutting);
+            for (let i = 0; i < points.length; i++) {
+                colors[i * 3] = cuttingColor.r;
+                colors[i * 3 + 1] = cuttingColor.g;
+                colors[i * 3 + 2] = cuttingColor.b;
+            }
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
             const material = new THREE.LineBasicMaterial({
-                color: this.moveColors.cutting, // Cutting color
+                vertexColors: true, // Enable vertex colors
                 transparent: true,
                 opacity: 0.9,
                 linewidth: 2
@@ -251,7 +263,9 @@ class GCodeVisualizer {
                 type: 'cutting',
                 pathIndex: index,
                 lineNumbers: segment.lineNumbers,
-                originalColor: this.moveColors.cutting
+                originalColor: this.moveColors.cutting,
+                pointsPerLine: segment.path.length / segment.lineNumbers.length, // Average points per line number
+                totalPoints: segment.path.length
             };
             line.name = `cutting-path-${index}`;
             line.renderOrder = 1; // Ensure lines render on top
@@ -259,15 +273,17 @@ class GCodeVisualizer {
             this.pathLines.push(line);
             this.group.add(line);
 
-            // Map line numbers to this THREE.Line object
-            segment.lineNumbers.forEach(lineNum => {
+            // Map line numbers to this THREE.Line object with vertex indices
+            segment.lineNumbers.forEach((lineNum, lineIdx) => {
                 if (!this.lineNumberMap.has(lineNum)) {
                     this.lineNumberMap.set(lineNum, []);
                 }
                 this.lineNumberMap.get(lineNum).push({
                     line: line,
                     originalColor: this.moveColors.cutting,
-                    type: 'cutting'
+                    type: 'cutting',
+                    lineIndex: lineIdx, // Which line number in the sequence
+                    totalLines: segment.lineNumbers.length
                 });
             });
         });
@@ -367,10 +383,7 @@ class GCodeVisualizer {
      * @param {number} lineNumber - The G-code line number (1-based)
      */
     markLineCompleted(lineNumber) {
-        console.log('markLineCompleted called for line:', lineNumber);
-
         if (this.completedLines.has(lineNumber)) {
-            console.log('Line already marked as completed:', lineNumber);
             return; // Already marked as completed
         }
 
@@ -378,23 +391,40 @@ class GCodeVisualizer {
 
         // Get all THREE.Line objects associated with this line number
         const lineObjects = this.lineNumberMap.get(lineNumber);
-        console.log('Line objects for line', lineNumber, ':', lineObjects);
-
         if (!lineObjects) {
-            console.log('No visual representation for line:', lineNumber);
-            console.log('Available line numbers:', Array.from(this.lineNumberMap.keys()).slice(0, 20));
             return; // No visual representation for this line
         }
 
-        // Update the color of each line segment
-        lineObjects.forEach(({ line, type }) => {
+        // Update the color for specific vertices
+        lineObjects.forEach(({ line, type, lineIndex, totalLines }) => {
             const completedColor = type === 'cutting'
-                ? this.moveColors.completedCutting
-                : this.moveColors.completedRapid;
+                ? new THREE.Color(this.moveColors.completedCutting)
+                : new THREE.Color(this.moveColors.completedRapid);
 
-            console.log('Setting line', lineNumber, 'to color:', completedColor.toString(16));
-            line.material.color.setHex(completedColor);
-            line.material.opacity = 0.3; // Make completed lines more transparent
+            if (type === 'cutting' && line.geometry.attributes.color) {
+                // For cutting paths with vertex colors, update only the relevant vertices
+                const colors = line.geometry.attributes.color.array;
+                const totalPoints = line.userData.totalPoints;
+
+                // Calculate which vertices belong to this line number
+                // Each line number gets an equal portion of the path
+                const startIdx = Math.floor((lineIndex / totalLines) * totalPoints);
+                const endIdx = Math.floor(((lineIndex + 1) / totalLines) * totalPoints);
+
+                // Update vertex colors for this segment
+                for (let i = startIdx; i <= Math.min(endIdx, totalPoints - 1); i++) {
+                    colors[i * 3] = completedColor.r;
+                    colors[i * 3 + 1] = completedColor.g;
+                    colors[i * 3 + 2] = completedColor.b;
+                }
+
+                // Mark the attribute as needing update
+                line.geometry.attributes.color.needsUpdate = true;
+            } else {
+                // For rapid moves, update the entire line color
+                line.material.color.setHex(completedColor);
+                line.material.opacity = 0.3;
+            }
         });
     }
 
@@ -413,9 +443,28 @@ class GCodeVisualizer {
         this.completedLines.forEach(lineNumber => {
             const lineObjects = this.lineNumberMap.get(lineNumber);
             if (lineObjects) {
-                lineObjects.forEach(({ line, originalColor, type }) => {
-                    line.material.color.setHex(originalColor);
-                    line.material.opacity = type === 'cutting' ? 0.9 : 0.6;
+                lineObjects.forEach(({ line, originalColor, type, lineIndex, totalLines }) => {
+                    if (type === 'cutting' && line.geometry.attributes.color) {
+                        // Reset vertex colors for cutting paths
+                        const colors = line.geometry.attributes.color.array;
+                        const totalPoints = line.userData.totalPoints;
+                        const color = new THREE.Color(originalColor);
+
+                        const startIdx = Math.floor((lineIndex / totalLines) * totalPoints);
+                        const endIdx = Math.floor(((lineIndex + 1) / totalLines) * totalPoints);
+
+                        for (let i = startIdx; i <= Math.min(endIdx, totalPoints - 1); i++) {
+                            colors[i * 3] = color.r;
+                            colors[i * 3 + 1] = color.g;
+                            colors[i * 3 + 2] = color.b;
+                        }
+
+                        line.geometry.attributes.color.needsUpdate = true;
+                    } else {
+                        // Reset line color for rapid moves
+                        line.material.color.setHex(originalColor);
+                        line.material.opacity = type === 'cutting' ? 0.9 : 0.6;
+                    }
                 });
             }
         });

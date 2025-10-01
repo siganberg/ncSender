@@ -52,6 +52,19 @@ class JobProcessorManager {
     this.currentJob = null;
   }
 
+  forceReset() {
+    // Force reset the job without validation (used when machine resets externally)
+    if (this.currentJob) {
+      try {
+        this.currentJob.stop();
+      } catch (error) {
+        // Ignore errors during force reset
+      }
+      log('Job force reset');
+      this.currentJob = null;
+    }
+  }
+
   getCurrentJob() {
     return this.currentJob;
   }

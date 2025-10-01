@@ -1,9 +1,9 @@
 <template>
   <div class="panel-stack">
-    <JogPanel 
-      :jog-config="jogConfig" 
-      :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home'" 
-      @update:step-size="emit('update:jogStep', $event)" 
+    <JogPanel
+      :jog-config="jogConfig"
+      :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home' || (jobStatus?.isRunning === true)"
+      @update:step-size="emit('update:jogStep', $event)"
     />
     <StatusPanel :status="status" />
     <ConsolePanel :lines="consoleLines" :connected="status.connected" @clear="emit('clearConsole')" />
@@ -34,6 +34,7 @@ defineProps<{
     stepSize: number;
     stepOptions: number[];
   };
+  jobStatus?: { isRunning: boolean; currentLine?: number; totalLines?: number } | null;
 }>();
 </script>
 

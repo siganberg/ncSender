@@ -21,12 +21,14 @@
         :loaded-g-code-program="serverState.loadedGCodeProgram"
         :work-coords="status.workCoords"
         :spindle-rpm="status.spindleRpm"
+        :job-status="serverState.jobStatus"
         @change-view="viewport = $event"
       />
       <RightPanel
         :status="{ ...status, connected: status.connected && websocketConnected }"
         :console-lines="consoleLines"
         :jog-config="jogConfig"
+        :job-status="serverState.jobStatus"
         @update:jog-step="jogConfig.stepSize = $event"
         @clear-console="clearConsole"
       />
@@ -707,7 +709,6 @@ const loadConnectionSettings = async () => {
 const saveConnectionSettings = async () => {
   // Validate form before saving
   if (!validateMainForm()) {
-    console.log('Validation failed, not saving settings');
     return;
   }
 
@@ -739,7 +740,6 @@ const saveConnectionSettings = async () => {
 
     if (response.ok) {
       const result = await response.json();
-      console.log('Settings saved successfully:', result.message || 'Settings saved');
       showSettings.value = false;
     } else {
       const error = await response.json();
@@ -754,7 +754,6 @@ const saveSetupSettings = async () => {
   try {
     // Validate the entire form
     if (!validateSetupForm()) {
-      console.error('Please fix validation errors before connecting');
       return;
     }
 
@@ -778,7 +777,6 @@ const saveSetupSettings = async () => {
 
     if (response.ok) {
       const result = await response.json();
-      console.log('Setup completed successfully:', result.message || 'Setup completed');
 
       // Close setup dialog and load settings
       showSetupDialog.value = false;
@@ -822,8 +820,9 @@ const jogConfig = reactive({
   const serverState = reactive({
     loadedGCodeProgram: null as string | null,
     online: false,
-  machineState: null as any,
-  isToolChanging: false as boolean
+    machineState: null as any,
+    isToolChanging: false as boolean,
+    jobStatus: null as { isRunning: boolean; currentLine?: number; totalLines?: number } | null
   });
 
 type ConsoleStatus = 'pending' | 'success' | 'error';

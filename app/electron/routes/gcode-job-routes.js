@@ -50,7 +50,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       res.json({ success: true, message: 'G-code job started', filename });
     } catch (error) {
       console.error('Error starting G-code job:', error);
-      res.status(500).json({ error: 'Failed to start G-code job' });
+      const errorMessage = error.message || 'Failed to start G-code job';
+      res.status(500).json({ error: errorMessage });
     }
   });
 
