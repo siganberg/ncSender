@@ -529,6 +529,9 @@ const animate = () => {
         cuttingPointer.rotation.z += rotationSpeed;
         lastSpindleUpdateTime = now;
       }
+    } else {
+      // Spindle stopped - reset rotation to 0
+      cuttingPointer.rotation.z = 0;
     }
   }
 
