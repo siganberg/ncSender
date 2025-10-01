@@ -205,7 +205,7 @@
             </div>
             <div class="setting-item">
               <label class="setting-label">Console buffer size</label>
-              <input type="number" class="setting-input" v-model="consoleSettings.consoleBufferSize" min="100" max="10000" step="100">
+              <span class="setting-value">50 lines (optimized for performance)</span>
             </div>
           </div>
         </div>
@@ -431,8 +431,7 @@ const setupSettings = reactive({
 
 // Console settings
 const consoleSettings = reactive({
-  autoClearConsole: true,
-  consoleBufferSize: 1000
+  autoClearConsole: true
 });
 
 // USB ports
@@ -693,7 +692,6 @@ const loadConnectionSettings = async () => {
 
       // Load console settings
       if (settings.autoClearConsole !== undefined) consoleSettings.autoClearConsole = settings.autoClearConsole;
-      if (settings.consoleBufferSize) consoleSettings.consoleBufferSize = settings.consoleBufferSize;
 
       // Load USB ports if USB connection type
       if (connectionSettings.type === 'USB') {
@@ -725,8 +723,7 @@ const saveConnectionSettings = async () => {
       defaultGcodeView: defaultView.value,
       accentColor: accentColor.value,
       gradientColor: gradientColor.value,
-      autoClearConsole: consoleSettings.autoClearConsole,
-      consoleBufferSize: parseInt(consoleSettings.consoleBufferSize) || 1000
+      autoClearConsole: consoleSettings.autoClearConsole
     };
 
     const response = await fetch(`${getApiBaseUrl()}/api/settings`, {
@@ -1016,6 +1013,22 @@ onMounted(async () => {
     consoleLines.value.push(newLine);
     commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
 
+    // Enforce buffer size limit - keep only last 50 lines for performance
+    const maxLines = 50;
+    if (consoleLines.value.length > maxLines) {
+      const removed = consoleLines.value.shift(); // Remove oldest line
+      if (removed) {
+        commandLinesMap.delete(removed.id);
+      }
+      // Rebuild map indices after shift
+      consoleLines.value.forEach((line, idx) => {
+        const entry = commandLinesMap.get(line.id);
+        if (entry) {
+          entry.index = idx;
+        }
+      });
+    }
+
     return { line: newLine, timestamp };
   };
 
@@ -1029,6 +1042,22 @@ onMounted(async () => {
     const newIndex = consoleLines.value.length;
     consoleLines.value.push(responseLine);
     commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
+
+    // Enforce buffer size limit - keep only last 50 lines for performance
+    const maxLines = 50;
+    if (consoleLines.value.length > maxLines) {
+      const removed = consoleLines.value.shift(); // Remove oldest line
+      if (removed) {
+        commandLinesMap.delete(removed.id);
+      }
+      // Rebuild map indices after shift
+      consoleLines.value.forEach((line, idx) => {
+        const entry = commandLinesMap.get(line.id);
+        if (entry) {
+          entry.index = idx;
+        }
+      });
+    }
   });
 
   // Auto-clear console when a new job starts (detect by line number 1)
@@ -1241,6 +1270,11 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .setting-select:hover,
 .setting-input:hover {
   border-color: var(--color-accent);
+}
+
+.setting-value {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
 }
 
 .setting-input:disabled {
