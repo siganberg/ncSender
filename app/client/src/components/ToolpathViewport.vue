@@ -1259,15 +1259,15 @@ h2 {
 .control-btn {
   border: none;
   border-radius: var(--radius-medium);
-  padding: 12px 20px;
-  font-size: 0.95rem;
+  padding: 16px 28px;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 90px;
+  min-width: 110px;
   justify-content: center;
 }
 
