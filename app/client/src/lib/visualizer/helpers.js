@@ -97,15 +97,28 @@ export const generateCuttingPointer = () => {
             console.error('Error loading MTL file:', error);
             // Fallback: load OBJ without materials
             const objLoader = new OBJLoader();
-            objLoader.load('/assets/cnc-bit2.obj', (obj) => {
-                obj.scale.set(500, 500, 500);
-                obj.rotation.x = Math.PI / 2;
-                const boxScaled = new THREE.Box3().setFromObject(obj);
-                const center = boxScaled.getCenter(new THREE.Vector3());
-                obj.position.sub(center);
-                obj.position.z += 11.5;
-                group.add(obj);
-            });
+            objLoader.load(
+                '/assets/cnc-bit.obj',
+                (obj) => {
+                    obj.scale.set(500, 500, 500);
+                    obj.rotation.x = Math.PI / 2;
+                    const boxScaled = new THREE.Box3().setFromObject(obj);
+                    const center = boxScaled.getCenter(new THREE.Vector3());
+                    obj.position.sub(center);
+                    obj.position.z += 11.5;
+                    group.add(obj);
+                },
+                undefined,
+                (objError) => {
+                    console.error('Error loading OBJ file:', objError);
+                    // Final fallback to simple cone if OBJ loading fails
+                    const geometry = new THREE.ConeGeometry(1, 10, 8);
+                    const cone = new THREE.Mesh(geometry, material);
+                    cone.rotation.x = Math.PI;
+                    cone.position.z = -5;
+                    group.add(cone);
+                }
+            );
         }
     );
 

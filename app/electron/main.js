@@ -70,6 +70,10 @@ async function createWindow() {
       const isFullScreen = mainWindow.isFullScreen();
       mainWindow.setFullScreen(!isFullScreen);
     }
+    // Press F12 to toggle DevTools (for debugging production builds)
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      mainWindow.webContents.toggleDevTools();
+    }
     // Press Ctrl+Alt+Q to quit in kiosk mode
     if (input.key === 'q' && input.control && input.alt && input.type === 'keyDown') {
       app.quit();
