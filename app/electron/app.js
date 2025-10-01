@@ -77,13 +77,12 @@ export async function createApp(options = {}) {
 
   // Server state
   const serverState = {
-    loadedGCodeProgram: null,
     machineState: {
       connected: false
     },
     isToolChanging: false,
     hasEverConnected: false,
-    jobStatus: null // Will be populated with current job info
+    jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
 
   // Middleware
@@ -335,7 +334,11 @@ export async function createApp(options = {}) {
 
   // Helper function to update job status in serverState
   const updateJobStatus = () => {
-    serverState.jobStatus = jobManager.getJobStatus();
+    const jobStatus = jobManager.getJobStatus();
+    // Only update if there's an active job, otherwise keep the loaded file info
+    if (jobStatus) {
+      serverState.jobLoaded = jobStatus;
+    }
   };
 
   function broadcast(type, data) {
@@ -622,9 +625,14 @@ export async function createApp(options = {}) {
     broadcast('server-state-updated', serverState);
   });
 
-  // Set up job completion callback to broadcast state update
+  // Set up job completion callback to reset job status and broadcast state update
   jobManager.setJobCompleteCallback(() => {
-    log('Job completed, broadcasting server state update');
+    log('Job completed, resetting jobLoaded status to stopped');
+    // Keep the loaded file info but reset status to stopped
+    if (serverState.jobLoaded) {
+      serverState.jobLoaded.status = 'stopped';
+      serverState.jobLoaded.currentLine = 0;
+    }
     broadcast('server-state-updated', serverState);
   });
 

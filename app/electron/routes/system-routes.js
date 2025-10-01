@@ -18,7 +18,7 @@ export function createSystemRoutes(serverState, cncController) {
     try {
       // Create a safe copy of serverState without circular references
       const safeServerState = {
-        loadedGCodeProgram: serverState.loadedGCodeProgram,
+        jobLoaded: serverState.jobLoaded,
         machineState: serverState.machineState,
         hasEverConnected: serverState.hasEverConnected
         // Exclude cncController to avoid circular references

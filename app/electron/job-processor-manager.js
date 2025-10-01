@@ -84,13 +84,20 @@ class JobProcessorManager {
     if (!this.currentJob) {
       return null;
     }
+
+    // Determine status: 'running', 'paused', or 'stopped'
+    let status = 'stopped';
+    if (this.currentJob.isRunning) {
+      status = 'running';
+    } else if (this.currentJob.isPaused) {
+      status = 'paused';
+    }
+
     return {
       filename: this.currentJob.filename,
       currentLine: this.currentJob.currentLine,
       totalLines: this.currentJob.lines.length,
-      isRunning: this.currentJob.isRunning,
-      isPaused: this.currentJob.isPaused,
-      isStopped: this.currentJob.isStopped
+      status: status
     };
   }
 

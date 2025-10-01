@@ -11,7 +11,7 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
   router.post('/clear', async (req, res) => {
     try {
       // Clear the loaded program from server state
-      serverState.loadedGCodeProgram = null;
+      serverState.jobLoaded = null;
 
       // Broadcast server state update to all connected clients
       broadcast('server-state-updated', serverState);

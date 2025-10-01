@@ -18,17 +18,16 @@
         :theme="theme"
         :connected="status.connected && websocketConnected"
         :machine-state="status.machineState"
-        :loaded-g-code-program="serverState.loadedGCodeProgram"
+        :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :spindle-rpm="status.spindleRpm"
-        :job-status="serverState.jobStatus"
         @change-view="viewport = $event"
       />
       <RightPanel
         :status="{ ...status, connected: status.connected && websocketConnected }"
         :console-lines="consoleLines"
         :jog-config="jogConfig"
-        :job-status="serverState.jobStatus"
+        :job-loaded="serverState.jobLoaded"
         @update:jog-step="jogConfig.stepSize = $event"
         @clear-console="clearConsole"
       />
@@ -818,11 +817,9 @@ const jogConfig = reactive({
 });
 
   const serverState = reactive({
-    loadedGCodeProgram: null as string | null,
-    online: false,
     machineState: null as any,
     isToolChanging: false as boolean,
-    jobStatus: null as { isRunning: boolean; currentLine?: number; totalLines?: number } | null
+    jobLoaded: null as { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null
   });
 
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -945,13 +942,13 @@ onMounted(async () => {
 
   // Initialize purely from WebSocket server-state-updated events
   api.onServerStateUpdated((newServerState) => {
-    const previousGCodeProgram = serverState.loadedGCodeProgram;
+    const previousJobFilename = serverState.jobLoaded?.filename;
     Object.assign(serverState, newServerState);
     // Only treat as connected when payload reports connected
     status.connected = !!serverState.machineState?.connected;
 
     // Reset viewport to default view when a new G-code file is loaded
-    if (serverState.loadedGCodeProgram && serverState.loadedGCodeProgram !== previousGCodeProgram) {
+    if (serverState.jobLoaded?.filename && serverState.jobLoaded.filename !== previousJobFilename) {
       viewport.value = defaultView.value;
     }
 

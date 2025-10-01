@@ -26,8 +26,13 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Read file content for validation
       const content = await fs.readFile(finalPath, 'utf8');
 
-      // Update server state
-      serverState.loadedGCodeProgram = originalName;
+      // Update server state - set jobLoaded with stopped status
+      serverState.jobLoaded = {
+        filename: originalName,
+        currentLine: 0,
+        totalLines: content.split('\n').length,
+        status: 'stopped'
+      };
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
@@ -105,8 +110,13 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       const filePath = path.join(filesDir, filename);
       const content = await fs.readFile(filePath, 'utf8');
 
-      // Update server state
-      serverState.loadedGCodeProgram = filename;
+      // Update server state - set jobLoaded with stopped status
+      serverState.jobLoaded = {
+        filename: filename,
+        currentLine: 0,
+        totalLines: content.split('\n').length,
+        status: 'stopped'
+      };
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {

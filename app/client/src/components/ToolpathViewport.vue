@@ -171,17 +171,16 @@ const props = withDefaults(defineProps<{
   theme: 'light' | 'dark';
   connected?: boolean;
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
-  loadedGCodeProgram?: string | null;
+  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   spindleRpm?: number;
-  jobStatus?: { isRunning: boolean; currentLine?: number; totalLines?: number } | null;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
   connected: false,
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   spindleRpm: 0,
-  jobStatus: null
+  jobLoaded: null
 });
 
 const emit = defineEmits<{
@@ -199,11 +198,11 @@ const canStartOrResume = computed(() => {
   const state = props.machineState?.toLowerCase();
 
   // Condition 1: Can start new job if we have a loaded program and machine is idle
-  if (props.loadedGCodeProgram && state === 'idle') {
+  if (props.jobLoaded?.filename && state === 'idle') {
     return true;
   }
 
-  // Condition 2: Can resume job if machine is on hold or door (regardless of loadedGCodeProgram)
+  // Condition 2: Can resume job if machine is on hold or door (regardless of jobLoaded)
   if (state === 'hold' || state === 'door') {
     return true;
   }
@@ -212,19 +211,19 @@ const canStartOrResume = computed(() => {
 });
 
 const canPause = computed(() => {
-  if (!props.connected || !props.loadedGCodeProgram) return false;
+  if (!props.connected || !props.jobLoaded?.filename) return false;
   const state = props.machineState?.toLowerCase();
   return state === 'run';
 });
 
 const canStop = computed(() => {
-  if (!props.connected || !props.loadedGCodeProgram) return false;
+  if (!props.connected || !props.jobLoaded?.filename) return false;
   const state = props.machineState?.toLowerCase();
   return state === 'run' || state === 'hold' || state === 'door';
 });
 
 const isJobRunning = computed(() => {
-  return props.jobStatus?.isRunning === true;
+  return props.jobLoaded?.status === 'running';
 });
 
 // Template refs
@@ -706,7 +705,7 @@ const fetchUploadedFiles = async () => {
 
 // Control button handlers
 const handleCycle = async () => {
-  if (!props.loadedGCodeProgram && !isOnHold.value) return;
+  if (!props.jobLoaded?.filename && !isOnHold.value) return;
 
   try {
     if (isOnHold.value) {
@@ -714,7 +713,7 @@ const handleCycle = async () => {
       await api.controlGCodeJob('resume');
     } else {
       // Start new job
-      await api.startGCodeJob(props.loadedGCodeProgram!);
+      await api.startGCodeJob(props.jobLoaded.filename);
     }
   } catch (error) {
     console.error('Error controlling job:', error);
@@ -983,15 +982,19 @@ onMounted(() => {
 
   // Listen for server state updates to track job progress
   api.onServerStateUpdated((state) => {
-    if (state.jobStatus && state.jobStatus.currentLine) {
+    if (state.jobLoaded && state.jobLoaded.currentLine && state.jobLoaded.status === 'running') {
       // Update our tracked last executed line
-      if (state.jobStatus.currentLine > lastExecutedLine.value) {
-        lastExecutedLine.value = state.jobStatus.currentLine;
+      if (state.jobLoaded.currentLine > lastExecutedLine.value) {
+        lastExecutedLine.value = state.jobLoaded.currentLine;
       }
-    } else if (!state.jobStatus || !state.jobStatus.isRunning) {
-      // Job finished or stopped, reset
+    } else if (!state.jobLoaded || state.jobLoaded.status === 'stopped') {
+      // Job finished or stopped, reset visualizer
       if (lastExecutedLine.value > 0) {
         lastExecutedLine.value = 0;
+        // Reset the completed lines visual state
+        if (gcodeVisualizer) {
+          gcodeVisualizer.resetCompletedLines();
+        }
       }
     }
   });
@@ -1005,8 +1008,8 @@ onMounted(() => {
     }
   });
 
-  // Watch for loadedGCodeProgram changes to handle clearing
-  watch(() => props.loadedGCodeProgram, (newValue, oldValue) => {
+  // Watch for jobLoaded changes to handle clearing
+  watch(() => props.jobLoaded?.filename, (newValue, oldValue) => {
     if (oldValue && !newValue) {
       // Program was cleared
       handleGCodeClear();

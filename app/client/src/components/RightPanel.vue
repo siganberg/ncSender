@@ -2,7 +2,7 @@
   <div class="panel-stack">
     <JogPanel
       :jog-config="jogConfig"
-      :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home' || (jobStatus?.isRunning === true)"
+      :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home' || (jobLoaded?.status === 'running')"
       @update:step-size="emit('update:jogStep', $event)"
     />
     <StatusPanel :status="status" />
@@ -34,7 +34,7 @@ defineProps<{
     stepSize: number;
     stepOptions: number[];
   };
-  jobStatus?: { isRunning: boolean; currentLine?: number; totalLines?: number } | null;
+  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
 }>();
 </script>
 
