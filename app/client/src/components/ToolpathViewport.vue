@@ -38,8 +38,8 @@
         </div>
       </div>
 
-      <!-- Bottom floating legend -->
-      <div class="floating-toolbar floating-toolbar--bottom">
+      <!-- Legend - upper right -->
+      <div class="floating-toolbar floating-toolbar--legend">
         <div class="legend-item" :class="{ 'legend-item--disabled': !showRapids }" @click="toggleRapids">
           <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
           <span>Rapid (G0)</span>
@@ -1096,6 +1096,14 @@ onUnmounted(() => {
   top: 16px;
   left: 16px;
   right: 16px;
+}
+
+.floating-toolbar--legend {
+  top: 76px;
+  right: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .floating-toolbar.floating-toolbar--bottom {
