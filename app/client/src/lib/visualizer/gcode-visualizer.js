@@ -8,12 +8,21 @@ class GCodeVisualizer {
         this.vertices = [];
         this.colors = [];
         this.pathLines = [];
-        
+
         // G-code movement types colors
         this.moveColors = {
             rapid: 0x00ff00,  // Rapid moves - Bright Green
-            cutting: 0x3e85c7  // Cutting moves - Light Blue
+            cutting: 0x3e85c7,  // Cutting moves - Light Blue
+            completedRapid: 0x666666,  // Completed rapid - Gray
+            completedCutting: 0x888888  // Completed cutting - Lighter Gray
         };
+
+        // Track line numbers for each path segment
+        // Map structure: lineNumber -> [{ line: THREE.Line, originalColor: number }]
+        this.lineNumberMap = new Map();
+
+        // Set of completed line numbers for O(1) lookup
+        this.completedLines = new Set();
 
         return this;
     }
@@ -26,6 +35,8 @@ class GCodeVisualizer {
         this.pathLines = [];
         this.vertices = [];
         this.colors = [];
+        this.lineNumberMap.clear();
+        this.completedLines.clear();
     }
 
     parseGCode(gcodeString) {
@@ -34,10 +45,12 @@ class GCodeVisualizer {
         let currentPosition = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
         let currentToolpath = [];
+        let currentToolpathLineNumbers = [];
         let safeZ = 2;
         let isToolDown = false;
-        
-        lines.forEach(line => {
+
+        lines.forEach((line, lineIndex) => {
+            const lineNumber = lineIndex + 1; // 1-based line numbering
             const cleanLine = line.split(';')[0].trim().toUpperCase();
             if (!cleanLine) return;
 
@@ -120,32 +133,42 @@ class GCodeVisualizer {
                     if (currentToolpath.length === 0) {
                         currentToolpath.push({ ...currentPosition });
                     }
-                    
+
                     // Handle arcs differently
                     if ((moveType === 'G2' || moveType === 'G3') && arcCenter) {
                         const arcPoints = this.interpolateArc(
-                            currentPosition, 
-                            newPosition, 
-                            arcCenter, 
+                            currentPosition,
+                            newPosition,
+                            arcCenter,
                             moveType === 'G2'
                         );
                         currentToolpath.push(...arcPoints);
                     } else {
                         currentToolpath.push({ ...newPosition });
                     }
+
+                    // Track line number for this segment
+                    currentToolpathLineNumbers.push(lineNumber);
                 } else if (isRapidMove) {
-                    
+
                     // Finish current cutting path
                     if (currentToolpath.length > 1) {
-                        toolpaths.cutting.push([...currentToolpath]);
+                        toolpaths.cutting.push({
+                            path: [...currentToolpath],
+                            lineNumbers: [...currentToolpathLineNumbers]
+                        });
                         currentToolpath = [];
+                        currentToolpathLineNumbers = [];
                     }
-                    
-                    // Add ALL rapid moves (including Z moves)
-                    toolpaths.rapid.push([
-                        { ...currentPosition },
-                        { ...newPosition }
-                    ]);
+
+                    // Add ALL rapid moves (including Z moves) with line number
+                    toolpaths.rapid.push({
+                        path: [
+                            { ...currentPosition },
+                            { ...newPosition }
+                        ],
+                        lineNumbers: [lineNumber]
+                    });
                 }
                 
                 currentPosition = newPosition;
@@ -153,7 +176,10 @@ class GCodeVisualizer {
         });
 
         if (currentToolpath.length > 1) {
-            toolpaths.cutting.push(currentToolpath);
+            toolpaths.cutting.push({
+                path: currentToolpath,
+                lineNumbers: currentToolpathLineNumbers
+            });
         }
 
         return toolpaths;
@@ -201,54 +227,88 @@ class GCodeVisualizer {
 
     render(gcodeString) {
         this.clear();
-        
+
         if (!gcodeString) return;
-        
+
         const toolpaths = this.parseGCode(gcodeString);
-        
+
         // Render cutting toolpaths (continuous lines)
-        toolpaths.cutting.forEach((path, index) => {
-            if (path.length < 2) return;
-            
-            const points = path.map(point => new THREE.Vector3(point.x, point.y, point.z));
+        toolpaths.cutting.forEach((segment, index) => {
+            if (segment.path.length < 2) return;
+
+            const points = segment.path.map(point => new THREE.Vector3(point.x, point.y, point.z));
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            
+
             const material = new THREE.LineBasicMaterial({
                 color: this.moveColors.cutting, // Cutting color
                 transparent: true,
                 opacity: 0.9,
                 linewidth: 2
             });
-            
+
             const line = new THREE.Line(geometry, material);
-            line.userData = { type: 'cutting', pathIndex: index };
+            line.userData = {
+                type: 'cutting',
+                pathIndex: index,
+                lineNumbers: segment.lineNumbers,
+                originalColor: this.moveColors.cutting
+            };
             line.name = `cutting-path-${index}`;
             line.renderOrder = 1; // Ensure lines render on top
-            
+
             this.pathLines.push(line);
             this.group.add(line);
+
+            // Map line numbers to this THREE.Line object
+            segment.lineNumbers.forEach(lineNum => {
+                if (!this.lineNumberMap.has(lineNum)) {
+                    this.lineNumberMap.set(lineNum, []);
+                }
+                this.lineNumberMap.get(lineNum).push({
+                    line: line,
+                    originalColor: this.moveColors.cutting,
+                    type: 'cutting'
+                });
+            });
         });
-        
+
         // Render rapid moves (solid lines)
-        toolpaths.rapid.forEach((path, index) => {
-            if (path.length < 2) return;
-            
-            const points = path.map(point => new THREE.Vector3(point.x, point.y, point.z));
+        toolpaths.rapid.forEach((segment, index) => {
+            if (segment.path.length < 2) return;
+
+            const points = segment.path.map(point => new THREE.Vector3(point.x, point.y, point.z));
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            
+
             const material = new THREE.LineBasicMaterial({
                 color: this.moveColors.rapid, // Rapid color - bright green
                 transparent: true,
                 opacity: 0.6, // Slightly more transparent than cutting paths
                 linewidth: 1
             });
-            
+
             const line = new THREE.Line(geometry, material);
-            line.userData = { type: 'rapid', pathIndex: index };
+            line.userData = {
+                type: 'rapid',
+                pathIndex: index,
+                lineNumbers: segment.lineNumbers,
+                originalColor: this.moveColors.rapid
+            };
             line.name = `rapid-path-${index}`;
-            
+
             this.pathLines.push(line);
             this.group.add(line);
+
+            // Map line numbers to this THREE.Line object
+            segment.lineNumbers.forEach(lineNum => {
+                if (!this.lineNumberMap.has(lineNum)) {
+                    this.lineNumberMap.set(lineNum, []);
+                }
+                this.lineNumberMap.get(lineNum).push({
+                    line: line,
+                    originalColor: this.moveColors.rapid,
+                    type: 'rapid'
+                });
+            });
         });
 
         this.group.name = 'gcode-paths';
@@ -300,6 +360,66 @@ class GCodeVisualizer {
 
     setRapidVisibility(visible) {
         this.setMoveTypeVisibility('rapid', visible);
+    }
+
+    /**
+     * Mark a line number as completed (gray it out)
+     * @param {number} lineNumber - The G-code line number (1-based)
+     */
+    markLineCompleted(lineNumber) {
+        console.log('markLineCompleted called for line:', lineNumber);
+
+        if (this.completedLines.has(lineNumber)) {
+            console.log('Line already marked as completed:', lineNumber);
+            return; // Already marked as completed
+        }
+
+        this.completedLines.add(lineNumber);
+
+        // Get all THREE.Line objects associated with this line number
+        const lineObjects = this.lineNumberMap.get(lineNumber);
+        console.log('Line objects for line', lineNumber, ':', lineObjects);
+
+        if (!lineObjects) {
+            console.log('No visual representation for line:', lineNumber);
+            console.log('Available line numbers:', Array.from(this.lineNumberMap.keys()).slice(0, 20));
+            return; // No visual representation for this line
+        }
+
+        // Update the color of each line segment
+        lineObjects.forEach(({ line, type }) => {
+            const completedColor = type === 'cutting'
+                ? this.moveColors.completedCutting
+                : this.moveColors.completedRapid;
+
+            console.log('Setting line', lineNumber, 'to color:', completedColor.toString(16));
+            line.material.color.setHex(completedColor);
+            line.material.opacity = 0.3; // Make completed lines more transparent
+        });
+    }
+
+    /**
+     * Mark multiple line numbers as completed (batch operation)
+     * @param {number[]} lineNumbers - Array of G-code line numbers
+     */
+    markLinesCompleted(lineNumbers) {
+        lineNumbers.forEach(lineNum => this.markLineCompleted(lineNum));
+    }
+
+    /**
+     * Reset all completed lines to their original colors
+     */
+    resetCompletedLines() {
+        this.completedLines.forEach(lineNumber => {
+            const lineObjects = this.lineNumberMap.get(lineNumber);
+            if (lineObjects) {
+                lineObjects.forEach(({ line, originalColor, type }) => {
+                    line.material.color.setHex(originalColor);
+                    line.material.opacity = type === 'cutting' ? 0.9 : 0.6;
+                });
+            }
+        });
+        this.completedLines.clear();
     }
 }
 

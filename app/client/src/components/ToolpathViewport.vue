@@ -522,6 +522,11 @@ const handleFileLoad = async (event: Event) => {
 const handleGCodeUpdate = (data: { filename: string; content: string; timestamp: string }) => {
   console.log('handleGCodeUpdate called with:', data);
   try {
+    // Reset completed lines before rendering new G-code
+    if (gcodeVisualizer) {
+      gcodeVisualizer.resetCompletedLines();
+    }
+
     gcodeVisualizer.render(data.content);
 
     // Reset all line type visibility to true when loading new G-code
@@ -939,6 +944,14 @@ onMounted(() => {
   // Set up WebSocket listeners for G-code events
   console.log('Setting up G-code event listeners');
   api.onGCodeUpdated(handleGCodeUpdate);
+
+  // Listen for command results to mark completed lines
+  api.on('cnc-command-result', (result) => {
+    const lineNumber = result?.meta?.lineNumber;
+    if (lineNumber && gcodeVisualizer) {
+      gcodeVisualizer.markLineCompleted(lineNumber);
+    }
+  });
 
   // Watch for loadedGCodeProgram changes to handle clearing
   watch(() => props.loadedGCodeProgram, (newValue, oldValue) => {
