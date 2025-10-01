@@ -5,7 +5,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSystemRoutes(serverState) {
+export function createSystemRoutes(serverState, cncController) {
   const router = Router();
 
   // Health check endpoint
@@ -48,8 +48,6 @@ export function createSystemRoutes(serverState) {
   // Get available USB ports
   router.get('/usb-ports', async (req, res) => {
     try {
-      // Get the CNC controller instance from server state
-      const cncController = serverState?.cncController;
       if (!cncController) {
         return res.status(503).json({ error: 'CNC controller not available' });
       }

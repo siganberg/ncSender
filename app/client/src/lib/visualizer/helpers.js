@@ -43,7 +43,6 @@ export const generateCuttingPointer = () => {
         '/assets/cnc-bit.mtl',
         (materials) => {
             materials.preload();
-            console.log('MTL materials loaded');
 
             // Now load OBJ with materials
             const objLoader = new OBJLoader();
@@ -51,49 +50,37 @@ export const generateCuttingPointer = () => {
             objLoader.load(
                 '/assets/cnc-bit.obj',
                 (obj) => {
-            console.log('CNC pointer OBJ loaded successfully');
+                    // Apply transparency and metallic look to all meshes in the loaded object
+                    obj.traverse((child) => {
+                        if (child.isMesh) {
+                            // Keep original material, add transparency and metallic properties
+                            if (child.material) {
+                                child.material.transparent = true;
+                                child.material.opacity = 1;
+                                child.material.metalness = 0.9;
+                                child.material.roughness = 0.3;
+                            }
+                            child.castShadow = true;
+                        }
+                    });
 
-            // Get bounding box to check size
-            const box = new THREE.Box3().setFromObject(obj);
-            const size = box.getSize(new THREE.Vector3());
-            console.log('Original OBJ size:', size);
+                    // The OBJ is in meters and very small, scale it up to millimeters
+                    // Model is ~0.001m, scale by 500
+                    obj.scale.set(500, 500, 500);
 
-            // Apply transparency and metallic look to all meshes in the loaded object
-            obj.traverse((child) => {
-                if (child.isMesh) {
-                    // Keep original material, add transparency and metallic properties
-                    if (child.material) {
-                        child.material.transparent = true;
-                        child.material.opacity = 1;
-                        child.material.metalness = 0.9;
-                        child.material.roughness = 0.3;
-                    }
-                    child.castShadow = true;
-                }
-            });
+                    // Rotate to point down along negative Z axis
+                    obj.rotation.x = Math.PI / 2; // 90° rotation
 
-            // The OBJ is in meters and very small, scale it up to millimeters
-            // Model is ~0.001m, scale by 500
-            obj.scale.set(500, 500, 500);
+                    // Center the object
+                    const boxScaled = new THREE.Box3().setFromObject(obj);
+                    const center = boxScaled.getCenter(new THREE.Vector3());
+                    obj.position.sub(center);
 
-            // Rotate to point down along negative Z axis
-            obj.rotation.x = Math.PI / 2; // 90° rotation
+                    obj.position.z += 10;
 
-            // Center the object
-            const boxScaled = new THREE.Box3().setFromObject(obj);
-            const center = boxScaled.getCenter(new THREE.Vector3());
-            obj.position.sub(center);
-
-
-            obj.position.z += 10;
-
-            console.log('Scaled OBJ size:', boxScaled.getSize(new THREE.Vector3()));
-
-            group.add(obj);
+                    group.add(obj);
                 },
-                (progress) => {
-                    console.log('Loading CNC pointer OBJ:', (progress.loaded / progress.total * 100).toFixed(2) + '%');
-                },
+                undefined, // Progress callback removed
                 (error) => {
                     console.error('Error loading CNC pointer OBJ:', error);
                     // Fallback to simple cone if loading fails
@@ -105,9 +92,7 @@ export const generateCuttingPointer = () => {
                 }
             );
         },
-        (progress) => {
-            console.log('Loading MTL:', (progress.loaded / progress.total * 100).toFixed(2) + '%');
-        },
+        undefined, // Progress callback removed
         (error) => {
             console.error('Error loading MTL file:', error);
             // Fallback: load OBJ without materials

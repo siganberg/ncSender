@@ -563,7 +563,7 @@ class NCClient {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('Parsed message:', message);
+        console.log('Parsed message:', JSON.stringify(message, null, 2));
         if (message && message.type === 'server-state-updated' && message.data) {
           this.lastServerState = message.data;
         }

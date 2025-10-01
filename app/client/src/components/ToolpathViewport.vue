@@ -15,9 +15,9 @@
           </button>
         </div>
         <div class="file-controls">
-          <input 
+          <input
             ref="fileInput"
-            type="file" 
+            type="file"
             accept=".nc,.gcode,.tap,.txt"
             @change="handleFileLoad"
             style="display: none"
@@ -262,10 +262,10 @@ let isRotating = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
 
-// Spindle position interpolation
+// Spindle position interpolation with exponential smoothing
 let targetSpindlePosition = { x: 0, y: 0, z: 0 };
 let currentSpindlePosition = { x: 0, y: 0, z: 0 };
-const spindleLerpSpeed = 0.2; // Interpolation speed (0-1, higher = faster)
+const spindleSmoothFactor = 0.2; // Lower = smoother but slower (0.05-0.2 recommended)
 
 const initThreeJS = () => {
   if (!canvas.value) return;
@@ -312,7 +312,7 @@ const initThreeJS = () => {
 
   const axes = createCoordinateAxes(50);
   scene.add(axes);
-  
+
   // Add initial axis labels
   axisLabelsGroup = createDynamicAxisLabels(null);
   scene.add(axisLabelsGroup);
@@ -350,18 +350,18 @@ const setupControls = () => {
   element.addEventListener('mousedown', onMouseDown);
   element.addEventListener('mousemove', onMouseMove);
   element.addEventListener('mouseup', onMouseUp);
-  element.addEventListener('wheel', onWheel);
+  element.addEventListener('wheel', onWheel, { passive: false });
 
   // Touch events for mobile
-  element.addEventListener('touchstart', onTouchStart);
-  element.addEventListener('touchmove', onTouchMove);
+  element.addEventListener('touchstart', onTouchStart, { passive: false });
+  element.addEventListener('touchmove', onTouchMove, { passive: false });
   element.addEventListener('touchend', onTouchEnd);
 };
 
 const onMouseDown = (event: MouseEvent) => {
   isDragging = true;
   previousMousePosition = { x: event.clientX, y: event.clientY };
-  
+
   // Only allow rotation in 3D view, not in top or side views
   const isOrthographicView = props.view === 'top' || props.view === 'front';
   isRotating = event.button === 0 && !isOrthographicView; // Left click for rotation (3D only)
@@ -378,13 +378,13 @@ const onMouseMove = (event: MouseEvent) => {
     // Rotate camera around scene center maintaining Z-up
     const spherical = new THREE.Spherical();
     spherical.setFromVector3(camera.position.clone().sub(cameraTarget));
-    
+
     spherical.theta -= deltaX * 0.01;
     spherical.phi += deltaY * 0.01;
-    
+
     // Limit vertical rotation (phi from 0.1 to PI-0.1)
     spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
-    
+
     camera.position.setFromSpherical(spherical).add(cameraTarget);
     camera.up.set(0, 0, 1); // Maintain Z-up orientation
     camera.lookAt(cameraTarget);
@@ -393,19 +393,19 @@ const onMouseMove = (event: MouseEvent) => {
     // For orthographic camera, base speed on frustum size instead of distance
     const frustumWidth = camera.right - camera.left;
     const panSpeed = frustumWidth * 0.0005; // Reduced from 0.001 to 0.0005 for slower panning
-    
+
     // Calculate pan vectors based on camera orientation
     const right = new THREE.Vector3();
     const up = new THREE.Vector3();
-    
+
     right.setFromMatrixColumn(camera.matrix, 0); // Get camera's right vector
     up.setFromMatrixColumn(camera.matrix, 1);    // Get camera's up vector
-    
+
     // Apply panning
     const panDelta = new THREE.Vector3()
       .addScaledVector(right, -deltaX * panSpeed)
       .addScaledVector(up, deltaY * panSpeed);
-    
+
     camera.position.add(panDelta);
     cameraTarget.add(panDelta);
     camera.lookAt(cameraTarget);
@@ -485,7 +485,7 @@ const onTouchEnd = () => {
 
 const updateSceneBackground = () => {
   if (!scene) return;
-  
+
   // Set background color based on theme
   const backgroundColor = props.theme === 'dark' ? 0x111827 : 0xf8fafc; // Dark blue-gray vs light gray
   scene.background = new THREE.Color(backgroundColor);
@@ -497,12 +497,12 @@ const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
 const animate = () => {
   animationId = requestAnimationFrame(animate);
 
-  // Smoothly interpolate spindle position
+  // Smoothly interpolate spindle position with exponential smoothing (no bouncing)
   if (cuttingPointer) {
-    // Lerp (linear interpolation) towards target position
-    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleLerpSpeed;
-    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleLerpSpeed;
-    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleLerpSpeed;
+    // Simple exponential moving average - always approaches target, never overshoots
+    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleSmoothFactor;
+    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleSmoothFactor;
+    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleSmoothFactor;
 
     cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
 
@@ -739,21 +739,21 @@ const handleStop = async () => {
 
 const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   if (!bounds || !camera) return;
-  
+
   // Use current view type if not specified
   const currentView = viewType || props.view;
-  
+
   // For orthographic camera, adjust frustum to fit the G-code bounds
   const padding = 1.01; // 1% padding for very tight fit
   const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
-  
+
   const sizeX = bounds.size.x * padding;
   const sizeY = bounds.size.y * padding;
   const sizeZ = bounds.size.z * padding;
-  
+
   // Set frustum based on the view type
   let frustumWidth, frustumHeight;
-  
+
   switch (currentView) {
     case 'top':
       // Top view: fit X and Y dimensions
@@ -782,7 +782,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       // the apparent size from this viewing angle
       const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY) * 0.9; // XY diagonal scaled
       const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7); // Include Z height
-      
+
       if (projectedWidth / aspect > projectedHeight) {
         frustumWidth = projectedWidth;
         frustumHeight = projectedWidth / aspect;
@@ -792,7 +792,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       }
       break;
   }
-  
+
   camera.left = -frustumWidth / 2;
   camera.right = frustumWidth / 2;
   camera.top = frustumHeight / 2;
@@ -810,10 +810,10 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
     cameraTarget.copy(bounds.center);
   }
   camera.up.set(0, 0, 1);
-  
+
   // Position camera based on view type
   const distance = Math.max(sizeX, sizeY, sizeZ) * 2; // Safe distance
-  
+
   switch (currentView) {
     case 'top':
       camera.position.set(bounds.center.x, bounds.center.y, bounds.center.z + distance);
@@ -834,7 +834,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       camera.up.set(0, 0, 1);
       break;
   }
-  
+
   camera.lookAt(cameraTarget);
 };
 
@@ -860,19 +860,19 @@ const handleViewButtonClick = (viewType: 'top' | 'front' | 'iso') => {
 
 const handleResize = () => {
   if (!canvas.value || !camera || !renderer) return;
-  
+
   const width = canvas.value.clientWidth;
   const height = canvas.value.clientHeight;
-  
+
   // Update orthographic camera aspect ratio
   const aspect = width / height;
   const frustumHeight = camera.top - camera.bottom;
   const frustumWidth = frustumHeight * aspect;
-  
+
   camera.left = -frustumWidth / 2;
   camera.right = frustumWidth / 2;
   camera.updateProjectionMatrix();
-  
+
   renderer.setSize(width, height);
   renderer.setPixelRatio(window.devicePixelRatio);
 };
@@ -883,10 +883,10 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
 
   const distance = camera.position.distanceTo(cameraTarget);
   const center = currentGCodeBounds ? currentGCodeBounds.center : new THREE.Vector3(0, 0, 0);
-  
+
   // Update camera target
   cameraTarget.copy(center);
-  
+
   switch (viewType) {
     case 'top':
       // Top view - looking down along Z axis with proper CNC orientation
@@ -902,14 +902,14 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
     case 'iso':
       // Isometric 3D view with Z up
       camera.position.set(
-        center.x + distance * 0.7, 
-        center.y - distance * 0.7, 
+        center.x + distance * 0.7,
+        center.y - distance * 0.7,
         center.z + distance * 0.7
       );
       camera.up.set(0, 0, 1); // Z axis points up in 3D view
       break;
   }
-  
+
   camera.lookAt(cameraTarget);
 };
 
@@ -1032,15 +1032,15 @@ onUnmounted(() => {
   if (animationId) {
     cancelAnimationFrame(animationId);
   }
-  
+
   if (renderer) {
     renderer.dispose();
   }
-  
+
   if (resizeObserver) {
     resizeObserver.disconnect();
   }
-  
+
   window.removeEventListener('resize', handleResize);
 });
 </script>

@@ -626,7 +626,7 @@ export async function createApp(options = {}) {
   });
 
   // Mount feature-based route modules
-  app.use('/api', createSystemRoutes(serverState));
+  app.use('/api', createSystemRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));

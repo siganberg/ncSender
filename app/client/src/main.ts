@@ -6,7 +6,7 @@ import '@/assets/styles/base.css';
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   return false;
-});
+}, { passive: false });
 
 // Disable text selection on touch devices, except in console
 document.addEventListener('selectstart', (e) => {
@@ -23,6 +23,23 @@ document.addEventListener('selectstart', (e) => {
   }
   e.preventDefault();
   return false;
-});
+}, { passive: false });
 
-createApp(App).mount('#app');
+const app = createApp(App);
+
+// Patch Vue's addEventListener to use passive: false for touch events
+const originalAddEventListener = Element.prototype.addEventListener;
+Element.prototype.addEventListener = function(type: string, listener: any, options?: any) {
+  if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
+    if (typeof options === 'boolean') {
+      options = { capture: options, passive: false };
+    } else if (typeof options === 'object' && options !== null) {
+      options = { ...options, passive: false };
+    } else {
+      options = { passive: false };
+    }
+  }
+  return originalAddEventListener.call(this, type, listener, options);
+};
+
+app.mount('#app');

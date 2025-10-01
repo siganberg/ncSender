@@ -172,7 +172,7 @@ export class CNCController extends EventEmitter {
           this.stopPolling();
         }
       }
-    }, 200);
+    }, 50);
   }
 
   stopPolling() {
