@@ -642,10 +642,41 @@ export async function createApp(options = {}) {
   cncController.on('system-message', (message) => broadcast('cnc-system-message', message));
   cncController.on('response', (response) => broadcast('cnc-response', response));
 
-  // Handle soft reset to force reset any active job
-  cncController.on('soft-reset', () => {
-    log('Soft reset detected, resetting job manager');
+  // Handle stop command to force reset any active job and update jobLoaded status
+  cncController.on('stop', () => {
+    log('Stop command detected, resetting job manager');
     jobManager.forceReset();
+
+    // Update jobLoaded status to stopped
+    if (serverState.jobLoaded) {
+      serverState.jobLoaded.status = 'stopped';
+      serverState.jobLoaded.currentLine = 0;
+    }
+
+    broadcast('server-state-updated', serverState);
+  });
+
+  // Handle pause command to update jobLoaded status
+  cncController.on('pause', () => {
+    log('Pause command detected');
+
+    // Update jobLoaded status to paused
+    if (serverState.jobLoaded) {
+      serverState.jobLoaded.status = 'paused';
+    }
+
+    broadcast('server-state-updated', serverState);
+  });
+
+  // Handle resume command to update jobLoaded status
+  cncController.on('resume', () => {
+    log('Resume command detected');
+
+    // Update jobLoaded status to running
+    if (serverState.jobLoaded) {
+      serverState.jobLoaded.status = 'running';
+    }
+
     broadcast('server-state-updated', serverState);
   });
 
