@@ -13,6 +13,13 @@
           >
             {{ preset.label }}
           </button>
+          <div class="spindle-toggle">
+            <span>Spindle View</span>
+            <label class="switch">
+              <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
         <div class="file-controls">
           <input
@@ -236,6 +243,7 @@ const isLoading = ref(false);
 const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
+const spindleViewMode = ref(false); // Spindle view mode - off by default
 const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
@@ -254,6 +262,8 @@ let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 let directionalLight: THREE.DirectionalLight;
+let gridGroup: THREE.Group;
+let axesGroup: THREE.Group;
 
 // Mouse/touch controls
 let isDragging = false;
@@ -311,11 +321,11 @@ const initThreeJS = () => {
   scene.add(directionalLight);
 
   // Grid with numbers and major/minor lines
-  const grid = createGridLines(); // 10mm spacing with numbers
-  scene.add(grid);
+  gridGroup = createGridLines(); // 10mm spacing with numbers
+  scene.add(gridGroup);
 
-  const axes = createCoordinateAxes(50);
-  scene.add(axes);
+  axesGroup = createCoordinateAxes(50);
+  scene.add(axesGroup);
 
   // Add initial axis labels
   axisLabelsGroup = createDynamicAxisLabels(null);
@@ -509,7 +519,33 @@ const animate = () => {
     currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleSmoothFactor;
     currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleSmoothFactor;
 
-    cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
+    // In spindle view mode, spindle stays at origin and everything else moves
+    if (spindleViewMode.value) {
+      // Keep spindle at origin
+      cuttingPointer.position.set(0, 0, 0);
+
+      // Move gcode/grid/axes in opposite direction
+      const offset = {
+        x: -currentSpindlePosition.x,
+        y: -currentSpindlePosition.y,
+        z: -currentSpindlePosition.z
+      };
+      if (gcodeVisualizer && gcodeVisualizer.group) {
+        gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
+      }
+      if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
+      if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+
+      // Keep camera looking at origin (where spindle is)
+      if (camera) {
+        cameraTarget.set(0, 0, 0);
+        camera.lookAt(cameraTarget);
+      }
+    } else {
+      // Normal mode: spindle follows position
+      cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
+    }
 
     // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
     if (props.spindleRpm > 0) {
@@ -981,6 +1017,34 @@ watch(() => showFileManager.value, (isOpen) => {
   }
 });
 
+// Watch for spindle view mode changes
+watch(() => spindleViewMode.value, (isSpindleView) => {
+  if (isSpindleView) {
+    // In spindle view mode, move gcode/grid/axes so spindle stays centered at (0,0,0)
+    // The spindle position stays at camera origin, so we offset everything else
+    if (gcodeVisualizer && gcodeVisualizer.group) {
+      // Offset will be calculated based on current spindle position
+      const offset = {
+        x: -currentSpindlePosition.x,
+        y: -currentSpindlePosition.y,
+        z: -currentSpindlePosition.z
+      };
+      gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
+      if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
+      if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+    }
+  } else {
+    // Normal mode - reset all positions
+    if (gcodeVisualizer && gcodeVisualizer.group) {
+      gcodeVisualizer.group.position.set(0, 0, 0);
+    }
+    if (gridGroup) gridGroup.position.set(0, 0, 0);
+    if (axesGroup) axesGroup.position.set(0, 0, 0);
+    if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
+  }
+});
+
 onMounted(() => {
   initThreeJS();
   window.addEventListener('resize', handleResize);
@@ -1170,6 +1234,61 @@ h2 {
 .view-button.active {
   background: var(--gradient-accent);
   color: #fff;
+}
+
+.spindle-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  color: var(--color-text-secondary);
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 20px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 20px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: var(--color-accent);
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
 }
 
 .viewport__canvas {
