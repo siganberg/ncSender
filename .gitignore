@@ -1,7 +1,11 @@
 # Dependencies
 **/node_modules/
+
+# Package lock files (except app/ and app/client/ which are tracked for reproducible builds)
 package-lock.json
 **/package-lock.json
+!app/package-lock.json
+!app/client/package-lock.json
 
 # Build output
 app/dist/
