@@ -156,14 +156,18 @@ export async function createApp(options = {}) {
     }
   });
 
-  // Serve assets folder BEFORE client dist (to avoid catch-all route)
-  const assetsPath = path.join(__dirname, '../assets');
-  app.use('/assets', express.static(assetsPath));
-  log('Serving assets from:', assetsPath);
-
-  // Serve static files for browser clients
+  // Serve static files for browser clients (includes /assets folder from Vite build)
   const clientDistPath = path.join(__dirname, '../client/dist');
-  app.use(express.static(clientDistPath));
+  app.use(express.static(clientDistPath, {
+    setHeaders: (res, filePath) => {
+      // Set proper MIME types for 3D model files
+      if (filePath.endsWith('.obj')) {
+        res.setHeader('Content-Type', 'text/plain');
+      } else if (filePath.endsWith('.mtl')) {
+        res.setHeader('Content-Type', 'text/plain');
+      }
+    }
+  }));
   log('Serving client files from:', clientDistPath);
 
   const translateCommandInput = (rawCommand) => {

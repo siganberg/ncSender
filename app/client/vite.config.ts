@@ -9,8 +9,10 @@ export default defineConfig({
   base: './',
   build: {
     outDir: path.resolve(__dirname, 'dist'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    assetsInlineLimit: 0 // Don't inline assets, keep them as files
   },
+  assetsInclude: ['**/*.obj', '**/*.mtl'], // Explicitly include OBJ and MTL files
   server: {
     port: 5174,
     strictPort: true,
