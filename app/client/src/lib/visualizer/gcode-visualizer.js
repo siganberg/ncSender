@@ -144,12 +144,13 @@ class GCodeVisualizer {
             vertexColors: true,
             transparent: true,
             opacity: 0.9,
-            linewidth: 2
+            linewidth: 2,
+            depthTest: false
         });
 
         const line = new THREE.Line(geometry, material);
         line.name = 'gcode-toolpath';
-        line.renderOrder = 1;
+        line.renderOrder = 999;
 
         this.pathLines.push(line);
         this.group.add(line);

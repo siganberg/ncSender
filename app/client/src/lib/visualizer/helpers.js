@@ -287,7 +287,7 @@ export const createGridLines = () => {
     if (points.length > 0) {
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const lines = new THREE.LineSegments(geometry, material);
-        lines.renderOrder = 0; // Render before gcode
+        lines.renderOrder = 0;
         group.add(lines);
     }
 
@@ -295,7 +295,7 @@ export const createGridLines = () => {
     if (majorPoints.length > 0) {
         const majorGeometry = new THREE.BufferGeometry().setFromPoints(majorPoints);
         const majorLines = new THREE.LineSegments(majorGeometry, majorMaterial);
-        majorLines.renderOrder = 0; // Render before gcode
+        majorLines.renderOrder = 0;
         group.add(majorLines);
     }
 
