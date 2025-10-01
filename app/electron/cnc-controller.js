@@ -119,6 +119,9 @@ export class CNCController extends EventEmitter {
         newStatus.feedrateOverride = feedrate;
         newStatus.rapidOverride = rapid;
         newStatus.spindleOverride = spindle;
+      } else if (key === 'T' && value) {
+        // Tool number
+        newStatus.tool = parseInt(value);
       } else if (key && value) {
         newStatus[key] = value;
       }
@@ -126,7 +129,7 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'Pn', 'Bf'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'Pn', 'Bf'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -148,14 +151,32 @@ export class CNCController extends EventEmitter {
     const content = data.substring(4, data.length - 1); // Remove [GC: and ]
     const modes = content.split(' ');
 
+    let hasChanges = false;
+
     // Find workspace coordinate system (G54-G59.3)
     const workspaceMode = modes.find(mode => /^G5[4-9]$/.test(mode) || /^G59\.[1-3]$/.test(mode));
 
-    if (workspaceMode) {
+    if (workspaceMode && workspaceMode !== this.lastStatus.workspace) {
       log('Active workspace detected:', workspaceMode);
       // Update workspace in lastStatus
       this.lastStatus.workspace = workspaceMode;
-      // Emit updated status with workspace
+      hasChanges = true;
+    }
+
+    // Find tool number (T0, T1, etc.)
+    const toolMode = modes.find(mode => /^T\d+$/.test(mode));
+
+    if (toolMode) {
+      const toolNumber = parseInt(toolMode.substring(1));
+      if (this.lastStatus.tool !== toolNumber) {
+        log('Active tool detected:', toolNumber);
+        this.lastStatus.tool = toolNumber;
+        hasChanges = true;
+      }
+    }
+
+    // Emit updated status if anything changed
+    if (hasChanges) {
       this.emit('status-report', { ...this.lastStatus });
     }
   }
@@ -250,6 +271,9 @@ export class CNCController extends EventEmitter {
     this.connectionStatus = 'connected';
     this.emitConnectionStatus('connected', true);
     this.startPolling();
+
+    // Request initial G-code modes to get workspace and tool number
+    this.sendCommand('$G');
   }
 
   onConnectionClosed(type) {

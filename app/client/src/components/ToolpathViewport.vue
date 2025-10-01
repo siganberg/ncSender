@@ -61,6 +61,12 @@
         </div>
       </div>
 
+      <!-- Tool indicator - lower right -->
+      <div class="tool-indicator" v-if="currentTool !== undefined">
+        <div class="tool-label">Tool:</div>
+        <div class="tool-value">T{{ currentTool }}</div>
+      </div>
+
       <!-- Control buttons - bottom center -->
       <div class="control-buttons">
         <button
@@ -181,6 +187,7 @@ const props = withDefaults(defineProps<{
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   spindleRpm?: number;
+  currentTool?: number;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
@@ -1345,6 +1352,33 @@ input:checked + .slider:before {
 
 .legend-item--disabled {
   opacity: 0.5;
+}
+
+/* Tool indicator - lower right */
+.tool-indicator {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: var(--color-surface-muted);
+  padding: 8px 16px;
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tool-label {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.tool-value {
+  font-size: 1.25rem;
+  font-weight: 600;
 }
 
 .legend-item--disabled:hover {

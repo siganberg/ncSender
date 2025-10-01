@@ -21,6 +21,7 @@
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :spindle-rpm="status.spindleRpm"
+        :current-tool="status.tool"
         @change-view="viewport = $event"
       />
       <RightPanel
@@ -806,7 +807,8 @@ const status = reactive({
   spindleRpm: 0,
   feedrateOverride: 100,
   rapidOverride: 100,
-  spindleOverride: 100
+  spindleOverride: 100,
+  tool: 0
 });
 
 // Track WebSocket connection state separately
@@ -890,6 +892,11 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
   }
   if (typeof report.spindleOverride === 'number') {
     status.spindleOverride = report.spindleOverride;
+  }
+
+  // Update tool number if present
+  if (typeof report.tool === 'number') {
+    status.tool = report.tool;
   }
 };
 
