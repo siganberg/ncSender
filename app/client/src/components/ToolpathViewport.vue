@@ -1058,7 +1058,14 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   camera.lookAt(cameraTarget);
 };
 
-const handleViewButtonClick = (viewType: 'top' | 'front' | 'iso') => {
+const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso') => {
+  // Save view preference to settings
+  try {
+    await updateSettings({ defaultGcodeView: viewType });
+  } catch (error) {
+    console.error('[ToolpathViewport] Failed to save view setting', JSON.stringify({ error: error.message }));
+  }
+
   // Reset all line type visibility to true when changing views
   showRapids.value = true;
   showCutting.value = true;

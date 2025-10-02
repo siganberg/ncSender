@@ -162,32 +162,6 @@
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
             <div class="setting-item">
-              <label class="setting-label">Theme</label>
-              <select class="setting-select" :value="theme" @change="theme = $event.target.value">
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Default Workspace</label>
-              <select class="setting-select" :value="workspace" @change="workspace = $event.target.value">
-                <option value="G54">G54</option>
-                <option value="G55">G55</option>
-                <option value="G56">G56</option>
-                <option value="G57">G57</option>
-                <option value="G58">G58</option>
-                <option value="G59">G59</option>
-              </select>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Default G-Code Preview</label>
-              <select class="setting-select" v-model="defaultView">
-                <option value="top">Top</option>
-                <option value="front">Side</option>
-                <option value="iso">3D</option>
-              </select>
-            </div>
-            <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
                 <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)">
