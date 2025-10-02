@@ -526,7 +526,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted } from 'vue';
+import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue';
 import AppShell from './components/AppShell.vue';
 import TopToolbar from './components/TopToolbar.vue';
 import ToolpathViewport from './components/ToolpathViewport.vue';
@@ -534,13 +534,17 @@ import RightPanel from './components/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import { api } from './lib/api.js';
+import { getSettings } from './lib/settings-store.js';
 
-const theme = ref<'light' | 'dark'>('dark'); // Default to dark mode
-const workspace = ref('G54');
-const viewport = ref<'top' | 'front' | 'iso'>('iso');
-const defaultView = ref<'top' | 'front' | 'iso'>('iso'); // Track default view from settings
+// Initialize settings from settings store (loaded in main.ts)
+const initialSettings = getSettings();
+const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
+const workspace = ref(initialSettings?.workspace || 'G54');
+const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
+const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
+let isInitialThemeLoad = true; // Flag to prevent saving theme during initial load
 
 // Settings tabs configuration
 const activeTab = ref('general');
@@ -554,22 +558,22 @@ watch(defaultView, (newView) => {
   viewport.value = newView;
 });
 
-// Color customization
-const accentColor = ref('#1abc9c');
-const gradientColor = ref('#34d399');
+// Color customization (from settings store)
+const accentColor = ref(initialSettings?.accentColor || '#1abc9c');
+const gradientColor = ref(initialSettings?.gradientColor || '#34d399');
 
 const currentGradient = computed(() => {
   return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
 });
 
-// Connection settings
+// Connection settings (from settings store)
 const connectionSettings = reactive({
-  type: 'USB',
-  baudRate: '115200',
-  ipAddress: '192.168.5.1',
-  port: 23,
-  serverPort: 8090,
-  usbPort: ''
+  type: initialSettings?.connectionType === 'usb' ? 'USB' : 'Ethernet',
+  baudRate: initialSettings?.baudRate?.toString() || '115200',
+  ipAddress: initialSettings?.ip || '192.168.5.1',
+  port: initialSettings?.port || 23,
+  serverPort: initialSettings?.serverPort || 8090,
+  usbPort: initialSettings?.usbPort || ''
 });
 
 // Setup dialog connection settings (separate from main settings)
@@ -583,7 +587,7 @@ const setupSettings = reactive({
 
 // Console settings
 const consoleSettings = reactive({
-  autoClearConsole: true
+  autoClearConsole: initialSettings?.autoClearConsole ?? true
 });
 
 // Firmware settings
@@ -1139,50 +1143,33 @@ const getApiBaseUrl = () => {
   return '';
 };
 
-const loadConnectionSettings = async () => {
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/settings`);
+const isSettingsValid = (settings) => {
+  if (!settings) return false;
 
-    if (response.status === 204) {
-      // No settings file exists, show mandatory setup dialog
-      showSetupDialog.value = true;
-      // Load USB ports for setup dialog
-      await loadSetupUsbPorts();
-      return;
-    }
-
-    if (response.ok) {
-      const settings = await response.json();
-
-      // Map server settings to frontend format
-      connectionSettings.type = settings.connectionType === 'usb' ? 'USB' : 'Ethernet';
-      connectionSettings.baudRate = settings.baudRate?.toString() || '115200';
-      connectionSettings.ipAddress = settings.ip || '192.168.5.1';
-      connectionSettings.port = settings.port || 23;
-      connectionSettings.serverPort = settings.serverPort || 8090;
-      connectionSettings.usbPort = settings.usbPort || '';
-
-      // Load application settings
-      if (settings.theme) theme.value = settings.theme;
-      if (settings.workspace) workspace.value = settings.workspace;
-      if (settings.defaultGcodeView) {
-        defaultView.value = settings.defaultGcodeView;
-        viewport.value = settings.defaultGcodeView;
-      }
-      if (settings.accentColor) accentColor.value = settings.accentColor;
-      if (settings.gradientColor) gradientColor.value = settings.gradientColor;
-
-      // Load console settings
-      if (settings.autoClearConsole !== undefined) consoleSettings.autoClearConsole = settings.autoClearConsole;
-
-      // Load USB ports if USB connection type
-      if (connectionSettings.type === 'USB') {
-        await loadMainUsbPorts();
-      }
-    }
-  } catch (error) {
-    console.error('Error loading connection settings:', error);
+  // Required fields
+  if (!settings.connectionType || !settings.baudRate) {
+    return false;
   }
+
+  // USB-specific validation
+  if (settings.connectionType === 'usb') {
+    if (!settings.usbPort) return false;
+  }
+
+  // Ethernet-specific validation
+  if (settings.connectionType === 'ethernet') {
+    if (!settings.ip || !settings.port) return false;
+
+    // Validate IP format
+    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipRegex.test(settings.ip)) return false;
+
+    // Validate port range
+    const port = parseInt(settings.port);
+    if (isNaN(port) || port < 1 || port > 65535) return false;
+  }
+
+  return true;
 };
 
 const saveConnectionSettings = async () => {
@@ -1245,23 +1232,23 @@ const saveSetupSettings = async () => {
       usbPort: setupSettings.usbPort || ''
     };
 
-    const response = await fetch(`${getApiBaseUrl()}/api/settings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(settingsToSave)
-    });
+    // Use settings store to save
+    const { saveSettings } = await import('./lib/settings-store.js');
+    await saveSettings(settingsToSave);
 
-    if (response.ok) {
-      const result = await response.json();
+    // Update local connection settings
+    connectionSettings.type = setupSettings.type;
+    connectionSettings.baudRate = setupSettings.baudRate;
+    connectionSettings.ipAddress = setupSettings.ipAddress;
+    connectionSettings.port = setupSettings.port;
+    connectionSettings.usbPort = setupSettings.usbPort;
 
-      // Close setup dialog and load settings
-      showSetupDialog.value = false;
-      await loadConnectionSettings();
-    } else {
-      const error = await response.json();
-      console.error('Failed to save setup settings:', error.error);
+    // Close setup dialog
+    showSetupDialog.value = false;
+
+    // Load USB ports if USB connection type
+    if (connectionSettings.type === 'USB') {
+      await loadMainUsbPorts();
     }
   } catch (error) {
     console.error('Error saving setup settings:', error);
@@ -1382,11 +1369,23 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 };
 
 onMounted(async () => {
-  // Load connection settings first (this will load the colors)
-  await loadConnectionSettings();
+  // Check if settings are valid, show setup dialog if not
+  if (!isSettingsValid(initialSettings)) {
+    showSetupDialog.value = true;
+    await loadSetupUsbPorts();
+  } else {
+    // Load USB ports if USB connection type
+    if (connectionSettings.type === 'USB') {
+      await loadMainUsbPorts();
+    }
+  }
 
   // Apply colors after settings are loaded
   applyColors();
+
+  // Mark initial theme load complete
+  await nextTick();
+  isInitialThemeLoad = false;
 
   // Listen for WebSocket connection events
   api.on('connected', () => {
@@ -1586,6 +1585,19 @@ const applyTheme = (value: 'light' | 'dark') => {
 };
 
 watchEffect(() => applyTheme(theme.value));
+
+// Watch theme changes and save to settings
+watch(() => theme.value, async (newTheme) => {
+  // Don't save during initial load
+  if (!isInitialThemeLoad) {
+    try {
+      const { updateSettings } = await import('./lib/settings-store.js');
+      await updateSettings({ theme: newTheme });
+    } catch (error) {
+      console.error('Failed to save theme setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
 
 const toggleTheme = () => {
   theme.value = theme.value === 'dark' ? 'light' : 'dark';

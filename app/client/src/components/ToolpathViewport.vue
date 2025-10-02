@@ -171,11 +171,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
 import { api } from '../lib/api.js';
+import { getSettings, updateSettings } from '../lib/settings-store.js';
 import Dialog from './Dialog.vue';
 
 const presets = [
@@ -270,6 +271,7 @@ const fileToDelete = ref<string | null>(null);
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 let currentGCodeBounds: any = null; // Store current G-code bounds
+let isInitialLoad = true; // Flag to prevent watchers from firing during initial settings load
 
 // Three.js objects
 let scene: THREE.Scene;
@@ -1236,7 +1238,17 @@ watch(() => showFileManager.value, (isOpen) => {
 });
 
 // Watch for auto-fit mode changes
-watch(() => autoFitMode.value, (isAutoFit) => {
+watch(() => autoFitMode.value, async (isAutoFit) => {
+  // Don't save during initial load
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ autoFit: isAutoFit });
+    } catch (error) {
+      console.error('[ToolpathViewport] Failed to save auto-fit setting', JSON.stringify({ error: error.message }));
+    }
+  }
+
+  // Update camera view
   if (isAutoFit && currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds);
   } else {
@@ -1245,7 +1257,16 @@ watch(() => autoFitMode.value, (isAutoFit) => {
 });
 
 // Watch for spindle view mode changes
-watch(() => spindleViewMode.value, (isSpindleView) => {
+watch(() => spindleViewMode.value, async (isSpindleView) => {
+  // Don't save during initial load
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ spindleView: isSpindleView });
+    } catch (error) {
+      console.error('[ToolpathViewport] Failed to save spindle view setting', JSON.stringify({ error: error.message }));
+    }
+  }
+
   if (isSpindleView) {
     // In spindle view mode, move gcode/grid/axes so spindle stays centered at (0,0,0)
     // The spindle position stays at camera origin, so we offset everything else
@@ -1292,7 +1313,24 @@ watch(() => spindleViewMode.value, (isSpindleView) => {
   }
 });
 
-onMounted(() => {
+onMounted(async () => {
+  // Load settings from store (already loaded in main.ts)
+  const settings = getSettings();
+  if (settings) {
+    if (typeof settings.autoFit === 'boolean') {
+      autoFitMode.value = settings.autoFit;
+    }
+    if (typeof settings.spindleView === 'boolean') {
+      spindleViewMode.value = settings.spindleView;
+    }
+  }
+
+  // Wait for next tick to ensure all watchers have fired with isInitialLoad=true
+  await nextTick();
+
+  // Mark initial load complete so watchers can save changes
+  isInitialLoad = false;
+
   initThreeJS();
   window.addEventListener('resize', handleResize);
 

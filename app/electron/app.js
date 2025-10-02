@@ -16,6 +16,7 @@ import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
+import { createSettingsRoutes } from './routes/settings-routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './routes/firmware-routes.js';
 import { getSetting, saveSettings, DEFAULT_SETTINGS } from './settings-manager.js';
 
@@ -701,8 +702,15 @@ export async function createApp(options = {}) {
     broadcast('server-state-updated', serverState);
   });
 
+  // API request logging middleware
+  app.use('/api', (req, _res, next) => {
+    log(`API ${req.method} ${req.path}`, req.body && Object.keys(req.body).length > 0 ? req.body : '');
+    next();
+  });
+
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState, cncController));
+  app.use('/api', createSettingsRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));

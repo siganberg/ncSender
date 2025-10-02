@@ -777,6 +777,53 @@ class NCClient {
     }
     return response.json();
   }
+
+  // Settings methods
+  async getSettings() {
+    const response = await fetch(`${this.baseUrl}/api/settings`);
+    if (response.status === 204) {
+      return null; // No settings file exists
+    }
+    if (!response.ok) {
+      throw new Error('Failed to get settings');
+    }
+    return response.json();
+  }
+
+  async getSetting(name) {
+    const response = await fetch(`${this.baseUrl}/api/settings/${name}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: `Failed to get setting ${name}` }));
+      throw new Error(error.error || `Failed to get setting ${name}`);
+    }
+    return response.json();
+  }
+
+  async updateSettings(updates) {
+    const response = await fetch(`${this.baseUrl}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to update settings' }));
+      throw new Error(error.error || 'Failed to update settings');
+    }
+    return response.json();
+  }
+
+  async saveSettings(settings) {
+    const response = await fetch(`${this.baseUrl}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to save settings' }));
+      throw new Error(error.error || 'Failed to save settings');
+    }
+    return response.json();
+  }
 }
 
 // Create singleton instance

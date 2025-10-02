@@ -12,7 +12,15 @@ This file contains development preferences and patterns to follow when working o
   - `cnc-routes.js` - CNC connection and control
   - `command-history-routes.js` - Command history management
   - `gcode-routes.js` - G-code file operations
+  - `settings-routes.js` - Settings management
   - `system-routes.js` - Health and server state
+
+### API Routes Organization
+- **Rule**: Each resource should have its own dedicated route file
+- **Pattern**: One route file per REST resource (e.g., `/api/settings`, `/api/gcode-files`, `/api/firmware`)
+- **File naming**: Use `{resource-name}-routes.js` format
+- **Location**: All route files in `app/electron/routes/`
+- **Benefits**: Clear separation of concerns, easier maintenance, independent testing
 
 ## Naming Conventions
 
@@ -26,6 +34,11 @@ This file contains development preferences and patterns to follow when working o
 ### Comments
 - **Preference**: Avoid adding comments unless explicitly requested
 - **Focus**: Write self-documenting code with clear naming and structure
+
+### Console Logging
+- **Browser logs**: Always use JSON.stringify() for objects to enable easy copy/paste
+- **Format**: `console.log('Message:', JSON.stringify(data))`
+- **Avoid**: Logging plain objects that can't be copied from the console
 
 ### Security
 - **Critical**: Never introduce code that exposes or logs secrets and keys

@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
+import { loadSettings } from './lib/settings-store.js';
 
 // Disable context menu globally for touch screen compatibility
 document.addEventListener('contextmenu', (e) => {
@@ -24,6 +25,9 @@ document.addEventListener('selectstart', (e) => {
   e.preventDefault();
   return false;
 }, { passive: false });
+
+// Load settings before mounting the app
+await loadSettings();
 
 const app = createApp(App);
 

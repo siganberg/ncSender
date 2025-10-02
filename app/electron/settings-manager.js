@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_SETTINGS = {
   pauseBeforeStop: 500,
-  connectionType: 'usb',
-  baudRate: 115200,
   ip: '192.168.5.1',
   port: 23,
   serverPort: 8090,
