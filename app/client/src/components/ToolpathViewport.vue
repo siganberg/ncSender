@@ -15,12 +15,21 @@
               {{ preset.label }}
             </button>
           </div>
-          <div class="spindle-toggle">
-            <label class="switch">
-              <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
-              <span class="slider"></span>
-            </label>
-            <span>Spindle View</span>
+          <div class="toggle-group">
+            <div class="spindle-toggle">
+              <label class="switch">
+                <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
+                <span class="slider"></span>
+              </label>
+              <span>Spindle View</span>
+            </div>
+            <div class="spindle-toggle">
+              <label class="switch">
+                <input type="checkbox" :checked="autoFitMode" @change="autoFitMode = !autoFitMode">
+                <span class="slider"></span>
+              </label>
+              <span>Auto-Fit</span>
+            </div>
           </div>
         </div>
         <div class="file-controls">
@@ -244,6 +253,7 @@ const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
+const autoFitMode = ref(true); // Auto-fit mode - on by default
 const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
@@ -1350,12 +1360,18 @@ h2 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--gap-xs);
+  gap: 16px;
 }
 
 .preset-buttons {
   display: flex;
   gap: var(--gap-xs);
+}
+
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .view-button {
@@ -1385,7 +1401,6 @@ h2 {
   transition: all 0.15s ease;
   user-select: none;
   font-size: 0.85rem;
-  margin-top: 8px;
 }
 
 .spindle-toggle:hover {
@@ -1395,8 +1410,8 @@ h2 {
 .switch {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 20px;
+  width: 32px;
+  height: 16px;
 }
 
 .switch input {
@@ -1420,10 +1435,10 @@ h2 {
 .slider:before {
   position: absolute;
   content: "";
-  height: 14px;
-  width: 14px;
-  left: 3px;
-  bottom: 3px;
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
   background-color: white;
   transition: 0.3s;
   border-radius: 50%;
@@ -1434,7 +1449,7 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-  transform: translateX(20px);
+  transform: translateX(16px);
 }
 
 .viewport__canvas {
