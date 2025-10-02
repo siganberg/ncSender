@@ -171,6 +171,9 @@ const props = withDefaults(defineProps<{
   machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
+  workOffset?: { x: number; y: number; z: number; a: number };
+  gridSizeX?: number;
+  gridSizeY?: number;
   spindleRpm?: number;
   currentTool?: number;
 }>(), {
@@ -178,6 +181,9 @@ const props = withDefaults(defineProps<{
   theme: 'dark', // Default to dark theme
   connected: false,
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
+  workOffset: () => ({ x: 0, y: 0, z: 0, a: 0 }),
+  gridSizeX: 1260,
+  gridSizeY: 1284,
   spindleRpm: 0,
   jobLoaded: null
 });
@@ -313,7 +319,11 @@ const initThreeJS = () => {
   scene.add(directionalLight);
 
   // Grid with numbers and major/minor lines
-  gridGroup = createGridLines(); // 10mm spacing with numbers
+  gridGroup = createGridLines({ // 10mm spacing with numbers
+    gridSizeX: props.gridSizeX,
+    gridSizeY: props.gridSizeY,
+    workOffset: props.workOffset
+  });
   scene.add(gridGroup);
 
   axesGroup = createCoordinateAxes(50);
@@ -1094,6 +1104,23 @@ watch(() => props.workCoords, (newCoords) => {
     }
   }
 }, { deep: true, immediate: true });
+
+// Watch for work offset changes to update the grid
+watch(() => props.workOffset, (newOffset) => {
+  if (scene && gridGroup) {
+    scene.remove(gridGroup);
+  }
+
+  gridGroup = createGridLines({
+    gridSizeX: props.gridSizeX,
+    gridSizeY: props.gridSizeY,
+    workOffset: newOffset
+  });
+
+  if (scene) {
+    scene.add(gridGroup);
+  }
+}, { deep: true });
 
 // Watch for file manager dialog open to fetch files
 watch(() => showFileManager.value, (isOpen) => {

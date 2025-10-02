@@ -20,6 +20,7 @@
         :machine-state="status.machineState"
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
+        :work-offset="status.wco"
         :spindle-rpm="status.spindleRpm"
         :current-tool="status.tool"
         @change-view="viewport = $event"

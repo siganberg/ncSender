@@ -236,13 +236,18 @@ export const listPointerMeshes = (group) => {
     // Removed mesh logging - no longer needed
 };
 
-export const createGridLines = () => {
+export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 } } = {}) => {
     const group = new THREE.Group();
 
-    // Create 1220x1220mm grid with 10mm spacing
-    const size = 610; // Half of 1220mm (center at origin)
+    // Create grid with 10mm spacing
     const step = 10; // 10mm grid spacing
     const majorStep = 100; // Major grid lines every 100mm
+
+    // Calculate dynamic boundaries based on work offset
+    const minX = -workOffset.x;
+    const maxX = gridSizeX - workOffset.x;
+    const minY = -gridSizeY - workOffset.y;
+    const maxY = -workOffset.y;
 
     // Regular grid lines
     const material = new THREE.LineBasicMaterial({
@@ -262,10 +267,10 @@ export const createGridLines = () => {
     const majorPoints = [];
 
     // Create horizontal lines (parallel to X axis)
-    for (let i = -size; i <= size; i += step) {
+    for (let i = Math.round(minY / step) * step; i <= maxY; i += step) {
         const linePoints = [
-            new THREE.Vector3(-size, i, 0),
-            new THREE.Vector3(size, i, 0)
+            new THREE.Vector3(minX, i, 0),
+            new THREE.Vector3(maxX, i, 0)
         ];
 
         if (i % majorStep === 0) {
@@ -276,10 +281,10 @@ export const createGridLines = () => {
     }
 
     // Create vertical lines (parallel to Y axis)
-    for (let i = -size; i <= size; i += step) {
+    for (let i = Math.round(minX / step) * step; i <= maxX; i += step) {
         const linePoints = [
-            new THREE.Vector3(i, -size, 0),
-            new THREE.Vector3(i, size, 0)
+            new THREE.Vector3(i, minY, 0),
+            new THREE.Vector3(i, maxY, 0)
         ];
 
         if (i % majorStep === 0) {
@@ -313,7 +318,7 @@ export const createGridLines = () => {
     });
 
     // Add X-axis numbers (every 10mm)
-    for (let i = -size; i <= size; i += 10) {
+    for (let i = Math.round(minX / 10) * 10; i <= maxX; i += 10) {
         if (i === 0) continue; // Skip center
 
         const canvas = document.createElement('canvas');
@@ -349,13 +354,13 @@ export const createGridLines = () => {
             alphaTest: 0.01
         });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(i, -5, 0); // Move X-axis labels below center line
+        sprite.position.set(i, minY - 5, 0); // Move X-axis labels below center line
         sprite.scale.set(16, 10, 1); // Scale 20
         group.add(sprite);
     }
 
     // Add Y-axis numbers (every 10mm)
-    for (let i = -size; i <= size; i += 10) {
+    for (let i = Math.round(minY / 10) * 10; i <= maxY; i += 10) {
         if (i === 0) continue; // Skip center
 
         const canvas = document.createElement('canvas');
@@ -391,7 +396,7 @@ export const createGridLines = () => {
             alphaTest: 0.01
         });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(-5, i, 0); // Move Y-axis labels left of center line
+        sprite.position.set(minX - 5, i, 0); // Move Y-axis labels left of center line
         sprite.scale.set(16, 10, 1); // Scale 20
         group.add(sprite);
     }
