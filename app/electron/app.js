@@ -16,6 +16,7 @@ import { createGCodeRoutes } from './routes/gcode-routes.js';
 import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
+import { createFirmwareRoutes, initializeFirmwareOnConnection } from './routes/firmware-routes.js';
 import { getSetting, saveSettings, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -612,6 +613,11 @@ export async function createApp(options = {}) {
 
       if (newOnlineStatus) {
         hasEverConnected = true;
+
+        // Initialize firmware structure on connection
+        initializeFirmwareOnConnection(cncController).catch((error) => {
+          log('Error initializing firmware on connection:', error?.message || error);
+        });
       }
 
       if (!newOnlineStatus && hasEverConnected) {
@@ -702,6 +708,7 @@ export async function createApp(options = {}) {
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
+  app.use('/api/firmware', createFirmwareRoutes(cncController));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

@@ -212,55 +212,124 @@
         </div>
 
         <!-- Firmware Tab -->
-        <div v-if="activeTab === 'firmware'" class="tab-panel">
-          <div class="settings-section">
-            <h3 class="section-title">Connection Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Baud Rate</label>
-              <select class="setting-select">
-                <option value="9600">9600</option>
-                <option value="19200">19200</option>
-                <option value="38400">38400</option>
-                <option value="57600">57600</option>
-                <option value="115200" selected>115200</option>
-                <option value="230400">230400</option>
-              </select>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Connection timeout (ms)</label>
-              <input type="number" class="setting-input" value="5000" min="1000" max="30000" step="1000">
-            </div>
+        <div v-if="activeTab === 'firmware'" class="tab-panel tab-panel--firmware">
+          <!-- Loading State -->
+          <div v-if="isFirmwareLoading" class="firmware-loading">
+            <div class="loading-spinner"></div>
+            <p>Querying firmware settings...</p>
+            <p class="loading-hint">Sending $EG, $ES, and $ESH commands to controller</p>
           </div>
 
-          <div class="settings-section">
-            <h3 class="section-title">GRBL Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Status report interval (ms)</label>
-              <input type="number" class="setting-input" value="200" min="50" max="1000" step="50">
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Enable position reporting</label>
-              <input type="checkbox" class="setting-checkbox" checked>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Enable real-time commands</label>
-              <input type="checkbox" class="setting-checkbox" checked>
-            </div>
+          <!-- Error State -->
+          <div v-else-if="firmwareError" class="firmware-error">
+            <p class="error-message">{{ firmwareError }}</p>
+            <button @click="loadFirmwareData" class="retry-button">Retry</button>
           </div>
 
-          <div class="settings-section">
-            <h3 class="section-title">Safety Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Enable soft limits</label>
-              <input type="checkbox" class="setting-checkbox" checked>
+          <!-- No Data State (Not Connected) -->
+          <div v-else-if="!firmwareData && !status.connected" class="firmware-empty">
+            <p>Connect to a CNC controller to query firmware settings</p>
+          </div>
+
+          <!-- Firmware Data Display -->
+          <div v-else-if="firmwareData" class="firmware-content">
+            <!-- Header with search -->
+            <div class="firmware-header">
+              <input
+                type="text"
+                v-model="firmwareSearchQuery"
+                placeholder="Search Firmware Settings..."
+                class="firmware-search-input"
+              />
+              <button @click="firmwareSearchQuery = ''" class="clear-search-button" v-if="firmwareSearchQuery">
+                Clear Search
+              </button>
             </div>
-            <div class="setting-item">
-              <label class="setting-label">Enable hard limits</label>
-              <input type="checkbox" class="setting-checkbox">
+
+            <!-- Firmware Settings Table -->
+            <div class="firmware-table-container">
+              <table class="firmware-table">
+                <thead>
+                  <tr>
+                    <th class="col-setting">$ Setting</th>
+                    <th class="col-description">Description</th>
+                    <th class="col-value">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="setting in filteredFirmwareSettings"
+                    :key="setting.id"
+                    class="firmware-row"
+                  >
+                    <td class="col-setting">
+                      <div class="setting-id">{{ setting.id }}</div>
+                      <div class="setting-group" v-if="setting.group">{{ setting.group.name }}</div>
+                    </td>
+                    <td class="col-description">
+                      <div class="setting-name">{{ setting.name }}</div>
+                      <div
+                        class="setting-hal-description"
+                        v-if="setting.halDetails && setting.halDetails[4]"
+                        v-html="setting.halDetails[4].replace(/\\n/g, '<br>')"
+                      ></div>
+                      <div class="setting-details" v-if="setting.unit || setting.min || setting.max">
+                        <span v-if="setting.unit">Unit: {{ setting.unit }}</span>
+                        <span v-if="setting.min">Min: {{ setting.min }}</span>
+                        <span v-if="setting.max">Max: {{ setting.max }}</span>
+                      </div>
+                    </td>
+                    <td class="col-value">
+                      <!-- DataType 2: Bitfield with toggle sliders -->
+                      <div v-if="setting.dataType === 2 && setting.format" class="bitfield-toggles">
+                        <template
+                          v-for="(bitName, index) in setting.format.split(',')"
+                          :key="index"
+                        >
+                          <span class="bitfield-name">{{ bitName.trim() }}</span>
+                          <label class="toggle-switch">
+                            <input
+                              type="checkbox"
+                              :checked="isBitSet(setting.value, index)"
+                              @change="toggleBit(setting, index)"
+                            />
+                            <span class="toggle-slider"></span>
+                          </label>
+                        </template>
+                      </div>
+
+                      <!-- DataType 6: String input -->
+                      <div v-else-if="setting.dataType === 6" class="string-input-container">
+                        <input
+                          type="text"
+                          :value="setting.value || ''"
+                          @blur="updateStringSetting(setting, $event.target.value)"
+                          @keydown.enter="$event.target.blur()"
+                          :minlength="setting.min ? parseInt(setting.min) : undefined"
+                          :maxlength="setting.max ? parseInt(setting.max) : undefined"
+                          class="setting-string-input"
+                          :placeholder="setting.format || ''"
+                        />
+                      </div>
+
+                      <!-- Default display for other data types -->
+                      <div v-else>
+                        <span class="setting-value-display">{{ setting.value || '—' }}</span>
+                        <span class="setting-unit" v-if="setting.unit && setting.value">{{ setting.unit }}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredFirmwareSettings.length === 0">
+                    <td colspan="3" class="no-results">No settings found matching "{{ firmwareSearchQuery }}"</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="setting-item">
-              <label class="setting-label">Homing cycle required</label>
-              <input type="checkbox" class="setting-checkbox">
+
+            <!-- Footer info -->
+            <div class="firmware-footer">
+              <span>Last updated: {{ new Date(firmwareData.timestamp).toLocaleString() }}</span>
+              <span>{{ filteredFirmwareSettings.length }} of {{ Object.keys(firmwareData.settings || {}).length }} settings</span>
             </div>
           </div>
         </div>
@@ -435,6 +504,12 @@ const consoleSettings = reactive({
   autoClearConsole: true
 });
 
+// Firmware settings
+const firmwareData = ref(null);
+const isFirmwareLoading = ref(false);
+const firmwareError = ref(null);
+const firmwareSearchQuery = ref('');
+
 // USB ports
 const availableUsbPorts = ref([]);
 const setupUsbPorts = ref([]);
@@ -539,6 +614,103 @@ const openSettings = async () => {
   // Load USB ports if connection type is USB
   if (connectionSettings.type === 'USB') {
     await loadMainUsbPorts();
+  }
+};
+
+const loadFirmwareData = async (forceRefresh = false) => {
+  try {
+    isFirmwareLoading.value = true;
+    firmwareError.value = null;
+
+    // GET endpoint now handles everything: checks file, queries controller if needed
+    const data = await api.getFirmwareSettings(forceRefresh);
+    firmwareData.value = data;
+  } catch (error) {
+    console.error('Error loading firmware data:', error);
+    firmwareError.value = error.message;
+  } finally {
+    isFirmwareLoading.value = false;
+  }
+};
+
+// Load firmware data when firmware tab is opened
+watch(activeTab, (newTab) => {
+  if (newTab === 'firmware' && !firmwareData.value && !isFirmwareLoading.value) {
+    loadFirmwareData();
+  }
+});
+
+// Computed property to filter firmware settings based on search query
+const filteredFirmwareSettings = computed(() => {
+  if (!firmwareData.value || !firmwareData.value.settings) {
+    return [];
+  }
+
+  const settings = Object.values(firmwareData.value.settings).map((setting: any) => ({
+    ...setting,
+    id: setting.id.toString()
+  }));
+
+  if (!firmwareSearchQuery.value) {
+    return settings.sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+  }
+
+  const query = firmwareSearchQuery.value.toLowerCase();
+  return settings.filter((setting: any) => {
+    return (
+      setting.id.includes(query) ||
+      setting.name?.toLowerCase().includes(query) ||
+      setting.group?.name?.toLowerCase().includes(query)
+    );
+  }).sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+});
+
+// Helper function to check if a bit is set
+const isBitSet = (value: string | number, bitIndex: number): boolean => {
+  const numValue = typeof value === 'string' ? parseInt(value) : value;
+  return ((numValue >> bitIndex) & 1) === 1;
+};
+
+// Function to toggle a bit in a bitfield setting
+const toggleBit = async (setting: any, bitIndex: number) => {
+  const currentValue = typeof setting.value === 'string' ? parseInt(setting.value) : (setting.value || 0);
+  const newValue = currentValue ^ (1 << bitIndex); // XOR to toggle the bit
+
+  try {
+    // Send $<id>=<value> command to update the setting
+    await api.sendCommand(`$${setting.id}=${newValue}`);
+
+    // Update local value
+    setting.value = newValue.toString();
+  } catch (error) {
+    console.error('Error updating bitfield setting:', error);
+  }
+};
+
+// Function to update string setting (dataType 6)
+const updateStringSetting = async (setting: any, newValue: string) => {
+  // Skip if value hasn't changed
+  if (newValue === setting.value) {
+    return;
+  }
+
+  // Validate min/max length
+  const minLength = setting.min ? parseInt(setting.min) : 0;
+  const maxLength = setting.max ? parseInt(setting.max) : Infinity;
+
+  if (newValue.length < minLength || newValue.length > maxLength) {
+    console.error(`String length must be between ${minLength} and ${maxLength}`);
+    return;
+  }
+
+  try {
+    // Send $<id>=<value> command to update the setting
+    await api.sendCommand(`$${setting.id}=${newValue}`);
+
+    // Update local value
+    setting.value = newValue;
+  } catch (error) {
+    console.error('Error updating string setting:', error);
   }
 };
 
@@ -1189,6 +1361,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   background: var(--color-surface);
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .tab-panel {
@@ -1775,5 +1948,468 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   .port-manufacturer {
     font-size: 0.7rem;
   }
+}
+
+/* Firmware Tab Styles */
+.firmware-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-xl);
+  gap: var(--gap-md);
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-hint {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.firmware-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-xl);
+  gap: var(--gap-md);
+  text-align: center;
+}
+
+.error-message {
+  color: #dc3545;
+  font-weight: 500;
+  padding: var(--gap-md);
+  background: rgba(220, 53, 69, 0.1);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  border-radius: var(--radius-small);
+}
+
+.retry-button {
+  padding: var(--gap-sm) var(--gap-lg);
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+  background: var(--color-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.3);
+}
+
+.firmware-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.tab-panel--firmware {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.firmware-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.firmware-header {
+  display: flex;
+  gap: var(--gap-sm);
+  align-items: center;
+  padding: var(--gap-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.firmware-search-input {
+  flex: 1;
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.firmware-search-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.clear-search-button {
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-search-button:hover {
+  background: var(--color-border);
+}
+
+.refresh-button {
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.firmware-table-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.firmware-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.firmware-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-surface-muted);
+}
+
+.firmware-table thead::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-border);
+}
+
+.firmware-table th {
+  padding: var(--gap-sm) var(--gap-md);
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.firmware-table th.col-setting {
+  text-align: center;
+}
+
+.firmware-table th.col-value {
+  text-align: right;
+}
+
+.firmware-table tbody tr:first-child td {
+  padding-top: var(--gap-lg);
+}
+
+.firmware-table tbody tr:last-child td {
+  padding-bottom: var(--gap-lg);
+}
+
+.firmware-table td {
+  padding: var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.firmware-table td:first-child {
+  padding-left: var(--gap-md);
+}
+
+.firmware-table td:last-child {
+  padding-right: var(--gap-md);
+}
+
+.firmware-row:nth-child(even) {
+  background: var(--color-surface-muted);
+}
+
+.firmware-row:hover {
+  background: var(--color-border);
+}
+
+.col-setting {
+  width: 10%;
+  min-width: 80px;
+  text-align: center;
+}
+
+.col-description {
+  width: 65%;
+}
+
+.col-value {
+  width: 25%;
+  text-align: right;
+}
+
+.setting-id {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: 1.3rem;
+}
+
+.setting-group {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  background: var(--color-surface-muted);
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.setting-name {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.setting-hal-description {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.setting-details {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: var(--gap-md);
+}
+
+.setting-value-display {
+  font-weight: 600;
+  color: var(--color-accent);
+  font-size: 1rem;
+}
+
+.setting-unit {
+  margin-left: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.no-results {
+  text-align: center;
+  padding: var(--gap-xl);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.firmware-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--gap-sm) var(--gap-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* Bitfield Toggle Switches */
+.bitfield-toggles {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--gap-sm) var(--gap-md);
+  align-items: center;
+  width: 100%;
+}
+
+.bitfield-item {
+  display: contents;
+}
+
+.bitfield-name {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.toggle-switch {
+  justify-self: center;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-border);
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--color-accent);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.2);
+}
+
+/* String Input (DataType 6) */
+.string-input-container {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.setting-string-input {
+  width: 60%;
+  min-width: 100px;
+  max-width: 300px;
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  text-align: right;
+  transition: all 0.2s ease;
+}
+
+.setting-string-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+  background: var(--color-surface);
+}
+
+.setting-string-input:invalid {
+  border-color: #dc3545;
+}
+
+.setting-string-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.firmware-json-details {
+  margin-top: var(--gap-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+}
+
+.firmware-json-details summary {
+  padding: var(--gap-sm) var(--gap-md);
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.firmware-json-details summary:hover {
+  background: var(--color-surface);
+}
+
+.firmware-json {
+  margin: 0;
+  padding: var(--gap-md);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius-small) var(--radius-small);
+  font-size: 0.85rem;
+  font-family: 'Courier New', monospace;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  color: var(--color-text-secondary);
 }
 </style>

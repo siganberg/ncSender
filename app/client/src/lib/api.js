@@ -754,6 +754,20 @@ class NCClient {
 
     return response.json();
   }
+
+  // Firmware settings methods
+  async getFirmwareSettings(forceRefresh = false) {
+    const url = forceRefresh
+      ? `${this.baseUrl}/api/firmware?refresh=true`
+      : `${this.baseUrl}/api/firmware`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to get firmware settings' }));
+      throw new Error(error.error || 'Failed to get firmware settings');
+    }
+    return response.json();
+  }
 }
 
 // Create singleton instance
