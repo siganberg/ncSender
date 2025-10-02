@@ -354,7 +354,7 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             alphaTest: 0.01
         });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(i, minY - 5, 0); // Move X-axis labels below center line
+        sprite.position.set(i, -5, 0); // Move X-axis labels below center line
         sprite.scale.set(16, 10, 1); // Scale 20
         group.add(sprite);
     }
@@ -396,7 +396,7 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             alphaTest: 0.01
         });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(minX - 5, i, 0); // Move Y-axis labels left of center line
+        sprite.position.set(-5, i, 0); // Move Y-axis labels left of center line
         sprite.scale.set(16, 10, 1); // Scale 20
         group.add(sprite);
     }

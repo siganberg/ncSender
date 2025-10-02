@@ -1343,7 +1343,11 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (report.WCO) {
     const [x, y, z] = report.WCO.split(',').map(Number);
-    status.wco = { x, y, z, a: 0 };
+    if (status.wco.x !== x || status.wco.y !== y || status.wco.z !== z) {
+      status.wco.x = x;
+      status.wco.y = y;
+      status.wco.z = z;
+    }
   }
 
   if (report.MPos) {
