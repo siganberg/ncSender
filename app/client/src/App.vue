@@ -233,7 +233,7 @@
 
           <!-- Firmware Data Display -->
           <div v-else-if="firmwareData" class="firmware-content">
-            <!-- Header with search -->
+            <!-- Header with search and submit -->
             <div class="firmware-header">
               <input
                 type="text"
@@ -243,6 +243,14 @@
               />
               <button @click="firmwareSearchQuery = ''" class="clear-search-button" v-if="firmwareSearchQuery">
                 Clear Search
+              </button>
+              <button
+                @click="submitFirmwareChanges"
+                class="submit-changes-button"
+                :disabled="!hasFirmwareChanges"
+                v-if="hasFirmwareChanges"
+              >
+                Submit Changes ({{ Object.keys(firmwareChanges).length }})
               </button>
             </div>
 
@@ -280,8 +288,38 @@
                       </div>
                     </td>
                     <td class="col-value">
-                      <!-- DataType 2: Bitfield with toggle sliders -->
-                      <div v-if="setting.dataType === 2 && setting.format" class="bitfield-toggles">
+                      <!-- DataType 0-5: Integers (int8, uint8, int16, uint16, int32, uint32) -->
+                      <div v-if="[0, 1, 2, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
+                        <input
+                          type="number"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                          @blur="updateNumericSetting(setting, $event.target.value)"
+                          @keydown.enter="$event.target.blur()"
+                          :min="setting.min || undefined"
+                          :max="setting.max || undefined"
+                          step="1"
+                          :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
+                          :placeholder="setting.format || ''"
+                        />
+                      </div>
+
+                      <!-- DataType 6: Float -->
+                      <div v-else-if="setting.dataType === 6" class="numeric-input-container">
+                        <input
+                          type="number"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                          @blur="updateNumericSetting(setting, $event.target.value)"
+                          @keydown.enter="$event.target.blur()"
+                          :min="setting.min || undefined"
+                          :max="setting.max || undefined"
+                          step="any"
+                          :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
+                          :placeholder="setting.format || ''"
+                        />
+                      </div>
+
+                      <!-- DataType 7: Bitfield with toggle sliders -->
+                      <div v-else-if="setting.dataType === 7 && setting.format" class="bitfield-toggles">
                         <template
                           v-for="(bitName, index) in setting.format.split(',')"
                           :key="index"
@@ -298,8 +336,8 @@
                         </template>
                       </div>
 
-                      <!-- DataType 6: String input -->
-                      <div v-else-if="setting.dataType === 6" class="string-input-container">
+                      <!-- DataType 8: String -->
+                      <div v-else-if="setting.dataType === 8" class="string-input-container">
                         <input
                           type="text"
                           :value="setting.value || ''"
@@ -310,6 +348,24 @@
                           class="setting-string-input"
                           :placeholder="setting.format || ''"
                         />
+                      </div>
+
+                      <!-- DataType 9: Bitmask (similar to bitfield) -->
+                      <div v-else-if="setting.dataType === 9 && setting.format" class="bitfield-toggles">
+                        <template
+                          v-for="(bitName, index) in setting.format.split(',')"
+                          :key="index"
+                        >
+                          <span class="bitfield-name">{{ bitName.trim() }}</span>
+                          <label class="toggle-switch">
+                            <input
+                              type="checkbox"
+                              :checked="isBitSet(setting.value, index)"
+                              @change="toggleBit(setting, index)"
+                            />
+                            <span class="toggle-slider"></span>
+                          </label>
+                        </template>
                       </div>
 
                       <!-- Default display for other data types -->
@@ -509,6 +565,7 @@ const firmwareData = ref(null);
 const isFirmwareLoading = ref(false);
 const firmwareError = ref(null);
 const firmwareSearchQuery = ref('');
+const firmwareChanges = ref({}); // Track pending changes: { settingId: newValue }
 
 // USB ports
 const availableUsbPorts = ref([]);
@@ -640,6 +697,11 @@ watch(activeTab, (newTab) => {
   }
 });
 
+// Check if there are pending firmware changes
+const hasFirmwareChanges = computed(() => {
+  return Object.keys(firmwareChanges.value).length > 0;
+});
+
 // Computed property to filter firmware settings based on search query
 const filteredFirmwareSettings = computed(() => {
   if (!firmwareData.value || !firmwareData.value.settings) {
@@ -672,25 +734,54 @@ const isBitSet = (value: string | number, bitIndex: number): boolean => {
 };
 
 // Function to toggle a bit in a bitfield setting
-const toggleBit = async (setting: any, bitIndex: number) => {
-  const currentValue = typeof setting.value === 'string' ? parseInt(setting.value) : (setting.value || 0);
+const toggleBit = (setting: any, bitIndex: number) => {
+  // Get current value (either from pending changes or original value)
+  const currentValue = firmwareChanges.value[setting.id] !== undefined
+    ? firmwareChanges.value[setting.id]
+    : (typeof setting.value === 'string' ? parseInt(setting.value) : (setting.value || 0));
+
   const newValue = currentValue ^ (1 << bitIndex); // XOR to toggle the bit
 
-  try {
-    // Send $<id>=<value> command to update the setting
-    await api.sendCommand(`$${setting.id}=${newValue}`);
-
-    // Update local value
-    setting.value = newValue.toString();
-  } catch (error) {
-    console.error('Error updating bitfield setting:', error);
-  }
+  // Track the change
+  firmwareChanges.value[setting.id] = newValue;
 };
 
-// Function to update string setting (dataType 6)
-const updateStringSetting = async (setting: any, newValue: string) => {
-  // Skip if value hasn't changed
+// Function to track numeric setting changes (dataTypes 0-6: integers and float)
+const updateNumericSetting = (setting: any, newValue: string) => {
+  // Skip if value hasn't changed from original
   if (newValue === setting.value) {
+    // Remove from changes if it matches original
+    delete firmwareChanges.value[setting.id];
+    return;
+  }
+
+  // Parse and validate numeric value
+  // DataType 6 = float, others (0-5) are integers
+  const numValue = setting.dataType === 6 ? parseFloat(newValue) : parseInt(newValue);
+
+  if (isNaN(numValue)) {
+    console.error('Invalid numeric value');
+    return;
+  }
+
+  // Validate min/max
+  const min = setting.min ? parseFloat(setting.min) : -Infinity;
+  const max = setting.max ? parseFloat(setting.max) : Infinity;
+
+  if (numValue < min || numValue > max) {
+    console.error(`Value must be between ${min} and ${max}`);
+    return;
+  }
+
+  // Track the change
+  firmwareChanges.value[setting.id] = numValue;
+};
+
+const updateStringSetting = (setting: any, newValue: string) => {
+  // Skip if value hasn't changed from original
+  if (newValue === setting.value) {
+    // Remove from changes if it matches original
+    delete firmwareChanges.value[setting.id];
     return;
   }
 
@@ -703,14 +794,34 @@ const updateStringSetting = async (setting: any, newValue: string) => {
     return;
   }
 
-  try {
-    // Send $<id>=<value> command to update the setting
-    await api.sendCommand(`$${setting.id}=${newValue}`);
+  // Track the change
+  firmwareChanges.value[setting.id] = newValue;
+};
 
-    // Update local value
-    setting.value = newValue;
+// Submit all pending firmware changes
+const submitFirmwareChanges = async () => {
+  if (!hasFirmwareChanges.value) {
+    return;
+  }
+
+  try {
+    // Send each change as a $<id>=<value> command
+    for (const [settingId, newValue] of Object.entries(firmwareChanges.value)) {
+      await api.sendCommand(`$${settingId}=${newValue}`);
+
+      // Update the local value in firmwareData
+      if (firmwareData.value.settings[settingId]) {
+        firmwareData.value.settings[settingId].value = newValue.toString();
+      }
+    }
+
+    // Clear changes after successful submission
+    firmwareChanges.value = {};
+
+    console.log('Firmware settings updated successfully');
   } catch (error) {
-    console.error('Error updating string setting:', error);
+    console.error('Error submitting firmware changes:', error);
+    alert('Failed to update firmware settings: ' + error.message);
   }
 };
 
@@ -2343,12 +2454,14 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.2);
 }
 
-/* String Input (DataType 6) */
+/* Numeric and String Input */
+.numeric-input-container,
 .string-input-container {
   display: flex;
   justify-content: flex-end;
 }
 
+.setting-numeric-input,
 .setting-string-input {
   width: 60%;
   min-width: 100px;
@@ -2363,6 +2476,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   transition: all 0.2s ease;
 }
 
+.setting-numeric-input:focus,
 .setting-string-input:focus {
   outline: none;
   border-color: var(--color-accent);
@@ -2370,10 +2484,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   background: var(--color-surface);
 }
 
+.setting-numeric-input:invalid,
 .setting-string-input:invalid {
   border-color: #dc3545;
 }
 
+.setting-numeric-input::placeholder,
 .setting-string-input::placeholder {
   color: var(--color-text-secondary);
   opacity: 0.5;

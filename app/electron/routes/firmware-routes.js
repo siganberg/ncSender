@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getUserDataDir } from '../utils/paths.js';
+import { FIRMWARE_DATA_TYPES, DATA_TYPE_NAMES } from '../constants/firmware-types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,9 +43,9 @@ function parseSettingGroups(response) {
  * Parse $ES (enumerate settings) response
  * Format: [SETTING:<id>|<group id>|<name>|{<unit>}|<data type>|{<format>}|{<min>}|{<max>}]
  *
- * Data types:
- * 0 = float, 1 = integer, 2 = bitfield/integer list, 3 = x-mask/axis mask
- * 4 = radiobuttons, 5 = bool, 6 = string, 7 = IPv4, 8 = password
+ * Data types are defined in ../constants/firmware-types.js:
+ * 0 = int8, 1 = uint8, 2 = int16, 3 = uint16, 4 = int32, 5 = uint32
+ * 6 = float, 7 = bitfield, 8 = string, 9 = mask (bitmask)
  */
 function parseSettings(response) {
   const settings = {};
