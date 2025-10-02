@@ -263,6 +263,20 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         opacity: 0.4
     });
 
+    // X-axis (Y=0) line material - Red
+    const xAxisLineMaterial = new THREE.LineBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 1.0
+    });
+
+    // Y-axis (X=0) line material - Green
+    const yAxisLineMaterial = new THREE.LineBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 1.0
+    });
+
     // Edge lines
     const edgeMaterial = new THREE.LineBasicMaterial({
         color: 0x77a9d7,
@@ -280,7 +294,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             new THREE.Vector3(maxX, i, 0)
         ];
 
-        if (i % majorStep === 0) {
+        if (i === 0) {
+            const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const xAxisLine = new THREE.Line(axisGeom, xAxisLineMaterial);
+            xAxisLine.renderOrder = 1;
+            group.add(xAxisLine);
+        } else if (i % majorStep === 0) {
             majorPoints.push(...linePoints);
         } else {
             points.push(...linePoints);
@@ -294,7 +313,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             new THREE.Vector3(i, maxY, 0)
         ];
 
-        if (i % majorStep === 0) {
+        if (i === 0) {
+            const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const yAxisLine = new THREE.Line(axisGeom, yAxisLineMaterial);
+            yAxisLine.renderOrder = 1;
+            group.add(yAxisLine);
+        } else if (i % majorStep === 0) {
             majorPoints.push(...linePoints);
         } else {
             points.push(...linePoints);

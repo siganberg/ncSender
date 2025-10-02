@@ -5,20 +5,31 @@
       <!-- Top floating toolbar -->
       <div class="floating-toolbar floating-toolbar--top">
         <div class="view-buttons" role="group" aria-label="Change viewport">
-          <button
-            v-for="preset in presets"
-            :key="preset.id"
-            :class="['view-button', { active: view === preset.id }]"
-            @click="handleViewButtonClick(preset.id)"
-          >
-            {{ preset.label }}
-          </button>
-          <div class="spindle-toggle">
-            <span>S. Cam</span>
-            <label class="switch">
-              <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
-              <span class="slider"></span>
-            </label>
+          <div class="preset-buttons">
+            <button
+              v-for="preset in presets"
+              :key="preset.id"
+              :class="['view-button', { active: view === preset.id }]"
+              @click="handleViewButtonClick(preset.id)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+          <div class="toggle-controls">
+            <div class="spindle-toggle">
+              <label class="switch">
+                <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
+                <span class="slider"></span>
+              </label>
+              <span>Spindle View</span>
+            </div>
+            <div class="spindle-toggle">
+              <label class="switch">
+                <input type="checkbox" :checked="autoZoomMode" @change="autoZoomMode = !autoZoomMode">
+                <span class="slider"></span>
+              </label>
+              <span>Auto-Zoom</span>
+            </div>
           </div>
         </div>
         <div class="file-controls">
@@ -242,6 +253,7 @@ const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
+const autoZoomMode = ref(true); // Auto-fit mode - on by default
 const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
@@ -1264,7 +1276,7 @@ onUnmounted(() => {
   z-index: 10;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   background: transparent;
   border-radius: 8px;
   padding: 4px 8px;
@@ -1346,6 +1358,13 @@ h2 {
 
 .view-buttons {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-xs);
+}
+
+.preset-buttons {
+  display: flex;
   gap: var(--gap-xs);
 }
 
@@ -1356,6 +1375,7 @@ h2 {
   cursor: pointer;
   background: var(--color-surface-muted);
   color: var(--color-text-secondary);
+  font-size: 14px;
 }
 
 .view-button.active {
@@ -1366,11 +1386,26 @@ h2 {
 .spindle-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--color-surface-muted);
+  gap: 6px;
+  padding: 4px 8px;
+  background: transparent;
   border-radius: var(--radius-small);
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  font-size: 0.85rem;
+}
+
+.toggle-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  margin-top: 8px;
+}
+
+.spindle-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .switch {
