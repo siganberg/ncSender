@@ -8,11 +8,18 @@ class GCodeVisualizer {
 
         // G-code movement types colors
         this.moveColors = {
-            rapid: 0x00ff00,  // Rapid moves - Bright Green
+            rapid: 0x00ff66,  // Rapid moves - Brighter Green
             cutting: 0x3e85c7,  // Cutting moves - Light Blue
             completedRapid: 0x333333,  // Completed rapid - Dark Gray
-            completedCutting: 0x444444  // Completed cutting - Dark Gray
+            completedCutting: 0x444444,  // Completed cutting - Dark Gray
+            outOfBounds: 0xcc5555  // Out of bounds - Muted Red
         };
+
+        // Grid boundaries (set via setGridBounds)
+        this.gridBounds = null;
+
+        // Store current G-code for re-rendering
+        this.currentGCode = null;
 
         // Visibility flags for shader
         this.showRapid = true;
@@ -34,6 +41,27 @@ class GCodeVisualizer {
         this.completedLines.clear();
     }
 
+    setGridBounds(gridBounds) {
+        this.gridBounds = gridBounds;
+
+        // Re-render current G-code with new bounds if exists
+        if (this.currentGCode) {
+            this.render(this.currentGCode);
+        }
+    }
+
+    isPointOutOfBounds(x, y, z) {
+        if (!this.gridBounds) return false;
+
+        const { minX, maxX, minY, maxY } = this.gridBounds;
+
+        return x < minX || x > maxX || y < minY || y > maxY;
+    }
+
+    hasOutOfBoundsMovement() {
+        return this.hasOutOfBounds || false;
+    }
+
     parseGCode(gcodeString) {
         const lines = gcodeString.split('\n');
         const vertices = []; // Flat array of x,y,z coordinates
@@ -42,9 +70,11 @@ class GCodeVisualizer {
 
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
+        let hasOutOfBounds = false; // Track if any points are out of bounds
 
         const rapidColor = new THREE.Color(this.moveColors.rapid);
         const cuttingColor = new THREE.Color(this.moveColors.cutting);
+        const outOfBoundsColor = new THREE.Color(this.moveColors.outOfBounds);
 
         lines.forEach((line, lineIndex) => {
             const lineNumber = lineIndex + 1;
@@ -82,7 +112,14 @@ class GCodeVisualizer {
 
             if (hasMovement && lastMoveType !== null) {
                 const isRapid = lastMoveType === 0;
-                const color = isRapid ? rapidColor : cuttingColor;
+
+                // Check if move is out of bounds
+                const isOutOfBounds = this.isPointOutOfBounds(currentPos.x, currentPos.y, currentPos.z) ||
+                                     this.isPointOutOfBounds(newPos.x, newPos.y, newPos.z);
+
+                if (isOutOfBounds) hasOutOfBounds = true;
+
+                const color = isOutOfBounds ? outOfBoundsColor : (isRapid ? rapidColor : cuttingColor);
 
                 if (lastMoveType === 2 || lastMoveType === 3) {
                     // Arc move
@@ -127,7 +164,7 @@ class GCodeVisualizer {
             }
         });
 
-        return { vertices, colors, frames };
+        return { vertices, colors, frames, hasOutOfBounds };
     }
 
     render(gcodeString) {
@@ -135,7 +172,13 @@ class GCodeVisualizer {
 
         if (!gcodeString) return;
 
-        const { vertices, colors, frames } = this.parseGCode(gcodeString);
+        // Store G-code for re-rendering when bounds change
+        this.currentGCode = gcodeString;
+
+        const { vertices, colors, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
+
+        // Store out of bounds status
+        this.hasOutOfBounds = hasOutOfBounds;
 
         if (vertices.length === 0) return;
 

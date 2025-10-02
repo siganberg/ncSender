@@ -74,6 +74,15 @@
         <div class="tool-value">T{{ currentTool }}</div>
       </div>
 
+      <!-- Out of bounds warning -->
+      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning">
+        <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
+          <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
+        </svg>
+        <span>Warning: Toolpath exceeds machine boundaries</span>
+      </div>
+
       <!-- Control buttons - bottom center -->
       <div class="control-buttons">
         <button
@@ -259,6 +268,7 @@ const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string
 const showDeleteConfirm = ref(false);
 const fileToDelete = ref<string | null>(null);
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
+const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 let currentGCodeBounds: any = null; // Store current G-code bounds
 
 // Three.js objects
@@ -685,7 +695,23 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
       gcodeVisualizer.resetCompletedLines();
     }
 
+    // Set grid bounds for out-of-bounds detection
+    const gridSizeX = props.gridSizeX || 1260;
+    const gridSizeY = props.gridSizeY || 1284;
+    const workOffsetX = props.workOffset?.x || 0;
+    const workOffsetY = props.workOffset?.y || 0;
+
+    const minX = -workOffsetX;
+    const maxX = gridSizeX - workOffsetX;
+    const minY = -gridSizeY - workOffsetY;
+    const maxY = -workOffsetY;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+
     gcodeVisualizer.render(data.content);
+
+    // Check if G-code has out of bounds movements
+    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
 
     // Reset all line type visibility to true when loading new G-code
     showRapids.value = true;
@@ -744,6 +770,7 @@ const handleGCodeClear = () => {
     gcodeVisualizer.clear();
   }
   hasFile.value = false;
+  showOutOfBoundsWarning.value = false;
   if (fileInput.value) {
     fileInput.value.value = '';
   }
@@ -1175,6 +1202,24 @@ watch(() => props.workOffset, (newOffset) => {
 
   if (scene) {
     scene.add(gridGroup);
+  }
+
+  // Update grid bounds for out-of-bounds detection (will auto re-render G-code)
+  if (gcodeVisualizer) {
+    const gridSizeX = props.gridSizeX || 1260;
+    const gridSizeY = props.gridSizeY || 1284;
+    const workOffsetX = newOffset?.x || 0;
+    const workOffsetY = newOffset?.y || 0;
+
+    const minX = -workOffsetX;
+    const maxX = gridSizeX - workOffsetX;
+    const minY = -gridSizeY - workOffsetY;
+    const maxY = -workOffsetY;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+
+    // Update out of bounds warning after re-rendering
+    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
   }
 
   // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
@@ -1650,6 +1695,43 @@ input:checked + .slider:before {
     min-height: 280px;
     max-height: 40vh;
   }
+}
+
+/* Out of bounds warning */
+.out-of-bounds-warning {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  backdrop-filter: blur(8px);
+  border: 2px solid #b84444;
+  color: #ff8888;
+  padding: 10px 20px;
+  border-radius: var(--radius-medium);
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 11;
+  animation: warningPulse 2s ease-in-out infinite;
+}
+
+@keyframes warningPulse {
+  0%, 100% {
+    border-color: #b84444;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    border-color: #d85555;
+    box-shadow: 0 4px 16px rgba(184, 68, 68, 0.4);
+  }
+}
+
+.warning-icon {
+  flex-shrink: 0;
 }
 
 /* Control buttons */
