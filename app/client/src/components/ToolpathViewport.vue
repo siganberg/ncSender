@@ -55,16 +55,16 @@
       <!-- Legend - upper right -->
       <div class="floating-toolbar floating-toolbar--legend">
         <div class="legend-item" :class="{ 'legend-item--disabled': !showRapids }" @click="toggleRapids">
-          <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
           <span>Rapid (G0)</span>
+          <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
         </div>
         <div class="legend-item" :class="{ 'legend-item--disabled': !showCutting }" @click="toggleCutting">
-          <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
           <span>Cutting (G1/G2/G3)</span>
+          <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
         </div>
         <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
-          <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
           <span>Spindle</span>
+          <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
         </div>
       </div>
 
@@ -1637,6 +1637,7 @@ input:checked + .slider:before {
 .legend-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   background: transparent;
   padding: 4px 8px;
@@ -1646,6 +1647,17 @@ input:checked + .slider:before {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
+  min-width: 180px;
+}
+
+.legend-item span:first-child {
+  flex: 0 1 auto;
+  text-align: left;
+}
+
+.legend-item .dot {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .legend-item:hover {
