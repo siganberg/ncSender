@@ -1110,7 +1110,7 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
 const updatePointerOpacity = () => {
   if (!cuttingPointer) return;
 
-  const opacity = props.view === 'top' ? 0.5 : 1.0;
+  const opacity = props.view === 'top' ? 0.3 : 1.0;
   cuttingPointer.traverse((child) => {
     if (child.isMesh && child.material) {
       child.material.opacity = opacity;
@@ -1216,6 +1216,19 @@ watch(() => spindleViewMode.value, (isSpindleView) => {
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
     }
+
+    // Center camera on spindle (0,0,0) while maintaining current zoom level and angle
+    if (camera) {
+      // Calculate the offset from current target to camera
+      const cameraOffset = camera.position.clone().sub(cameraTarget);
+
+      // Set new target to origin (where spindle will be)
+      cameraTarget.set(0, 0, 0);
+
+      // Move camera by the same offset from new target (maintains viewing angle)
+      camera.position.copy(cameraTarget).add(cameraOffset);
+      camera.lookAt(cameraTarget);
+    }
   } else {
     // Normal mode - reset all positions
     if (gcodeVisualizer && gcodeVisualizer.group) {
@@ -1225,9 +1238,11 @@ watch(() => spindleViewMode.value, (isSpindleView) => {
     if (axesGroup) axesGroup.position.set(0, 0, 0);
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
 
-    // Auto fit to gcode bounds when exiting spindle view mode
-    if (currentGCodeBounds) {
+    // Respect Auto-Fit setting when exiting spindle view mode
+    if (autoFitMode.value && currentGCodeBounds) {
       fitCameraToBounds(currentGCodeBounds);
+    } else {
+      fitCameraToBounds(getGridBounds());
     }
   }
 });
