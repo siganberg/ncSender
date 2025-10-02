@@ -512,5 +512,53 @@ export function createFirmwareRoutes(cncController) {
     }
   });
 
+  // GET /api/firmware/:settingId - Get a specific firmware setting value
+  router.get('/:settingId', async (req, res) => {
+    if (!cncController || !cncController.isConnected) {
+      res.status(400).json({ error: 'CNC controller not connected' });
+      return;
+    }
+
+    const { settingId } = req.params;
+
+    try {
+      // Read existing firmware structure
+      let firmwareData;
+      try {
+        const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
+        firmwareData = JSON.parse(data);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          res.status(404).json({ error: 'Firmware structure not initialized. Reconnect to the CNC controller.' });
+          return;
+        }
+        throw error;
+      }
+
+      // Check if setting exists
+      if (!firmwareData.settings[settingId]) {
+        res.status(404).json({ error: `Setting ${settingId} not found` });
+        return;
+      }
+
+      // Query current values with $$
+      console.log(`Querying firmware setting ${settingId}...`);
+      const currentValues = await queryCurrentValues(cncController);
+
+      // Get the specific setting value
+      const value = currentValues[settingId];
+
+      if (value === undefined) {
+        res.status(404).json({ error: `Setting ${settingId} has no value` });
+        return;
+      }
+
+      res.json({ value });
+    } catch (error) {
+      console.error(`Error querying firmware setting ${settingId}:`, error);
+      res.status(500).json({ error: error.message || 'Failed to query firmware setting' });
+    }
+  });
+
   return router;
 }
