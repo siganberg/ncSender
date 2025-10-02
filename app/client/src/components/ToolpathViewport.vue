@@ -303,7 +303,7 @@ const initThreeJS = () => {
     frustumSize / 2,             // top
     -frustumSize / 2,            // bottom
     0.1,                         // near
-    2000                         // far
+    10000                        // far - increased to support large grid views
   );
   // Position camera in 3D isometric view with Z pointing up
   camera.position.set(100, -100, 100);
@@ -696,7 +696,9 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     if (bounds && bounds.size.length() > 0) {
       currentGCodeBounds = bounds; // Store bounds for later use
       // Fit to current view (honors user's selection / default)
-      fitCameraToBounds(bounds);
+      if (autoFitMode.value) {
+        fitCameraToBounds(bounds);
+      }
     }
 
     hasFile.value = true;
@@ -888,6 +890,44 @@ const handleStop = async () => {
   }
 };
 
+const getGridBounds = () => {
+  const gridSizeX = props.gridSizeX || 1260;
+  const gridSizeY = props.gridSizeY || 1284;
+  const workOffsetX = props.workOffset?.x || 0;
+  const workOffsetY = props.workOffset?.y || 0;
+
+  // Grid boundaries (from helpers.js createGridLines)
+  // minX = -workOffset.x
+  // maxX = gridSizeX - workOffset.x
+  // minY = -gridSizeY - workOffset.y
+  // maxY = -workOffset.y
+
+  const minX = -workOffsetX;
+  const maxX = gridSizeX - workOffsetX;
+  const minY = -gridSizeY - workOffsetY;
+  const maxY = -workOffsetY;
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const sizeX = maxX - minX;
+  const sizeY = maxY - minY;
+
+  const bounds = {
+    center: new THREE.Vector3(
+      centerX,
+      centerY,
+      0
+    ),
+    size: new THREE.Vector3(
+      sizeX,
+      sizeY,
+      Math.max(sizeX, sizeY) * 0.15 // 15% of max grid dimension for Z
+    )
+  };
+
+  return bounds;
+};
+
 const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   if (!bounds || !camera) return;
 
@@ -1004,8 +1044,10 @@ const handleViewButtonClick = (viewType: 'top' | 'front' | 'iso') => {
   emit('change-view', viewType);
 
   // Always fit to view when clicking a view button
-  if (currentGCodeBounds) {
+  if (autoFitMode.value && currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds, viewType);
+  } else {
+    fitCameraToBounds(getGridBounds(), viewType);
   }
 };
 
@@ -1080,8 +1122,10 @@ const updatePointerOpacity = () => {
 watch(() => props.view, (newView) => {
   setCameraView(newView);
   // Auto fit to view when changing views with the specific view type
-  if (currentGCodeBounds) {
+  if (autoFitMode.value && currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds, newView);
+  } else {
+    fitCameraToBounds(getGridBounds(), newView);
   }
   // Update pointer opacity
   updatePointerOpacity();
@@ -1132,12 +1176,26 @@ watch(() => props.workOffset, (newOffset) => {
   if (scene) {
     scene.add(gridGroup);
   }
+
+  // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
+  if (!autoFitMode.value) {
+    fitCameraToBounds(getGridBounds());
+  }
 }, { deep: true });
 
 // Watch for file manager dialog open to fetch files
 watch(() => showFileManager.value, (isOpen) => {
   if (isOpen) {
     fetchUploadedFiles();
+  }
+});
+
+// Watch for auto-fit mode changes
+watch(() => autoFitMode.value, (isAutoFit) => {
+  if (isAutoFit && currentGCodeBounds) {
+    fitCameraToBounds(currentGCodeBounds);
+  } else {
+    fitCameraToBounds(getGridBounds());
   }
 });
 
