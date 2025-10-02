@@ -263,6 +263,13 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         opacity: 0.4
     });
 
+    // Edge lines
+    const edgeMaterial = new THREE.LineBasicMaterial({
+        color: 0x77a9d7,
+        transparent: true,
+        opacity: 1.0
+    });
+
     const points = [];
     const majorPoints = [];
 
@@ -309,6 +316,22 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         majorLines.renderOrder = 0;
         group.add(majorLines);
     }
+
+    // Add edge lines
+    const edgePoints = [
+        new THREE.Vector3(minX, minY, 0),
+        new THREE.Vector3(maxX, minY, 0),
+        new THREE.Vector3(minX, maxY, 0),
+        new THREE.Vector3(maxX, maxY, 0),
+        new THREE.Vector3(minX, minY, 0),
+        new THREE.Vector3(minX, maxY, 0),
+        new THREE.Vector3(maxX, minY, 0),
+        new THREE.Vector3(maxX, maxY, 0),
+    ];
+    const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    edgeLines.renderOrder = 1; // Render on top of other grid lines
+    group.add(edgeLines);
 
     // Add grid numbers
     const textMaterial = new THREE.SpriteMaterial({
