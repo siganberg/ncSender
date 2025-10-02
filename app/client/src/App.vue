@@ -45,7 +45,7 @@
   </AppShell>
 
   <!-- Dialog moved outside AppShell to avoid overflow clipping -->
-  <Dialog v-if="showSettings" @close="showSettings = false" :show-header="false" size="medium">
+  <Dialog v-if="showSettings" @close="closeSettings" :show-header="false" size="medium">
     <div class="settings-container">
       <div class="tabs">
         <button
@@ -216,8 +216,8 @@
           <!-- Loading State -->
           <div v-if="isFirmwareLoading" class="firmware-loading">
             <div class="loading-spinner"></div>
-            <p>Querying firmware settings...</p>
-            <p class="loading-hint">Sending $EG, $ES, and $ESH commands to controller</p>
+            <p>Loading firmware settings...</p>
+            <p class="loading-hint">Fetching firmware data from controller</p>
           </div>
 
           <!-- Error State -->
@@ -241,16 +241,18 @@
                 placeholder="Search Firmware Settings..."
                 class="firmware-search-input"
               />
-              <button @click="firmwareSearchQuery = ''" class="clear-search-button" v-if="firmwareSearchQuery">
-                Clear Search
+              <button @click="importFirmwareSettings" class="import-export-button">
+                Import
+              </button>
+              <button @click="exportFirmwareSettings" class="import-export-button">
+                Export
               </button>
               <button
                 @click="submitFirmwareChanges"
                 class="submit-changes-button"
                 :disabled="!hasFirmwareChanges"
-                v-if="hasFirmwareChanges"
               >
-                Submit Changes ({{ Object.keys(firmwareChanges).length }})
+                Submit{{ hasFirmwareChanges ? ` (${Object.keys(firmwareChanges).length})` : '' }}
               </button>
             </div>
 
@@ -281,7 +283,7 @@
                         v-if="setting.halDetails && setting.halDetails[4]"
                         v-html="setting.halDetails[4].replace(/\\n/g, '<br>')"
                       ></div>
-                      <div class="setting-details" v-if="setting.unit || setting.min || setting.max">
+                      <div class="setting-details" v-if="(setting.unit || setting.min || setting.max) && setting.dataType !== 7">
                         <span v-if="setting.unit">Unit: {{ setting.unit }}</span>
                         <span v-if="setting.min">Min: {{ setting.min }}</span>
                         <span v-if="setting.max">Max: {{ setting.max }}</span>
@@ -292,10 +294,10 @@
                       <div v-if="[0, 1, 2, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
                         <input
                           type="number"
-                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
-                          @blur="updateNumericSetting(setting, $event.target.value)"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
+                          @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="setting.min || undefined"
+                          :min="([481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) || setting.dataType === 5) ? 0 : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="1"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -307,10 +309,10 @@
                       <div v-else-if="setting.dataType === 6" class="numeric-input-container">
                         <input
                           type="number"
-                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
-                          @blur="updateNumericSetting(setting, $event.target.value)"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
+                          @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="setting.min || undefined"
+                          :min="[481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) ? 0 : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="any"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -318,54 +320,76 @@
                         />
                       </div>
 
-                      <!-- DataType 7: Bitfield with toggle sliders -->
-                      <div v-else-if="setting.dataType === 7 && setting.format" class="bitfield-toggles">
-                        <template
-                          v-for="(bitName, index) in setting.format.split(',')"
-                          :key="index"
-                        >
-                          <span class="bitfield-name">{{ bitName.trim() }}</span>
-                          <label class="toggle-switch">
-                            <input
-                              type="checkbox"
-                              :checked="isBitSet(setting.value, index)"
-                              @change="toggleBit(setting, index)"
-                            />
-                            <span class="toggle-slider"></span>
-                          </label>
-                        </template>
+                      <!-- DataType 7: Bitfield, MAC address, or G-code string -->
+                      <div v-else-if="setting.dataType === 7">
+                        <!-- MAC address input (format: x(17)) -->
+                        <div v-if="setting.format && setting.format.toLowerCase() === 'x(17)'" class="string-input-container">
+                          <input
+                            type="text"
+                            :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                            @input="updateMacAddress(setting, $event.target.value)"
+                            @keydown.enter="$event.target.blur()"
+                            :maxlength="setting.max ? parseInt(setting.max) : undefined"
+                            :class="['setting-string-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
+                            placeholder="XX:XX:XX:XX:XX:XX"
+                          />
+                        </div>
+                        <!-- G-code string input (format: x(127) or other x(...) values) -->
+                        <div v-else-if="setting.format && setting.format.toLowerCase().startsWith('x(')" class="string-input-container">
+                          <input
+                            type="text"
+                            :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                            @input="updateGcodeString(setting, $event.target.value)"
+                            @keydown.enter="$event.target.blur()"
+                            :maxlength="setting.max ? parseInt(setting.max) : undefined"
+                            :class="['setting-string-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
+                            placeholder="G-code commands (use | as separator)"
+                          />
+                        </div>
+                        <!-- Bitfield toggles -->
+                        <div v-else-if="setting.format" class="bitfield-toggles">
+                          <template
+                            v-for="(bitName, index) in setting.format.split(',')"
+                            :key="index"
+                          >
+                            <span class="bitfield-name">{{ bitName.trim() }}</span>
+                            <label class="toggle-switch">
+                              <input
+                                type="checkbox"
+                                :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                                @change="toggleBit(setting, index)"
+                              />
+                              <span class="toggle-slider"></span>
+                            </label>
+                          </template>
+                        </div>
                       </div>
 
                       <!-- DataType 8: String -->
                       <div v-else-if="setting.dataType === 8" class="string-input-container">
                         <input
                           type="text"
-                          :value="setting.value || ''"
-                          @blur="updateStringSetting(setting, $event.target.value)"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                          @input="updateStringSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
                           :minlength="setting.min ? parseInt(setting.min) : undefined"
                           :maxlength="setting.max ? parseInt(setting.max) : undefined"
-                          class="setting-string-input"
+                          :class="['setting-string-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
                           :placeholder="setting.format || ''"
                         />
                       </div>
 
-                      <!-- DataType 9: Bitmask (similar to bitfield) -->
-                      <div v-else-if="setting.dataType === 9 && setting.format" class="bitfield-toggles">
-                        <template
-                          v-for="(bitName, index) in setting.format.split(',')"
-                          :key="index"
-                        >
-                          <span class="bitfield-name">{{ bitName.trim() }}</span>
-                          <label class="toggle-switch">
-                            <input
-                              type="checkbox"
-                              :checked="isBitSet(setting.value, index)"
-                              @change="toggleBit(setting, index)"
-                            />
-                            <span class="toggle-slider"></span>
-                          </label>
-                        </template>
+                      <!-- DataType 9: IP Address -->
+                      <div v-else-if="setting.dataType === 9" class="string-input-container">
+                        <input
+                          type="text"
+                          :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value || '')"
+                          @input="updateIpAddress(setting, $event.target.value)"
+                          @keydown.enter="$event.target.blur()"
+                          maxlength="15"
+                          :class="['setting-string-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
+                          placeholder="192.168.1.1"
+                        />
                       </div>
 
                       <!-- Default display for other data types -->
@@ -384,7 +408,8 @@
 
             <!-- Footer info -->
             <div class="firmware-footer">
-              <span>Last updated: {{ new Date(firmwareData.timestamp).toLocaleString() }}</span>
+              <span v-if="importSummary" class="import-summary">Import: {{ importSummary.changed }} setting(s) changed out of {{ importSummary.total }} total. Settings are not saved until submitted.</span>
+              <span v-else>Last updated: {{ new Date(firmwareData.timestamp).toLocaleString() }}</span>
               <span>{{ filteredFirmwareSettings.length }} of {{ Object.keys(firmwareData.settings || {}).length }} settings</span>
             </div>
           </div>
@@ -393,10 +418,10 @@
 
       <!-- Footer with Close Button -->
       <div class="settings-footer">
-        <button class="close-button" @click="saveConnectionSettings">
+        <button v-if="activeTab === 'general'" class="close-button" @click="saveConnectionSettings">
           Save
         </button>
-        <button class="close-button" @click="showSettings = false">
+        <button class="close-button" @click="closeSettings">
           Close
         </button>
       </div>
@@ -566,6 +591,7 @@ const isFirmwareLoading = ref(false);
 const firmwareError = ref(null);
 const firmwareSearchQuery = ref('');
 const firmwareChanges = ref({}); // Track pending changes: { settingId: newValue }
+const importSummary = ref(null); // { changed: number, total: number }
 
 // USB ports
 const availableUsbPorts = ref([]);
@@ -674,6 +700,13 @@ const openSettings = async () => {
   }
 };
 
+const closeSettings = () => {
+  // Clear any pending firmware changes
+  clearFirmwareChanges();
+  // Close the dialog
+  showSettings.value = false;
+};
+
 const loadFirmwareData = async (forceRefresh = false) => {
   try {
     isFirmwareLoading.value = true;
@@ -765,11 +798,17 @@ const updateNumericSetting = (setting: any, newValue: string) => {
   }
 
   // Validate min/max
+  // Special case: for certain settings, 0 is always valid even if min is set higher
+  const zeroIsValidSettings = [481, 397, 392, 393, 394, 673, 539]; // Settings where 0 has special meaning
+  const allowZero = setting.dataType === 5 || zeroIsValidSettings.includes(setting.id);
+
   const min = setting.min ? parseFloat(setting.min) : -Infinity;
   const max = setting.max ? parseFloat(setting.max) : Infinity;
 
-  if (numValue < min || numValue > max) {
-    console.error(`Value must be between ${min} and ${max}`);
+  if (allowZero && numValue === 0) {
+    // 0 is always valid for these settings (typically means disabled/unlimited)
+  } else if (numValue < min || numValue > max) {
+    console.error(`Value must be between ${min} and ${max}${allowZero ? ' (or 0)' : ''}`);
     return;
   }
 
@@ -798,6 +837,89 @@ const updateStringSetting = (setting: any, newValue: string) => {
   firmwareChanges.value[setting.id] = newValue;
 };
 
+// Update MAC address setting (dataType 7 with format "x(17)")
+const updateMacAddress = (setting: any, newValue: string) => {
+  // Skip if value hasn't changed from original
+  if (newValue === setting.value) {
+    // Remove from changes if it matches original
+    delete firmwareChanges.value[setting.id];
+    return;
+  }
+
+  // Validate max length (max value represents max character length for dataType 7)
+  const maxLength = setting.max ? parseInt(setting.max) : 17;
+  if (newValue.length > maxLength) {
+    console.error(`MAC address length cannot exceed ${maxLength} characters`);
+    alert(`MAC address length cannot exceed ${maxLength} characters`);
+    return;
+  }
+
+  // Validate MAC address format (XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX)
+  const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+  if (!macRegex.test(newValue)) {
+    console.error('Invalid MAC address format. Expected XX:XX:XX:XX:XX:XX');
+    alert('Invalid MAC address format. Please use format: XX:XX:XX:XX:XX:XX');
+    return;
+  }
+
+  // Track the change
+  firmwareChanges.value[setting.id] = newValue;
+};
+
+// Update G-code string setting (dataType 7 with format "x(127)" or similar)
+const updateGcodeString = (setting: any, newValue: string) => {
+  // Skip if value hasn't changed from original
+  if (newValue === setting.value) {
+    // Remove from changes if it matches original
+    delete firmwareChanges.value[setting.id];
+    return;
+  }
+
+  // Validate max length (max value represents max character length for dataType 7)
+  const maxLength = setting.max ? parseInt(setting.max) : Infinity;
+  if (newValue.length > maxLength) {
+    console.error(`G-code string length cannot exceed ${maxLength} characters`);
+    alert(`G-code string length cannot exceed ${maxLength} characters`);
+    return;
+  }
+
+  // Basic validation: ensure it contains valid G-code characters
+  // Allow: letters, numbers, spaces, pipes (|), dots (.), minus (-), and other common G-code characters
+  const validGcodeRegex = /^[A-Za-z0-9\s|.\-;:()$#*+=\[\]]*$/;
+
+  if (!validGcodeRegex.test(newValue)) {
+    console.error('Invalid G-code string. Contains invalid characters.');
+    alert('Invalid G-code string. Please use valid G-code characters and | as separator for multiple commands.');
+    return;
+  }
+
+  // Track the change
+  firmwareChanges.value[setting.id] = newValue;
+};
+
+// Update IP address setting (dataType 9)
+const updateIpAddress = (setting: any, newValue: string) => {
+  // Skip if value hasn't changed from original
+  if (newValue === setting.value) {
+    // Remove from changes if it matches original
+    delete firmwareChanges.value[setting.id];
+    return;
+  }
+
+  // Validate IPv4 address format (0-255.0-255.0-255.0-255)
+  const ipRegex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+  if (!ipRegex.test(newValue)) {
+    console.error('Invalid IP address format. Expected format: XXX.XXX.XXX.XXX (0-255 for each octet)');
+    alert('Invalid IP address format. Please use format: XXX.XXX.XXX.XXX (e.g., 192.168.1.1)');
+    return;
+  }
+
+  // Track the change
+  firmwareChanges.value[setting.id] = newValue;
+};
+
 // Submit all pending firmware changes
 const submitFirmwareChanges = async () => {
   if (!hasFirmwareChanges.value) {
@@ -815,14 +937,85 @@ const submitFirmwareChanges = async () => {
       }
     }
 
-    // Clear changes after successful submission
+    // Clear changes and import summary after successful submission
     firmwareChanges.value = {};
+    importSummary.value = null;
 
     console.log('Firmware settings updated successfully');
   } catch (error) {
     console.error('Error submitting firmware changes:', error);
     alert('Failed to update firmware settings: ' + error.message);
   }
+};
+
+// Clear/abandon pending firmware changes
+const clearFirmwareChanges = () => {
+  firmwareChanges.value = {};
+  importSummary.value = null;
+};
+
+// Export firmware settings to JSON file
+const exportFirmwareSettings = () => {
+  if (!firmwareData.value) {
+    return;
+  }
+
+  // Create a JSON blob with current settings values
+  const exportData = {};
+  for (const [id, setting] of Object.entries(firmwareData.value.settings)) {
+    exportData[id] = setting.value;
+  }
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `firmware-settings-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// Import firmware settings from JSON file
+const importFirmwareSettings = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json';
+
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importedSettings = JSON.parse(text);
+
+      // Track only changes that differ from current values
+      let changesCount = 0;
+      for (const [id, value] of Object.entries(importedSettings)) {
+        if (firmwareData.value.settings[id]) {
+          const currentValue = firmwareData.value.settings[id].value;
+          // Only track if the value is different
+          if (String(value) !== String(currentValue)) {
+            firmwareChanges.value[id] = value;
+            changesCount++;
+          }
+        }
+      }
+
+      // Show summary in footer
+      importSummary.value = {
+        changed: changesCount,
+        total: Object.keys(importedSettings).length
+      };
+    } catch (error) {
+      console.error('Error importing settings:', error);
+      alert('Failed to import settings: ' + error.message);
+    }
+  };
+
+  input.click();
 };
 
 const updateAccentColor = (color: string) => {
@@ -2070,6 +2263,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   padding: var(--gap-xl);
   gap: var(--gap-md);
   text-align: center;
+  height: 100%;
 }
 
 .loading-spinner {
@@ -2185,7 +2379,8 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
 }
 
-.clear-search-button {
+.clear-search-button,
+.import-export-button {
   padding: var(--gap-sm) var(--gap-md);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
@@ -2196,8 +2391,34 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   transition: all 0.2s ease;
 }
 
-.clear-search-button:hover {
+.clear-search-button:hover,
+.import-export-button:hover {
   background: var(--color-border);
+}
+
+.submit-changes-button {
+  padding: var(--gap-sm) var(--gap-lg);
+  background: var(--color-accent);
+  color: white !important;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(26, 188, 156, 0.2);
+}
+
+.submit-changes-button:hover:not(:disabled) {
+  background: #1fa882;
+  color: white !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(26, 188, 156, 0.3);
+}
+
+.submit-changes-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .refresh-button {
@@ -2316,7 +2537,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .setting-id {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
   font-size: 1.3rem;
 }
@@ -2326,13 +2547,16 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   color: var(--color-text-secondary);
   margin-top: 2px;
   background: var(--color-surface-muted);
-  padding: 2px 6px;
-  border-radius: 3px;
-  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .setting-name {
-  font-weight: 500;
+  font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: 4px;
 }
@@ -2380,6 +2604,11 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   flex-shrink: 0;
+}
+
+.firmware-footer .import-summary {
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 /* Bitfield Toggle Switches */
@@ -2466,7 +2695,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   width: 60%;
   min-width: 100px;
   max-width: 300px;
-  padding: var(--gap-sm) var(--gap-md);
+  padding: 10px 10px !important;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -2487,6 +2716,13 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .setting-numeric-input:invalid,
 .setting-string-input:invalid {
   border-color: #dc3545;
+}
+
+.setting-numeric-input.has-changes,
+.setting-string-input.has-changes {
+  border-color: var(--color-accent);
+  background: rgba(26, 188, 156, 0.05);
+  font-weight: 600;
 }
 
 .setting-numeric-input::placeholder,

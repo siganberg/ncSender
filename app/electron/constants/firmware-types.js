@@ -13,9 +13,9 @@ export const FIRMWARE_DATA_TYPES = {
   INT32: 4,     // Signed 32-bit integer
   UINT32: 5,    // Unsigned 32-bit integer
   FLOAT: 6,     // Floating point number
-  BITFIELD: 7,  // Bitfield (comma-separated bit names in format field)
+  BITFIELD: 7,  // Bitfield (comma-separated bit names), MAC address (x(17)), or G-code string (x(127))
   STRING: 8,    // String value
-  MASK: 9       // Bitmask (multi-option selection)
+  IPV4: 9       // IPv4 address
 };
 
 export const DATA_TYPE_NAMES = {
@@ -28,7 +28,7 @@ export const DATA_TYPE_NAMES = {
   [FIRMWARE_DATA_TYPES.FLOAT]: 'float',
   [FIRMWARE_DATA_TYPES.BITFIELD]: 'bitfield',
   [FIRMWARE_DATA_TYPES.STRING]: 'string',
-  [FIRMWARE_DATA_TYPES.MASK]: 'mask'
+  [FIRMWARE_DATA_TYPES.IPV4]: 'ipv4'
 };
 
 /**
@@ -53,8 +53,8 @@ export function isNumericType(dataType) {
 }
 
 /**
- * Check if a data type is a bitfield or mask type
+ * Check if a data type is a bitfield type
  */
 export function isBitfieldType(dataType) {
-  return dataType === FIRMWARE_DATA_TYPES.BITFIELD || dataType === FIRMWARE_DATA_TYPES.MASK;
+  return dataType === FIRMWARE_DATA_TYPES.BITFIELD;
 }
