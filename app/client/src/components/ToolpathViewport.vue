@@ -15,21 +15,12 @@
               {{ preset.label }}
             </button>
           </div>
-          <div class="toggle-controls">
-            <div class="spindle-toggle">
-              <label class="switch">
-                <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
-                <span class="slider"></span>
-              </label>
-              <span>Spindle View</span>
-            </div>
-            <div class="spindle-toggle">
-              <label class="switch">
-                <input type="checkbox" :checked="autoZoomMode" @change="autoZoomMode = !autoZoomMode">
-                <span class="slider"></span>
-              </label>
-              <span>Auto-Zoom</span>
-            </div>
+          <div class="spindle-toggle">
+            <label class="switch">
+              <input type="checkbox" :checked="spindleViewMode" @change="spindleViewMode = !spindleViewMode">
+              <span class="slider"></span>
+            </label>
+            <span>Spindle View</span>
           </div>
         </div>
         <div class="file-controls">
@@ -253,7 +244,6 @@ const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
-const autoZoomMode = ref(true); // Auto-fit mode - on by default
 const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
@@ -1395,12 +1385,6 @@ h2 {
   transition: all 0.15s ease;
   user-select: none;
   font-size: 0.85rem;
-}
-
-.toggle-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-xs);
   margin-top: 8px;
 }
 
