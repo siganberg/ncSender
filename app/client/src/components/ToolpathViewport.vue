@@ -466,7 +466,12 @@ const updatePointerScale = () => {
 
   // Scale pointer based on frustum size so it remains visible at all zoom levels
   const frustumWidth = camera.right - camera.left;
-  const scale = frustumWidth * 0.01; // 1% of visible width
+  let scale = frustumWidth * 0.01; // 1% of visible width
+
+  // Cap the maximum scale to prevent spindle from appearing too large when zoomed out
+  const maxScale = 5; // Maximum scale limit
+  scale = Math.min(scale, maxScale);
+
   cuttingPointer.scale.set(scale, scale, scale);
 };
 
