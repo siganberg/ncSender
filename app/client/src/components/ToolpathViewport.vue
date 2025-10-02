@@ -1485,7 +1485,7 @@ input:checked + .slider:before {
 }
 
 .dot--rapid {
-  background: #0ef6ae;
+  background: #00ff00;
 }
 
 .dot--cutting {

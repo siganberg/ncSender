@@ -14,6 +14,10 @@ class GCodeVisualizer {
             completedCutting: 0x444444  // Completed cutting - Dark Gray
         };
 
+        // Visibility flags for shader
+        this.showRapid = true;
+        this.showCutting = true;
+
         // Track line numbers for completion marking
         this.lineNumberMap = new Map();
         this.completedLines = new Set();
@@ -140,11 +144,50 @@ class GCodeVisualizer {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-        const material = new THREE.LineBasicMaterial({
-            vertexColors: true,
+        // Custom shader material that can hide vertices by color
+        const material = new THREE.ShaderMaterial({
+            vertexShader: `
+                attribute vec3 color;
+                varying vec3 vColor;
+
+                void main() {
+                    vColor = color;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 rapidColor;
+                uniform vec3 cuttingColor;
+                uniform bool showRapid;
+                uniform bool showCutting;
+                uniform float opacity;
+
+                varying vec3 vColor;
+
+                void main() {
+                    // Calculate distance from vertex color to each reference color
+                    float distToRapid = distance(vColor, rapidColor);
+                    float distToCutting = distance(vColor, cuttingColor);
+
+                    // Determine which color group this vertex belongs to (with tolerance)
+                    bool isRapid = distToRapid < 0.1;
+                    bool isCutting = distToCutting < 0.1;
+
+                    // Discard fragment if its color group is hidden
+                    if (isRapid && !showRapid) discard;
+                    if (isCutting && !showCutting) discard;
+
+                    gl_FragColor = vec4(vColor, opacity);
+                }
+            `,
+            uniforms: {
+                rapidColor: { value: new THREE.Color(this.moveColors.rapid) },
+                cuttingColor: { value: new THREE.Color(this.moveColors.cutting) },
+                showRapid: { value: this.showRapid },
+                showCutting: { value: this.showCutting },
+                opacity: { value: 0.9 }
+            },
             transparent: true,
-            opacity: 0.9,
-            linewidth: 2,
             depthTest: false
         });
 
@@ -185,8 +228,19 @@ class GCodeVisualizer {
     }
 
     setMoveTypeVisibility(type, visible) {
-        // Simplified - would need separate geometry for each type
-        this.group.visible = visible;
+        if (type === 'rapid') {
+            this.showRapid = visible;
+        } else if (type === 'cutting') {
+            this.showCutting = visible;
+        }
+
+        // Update shader uniforms
+        this.pathLines.forEach(line => {
+            if (line.material.uniforms) {
+                line.material.uniforms.showRapid.value = this.showRapid;
+                line.material.uniforms.showCutting.value = this.showCutting;
+            }
+        });
     }
 
     setCuttingVisibility(visible) {
