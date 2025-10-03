@@ -26,6 +26,7 @@
         :work-offset="status.wco"
         :grid-size-x="gridSizeX"
         :grid-size-y="gridSizeY"
+        :z-max-travel="zMaxTravel"
         :spindle-rpm="status.spindleRpm"
         :current-tool="status.tool"
         :alarm-message="alarmMessage"
@@ -553,7 +554,7 @@ const showSetupDialog = ref(false);
 let isInitialThemeLoad = true;
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
-const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, isConnected } = store;
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, isConnected } = store;
 
 // Jog config (local UI state)
 const jogConfig = reactive({

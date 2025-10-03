@@ -89,7 +89,7 @@
           <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
           <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
         </svg>
-        <span>Warning: Toolpath exceeds machine boundaries</span>
+        <span>{{ outOfBoundsMessage }}</span>
       </div>
 
       <!-- Control buttons - bottom center -->
@@ -209,6 +209,7 @@ const props = withDefaults(defineProps<{
   workOffset?: { x: number; y: number; z: number; a: number };
   gridSizeX?: number;
   gridSizeY?: number;
+  zMaxTravel?: number | null;
   spindleRpm?: number;
   alarmMessage?: string;
   currentTool?: number;
@@ -220,6 +221,7 @@ const props = withDefaults(defineProps<{
   workOffset: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   gridSizeX: 1260,
   gridSizeY: 1284,
+  zMaxTravel: null,
   spindleRpm: 0,
   jobLoaded: null
 });
@@ -285,6 +287,13 @@ const showDeleteConfirm = ref(false);
 const fileToDelete = ref<string | null>(null);
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
+const outOfBoundsAxes = ref<string[]>([]);
+const outOfBoundsMessage = computed(() => {
+  const base = 'Warning: Toolpath exceeds machine boundaries';
+  if (!showOutOfBoundsWarning.value) return '';
+  if (!outOfBoundsAxes.value || outOfBoundsAxes.value.length === 0) return base;
+  return `${base} (${outOfBoundsAxes.value.join(', ')})`;
+});
 let currentGCodeBounds: any = null; // Store current G-code bounds
 let isInitialLoad = true; // Flag to prevent watchers from firing during initial settings load
 
@@ -722,18 +731,23 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     const gridSizeY = props.gridSizeY || 1284;
     const workOffsetX = props.workOffset?.x || 0;
     const workOffsetY = props.workOffset?.y || 0;
+    const workOffsetZ = props.workOffset?.z || 0;
+    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
 
     const minX = -workOffsetX;
     const maxX = gridSizeX - workOffsetX;
     const minY = -gridSizeY - workOffsetY;
     const maxY = -workOffsetY;
+    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
+    const maxZ = zMax != null ? -workOffsetZ : undefined;
 
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
 
     gcodeVisualizer.render(data.content);
 
     // Check if G-code has out of bounds movements
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
 
     // Reset all line type visibility to true when loading new G-code
     showRapids.value = true;
@@ -1239,16 +1253,22 @@ watch(() => props.workOffset, (newOffset) => {
     const gridSizeY = props.gridSizeY || 1284;
     const workOffsetX = newOffset?.x || 0;
     const workOffsetY = newOffset?.y || 0;
+    const workOffsetZ = newOffset?.z || 0;
+    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
 
     const minX = -workOffsetX;
     const maxX = gridSizeX - workOffsetX;
     const minY = -gridSizeY - workOffsetY;
     const maxY = -workOffsetY;
 
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
+    const maxZ = zMax != null ? -workOffsetZ : undefined;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
 
     // Update out of bounds warning after re-rendering
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
   }
 
   // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
@@ -1257,8 +1277,8 @@ watch(() => props.workOffset, (newOffset) => {
   }
 }, { deep: true });
 
-// Watch for grid size changes to update the grid and bounds
-watch(() => [props.gridSizeX, props.gridSizeY], () => {
+  // Watch for grid size changes to update the grid and bounds
+  watch(() => [props.gridSizeX, props.gridSizeY], () => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
   }
@@ -1267,6 +1287,28 @@ watch(() => [props.gridSizeX, props.gridSizeY], () => {
     gridSizeX: props.gridSizeX,
     gridSizeY: props.gridSizeY,
     workOffset: props.workOffset
+  });
+
+  // Watch for zMaxTravel changes to update bounds and OOB detection
+  watch(() => props.zMaxTravel, () => {
+    if (!gcodeVisualizer) return;
+    const gridSizeX = props.gridSizeX || 1260;
+    const gridSizeY = props.gridSizeY || 1284;
+    const workOffsetX = props.workOffset?.x || 0;
+    const workOffsetY = props.workOffset?.y || 0;
+    const workOffsetZ = props.workOffset?.z || 0;
+    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
+
+    const minX = -workOffsetX;
+    const maxX = gridSizeX - workOffsetX;
+    const minY = -gridSizeY - workOffsetY;
+    const maxY = -workOffsetY;
+    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
+    const maxZ = zMax != null ? -workOffsetZ : undefined;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
+    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
   });
 
   if (scene) {
@@ -1279,16 +1321,22 @@ watch(() => [props.gridSizeX, props.gridSizeY], () => {
     const gridSizeY = props.gridSizeY || 1284;
     const workOffsetX = props.workOffset?.x || 0;
     const workOffsetY = props.workOffset?.y || 0;
+    const workOffsetZ = props.workOffset?.z || 0;
+    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
 
     const minX = -workOffsetX;
     const maxX = gridSizeX - workOffsetX;
     const minY = -gridSizeY - workOffsetY;
     const maxY = -workOffsetY;
 
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
+    const maxZ = zMax != null ? -workOffsetZ : undefined;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
 
     // Update out of bounds warning after re-rendering
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
   }
 
   // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)

@@ -59,6 +59,8 @@ const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
 const gridSizeX = ref(1260);
 const gridSizeY = ref(1284);
+// Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
+const zMaxTravel = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
 
 // INTERNAL STATE
@@ -231,18 +233,23 @@ const tryLoadMachineDimensionsOnce = async () => {
   if (!status.connected || !websocketConnected.value) return;
 
   try {
-    // IDs: X max travel = 130, Y max travel = 131
+    // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
     // Use getFirmwareSetting() to query specific settings instead of fetching all with $$
-    const xResp = await api.getFirmwareSetting(130);
-    const yResp = await api.getFirmwareSetting(131);
+    const [xResp, yResp, zResp] = await Promise.all([
+      api.getFirmwareSetting(130),
+      api.getFirmwareSetting(131),
+      api.getFirmwareSetting(132)
+    ]);
     const xVal = parseFloat(String(xResp?.value ?? ''));
     const yVal = parseFloat(String(yResp?.value ?? ''));
+    const zVal = parseFloat(String(zResp?.value ?? ''));
     if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
     if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
+    if (!Number.isNaN(zVal) && zVal > 0) zMaxTravel.value = zVal;
     machineDimsLoaded.value = true;
-    console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}`);
+    console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
   } catch (e) {
-    console.warn('[Store] Could not load machine dimensions ($130/$131):', (e && e.message) ? e.message : e);
+    console.warn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
   }
 };
 
@@ -392,7 +399,7 @@ export async function seedInitialState() {
 
 // Composable for components to access the store
 export function useAppStore() {
-  return {
+    return {
     // Shared state (read-only for components)
     serverState: readonly(serverState),
     status: readonly(status),
@@ -401,9 +408,10 @@ export function useAppStore() {
     // Client-specific state (read-only)
     websocketConnected: readonly(websocketConnected),
     lastAlarmCode: readonly(lastAlarmCode),
-    alarmMessage: readonly(alarmMessage),
-    gridSizeX: readonly(gridSizeX),
-    gridSizeY: readonly(gridSizeY),
+      alarmMessage: readonly(alarmMessage),
+      gridSizeX: readonly(gridSizeX),
+      gridSizeY: readonly(gridSizeY),
+      zMaxTravel: readonly(zMaxTravel),
 
     // Computed properties
     isConnected,

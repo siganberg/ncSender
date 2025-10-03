@@ -16,7 +16,7 @@ class GCodeVisualizer {
         };
 
         // Grid boundaries (set via setGridBounds)
-        this.gridBounds = null;
+        this.gridBounds = null; // { minX, maxX, minY, maxY, minZ?, maxZ? }
 
         // Store current G-code for re-rendering
         this.currentGCode = null;
@@ -29,6 +29,9 @@ class GCodeVisualizer {
         this.lineNumberMap = new Map(); // lineNumber -> { startVertexIdx, endVertexIdx }
         this.lineMoveType = new Map();  // lineNumber -> 'rapid' | 'cutting'
         this.completedLines = new Set();
+
+        // Track which axes have any out-of-bounds vertices
+        this._outOfBoundsAxes = new Set(); // subset of ['X','Y','Z']
 
         return this;
     }
@@ -49,12 +52,18 @@ class GCodeVisualizer {
         this.updateOutOfBoundsColors();
     }
 
+    _axisOutOfBounds(x, y, z) {
+        if (!this.gridBounds) return { x: false, y: false, z: false };
+        const { minX, maxX, minY, maxY, minZ, maxZ } = this.gridBounds;
+        const xOob = (typeof minX === 'number' && x < minX) || (typeof maxX === 'number' && x > maxX);
+        const yOob = (typeof minY === 'number' && y < minY) || (typeof maxY === 'number' && y > maxY);
+        const zOob = (typeof minZ === 'number' && z < minZ) || (typeof maxZ === 'number' && z > maxZ);
+        return { x: !!xOob, y: !!yOob, z: !!zOob };
+    }
+
     isPointOutOfBounds(x, y, z) {
-        if (!this.gridBounds) return false;
-
-        const { minX, maxX, minY, maxY } = this.gridBounds;
-
-        return x < minX || x > maxX || y < minY || y > maxY;
+        const a = this._axisOutOfBounds(x, y, z);
+        return a.x || a.y || a.z;
     }
 
     hasOutOfBoundsMovement() {
@@ -70,6 +79,8 @@ class GCodeVisualizer {
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
         let hasOutOfBounds = false; // Track if any points are out of bounds
+        // Reset axes tracking for fresh parse
+        this._outOfBoundsAxes.clear();
 
         const rapidColor = new THREE.Color(this.moveColors.rapid);
         const cuttingColor = new THREE.Color(this.moveColors.cutting);
@@ -115,10 +126,14 @@ class GCodeVisualizer {
                 this.lineMoveType.set(lineNumber, isRapid ? 'rapid' : 'cutting');
 
                 // Check if move is out of bounds
-                const isOutOfBounds = this.isPointOutOfBounds(currentPos.x, currentPos.y, currentPos.z) ||
-                                     this.isPointOutOfBounds(newPos.x, newPos.y, newPos.z);
+                const oob1 = this._axisOutOfBounds(currentPos.x, currentPos.y, currentPos.z);
+                const oob2 = this._axisOutOfBounds(newPos.x, newPos.y, newPos.z);
+                const isOutOfBounds = (oob1.x||oob1.y||oob1.z) || (oob2.x||oob2.y||oob2.z);
 
                 if (isOutOfBounds) hasOutOfBounds = true;
+                if (oob1.x || oob2.x) this._outOfBoundsAxes.add('X');
+                if (oob1.y || oob2.y) this._outOfBoundsAxes.add('Y');
+                if (oob1.z || oob2.z) this._outOfBoundsAxes.add('Z');
 
                 const color = isOutOfBounds ? outOfBoundsColor : (isRapid ? rapidColor : cuttingColor);
 
@@ -264,6 +279,9 @@ class GCodeVisualizer {
             size: box.getSize(new THREE.Vector3())
         };
 
+        // Ensure OOB recoloring and axis flags are consistent with current bounds
+        this.updateOutOfBoundsColors();
+
         return this.group;
     }
 
@@ -385,6 +403,7 @@ class GCodeVisualizer {
             const oobColor = new THREE.Color(this.moveColors.outOfBounds);
 
             let anyOob = false;
+            const axes = new Set();
 
             // Iterate by line ranges for efficiency
             for (const [lineNumber, range] of this.lineNumberMap.entries()) {
@@ -407,6 +426,10 @@ class GCodeVisualizer {
                     } else if (this.gridBounds && this.isPointOutOfBounds(x, y, z)) {
                         c = oobColor;
                         anyOob = true;
+                        const a = this._axisOutOfBounds(x, y, z);
+                        if (a.x) axes.add('X');
+                        if (a.y) axes.add('Y');
+                        if (a.z) axes.add('Z');
                     } else {
                         c = baseActive;
                     }
@@ -419,6 +442,7 @@ class GCodeVisualizer {
 
             colorAttr.needsUpdate = true;
             this.hasOutOfBounds = anyOob;
+            this._outOfBoundsAxes = axes;
         } catch {
             // ignore coloring failures to avoid disrupting rendering
         }
@@ -429,6 +453,10 @@ class GCodeVisualizer {
             cutting: true,
             rapid: true
         };
+    }
+
+    getOutOfBoundsAxes() {
+        return Array.from(this._outOfBoundsAxes);
     }
 }
 
