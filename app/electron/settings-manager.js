@@ -16,7 +16,8 @@ const DEFAULT_SETTINGS = {
   gradientColor: '#34d399',
   autoClearConsole: true,
   consoleBufferSize: 1000,
-  lastLoadedFile: null
+  lastLoadedFile: null,
+  enableStateDeltaBroadcast: true
 };
 
 function getUserDataDir() {

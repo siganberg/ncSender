@@ -11,6 +11,7 @@ class NCClient {
     this.jogAckTimeoutMs = 1500;
     this.discoveredPort = null;
     this.lastServerState = null;
+    this.messageStates = new Map(); // Track state for each message type
   }
 
   ensureClientId() {
@@ -540,10 +541,36 @@ class NCClient {
       try {
         const message = JSON.parse(event.data);
         console.log('Parsed message:', JSON.stringify(message, null, 2));
-        if (message && message.type === 'server-state-updated' && message.data) {
-          this.lastServerState = message.data;
+
+        if (message && message.type && message.data) {
+          // Message types that should never be merged (streaming data, events, etc.)
+          const noMergeTypes = new Set([
+            'cnc-data',
+            'cnc-system-message',
+            'cnc-response',
+            'command-history-appended'
+          ]);
+
+          if (noMergeTypes.has(message.type)) {
+            // Emit as-is for streaming/event data
+            this.emit(message.type, message.data);
+          } else {
+            // Merge partial updates with existing state for this message type
+            const existingState = this.messageStates.get(message.type);
+            const mergedState = this.mergeState(existingState, message.data);
+            this.messageStates.set(message.type, mergedState);
+
+            // Special handling for server-state-updated
+            if (message.type === 'server-state-updated') {
+              this.lastServerState = mergedState;
+            }
+
+            // Emit the full merged state
+            this.emit(message.type, mergedState);
+          }
+        } else {
+          this.emit(message.type, message.data);
         }
-        this.emit(message.type, message.data);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error, 'Raw data:', event.data);
       }
@@ -572,6 +599,27 @@ class NCClient {
       }
       this.connect();
     }, 1000);
+  }
+
+  mergeState(existingState, partialUpdate) {
+    if (!existingState) {
+      return partialUpdate;
+    }
+
+    const merged = { ...existingState };
+
+    for (const key in partialUpdate) {
+      const value = partialUpdate[key];
+
+      // Handle nested objects (one level deep)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        merged[key] = { ...merged[key], ...value };
+      } else {
+        merged[key] = value;
+      }
+    }
+
+    return merged;
   }
 
 

@@ -20,6 +20,7 @@ import { createSettingsRoutes } from './routes/settings-routes.js';
 import { createAlarmRoutes, fetchAndSaveAlarmCodes } from './routes/alarm-routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './routes/firmware-routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './settings-manager.js';
+import { MessageStateTracker } from './state-diff.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,6 +87,9 @@ export async function createApp(options = {}) {
     },
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
+
+  // Track previous state for all message types
+  const messageStateTracker = new MessageStateTracker();
 
   // Track connection history for internal server logic only (not broadcasted to clients)
   let hasEverConnected = false;
@@ -360,6 +364,26 @@ export async function createApp(options = {}) {
     // Always include current job status in server-state-updated messages
     if (type === 'server-state-updated') {
       updateJobStatus();
+    }
+
+    // Check if delta broadcast is enabled
+    const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
+
+    // Message types that should never use delta (streaming data, errors, etc.)
+    const noDeltaTypes = new Set([
+      'cnc-data',           // Raw streaming data from CNC
+      'cnc-system-message', // System messages
+      'cnc-response',       // Direct responses
+      'command-history-appended' // Append-only events
+    ]);
+
+    if (enableStateDeltaBroadcast && !noDeltaTypes.has(type)) {
+      // Get delta for this message type
+      const changes = messageStateTracker.getDelta(type, data);
+      if (!changes) {
+        return; // No changes, skip broadcast
+      }
+      data = changes;
     }
 
     try {
