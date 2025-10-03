@@ -1,15 +1,78 @@
 <template>
   <section class="card">
-    <header class="card__header">
-      <h2>Status</h2>
-    </header>
+    <div class="status-hint">Press and hold an axis card to zero it at the current position</div>
     <div class="coords">
+      <!-- Group X and Y with a border and a join indicator -->
+      <div class="axis-group xy-group">
+        <!-- X Card -->
+        <div
+          class="axis-display"
+          @mousedown="startLongPress('x', $event)"
+          @mouseup="endLongPress('x')"
+          @mouseleave="cancelLongPress('x')"
+          @touchstart.prevent="startLongPress('x', $event)"
+          @touchend="endLongPress('x')"
+          @touchcancel="cancelLongPress('x')"
+        >
+          <div class="press-progress" :style="{ width: `${pressState['x']?.progress || 0}%` }"></div>
+          <span class="axis-label">X</span>
+          <div class="coord-values">
+            <div class="work-coord">{{ axisValues.x.toFixed(3) }}</div>
+            <div class="machine-coord">{{ machineValues.x.toFixed(3) }}</div>
+          </div>
+        </div>
+
+        <!-- XY Join Indicator -->
+        <div
+          :class="['axis-link', { active: (pressState['xy']?.progress || 0) > 0 }]"
+          title="Zero X and Y (G10 L20 X0 Y0)"
+          @mousedown="startLongPress('xy', $event)"
+          @mouseup="endLongPress('xy')"
+          @mouseleave="cancelLongPress('xy')"
+          @touchstart.prevent="startLongPress('xy', $event)"
+          @touchend="endLongPress('xy')"
+          @touchcancel="cancelLongPress('xy')"
+        >
+          <span class="link-label">XY</span>
+        </div>
+
+        <!-- Y Card -->
+        <div
+          class="axis-display"
+          @mousedown="startLongPress('y', $event)"
+          @mouseup="endLongPress('y')"
+          @mouseleave="cancelLongPress('y')"
+          @touchstart.prevent="startLongPress('y', $event)"
+          @touchend="endLongPress('y')"
+          @touchcancel="cancelLongPress('y')"
+        >
+          <div class="press-progress" :style="{ width: `${pressState['y']?.progress || 0}%` }"></div>
+          <span class="axis-label">Y</span>
+          <div class="coord-values">
+            <div class="work-coord">{{ axisValues.y.toFixed(3) }}</div>
+            <div class="machine-coord">{{ machineValues.y.toFixed(3) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Other axes (e.g., Z) -->
       <div class="axis-grid">
-        <div v-for="(workValue, axis) in filteredWorkCoords" :key="axis" class="axis-display">
+        <div
+          v-for="axis in remainingAxes"
+          :key="axis"
+          class="axis-display"
+          @mousedown="startLongPress(axis, $event)"
+          @mouseup="endLongPress(axis)"
+          @mouseleave="cancelLongPress(axis)"
+          @touchstart.prevent="startLongPress(axis, $event)"
+          @touchend="endLongPress(axis)"
+          @touchcancel="cancelLongPress(axis)"
+        >
+          <div class="press-progress" :style="{ width: `${(pressState[axis]?.progress || 0)}%` }"></div>
           <span class="axis-label">{{ axis.toUpperCase() }}</span>
           <div class="coord-values">
-            <div class="work-coord">{{ workValue.toFixed(3) }}</div>
-            <div class="machine-coord">{{ status.machineCoords[axis]?.toFixed(3) || '0.000' }}</div>
+            <div class="work-coord">{{ axisValues[axis].toFixed(3) }}</div>
+            <div class="machine-coord">{{ machineValues[axis].toFixed(3) }}</div>
           </div>
         </div>
       </div>
@@ -70,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 
 const props = defineProps<{
@@ -89,10 +152,25 @@ const props = defineProps<{
 
 // Filter out the A axis from work coordinates
 const filteredWorkCoords = computed(() => {
-  const coords = { ...props.status.workCoords };
-  delete coords.a;
+  const coords = { ...props.status.workCoords } as Record<string, number>;
+  delete (coords as any).a;
   return coords;
 });
+
+const axisValues = computed(() => ({
+  x: Number(props.status.workCoords.x ?? 0),
+  y: Number(props.status.workCoords.y ?? 0),
+  z: Number(props.status.workCoords.z ?? 0)
+}) as Record<string, number>);
+
+const machineValues = computed(() => ({
+  x: Number(props.status.machineCoords.x ?? 0),
+  y: Number(props.status.machineCoords.y ?? 0),
+  z: Number(props.status.machineCoords.z ?? 0)
+}) as Record<string, number>);
+
+const remainingAxes = computed(() => Object.keys(filteredWorkCoords.value)
+  .filter(a => a !== 'x' && a !== 'y'));
 
 // Override percentages (100% = normal speed)
 const feedOverride = ref(100);
@@ -223,6 +301,129 @@ const resetSpindleOverride = () => {
   spindleOverride.value = 100;
   previousSpindleOverride.value = 100;
 };
+
+// --- Long press to zero work coordinate (G10 L20 <axis>0) ---
+type AxisKey = 'x' | 'y' | 'z' | string;
+const LONG_PRESS_MS = 750;
+
+const pressState = reactive<Record<string, { start: number; progress: number; raf?: number; triggered: boolean; active: boolean }>>({});
+
+const ensureAxisState = (axis: AxisKey) => {
+  if (!pressState[axis]) {
+    pressState[axis] = { start: 0, progress: 0, triggered: false, active: false };
+  }
+  return pressState[axis];
+};
+
+let activeAxis: string | null = null;
+
+const startLongPress = (axis: AxisKey, _evt: Event) => {
+  const state = ensureAxisState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.start = performance.now();
+  state.progress = 0;
+  state.triggered = false;
+  state.active = true;
+  activeAxis = String(axis).toLowerCase();
+
+  const tick = () => {
+    if (!state.active) return; // stop if canceled
+    const elapsed = performance.now() - state.start;
+    const pct = Math.min(100, (elapsed / LONG_PRESS_MS) * 100);
+    state.progress = pct;
+
+    // When pressing XY, mirror progress into X and Y cards
+    if (String(axis).toLowerCase() === 'xy') {
+      const sx = ensureAxisState('x');
+      const sy = ensureAxisState('y');
+      sx.progress = pct;
+      sy.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS && !state.triggered) {
+      state.triggered = true;
+      // Send zero command(s)
+      const a = String(axis).toUpperCase();
+      if (a === 'XY' || a === 'YX' || a === 'XY0') {
+        api.sendCommandViaWebSocket({ command: 'G10 L20 X0 Y0', displayCommand: 'G10 L20 X0 Y0' }).catch(() => {});
+      } else {
+        api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0` }).catch(() => {});
+      }
+    }
+
+    // Keep animating until release
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endLongPress = (axis: AxisKey) => {
+  const state = ensureAxisState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  if (activeAxis === String(axis).toLowerCase()) activeAxis = null;
+  const axisLower = String(axis).toLowerCase();
+  if (!state.triggered) {
+    state.progress = 0;
+    // If XY was canceled before triggering, also reset mirrored X/Y bars immediately
+    if (axisLower === 'xy') {
+      const sx = ensureAxisState('x');
+      const sy = ensureAxisState('y');
+      sx.progress = 0; sy.progress = 0;
+      sx.triggered = false; sy.triggered = false;
+      sx.active = false; sy.active = false;
+    }
+  } else {
+    // Immediate reset for XY to avoid visible lag; brief linger only for single-axis
+    if (axisLower === 'xy') {
+      state.progress = 0; state.triggered = false;
+      const sx = ensureAxisState('x');
+      const sy = ensureAxisState('y');
+      sx.progress = 0; sy.progress = 0;
+      sx.triggered = false; sy.triggered = false;
+      sx.active = false; sy.active = false;
+    } else {
+      setTimeout(() => { state.progress = 0; state.triggered = false; }, 150);
+    }
+  }
+};
+
+const cancelLongPress = (axis: AxisKey) => {
+  const state = ensureAxisState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+  if (String(axis).toLowerCase() === 'xy') {
+    const sx = ensureAxisState('x');
+    const sy = ensureAxisState('y');
+    sx.progress = 0; sy.progress = 0;
+    sx.triggered = false; sy.triggered = false;
+    sx.active = false; sy.active = false;
+  }
+  if (activeAxis === String(axis).toLowerCase()) activeAxis = null;
+};
+
+// Global release handlers to ensure cancel/reset even if pointerup occurs outside the element
+const handleGlobalPointerUp = () => {
+  if (!activeAxis) return;
+  cancelLongPress(activeAxis);
+};
+
+onMounted(() => {
+  window.addEventListener('mouseup', handleGlobalPointerUp);
+  window.addEventListener('touchend', handleGlobalPointerUp);
+  window.addEventListener('touchcancel', handleGlobalPointerUp);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('mouseup', handleGlobalPointerUp);
+  window.removeEventListener('touchend', handleGlobalPointerUp);
+  window.removeEventListener('touchcancel', handleGlobalPointerUp);
+});
 </script>
 
 <style scoped>
@@ -248,10 +449,19 @@ h2, h3 {
   font-size: 1.1rem;
 }
 
+.status-hint {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
 .coords {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-sm);
+  gap: 4px;
 }
 
 .axis-grid {
@@ -260,20 +470,94 @@ h2, h3 {
   gap: var(--gap-sm);
 }
 
+.axis-group.xy-group {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 0; /* let X and Y close together behind XY */
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 2px;
+  margin-bottom: 4px;
+}
+
 .axis-display {
   background: var(--color-surface-muted);
   padding: 8px;
   border-radius: var(--radius-small);
+  border: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer; /* indicate pressable */
+  z-index: 1; /* below XY "tape" */
 }
 
 .axis-label {
   font-weight: 600;
   font-size: 0.8rem;
   color: var(--color-text-secondary);
+}
+
+.axis-link {
+  width: 96px;
+  min-width: 96px;
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  /* Always show gradient border via pseudo-element */
+  cursor: pointer;
+  /* Tape-like overlapping look */
+  align-self: center;
+  height: 68%;
+  min-height: 28px;
+  margin-left: -20px;  /* overlap X side more */
+  margin-right: -20px; /* overlap Y side more */
+  margin-top: -2px;
+  margin-bottom: -2px;
+  z-index: 2; /* above X/Y cards */
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+
+/* Slightly tuck X and Y under the XY tape for a tighter join */
+.axis-group.xy-group > .axis-display:first-child { margin-right: -20px; }
+.axis-group.xy-group > .axis-display:last-child { margin-left: -20px; }
+
+.axis-link .link-label {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+@keyframes link-glow {
+  0% { box-shadow: 0 0 0 0 var(--color-accent); }
+  100% { box-shadow: 0 0 12px 2px var(--color-accent); }
+}
+
+.axis-link.active {
+  animation: link-glow 0.9s ease-in-out infinite alternate;
+}
+
+/* Gradient border ring only while active (pressing) */
+.axis-link.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px; /* border thickness */
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
 }
 
 .coord-values {
@@ -294,6 +578,17 @@ h2, h3 {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
   line-height: 1.2;
+}
+
+.press-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--color-accent) 0%, rgba(52,211,153,0.8) 100%);
+  opacity: 0.18;
+  pointer-events: none;
 }
 
 
@@ -438,6 +733,13 @@ h2, h3 {
 @media (max-width: 959px) {
   .metrics {
     flex-direction: column;
+  }
+}
+
+/* Portrait/top-row equal-height with JogPanel */
+@media (max-width: 1279px) {
+  .card {
+    height: 100%; /* stretch to grid row height */
   }
 }
 </style>

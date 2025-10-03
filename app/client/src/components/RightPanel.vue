@@ -73,6 +73,7 @@ defineProps<{
     overflow-y: auto;
     min-height: 0;
     height: 100%;
+    align-items: stretch; /* ensure items stretch to row height */
   }
 
   /* Jog and Status panels in top row adapt to content with min-height */
@@ -81,6 +82,7 @@ defineProps<{
     grid-column: 1;
     grid-row: 1;
     min-height: 280px;
+    height: 100%;
   }
 
   .panel-stack > :nth-child(2) {
@@ -88,6 +90,7 @@ defineProps<{
     grid-column: 2;
     grid-row: 1;
     min-height: 280px;
+    height: 100%;
   }
 
   .panel-stack > :nth-child(3) {

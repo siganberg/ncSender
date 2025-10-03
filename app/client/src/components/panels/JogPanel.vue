@@ -497,4 +497,11 @@ h2 {
     height: 50px;
   }
 }
+
+/* Portrait/top-row equal-height with StatusPanel */
+@media (max-width: 1279px) {
+  .card {
+    height: 100%; /* stretch to grid row height */
+  }
+}
 </style>
