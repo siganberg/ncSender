@@ -1479,17 +1479,30 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
 });
 
+// Track which line numbers have been marked as completed
+const markedLines = new Set<number>();
+
 // Watch console lines from store to mark completed lines
 // This replaces the api.on('cnc-command-result') listener
-watch(() => store.consoleLines, (lines) => {
-  if (!lines || lines.length === 0) return;
+watch(() => store.consoleLines.value, (lines) => {
+  console.log('[ToolpathViewport] Lines changed, count:', lines?.length, 'hasVisualizer:', !!gcodeVisualizer);
 
-  const lastLine = lines[lines.length - 1];
-  const lineNumber = lastLine?.meta?.lineNumber;
+  if (!lines || lines.length === 0 || !gcodeVisualizer) return;
 
-  if (lineNumber && lastLine?.status === 'success' && gcodeVisualizer.value) {
-    gcodeVisualizer.value.markLineCompleted(lineNumber);
-  }
+  // Check all lines for completed commands with line numbers
+  // This handles rapid updates during job execution
+  lines.forEach(line => {
+    const lineNumber = line?.meta?.lineNumber;
+
+    if (lineNumber &&
+        line?.status === 'success' &&
+        line?.type === 'command' &&
+        !markedLines.has(lineNumber)) {
+      console.log('[ToolpathViewport] Marking line completed:', lineNumber, line);
+      gcodeVisualizer.markLineCompleted(lineNumber);
+      markedLines.add(lineNumber);
+    }
+  });
 }, { deep: true });
 </script>
 
