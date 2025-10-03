@@ -38,6 +38,7 @@ const status = reactive({
   machineCoords: { x: 0, y: 0, z: 0, a: 0 },
   workCoords: { x: 0, y: 0, z: 0, a: 0 },
   wco: { x: 0, y: 0, z: 0 },
+  alarms: [] as string[],
   feedRate: 0,
   spindleRpm: 0,
   feedrateOverride: 100,
