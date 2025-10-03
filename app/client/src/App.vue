@@ -273,8 +273,26 @@
                       </div>
                     </td>
                     <td class="col-value">
-                      <!-- DataType 0-5: Integers (int8, uint8, int16, uint16, int32, uint32) -->
-                      <div v-if="[0, 1, 2, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
+                      <!-- DataType 2: Bitfield with toggle sliders -->
+                      <div v-if="setting.dataType === 2 && setting.format" class="bitfield-toggles">
+                        <template
+                          v-for="(bitName, index) in setting.format.split(',')"
+                          :key="index"
+                        >
+                          <span class="bitfield-name">{{ bitName.trim() }}</span>
+                          <label class="toggle-switch">
+                            <input
+                              type="checkbox"
+                              :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                              @change="toggleBit(setting, index)"
+                            />
+                            <span class="toggle-slider"></span>
+                          </label>
+                        </template>
+                      </div>
+
+                      <!-- DataType 0-1, 3-5: Integers (int8, uint8, int16, uint16, int32, uint32) -->
+                      <div v-else-if="[0, 1, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
                         <input
                           type="number"
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"

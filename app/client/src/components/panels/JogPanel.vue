@@ -15,42 +15,43 @@
       <h2>Controls</h2>
     </header>
     <div class="jog-layout">
-      <!-- XY Joystick Layout -->
-      <div class="xy-joystick">
-        <!-- Top Row -->
-        <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1-1') }]" aria-label="Jog X negative Y positive"
-                @mousedown="jogDiagonalStart(-1, 1, $event)" @mouseup="jogDiagonalEnd(-1, 1, $event)"
-                @touchstart="jogDiagonalStart(-1, 1, $event)" @touchend="jogDiagonalEnd(-1, 1, $event)">↖</button>
-        <button :class="['control', 'axis', { pressed: isButtonPressed('Y-1') }]" aria-label="Jog Y positive"
-                @mousedown="jogStart('Y', 1, $event)" @mouseup="jogEnd('Y', 1, $event)"
-                @touchstart="jogStart('Y', 1, $event)" @touchend="jogEnd('Y', 1, $event)">Y+</button>
-        <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1-1') }]" aria-label="Jog X positive Y positive"
-                @mousedown="jogDiagonalStart(1, 1, $event)" @mouseup="jogDiagonalEnd(1, 1, $event)"
-                @touchstart="jogDiagonalStart(1, 1, $event)" @touchend="jogDiagonalEnd(1, 1, $event)">↗</button>
+      <!-- Axis Movement Group (XY Joystick + Z Controls) -->
+      <div class="axis-movement-group">
+        <!-- XY Joystick Layout -->
+        <div class="xy-joystick">
+          <!-- Top Row -->
+          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1-1') }]" aria-label="Jog X negative Y positive"
+                  @mousedown="jogDiagonalStart(-1, 1, $event)" @mouseup="jogDiagonalEnd(-1, 1, $event)"
+                  @touchstart="jogDiagonalStart(-1, 1, $event)" @touchend="jogDiagonalEnd(-1, 1, $event)">↖</button>
+          <button :class="['control', 'axis', { pressed: isButtonPressed('Y-1') }]" aria-label="Jog Y positive"
+                  @mousedown="jogStart('Y', 1, $event)" @mouseup="jogEnd('Y', 1, $event)"
+                  @touchstart="jogStart('Y', 1, $event)" @touchend="jogEnd('Y', 1, $event)">Y+</button>
+          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1-1') }]" aria-label="Jog X positive Y positive"
+                  @mousedown="jogDiagonalStart(1, 1, $event)" @mouseup="jogDiagonalEnd(1, 1, $event)"
+                  @touchstart="jogDiagonalStart(1, 1, $event)" @touchend="jogDiagonalEnd(1, 1, $event)">↗</button>
 
-        <!-- Middle Row -->
-        <button :class="['control', 'axis', { pressed: isButtonPressed('X--1') }]" aria-label="Jog X negative"
-                @mousedown="jogStart('X', -1, $event)" @mouseup="jogEnd('X', -1, $event)"
-                @touchstart="jogStart('X', -1, $event)" @touchend="jogEnd('X', -1, $event)">X-</button>
-        <div class="center-indicator"></div>
-        <button :class="['control', 'axis', { pressed: isButtonPressed('X-1') }]" aria-label="Jog X positive"
-                @mousedown="jogStart('X', 1, $event)" @mouseup="jogEnd('X', 1, $event)"
-                @touchstart="jogStart('X', 1, $event)" @touchend="jogEnd('X', 1, $event)">X+</button>
+          <!-- Middle Row -->
+          <button :class="['control', 'axis', { pressed: isButtonPressed('X--1') }]" aria-label="Jog X negative"
+                  @mousedown="jogStart('X', -1, $event)" @mouseup="jogEnd('X', -1, $event)"
+                  @touchstart="jogStart('X', -1, $event)" @touchend="jogEnd('X', -1, $event)">X-</button>
+          <button class="center-indicator" aria-label="Soft Reset" @click="sendSoftReset"></button>
+          <button :class="['control', 'axis', { pressed: isButtonPressed('X-1') }]" aria-label="Jog X positive"
+                  @mousedown="jogStart('X', 1, $event)" @mouseup="jogEnd('X', 1, $event)"
+                  @touchstart="jogStart('X', 1, $event)" @touchend="jogEnd('X', 1, $event)">X+</button>
 
-        <!-- Bottom Row -->
-        <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1--1') }]" aria-label="Jog X negative Y negative"
-                @mousedown="jogDiagonalStart(-1, -1, $event)" @mouseup="jogDiagonalEnd(-1, -1, $event)"
-                @touchstart="jogDiagonalStart(-1, -1, $event)" @touchend="jogDiagonalEnd(-1, -1, $event)">↙</button>
-        <button :class="['control', 'axis', { pressed: isButtonPressed('Y--1') }]" aria-label="Jog Y negative"
-                @mousedown="jogStart('Y', -1, $event)" @mouseup="jogEnd('Y', -1, $event)"
-                @touchstart="jogStart('Y', -1, $event)" @touchend="jogEnd('Y', -1, $event)">Y-</button>
-        <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1--1') }]" aria-label="Jog X positive Y negative"
-                @mousedown="jogDiagonalStart(1, -1, $event)" @mouseup="jogDiagonalEnd(1, -1, $event)"
-                @touchstart="jogDiagonalStart(1, -1, $event)" @touchend="jogDiagonalEnd(1, -1, $event)">↘</button>
-      </div>
+          <!-- Bottom Row -->
+          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1--1') }]" aria-label="Jog X negative Y negative"
+                  @mousedown="jogDiagonalStart(-1, -1, $event)" @mouseup="jogDiagonalEnd(-1, -1, $event)"
+                  @touchstart="jogDiagonalStart(-1, -1, $event)" @touchend="jogDiagonalEnd(-1, -1, $event)">↙</button>
+          <button :class="['control', 'axis', { pressed: isButtonPressed('Y--1') }]" aria-label="Jog Y negative"
+                  @mousedown="jogStart('Y', -1, $event)" @mouseup="jogEnd('Y', -1, $event)"
+                  @touchstart="jogStart('Y', -1, $event)" @touchend="jogEnd('Y', -1, $event)">Y-</button>
+          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1--1') }]" aria-label="Jog X positive Y negative"
+                  @mousedown="jogDiagonalStart(1, -1, $event)" @mouseup="jogDiagonalEnd(1, -1, $event)"
+                  @touchstart="jogDiagonalStart(1, -1, $event)" @touchend="jogDiagonalEnd(1, -1, $event)">↘</button>
+        </div>
 
-      <!-- Z Controls on the side -->
-      <div class="z-home-controls">
+        <!-- Z Controls -->
         <div class="z-controls">
           <button :class="['control', 'z-button', { pressed: isButtonPressed('Z-1') }]" aria-label="Jog Z positive"
                   @mousedown="jogStart('Z', 1, $event)" @mouseup="jogEnd('Z', 1, $event)"
@@ -59,33 +60,38 @@
                   @mousedown="jogStart('Z', -1, $event)" @mouseup="jogEnd('Z', -1, $event)"
                   @touchstart="jogStart('Z', -1, $event)" @touchend="jogEnd('Z', -1, $event)">Z-</button>
         </div>
-        <div class="home-group" ref="homeGroupRef">
-          <Transition name="home-main" mode="out-in">
-            <button
-              v-if="!homeSplit"
-              :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active }]"
-              @click="goHome"
-              @mousedown="startHomePress($event)"
-              @mouseup="endHomePress()"
-              @mouseleave="cancelHomePress()"
-              @touchstart.prevent="startHomePress($event)"
-              @touchend="endHomePress()"
-              @touchcancel="cancelHomePress()"
-            >
-              <div class="press-progress-home" :style="{ height: `${homePress.progress || 0}%` }"></div>
-              Home
-            </button>
-          </Transition>
+      </div>
 
-          <Transition name="home-split" mode="out-in">
-            <div v-if="homeSplit" class="home-split">
-              <button class="control home-split-btn" @click="goHomeAxis('X')">HX</button>
-              <button class="control home-split-btn" @click="goHomeAxis('Y')">HY</button>
-              <button class="control home-split-btn" @click="goHomeAxis('Z')">HZ</button>
-            </div>
-          </Transition>
-        </div>
+      <!-- Home button group -->
+      <div class="home-group" ref="homeGroupRef">
+        <Transition name="home-main" mode="out-in">
+          <button
+            v-if="!homeSplit"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active }]"
+            @click="goHome"
+            @mousedown="startHomePress($event)"
+            @mouseup="endHomePress()"
+            @mouseleave="cancelHomePress()"
+            @touchstart.prevent="startHomePress($event)"
+            @touchend="endHomePress()"
+            @touchcancel="cancelHomePress()"
+          >
+            <div class="press-progress-home" :style="{ height: `${homePress.progress || 0}%` }"></div>
+            Home
+          </button>
+        </Transition>
 
+        <Transition name="home-split" mode="out-in">
+          <div v-if="homeSplit" class="home-split">
+            <button class="control home-split-btn" @click="goHomeAxis('X')">HX</button>
+            <button class="control home-split-btn" @click="goHomeAxis('Y')">HY</button>
+            <button class="control home-split-btn" @click="goHomeAxis('Z')">HZ</button>
+          </div>
+        </Transition>
+      </div>
+
+      <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
+      <div class="position-controls-group">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column">
           <button class="control axis-zero-btn" title="Zero X" @click="goToZero('X')">X0</button>
@@ -588,6 +594,18 @@ const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
   }
 };
 
+// Soft reset (center button)
+const sendSoftReset = async () => {
+  try {
+    await api.sendCommandViaWebSocket({
+      command: String.fromCharCode(0x18),
+      displayCommand: '\\x18; (Soft Reset)'
+    });
+  } catch (error) {
+    console.error('Failed to send soft reset:', error);
+  }
+};
+
 // Corner button handlers
 const goToCorner = async (corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right') => {
   const xLimit = props.gridSizeX || 1260;
@@ -668,8 +686,15 @@ h2 {
 
 .jog-layout {
   display: flex;
-  gap: var(--gap-md);
+  gap: var(--gap-xs);
   align-items: center;
+  width: 100%;
+}
+
+.axis-movement-group {
+  display: flex;
+  gap: var(--gap-xs);
+  align-items: stretch;
 }
 
 .xy-joystick {
@@ -681,13 +706,32 @@ h2 {
   height: 180px;
 }
 
+.z-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  min-width: 50px;
+}
+
 .center-indicator {
   width: 100%;
   height: 100%;
-  border: 2px solid var(--color-border);
+  border: 2px solid #ff6b6b;
   border-radius: 50%;
   background: var(--color-surface);
   position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.center-indicator:hover {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: #ff4444;
+}
+
+.center-indicator:active {
+  background: rgba(255, 107, 107, 0.2);
+  transform: scale(0.95);
 }
 
 .center-indicator::after {
@@ -698,7 +742,7 @@ h2 {
   transform: translate(-50%, -50%);
   width: 8px;
   height: 8px;
-  background: var(--color-text-secondary);
+  background: #ff6b6b;
   border-radius: 50%;
 }
 
@@ -711,7 +755,7 @@ h2 {
 
 .control {
   border-radius: var(--radius-small);
-  border: 2px solid transparent;
+  border: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   font-size: 1rem;
   font-weight: 600;
@@ -724,7 +768,7 @@ h2 {
 }
 
 .control:hover {
-  border: 2px solid var(--color-accent);
+  border: 1px solid var(--color-accent);
 }
 
 .control:active,
@@ -733,7 +777,7 @@ h2 {
   color: white;
   transform: scale(0.98);
   box-shadow: 0 0 10px rgba(26, 188, 156, 0.5);
-  border: 2px solid var(--color-accent);
+  border: 1px solid var(--color-accent);
 }
 
 .control.corner {
@@ -744,7 +788,12 @@ h2 {
   font-weight: bold;
 }
 
-.z-home-controls {
+.home-group {
+  flex: 1; /* Home button adapts to available space */
+  min-width: 60px; /* Minimum width cap */
+}
+
+.position-controls-group {
   display: flex;
   gap: var(--gap-xs);
   align-items: stretch;
@@ -755,7 +804,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 150px;
+  min-width: 100px; /* Can squeeze to 100px */
   height: 180px; /* match column height */
 }
 
@@ -790,7 +839,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 90px;
+  min-width: 50px; /* Can shrink to 50px */
 }
 
 .axis-zero-btn {
@@ -798,22 +847,14 @@ h2 {
   font-weight: 800;
 }
 
-.z-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-xs);
-  height: 180px;
-}
-
 .z-button {
-  width: 60px;
-  flex: 1; /* Each button takes equal height */
+  flex: 1;
   background: var(--color-surface-muted);
   font-weight: bold;
 }
 
 .home-button {
-  width: 60px;
+  width: 100%;
   height: 100%;
   background: var(--color-surface-muted);
   font-weight: bold;
@@ -833,14 +874,7 @@ h2 {
   }
 
   .z-controls {
-    flex-direction: row;
-    height: auto;
-    width: auto; /* adapt to button widths in portrait */
-  }
-
-  .z-button {
-    flex: 1;
-    height: 50px;
+    width: 50px;
   }
 
   /* Make X0/Y0/Z0 column slimmer on portrait */
@@ -854,16 +888,16 @@ h2 {
   }
 }
 
-/* Portrait: ensure each column in Job Controls has equal total height */
+/* Portrait: ensure each column in Controls has equal total height */
 @media (orientation: portrait) {
   /* Portrait: fixed balanced control height */
-  .jog-layout { align-items: center; justify-content: center; --jog-col-height: 200px; margin-top: auto; margin-bottom: auto; }
+  .jog-layout { align-items: center; justify-content: center; --jog-col-height: 200px; margin-top: auto; margin-bottom: auto; gap: 6px; }
+  .axis-movement-group { height: var(--jog-col-height); }
   .xy-joystick { width: var(--jog-col-height); height: var(--jog-col-height); }
-  .z-home-controls { align-items: stretch; }
-  .z-home-controls > * { height: var(--jog-col-height); }
-  .z-controls { height: var(--jog-col-height); flex-direction: column; }
-  .z-button { height: auto; }
+  .z-controls { height: var(--jog-col-height); }
   .home-group { height: var(--jog-col-height); }
+  .position-controls-group { align-items: stretch; }
+  .position-controls-group > * { height: var(--jog-col-height); }
   .axis-zero-column { height: var(--jog-col-height); }
   .corner-simple { height: var(--jog-col-height); }
 }
@@ -1031,10 +1065,11 @@ h2 {
     height: 100%; /* stretch to grid row height */
   }
   /* Make internal controls compact to avoid horizontal overflow */
-  .jog-layout { flex-wrap: wrap; gap: var(--gap-sm); justify-content: center; --jog-col-height: 150px; }
-  .z-controls { width: auto; height: var(--jog-col-height); gap: 4px; }
-  .z-button { height: auto; }
-  .home-group { width: 60px; height: var(--jog-col-height); }
+  .jog-layout { flex-wrap: wrap; gap: 6px; justify-content: center; --jog-col-height: 150px; }
+  .axis-movement-group { height: var(--jog-col-height); }
+  .xy-joystick { width: var(--jog-col-height); height: var(--jog-col-height); }
+  .z-controls { height: var(--jog-col-height); }
+  .home-group { height: var(--jog-col-height); }
   .axis-zero-column { width: 50px; height: var(--jog-col-height); gap: 4px; }
   .axis-zero-btn { font-size: 0.9rem; }
   .corner-simple { width: 120px; height: var(--jog-col-height); gap: 4px; }
