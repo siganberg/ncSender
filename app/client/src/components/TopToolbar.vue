@@ -4,7 +4,9 @@
       ? 'state--offline'
       : (isToolChanging
           ? 'state--tool'
-          : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting'))
+          : (connected && machineState?.toLowerCase() === 'idle' && !store.isHomed.value
+              ? 'state--homing-required'
+              : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting')))
   ">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
@@ -42,6 +44,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useAppStore } from '../composables/use-app-store';
+
+const store = useAppStore();
 
 const props = defineProps<{
   workspace: string;
@@ -71,6 +76,10 @@ const machineStateText = computed(() => {
   if (!props.machineState || props.machineState === 'offline') return 'Connected';
 
   const state = props.machineState.toLowerCase();
+
+  // Check if machine is idle AND not homed - show "Homing Required"
+  if (state === 'idle' && !store.isHomed.value) return 'Homing Required';
+
   switch (state) {
     case 'idle': return 'Idle';
     case 'run': return 'Running';
@@ -305,9 +314,9 @@ button.danger {
 }
 
 .toolbar.state--connecting {
-  border-color: #fd7e14; /* Orange */
-  box-shadow: var(--shadow-elevated), 0 0 14px rgba(253, 126, 20, 0.85);
-  animation: pulse-glow-orange 1.6s ease-in-out infinite;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-elevated), 0 0 14px rgba(26, 188, 156, 0.85);
+  animation: pulse-glow-teal 1.6s ease-in-out infinite;
 }
 
 .toolbar.state--idle {
@@ -356,6 +365,17 @@ button.danger {
   animation: pulse-glow-blue 2.5s infinite;
 }
 
+.toolbar.state--homing-required {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6);
+  animation: pulse-glow-teal 2s ease-in-out infinite;
+}
+
+.toolbar.state--homing-required .machine-state {
+  color: var(--color-accent);
+  text-shadow: none;
+}
+
 .toolbar.state--sleep {
   border-color: #6c757d;
   box-shadow: var(--shadow-elevated), 0 0 15px rgba(108, 117, 125, 0.5);
@@ -374,12 +394,12 @@ button.danger {
 
 /* Subtle pulsing for the Connecting... text */
 .toolbar.state--connecting .machine-state {
-  color: #fd7e14;
+  color: var(--color-accent);
   text-shadow: none;
-  animation: pulse-text-orange 1.2s ease-in-out infinite;
+  animation: pulse-text-teal 1.2s ease-in-out infinite;
 }
 
-@keyframes pulse-text-orange {
+@keyframes pulse-text-teal {
   0%, 100% { opacity: 0.8; }
   50% { opacity: 1; }
 }
@@ -412,6 +432,11 @@ button.danger {
 @keyframes pulse-glow-yellow {
   0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(255, 193, 7, 0.6); }
   25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(255, 193, 7, 0.9); }
+}
+
+@keyframes pulse-glow-teal {
+  0%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6); }
+  50% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(26, 188, 156, 0.9); }
 }
 
 /* Theme toggle button */

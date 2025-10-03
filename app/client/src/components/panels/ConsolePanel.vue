@@ -1,5 +1,5 @@
 <template>
-  <section class="card">
+  <section class="card" :class="{ 'card-disabled': !store.isConnected.value }">
     <header class="card__header">
       <h2>Console</h2>
       <div class="auto-scroll-toggle" @click="autoScroll = !autoScroll" :class="{ active: autoScroll }">
@@ -37,8 +37,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
 import { api } from '../../lib/api.js';
+import { useAppStore } from '../../composables/use-app-store';
+
+const store = useAppStore();
 
 const props = defineProps<{
   lines: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response' }>;
@@ -174,6 +177,13 @@ watch(() => props.lines, async () => {
 </script>
 
 <style scoped>
+/* Disable console when not connected */
+.card-disabled .console-output,
+.card-disabled .console-input {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-medium);

@@ -1,5 +1,5 @@
 <template>
-  <section class="card" :class="{ 'is-disabled': jogDisabled }">
+  <section class="card">
     <header class="card__header">
       <div class="step-selector">
         <span>Step</span>
@@ -12,11 +12,11 @@
           {{ value }}
         </button>
       </div>
-      <h2>Controls</h2>
+      <h2>Motion Controls</h2>
     </header>
     <div class="jog-layout">
       <!-- Axis Movement Group (XY Joystick + Z Controls) -->
-      <div class="axis-movement-group">
+      <div class="axis-movement-group" :class="{ 'motion-disabled': motionControlsDisabled }">
         <!-- XY Joystick Layout -->
         <div class="xy-joystick">
           <!-- Top Row -->
@@ -67,7 +67,8 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value }]"
+            :disabled="isHoming"
             @click="goHome"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
@@ -89,15 +90,15 @@
 
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('X')">HX</button>
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('Y')">HY</button>
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('Z')">HZ</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('X')">HX</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('Y')">HY</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('Z')">HZ</button>
           </div>
         </Transition>
       </div>
 
       <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
-      <div class="position-controls-group">
+      <div class="position-controls-group" :class="{ 'motion-disabled': motionControlsDisabled }">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column">
           <button class="control axis-zero-btn" title="Zero X" @click="goToZero('X')">X0</button>
@@ -185,8 +186,11 @@ const props = defineProps<{
   gridSizeY?: number;
 }>();
 
-// Computed to check if jogging should be disabled (not homed OR already disabled)
-const jogDisabled = computed(() => props.isDisabled || !store.isHomed);
+// Computed to check if motion controls should be disabled (not connected, not homed, OR already disabled)
+const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value);
+
+// Computed to check if homing is in progress
+const isHoming = computed(() => store.status.machineState?.toLowerCase() === 'home');
 
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;
@@ -303,6 +307,12 @@ const jogStart = (axis: 'X' | 'Y' | 'Z', direction: 1 | -1, event?: Event) => {
   if (event) {
     event.preventDefault();
   }
+
+  // Don't allow jogging if motion controls are disabled
+  if (motionControlsDisabled.value) {
+    return;
+  }
+
   const buttonId = getButtonId(axis, direction);
   setButtonPressed(buttonId);
 
@@ -317,6 +327,12 @@ const jogDiagonalStart = (xDirection: 1 | -1, yDirection: 1 | -1, event?: Event)
   if (event) {
     event.preventDefault();
   }
+
+  // Don't allow jogging if motion controls are disabled
+  if (motionControlsDisabled.value) {
+    return;
+  }
+
   const buttonId = getButtonId('', undefined, xDirection, yDirection);
   setButtonPressed(buttonId);
 
@@ -536,6 +552,9 @@ const parkPress = reactive<{ start: number; progress: number; raf?: number; acti
 const handleParkClick = async () => {
   // If long-press already handled action, ignore click
   if (parkPress.triggered) return;
+  if (motionControlsDisabled.value) {
+    return;
+  }
   try {
     const response = await api.getSetting('parkingLocation');
     if (response === null || !response.parkingLocation) {
@@ -612,6 +631,9 @@ const cancelParkPress = () => {
 
 // Zero axis buttons
 const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
+  if (motionControlsDisabled.value) {
+    return;
+  }
   try {
     await api.sendCommandViaWebSocket({
       command: `G90 G0 ${axis}0`,
@@ -636,6 +658,9 @@ const sendSoftReset = async () => {
 
 // Corner button handlers
 const goToCorner = async (corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right') => {
+  if (motionControlsDisabled.value) {
+    return;
+  }
   const xLimit = props.gridSizeX || 1260;
   const yLimit = props.gridSizeY || 1284;
 
@@ -665,7 +690,8 @@ const goToCorner = async (corner: 'top-left' | 'top-right' | 'bottom-left' | 'bo
 </script>
 
 <style scoped>
-.card.is-disabled {
+/* Disable motion controls when not homed */
+.motion-disabled {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -795,17 +821,23 @@ h2 {
   touch-action: manipulation;
 }
 
-.control:hover {
+.control:hover:not(:disabled) {
   border: 1px solid var(--color-accent);
 }
 
-.control:active,
+.control:active:not(:disabled),
 .control.pressed {
   background: var(--color-accent);
   color: white;
   transform: scale(0.98);
   box-shadow: 0 0 10px rgba(26, 188, 156, 0.5);
   border: 1px solid var(--color-accent);
+}
+
+.control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .control.corner {

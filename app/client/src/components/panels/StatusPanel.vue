@@ -1,5 +1,5 @@
 <template>
-  <section class="card status-card">
+  <section class="card status-card" :class="{ 'card-disabled': coordZeroingDisabled }">
     <div class="status-hint">Press and hold an axis card to zero it at the current position</div>
     <div class="coords">
       <!-- Group X and Y with a border and a join indicator -->
@@ -135,6 +135,12 @@
 <script setup lang="ts">
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
+import { useAppStore } from '../../composables/use-app-store';
+
+const store = useAppStore();
+
+// Computed to check if coordinate zeroing should be disabled (not connected or not homed)
+const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value);
 
 const props = defineProps<{
   status: {
@@ -318,6 +324,9 @@ const ensureAxisState = (axis: AxisKey) => {
 let activeAxis: string | null = null;
 
 const startLongPress = (axis: AxisKey, _evt: Event) => {
+  if (!store.isHomed.value) {
+    return;
+  }
   const state = ensureAxisState(axis);
   if (state.raf) cancelAnimationFrame(state.raf);
   state.start = performance.now();
@@ -427,6 +436,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Disable entire status card when not homed */
+.card-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-medium);

@@ -128,8 +128,9 @@ export class CNCController extends EventEmitter {
         // Tool number
         newStatus.tool = parseInt(value);
       } else if (key === 'H' && value) {
-        // Homed status (0 = not homed, 1 = homed)
-        newStatus.homed = value === '1';
+        // Homed status - can be '0', '1', or '1,7' (multiple axes homed)
+        // Consider machine homed if value contains '1' (any axis homed)
+        newStatus.homed = value.includes('1');
       } else if (key && value) {
         newStatus[key] = value;
       }

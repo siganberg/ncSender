@@ -93,7 +93,7 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons">
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -1494,6 +1494,12 @@ watch(() => store.consoleLines, (lines) => {
 </script>
 
 <style scoped>
+/* Disable control buttons when not homed */
+.controls-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .viewport {
   background: var(--color-surface);
   border-radius: var(--radius-medium);

@@ -25,6 +25,7 @@ interface StatusReport {
   rapidOverride?: number;
   spindleOverride?: number;
   tool?: number;
+  homed?: boolean;
 }
 
 // SHARED STATE (synchronized across all clients via WebSocket broadcasts)
@@ -45,7 +46,8 @@ const status = reactive({
   feedrateOverride: 100,
   rapidOverride: 100,
   spindleOverride: 100,
-  tool: 0
+  tool: 0,
+  homed: false
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -62,6 +64,11 @@ const machineDimsLoaded = ref(false);
 // INTERNAL STATE
 let storeInitialized = false;
 let responseLineIdCounter = 0;
+
+// COMPUTED PROPERTIES (created once at module level)
+const isConnected = computed(() => status.connected && websocketConnected.value);
+const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
+const isHomed = computed(() => status.homed === true);
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -106,6 +113,10 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof report.tool === 'number') {
     status.tool = report.tool;
+  }
+
+  if (typeof report.homed === 'boolean') {
+    status.homed = report.homed;
   }
 };
 
@@ -394,9 +405,9 @@ export function useAppStore() {
     gridSizeY: readonly(gridSizeY),
 
     // Computed properties
-    isConnected: computed(() => status.connected && websocketConnected.value),
-    currentJobFilename: computed(() => serverState.jobLoaded?.filename),
-    isHomed: computed(() => serverState.machineState?.homed === true),
+    isConnected,
+    currentJobFilename,
+    isHomed,
 
     // Actions
     clearConsole: () => {
