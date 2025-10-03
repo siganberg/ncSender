@@ -76,6 +76,13 @@ defineProps<{
     align-items: stretch; /* ensure items stretch to row height */
   }
 
+  /* In portrait, give Jog slightly more width than Status */
+  @media (orientation: portrait) {
+    .panel-stack {
+      grid-template-columns: 5fr 4fr; /* gentle 55/45 split */
+    }
+  }
+
   /* Jog and Status panels in top row adapt to content with min-height */
   .panel-stack > :nth-child(1) {
     /* JogPanel */

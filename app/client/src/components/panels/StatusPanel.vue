@@ -746,6 +746,13 @@ h2, h3 {
   }
 }
 
+/* Ensure two rows in portrait regardless of width */
+@media (orientation: portrait) {
+  .metrics {
+    flex-direction: column;
+  }
+}
+
 /* Portrait/top-row equal-height with JogPanel */
 @media (max-width: 1279px) {
   .card {

@@ -701,6 +701,19 @@ h2 {
   }
 }
 
+/* Portrait: ensure each column in Job Controls has equal total height */
+@media (orientation: portrait) {
+  .jog-layout { align-items: center; justify-content: center; --jog-col-height: 150px; margin-top: auto; margin-bottom: auto; }
+  .xy-joystick { width: var(--jog-col-height); height: var(--jog-col-height); }
+  .z-home-controls { align-items: stretch; }
+  .z-home-controls > * { height: var(--jog-col-height); }
+  .z-controls { height: var(--jog-col-height); flex-direction: column; }
+  .z-button { height: auto; }
+  .home-group { height: var(--jog-col-height); }
+  .axis-zero-column { height: var(--jog-col-height); }
+  .corner-simple { height: var(--jog-col-height); }
+}
+
 /* Tablet portrait: keep zero column narrow so cards do not overflow */
 @media (max-width: 1279px) and (min-width: 960px) {
   .axis-zero-column {
