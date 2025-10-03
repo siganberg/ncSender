@@ -5,37 +5,8 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-// Alarm message mapping
-const alarmMessages = {
-  1: 'Hard limit triggered. Machine position is lost due to limit switch activation.',
-  2: 'G-code motion target exceeds machine travel. Job aborted.',
-  3: 'Reset while in motion. Position may be lost.',
-  4: 'Probe fail. Probe did not contact surface.',
-  5: 'Probe fail. Probe was already triggered at start of probe cycle.',
-  6: 'Homing fail. Reset during homing cycle.',
-  7: 'Homing fail. Safety door opened during homing.',
-  8: 'Homing fail. Limit switch not found during search.',
-  9: 'Homing fail. Limit switch not cleared after pull-off.',
-  10: 'Homing fail. Homing cycle not enabled in settings.'
-};
-
 export function createSettingsRoutes(serverState, cncController) {
   const router = Router();
-
-  // Get alarm description by ID
-  router.get('/alarm/:id', (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid alarm ID' });
-      }
-      const description = alarmMessages[id] || 'Unknown Alarm';
-      res.json({ id, description });
-    } catch (error) {
-      console.error('Error getting alarm description:', error);
-      res.status(500).json({ error: 'Failed to get alarm description' });
-    }
-  });
 
   // Get all settings
   router.get('/settings', (req, res) => {

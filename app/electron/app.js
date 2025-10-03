@@ -17,6 +17,7 @@ import { createGCodePreviewRoutes } from './routes/gcode-preview-routes.js';
 import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
 import { createSettingsRoutes } from './routes/settings-routes.js';
+import { createAlarmRoutes, fetchAndSaveAlarmCodes } from './routes/alarm-routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './routes/firmware-routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './settings-manager.js';
 
@@ -603,6 +604,11 @@ export async function createApp(options = {}) {
         initializeFirmwareOnConnection(cncController).catch((error) => {
           log('Error initializing firmware on connection:', error?.message || error);
         });
+
+        // Fetch and save alarm codes if not already cached
+        fetchAndSaveAlarmCodes(cncController).catch((error) => {
+          log('Error fetching alarm codes on connection:', error?.message || error);
+        });
       }
 
       if (!newOnlineStatus && hasEverConnected) {
@@ -728,6 +734,7 @@ export async function createApp(options = {}) {
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState, cncController));
   app.use('/api', createSettingsRoutes(serverState, cncController));
+  app.use('/api', createAlarmRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));

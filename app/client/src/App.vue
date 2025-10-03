@@ -1639,6 +1639,10 @@ const toggleTheme = () => {
 
 const handleUnlock = async () => {
   try {
+    // Send soft reset first, then unlock
+    await api.sendCommand('\x18');
+    // Wait a bit for reset to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
     await api.sendCommand('$X');
   } catch (error) {
     console.error('Failed to send unlock command:', error);
