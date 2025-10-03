@@ -101,9 +101,45 @@
       <div class="position-controls-group" :class="{ 'motion-disabled': motionControlsDisabled }">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column">
-          <button class="control axis-zero-btn" title="Zero X" @click="goToZero('X')">X0</button>
-          <button class="control axis-zero-btn" title="Zero Y" @click="goToZero('Y')">Y0</button>
-          <button class="control axis-zero-btn" title="Zero Z" @click="goToZero('Z')">Z0</button>
+          <button
+            :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.X.triggered, 'blink-border': axisZeroPress.X.blinking }]"
+            title="Zero X (Hold to move)"
+            @mousedown="startAxisZeroPress('X', $event)"
+            @mouseup="endAxisZeroPress('X')"
+            @mouseleave="cancelAxisZeroPress('X')"
+            @touchstart="startAxisZeroPress('X', $event)"
+            @touchend="endAxisZeroPress('X')"
+            @touchcancel="cancelAxisZeroPress('X')"
+          >
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.X.progress || 0}%` }"></div>
+            X0
+          </button>
+          <button
+            :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Y.triggered, 'blink-border': axisZeroPress.Y.blinking }]"
+            title="Zero Y (Hold to move)"
+            @mousedown="startAxisZeroPress('Y', $event)"
+            @mouseup="endAxisZeroPress('Y')"
+            @mouseleave="cancelAxisZeroPress('Y')"
+            @touchstart="startAxisZeroPress('Y', $event)"
+            @touchend="endAxisZeroPress('Y')"
+            @touchcancel="cancelAxisZeroPress('Y')"
+          >
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Y.progress || 0}%` }"></div>
+            Y0
+          </button>
+          <button
+            :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Z.triggered, 'blink-border': axisZeroPress.Z.blinking }]"
+            title="Zero Z (Hold to move)"
+            @mousedown="startAxisZeroPress('Z', $event)"
+            @mouseup="endAxisZeroPress('Z')"
+            @mouseleave="cancelAxisZeroPress('Z')"
+            @touchstart="startAxisZeroPress('Z', $event)"
+            @touchend="endAxisZeroPress('Z')"
+            @touchcancel="cancelAxisZeroPress('Z')"
+          >
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Z.progress || 0}%` }"></div>
+            Z0
+          </button>
         </div>
 
         <!-- Simple 2x2 corner buttons + Park below -->
@@ -171,7 +207,7 @@
             </button>
           </div>
           <button
-            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.triggered || parkPress.saved, 'blink-border': parkPress.blinking }]"
+            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.saved, 'blink-border': parkPress.blinking }]"
             title="Park (Hold 1.5s to go, 3s to save)"
             @mousedown="startParkPress($event)"
             @mouseup="endParkPress()"
@@ -499,6 +535,7 @@ const homePress = reactive<{ start: number; progress: number; raf?: number; acti
 let homeActive = false;
 
 const startHomePress = (_evt?: Event) => {
+  if (_evt) _evt.preventDefault();
   if (homeSplit.value) return;
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.start = performance.now();
@@ -627,6 +664,7 @@ const goToPark = async () => {
 };
 
 const startParkPress = (_evt?: Event) => {
+  if (_evt) _evt.preventDefault();
   if (parkPress.raf) cancelAnimationFrame(parkPress.raf);
   parkPress.start = performance.now();
   parkPress.progress = 0;
@@ -743,7 +781,92 @@ const cancelParkPress = () => {
   parkPress.saved = false;
 };
 
-// Zero axis buttons
+// Zero axis buttons with long-press
+const LONG_PRESS_MS_AXIS_ZERO = 1500;
+const axisZeroPress = reactive({
+  X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
+});
+
+type AxisZeroType = 'X' | 'Y' | 'Z';
+
+const getAxisZeroPressState = (axis: AxisZeroType) => {
+  return axisZeroPress[axis];
+};
+
+const startAxisZeroPress = (axis: AxisZeroType, _evt?: Event) => {
+  if (_evt) _evt.preventDefault();
+  if (motionControlsDisabled.value) return;
+
+  const state = getAxisZeroPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_AXIS_ZERO - DELAY_BEFORE_VISUAL_MS)) * 100);
+      state.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS_AXIS_ZERO && !state.triggered) {
+      state.triggered = true;
+      goToZero(axis);
+      state.progress = 0;
+      state.active = false;
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endAxisZeroPress = (axis: AxisZeroType) => {
+  const state = getAxisZeroPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  // If not triggered (incomplete press), show blink feedback
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => {
+      state.blinking = false;
+    }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  // Reset triggered after delay
+  setTimeout(() => {
+    state.triggered = false;
+  }, 100);
+};
+
+const cancelAxisZeroPress = (axis: AxisZeroType) => {
+  const state = getAxisZeroPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+};
+
 const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
   if (motionControlsDisabled.value) {
     return;
@@ -791,6 +914,7 @@ const getCornerPressState = (corner: CornerType) => {
 };
 
 const startCornerPress = (corner: CornerType, _evt?: Event) => {
+  if (_evt) _evt.preventDefault();
   if (motionControlsDisabled.value) return;
 
   const state = getCornerPressState(corner);
@@ -1142,6 +1266,14 @@ h2 {
 .axis-zero-btn {
   flex: 1;
   font-weight: 800;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ensure visibility over accent-pressed background for axis zero */
+.axis-zero-btn:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
 }
 
 .z-button {

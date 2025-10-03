@@ -5,6 +5,7 @@ import { createServer } from './server.js';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isKiosk = process.argv.includes('--kiosk');
+const isServerOnly = process.argv.includes('--server-only') || process.argv.includes('--headless');
 
 let mainWindow = null;
 let server = null;
@@ -81,10 +82,25 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (isServerOnly) {
+    console.log('Running in server-only mode (headless)');
+    startServer().then((port) => {
+      console.log(`Server is running on http://localhost:${port}`);
+      console.log('Access the UI from any browser on your network');
+      console.log('Press Ctrl+C to stop the server');
+    }).catch((error) => {
+      console.error('Failed to start server:', error);
+      app.quit();
+    });
+  } else {
+    createWindow();
+  }
+});
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // In server-only mode, don't quit when windows are closed (there are none)
+  if (!isServerOnly && process.platform !== 'darwin') {
     app.quit();
   }
 });
