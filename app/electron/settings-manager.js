@@ -117,4 +117,21 @@ export function saveConnectionSettings(connectionSettings) {
   return saveSettings(settingsToSave);
 }
 
+export function removeSetting(key) {
+  ensureSettingsFile();
+
+  try {
+    const currentSettings = readSettings();
+    if (currentSettings && Object.prototype.hasOwnProperty.call(currentSettings, key)) {
+      const { [key]: _, ...updatedSettings } = currentSettings;
+      fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2), 'utf8');
+      return updatedSettings;
+    }
+    return currentSettings;
+  } catch (error) {
+    console.error(`Failed to remove setting '${key}':`, error);
+    throw error;
+  }
+}
+
 export { SETTINGS_PATH, DEFAULT_SETTINGS };

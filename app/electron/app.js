@@ -18,7 +18,7 @@ import { createGCodeJobRoutes } from './routes/gcode-job-routes.js';
 import { createSystemRoutes } from './routes/system-routes.js';
 import { createSettingsRoutes } from './routes/settings-routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './routes/firmware-routes.js';
-import { getSetting, saveSettings, DEFAULT_SETTINGS } from './settings-manager.js';
+import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './settings-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -205,10 +205,8 @@ export async function createApp(options = {}) {
 
     const translation = translateCommandInput(rawCommand);
     if (translation.error) {
-      sendWsMessage(ws, 'cnc:command-error', {
-        commandId: commandId ?? null,
-        error: translation.error
-      });
+      // Translation error - command is invalid, don't send to CNC
+      log('Command translation error:', translation.error.message);
       return;
     }
 
@@ -237,11 +235,6 @@ export async function createApp(options = {}) {
     }
 
     try {
-      sendWsMessage(ws, 'cnc:command-ack', {
-        commandId: normalizedCommandId,
-        status: 'accepted'
-      });
-
       const realtimeJobCommands = new Set(['!', '~', '\x18']);
       if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
         try {
@@ -277,11 +270,6 @@ export async function createApp(options = {}) {
         message: error?.message || 'Failed to send command',
         code: error?.code
       };
-
-      sendWsMessage(ws, 'cnc:command-error', {
-        commandId: normalizedCommandId,
-        error: errorPayload
-      });
 
       log('WebSocket command failed', commandMeta.displayCommand, `id=${normalizedCommandId}`, errorPayload.message);
     }
@@ -326,10 +314,6 @@ export async function createApp(options = {}) {
         case 'cnc:command':
           handleWebSocketCommand(ws, parsed.data).catch((error) => {
             log('Error handling CNC command', error?.message || error);
-            sendWsMessage(ws, 'cnc:command-error', {
-              commandId: parsed?.data?.commandId ?? null,
-              error: { message: error?.message || 'Command handling failed' }
-            });
           });
           break;
         default:
@@ -652,6 +636,39 @@ export async function createApp(options = {}) {
   });
   cncController.on('system-message', (message) => broadcast('cnc-system-message', message));
   cncController.on('response', (response) => broadcast('cnc-response', response));
+
+  // Handle CNC error to store lastAlarmCode in settings and broadcast to all clients
+  cncController.on('cnc-error', (errorData) => {
+    try {
+      let alarmCode = errorData.code;
+
+      // If code is 'ALARM', parse the actual code from the message (e.g., "ALARM:1" -> 1)
+      if (alarmCode === 'ALARM' && errorData.message) {
+        const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
+        if (alarmMatch) {
+          alarmCode = parseInt(alarmMatch[1]);
+        }
+      }
+
+      saveSettings({ lastAlarmCode: alarmCode });
+      log('Saved lastAlarmCode to settings:', alarmCode);
+
+      // Broadcast to all clients
+      broadcast('cnc-error', errorData);
+    } catch (error) {
+      log('Failed to save lastAlarmCode:', error);
+    }
+  });
+
+  // Handle unlock command ($X) to clear lastAlarmCode from settings
+  cncController.on('unlock', () => {
+    try {
+      removeSetting('lastAlarmCode');
+      log('Cleared lastAlarmCode from settings');
+    } catch (error) {
+      log('Failed to clear lastAlarmCode:', error);
+    }
+  });
 
   // Handle stop command to force reset any active job and update jobLoaded status
   cncController.on('stop', () => {

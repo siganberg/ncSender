@@ -175,14 +175,10 @@ class NCClient {
 
     return new Promise((resolve, reject) => {
       let settled = false;
-      let ackReceived = false;
 
       const cleanup = () => {
         settled = true;
-        clearTimeout(ackTimer);
         clearTimeout(resultTimer);
-        if (offAck) offAck();
-        if (offError) offError();
         if (offResult) offResult();
       };
 
@@ -193,30 +189,10 @@ class NCClient {
         }
       };
 
-      const ackTimer = setTimeout(() => {
-        if (!ackReceived) {
-          rejectWith(new Error('Timed out waiting for command acknowledgement'));
-        }
-      }, this.jogAckTimeoutMs);
-
       const resultTimeoutMs = Math.max(this.jogAckTimeoutMs * 4, 6000);
       const resultTimer = setTimeout(() => {
         rejectWith(new Error('Timed out waiting for command result'));
       }, resultTimeoutMs);
-
-      const offAck = this.on('cnc:command-ack', (data) => {
-        if (!data || data.commandId !== normalizedCommandId || settled) {
-          return;
-        }
-        ackReceived = true;
-      });
-
-      const offError = this.on('cnc:command-error', (data) => {
-        if (!data || data.commandId !== normalizedCommandId || settled) {
-          return;
-        }
-        rejectWith(new Error(data?.error?.message || 'Command failed'));
-      });
 
       const offResult = this.on('cnc-command-result', (result) => {
         if (!result || result.id !== normalizedCommandId || settled) {

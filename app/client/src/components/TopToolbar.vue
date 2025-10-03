@@ -11,8 +11,11 @@
       <div class="workspace">Workspace: {{ workspace }}</div>
     </div>
     <div class="toolbar__center">
-      <div class="machine-state">
+      <div class="machine-state" v-if="!isAlarmState">
         <span>{{ machineStateText }}</span>
+      </div>
+      <div class="alarm-state" v-else>
+        <button class="unlock-button" @click="$emit('unlock')">Unlock</button>
       </div>
     </div>
     <div class="toolbar__actions">
@@ -36,11 +39,18 @@ const props = defineProps<{
   isToolChanging?: boolean;
   onShowSettings: () => void;
   setupRequired?: boolean;
+  lastAlarmCode?: number | string;
 }>();
 
 const emit = defineEmits<{
   (e: 'toggle-theme'): void;
+  (e: 'unlock'): void;
 }>();
+
+const isAlarmState = computed(() => {
+  return (props.lastAlarmCode !== undefined && props.lastAlarmCode !== null) ||
+         (props.machineState && props.machineState.toLowerCase() === 'alarm');
+});
 
 const machineStateText = computed(() => {
   if (props.setupRequired) return 'Setup Required';
@@ -164,6 +174,33 @@ button.danger {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   text-align: center;
   transition: text-shadow 0.3s ease;
+}
+
+/* Alarm state */
+.alarm-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.unlock-button {
+  background: linear-gradient(135deg, #dc3545, rgba(220, 53, 69, 0.8));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 12px 24px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.unlock-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(220, 53, 69, 0.5);
 }
 
 .toolbar.state--idle .machine-state {

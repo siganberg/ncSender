@@ -74,6 +74,15 @@
         <div class="tool-value">T{{ currentTool }}</div>
       </div>
 
+      <!-- Alarm message -->
+      <div class="alarm-message-warning" v-if="alarmMessage">
+        <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
+          <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
+        </svg>
+        <span>Alert: {{ alarmMessage }}</span>
+      </div>
+
       <!-- Out of bounds warning -->
       <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning">
         <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -196,6 +205,7 @@ const props = withDefaults(defineProps<{
   gridSizeX?: number;
   gridSizeY?: number;
   spindleRpm?: number;
+  alarmMessage?: string;
   currentTool?: number;
 }>(), {
   view: 'iso', // Default to 3D view
@@ -1757,6 +1767,28 @@ input:checked + .slider:before {
     min-height: 280px;
     max-height: 40vh;
   }
+}
+
+/* Alarm message warning */
+.alarm-message-warning {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  backdrop-filter: blur(8px);
+  border: 2px solid #b84444;
+  color: #ff8888;
+  padding: 10px 20px;
+  border-radius: var(--radius-medium);
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 11;
+  animation: warningPulse 2s ease-in-out infinite;
 }
 
 /* Out of bounds warning */

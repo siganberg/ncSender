@@ -47,6 +47,11 @@ export class CNCController extends EventEmitter {
 
     this.commandQueue.on('ack', (payload) => {
       this.emit('command-ack', payload);
+
+      // Emit unlock event when $X command is acknowledged
+      if (payload.command && payload.command.toLowerCase() === '$x') {
+        this.emit('unlock');
+      }
     });
   }
 

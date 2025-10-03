@@ -7,7 +7,9 @@
         :setup-required="showSetupDialog"
         :machine-state="status.machineState"
         :is-tool-changing="serverState.machineState?.isToolChanging"
+        :last-alarm-code="lastAlarmCode"
         @toggle-theme="toggleTheme"
+        @unlock="handleUnlock"
         :on-show-settings="openSettings"
       />
     </template>
@@ -23,6 +25,7 @@
         :work-offset="status.wco"
         :spindle-rpm="status.spindleRpm"
         :current-tool="status.tool"
+        :alarm-message="alarmMessage"
         @change-view="viewport = $event"
       />
       <RightPanel
@@ -519,6 +522,37 @@ const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeVi
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
 let isInitialThemeLoad = true; // Flag to prevent saving theme during initial load
+
+// Alarm state
+const lastAlarmCode = ref<number | string | undefined>(initialSettings?.lastAlarmCode);
+const alarmMessage = ref<string>('');
+
+// Fetch alarm description from API
+const fetchAlarmDescription = async (code: number | string | undefined) => {
+  if (code === undefined || code === null) {
+    alarmMessage.value = '';
+    return;
+  }
+
+  const numCode = typeof code === 'string' ? parseInt(code) : code;
+  if (isNaN(numCode)) {
+    alarmMessage.value = 'Unknown Alarm';
+    return;
+  }
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/alarm/${numCode}`);
+    if (!response.ok) {
+      alarmMessage.value = 'Unknown Alarm';
+      return;
+    }
+    const data = await response.json();
+    alarmMessage.value = data.description;
+  } catch (error) {
+    console.error('Failed to fetch alarm description:', error);
+    alarmMessage.value = 'Unknown Alarm';
+  }
+};
 
 // Settings tabs configuration
 const activeTab = ref('general');
@@ -1354,6 +1388,11 @@ onMounted(async () => {
     }
   }
 
+  // Fetch alarm description on page load if lastAlarmCode exists
+  if (lastAlarmCode.value !== undefined && lastAlarmCode.value !== null) {
+    await fetchAlarmDescription(lastAlarmCode.value);
+  }
+
   // Apply colors after settings are loaded
   applyColors();
 
@@ -1375,6 +1414,21 @@ onMounted(async () => {
   api.on('error', () => {
     console.log('WebSocket connection error');
     websocketConnected.value = false;
+  });
+
+  // Listen for CNC errors (including alarms)
+  api.on('cnc-error', async (errorData) => {
+    if (!errorData) return;
+
+    // Check if it's an alarm (errorData.message contains "ALARM:X")
+    if (errorData.message && errorData.message.toUpperCase().startsWith('ALARM:')) {
+      const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
+      if (alarmMatch) {
+        const code = parseInt(alarmMatch[1]);
+        lastAlarmCode.value = code;
+        await fetchAlarmDescription(code);
+      }
+    }
   });
 
   // Set initial WebSocket state - check if already connected or connecting
@@ -1402,7 +1456,7 @@ onMounted(async () => {
   }
 
   // Initialize purely from WebSocket server-state-updated events
-  api.onServerStateUpdated((newServerState) => {
+  api.onServerStateUpdated(async (newServerState) => {
     const previousJobFilename = serverState.jobLoaded?.filename;
     Object.assign(serverState, newServerState);
     // Only treat as connected when payload reports connected
@@ -1416,6 +1470,12 @@ onMounted(async () => {
     // Only apply machine state when connected
     if (serverState.machineState?.connected && serverState.machineState) {
       applyStatusReport(serverState.machineState);
+
+      // Clear alarm state when machine state is not alarm
+      if (status.machineState && status.machineState.toLowerCase() !== 'alarm') {
+        lastAlarmCode.value = undefined;
+        alarmMessage.value = '';
+      }
     } else if (!serverState.machineState?.connected) {
       status.machineState = 'offline';
     }
@@ -1575,6 +1635,14 @@ watch(() => theme.value, async (newTheme) => {
 
 const toggleTheme = () => {
   theme.value = theme.value === 'dark' ? 'light' : 'dark';
+};
+
+const handleUnlock = async () => {
+  try {
+    await api.sendCommand('$X');
+  } catch (error) {
+    console.error('Failed to send unlock command:', error);
+  }
 };
 
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
