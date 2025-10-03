@@ -109,31 +109,70 @@
         <!-- Simple 2x2 corner buttons + Park below -->
         <div class="corner-simple">
           <div class="corner-grid">
-            <button class="control corner-btn" title="Corner Top-Left" @click="goToCorner('top-left')">
+            <button
+              :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.topLeft.triggered, 'blink-border': cornerPress.topLeft.blinking }]"
+              title="Corner Top-Left (Hold to move)"
+              @mousedown="startCornerPress('top-left', $event)"
+              @mouseup="endCornerPress('top-left')"
+              @mouseleave="cancelCornerPress('top-left')"
+              @touchstart="startCornerPress('top-left', $event)"
+              @touchend="endCornerPress('top-left')"
+              @touchcancel="cancelCornerPress('top-left')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${cornerPress.topLeft.progress || 0}%` }"></div>
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16 6H8V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
-            <button class="control corner-btn" title="Corner Top-Right" @click="goToCorner('top-right')">
+            <button
+              :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.topRight.triggered, 'blink-border': cornerPress.topRight.blinking }]"
+              title="Corner Top-Right (Hold to move)"
+              @mousedown="startCornerPress('top-right', $event)"
+              @mouseup="endCornerPress('top-right')"
+              @mouseleave="cancelCornerPress('top-right')"
+              @touchstart="startCornerPress('top-right', $event)"
+              @touchend="endCornerPress('top-right')"
+              @touchcancel="cancelCornerPress('top-right')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${cornerPress.topRight.progress || 0}%` }"></div>
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 6H16V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
-            <button class="control corner-btn" title="Corner Bottom-Left" @click="goToCorner('bottom-left')">
+            <button
+              :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.bottomLeft.triggered, 'blink-border': cornerPress.bottomLeft.blinking }]"
+              title="Corner Bottom-Left (Hold to move)"
+              @mousedown="startCornerPress('bottom-left', $event)"
+              @mouseup="endCornerPress('bottom-left')"
+              @mouseleave="cancelCornerPress('bottom-left')"
+              @touchstart="startCornerPress('bottom-left', $event)"
+              @touchend="endCornerPress('bottom-left')"
+              @touchcancel="cancelCornerPress('bottom-left')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${cornerPress.bottomLeft.progress || 0}%` }"></div>
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16 18H8V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
-            <button class="control corner-btn" title="Corner Bottom-Right" @click="goToCorner('bottom-right')">
+            <button
+              :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.bottomRight.triggered, 'blink-border': cornerPress.bottomRight.blinking }]"
+              title="Corner Bottom-Right (Hold to move)"
+              @mousedown="startCornerPress('bottom-right', $event)"
+              @mouseup="endCornerPress('bottom-right')"
+              @mouseleave="cancelCornerPress('bottom-right')"
+              @touchstart="startCornerPress('bottom-right', $event)"
+              @touchend="endCornerPress('bottom-right')"
+              @touchcancel="cancelCornerPress('bottom-right')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${cornerPress.bottomRight.progress || 0}%` }"></div>
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 18H16V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
           </div>
           <button
-            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.triggered }]"
-            title="Park"
-            @click="handleParkClick"
+            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.triggered || parkPress.saved, 'blink-border': parkPress.blinking }]"
+            title="Park (Hold 1.5s to go, 3s to save)"
             @mousedown="startParkPress($event)"
             @mouseup="endParkPress()"
             @mouseleave="cancelParkPress()"
@@ -152,7 +191,7 @@
     <Dialog v-if="showParkingDialog" @close="showParkingDialog = false" :show-header="false" size="small" :z-index="10000">
       <ConfirmPanel
         title="Parking Location Not Set"
-        message="Long press the Park button (1s) to save the current machine position as the parking location."
+        message="No parking location is saved yet. Please move your spindle to the desired location and continuously press the Park button for at least 3 seconds."
         :show-cancel="false"
         confirm-text="Close"
         variant="primary"
@@ -558,22 +597,20 @@ const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
   }
 };
 
-// --- Parking location: click to check, long-press to set ---
+// --- Parking location: 1.5s to go to park, 3s to save coordinates ---
 const showParkingDialog = ref(false);
-const LONG_PRESS_MS_PARK = 1000;
-const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
+const LONG_PRESS_MS_PARK_GO = 1500;
+const LONG_PRESS_MS_PARK_SAVE = 3000;
+const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; saved: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, saved: false, blinking: false });
 
-const handleParkClick = async () => {
-  // If long-press already handled action, ignore click
-  if (parkPress.triggered) return;
+const goToPark = async () => {
   if (motionControlsDisabled.value) {
     return;
   }
   try {
     const response = await api.getSetting('parkingLocation');
     if (response === null || !response.parkingLocation) {
-      // Not set
-      showParkingDialog.value = true;
+      // Not set - don't show dialog, user might be continuing to hold for save
       return;
     }
     // Parse parking location (format: "x,y,z")
@@ -584,8 +621,8 @@ const handleParkClick = async () => {
     await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${x} Y${y}`, displayCommand: `G53 G90 G0 X${x} Y${y}` });
     await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${z}`, displayCommand: `G53 G90 G0 Z${z}` });
   } catch (_err) {
-    // Network or other errors: show dialog to instruct long press
-    showParkingDialog.value = true;
+    // Network or other errors: ignore during active press
+    return;
   }
 };
 
@@ -595,22 +632,36 @@ const startParkPress = (_evt?: Event) => {
   parkPress.progress = 0;
   parkPress.active = true;
   parkPress.triggered = false;
+  parkPress.saved = false;
 
   const tick = () => {
     if (!parkPress.active) return;
     const elapsed = performance.now() - parkPress.start;
 
-    // Delay the visual indicator
+    // Two-stage progress: 0-1.5s for go-to, 1.5-3s for save (reset and fill again)
     if (elapsed < DELAY_BEFORE_VISUAL_MS) {
       parkPress.progress = 0;
-    } else {
+    } else if (elapsed < LONG_PRESS_MS_PARK_GO) {
+      // Stage 1: Go to park (0-1.5s)
       const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
-      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_PARK - DELAY_BEFORE_VISUAL_MS)) * 100);
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_PARK_GO - DELAY_BEFORE_VISUAL_MS)) * 100);
       parkPress.progress = pct;
+    } else if (elapsed < LONG_PRESS_MS_PARK_SAVE) {
+      // Stage 2: Save coordinates (1.5-3s) - fill again from 0 to 100%
+      const stage2Start = LONG_PRESS_MS_PARK_GO + DELAY_BEFORE_VISUAL_MS;
+      if (elapsed < stage2Start) {
+        parkPress.progress = 0;
+      } else {
+        const stage2Elapsed = elapsed - stage2Start;
+        const stage2Duration = LONG_PRESS_MS_PARK_SAVE - stage2Start;
+        const pct = Math.min(100, (stage2Elapsed / stage2Duration) * 100);
+        parkPress.progress = pct;
+      }
     }
 
-    if (elapsed >= LONG_PRESS_MS_PARK && !parkPress.triggered) {
-      parkPress.triggered = true;
+    // Trigger save coordinates at 3s
+    if (elapsed >= LONG_PRESS_MS_PARK_SAVE && !parkPress.saved) {
+      parkPress.saved = true;
       // Capture current machine coords and save as parkingLocation
       const x = Number(props.machineCoords?.x ?? 0).toFixed(3);
       const y = Number(props.machineCoords?.y ?? 0).toFixed(3);
@@ -625,20 +676,61 @@ const startParkPress = (_evt?: Event) => {
       return;
     }
 
+    // Mark at 1.5s but don't execute yet - wait for release
+    if (elapsed >= LONG_PRESS_MS_PARK_GO && !parkPress.triggered) {
+      parkPress.triggered = true;
+    }
+
     parkPress.raf = requestAnimationFrame(tick);
   };
 
   parkPress.raf = requestAnimationFrame(tick);
 };
 
-const endParkPress = () => {
+const endParkPress = async () => {
   if (parkPress.raf) cancelAnimationFrame(parkPress.raf);
   parkPress.raf = undefined;
-  parkPress.active = false;
-  parkPress.progress = 0;
-  // Reset triggered after a short delay to allow click suppression for long-press
+
+  const elapsed = performance.now() - parkPress.start;
+
+  // < 1.5s: Cancel action (blink)
+  if (elapsed < LONG_PRESS_MS_PARK_GO) {
+    parkPress.active = false;
+    parkPress.progress = 0;
+    parkPress.blinking = true;
+    setTimeout(() => {
+      parkPress.blinking = false;
+    }, 400);
+  }
+  // 1.5s to 3s: Execute go-to or show dialog if not set
+  else if (elapsed >= LONG_PRESS_MS_PARK_GO && elapsed < LONG_PRESS_MS_PARK_SAVE && !parkPress.saved) {
+    parkPress.active = false;
+    parkPress.progress = 0;
+
+    // Check if parking location exists and execute go-to
+    try {
+      const response = await api.getSetting('parkingLocation');
+      if (response === null || !response.parkingLocation) {
+        // No parking location - show dialog
+        showParkingDialog.value = true;
+      } else {
+        // Execute go-to park
+        goToPark();
+      }
+    } catch {
+      showParkingDialog.value = true;
+    }
+  }
+  // >= 3s: Already saved via the tick function
+  else {
+    parkPress.active = false;
+    parkPress.progress = 0;
+  }
+
+  // Reset triggered after a short delay
   setTimeout(() => {
     parkPress.triggered = false;
+    parkPress.saved = false;
   }, 100);
 };
 
@@ -648,6 +740,7 @@ const cancelParkPress = () => {
   parkPress.active = false;
   parkPress.progress = 0;
   parkPress.triggered = false;
+  parkPress.saved = false;
 };
 
 // Zero axis buttons
@@ -677,8 +770,99 @@ const sendSoftReset = async () => {
   }
 };
 
-// Corner button handlers
-const goToCorner = async (corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right') => {
+// Corner button long-press handlers
+const LONG_PRESS_MS_CORNER = 1500;
+const cornerPress = reactive({
+  topLeft: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  topRight: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  bottomLeft: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  bottomRight: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
+});
+
+type CornerType = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+const getCornerPressState = (corner: CornerType) => {
+  switch (corner) {
+    case 'top-left': return cornerPress.topLeft;
+    case 'top-right': return cornerPress.topRight;
+    case 'bottom-left': return cornerPress.bottomLeft;
+    case 'bottom-right': return cornerPress.bottomRight;
+  }
+};
+
+const startCornerPress = (corner: CornerType, _evt?: Event) => {
+  if (motionControlsDisabled.value) return;
+
+  const state = getCornerPressState(corner);
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_CORNER - DELAY_BEFORE_VISUAL_MS)) * 100);
+      state.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS_CORNER && !state.triggered) {
+      state.triggered = true;
+      goToCorner(corner);
+      state.progress = 0;
+      state.active = false;
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endCornerPress = (corner: CornerType) => {
+  const state = getCornerPressState(corner);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  // If not triggered (incomplete press), show blink feedback
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => {
+      state.blinking = false;
+    }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  // Reset triggered after delay
+  setTimeout(() => {
+    state.triggered = false;
+  }, 100);
+};
+
+const cancelCornerPress = (corner: CornerType) => {
+  const state = getCornerPressState(corner);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+};
+
+// Corner movement function
+const goToCorner = async (corner: CornerType) => {
   if (motionControlsDisabled.value) {
     return;
   }
@@ -903,12 +1087,32 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
 }
 
 .corner-btn svg {
   width: 20px;
   height: 20px;
   color: var(--color-text-primary);
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure visibility over accent-pressed background for corners */
+.corner-btn:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
+/* Blink border animation for incomplete press */
+@keyframes blink-border {
+  0%, 100% { border-color: #ff6b6b; }
+  50% { border-color: var(--color-border); }
+}
+
+.control.blink-border {
+  animation: blink-border 0.4s ease-in-out;
 }
 
 .zero-row {
