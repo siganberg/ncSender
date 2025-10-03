@@ -59,7 +59,32 @@
                   @mousedown="jogStart('Z', -1, $event)" @mouseup="jogEnd('Z', -1, $event)"
                   @touchstart="jogStart('Z', -1, $event)" @touchend="jogEnd('Z', -1, $event)">Z-</button>
         </div>
-        <button class="control home-button" @click="goHome">Home</button>
+        <div class="home-group" ref="homeGroupRef">
+          <Transition name="home-main" mode="out-in">
+            <button
+              v-if="!homeSplit"
+              :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active }]"
+              @click="goHome"
+              @mousedown="startHomePress($event)"
+              @mouseup="endHomePress()"
+              @mouseleave="cancelHomePress()"
+              @touchstart.prevent="startHomePress($event)"
+              @touchend="endHomePress()"
+              @touchcancel="cancelHomePress()"
+            >
+              <div class="press-progress-home" :style="{ height: `${homePress.progress || 0}%` }"></div>
+              Home
+            </button>
+          </Transition>
+
+          <Transition name="home-split" mode="out-in">
+            <div v-if="homeSplit" class="home-split">
+              <button class="control home-split-btn" @click="goHomeAxis('X')">HX</button>
+              <button class="control home-split-btn" @click="goHomeAxis('Y')">HY</button>
+              <button class="control home-split-btn" @click="goHomeAxis('Z')">HZ</button>
+            </div>
+          </Transition>
+        </div>
       </div>
     </div>
   </section>
@@ -67,7 +92,7 @@
 
 <script setup lang="ts">
 import { api } from '../../lib/api.js';
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
@@ -321,6 +346,105 @@ onBeforeUnmount(() => {
   }
   stopHeartbeat();
 });
+
+// --- Home split (HX/HY/HZ) via long-press ---
+const homeSplit = ref(false);
+const homeGroupRef = ref<HTMLElement | null>(null);
+const LONG_PRESS_MS_HOME = 750;
+const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
+let homeActive = false;
+
+const startHomePress = (_evt?: Event) => {
+  if (homeSplit.value) return;
+  if (homePress.raf) cancelAnimationFrame(homePress.raf);
+  homePress.start = performance.now();
+  homePress.progress = 0;
+  homePress.active = true;
+  homePress.triggered = false;
+  homeActive = true;
+
+  const tick = () => {
+    if (!homePress.active) return;
+    const elapsed = performance.now() - homePress.start;
+    const pct = Math.min(100, (elapsed / LONG_PRESS_MS_HOME) * 100);
+    homePress.progress = pct;
+
+    if (elapsed >= LONG_PRESS_MS_HOME && !homePress.triggered) {
+      homePress.triggered = true;
+      homeSplit.value = true; // reveal HX/HY/HZ
+      // reset the visual progress immediately
+      homePress.progress = 0;
+      homePress.active = false;
+      homeActive = false;
+      return; // stop animating
+    }
+
+    homePress.raf = requestAnimationFrame(tick);
+  };
+
+  homePress.raf = requestAnimationFrame(tick);
+};
+
+const endHomePress = () => {
+  if (homePress.raf) cancelAnimationFrame(homePress.raf);
+  homePress.raf = undefined;
+  homePress.active = false;
+  homeActive = false;
+  if (!homePress.triggered) {
+    // Not triggered: ensure progress cleared
+    homePress.progress = 0;
+  }
+};
+
+const cancelHomePress = () => {
+  if (homePress.raf) cancelAnimationFrame(homePress.raf);
+  homePress.raf = undefined;
+  homePress.active = false;
+  homeActive = false;
+  homePress.progress = 0;
+  homePress.triggered = false;
+};
+
+// Click outside to collapse back to single Home
+const handleGlobalClick = (e: MouseEvent | TouchEvent) => {
+  if (!homeSplit.value) return;
+  const target = e.target as Node | null;
+  const container = homeGroupRef.value;
+  if (!container) return;
+  if (!target || !container.contains(target)) {
+    homeSplit.value = false;
+  }
+};
+
+const handleGlobalPointerUp = () => {
+  if (homeActive) {
+    cancelHomePress();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('click', handleGlobalClick, true);
+  window.addEventListener('touchstart', handleGlobalClick, true);
+  window.addEventListener('mouseup', handleGlobalPointerUp);
+  window.addEventListener('touchend', handleGlobalPointerUp);
+  window.addEventListener('touchcancel', handleGlobalPointerUp);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleGlobalClick, true);
+  window.removeEventListener('touchstart', handleGlobalClick, true);
+  window.removeEventListener('mouseup', handleGlobalPointerUp);
+  window.removeEventListener('touchend', handleGlobalPointerUp);
+  window.removeEventListener('touchcancel', handleGlobalPointerUp);
+});
+
+const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
+  try {
+    await api.sendCommandViaWebSocket({ command: `$H${axis}`, displayCommand: `$H${axis}` });
+  } catch (error) {
+    console.error(`Failed to home ${axis}:`, error);
+  }
+};
 </script>
 
 <style scoped>
@@ -473,6 +597,8 @@ h2 {
   height: 180px;
   background: var(--color-surface-muted);
   font-weight: bold;
+  position: relative;
+  overflow: hidden;
 }
 
 @media (max-width: 959px) {
@@ -496,6 +622,87 @@ h2 {
     flex: 1;
     height: 50px;
   }
+}
+
+/* Home split styles */
+.home-group {
+  margin: 0;
+  padding: 0;
+  border: none;
+  width: 60px;
+  height: 180px;
+  position: relative; /* lock size; children will be absolute */
+}
+
+.home-split {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-split-btn {
+  flex: 1;
+  width: 100%;
+  font-weight: bold;
+}
+
+.press-progress-home {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 0%;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+/* Ensure visibility over accent-pressed background */
+.home-button.is-holding .press-progress-home,
+.home-button:active .press-progress-home {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
+/* Transition animations for expanding/collapsing Home -> HX/HY/HZ */
+.home-split-enter-active,
+.home-split-leave-active,
+.home-main-enter-active,
+.home-main-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+  will-change: opacity, transform;
+}
+
+.home-split-enter-from,
+.home-main-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.home-split-enter-to,
+.home-main-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.home-split-leave-from,
+.home-main-enter-to {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.home-split-leave-to,
+.home-main-enter-from {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* Position the main Home view absolutely as well */
+.home-main-view {
+  position: absolute;
+  inset: 0;
 }
 
 /* Portrait/top-row equal-height with StatusPanel */
