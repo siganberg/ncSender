@@ -127,6 +127,9 @@ export class CNCController extends EventEmitter {
       } else if (key === 'T' && value) {
         // Tool number
         newStatus.tool = parseInt(value);
+      } else if (key === 'H' && value) {
+        // Homed status (0 = not homed, 1 = homed)
+        newStatus.homed = value === '1';
       } else if (key && value) {
         newStatus[key] = value;
       }
@@ -134,7 +137,7 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'Pn', 'Bf'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
