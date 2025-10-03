@@ -69,11 +69,11 @@
             v-if="!homeSplit"
             :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value }]"
             :disabled="isHoming"
-            @click="goHome"
+            @click="handleHomeClick"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
-            @touchstart.prevent="startHomePress($event)"
+            @touchstart="startHomePress($event)"
             @touchend="endHomePress()"
             @touchcancel="cancelHomePress()"
           >
@@ -137,7 +137,7 @@
             @mousedown="startParkPress($event)"
             @mouseup="endParkPress()"
             @mouseleave="cancelParkPress()"
-            @touchstart.prevent="startParkPress($event)"
+            @touchstart="startParkPress($event)"
             @touchend="endParkPress()"
             @touchcancel="cancelParkPress()"
           >
@@ -391,6 +391,12 @@ const stopJog = () => {
   api.stopJogSession(jogId).catch((error) => {
     console.error('Failed to stop jog session:', error);
   });
+};
+
+const handleHomeClick = async () => {
+  // If long-press already handled action, ignore click
+  if (homePress.triggered) return;
+  await goHome();
 };
 
 const goHome = async () => {
@@ -864,7 +870,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 100px; /* Can squeeze to 100px */
+  min-width: 120px;
   height: 180px; /* match column height */
 }
 
@@ -911,7 +917,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 50px; /* Can shrink to 50px */
+  min-width: 70px;
 }
 
 .axis-zero-btn {
