@@ -110,22 +110,22 @@
           <div class="corner-grid">
             <button class="control corner-btn" title="Corner Top-Left" @click="goToCorner('top-left')">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 2H2V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
+                <path d="M16 6H8V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
             <button class="control corner-btn" title="Corner Top-Right" @click="goToCorner('top-right')">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 2H22V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
+                <path d="M8 6H16V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
             <button class="control corner-btn" title="Corner Bottom-Left" @click="goToCorner('bottom-left')">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 22H2V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
+                <path d="M16 18H8V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
             <button class="control corner-btn" title="Corner Bottom-Right" @click="goToCorner('bottom-right')">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 22H22V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
+                <path d="M8 18H16V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
             </button>
           </div>
