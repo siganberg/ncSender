@@ -1453,6 +1453,13 @@ onMounted(async () => {
     setCameraView(props.view);
     // No need to emit here; parent already owns the state
 
+    // Ensure initial framing even when Auto-Fit is OFF and no G-code is loaded
+    if (autoFitMode.value && currentGCodeBounds) {
+      fitCameraToBounds(currentGCodeBounds, props.view);
+    } else {
+      fitCameraToBounds(getGridBounds(), props.view);
+    }
+
     // Check for existing G-code program after viewport is fully initialized
     if (api.ws && api.ws.readyState === WebSocket.OPEN) {
       api.checkCurrentProgram();
