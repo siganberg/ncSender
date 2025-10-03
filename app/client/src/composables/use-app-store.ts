@@ -215,23 +215,21 @@ const addResponseLine = (data: string) => {
 // Helper to try loading machine dimensions once
 const tryLoadMachineDimensionsOnce = async () => {
   if (machineDimsLoaded.value) return;
+  if (!status.connected || !websocketConnected.value) return;
 
   try {
-    const settings = await api.getFirmwareSettings();
-    if (settings && Array.isArray(settings)) {
-      const xMaxTravel = settings.find((s: any) => s.id === 130);
-      const yMaxTravel = settings.find((s: any) => s.id === 131);
-
-      if (xMaxTravel?.value) {
-        gridSizeX.value = Math.abs(parseFloat(xMaxTravel.value));
-      }
-      if (yMaxTravel?.value) {
-        gridSizeY.value = Math.abs(parseFloat(yMaxTravel.value));
-      }
-      machineDimsLoaded.value = true;
-    }
-  } catch (error) {
-    console.warn('Unable to load machine dimensions:', error);
+    // IDs: X max travel = 130, Y max travel = 131
+    // Use getFirmwareSetting() to query specific settings instead of fetching all with $$
+    const xResp = await api.getFirmwareSetting(130);
+    const yResp = await api.getFirmwareSetting(131);
+    const xVal = parseFloat(String(xResp?.value ?? ''));
+    const yVal = parseFloat(String(yResp?.value ?? ''));
+    if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
+    if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
+    machineDimsLoaded.value = true;
+    console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}`);
+  } catch (e) {
+    console.warn('[Store] Could not load machine dimensions ($130/$131):', (e && e.message) ? e.message : e);
   }
 };
 
