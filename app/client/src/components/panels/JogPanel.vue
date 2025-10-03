@@ -85,6 +85,24 @@
             </div>
           </Transition>
         </div>
+
+        <!-- Simple 2x2 corner buttons + Park below -->
+        <!-- Column of X0/Y0/Z0 separate from corner/park -->
+        <div class="axis-zero-column">
+          <button class="control axis-zero-btn" title="Zero X">X0</button>
+          <button class="control axis-zero-btn" title="Zero Y">Y0</button>
+          <button class="control axis-zero-btn" title="Zero Z">Z0</button>
+        </div>
+
+        <div class="corner-simple">
+          <div class="corner-grid">
+            <button class="control corner-btn" title="Corner ↖">↖</button>
+            <button class="control corner-btn" title="Corner ↗">↗</button>
+            <button class="control corner-btn" title="Corner ↙">↙</button>
+            <button class="control corner-btn" title="Corner ↘">↘</button>
+          </div>
+          <button class="control park-btn-wide" title="Park">Park</button>
+        </div>
       </div>
     </div>
   </section>
@@ -499,6 +517,8 @@ h2 {
   display: flex;
   gap: var(--gap-md);
   align-items: center;
+  justify-content: center; /* center horizontally in row layout */
+  margin-block: auto; /* center vertically within the card */
 }
 
 .xy-joystick {
@@ -576,7 +596,53 @@ h2 {
 .z-home-controls {
   display: flex;
   gap: var(--gap-xs);
+  align-items: stretch;
 }
+
+/* Simple corner + park layout */
+.corner-simple {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 150px;
+  height: 180px; /* match column height */
+}
+
+.corner-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+  flex: 1; /* take available space above Park */
+}
+
+.corner-btn { font-size: 1.1rem; font-weight: 800; }
+
+.zero-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.zero-btn {
+  height: 44px;
+  font-weight: 800;
+}
+
+.park-btn-wide {
+  height: 56px;
+  font-weight: 800;
+}
+
+.axis-zero-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 90px;
+  height: 180px; /* match column height */
+}
+
+.axis-zero-btn { flex: 1; font-weight: 800; }
 
 .z-controls {
   display: flex;
@@ -605,6 +671,8 @@ h2 {
   .jog-layout {
     flex-direction: column;
     gap: var(--gap-sm);
+    justify-content: center; /* center in column layout */
+    margin-block: auto; /* keep vertically centered in taller card */
   }
   
   .xy-joystick {
@@ -621,6 +689,28 @@ h2 {
   .z-button {
     flex: 1;
     height: 50px;
+  }
+
+  /* Make X0/Y0/Z0 column slimmer on portrait */
+  .axis-zero-column {
+    width: 72px;
+    gap: 4px;
+  }
+  .axis-zero-btn {
+    height: 40px;
+    font-size: 0.9rem;
+  }
+}
+
+/* Tablet portrait: keep zero column narrow so cards do not overflow */
+@media (max-width: 1279px) and (min-width: 960px) {
+  .axis-zero-column {
+    width: 80px;
+    gap: 4px;
+  }
+  .axis-zero-btn {
+    height: 42px;
+    font-size: 0.95rem;
   }
 }
 
@@ -710,5 +800,16 @@ h2 {
   .card {
     height: 100%; /* stretch to grid row height */
   }
+  /* Keep a single-row compact layout */
+  .jog-layout { flex-wrap: nowrap; gap: 4px; justify-content: space-between; align-items: center; }
+  .z-controls { width: 88px; height: 136px; gap: 4px; }
+  .z-button { height: auto; }
+  .home-group { width: 82px; height: 136px; }
+  .axis-zero-column { width: 48px; height: 136px; gap: 3px; }
+  .axis-zero-btn { font-size: 0.8rem; }
+  .corner-simple { width: 88px; height: 136px; gap: 3px; }
+  .corner-grid { gap: 3px; }
+  .corner-btn { font-size: 0.9rem; }
+  .park-btn-wide { height: 36px; }
 }
 </style>
