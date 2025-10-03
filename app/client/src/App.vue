@@ -36,6 +36,8 @@
         :console-lines="consoleLines"
         :jog-config="jogConfig"
         :job-loaded="serverState.jobLoaded"
+        :grid-size-x="gridSizeX"
+        :grid-size-y="gridSizeY"
         @update:jog-step="jogConfig.stepSize = $event"
         @clear-console="clearConsole"
       />

@@ -768,6 +768,9 @@ class NCClient {
 
   async getSetting(name) {
     const response = await fetch(`${this.baseUrl}/api/settings/${name}`);
+    if (response.status === 204) {
+      return null; // Setting not found / not set
+    }
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: `Failed to get setting ${name}` }));
       throw new Error(error.error || `Failed to get setting ${name}`);

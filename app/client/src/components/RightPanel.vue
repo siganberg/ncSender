@@ -3,6 +3,9 @@
     <JogPanel
       :jog-config="jogConfig"
       :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home' || (jobLoaded?.status === 'running')"
+      :machine-coords="status.machineCoords"
+      :grid-size-x="gridSizeX"
+      :grid-size-y="gridSizeY"
       @update:step-size="emit('update:jogStep', $event)"
     />
     <StatusPanel :status="status" />
@@ -35,6 +38,8 @@ defineProps<{
     stepOptions: number[];
   };
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
+  gridSizeX?: number;
+  gridSizeY?: number;
 }>();
 </script>
 

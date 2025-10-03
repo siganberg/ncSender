@@ -1,7 +1,6 @@
 <template>
   <section class="card" :class="{ 'is-disabled': isDisabled }">
     <header class="card__header">
-      <h2>Jog Controls</h2>
       <div class="step-selector">
         <span>Step</span>
         <button
@@ -13,6 +12,7 @@
           {{ value }}
         </button>
       </div>
+      <h2>Controls</h2>
     </header>
     <div class="jog-layout">
       <!-- XY Joystick Layout -->
@@ -88,29 +88,56 @@
 
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column">
-          <button class="control axis-zero-btn" title="Zero X">X0</button>
-          <button class="control axis-zero-btn" title="Zero Y">Y0</button>
-          <button class="control axis-zero-btn" title="Zero Z">Z0</button>
+          <button class="control axis-zero-btn" title="Zero X" @click="goToZero('X')">X0</button>
+          <button class="control axis-zero-btn" title="Zero Y" @click="goToZero('Y')">Y0</button>
+          <button class="control axis-zero-btn" title="Zero Z" @click="goToZero('Z')">Z0</button>
         </div>
 
         <!-- Simple 2x2 corner buttons + Park below -->
         <div class="corner-simple">
           <div class="corner-grid">
-            <button class="control corner-btn" title="Corner ↖">↖</button>
-            <button class="control corner-btn" title="Corner ↗">↗</button>
-            <button class="control corner-btn" title="Corner ↙">↙</button>
-            <button class="control corner-btn" title="Corner ↘">↘</button>
+            <button class="control corner-btn" title="Corner ↖" @click="goToCorner('top-left')">↖</button>
+            <button class="control corner-btn" title="Corner ↗" @click="goToCorner('top-right')">↗</button>
+            <button class="control corner-btn" title="Corner ↙" @click="goToCorner('bottom-left')">↙</button>
+            <button class="control corner-btn" title="Corner ↘" @click="goToCorner('bottom-right')">↘</button>
           </div>
-          <button class="control park-btn-wide" title="Park">Park</button>
+          <button
+            class="control park-btn-wide"
+            title="Park"
+            @click="handleParkClick"
+            @mousedown="startParkPress($event)"
+            @mouseup="endParkPress()"
+            @mouseleave="cancelParkPress()"
+            @touchstart.prevent="startParkPress($event)"
+            @touchend="endParkPress()"
+            @touchcancel="cancelParkPress()"
+          >
+            <div class="press-progress-park" :style="{ width: `${parkPress.progress || 0}%` }"></div>
+            Park
+          </button>
         </div>
       </div>
     </div>
+
+    <!-- Parking not set dialog -->
+    <Dialog v-if="showParkingDialog" @close="showParkingDialog = false" :show-header="false" size="small" :z-index="10000">
+      <ConfirmPanel
+        title="Parking Location Not Set"
+        message="Long press the Park button (1s) to save the current machine position as the parking location."
+        :show-cancel="false"
+        confirm-text="Close"
+        variant="primary"
+        @confirm="showParkingDialog = false"
+      />
+    </Dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { api } from '../../lib/api.js';
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
+import Dialog from '../Dialog.vue';
+import ConfirmPanel from '../ConfirmPanel.vue';
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
@@ -122,6 +149,9 @@ const props = defineProps<{
     stepOptions: number[];
   };
   isDisabled?: boolean;
+  machineCoords?: { x: number; y: number; z: number };
+  gridSizeX?: number;
+  gridSizeY?: number;
 }>();
 
 let jogTimer: number | null = null;
@@ -463,6 +493,129 @@ const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
     console.error(`Failed to home ${axis}:`, error);
   }
 };
+
+// --- Parking location: click to check, long-press to set ---
+const showParkingDialog = ref(false);
+const LONG_PRESS_MS_PARK = 1000;
+const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
+
+const handleParkClick = async () => {
+  // If long-press already handled action, ignore click
+  if (parkPress.triggered) return;
+  try {
+    const response = await api.getSetting('parkingLocation');
+    if (response === null || !response.parkingLocation) {
+      // Not set
+      showParkingDialog.value = true;
+      return;
+    }
+    // Parse parking location (format: "x,y,z")
+    const [x, y, z] = response.parkingLocation.split(',').map(v => parseFloat(v));
+
+    // Send parking G-code commands in sequence
+    await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 Z-5', displayCommand: 'G53 G90 G0 Z-5' });
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${x} Y${y}`, displayCommand: `G53 G90 G0 X${x} Y${y}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${z}`, displayCommand: `G53 G90 G0 Z${z}` });
+  } catch (_err) {
+    // Network or other errors: show dialog to instruct long press
+    showParkingDialog.value = true;
+  }
+};
+
+const startParkPress = (_evt?: Event) => {
+  if (parkPress.raf) cancelAnimationFrame(parkPress.raf);
+  parkPress.start = performance.now();
+  parkPress.progress = 0;
+  parkPress.active = true;
+  parkPress.triggered = false;
+
+  const tick = () => {
+    if (!parkPress.active) return;
+    const elapsed = performance.now() - parkPress.start;
+    const pct = Math.min(100, (elapsed / LONG_PRESS_MS_PARK) * 100);
+    parkPress.progress = pct;
+
+    if (elapsed >= LONG_PRESS_MS_PARK && !parkPress.triggered) {
+      parkPress.triggered = true;
+      // Capture current machine coords and save as parkingLocation
+      const x = Number(props.machineCoords?.x ?? 0).toFixed(3);
+      const y = Number(props.machineCoords?.y ?? 0).toFixed(3);
+      const z = Number(props.machineCoords?.z ?? 0).toFixed(3);
+      const parking = `${x},${y},${z}`;
+      api.updateSettings({ parkingLocation: parking }).catch(() => {});
+      // Close the info dialog if open
+      showParkingDialog.value = false;
+      // stop animating
+      parkPress.active = false;
+      parkPress.progress = 0;
+      return;
+    }
+
+    parkPress.raf = requestAnimationFrame(tick);
+  };
+
+  parkPress.raf = requestAnimationFrame(tick);
+};
+
+const endParkPress = () => {
+  if (parkPress.raf) cancelAnimationFrame(parkPress.raf);
+  parkPress.raf = undefined;
+  parkPress.active = false;
+  parkPress.progress = 0;
+  // Reset triggered after a short delay to allow click suppression for long-press
+  setTimeout(() => {
+    parkPress.triggered = false;
+  }, 100);
+};
+
+const cancelParkPress = () => {
+  if (parkPress.raf) cancelAnimationFrame(parkPress.raf);
+  parkPress.raf = undefined;
+  parkPress.active = false;
+  parkPress.progress = 0;
+  parkPress.triggered = false;
+};
+
+// Zero axis buttons
+const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
+  try {
+    await api.sendCommandViaWebSocket({
+      command: `G90 G0 ${axis}0`,
+      displayCommand: `G90 G0 ${axis}0`
+    });
+  } catch (error) {
+    console.error(`Failed to move ${axis} to zero:`, error);
+  }
+};
+
+// Corner button handlers
+const goToCorner = async (corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right') => {
+  const xLimit = props.gridSizeX || 1260;
+  const yLimit = props.gridSizeY || 1284;
+
+  try {
+    // Always move to safe Z height first
+    await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 Z-5', displayCommand: 'G53 G90 G0 Z-5' });
+
+    // Move to corner based on which button was clicked
+    switch (corner) {
+      case 'top-left':
+        await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 X0 Y0', displayCommand: 'G53 G90 G0 X0 Y0' });
+        break;
+      case 'top-right':
+        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xLimit} Y0`, displayCommand: `G53 G90 G0 X${xLimit} Y0` });
+        break;
+      case 'bottom-left':
+        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X0 Y-${yLimit}`, displayCommand: `G53 G90 G0 X0 Y-${yLimit}` });
+        break;
+      case 'bottom-right':
+        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xLimit} Y-${yLimit}`, displayCommand: `G53 G90 G0 X${xLimit} Y-${yLimit}` });
+        break;
+    }
+  } catch (error) {
+    console.error('Failed to move to corner:', error);
+  }
+};
 </script>
 
 <style scoped>
@@ -769,6 +922,28 @@ h2 {
   opacity: 1;
 }
 
+/* Park press progress */
+.park-btn-wide {
+  position: relative;
+  overflow: hidden;
+}
+.press-progress-park {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0%;
+  height: 100%;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+/* Ensure visibility over accent-pressed background */
+.park-btn-wide:active .press-progress-park {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
 /* Transition animations for expanding/collapsing Home -> HX/HY/HZ */
 .home-split-enter-active,
 .home-split-leave-active,
@@ -806,6 +981,48 @@ h2 {
 .home-main-view {
   position: absolute;
   inset: 0;
+}
+
+/* Simple confirm dialog styling (mirrors ToolpathViewport) */
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+.confirm-dialog__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.confirm-dialog__message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+.confirm-dialog__actions {
+  display: flex;
+  gap: var(--gap-sm);
+  justify-content: flex-end;
+  margin-top: var(--gap-sm);
+}
+.confirm-dialog__btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+.confirm-dialog__btn--cancel {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+.confirm-dialog__btn--cancel:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
 }
 
 /* Portrait/top-row equal-height with StatusPanel */

@@ -127,14 +127,15 @@
 
   <!-- Delete Confirmation Dialog -->
   <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
-    <div class="confirm-dialog">
-      <h3 class="confirm-dialog__title">Delete File</h3>
-      <p class="confirm-dialog__message">Are you sure you want to delete "{{ fileToDelete }}"?</p>
-      <div class="confirm-dialog__actions">
-        <button @click="cancelDelete" class="confirm-dialog__btn confirm-dialog__btn--cancel">Cancel</button>
-        <button @click="confirmDelete" class="confirm-dialog__btn confirm-dialog__btn--danger">Delete</button>
-      </div>
-    </div>
+    <ConfirmPanel
+      title="Delete File"
+      :message="'Are you sure you want to delete ' + fileToDelete + '?'"
+      cancel-text="Cancel"
+      confirm-text="Delete"
+      variant="danger"
+      @cancel="cancelDelete"
+      @confirm="confirmDelete"
+    />
   </Dialog>
 
   <!-- File Manager Dialog -->
@@ -187,6 +188,7 @@ import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generat
 import { api } from '../lib/api.js';
 import { getSettings, updateSettings } from '../lib/settings-store.js';
 import Dialog from './Dialog.vue';
+import ConfirmPanel from './ConfirmPanel.vue';
 
 const presets = [
   { id: 'top', label: 'Top' },
