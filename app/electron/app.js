@@ -657,11 +657,11 @@ export async function createApp(options = {}) {
         const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
         if (alarmMatch) {
           alarmCode = parseInt(alarmMatch[1]);
+          saveSettings({ lastAlarmCode: alarmCode });
+          log('Saved lastAlarmCode to settings:', alarmCode);
         }
       }
 
-      saveSettings({ lastAlarmCode: alarmCode });
-      log('Saved lastAlarmCode to settings:', alarmCode);
 
       // Broadcast to all clients
       broadcast('cnc-error', errorData);
