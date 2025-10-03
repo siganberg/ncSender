@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
 import { loadSettings } from './lib/settings-store.js';
+import { initializeStore, seedInitialState } from './composables/use-app-store';
 
 // Disable context menu globally for touch screen compatibility
 document.addEventListener('contextmenu', (e) => {
@@ -26,24 +27,33 @@ document.addEventListener('selectstart', (e) => {
   return false;
 }, { passive: false });
 
-// Load settings before mounting the app
-await loadSettings();
+// Async initialization
+(async () => {
+  // Load settings before mounting the app
+  await loadSettings();
 
-const app = createApp(App);
+  // Initialize centralized store and WebSocket event listeners
+  initializeStore();
 
-// Patch Vue's addEventListener to use passive: false for touch events
-const originalAddEventListener = Element.prototype.addEventListener;
-Element.prototype.addEventListener = function(type: string, listener: any, options?: any) {
-  if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
-    if (typeof options === 'boolean') {
-      options = { capture: options, passive: false };
-    } else if (typeof options === 'object' && options !== null) {
-      options = { ...options, passive: false };
-    } else {
-      options = { passive: false };
+  // Seed initial state from server
+  await seedInitialState();
+
+  const app = createApp(App);
+
+  // Patch Vue's addEventListener to use passive: false for touch events
+  const originalAddEventListener = Element.prototype.addEventListener;
+  Element.prototype.addEventListener = function(type: string, listener: any, options?: any) {
+    if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
+      if (typeof options === 'boolean') {
+        options = { capture: options, passive: false };
+      } else if (typeof options === 'object' && options !== null) {
+        options = { ...options, passive: false };
+      } else {
+        options = { passive: false };
+      }
     }
-  }
-  return originalAddEventListener.call(this, type, listener, options);
-};
+    return originalAddEventListener.call(this, type, listener, options);
+  };
 
-app.mount('#app');
+  app.mount('#app');
+})();

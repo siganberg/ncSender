@@ -187,8 +187,11 @@ import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
 import { api } from '../lib/api.js';
 import { getSettings, updateSettings } from '../lib/settings-store.js';
+import { useAppStore } from '../composables/use-app-store';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
+
+const store = useAppStore();
 
 const presets = [
   { id: 'top', label: 'Top' },
@@ -1430,15 +1433,6 @@ onMounted(async () => {
     }
   });
 
-  // Listen for command results to mark completed lines
-  // Only mark as completed when status is 'success' (actually executed)
-  api.on('cnc-command-result', (result) => {
-    const lineNumber = result?.meta?.lineNumber;
-    if (lineNumber && result?.status === 'success' && gcodeVisualizer) {
-      gcodeVisualizer.markLineCompleted(lineNumber);
-    }
-  });
-
   // Watch for jobLoaded changes to handle clearing
   watch(() => props.jobLoaded?.filename, (newValue, oldValue) => {
     if (oldValue && !newValue) {
@@ -1484,6 +1478,19 @@ onUnmounted(() => {
 
   window.removeEventListener('resize', handleResize);
 });
+
+// Watch console lines from store to mark completed lines
+// This replaces the api.on('cnc-command-result') listener
+watch(() => store.consoleLines, (lines) => {
+  if (!lines || lines.length === 0) return;
+
+  const lastLine = lines[lines.length - 1];
+  const lineNumber = lastLine?.meta?.lineNumber;
+
+  if (lineNumber && lastLine?.status === 'success' && gcodeVisualizer.value) {
+    gcodeVisualizer.value.markLineCompleted(lineNumber);
+  }
+}, { deep: true });
 </script>
 
 <style scoped>

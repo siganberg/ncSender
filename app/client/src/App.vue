@@ -3,7 +3,7 @@
     <template #top-toolbar>
       <TopToolbar
         :workspace="workspace"
-        :connected="status.connected && websocketConnected"
+        :connected="isConnected"
         :setup-required="showSetupDialog"
         :machine-state="status.machineState"
         :is-tool-changing="serverState.machineState?.isToolChanging"
@@ -19,7 +19,7 @@
       <ToolpathViewport
         :view="viewport"
         :theme="theme"
-        :connected="status.connected && websocketConnected"
+        :connected="isConnected"
         :machine-state="status.machineState"
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
@@ -32,7 +32,7 @@
         @change-view="viewport = $event"
       />
       <RightPanel
-        :status="{ ...status, connected: status.connected && websocketConnected }"
+        :status="{ ...status, connected: isConnected }"
         :console-lines="consoleLines"
         :jog-config="jogConfig"
         :job-loaded="serverState.jobLoaded"
@@ -535,47 +535,34 @@ import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import { api } from './lib/api.js';
 import { getSettings } from './lib/settings-store.js';
+import { useAppStore } from './composables/use-app-store';
+
+// Get centralized store
+const store = useAppStore();
 
 // Initialize settings from settings store (loaded in main.ts)
 const initialSettings = getSettings();
+
+// LOCAL UI STATE (not synchronized across clients)
 const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
 const workspace = ref(initialSettings?.workspace || 'G54');
 const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
 const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
-let isInitialThemeLoad = true; // Flag to prevent saving theme during initial load
+let isInitialThemeLoad = true;
 
-// Alarm state
-const lastAlarmCode = ref<number | string | undefined>(initialSettings?.lastAlarmCode);
-const alarmMessage = ref<string>('');
+// SHARED STATE FROM STORE (read-only refs from centralized store)
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, isConnected } = store;
 
-// Fetch alarm description from API
-const fetchAlarmDescription = async (code: number | string | undefined) => {
-  if (code === undefined || code === null) {
-    alarmMessage.value = '';
-    return;
-  }
+// Jog config (local UI state)
+const jogConfig = reactive({
+  stepSize: 1,
+  stepOptions: [0.1, 1, 10]
+});
 
-  const numCode = typeof code === 'string' ? parseInt(code) : code;
-  if (isNaN(numCode)) {
-    alarmMessage.value = 'Unknown Alarm';
-    return;
-  }
-
-  try {
-    const response = await fetch(`${api.baseUrl}/api/alarm/${numCode}`);
-    if (!response.ok) {
-      alarmMessage.value = 'Unknown Alarm';
-      return;
-    }
-    const data = await response.json();
-    alarmMessage.value = data.description;
-  } catch (error) {
-    console.error('Failed to fetch alarm description:', error);
-    alarmMessage.value = 'Unknown Alarm';
-  }
-};
+// Fetch alarm description (delegate to store)
+const fetchAlarmDescription = store.setLastAlarmCode;
 
 // Handle workspace change from toolbar
 const handleWorkspaceChange = async (newWorkspace: string) => {
@@ -1297,141 +1284,8 @@ const saveSetupSettings = async () => {
   }
 };
 
-const clearConsole = () => {
-  consoleLines.value = [];
-  commandLinesMap.clear();
-};
-
-const status = reactive({
-  connected: false,
-  machineState: 'idle' as 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool',
-  machineCoords: { x: 0, y: 0, z: 0, a: 0 },
-  workCoords: { x: 0, y: 0, z: 0, a: 0 },
-  wco: { x: 0, y: 0, z: 0, a: 0 },
-  alarms: [] as string[],
-  feedRate: 0,
-  spindleRpm: 0,
-  feedrateOverride: 100,
-  rapidOverride: 100,
-  spindleOverride: 100,
-  tool: 0
-});
-
-// Track WebSocket connection state separately
-const websocketConnected = ref(false);
-
-const jogConfig = reactive({
-  stepSize: 1,
-  stepOptions: [0.1, 1, 10]
-});
-
-  const serverState = reactive({
-    machineState: null as any,
-    jobLoaded: null as { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null
-  });
-
-type ConsoleStatus = 'pending' | 'success' | 'error';
-type ConsoleLine = {
-  id: string | number;
-  level: string;
-  message: string;
-  timestamp: string;
-  status?: ConsoleStatus;
-  type?: 'command' | 'response';
-  originId?: string | null;
-  meta?: Record<string, unknown> | null;
-};
-
-type StatusReport = {
-  machineState?: string;
-  WCO?: string;
-  MPos?: string;
-  FS?: string;
-  feedrateOverride?: number;
-  rapidOverride?: number;
-  spindleOverride?: number;
-  [key: string]: unknown;
-};
-
-const consoleLines = ref<ConsoleLine[]>([]);
-// Map for O(1) command lookup by ID with array index
-const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
-
-// Machine grid dimensions (mm); defaults used until fetched from controller
-const gridSizeX = ref(1260);
-const gridSizeY = ref(1284);
-const machineDimsLoaded = ref(false);
-
-const tryLoadMachineDimensionsOnce = async () => {
-  if (machineDimsLoaded.value) return;
-  if (!status.connected || !websocketConnected.value) return;
-  try {
-    // IDs: X max travel = 130, Y max travel = 131
-    const xResp = await api.getFirmwareSetting(130);
-    const yResp = await api.getFirmwareSetting(131);
-    const xVal = parseFloat(String(xResp?.value ?? ''));
-    const yVal = parseFloat(String(yResp?.value ?? ''));
-    if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
-    if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
-    machineDimsLoaded.value = true;
-    console.log(`[App] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}`);
-  } catch (e) {
-    console.warn('[App] Could not load machine dimensions ($130/$131):', (e && e.message) ? e.message : e);
-  }
-};
-
-const applyStatusReport = (report: StatusReport | null | undefined) => {
-  if (!report) {
-    return;
-  }
-
-  if (report.status) {
-    status.machineState = report.status as typeof status.machineState;
-  }
-
-  if (report.workspace) {
-    workspace.value = report.workspace as string;
-  }
-
-  if (report.WCO) {
-    const [x, y, z] = report.WCO.split(',').map(Number);
-    if (status.wco.x !== x || status.wco.y !== y || status.wco.z !== z) {
-      status.wco.x = x;
-      status.wco.y = y;
-      status.wco.z = z;
-    }
-  }
-
-  if (report.MPos) {
-    const [x, y, z] = report.MPos.split(',').map(Number);
-    status.machineCoords = { x, y, z, a: 0 };
-    status.workCoords.x = status.machineCoords.x - status.wco.x;
-    status.workCoords.y = status.machineCoords.y - status.wco.y;
-    status.workCoords.z = status.machineCoords.z - status.wco.z;
-  }
-
-  if (report.FS) {
-    const [feed, spindle] = report.FS.split(',').map(Number);
-    status.feedRate = feed;
-    status.spindleRpm = spindle;
-  }
-
-  // Update override values if present
-  if (typeof report.feedrateOverride === 'number') {
-    status.feedrateOverride = report.feedrateOverride;
-  }
-  if (typeof report.rapidOverride === 'number') {
-    status.rapidOverride = report.rapidOverride;
-  }
-  if (typeof report.spindleOverride === 'number') {
-    status.spindleOverride = report.spindleOverride;
-  }
-
-  // Update tool number if present
-  if (typeof report.tool === 'number') {
-    status.tool = report.tool;
-  }
-};
+// Clear console (delegate to store)
+const clearConsole = store.clearConsole;
 
 onMounted(async () => {
   // Check if settings are valid, show setup dialog if not
@@ -1457,225 +1311,16 @@ onMounted(async () => {
   await nextTick();
   isInitialThemeLoad = false;
 
-  // Listen for WebSocket connection events
-  api.on('connected', () => {
-    console.log('WebSocket connected');
-    websocketConnected.value = true;
-  });
+  // Note: WebSocket event listeners and state management are now
+  // centralized in the store (see composables/use-app-store.ts)
+  // and initialized in main.ts before the app mounts
+});
 
-  api.on('disconnected', () => {
-    console.log('WebSocket disconnected');
-    websocketConnected.value = false;
-  });
-
-  api.on('error', () => {
-    console.log('WebSocket connection error');
-    websocketConnected.value = false;
-  });
-
-  // Listen for CNC errors (including alarms)
-  api.on('cnc-error', async (errorData) => {
-    if (!errorData) return;
-
-    // Check if it's an alarm (errorData.message contains "ALARM:X")
-    if (errorData.message && errorData.message.toUpperCase().startsWith('ALARM:')) {
-      const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
-      if (alarmMatch) {
-        const code = parseInt(alarmMatch[1]);
-        lastAlarmCode.value = code;
-        await fetchAlarmDescription(code);
-      }
-    }
-  });
-
-  // Set initial WebSocket state - check if already connected or connecting
-  if (api.ws) {
-    websocketConnected.value = api.ws.readyState === 1; // WebSocket.OPEN = 1
-  } else {
-    websocketConnected.value = false;
+// Watch for job changes to reset viewport
+watch(() => store.currentJobFilename, (newFilename, oldFilename) => {
+  if (newFilename && newFilename !== oldFilename) {
+    viewport.value = defaultView.value;
   }
-
-  // Seed UI from last known server state (in case initial WS events were missed)
-  try {
-    const last = api.lastServerState;
-    if (last && typeof last === 'object') {
-      Object.assign(serverState, last);
-      // Only treat as connected when payload reports connected
-      status.connected = !!serverState.machineState?.connected;
-      if (serverState.machineState?.connected && serverState.machineState) {
-        applyStatusReport(serverState.machineState);
-      } else if (!serverState.machineState?.connected) {
-        status.machineState = 'offline';
-      }
-      // Attempt to load machine dimensions if already connected
-      await tryLoadMachineDimensionsOnce();
-    }
-  } catch (e) {
-    console.warn('Unable to seed initial server state:', e);
-  }
-
-  // Initialize purely from WebSocket server-state-updated events
-  api.onServerStateUpdated(async (newServerState) => {
-    const previousJobFilename = serverState.jobLoaded?.filename;
-    Object.assign(serverState, newServerState);
-    // Only treat as connected when payload reports connected
-    status.connected = !!serverState.machineState?.connected;
-
-    // Reset viewport to default view when a new G-code file is loaded
-    if (serverState.jobLoaded?.filename && serverState.jobLoaded.filename !== previousJobFilename) {
-      viewport.value = defaultView.value;
-    }
-
-    // Only apply machine state when connected
-    if (serverState.machineState?.connected && serverState.machineState) {
-      applyStatusReport(serverState.machineState);
-
-      // Clear alarm state when machine state is not alarm
-      if (status.machineState && status.machineState.toLowerCase() !== 'alarm') {
-        lastAlarmCode.value = undefined;
-        alarmMessage.value = '';
-      }
-    } else if (!serverState.machineState?.connected) {
-      status.machineState = 'offline';
-    }
-  });
-
-  // Also watch for connection ready state to trigger dimension load
-  watch(() => (status.connected && websocketConnected.value), async (isReady) => {
-    if (isReady) {
-      await tryLoadMachineDimensionsOnce();
-    }
-  }, { immediate: false });
-
-  // (Removed duplicate server-state-updated listener)
-
-  // Listen for new commands
-  const addOrUpdateCommandLine = (payload) => {
-    if (!payload) return null;
-
-    if (api.isJogCancelCommand(payload.command)) {
-      return null;
-    }
-
-    let message = payload.displayCommand || payload.command || 'Command';
-    const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
-
-    // Format error messages specially
-    if (payload.status === 'error' && payload.error?.message) {
-      const lineInfo = payload.meta?.lineNumber ? ` (Line: ${payload.meta.lineNumber})` : '';
-      message = `${message}; --> ${payload.error.message}${lineInfo}`;
-    }
-
-    // Use Map for O(1) lookup instead of array.find()
-    const existingEntry = commandLinesMap.get(payload.id);
-
-    if (existingEntry) {
-      // Create new object to trigger Vue reactivity
-      const updatedLine = {
-        ...existingEntry.line,
-        message,
-        timestamp,
-        status: payload.status ?? existingEntry.line.status,
-        level: payload.status === 'error' ? 'error' : existingEntry.line.level,
-        originId: payload.originId ?? existingEntry.line.originId,
-        meta: payload.meta ?? existingEntry.line.meta
-      };
-
-      // Update both structures with O(1) operations
-      consoleLines.value[existingEntry.index] = updatedLine;
-      commandLinesMap.set(payload.id, { line: updatedLine, index: existingEntry.index });
-
-      return { line: updatedLine, timestamp };
-    }
-
-    const newLine = {
-        id: payload.id ?? `${Date.now()}-pending`,
-        level: payload.status === 'error' ? 'error' : 'info',
-        message,
-        timestamp,
-        status: payload.status ?? 'pending',
-        type: 'command',
-        originId: payload.originId ?? null,
-        meta: payload.meta ?? null
-      };
-
-    // Add to both array (for reactivity) and map (for fast lookup)
-    const newIndex = consoleLines.value.length;
-    consoleLines.value.push(newLine);
-    commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
-
-    // Enforce buffer size limit - keep only last 50 lines for performance
-    const maxLines = 50;
-    if (consoleLines.value.length > maxLines) {
-      const removed = consoleLines.value.shift(); // Remove oldest line
-      if (removed) {
-        commandLinesMap.delete(removed.id);
-      }
-      // Rebuild map indices after shift
-      consoleLines.value.forEach((line, idx) => {
-        const entry = commandLinesMap.get(line.id);
-        if (entry) {
-          entry.index = idx;
-        }
-      });
-    }
-
-    return { line: newLine, timestamp };
-  };
-
-  api.on('cnc-command', (commandEvent) => {
-    addOrUpdateCommandLine(commandEvent);
-  });
-
-  // Listen for command responses
-  api.onData((data) => {
-    const responseLine = { id: Date.now(), level: 'info', message: data, timestamp: '', type: 'response' };
-    const newIndex = consoleLines.value.length;
-    consoleLines.value.push(responseLine);
-    commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
-
-    // Enforce buffer size limit - keep only last 50 lines for performance
-    const maxLines = 50;
-    if (consoleLines.value.length > maxLines) {
-      const removed = consoleLines.value.shift(); // Remove oldest line
-      if (removed) {
-        commandLinesMap.delete(removed.id);
-      }
-      // Rebuild map indices after shift
-      consoleLines.value.forEach((line, idx) => {
-        const entry = commandLinesMap.get(line.id);
-        if (entry) {
-          entry.index = idx;
-        }
-      });
-    }
-  });
-
-  // Auto-clear console when a new job starts (detect by line number 1)
-  let lastJobStartTime = 0;
-
-  api.on('cnc-command-result', (result) => {
-    if (!result) return;
-
-    if (api.isJogCancelCommand(result.command)) {
-      return;
-    }
-
-    // Auto-clear console when starting a new job (line 1)
-    // if (result.meta?.lineNumber === 1 && result.status === 'pending') {
-    //   const now = Date.now();
-    //   // Only clear if it's been more than 2 seconds since last job start (avoid duplicate clears)
-    //   if (now - lastJobStartTime > 2000) {
-    //     console.log('New job detected, clearing console history');
-    //     clearConsole();
-    //     lastJobStartTime = now;
-    //   }
-    // }
-
-    const updateResult = addOrUpdateCommandLine(result);
-  });
-
-
 });
 
 const applyTheme = (value: 'light' | 'dark') => {
