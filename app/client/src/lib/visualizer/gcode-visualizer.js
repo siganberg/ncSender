@@ -25,8 +25,9 @@ class GCodeVisualizer {
         this.showRapid = true;
         this.showCutting = true;
 
-        // Track line numbers for completion marking
-        this.lineNumberMap = new Map();
+        // Track line numbers for completion marking and original move type per line
+        this.lineNumberMap = new Map(); // lineNumber -> { startVertexIdx, endVertexIdx }
+        this.lineMoveType = new Map();  // lineNumber -> 'rapid' | 'cutting'
         this.completedLines = new Set();
 
         return this;
@@ -44,9 +45,25 @@ class GCodeVisualizer {
     setGridBounds(gridBounds) {
         this.gridBounds = gridBounds;
 
-        // Re-render current G-code with new bounds if exists
-        if (this.currentGCode) {
-            this.render(this.currentGCode);
+        // Recompute out-of-bounds flag without re-rendering to preserve completed coloring
+        try {
+            const line = this.pathLines[0];
+            const positions = line && line.geometry && line.geometry.attributes && line.geometry.attributes.position;
+            if (!positions || !positions.array) return;
+            const arr = positions.array;
+            let anyOob = false;
+            for (let i = 0; i < positions.count; i++) {
+                const x = arr[i * 3];
+                const y = arr[i * 3 + 1];
+                const z = arr[i * 3 + 2];
+                if (this.isPointOutOfBounds(x, y, z)) {
+                    anyOob = true;
+                    break;
+                }
+            }
+            this.hasOutOfBounds = anyOob;
+        } catch {
+            // ignore
         }
     }
 
@@ -66,7 +83,7 @@ class GCodeVisualizer {
         const lines = gcodeString.split('\n');
         const vertices = []; // Flat array of x,y,z coordinates
         const colors = []; // Flat array of r,g,b values
-        const frames = []; // Line number to vertex index mapping
+        const frames = []; // Line number to vertex index mapping (start vertex)
 
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
@@ -81,7 +98,7 @@ class GCodeVisualizer {
             const cleanLine = line.split(';')[0].trim().toUpperCase();
             if (!cleanLine) return;
 
-            // Track vertex index for this line
+            // Track vertex index for this (source) line
             frames.push(vertices.length / 3);
 
             // Parse G-code
@@ -112,6 +129,8 @@ class GCodeVisualizer {
 
             if (hasMovement && lastMoveType !== null) {
                 const isRapid = lastMoveType === 0;
+                // Record original move type for this line number
+                this.lineMoveType.set(lineNumber, isRapid ? 'rapid' : 'cutting');
 
                 // Check if move is out of bounds
                 const isOutOfBounds = this.isPointOutOfBounds(currentPos.x, currentPos.y, currentPos.z) ||
@@ -174,6 +193,10 @@ class GCodeVisualizer {
 
         // Store G-code for re-rendering when bounds change
         this.currentGCode = gcodeString;
+
+        // Reset per-line maps for fresh render
+        this.lineNumberMap.clear();
+        this.lineMoveType.clear();
 
         const { vertices, colors, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
 
@@ -241,8 +264,14 @@ class GCodeVisualizer {
         this.pathLines.push(line);
         this.group.add(line);
 
-        // Store frames for line number tracking
+        // Store frames for line number tracking (compute end indices for quick access)
         this.frames = frames;
+        this.lineNumberMap.clear();
+        for (let ln = 1; ln <= frames.length; ln++) {
+            const startVertexIdx = frames[ln - 1];
+            const endVertexIdx = ln < frames.length ? frames[ln] : geometry.attributes.position.count;
+            this.lineNumberMap.set(ln, { startVertexIdx, endVertexIdx });
+        }
 
         // Calculate bounds
         const box = new THREE.Box3().setFromObject(this.group);
@@ -306,14 +335,16 @@ class GCodeVisualizer {
         if (!line || !line.geometry.attributes.color) return;
 
         // Get the vertex index range for this line number
-        if (!this.frames || lineNumber - 1 >= this.frames.length) return;
-
-        const startVertexIdx = this.frames[lineNumber - 1];
-        const endVertexIdx = lineNumber < this.frames.length ? this.frames[lineNumber] : line.geometry.attributes.position.count;
+        const range = this.lineNumberMap.get(lineNumber);
+        if (!range) return;
+        const { startVertexIdx, endVertexIdx } = range;
 
         // Update colors for this line's vertices
         const colors = line.geometry.attributes.color.array;
-        const completedColor = new THREE.Color(this.moveColors.completedCutting);
+        const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+        const completedColor = new THREE.Color(
+            moveType === 'rapid' ? this.moveColors.completedRapid : this.moveColors.completedCutting
+        );
 
         for (let i = startVertexIdx; i < endVertexIdx; i++) {
             colors[i * 3] = completedColor.r;
@@ -332,22 +363,21 @@ class GCodeVisualizer {
         const line = this.pathLines[0];
         if (!line || !line.geometry.attributes.color) return;
 
-        // Reset all vertices to original colors
+        // Reset all previously completed vertices to their original colors based on move type
         const colors = line.geometry.attributes.color.array;
         const rapidColor = new THREE.Color(this.moveColors.rapid);
         const cuttingColor = new THREE.Color(this.moveColors.cutting);
 
         this.completedLines.forEach(lineNumber => {
-            if (!this.frames || lineNumber - 1 >= this.frames.length) return;
-
-            const startVertexIdx = this.frames[lineNumber - 1];
-            const endVertexIdx = lineNumber < this.frames.length ? this.frames[lineNumber] : line.geometry.attributes.position.count;
-
-            // Restore original color (would need to track which type each line is)
+            const range = this.lineNumberMap.get(lineNumber);
+            if (!range) return;
+            const { startVertexIdx, endVertexIdx } = range;
+            const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+            const base = moveType === 'rapid' ? rapidColor : cuttingColor;
             for (let i = startVertexIdx; i < endVertexIdx; i++) {
-                colors[i * 3] = cuttingColor.r;
-                colors[i * 3 + 1] = cuttingColor.g;
-                colors[i * 3 + 2] = cuttingColor.b;
+                colors[i * 3] = base.r;
+                colors[i * 3 + 1] = base.g;
+                colors[i * 3 + 2] = base.b;
             }
         });
 
