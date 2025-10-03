@@ -60,6 +60,7 @@ const machineDimsLoaded = ref(false);
 
 // INTERNAL STATE
 let storeInitialized = false;
+let responseLineIdCounter = 0;
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -184,7 +185,7 @@ const addOrUpdateCommandLine = (payload: any) => {
 // Helper function to add response line to console
 const addResponseLine = (data: string) => {
   const responseLine: ConsoleLine = {
-    id: Date.now(),
+    id: `response-${Date.now()}-${responseLineIdCounter++}`,
     level: 'info',
     message: data,
     timestamp: '',
