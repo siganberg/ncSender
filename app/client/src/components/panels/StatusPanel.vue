@@ -1,5 +1,5 @@
 <template>
-  <section class="card">
+  <section class="card status-card">
     <div class="status-hint">Press and hold an axis card to zero it at the current position</div>
     <div class="coords">
       <!-- Group X and Y with a border and a join indicator -->
@@ -468,6 +468,16 @@ h2, h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--gap-sm);
+}
+
+@media (max-width: 959px) {
+  /* Reduce axis card minimum width on portrait to fit better */
+  .axis-grid {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 6px;
+  }
+  .axis-group.xy-group { margin-bottom: 2px; }
+  .axis-link { width: 80px; min-width: 80px; }
 }
 
 .axis-group.xy-group {

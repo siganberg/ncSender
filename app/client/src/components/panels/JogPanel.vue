@@ -27,7 +27,7 @@
         <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1-1') }]" aria-label="Jog X positive Y positive"
                 @mousedown="jogDiagonalStart(1, 1, $event)" @mouseup="jogDiagonalEnd(1, 1, $event)"
                 @touchstart="jogDiagonalStart(1, 1, $event)" @touchend="jogDiagonalEnd(1, 1, $event)">↗</button>
-        
+
         <!-- Middle Row -->
         <button :class="['control', 'axis', { pressed: isButtonPressed('X--1') }]" aria-label="Jog X negative"
                 @mousedown="jogStart('X', -1, $event)" @mouseup="jogEnd('X', -1, $event)"
@@ -36,7 +36,7 @@
         <button :class="['control', 'axis', { pressed: isButtonPressed('X-1') }]" aria-label="Jog X positive"
                 @mousedown="jogStart('X', 1, $event)" @mouseup="jogEnd('X', 1, $event)"
                 @touchstart="jogStart('X', 1, $event)" @touchend="jogEnd('X', 1, $event)">X+</button>
-        
+
         <!-- Bottom Row -->
         <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1--1') }]" aria-label="Jog X negative Y negative"
                 @mousedown="jogDiagonalStart(-1, -1, $event)" @mouseup="jogDiagonalEnd(-1, -1, $event)"
@@ -48,7 +48,7 @@
                 @mousedown="jogDiagonalStart(1, -1, $event)" @mouseup="jogDiagonalEnd(1, -1, $event)"
                 @touchstart="jogDiagonalStart(1, -1, $event)" @touchend="jogDiagonalEnd(1, -1, $event)">↘</button>
       </div>
-      
+
       <!-- Z Controls on the side -->
       <div class="z-home-controls">
         <div class="z-controls">
@@ -86,7 +86,6 @@
           </Transition>
         </div>
 
-        <!-- Simple 2x2 corner buttons + Park below -->
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column">
           <button class="control axis-zero-btn" title="Zero X">X0</button>
@@ -94,6 +93,7 @@
           <button class="control axis-zero-btn" title="Zero Z">Z0</button>
         </div>
 
+        <!-- Simple 2x2 corner buttons + Park below -->
         <div class="corner-simple">
           <div class="corner-grid">
             <button class="control corner-btn" title="Corner ↖">↖</button>
@@ -517,8 +517,6 @@ h2 {
   display: flex;
   gap: var(--gap-md);
   align-items: center;
-  justify-content: center; /* center horizontally in row layout */
-  margin-block: auto; /* center vertically within the card */
 }
 
 .xy-joystick {
@@ -634,15 +632,18 @@ h2 {
   font-weight: 800;
 }
 
+/* Axis zero column */
 .axis-zero-column {
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 90px;
-  height: 180px; /* match column height */
 }
 
-.axis-zero-btn { flex: 1; font-weight: 800; }
+.axis-zero-btn {
+  flex: 1;
+  font-weight: 800;
+}
 
 .z-controls {
   display: flex;
@@ -660,7 +661,7 @@ h2 {
 
 .home-button {
   width: 60px;
-  height: 180px;
+  height: 100%;
   background: var(--color-surface-muted);
   font-weight: bold;
   position: relative;
@@ -671,21 +672,19 @@ h2 {
   .jog-layout {
     flex-direction: column;
     gap: var(--gap-sm);
-    justify-content: center; /* center in column layout */
-    margin-block: auto; /* keep vertically centered in taller card */
   }
-  
+
   .xy-joystick {
     width: 150px;
     height: 150px;
   }
-  
+
   .z-controls {
     flex-direction: row;
     height: auto;
-    width: 150px;
+    width: auto; /* adapt to button widths in portrait */
   }
-  
+
   .z-button {
     flex: 1;
     height: 50px;
@@ -800,16 +799,16 @@ h2 {
   .card {
     height: 100%; /* stretch to grid row height */
   }
-  /* Keep a single-row compact layout */
-  .jog-layout { flex-wrap: nowrap; gap: 4px; justify-content: space-between; align-items: center; }
-  .z-controls { width: 88px; height: 136px; gap: 4px; }
+  /* Make internal controls compact to avoid horizontal overflow */
+  .jog-layout { flex-wrap: wrap; gap: var(--gap-sm); justify-content: center; }
+  .z-controls { width: auto; height: 150px; gap: 4px; }
   .z-button { height: auto; }
-  .home-group { width: 82px; height: 136px; }
-  .axis-zero-column { width: 48px; height: 136px; gap: 3px; }
-  .axis-zero-btn { font-size: 0.8rem; }
-  .corner-simple { width: 88px; height: 136px; gap: 3px; }
-  .corner-grid { gap: 3px; }
-  .corner-btn { font-size: 0.9rem; }
-  .park-btn-wide { height: 36px; }
+  .home-group { width: 60px; height: 150px; }
+  .axis-zero-column { width: 50px; height: 150px; gap: 4px; }
+  .axis-zero-btn { font-size: 0.9rem; }
+  .corner-simple { width: 120px; height: 150px; gap: 4px; }
+  .corner-grid { gap: 4px; }
+  .corner-btn { font-size: 1rem; }
+  .park-btn-wide { height: 44px; }
 }
 </style>
