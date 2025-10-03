@@ -16,7 +16,8 @@ interface ConsoleLine {
 }
 
 interface StatusReport {
-  activeState?: string;
+  status?: string;
+  workspace?: string;
   WCO?: string;
   MPos?: string;
   FS?: string;
@@ -66,8 +67,8 @@ let responseLineIdCounter = 0;
 const applyStatusReport = (report: StatusReport | null | undefined) => {
   if (!report) return;
 
-  if (report.activeState) {
-    status.machineState = report.activeState;
+  if (report.status) {
+    status.machineState = report.status;
   }
 
   if (report.WCO) {
