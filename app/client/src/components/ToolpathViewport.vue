@@ -1485,8 +1485,6 @@ const markedLines = new Set<number>();
 // Watch console lines from store to mark completed lines
 // This replaces the api.on('cnc-command-result') listener
 watch(() => store.consoleLines.value, (lines) => {
-  console.log('[ToolpathViewport] Lines changed, count:', lines?.length, 'hasVisualizer:', !!gcodeVisualizer);
-
   if (!lines || lines.length === 0 || !gcodeVisualizer) return;
 
   // Check all lines for completed commands with line numbers
@@ -1498,7 +1496,6 @@ watch(() => store.consoleLines.value, (lines) => {
         line?.status === 'success' &&
         line?.type === 'command' &&
         !markedLines.has(lineNumber)) {
-      console.log('[ToolpathViewport] Marking line completed:', lineNumber, line);
       gcodeVisualizer.markLineCompleted(lineNumber);
       markedLines.add(lineNumber);
     }
