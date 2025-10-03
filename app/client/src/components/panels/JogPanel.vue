@@ -703,7 +703,7 @@ h2 {
 
 /* Portrait: ensure each column in Job Controls has equal total height */
 @media (orientation: portrait) {
-  .jog-layout { align-items: center; justify-content: center; --jog-col-height: 150px; margin-top: auto; margin-bottom: auto; }
+  .jog-layout { align-items: center; justify-content: center; --jog-col-height: 200px; margin-top: auto; margin-bottom: auto; }
   .xy-joystick { width: var(--jog-col-height); height: var(--jog-col-height); }
   .z-home-controls { align-items: stretch; }
   .z-home-controls > * { height: var(--jog-col-height); }
@@ -813,15 +813,20 @@ h2 {
     height: 100%; /* stretch to grid row height */
   }
   /* Make internal controls compact to avoid horizontal overflow */
-  .jog-layout { flex-wrap: wrap; gap: var(--gap-sm); justify-content: center; }
-  .z-controls { width: auto; height: 150px; gap: 4px; }
+  .jog-layout { flex-wrap: wrap; gap: var(--gap-sm); justify-content: center; --jog-col-height: 150px; }
+  .z-controls { width: auto; height: var(--jog-col-height); gap: 4px; }
   .z-button { height: auto; }
-  .home-group { width: 60px; height: 150px; }
-  .axis-zero-column { width: 50px; height: 150px; gap: 4px; }
+  .home-group { width: 60px; height: var(--jog-col-height); }
+  .axis-zero-column { width: 50px; height: var(--jog-col-height); gap: 4px; }
   .axis-zero-btn { font-size: 0.9rem; }
-  .corner-simple { width: 120px; height: 150px; gap: 4px; }
+  .corner-simple { width: 120px; height: var(--jog-col-height); gap: 4px; }
   .corner-grid { gap: 4px; }
   .corner-btn { font-size: 1rem; }
   .park-btn-wide { height: 44px; }
+
+  /* Portrait: increase overall column height where space allows */
+  @media (orientation: portrait) {
+    .jog-layout { --jog-col-height: 200px; }
+  }
 }
 </style>
