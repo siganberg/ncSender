@@ -522,37 +522,20 @@ export function createFirmwareRoutes(cncController) {
     const { settingId } = req.params;
 
     try {
-      // Read existing firmware structure
-      let firmwareData;
-      try {
-        const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
-        firmwareData = JSON.parse(data);
-      } catch (error) {
-        if (error.code === 'ENOENT') {
-          res.status(404).json({ error: 'Firmware structure not initialized. Reconnect to the CNC controller.' });
-          return;
-        }
-        throw error;
-      }
+      // Query specific setting directly, avoid full $$ dump
 
-      // Check if setting exists
-      if (!firmwareData.settings[settingId]) {
-        res.status(404).json({ error: `Setting ${settingId} not found` });
+      // Use the single-command helper to request `$<id>` and parse the response
+      const command = '$' + settingId;
+      const response = await querySingleCommand(cncController, command);
+
+      // Parse format: $<id>=<value>
+      const match = response && response.match(new RegExp('^\\$' + settingId + '=(.*)$', 'm'));
+      if (!match || match[1] === undefined) {
+        res.status(404).json({ error: `Setting ${settingId} not found or no value returned` });
         return;
       }
 
-      // Query current values with $$
-      console.log(`Querying firmware setting ${settingId}...`);
-      const currentValues = await queryCurrentValues(cncController);
-
-      // Get the specific setting value
-      const value = currentValues[settingId];
-
-      if (value === undefined) {
-        res.status(404).json({ error: `Setting ${settingId} has no value` });
-        return;
-      }
-
+      const value = match[1].trim();
       res.json({ value });
     } catch (error) {
       console.error(`Error querying firmware setting ${settingId}:`, error);

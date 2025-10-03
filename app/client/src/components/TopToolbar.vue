@@ -8,7 +8,18 @@
   ">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
-      <div class="workspace">Workspace: {{ workspace }}</div>
+      <div class="workspace-selector">
+        <label class="workspace-label" for="workspace-select">Workspace:</label>
+        <select
+          id="workspace-select"
+          class="workspace-select"
+          :value="workspace"
+          @change="onWorkspaceChange($event)"
+          :disabled="!connected"
+        >
+          <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
+        </select>
+      </div>
     </div>
     <div class="toolbar__center">
       <div class="machine-state" v-if="!isAlarmState">
@@ -45,6 +56,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'toggle-theme'): void;
   (e: 'unlock'): void;
+  (e: 'change-workspace', value: string): void;
 }>();
 
 const isAlarmState = computed(() => {
@@ -74,6 +86,15 @@ const machineStateText = computed(() => {
     default: return 'Connected';
   }
 });
+
+const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
+const onWorkspaceChange = (e: Event) => {
+  const target = e.target as HTMLSelectElement | null;
+  const value = (target?.value || '').toUpperCase();
+  if (workspaces.includes(value)) {
+    emit('change-workspace', value);
+  }
+};
 </script>
 
 <style scoped>
@@ -111,11 +132,27 @@ const machineStateText = computed(() => {
   font-size: 1.25rem;
 }
 
-.workspace {
-  padding: 4px 12px;
-  border-radius: var(--radius-small);
+.workspace-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+}
+
+.workspace-label {
   color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.workspace-select {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  font-size: 0.95rem;
 }
 
 .toolbar__actions {

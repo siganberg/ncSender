@@ -10,6 +10,7 @@
         :last-alarm-code="lastAlarmCode"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
+        @change-workspace="handleWorkspaceChange"
         :on-show-settings="openSettings"
       />
     </template>
@@ -23,6 +24,8 @@
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :work-offset="status.wco"
+        :grid-size-x="gridSizeX"
+        :grid-size-y="gridSizeY"
         :spindle-rpm="status.spindleRpm"
         :current-tool="status.tool"
         :alarm-message="alarmMessage"
@@ -551,6 +554,17 @@ const fetchAlarmDescription = async (code: number | string | undefined) => {
   } catch (error) {
     console.error('Failed to fetch alarm description:', error);
     alarmMessage.value = 'Unknown Alarm';
+  }
+};
+
+// Handle workspace change from toolbar
+const handleWorkspaceChange = async (newWorkspace: string) => {
+  try {
+    // Optimistically update UI; server will confirm via status update
+    workspace.value = newWorkspace;
+    await api.sendCommandViaWebSocket({ command: newWorkspace, displayCommand: newWorkspace });
+  } catch (error) {
+    console.error('Failed to change workspace:', error?.message || error);
   }
 };
 
@@ -1323,6 +1337,29 @@ const consoleLines = ref<ConsoleLine[]>([]);
 // Map for O(1) command lookup by ID with array index
 const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
 
+// Machine grid dimensions (mm); defaults used until fetched from controller
+const gridSizeX = ref(1260);
+const gridSizeY = ref(1284);
+const machineDimsLoaded = ref(false);
+
+const tryLoadMachineDimensionsOnce = async () => {
+  if (machineDimsLoaded.value) return;
+  if (!status.connected || !websocketConnected.value) return;
+  try {
+    // IDs: X max travel = 130, Y max travel = 131
+    const xResp = await api.getFirmwareSetting(130);
+    const yResp = await api.getFirmwareSetting(131);
+    const xVal = parseFloat(String(xResp?.value ?? ''));
+    const yVal = parseFloat(String(yResp?.value ?? ''));
+    if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
+    if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
+    machineDimsLoaded.value = true;
+    console.log(`[App] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}`);
+  } catch (e) {
+    console.warn('[App] Could not load machine dimensions ($130/$131):', (e && e.message) ? e.message : e);
+  }
+};
+
 const applyStatusReport = (report: StatusReport | null | undefined) => {
   if (!report) {
     return;
@@ -1450,6 +1487,8 @@ onMounted(async () => {
       } else if (!serverState.machineState?.connected) {
         status.machineState = 'offline';
       }
+      // Attempt to load machine dimensions if already connected
+      await tryLoadMachineDimensionsOnce();
     }
   } catch (e) {
     console.warn('Unable to seed initial server state:', e);
@@ -1480,6 +1519,13 @@ onMounted(async () => {
       status.machineState = 'offline';
     }
   });
+
+  // Also watch for connection ready state to trigger dimension load
+  watch(() => (status.connected && websocketConnected.value), async (isReady) => {
+    if (isReady) {
+      await tryLoadMachineDimensionsOnce();
+    }
+  }, { immediate: false });
 
   // (Removed duplicate server-state-updated listener)
 

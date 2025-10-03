@@ -1252,6 +1252,46 @@ watch(() => props.workOffset, (newOffset) => {
   }
 }, { deep: true });
 
+// Watch for grid size changes to update the grid and bounds
+watch(() => [props.gridSizeX, props.gridSizeY], () => {
+  if (scene && gridGroup) {
+    scene.remove(gridGroup);
+  }
+
+  gridGroup = createGridLines({
+    gridSizeX: props.gridSizeX,
+    gridSizeY: props.gridSizeY,
+    workOffset: props.workOffset
+  });
+
+  if (scene) {
+    scene.add(gridGroup);
+  }
+
+  // Update grid bounds for out-of-bounds detection (will auto re-render G-code)
+  if (gcodeVisualizer) {
+    const gridSizeX = props.gridSizeX || 1260;
+    const gridSizeY = props.gridSizeY || 1284;
+    const workOffsetX = props.workOffset?.x || 0;
+    const workOffsetY = props.workOffset?.y || 0;
+
+    const minX = -workOffsetX;
+    const maxX = gridSizeX - workOffsetX;
+    const minY = -gridSizeY - workOffsetY;
+    const maxY = -workOffsetY;
+
+    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY });
+
+    // Update out of bounds warning after re-rendering
+    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+  }
+
+  // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
+  if (!autoFitMode.value) {
+    fitCameraToBounds(getGridBounds());
+  }
+});
+
 // Watch for file manager dialog open to fetch files
 watch(() => showFileManager.value, (isOpen) => {
   if (isOpen) {

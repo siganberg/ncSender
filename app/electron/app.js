@@ -582,6 +582,8 @@ export async function createApp(options = {}) {
           serverState.machineState = {};
         }
         serverState.machineState.workspace = newWorkspace;
+        // Keep WCS in sync for clients that display it
+        serverState.machineState.WCS = newWorkspace;
         broadcast('server-state-updated', serverState);
       }
     }
@@ -623,7 +625,9 @@ export async function createApp(options = {}) {
   cncController.on('data', (data) => broadcast('cnc-data', data));
   cncController.on('status-report', (status) => {
     const prevMachineState = { ...serverState.machineState };
-    serverState.machineState = { ...serverState.machineState, ...status };
+    // Do not allow controller status to overwrite our authoritative workspace
+    const { workspace: _ignoreWorkspace, ...statusWithoutWorkspace } = status || {};
+    serverState.machineState = { ...serverState.machineState, ...statusWithoutWorkspace };
 
     // Check if anything actually changed
     const hasChanged = JSON.stringify(prevMachineState) !== JSON.stringify(serverState.machineState);
@@ -791,4 +795,3 @@ export async function createApp(options = {}) {
 
   return { app, server, wss, port, start, close };
 }
-

@@ -80,7 +80,6 @@ export class CommandQueue extends EventEmitter {
 
     this.pending.push(entry);
     this.emit('queued', toEventPayload(entry, { status: 'pending', timestamp: new Date().toISOString() }));
-    this.log('Queued CNC command', rawCommand, `queueSize=${this.pending.length}`);
 
     this.dispatchNext();
 
@@ -101,7 +100,6 @@ export class CommandQueue extends EventEmitter {
       this.activeEntry = entry;
       this.startTimeout(entry);
       this.emit('sent', toEventPayload(entry, { status: 'sent', timestamp: new Date().toISOString() }));
-      this.log('Sent CNC command', entry.rawCommand);
     } catch (error) {
       this.log('Failed to send CNC command', entry.rawCommand, error?.message || error);
       const normalizedError = error instanceof Error ? error : new Error(String(error));
