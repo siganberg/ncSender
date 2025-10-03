@@ -703,6 +703,7 @@ h2 {
 
 /* Portrait: ensure each column in Job Controls has equal total height */
 @media (orientation: portrait) {
+  /* Portrait: fixed balanced control height */
   .jog-layout { align-items: center; justify-content: center; --jog-col-height: 200px; margin-top: auto; margin-bottom: auto; }
   .xy-joystick { width: var(--jog-col-height); height: var(--jog-col-height); }
   .z-home-controls { align-items: stretch; }
@@ -824,7 +825,7 @@ h2 {
   .corner-btn { font-size: 1rem; }
   .park-btn-wide { height: 44px; }
 
-  /* Portrait: increase overall column height where space allows */
+  /* Portrait: match main portrait height */
   @media (orientation: portrait) {
     .jog-layout { --jog-col-height: 200px; }
   }
