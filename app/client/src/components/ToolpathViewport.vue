@@ -1814,13 +1814,13 @@ input:checked + .slider:before {
 }
 
 @keyframes warningPulse {
-  0%, 100% {
-    border-color: #b84444;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  0%, 50%, 100% {
+    border-color: #dc3545;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6);
   }
-  50% {
-    border-color: #d85555;
-    box-shadow: 0 4px 16px rgba(184, 68, 68, 0.4);
+  25%, 75% {
+    border-color: #dc3545;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(220, 53, 69, 0.9);
   }
 }
 

@@ -15,7 +15,7 @@
         <span>{{ machineStateText }}</span>
       </div>
       <div class="alarm-state" v-else>
-        <button class="unlock-button" @click="$emit('unlock')">Unlock</button>
+        <button class="unlock-button" @click="$emit('unlock')">Press to Unlock</button>
       </div>
     </div>
     <div class="toolbar__actions">
@@ -186,21 +186,20 @@ button.danger {
 }
 
 .unlock-button {
-  background: linear-gradient(135deg, #dc3545, rgba(220, 53, 69, 0.8));
-  color: #fff;
-  border: none;
+  background: transparent;
+  color: #ff8888;
+  border: 2px solid #b84444;
   border-radius: var(--radius-small);
   padding: 12px 24px;
   font-size: 1.2rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .unlock-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(220, 53, 69, 0.5);
+  border-color: #d85555;
 }
 
 .toolbar.state--idle .machine-state {
