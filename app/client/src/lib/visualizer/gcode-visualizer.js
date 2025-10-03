@@ -45,26 +45,8 @@ class GCodeVisualizer {
     setGridBounds(gridBounds) {
         this.gridBounds = gridBounds;
 
-        // Recompute out-of-bounds flag without re-rendering to preserve completed coloring
-        try {
-            const line = this.pathLines[0];
-            const positions = line && line.geometry && line.geometry.attributes && line.geometry.attributes.position;
-            if (!positions || !positions.array) return;
-            const arr = positions.array;
-            let anyOob = false;
-            for (let i = 0; i < positions.count; i++) {
-                const x = arr[i * 3];
-                const y = arr[i * 3 + 1];
-                const z = arr[i * 3 + 2];
-                if (this.isPointOutOfBounds(x, y, z)) {
-                    anyOob = true;
-                    break;
-                }
-            }
-            this.hasOutOfBounds = anyOob;
-        } catch {
-            // ignore
-        }
+        // Recompute out-of-bounds and recolor in-place to preserve completed coloring
+        this.updateOutOfBoundsColors();
     }
 
     isPointOutOfBounds(x, y, z) {
@@ -383,6 +365,63 @@ class GCodeVisualizer {
 
         line.geometry.attributes.color.needsUpdate = true;
         this.completedLines.clear();
+    }
+
+    updateOutOfBoundsColors() {
+        try {
+            const line = this.pathLines[0];
+            if (!line) return;
+
+            const posAttr = line.geometry?.attributes?.position;
+            const colorAttr = line.geometry?.attributes?.color;
+            if (!posAttr || !colorAttr) return;
+
+            const colors = colorAttr.array;
+            const positions = posAttr.array;
+            const rapidColor = new THREE.Color(this.moveColors.rapid);
+            const cuttingColor = new THREE.Color(this.moveColors.cutting);
+            const completedRapid = new THREE.Color(this.moveColors.completedRapid);
+            const completedCutting = new THREE.Color(this.moveColors.completedCutting);
+            const oobColor = new THREE.Color(this.moveColors.outOfBounds);
+
+            let anyOob = false;
+
+            // Iterate by line ranges for efficiency
+            for (const [lineNumber, range] of this.lineNumberMap.entries()) {
+                const { startVertexIdx, endVertexIdx } = range;
+                const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+                const isCompleted = this.completedLines.has(lineNumber);
+
+                const baseCompleted = moveType === 'rapid' ? completedRapid : completedCutting;
+                const baseActive = moveType === 'rapid' ? rapidColor : cuttingColor;
+
+                for (let i = startVertexIdx; i < endVertexIdx; i++) {
+                    const x = positions[i * 3];
+                    const y = positions[i * 3 + 1];
+                    const z = positions[i * 3 + 2];
+
+                    let c;
+                    if (isCompleted) {
+                        // Completed has priority over OOB
+                        c = baseCompleted;
+                    } else if (this.gridBounds && this.isPointOutOfBounds(x, y, z)) {
+                        c = oobColor;
+                        anyOob = true;
+                    } else {
+                        c = baseActive;
+                    }
+
+                    colors[i * 3] = c.r;
+                    colors[i * 3 + 1] = c.g;
+                    colors[i * 3 + 2] = c.b;
+                }
+            }
+
+            colorAttr.needsUpdate = true;
+            this.hasOutOfBounds = anyOob;
+        } catch {
+            // ignore coloring failures to avoid disrupting rendering
+        }
     }
 
     getMoveTypeVisibility() {
