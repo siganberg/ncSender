@@ -693,7 +693,7 @@ h2 {
 
 .axis-movement-group {
   display: flex;
-  gap: var(--gap-xs);
+  gap: 4px;
   align-items: stretch;
 }
 
@@ -709,7 +709,7 @@ h2 {
 .z-controls {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-xs);
+  gap: 4px;
   min-width: 50px;
 }
 
@@ -795,7 +795,7 @@ h2 {
 
 .position-controls-group {
   display: flex;
-  gap: var(--gap-xs);
+  gap: 4px;
   align-items: stretch;
 }
 
@@ -803,7 +803,7 @@ h2 {
 .corner-simple {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 100px; /* Can squeeze to 100px */
   height: 180px; /* match column height */
 }
@@ -812,7 +812,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 6px;
+  gap: 4px;
   flex: 1; /* take available space above Park */
 }
 
@@ -838,7 +838,7 @@ h2 {
 .axis-zero-column {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 50px; /* Can shrink to 50px */
 }
 
