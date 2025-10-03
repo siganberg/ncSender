@@ -542,32 +542,11 @@ class NCClient {
         const message = JSON.parse(event.data);
         console.log('Parsed message:', JSON.stringify(message, null, 2));
 
-        if (message && message.type && message.data) {
-          // Message types that should never be merged (streaming data, events, etc.)
-          const noMergeTypes = new Set([
-            'cnc-data',
-            'cnc-system-message',
-            'cnc-response',
-            'command-history-appended'
-          ]);
-
-          if (noMergeTypes.has(message.type)) {
-            // Emit as-is for streaming/event data
-            this.emit(message.type, message.data);
-          } else {
-            // Merge partial updates with existing state for this message type
-            const existingState = this.messageStates.get(message.type);
-            const mergedState = this.mergeState(existingState, message.data);
-            this.messageStates.set(message.type, mergedState);
-
-            // Special handling for server-state-updated
-            if (message.type === 'server-state-updated') {
-              this.lastServerState = mergedState;
-            }
-
-            // Emit the full merged state
-            this.emit(message.type, mergedState);
-          }
+        if (message && message.type === 'server-state-updated' && message.data) {
+          // Merge partial state updates with existing state
+          this.lastServerState = this.mergeState(this.lastServerState, message.data);
+          // Emit the full merged state
+          this.emit(message.type, this.lastServerState);
         } else {
           this.emit(message.type, message.data);
         }

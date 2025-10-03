@@ -364,26 +364,18 @@ export async function createApp(options = {}) {
     // Always include current job status in server-state-updated messages
     if (type === 'server-state-updated') {
       updateJobStatus();
-    }
 
-    // Check if delta broadcast is enabled
-    const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
+      // Check if delta broadcast is enabled
+      const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
 
-    // Message types that should never use delta (streaming data, errors, etc.)
-    const noDeltaTypes = new Set([
-      'cnc-data',           // Raw streaming data from CNC
-      'cnc-system-message', // System messages
-      'cnc-response',       // Direct responses
-      'command-history-appended' // Append-only events
-    ]);
-
-    if (enableStateDeltaBroadcast && !noDeltaTypes.has(type)) {
-      // Get delta for this message type
-      const changes = messageStateTracker.getDelta(type, data);
-      if (!changes) {
-        return; // No changes, skip broadcast
+      if (enableStateDeltaBroadcast) {
+        // Get delta for server-state-updated only
+        const changes = messageStateTracker.getDelta(type, data);
+        if (!changes) {
+          return; // No changes, skip broadcast
+        }
+        data = changes;
       }
-      data = changes;
     }
 
     try {
@@ -510,19 +502,33 @@ export async function createApp(options = {}) {
     }).join('');
   };
 
-  const toCommandPayload = (event, overrides = {}) => {
+  const toCommandPayload = (event, options = {}) => {
+    const { includeTimestamp = true, ...overrides } = options;
     const command = typeof event.command === 'string' ? event.command : (event.displayCommand || '');
     const displayCommand = formatCommandText(event.displayCommand ?? command);
-    return {
+
+    // Filter out server-only meta fields from broadcast
+    let filteredMeta = null;
+    if (event.meta) {
+      const { jobControl, continuous, job, ...clientMeta } = event.meta;
+      filteredMeta = Object.keys(clientMeta).length > 0 ? clientMeta : null;
+    }
+
+    const payload = {
       id: event.id,
       command,
       displayCommand,
       status: event.status || 'pending',
-      timestamp: event.timestamp || new Date().toISOString(),
       originId: event.meta?.originId ?? null,
-      meta: event.meta || null,
+      meta: filteredMeta,
       ...overrides
     };
+
+    if (includeTimestamp) {
+      payload.timestamp = event.timestamp || new Date().toISOString();
+    }
+
+    return payload;
   };
 
   const setToolChanging = (value) => {
@@ -558,7 +564,7 @@ export async function createApp(options = {}) {
     }
 
     let status = event.status || 'success';
-    const payload = toCommandPayload(event);
+    const payload = toCommandPayload(event, { includeTimestamp: false });
 
     if (status === 'flushed') {
       status = 'error';

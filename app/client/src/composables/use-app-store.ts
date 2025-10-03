@@ -129,7 +129,6 @@ const addOrUpdateCommandLine = (payload: any) => {
   }
 
   let message = payload.displayCommand || payload.command || 'Command';
-  const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
   // Format error messages specially
   if (payload.status === 'error' && payload.error?.message) {
@@ -141,11 +140,10 @@ const addOrUpdateCommandLine = (payload: any) => {
   const existingEntry = commandLinesMap.get(payload.id);
 
   if (existingEntry) {
-    // Create new object to trigger Vue reactivity
+    // Update existing entry - preserve original timestamp
     const updatedLine = {
       ...existingEntry.line,
       message,
-      timestamp,
       status: payload.status ?? existingEntry.line.status,
       level: payload.status === 'error' ? 'error' : existingEntry.line.level,
       originId: payload.originId ?? existingEntry.line.originId,
@@ -156,8 +154,11 @@ const addOrUpdateCommandLine = (payload: any) => {
     consoleLines.value[existingEntry.index] = updatedLine;
     commandLinesMap.set(payload.id, { line: updatedLine, index: existingEntry.index });
 
-    return { line: updatedLine, timestamp };
+    return { line: updatedLine, timestamp: existingEntry.line.timestamp };
   }
+
+  // New entry - generate timestamp from payload or current time
+  const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
   const newLine: ConsoleLine = {
     id: payload.id ?? `${Date.now()}-pending`,
