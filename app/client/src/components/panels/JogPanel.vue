@@ -1,5 +1,5 @@
 <template>
-  <section class="card" :class="{ 'is-disabled': isDisabled }">
+  <section class="card" :class="{ 'is-disabled': jogDisabled }">
     <header class="card__header">
       <div class="step-selector">
         <span>Step</span>
@@ -67,7 +67,7 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed }]"
             @click="goHome"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
@@ -89,9 +89,9 @@
 
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
-            <button class="control home-split-btn" @click="goHomeAxis('X')">HX</button>
-            <button class="control home-split-btn" @click="goHomeAxis('Y')">HY</button>
-            <button class="control home-split-btn" @click="goHomeAxis('Z')">HZ</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('X')">HX</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('Y')">HY</button>
+            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed }]" @click="goHomeAxis('Z')">HZ</button>
           </div>
         </Transition>
       </div>
@@ -163,9 +163,12 @@
 
 <script setup lang="ts">
 import { api } from '../../lib/api.js';
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue';
+import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../Dialog.vue';
 import ConfirmPanel from '../ConfirmPanel.vue';
+
+const store = useAppStore();
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
@@ -181,6 +184,9 @@ const props = defineProps<{
   gridSizeX?: number;
   gridSizeY?: number;
 }>();
+
+// Computed to check if jogging should be disabled (not homed OR already disabled)
+const jogDisabled = computed(() => props.isDisabled || !store.isHomed);
 
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;
@@ -1072,6 +1078,36 @@ h2 {
 .home-main-view {
   position: absolute;
   inset: 0;
+}
+
+/* Glowing animation for Home button when not homed */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(26, 188, 156, 0.6),
+                0 0 16px rgba(26, 188, 156, 0.4),
+                inset 0 0 8px rgba(26, 188, 156, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(26, 188, 156, 0.8),
+                0 0 24px rgba(26, 188, 156, 0.6),
+                inset 0 0 12px rgba(26, 188, 156, 0.5);
+  }
+}
+
+.home-button.needs-homing {
+  animation: glow-pulse 2s ease-in-out infinite;
+  background: var(--color-accent);
+  color: white;
+}
+
+.home-button.needs-homing .home-icon {
+  color: white;
+}
+
+.home-split-btn.needs-homing {
+  animation: glow-pulse 2s ease-in-out infinite;
+  background: var(--color-accent);
+  color: white;
 }
 
 /* Simple confirm dialog styling (mirrors ToolpathViewport) */

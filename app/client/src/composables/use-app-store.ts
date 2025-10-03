@@ -396,6 +396,7 @@ export function useAppStore() {
     // Computed properties
     isConnected: computed(() => status.connected && websocketConnected.value),
     currentJobFilename: computed(() => serverState.jobLoaded?.filename),
+    isHomed: computed(() => serverState.machineState?.homed === true),
 
     // Actions
     clearConsole: () => {
