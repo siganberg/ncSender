@@ -67,7 +67,7 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
             :disabled="isHoming"
             @click="handleHomeClick"
             @mousedown="startHomePress($event)"
@@ -77,7 +77,7 @@
             @touchend="endHomePress()"
             @touchcancel="cancelHomePress()"
           >
-            <div class="press-progress-home" :style="{ height: `${homePress.progress || 0}%` }"></div>
+            <div class="long-press-indicator long-press-vertical" :style="{ height: `${homePress.progress || 0}%` }"></div>
             <div class="home-button-content">
               <svg class="home-icon" viewBox="0 0 460.298 460.297" xmlns="http://www.w3.org/2000/svg">
                 <path fill="currentColor" d="M230.149,120.939L65.986,256.274c0,0.191-0.048,0.472-0.144,0.855c-0.094,0.38-0.144,0.656-0.144,0.852v137.041c0,4.948,1.809,9.236,5.426,12.847c3.616,3.613,7.898,5.431,12.847,5.431h109.63V303.664h73.097v109.64h109.629c4.948,0,9.236-1.814,12.847-5.435c3.617-3.607,5.432-7.898,5.432-12.847V257.981c0-0.76-0.104-1.334-0.288-1.707L230.149,120.939z"/>
@@ -131,7 +131,7 @@
             </button>
           </div>
           <button
-            class="control park-btn-wide"
+            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.triggered }]"
             title="Park"
             @click="handleParkClick"
             @mousedown="startParkPress($event)"
@@ -141,7 +141,7 @@
             @touchend="endParkPress()"
             @touchcancel="cancelParkPress()"
           >
-            <div class="press-progress-park" :style="{ width: `${parkPress.progress || 0}%` }"></div>
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${parkPress.progress || 0}%` }"></div>
             Park
           </button>
         </div>
@@ -455,6 +455,7 @@ onBeforeUnmount(() => {
 const homeSplit = ref(false);
 const homeGroupRef = ref<HTMLElement | null>(null);
 const LONG_PRESS_MS_HOME = 750;
+const DELAY_BEFORE_VISUAL_MS = 150;
 const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
 let homeActive = false;
 
@@ -470,8 +471,15 @@ const startHomePress = (_evt?: Event) => {
   const tick = () => {
     if (!homePress.active) return;
     const elapsed = performance.now() - homePress.start;
-    const pct = Math.min(100, (elapsed / LONG_PRESS_MS_HOME) * 100);
-    homePress.progress = pct;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      homePress.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_HOME - DELAY_BEFORE_VISUAL_MS)) * 100);
+      homePress.progress = pct;
+    }
 
     if (elapsed >= LONG_PRESS_MS_HOME && !homePress.triggered) {
       homePress.triggered = true;
@@ -591,8 +599,15 @@ const startParkPress = (_evt?: Event) => {
   const tick = () => {
     if (!parkPress.active) return;
     const elapsed = performance.now() - parkPress.start;
-    const pct = Math.min(100, (elapsed / LONG_PRESS_MS_PARK) * 100);
-    parkPress.progress = pct;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      parkPress.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_PARK - DELAY_BEFORE_VISUAL_MS)) * 100);
+      parkPress.progress = pct;
+    }
 
     if (elapsed >= LONG_PRESS_MS_PARK && !parkPress.triggered) {
       parkPress.triggered = true;
@@ -1039,44 +1054,56 @@ h2 {
   font-weight: bold;
 }
 
-.press-progress-home {
+/* Long press indicator - base styles */
+.long-press-indicator {
   position: absolute;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+/* Vertical fill (bottom to top) */
+.long-press-vertical {
   left: 0;
   bottom: 0;
   width: 100%;
   height: 0%;
-  background: var(--color-accent);
-  opacity: 0.22;
-  pointer-events: none;
 }
 
-/* Ensure visibility over accent-pressed background */
-.home-button.is-holding .press-progress-home,
-.home-button:active .press-progress-home {
-  background: rgba(255, 255, 255, 0.35);
-  opacity: 1;
-}
-
-/* Park press progress */
-.park-btn-wide {
-  position: relative;
-  overflow: hidden;
-}
-.press-progress-park {
-  position: absolute;
+/* Horizontal fill (left to right) */
+.long-press-horizontal {
   left: 0;
   top: 0;
   width: 0%;
   height: 100%;
-  background: var(--color-accent);
-  opacity: 0.22;
-  pointer-events: none;
 }
 
 /* Ensure visibility over accent-pressed background */
-.park-btn-wide:active .press-progress-park {
+.home-button.is-holding .long-press-indicator,
+.home-button:active .long-press-indicator {
   background: rgba(255, 255, 255, 0.35);
   opacity: 1;
+}
+
+/* Park button container needs relative positioning and overflow hidden */
+.park-btn-wide {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ensure visibility over accent-pressed background for park */
+.park-btn-wide:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
+/* Remove highlight when long press is triggered */
+.control.long-press-triggered {
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border: 1px solid var(--color-border) !important;
 }
 
 /* Transition animations for expanding/collapsing Home -> HX/HY/HZ */
