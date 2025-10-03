@@ -32,6 +32,8 @@ class GCodeVisualizer {
 
         // Track which axes have any out-of-bounds vertices
         this._outOfBoundsAxes = new Set(); // subset of ['X','Y','Z']
+        // Track which directions are out-of-bounds (e.g., 'X+', 'X-', 'Y+', 'Y-', 'Z+', 'Z-')
+        this._outOfBoundsDirections = new Set();
 
         return this;
     }
@@ -81,6 +83,7 @@ class GCodeVisualizer {
         let hasOutOfBounds = false; // Track if any points are out of bounds
         // Reset axes tracking for fresh parse
         this._outOfBoundsAxes.clear();
+        this._outOfBoundsDirections.clear();
 
         const rapidColor = new THREE.Color(this.moveColors.rapid);
         const cuttingColor = new THREE.Color(this.moveColors.cutting);
@@ -404,6 +407,7 @@ class GCodeVisualizer {
 
             let anyOob = false;
             const axes = new Set();
+            const dirs = new Set();
 
             // Iterate by line ranges for efficiency
             for (const [lineNumber, range] of this.lineNumberMap.entries()) {
@@ -430,6 +434,15 @@ class GCodeVisualizer {
                         if (a.x) axes.add('X');
                         if (a.y) axes.add('Y');
                         if (a.z) axes.add('Z');
+
+                        // Track directions
+                        const { minX, maxX, minY, maxY, minZ, maxZ } = this.gridBounds || {};
+                        if (typeof minX === 'number' && x < minX) dirs.add('X-');
+                        if (typeof maxX === 'number' && x > maxX) dirs.add('X+');
+                        if (typeof minY === 'number' && y < minY) dirs.add('Y-');
+                        if (typeof maxY === 'number' && y > maxY) dirs.add('Y+');
+                        if (typeof minZ === 'number' && z < minZ) dirs.add('Z-');
+                        if (typeof maxZ === 'number' && z > maxZ) dirs.add('Z+');
                     } else {
                         c = baseActive;
                     }
@@ -443,6 +456,7 @@ class GCodeVisualizer {
             colorAttr.needsUpdate = true;
             this.hasOutOfBounds = anyOob;
             this._outOfBoundsAxes = axes;
+            this._outOfBoundsDirections = dirs;
         } catch {
             // ignore coloring failures to avoid disrupting rendering
         }
@@ -457,6 +471,10 @@ class GCodeVisualizer {
 
     getOutOfBoundsAxes() {
         return Array.from(this._outOfBoundsAxes);
+    }
+
+    getOutOfBoundsDirections() {
+        return Array.from(this._outOfBoundsDirections);
     }
 }
 

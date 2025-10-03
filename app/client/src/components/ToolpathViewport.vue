@@ -288,11 +288,18 @@ const fileToDelete = ref<string | null>(null);
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 const outOfBoundsAxes = ref<string[]>([]);
+const outOfBoundsDirections = ref<string[]>([]);
 const outOfBoundsMessage = computed(() => {
   const base = 'Warning: Toolpath exceeds machine boundaries';
   if (!showOutOfBoundsWarning.value) return '';
-  if (!outOfBoundsAxes.value || outOfBoundsAxes.value.length === 0) return base;
-  return `${base} (${outOfBoundsAxes.value.join(', ')})`;
+  // Prefer direction list (e.g., X+, Z-) if available; fallback to axes list
+  if (outOfBoundsDirections.value && outOfBoundsDirections.value.length > 0) {
+    return `${base} (${outOfBoundsDirections.value.join(', ')})`;
+  }
+  if (outOfBoundsAxes.value && outOfBoundsAxes.value.length > 0) {
+    return `${base} (${outOfBoundsAxes.value.join(', ')})`;
+  }
+  return base;
 });
 let currentGCodeBounds: any = null; // Store current G-code bounds
 let isInitialLoad = true; // Flag to prevent watchers from firing during initial settings load
@@ -748,6 +755,7 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     // Check if G-code has out of bounds movements
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
     outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 
     // Reset all line type visibility to true when loading new G-code
     showRapids.value = true;
@@ -1269,6 +1277,7 @@ watch(() => props.workOffset, (newOffset) => {
     // Update out of bounds warning after re-rendering
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
     outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
   }
 
   // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
@@ -1289,27 +1298,7 @@ watch(() => props.workOffset, (newOffset) => {
     workOffset: props.workOffset
   });
 
-  // Watch for zMaxTravel changes to update bounds and OOB detection
-  watch(() => props.zMaxTravel, () => {
-    if (!gcodeVisualizer) return;
-    const gridSizeX = props.gridSizeX || 1260;
-    const gridSizeY = props.gridSizeY || 1284;
-    const workOffsetX = props.workOffset?.x || 0;
-    const workOffsetY = props.workOffset?.y || 0;
-    const workOffsetZ = props.workOffset?.z || 0;
-    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
-
-    const minX = -workOffsetX;
-    const maxX = gridSizeX - workOffsetX;
-    const minY = -gridSizeY - workOffsetY;
-    const maxY = -workOffsetY;
-    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
-    const maxZ = zMax != null ? -workOffsetZ : undefined;
-
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
-    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
-    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
-  });
+  // (zMaxTravel watcher is defined below as a top-level watcher)
 
   if (scene) {
     scene.add(gridGroup);
@@ -1337,6 +1326,7 @@ watch(() => props.workOffset, (newOffset) => {
     // Update out of bounds warning after re-rendering
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
     outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
   }
 
   // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
