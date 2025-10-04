@@ -55,16 +55,12 @@
       </div>
     </div>
 
-    <!-- G-Code File Viewer Tab -->
+    <!-- G-Code Viewer Tab -->
     <div v-if="activeTab === 'gcode-viewer'" class="tab-content">
       <div v-if="!totalLines" class="placeholder-content">
-        <p>No G-code file loaded</p>
+        <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
       <div v-else class="gcode-viewer">
-        <div class="gcode-header">
-          <span class="gcode-filename">{{ store.gcodeFilename.value || 'Untitled' }}</span>
-          <span class="gcode-line-count">{{ totalLines }} lines</span>
-        </div>
         <div class="gcode-content" ref="gcodeOutput" @scroll="onGcodeScroll">
           <div class="gcode-spacer" :style="{ height: totalHeight + 'px' }"></div>
           <div class="gcode-items" :style="{ transform: 'translateY(' + offsetY + 'px)' }">
@@ -79,6 +75,9 @@
             </div>
           </div>
         </div>
+        <div class="gcode-footer">
+          {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
+        </div>
       </div>
     </div>
   </section>
@@ -87,7 +86,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
 import { api } from '../../lib/api.js';
-import { getLinesRangeFromIDB } from '../../lib/gcode-store.js';
+import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { useAppStore } from '../../composables/use-app-store';
 
 const store = useAppStore();
@@ -111,8 +110,8 @@ const currentInput = ref('');
 const activeTab = ref('terminal');
 const tabs = [
   { id: 'terminal', label: 'Terminal' },
-  { id: 'macros', label: 'Macros' },
-  { id: 'gcode-viewer', label: 'G-Code File Viewer' }
+  { id: 'gcode-viewer', label: 'G-Code Viewer' },
+  { id: 'macros', label: 'Macros' }
 ];
 
 // Virtualized G-code viewer state
@@ -176,14 +175,20 @@ async function updateVisibleRange() {
   renderStart.value = start;
   renderEnd.value = end;
   const currentVersion = ++fetchVersion;
+  const useIDB = isIDBEnabled();
   const lines = await (async () => {
     if (end <= start || start >= totalLines.value) return [];
     const startLine = start + 1;
     const endLine = Math.min(totalLines.value, end);
-    try {
-      const lines = await getLinesRangeFromIDB(startLine, endLine);
-      return lines.map((text, i) => ({ index: start + i, text }));
-    } catch (e) {
+    if (useIDB) {
+      try {
+        const lines = await getLinesRangeFromIDB(startLine, endLine);
+        return lines.map((text, i) => ({ index: start + i, text }));
+      } catch (e) {
+        // fallthrough to memory
+      }
+    }
+    {
       if (store.gcodeContent.value) {
         const arr = store.gcodeContent.value.split('\n');
         while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
@@ -635,23 +640,9 @@ h2 {
   gap: var(--gap-xs);
 }
 
-.gcode-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--gap-xs) var(--gap-sm);
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-small);
-}
-
-.gcode-filename {
-  font-weight: 600;
-  color: var(--color-text-primary);
-  font-size: 0.9rem;
-}
-
-.gcode-line-count {
-  font-size: 0.8rem;
+.gcode-footer {
+  padding-top: 6px;
+  font-size: 0.85rem;
   color: var(--color-text-secondary);
 }
 

@@ -6,7 +6,16 @@ const DB_VERSION = 1;
 const LINES_STORE = 'gcodeLines';
 const META_STORE = 'gcodeMeta';
 
+let idbEnabled = typeof indexedDB !== 'undefined' && !!indexedDB;
+
+export function isIDBEnabled() {
+  return idbEnabled;
+}
+
 function openDB() {
+  if (!idbEnabled) {
+    return Promise.reject(new Error('IndexedDB not available'));
+  }
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -21,11 +30,15 @@ function openDB() {
     };
 
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      idbEnabled = false;
+      reject(request.error);
+    };
   });
 }
 
 export async function clearGCodeIDB() {
+  if (!idbEnabled) throw new Error('IndexedDB disabled');
   const db = await openDB();
   await Promise.all([
     new Promise((resolve, reject) => {
@@ -40,6 +53,7 @@ export async function clearGCodeIDB() {
 }
 
 export async function saveGCodeToIDB(filename, content) {
+  if (!idbEnabled) throw new Error('IndexedDB disabled');
   const db = await openDB();
 
   // Split into lines and remove trailing empty lines
@@ -75,6 +89,7 @@ export async function saveGCodeToIDB(filename, content) {
 }
 
 export async function getLineCountFromIDB() {
+  if (!idbEnabled) return 0;
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction([META_STORE], 'readonly');
@@ -87,6 +102,7 @@ export async function getLineCountFromIDB() {
 }
 
 export async function getFilenameFromIDB() {
+  if (!idbEnabled) return '';
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction([META_STORE], 'readonly');
@@ -99,6 +115,7 @@ export async function getFilenameFromIDB() {
 }
 
 export async function getLinesRangeFromIDB(start, end) {
+  if (!idbEnabled) throw new Error('IndexedDB disabled');
   if (start > end) return [];
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -126,4 +143,3 @@ export async function getLinesRangeFromIDB(start, end) {
     tx.onerror = () => reject(tx.error);
   });
 }
-

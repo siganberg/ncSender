@@ -1,6 +1,6 @@
 import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
-import { saveGCodeToIDB, clearGCodeIDB } from '@/lib/gcode-store.js';
+import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.js';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -391,24 +391,34 @@ export function initializeStore() {
   // G-code content updates
   api.onGCodeUpdated((data) => {
     if (data?.content) {
-      saveGCodeToIDB(data.filename || '', data.content)
-        .then(({ lineCount }) => {
-          gcodeLineCount.value = lineCount;
-          gcodeFilename.value = data.filename || '';
-          // Avoid keeping the entire content string in reactive state for memory
-          gcodeContent.value = '';
-        })
-        .catch((err) => {
-          console.error('Failed to persist G-code to IndexedDB:', err);
-          // Fallback: keep in memory if save failed
-          gcodeContent.value = data.content;
-          gcodeFilename.value = data.filename || '';
-          const lines = data.content.split('\n');
-          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-            lines.pop();
-          }
-          gcodeLineCount.value = lines.length;
-        });
+      if (isIDBEnabled()) {
+        saveGCodeToIDB(data.filename || '', data.content)
+          .then(({ lineCount }) => {
+            gcodeLineCount.value = lineCount;
+            gcodeFilename.value = data.filename || '';
+            // Avoid keeping the entire content string in reactive state for memory
+            gcodeContent.value = '';
+          })
+          .catch((err) => {
+            console.error('Failed to persist G-code to IndexedDB:', err);
+            // Fallback: keep in memory if save failed
+            const lines = data.content.split('\n');
+            while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+              lines.pop();
+            }
+            gcodeContent.value = data.content;
+            gcodeFilename.value = data.filename || '';
+            gcodeLineCount.value = lines.length;
+          });
+      } else {
+        const lines = data.content.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+          lines.pop();
+        }
+        gcodeContent.value = data.content;
+        gcodeFilename.value = data.filename || '';
+        gcodeLineCount.value = lines.length;
+      }
     }
   });
 
@@ -485,7 +495,9 @@ export function useAppStore() {
     },
 
     clearGCodeViewer: () => {
-      clearGCodeIDB().catch(() => {});
+      if (isIDBEnabled()) {
+        clearGCodeIDB().catch(() => {});
+      }
       gcodeContent.value = '';
       gcodeFilename.value = '';
       gcodeLineCount.value = 0;
