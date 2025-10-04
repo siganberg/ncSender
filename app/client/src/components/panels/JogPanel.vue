@@ -1,5 +1,5 @@
 <template>
-  <section class="card">
+  <section class="card" :class="{ 'controls-disabled': motionControlsDisabled }">
     <header class="card__header">
       <div class="step-selector">
         <span class="step-label">Step</span>
@@ -1080,6 +1080,20 @@ const goToCorner = async (corner: CornerType) => {
 </script>
 
 <style scoped>
+.controls-disabled {
+  opacity: 0.6;
+}
+
+.controls-disabled .step-selector,
+.controls-disabled .jog-layout,
+.controls-disabled .home-group {
+  pointer-events: none;
+}
+
+.controls-disabled input,
+.controls-disabled button {
+  cursor: not-allowed !important;
+}
 /* Disable motion controls when not homed */
 .motion-disabled {
   opacity: 0.5;

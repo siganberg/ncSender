@@ -95,7 +95,7 @@
               v-for="item in visibleLines"
               :key="item.index"
               class="gcode-line"
-              :class="{ 'gcode-line--completed': isProgramRunning && (item.index + 1 <= completedUpTo) }"
+              :class="{ 'gcode-line--completed': (item.index + 1 <= completedUpTo) }"
               :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
             >
               <span class="line-number">Line {{ item.index + 1 }}:</span>

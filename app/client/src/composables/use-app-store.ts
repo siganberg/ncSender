@@ -77,6 +77,8 @@ const gcodeCompletedUpTo = ref<number>(0);
 
 // INTERNAL STATE
 let storeInitialized = false;
+let lastJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
+let lastJobFilename: string | undefined = undefined;
 let responseLineIdCounter = 0;
 
 // COMPUTED PROPERTIES (created once at module level)
@@ -202,8 +204,8 @@ const addOrUpdateCommandLine = (payload: any) => {
   consoleLines.value.push(newLine);
   commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
 
-  // Persist to IndexedDB if available
-  if (isTerminalIDBEnabled()) {
+  // Persist to IndexedDB if available (exclude gcode-runner chatter)
+  if (isTerminalIDBEnabled() && newLine.sourceId !== 'gcode-runner') {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
@@ -369,17 +371,17 @@ export function initializeStore() {
       await tryLoadMachineDimensionsOnce();
     }
 
-    // Keep G-code viewer in sync with preview state
-    // If no job is loaded, clear the gcode content and filename
-    if (!serverState.jobLoaded || !serverState.jobLoaded.filename) {
-      try {
-        await clearGCodeIDB();
-      } catch {}
-      gcodeContent.value = '';
-      gcodeFilename.value = '';
-      gcodeLineCount.value = 0;
+    // If a run starts (status transitions into running), reset completed tracking
+    const currentStatus = serverState.jobLoaded?.status as any;
+    const currentFilename = serverState.jobLoaded?.filename as string | undefined;
+    if (currentStatus === 'running' && lastJobStatus !== 'running') {
       gcodeCompletedUpTo.value = 0;
     }
+    lastJobStatus = currentStatus;
+    if (currentFilename) lastJobFilename = currentFilename;
+
+    // Do not auto-clear the G-code viewer when job stops/completes.
+    // We keep the last loaded file so users can review it.
   });
 
   // Console/command events
@@ -391,7 +393,7 @@ export function initializeStore() {
     if (!result) return;
     if (api.isJogCancelCommand(result.command)) return;
     const updated = addOrUpdateCommandLine(result);
-    if (isTerminalIDBEnabled() && result?.id) {
+    if (isTerminalIDBEnabled() && result?.id && result?.sourceId !== 'gcode-runner') {
       updateTerminalLineByIdInIDB(result.id, {
         message: updated?.line?.message ?? result.displayCommand ?? result.command,
         status: result.status,

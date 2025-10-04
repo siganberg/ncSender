@@ -1516,22 +1516,35 @@ onMounted(async () => {
   api.onGCodeUpdated(handleGCodeUpdate);
 
   // Listen for server state updates to track job progress
+  let prevJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
   api.onServerStateUpdated((state) => {
-    if (state.jobLoaded && state.jobLoaded.currentLine && state.jobLoaded.status === 'running') {
-      // Update our tracked last executed line
+    const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | undefined;
+
+    // If a run is starting, reset completed markers so we start fresh
+    if (status === 'running' && prevJobStatus !== 'running') {
+      lastExecutedLine.value = 0;
+      if (gcodeVisualizer) {
+        gcodeVisualizer.resetCompletedLines();
+      }
+      markedLines.clear();
+    }
+
+    if (state.jobLoaded && state.jobLoaded.currentLine && status === 'running') {
       if (state.jobLoaded.currentLine > lastExecutedLine.value) {
         lastExecutedLine.value = state.jobLoaded.currentLine;
       }
-    } else if (!state.jobLoaded || state.jobLoaded.status === 'stopped') {
-      // Job finished or stopped, reset visualizer
-      if (lastExecutedLine.value > 0) {
-        lastExecutedLine.value = 0;
-        // Reset the completed lines visual state
-        if (gcodeVisualizer) {
-          gcodeVisualizer.resetCompletedLines();
-        }
-      }
     }
+
+    // Reset visualizer segments when job stops/completes or when program is cleared
+    if (!state.jobLoaded || status === 'stopped') {
+      lastExecutedLine.value = 0;
+      if (gcodeVisualizer) {
+        gcodeVisualizer.resetCompletedLines();
+      }
+      markedLines.clear();
+    }
+
+    prevJobStatus = status;
   });
 
   // Watch for jobLoaded changes to handle clearing
