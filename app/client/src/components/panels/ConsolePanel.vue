@@ -18,6 +18,12 @@
           <div class="toggle-handle"></div>
         </div>
       </div>
+      <div class="auto-scroll-toggle" @click="autoScrollGcode = !autoScrollGcode" :class="{ active: autoScrollGcode }" v-if="activeTab === 'gcode-viewer'">
+        <span class="toggle-label">Auto-Scroll</span>
+        <div class="toggle-switch">
+          <div class="toggle-handle"></div>
+        </div>
+      </div>
     </header>
 
     <!-- Terminal Tab -->
@@ -68,6 +74,7 @@
               v-for="item in visibleLines"
               :key="item.index"
               class="gcode-line"
+              :class="{ 'gcode-line--completed': isProgramRunning && (item.index + 1 <= completedUpTo) }"
               :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
             >
               <span class="line-number">Line {{ item.index + 1 }}:</span>
@@ -77,6 +84,7 @@
         </div>
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
+          <span class="gcode-storage">{{ storageMode }}</span>
         </div>
       </div>
     </div>
@@ -102,6 +110,7 @@ const emit = defineEmits<{
 
 const commandToSend = ref('');
 const autoScroll = ref(true);
+const autoScrollGcode = ref(true);
 const consoleOutput = ref<HTMLElement | null>(null);
 const gcodeOutput = ref<HTMLElement | null>(null);
 const commandHistory = ref<string[]>([]);
@@ -128,6 +137,36 @@ const totalLines = computed(() => {
     return arr.length;
   }
   return 0;
+});
+
+const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
+const completedUpTo = computed(() => store.gcodeCompletedUpTo?.value ?? 0);
+const isProgramRunning = computed(() => store.serverState.jobLoaded?.status === 'running');
+
+function scrollToLineCentered(lineNumber: number) {
+  const el = gcodeOutput.value;
+  if (!el || !lineNumber || totalLines.value === 0) return;
+  const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineNumber - 1));
+  const vh = el.clientHeight || 0;
+  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
+  const desired = targetIndex * rowHeight.value - centerOffset;
+  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
+  const clamped = Math.max(0, Math.min(maxScroll, desired));
+  el.scrollTop = clamped;
+  // Ensure visible range updates
+  requestAnimationFrame(() => updateVisibleRange());
+}
+
+watch(completedUpTo, (val) => {
+  if (activeTab.value === 'gcode-viewer' && autoScrollGcode.value && isProgramRunning.value) {
+    scrollToLineCentered(val);
+  }
+});
+
+watch(isProgramRunning, (running) => {
+  if (running && activeTab.value === 'gcode-viewer' && autoScrollGcode.value) {
+    scrollToLineCentered(completedUpTo.value);
+  }
 });
 
 const renderStart = ref(0); // 0-based index
@@ -646,6 +685,15 @@ h2 {
   color: var(--color-text-secondary);
 }
 
+.gcode-storage {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
 .gcode-content {
   background: #141414;
   border-radius: var(--radius-small);
@@ -696,6 +744,11 @@ h2 {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
   user-select: text !important;
+}
+
+.gcode-line--completed .line-content {
+  text-decoration: line-through;
+  opacity: 0.7;
 }
 
 .line-number {

@@ -72,6 +72,7 @@ const machineDimsLoaded = ref(false);
 const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for compatibility
 const gcodeFilename = ref<string>('');
 const gcodeLineCount = ref<number>(0);
+const gcodeCompletedUpTo = ref<number>(0);
 
 // INTERNAL STATE
 let storeInitialized = false;
@@ -370,6 +371,7 @@ export function initializeStore() {
       gcodeContent.value = '';
       gcodeFilename.value = '';
       gcodeLineCount.value = 0;
+      gcodeCompletedUpTo.value = 0;
     }
   });
 
@@ -382,6 +384,14 @@ export function initializeStore() {
     if (!result) return;
     if (api.isJogCancelCommand(result.command)) return;
     addOrUpdateCommandLine(result);
+
+    // Update completed line tracking for viewers
+    const ln = (result as any)?.meta?.lineNumber;
+    if (typeof ln === 'number' && ln > 0) {
+      if (ln > gcodeCompletedUpTo.value) {
+        gcodeCompletedUpTo.value = ln;
+      }
+    }
   });
 
   api.onData((data) => {
@@ -391,6 +401,7 @@ export function initializeStore() {
   // G-code content updates
   api.onGCodeUpdated((data) => {
     if (data?.content) {
+      gcodeCompletedUpTo.value = 0; // reset on new file
       if (isIDBEnabled()) {
         saveGCodeToIDB(data.filename || '', data.content)
           .then(({ lineCount }) => {
@@ -482,6 +493,7 @@ export function useAppStore() {
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
+      gcodeCompletedUpTo: readonly(gcodeCompletedUpTo),
 
     // Computed properties
     isConnected,
@@ -501,6 +513,7 @@ export function useAppStore() {
       gcodeContent.value = '';
       gcodeFilename.value = '';
       gcodeLineCount.value = 0;
+      gcodeCompletedUpTo.value = 0;
     },
 
     setLastAlarmCode: async (code: number | string | undefined) => {
