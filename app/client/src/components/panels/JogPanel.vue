@@ -1,5 +1,5 @@
 <template>
-  <section class="card" :class="{ 'controls-disabled': motionControlsDisabled }">
+  <section class="card" :class="{ 'controls-disabled': panelDisabled }">
     <header class="card__header">
       <div class="step-selector">
         <span class="step-label">Step</span>
@@ -322,7 +322,10 @@ const validateFeedRate = () => {
   }
 };
 
-// Computed to check if motion controls should be disabled (not connected, not homed, OR already disabled)
+// Disable the entire panel only when disconnected or explicitly disabled
+const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled);
+
+// Disable motion controls when disconnected, explicitly disabled, or not homed
 const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value);
 
 // Computed to check if homing is in progress
