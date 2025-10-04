@@ -2,7 +2,7 @@
   <section class="card">
     <header class="card__header">
       <div class="step-selector">
-        <span>Step</span>
+        <span class="step-label">Step</span>
         <button
           v-for="value in jogConfig.stepOptions"
           :key="value"
@@ -11,6 +11,15 @@
         >
           {{ value }}
         </button>
+        <span class="feed-rate-label">Feed Rate</span>
+        <input
+          type="text"
+          class="feed-rate-input"
+          :value="feedRateInput"
+          @input="handleFeedRateInput"
+          @blur="validateFeedRate"
+          placeholder="0.00"
+        />
       </div>
       <h2>Motion Controls</h2>
     </header>
@@ -239,7 +248,7 @@
 
 <script setup lang="ts">
 import { api } from '../../lib/api.js';
-import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../Dialog.vue';
 import ConfirmPanel from '../ConfirmPanel.vue';
@@ -260,6 +269,58 @@ const props = defineProps<{
   gridSizeX?: number;
   gridSizeY?: number;
 }>();
+
+// Feed rate management based on step size
+const feedRateDefaults = {
+  0.1: 500,
+  1: 3000,
+  10: 8000
+};
+
+const feedRateInput = ref(String(feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500));
+const feedRate = ref(feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500);
+
+// Watch for step size changes and update feed rate
+watch(() => props.jogConfig.stepSize, (newStepSize) => {
+  const defaultRate = feedRateDefaults[newStepSize as keyof typeof feedRateDefaults] || 500;
+  feedRate.value = defaultRate;
+  feedRateInput.value = String(defaultRate);
+});
+
+const handleFeedRateInput = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  let value = input.value;
+
+  // Only allow numbers and decimal point
+  value = value.replace(/[^\d.]/g, '');
+
+  // Ensure only one decimal point
+  const parts = value.split('.');
+  if (parts.length > 2) {
+    value = parts[0] + '.' + parts.slice(1).join('');
+  }
+
+  // Limit to 2 decimal places
+  if (parts.length === 2 && parts[1].length > 2) {
+    value = parts[0] + '.' + parts[1].substring(0, 2);
+  }
+
+  feedRateInput.value = value;
+};
+
+const validateFeedRate = () => {
+  const parsed = parseFloat(feedRateInput.value);
+
+  if (isNaN(parsed) || parsed <= 0) {
+    // Reset to default for current step size
+    const defaultRate = feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500;
+    feedRate.value = defaultRate;
+    feedRateInput.value = String(defaultRate);
+  } else {
+    feedRate.value = parsed;
+    feedRateInput.value = parsed.toFixed(2);
+  }
+};
 
 // Computed to check if motion controls should be disabled (not connected, not homed, OR already disabled)
 const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value);
@@ -330,8 +391,8 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
 };
 
 const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  const feedRate = axis === 'Z' ? 2500 : 5000;
-  const command = `$J=G21G91 ${axis}${3000 * direction} F${feedRate}`;
+  const jogFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
+  const command = `$J=G21G91 ${axis}${3000 * direction} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -342,7 +403,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
       displayCommand: command,
       axis,
       direction,
-      feedRate
+      feedRate: jogFeedRate
     });
     startHeartbeat(jogId);
   } catch (error) {
@@ -355,7 +416,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const command = `$J=G21G91 X${3000 * xDirection} Y${3000 * yDirection} F5000`;
+  const command = `$J=G21G91 X${3000 * xDirection} Y${3000 * yDirection} F${feedRate.value}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -366,7 +427,7 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
       displayCommand: command,
       axis: 'XY',
       direction: null,
-      feedRate: 5000
+      feedRate: feedRate.value
     });
     startHeartbeat(jogId);
   } catch (error) {
@@ -1060,11 +1121,39 @@ h2 {
   background: var(--color-surface-muted);
   color: var(--color-text-secondary);
   cursor: pointer;
+  min-width: 50px;
 }
 
 .chip.active {
   background: var(--gradient-accent);
   color: #fff;
+}
+
+.step-label,
+.feed-rate-label {
+  font-size: 0.85rem;
+}
+
+.feed-rate-input {
+  width: 70px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.feed-rate-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.feed-rate-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
 }
 
 .jog-layout {

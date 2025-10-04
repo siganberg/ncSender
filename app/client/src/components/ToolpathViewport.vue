@@ -292,13 +292,24 @@ const outOfBoundsDirections = ref<string[]>([]);
 const outOfBoundsMessage = computed(() => {
   const base = 'Warning: Toolpath exceeds machine boundaries';
   if (!showOutOfBoundsWarning.value) return '';
-  // Prefer direction list (e.g., X+, Z-) if available; fallback to axes list
-  if (outOfBoundsDirections.value && outOfBoundsDirections.value.length > 0) {
-    return `${base} (${outOfBoundsDirections.value.join(', ')})`;
+
+  // Prefer direction list; map Z+/Z- to friendly phrases, keep X/Y as-is
+  const dirs = outOfBoundsDirections.value || [];
+  if (dirs.length > 0) {
+    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
+    const mapped = dirs.map((d) => {
+      if (d === 'Z+') return 'Z above 0';
+      if (d === 'Z-') return zMax != null ? `Z below machine limit (-${zMax})` : 'Z below machine limit';
+      return d;
+    });
+    return `${base} at ${mapped.join(', ')}`;
   }
+
+  // Fallback to axes list
   if (outOfBoundsAxes.value && outOfBoundsAxes.value.length > 0) {
-    return `${base} (${outOfBoundsAxes.value.join(', ')})`;
+    return `${base} at ${outOfBoundsAxes.value.join(', ')}`;
   }
+
   return base;
 });
 let currentGCodeBounds: any = null; // Store current G-code bounds
