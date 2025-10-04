@@ -5,17 +5,23 @@
       <div class="workspace">Workspace: {{ workspace }}</div>
     </div>
     <div class="toolbar__actions">
-      <button class="ghost">Connect</button>
-      <div class="divider" aria-hidden="true"></div>
-      <button class="primary">Start</button>
-      <button class="ghost" :disabled="jobState !== 'running'">Pause</button>
-      <button class="ghost" :disabled="jobState === 'idle'">Stop</button>
-      <button class="danger">Emergency Stop</button>
+      <div class="job-progress">
+        <ProgressBar />
+      </div>
+      <div class="actions-row">
+        <button class="ghost">Connect</button>
+        <div class="divider" aria-hidden="true"></div>
+        <button class="primary">Start</button>
+        <button class="ghost" :disabled="jobState !== 'running'">Pause</button>
+        <button class="ghost" :disabled="jobState === 'idle'">Stop</button>
+        <button class="danger">Emergency Stop</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import ProgressBar from './ProgressBar.vue';
 defineProps<{
   jobState: 'idle' | 'running' | 'paused';
   workspace: string;
@@ -57,6 +63,18 @@ const emit = defineEmits<{
 }
 
 .toolbar__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-xs);
+  min-width: 420px;
+}
+
+.job-progress {
+  width: 100%;
+}
+
+.actions-row {
   display: flex;
   align-items: center;
   gap: var(--gap-xs);
@@ -106,8 +124,9 @@ button.danger {
   }
 
   .toolbar__actions {
-    flex-wrap: wrap;
-    justify-content: center;
+    min-width: 0;
   }
+
+  .actions-row { flex-wrap: wrap; justify-content: center; }
 }
 </style>

@@ -110,6 +110,11 @@
         <span>{{ outOfBoundsMessage }}</span>
       </div>
 
+      <!-- Progress bar above controls -->
+      <div class="progress-bar-container">
+        <ProgressBar />
+      </div>
+
       <!-- Control buttons - bottom center -->
       <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value }">
         <button
@@ -208,6 +213,7 @@ import { getSettings, updateSettings } from '../lib/settings-store.js';
 import { useAppStore } from '../composables/use-app-store';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
+import ProgressBar from './ProgressBar.vue';
 
 const store = useAppStore();
 
@@ -2041,6 +2047,16 @@ input:checked + .slider:before {
 
 .warning-icon {
   flex-shrink: 0;
+}
+
+/* Progress bar container */
+.progress-bar-container {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 92px; /* sit above the control buttons */
+  width: min(520px, calc(100% - 48px));
+  z-index: 9;
 }
 
 /* Control buttons */
