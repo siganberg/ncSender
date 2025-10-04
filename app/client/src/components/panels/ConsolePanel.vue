@@ -140,7 +140,7 @@ const gcodeOutput = ref<HTMLElement | null>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
-const activeTab = ref('terminal');
+const activeTab = ref('gcode-viewer');
 const tabs = [
   { id: 'gcode-viewer', label: 'G-Code Viewer' },
   { id: 'terminal', label: 'Terminal' },
@@ -312,6 +312,15 @@ watch(activeTab, async (tab) => {
     await nextTick();
     measureLineHeight();
     updateVisibleRange();
+  } else if (tab === 'terminal') {
+    await nextTick();
+    measureTerminalRowHeight();
+    await refreshTerminalCount();
+    if (autoScroll.value && consoleOutput.value) {
+      const el = consoleOutput.value;
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    }
+    updateTerminalVisibleRange();
   }
 });
 
