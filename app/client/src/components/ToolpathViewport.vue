@@ -74,6 +74,24 @@
         <div class="tool-value">T{{ currentTool }}</div>
       </div>
 
+      <!-- Coolant controls - lower left -->
+      <div class="coolant-controls">
+        <div class="spindle-toggle">
+          <label class="switch">
+            <input type="checkbox" :checked="floodEnabled" @change="toggleFlood">
+            <span class="slider"></span>
+          </label>
+          <span>Flood</span>
+        </div>
+        <div class="spindle-toggle">
+          <label class="switch">
+            <input type="checkbox" :checked="mistEnabled" @change="toggleMist">
+            <span class="slider"></span>
+          </label>
+          <span>Mist</span>
+        </div>
+      </div>
+
       <!-- Alarm message -->
       <div class="alarm-message-warning" v-if="alarmMessage">
         <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -281,6 +299,8 @@ const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
 const autoFitMode = ref(true); // Auto-fit mode - on by default
+const floodEnabled = ref(false); // Flood coolant - off by default
+const mistEnabled = ref(false); // Mist coolant - off by default
 const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
@@ -1429,6 +1449,34 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
   }
 });
 
+const toggleFlood = async () => {
+  floodEnabled.value = !floodEnabled.value;
+  try {
+    const command = floodEnabled.value ? 'M8' : 'M9';
+    await api.sendCommandViaWebSocket({
+      command,
+      displayCommand: command
+    });
+  } catch (error) {
+    console.error('Failed to toggle flood coolant:', error);
+    floodEnabled.value = !floodEnabled.value; // Revert on error
+  }
+};
+
+const toggleMist = async () => {
+  mistEnabled.value = !mistEnabled.value;
+  try {
+    const command = mistEnabled.value ? 'M7' : 'M9';
+    await api.sendCommandViaWebSocket({
+      command,
+      displayCommand: command
+    });
+  } catch (error) {
+    console.error('Failed to toggle mist coolant:', error);
+    mistEnabled.value = !mistEnabled.value; // Revert on error
+  }
+};
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
@@ -1550,6 +1598,19 @@ watch(() => store.consoleLines.value, (lines) => {
     }
   });
 }, { deep: true });
+
+// Watch for coolant state changes from machine status
+watch(() => store.status.floodCoolant, (newValue) => {
+  if (newValue !== undefined) {
+    floodEnabled.value = newValue;
+  }
+});
+
+watch(() => store.status.mistCoolant, (newValue) => {
+  if (newValue !== undefined) {
+    mistEnabled.value = newValue;
+  }
+});
 </script>
 
 <style scoped>
@@ -1729,6 +1790,7 @@ h2 {
   background-color: #ccc;
   transition: 0.3s;
   border-radius: 20px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .slider:before {
@@ -1780,7 +1842,7 @@ input:checked + .slider:before {
 .legend-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
   background: transparent;
   padding: 4px 8px;
@@ -1795,12 +1857,11 @@ input:checked + .slider:before {
 
 .legend-item span:first-child {
   flex: 0 1 auto;
-  text-align: left;
+  text-align: right;
 }
 
 .legend-item .dot {
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .legend-item:hover {
@@ -1810,6 +1871,21 @@ input:checked + .slider:before {
 
 .legend-item--disabled {
   opacity: 0.5;
+}
+
+/* Coolant controls - lower left */
+.coolant-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: var(--color-surface-muted);
+  padding: 8px 12px;
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Tool indicator - lower right */

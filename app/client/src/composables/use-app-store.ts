@@ -26,6 +26,9 @@ interface StatusReport {
   spindleOverride?: number;
   tool?: number;
   homed?: boolean;
+  floodCoolant?: boolean;
+  mistCoolant?: boolean;
+  spindleActive?: boolean;
 }
 
 // SHARED STATE (synchronized across all clients via WebSocket broadcasts)
@@ -47,7 +50,10 @@ const status = reactive({
   rapidOverride: 100,
   spindleOverride: 100,
   tool: 0,
-  homed: false
+  homed: false,
+  floodCoolant: false,
+  mistCoolant: false,
+  spindleActive: false
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -119,6 +125,18 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof report.homed === 'boolean') {
     status.homed = report.homed;
+  }
+
+  if (typeof report.floodCoolant === 'boolean') {
+    status.floodCoolant = report.floodCoolant;
+  }
+
+  if (typeof report.mistCoolant === 'boolean') {
+    status.mistCoolant = report.mistCoolant;
+  }
+
+  if (typeof report.spindleActive === 'boolean') {
+    status.spindleActive = report.spindleActive;
   }
 };
 

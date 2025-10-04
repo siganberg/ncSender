@@ -116,6 +116,9 @@ export class CNCController extends EventEmitter {
     // Update machine state (always present) - extract state name before colon
     newStatus.status = parts[0].split(':')[0];
 
+    // Check if A: field is present in the status report
+    let hasAccessoryField = false;
+
     // Parse and update only the fields present in this report
     parts.slice(1).forEach(part => {
       const [key, value] = part.split(':');
@@ -131,14 +134,41 @@ export class CNCController extends EventEmitter {
         // Homed status - can be '0', '1', or '1,7' (multiple axes homed)
         // Consider machine homed if value contains '1' (any axis homed)
         newStatus.homed = value.includes('1');
+      } else if (key === 'A') {
+        // Accessory state: S=Spindle, F=Flood, M=Mist
+        hasAccessoryField = true;
+        if (value) {
+          newStatus.spindleActive = value.includes('S') || value.includes('C');
+          newStatus.floodCoolant = value.includes('F');
+          newStatus.mistCoolant = value.includes('M');
+        } else {
+          // A: field present but empty means all accessories are off
+          newStatus.spindleActive = false;
+          newStatus.floodCoolant = false;
+          newStatus.mistCoolant = false;
+        }
       } else if (key && value) {
         newStatus[key] = value;
       }
     });
 
+    // Only update accessory states if A: field was present in this report
+    // This prevents resetting states when Grbl doesn't include the A: field
+    if (!hasAccessoryField && this.lastStatus) {
+      // Preserve previous accessory states
+      newStatus.spindleActive = this.lastStatus.spindleActive || false;
+      newStatus.floodCoolant = this.lastStatus.floodCoolant || false;
+      newStatus.mistCoolant = this.lastStatus.mistCoolant || false;
+    } else if (!hasAccessoryField) {
+      // First status report, default to off
+      newStatus.spindleActive = false;
+      newStatus.floodCoolant = false;
+      newStatus.mistCoolant = false;
+    }
+
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
