@@ -68,6 +68,8 @@ const gridSizeY = ref(1284);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
 const zMaxTravel = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
+const gcodeContent = ref<string>('');
+const gcodeFilename = ref<string>('');
 
 // INTERNAL STATE
 let storeInitialized = false;
@@ -373,6 +375,14 @@ export function initializeStore() {
     addResponseLine(data);
   });
 
+  // G-code content updates
+  api.onGCodeUpdated((data) => {
+    if (data?.content) {
+      gcodeContent.value = data.content;
+      gcodeFilename.value = data.filename || '';
+    }
+  });
+
   storeInitialized = true;
   console.log('App store initialized successfully');
 }
@@ -430,6 +440,8 @@ export function useAppStore() {
       gridSizeX: readonly(gridSizeX),
       gridSizeY: readonly(gridSizeY),
       zMaxTravel: readonly(zMaxTravel),
+      gcodeContent: readonly(gcodeContent),
+      gcodeFilename: readonly(gcodeFilename),
 
     // Computed properties
     isConnected,

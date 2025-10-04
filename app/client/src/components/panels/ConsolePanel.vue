@@ -1,38 +1,82 @@
 <template>
   <section class="card" :class="{ 'card-disabled': !store.isConnected.value }">
     <header class="card__header">
-      <h2>Console</h2>
-      <div class="auto-scroll-toggle" @click="autoScroll = !autoScroll" :class="{ active: autoScroll }">
+      <div class="tabs">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          class="tab-button"
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      <div class="auto-scroll-toggle" @click="autoScroll = !autoScroll" :class="{ active: autoScroll }" v-if="activeTab === 'terminal'">
         <span class="toggle-label">Auto-Scroll</span>
         <div class="toggle-switch">
           <div class="toggle-handle"></div>
         </div>
       </div>
     </header>
-    <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
-      <div v-if="lines.length === 0" class="empty-state">
-        All clear – give me a command!
+
+    <!-- Terminal Tab -->
+    <div v-if="activeTab === 'terminal'" class="tab-content">
+      <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
+        <div v-if="lines.length === 0" class="empty-state">
+          All clear – give me a command!
+        </div>
+        <article
+          v-for="line in lines"
+          :key="line.id"
+          :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
+        >
+          <span class="timestamp">{{ line.timestamp }}{{ line.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(line)"></span></span>
+          <span class="message">{{ line.message }}</span>
+        </article>
       </div>
-      <article
-        v-for="line in lines"
-        :key="line.id"
-        :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
-      >
-        <span class="timestamp">{{ line.timestamp }}{{ line.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(line)"></span></span>
-        <span class="message">{{ line.message }}</span>
-      </article>
+      <form class="console-input" @submit.prevent="sendCommand">
+        <input
+          type="text"
+          :placeholder="connected ? 'Send command' : 'Connect to CNC to send commands'"
+          v-model="commandToSend"
+          @keydown="handleKeyDown"
+          :disabled="!connected"
+        />
+        <button type="submit" class="primary" :disabled="!connected">Send</button>
+        <button type="button" class="primary" @click="$emit('clear')">Clear</button>
+      </form>
     </div>
-    <form class="console-input" @submit.prevent="sendCommand">
-      <input
-        type="text"
-        :placeholder="connected ? 'Send command' : 'Connect to CNC to send commands'"
-        v-model="commandToSend"
-        @keydown="handleKeyDown"
-        :disabled="!connected"
-      />
-      <button type="submit" class="primary" :disabled="!connected">Send</button>
-      <button type="button" class="primary" @click="$emit('clear')">Clear</button>
-    </form>
+
+    <!-- Macros Tab -->
+    <div v-if="activeTab === 'macros'" class="tab-content">
+      <div class="placeholder-content">
+        <p>Macros functionality coming soon</p>
+      </div>
+    </div>
+
+    <!-- G-Code File Viewer Tab -->
+    <div v-if="activeTab === 'gcode-viewer'" class="tab-content">
+      <div v-if="!gcodeLines.length" class="placeholder-content">
+        <p>No G-code file loaded</p>
+      </div>
+      <div v-else class="gcode-viewer">
+        <div class="gcode-header">
+          <span class="gcode-filename">{{ store.gcodeFilename.value || 'Untitled' }}</span>
+          <span class="gcode-line-count">{{ gcodeLines.length }} lines</span>
+        </div>
+        <div class="gcode-content" ref="gcodeOutput">
+          <div
+            v-for="(line, index) in gcodeLines"
+            :key="index"
+            class="gcode-line"
+          >
+            <span class="line-number">Line {{ index + 1 }}:</span>
+            <span class="line-content">{{ line }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -58,6 +102,24 @@ const consoleOutput = ref<HTMLElement | null>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
+const activeTab = ref('terminal');
+const tabs = [
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'macros', label: 'Macros' },
+  { id: 'gcode-viewer', label: 'G-Code File Viewer' }
+];
+
+const gcodeLines = computed(() => {
+  if (!store.gcodeContent.value) return [];
+  const lines = store.gcodeContent.value.split('\n');
+
+  // Remove trailing empty lines only
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+    lines.pop();
+  }
+
+  return lines;
+});
 
 const sendCommand = async () => {
   if (!commandToSend.value) return;
@@ -184,6 +246,12 @@ watch(() => props.lines, async () => {
   pointer-events: none;
 }
 
+/* Keep G-Code viewer selectable even when disconnected */
+.card-disabled .gcode-viewer {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-medium);
@@ -200,11 +268,57 @@ watch(() => props.lines, async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--gap-sm);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0;
 }
 
 h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+
+/* Compact Tabs */
+.tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.tab-button {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  font-weight: 500;
+  position: relative;
+  margin-bottom: -1px;
+}
+
+.tab-button:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.tab-button.active {
+  background: transparent;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.tab-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-accent);
 }
 
 .filters {
@@ -367,11 +481,123 @@ h2 {
   background: var(--gradient-accent);
   color: #fff;
 }
+
+/* Tab Content */
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  flex: 1;
+  min-height: 0;
+}
+
+.placeholder-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* G-Code Viewer */
+.gcode-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--gap-xs);
+}
+
+.gcode-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--gap-xs) var(--gap-sm);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+}
+
+.gcode-filename {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.gcode-line-count {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.gcode-content {
+  background: #141414;
+  border-radius: var(--radius-small);
+  padding: var(--gap-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+/* Ensure all descendants remain selectable, except line numbers */
+.gcode-content * {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+.gcode-line {
+  display: flex;
+  gap: var(--gap-sm);
+  line-height: 1.4;
+  padding: 2px 0;
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+.line-number {
+  color: var(--color-text-secondary);
+  min-width: 80px;
+  flex-shrink: 0;
+  pointer-events: none;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
+.line-content {
+  color: #bdc3c7;
+  flex: 1;
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
 </style>
 
 <style>
-body.theme-light .console-output {
+body.theme-light .console-output,
+body.theme-light .gcode-content {
   background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
+}
+
+body.theme-light .line-content {
   color: var(--color-text-primary) !important;
 }
 </style>

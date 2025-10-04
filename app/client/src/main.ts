@@ -10,19 +10,18 @@ document.addEventListener('contextmenu', (e) => {
   return false;
 }, { passive: false });
 
-// Disable text selection on touch devices, except in console
+// Disable text selection on touch devices, except in allowed areas
 document.addEventListener('selectstart', (e) => {
-  // Allow text selection in console
-  const target = e.target as Node;
-  if (target && target.nodeType === Node.ELEMENT_NODE) {
-    if ((target as Element).closest('.console-output')) {
-      return true;
-    }
-  } else if (target && target.parentElement) {
-    if (target.parentElement.closest('.console-output')) {
-      return true;
-    }
+  const target = e.target as Node | null;
+  const el = (target && target.nodeType === Node.ELEMENT_NODE)
+    ? (target as Element)
+    : (target as any)?.parentElement as Element | null;
+
+  // Allow selection in inputs, textareas, contenteditable, console history, and G-code viewer
+  if (el && el.closest('input, textarea, [contenteditable], .console-output, .gcode-content, .gcode-line, .line-content')) {
+    return true;
   }
+
   e.preventDefault();
   return false;
 }, { passive: false });
