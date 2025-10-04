@@ -28,18 +28,39 @@
 
     <!-- Terminal Tab -->
     <div v-if="activeTab === 'terminal'" class="tab-content">
-      <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
-        <div v-if="terminalLines.length === 0" class="empty-state">
-          All clear – give me a command!
-        </div>
-        <article
-          v-for="line in terminalLines"
-          :key="line.id"
-          :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
-        >
-          <span class="timestamp">{{ line.timestamp }}{{ line.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(line)"></span></span>
-          <span class="message">{{ line.message }}</span>
-        </article>
+      <div class="console-output" :class="{ 'console-output--virtual': useTerminalIDB }" role="log" aria-live="polite" ref="consoleOutput" @scroll="onTerminalScroll">
+        <template v-if="useTerminalIDB">
+          <div v-if="terminalTotalLines === 0" class="empty-state">
+            All clear – give me a command!
+          </div>
+          <template v-else>
+            <div class="terminal-spacer" :style="{ height: terminalTotalHeight + 'px' }"></div>
+            <div class="terminal-items" :style="{ transform: 'translateY(' + terminalOffsetY + 'px)' }">
+              <article
+                v-for="line in terminalVisibleLines"
+                :key="line.seq ?? line.id ?? line.index"
+                :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
+                :style="{ height: terminalRowHeight + 'px', lineHeight: terminalRowHeight + 'px' }"
+              >
+                <span class="timestamp">{{ line.timestamp }}{{ line.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(line)"></span></span>
+                <span class="message">{{ line.message }}</span>
+              </article>
+            </div>
+          </template>
+        </template>
+        <template v-else>
+          <div v-if="terminalLines.length === 0" class="empty-state">
+            All clear – give me a command!
+          </div>
+          <article
+            v-for="line in terminalLines"
+            :key="line.id"
+            :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
+          >
+            <span class="timestamp">{{ line.timestamp }}{{ line.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(line)"></span></span>
+            <span class="message">{{ line.message }}</span>
+          </article>
+        </template>
       </div>
       <form class="console-input" @submit.prevent="sendCommand">
         <input
@@ -95,6 +116,7 @@
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
 import { api } from '../../lib/api.js';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
+import { isTerminalIDBEnabled, getTerminalLinesWindowFromIDB, getTerminalCountFromIDB } from '../../lib/terminal-store.js';
 import { useAppStore } from '../../composables/use-app-store';
 
 const store = useAppStore();
@@ -396,7 +418,9 @@ watch(autoScroll, (newValue) => {
   if (newValue) {
     nextTick(() => {
       if (consoleOutput.value) {
-        consoleOutput.value.scrollTop = consoleOutput.value.scrollHeight;
+        const el = consoleOutput.value;
+        el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+        requestAnimationFrame(() => updateTerminalVisibleRange());
       }
     });
   }
@@ -406,8 +430,110 @@ watch(() => props.lines, async () => {
   if (autoScroll.value) {
     await nextTick();
     if (consoleOutput.value) {
-      consoleOutput.value.scrollTop = consoleOutput.value.scrollHeight;
+      const el = consoleOutput.value;
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
     }
+  }
+}, { deep: true });
+
+// Terminal virtualization using IndexedDB (optional)
+const useTerminalIDB = computed(() => isTerminalIDBEnabled());
+const terminalRowHeight = ref(24);
+const terminalRenderStart = ref(0);
+const terminalRenderEnd = ref(0);
+const terminalVisibleLines = ref<Array<any>>([]);
+const terminalOffsetY = computed(() => terminalRenderStart.value * terminalRowHeight.value);
+const terminalTotalLines = ref(0);
+const terminalTotalHeight = computed(() => terminalTotalLines.value * terminalRowHeight.value);
+
+function measureTerminalRowHeight() {
+  const el = consoleOutput.value;
+  if (!el) return;
+  const temp = document.createElement('article');
+  temp.className = 'console-line';
+  temp.style.visibility = 'hidden';
+  temp.innerHTML = '<span class="timestamp">00:00 </span><span class="message">Sample</span>';
+  el.appendChild(temp);
+  const h = temp.getBoundingClientRect().height;
+  el.removeChild(temp);
+  if (h && h > 0) terminalRowHeight.value = Math.ceil(h);
+}
+
+async function refreshTerminalCount() {
+  if (useTerminalIDB.value) {
+    try {
+      terminalTotalLines.value = await getTerminalCountFromIDB();
+    } catch {
+      terminalTotalLines.value = (terminalLines.value || []).length;
+    }
+  } else {
+    terminalTotalLines.value = (terminalLines.value || []).length;
+  }
+}
+
+let terminalFetchVersion = 0;
+async function updateTerminalVisibleRange() {
+  if (!useTerminalIDB.value) return; // not needed when rendering from memory
+  const el = consoleOutput.value;
+  if (!el) return;
+  const vh = el.clientHeight || 0;
+  const scrollTop = el.scrollTop || 0;
+  const visibleCount = Math.ceil(vh / terminalRowHeight.value) + overscan;
+  const atBottom = Math.abs((el.scrollHeight - el.clientHeight) - scrollTop) <= 2;
+  let start: number;
+  if (atBottom) {
+    start = Math.max(0, (terminalTotalLines.value - visibleCount));
+  } else {
+    const firstVisible = Math.floor(scrollTop / terminalRowHeight.value);
+    start = Math.max(0, firstVisible - Math.floor(overscan / 2));
+  }
+  const end = Math.min(terminalTotalLines.value, start + visibleCount);
+  terminalRenderStart.value = start;
+  terminalRenderEnd.value = end;
+  const current = ++terminalFetchVersion;
+  if (end <= start || start >= terminalTotalLines.value) {
+    terminalVisibleLines.value = [];
+    return;
+  }
+  try {
+    const rows = await getTerminalLinesWindowFromIDB(start, end);
+    if (current === terminalFetchVersion) {
+      terminalVisibleLines.value = rows.map((r, i) => ({ ...r, index: start + i }));
+    }
+  } catch {
+    // fall back to memory
+    const all = (terminalLines.value || []);
+    terminalVisibleLines.value = all.slice(start, end).map((r, i) => ({ ...r, index: start + i }));
+  }
+}
+
+function onTerminalScroll() {
+  if (!useTerminalIDB.value) return;
+  // Do not force bottom here; allow manual scroll.
+  updateTerminalVisibleRange();
+}
+
+onMounted(async () => {
+  await nextTick();
+  measureTerminalRowHeight();
+  await refreshTerminalCount();
+  if (autoScroll.value && consoleOutput.value) {
+    const el = consoleOutput.value;
+    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  }
+  updateTerminalVisibleRange();
+});
+
+watch(() => props.lines, async () => {
+  // When new lines are pushed, keep count in sync and autoscroll if enabled
+  await refreshTerminalCount();
+  if (useTerminalIDB.value) {
+    await nextTick();
+    if (autoScroll.value && consoleOutput.value) {
+      const el = consoleOutput.value;
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    }
+    updateTerminalVisibleRange();
   }
 }, { deep: true });
 </script>
@@ -550,6 +676,8 @@ h2 {
   flex: 1;
   min-height: 160px;
   overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
   color: #bdc3c7;
   font-family: 'JetBrains Mono', monospace;
   -webkit-user-select: text !important;
@@ -557,6 +685,14 @@ h2 {
   -ms-user-select: text !important;
   user-select: text !important;
 }
+
+.console-output--virtual {
+  display: block; /* prevent flex gap from affecting spacer/items */
+  gap: 0;
+}
+
+.terminal-spacer { width: 1px; height: 0; opacity: 0; }
+.terminal-items { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
 
 
 .console-output * {
@@ -616,6 +752,7 @@ h2 {
 .message {
   flex: 1;
   font-size: 0.75rem;
+  white-space: pre;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;

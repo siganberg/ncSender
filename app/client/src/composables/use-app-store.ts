@@ -1,6 +1,7 @@
 import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
 import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.js';
+import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -201,8 +202,13 @@ const addOrUpdateCommandLine = (payload: any) => {
   consoleLines.value.push(newLine);
   commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
 
-  // Enforce buffer size limit - keep only last 50 lines for performance
-  const maxLines = 50;
+  // Persist to IndexedDB if available
+  if (isTerminalIDBEnabled()) {
+    appendTerminalLineToIDB(newLine).catch(() => {});
+  }
+
+  // Keep a modest in-memory buffer for UI watchers; full history in IDB
+  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {
@@ -233,8 +239,13 @@ const addResponseLine = (data: string) => {
   consoleLines.value.push(responseLine);
   commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
 
-  // Enforce buffer size limit
-  const maxLines = 50;
+  // Persist to IDB if available
+  if (isTerminalIDBEnabled()) {
+    appendTerminalLineToIDB(responseLine).catch(() => {});
+  }
+
+  // Enforce buffer size limit (keep small buffer if IDB available)
+  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {
@@ -379,7 +390,16 @@ export function initializeStore() {
   api.on('cnc-command-result', (result) => {
     if (!result) return;
     if (api.isJogCancelCommand(result.command)) return;
-    addOrUpdateCommandLine(result);
+    const updated = addOrUpdateCommandLine(result);
+    if (isTerminalIDBEnabled() && result?.id) {
+      updateTerminalLineByIdInIDB(result.id, {
+        message: updated?.line?.message ?? result.displayCommand ?? result.command,
+        status: result.status,
+        level: result.status === 'error' ? 'error' : 'info',
+        sourceId: result.sourceId,
+        meta: result.meta
+      }).catch(() => {});
+    }
 
     // Update completed line tracking for viewers
     const ln = (result as any)?.meta?.lineNumber;
@@ -500,6 +520,9 @@ export function useAppStore() {
     clearConsole: () => {
       consoleLines.value = [];
       commandLinesMap.clear();
+      if (isTerminalIDBEnabled()) {
+        clearTerminalIDB().catch(() => {});
+      }
     },
 
     clearGCodeViewer: () => {
