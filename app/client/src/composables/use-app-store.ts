@@ -256,16 +256,12 @@ const tryLoadMachineDimensionsOnce = async () => {
   if (!status.connected || !websocketConnected.value) return;
 
   try {
+    // Read from cached firmware data served by the backend (no controller calls)
     // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
-    // Use getFirmwareSetting() to query specific settings instead of fetching all with $$
-    const [xResp, yResp, zResp] = await Promise.all([
-      api.getFirmwareSetting(130),
-      api.getFirmwareSetting(131),
-      api.getFirmwareSetting(132)
-    ]);
-    const xVal = parseFloat(String(xResp?.value ?? ''));
-    const yVal = parseFloat(String(yResp?.value ?? ''));
-    const zVal = parseFloat(String(zResp?.value ?? ''));
+    const firmware = await api.getFirmwareSettings(false).catch(() => null as any);
+    const xVal = parseFloat(String(firmware?.settings?.['130']?.value ?? ''));
+    const yVal = parseFloat(String(firmware?.settings?.['131']?.value ?? ''));
+    const zVal = parseFloat(String(firmware?.settings?.['132']?.value ?? ''));
     if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
     if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
     if (!Number.isNaN(zVal) && zVal > 0) zMaxTravel.value = zVal;

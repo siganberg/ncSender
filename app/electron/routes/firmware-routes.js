@@ -356,29 +356,28 @@ export async function initializeFirmwareOnConnection(cncController) {
     console.log('Firmware version:', currentVersion);
 
     // Check if firmware.json exists and version matches
-    let needsUpdate = false;
+    let needsStructureUpdate = false;
     try {
       const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
       const existingData = JSON.parse(data);
 
       if (existingData.firmwareVersion !== currentVersion) {
         console.log(`Firmware version mismatch: ${existingData.firmwareVersion} -> ${currentVersion}`);
-        needsUpdate = true;
+        needsStructureUpdate = true;
       } else {
         console.log('Firmware version matches, skipping structure query');
-        return;
       }
     } catch (error) {
       if (error.code === 'ENOENT') {
         console.log('firmware.json not found, initializing...');
-        needsUpdate = true;
+        needsStructureUpdate = true;
       } else {
         throw error;
       }
     }
 
     // Query firmware structure if needed
-    if (needsUpdate) {
+    if (needsStructureUpdate) {
       console.log('Querying firmware structure ($EG, $ES, $ESH)...');
       const { groups, settings, halSettings } = await queryFirmwareStructure(cncController);
 
@@ -408,6 +407,36 @@ export async function initializeFirmwareOnConnection(cncController) {
       await ensureDataDirectory();
       await fs.writeFile(FIRMWARE_FILE_PATH, JSON.stringify(firmwareData, null, 2), 'utf8');
       console.log('Firmware structure saved to firmware.json');
+    }
+
+    // Always refresh current values on connection using $$ and persist to firmware.json
+    try {
+      console.log('Refreshing firmware values with $$ on connection...');
+      const currentValues = await queryCurrentValues(cncController);
+
+      // Load existing file (created above or previously present)
+      let firmwareData;
+      try {
+        const text = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
+        firmwareData = JSON.parse(text);
+      } catch {
+        // If for some reason file is missing, construct minimal structure
+        firmwareData = { version: '1.0', firmwareVersion: currentVersion, timestamp: new Date().toISOString(), groups: {}, settings: {} };
+      }
+
+      for (const [id, value] of Object.entries(currentValues)) {
+        if (!firmwareData.settings[id]) {
+          firmwareData.settings[id] = { id: parseInt(id, 10) };
+        }
+        firmwareData.settings[id].value = value;
+      }
+      firmwareData.timestamp = new Date().toISOString();
+
+      await ensureDataDirectory();
+      await fs.writeFile(FIRMWARE_FILE_PATH, JSON.stringify(firmwareData, null, 2), 'utf8');
+      console.log('Firmware values refreshed from $$ and saved');
+    } catch (error) {
+      console.error('Failed to refresh firmware values on connection:', error?.message || error);
     }
   } catch (error) {
     console.error('Error initializing firmware on connection:', error);
@@ -466,82 +495,23 @@ async function querySingleCommand(cncController, command) {
 export function createFirmwareRoutes(cncController) {
   const router = express.Router();
 
-  // GET /api/firmware - Get firmware settings with current values from $$
-  router.get('/', async (req, res) => {
-    if (!cncController || !cncController.isConnected) {
-      res.status(400).json({ error: 'CNC controller not connected' });
-      return;
-    }
-
+  // GET /api/firmware - Return cached firmware settings from firmware.json (no controller calls)
+  router.get('/', async (_req, res) => {
     try {
-      // Read existing firmware structure
-      let firmwareData;
-      try {
-        const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
-        firmwareData = JSON.parse(data);
-      } catch (error) {
-        if (error.code === 'ENOENT') {
-          res.status(404).json({ error: 'Firmware structure not initialized. Reconnect to the CNC controller.' });
-          return;
-        }
-        throw error;
-      }
-
-      // Query current values with $$
-      console.log('Querying current firmware values with $$...');
-      const currentValues = await queryCurrentValues(cncController);
-
-      // Update values in settings
-      for (const [id, value] of Object.entries(currentValues)) {
-        if (firmwareData.settings[id]) {
-          firmwareData.settings[id].value = value;
-        }
-      }
-
-      // Update timestamp
-      firmwareData.timestamp = new Date().toISOString();
-
-      // Save updated data
-      await ensureDataDirectory();
-      await fs.writeFile(FIRMWARE_FILE_PATH, JSON.stringify(firmwareData, null, 2), 'utf8');
-
+      const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
+      const firmwareData = JSON.parse(data);
       res.json(firmwareData);
     } catch (error) {
-      console.error('Error querying firmware values:', error);
-      res.status(500).json({ error: error.message || 'Failed to query firmware values' });
-    }
-  });
-
-  // GET /api/firmware/:settingId - Get a specific firmware setting value
-  router.get('/:settingId', async (req, res) => {
-    if (!cncController || !cncController.isConnected) {
-      res.status(400).json({ error: 'CNC controller not connected' });
-      return;
-    }
-
-    const { settingId } = req.params;
-
-    try {
-      // Query specific setting directly, avoid full $$ dump
-
-      // Use the single-command helper to request `$<id>` and parse the response
-      const command = '$' + settingId;
-      const response = await querySingleCommand(cncController, command);
-
-      // Parse format: $<id>=<value>
-      const match = response && response.match(new RegExp('^\\$' + settingId + '=(.*)$', 'm'));
-      if (!match || match[1] === undefined) {
-        res.status(404).json({ error: `Setting ${settingId} not found or no value returned` });
-        return;
+      if (error.code === 'ENOENT') {
+        res.status(404).json({ error: 'Firmware data not initialized. Connect to the CNC controller to populate values.' });
+      } else {
+        console.error('Error reading firmware data:', error);
+        res.status(500).json({ error: 'Failed to read firmware data' });
       }
-
-      const value = match[1].trim();
-      res.json({ value });
-    } catch (error) {
-      console.error(`Error querying firmware setting ${settingId}:`, error);
-      res.status(500).json({ error: error.message || 'Failed to query firmware setting' });
     }
   });
+
+  // No per-setting route; clients should read all from GET /api/firmware
 
   return router;
 }

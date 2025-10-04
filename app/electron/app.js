@@ -117,6 +117,7 @@ export async function createApp(options = {}) {
   // File upload configuration
   const userDataDir = getUserDataDir();
   const filesDir = path.join(userDataDir, 'gcode-files');
+  const firmwareFilePath = path.join(userDataDir, 'firmware.json');
 
   try {
     await fs.mkdir(filesDir, { recursive: true });
@@ -649,6 +650,44 @@ export async function createApp(options = {}) {
       }
 
       broadcast('server-state-updated', serverState);
+    }
+  });
+
+  // Update cached firmware value in firmware.json when a $<id>=<value> command is acknowledged
+  cncController.on('command-ack', async (event) => {
+    try {
+      const cmd = String(event?.command || '').trim();
+      // Match $<number>=<value> (e.g., $130=1260 or $1=255)
+      const match = cmd.match(/^\$(\d+)=\s*(.+)$/);
+      if (!match) return;
+      const id = match[1];
+      const value = match[2];
+
+      // Read existing firmware data
+      let firmwareData;
+      try {
+        const text = await fs.readFile(firmwareFilePath, 'utf8');
+        firmwareData = JSON.parse(text);
+      } catch (err) {
+        // If file missing, start minimal structure
+        firmwareData = { version: '1.0', timestamp: new Date().toISOString(), groups: {}, settings: {} };
+      }
+
+      if (!firmwareData.settings) firmwareData.settings = {};
+      if (!firmwareData.settings[id]) {
+        firmwareData.settings[id] = { id: parseInt(id, 10) };
+      }
+      firmwareData.settings[id].value = String(value);
+      firmwareData.timestamp = new Date().toISOString();
+
+      // Persist update
+      try {
+        await fs.mkdir(path.dirname(firmwareFilePath), { recursive: true });
+      } catch {}
+      await fs.writeFile(firmwareFilePath, JSON.stringify(firmwareData, null, 2), 'utf8');
+      log(`Updated firmware.json setting $${id}=${value}`);
+    } catch (error) {
+      log('Failed to update firmware.json from command-ack:', error?.message || error);
     }
   });
 

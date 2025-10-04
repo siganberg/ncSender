@@ -772,15 +772,6 @@ class NCClient {
     return response.json();
   }
 
-  async getFirmwareSetting(settingId) {
-    const response = await fetch(`${this.baseUrl}/api/firmware/${settingId}`);
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: `Failed to get firmware setting ${settingId}` }));
-      throw new Error(error.error || `Failed to get firmware setting ${settingId}`);
-    }
-    return response.json();
-  }
-
   // Settings methods
   async getSettings() {
     const response = await fetch(`${this.baseUrl}/api/settings`);
