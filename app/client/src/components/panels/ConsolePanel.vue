@@ -29,11 +29,11 @@
     <!-- Terminal Tab -->
     <div v-if="activeTab === 'terminal'" class="tab-content">
       <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
-        <div v-if="lines.length === 0" class="empty-state">
+        <div v-if="terminalLines.length === 0" class="empty-state">
           All clear – give me a command!
         </div>
         <article
-          v-for="line in lines"
+          v-for="line in terminalLines"
           :key="line.id"
           :class="['console-line', `console-line--${line.level}`, `console-line--${line.type}`]"
         >
@@ -99,10 +99,12 @@ import { useAppStore } from '../../composables/use-app-store';
 
 const store = useAppStore();
 
-const props = defineProps<{
-  lines: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response' }>;
+const props = withDefaults(defineProps<{
+  lines?: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response'; sourceId?: string }>;
   connected?: boolean;
-}>();
+}>(), {
+  lines: () => []
+});
 
 const emit = defineEmits<{
   (e: 'clear'): void;
@@ -122,6 +124,9 @@ const tabs = [
   { id: 'gcode-viewer', label: 'G-Code Viewer' },
   { id: 'macros', label: 'Macros' }
 ];
+
+// Filter console lines to hide job-runner chatter
+const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
 
 // Virtualized G-code viewer state
 const lineHeight = ref(18); // height of a .gcode-line (no gap)

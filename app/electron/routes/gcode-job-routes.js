@@ -249,7 +249,8 @@ export class GCodeJobProcessor {
           displayCommand: lineData.cleanLine,
           meta: {
             lineNumber: lineData.lineNumber,
-            job: { filename: this.filename }
+            job: { filename: this.filename },
+            sourceId: 'gcode-runner'
           }
         });
       } catch (error) {
@@ -274,7 +275,8 @@ export class GCodeJobProcessor {
         displayCommand: completionComment,
         status: 'success',
         timestamp: new Date().toISOString(),
-        meta: { jobComplete: true }
+        meta: { jobComplete: true },
+        sourceId: 'gcode-runner'
       });
 
       // Trigger completion callbacks after a small delay to ensure all state updates propagate

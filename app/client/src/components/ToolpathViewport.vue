@@ -1593,7 +1593,8 @@ watch(() => store.consoleLines.value, (lines) => {
   lines.forEach(line => {
     const lineNumber = line?.meta?.lineNumber;
 
-    if (lineNumber &&
+    if (line?.sourceId === 'gcode-runner' &&
+        lineNumber &&
         line?.status === 'success' &&
         line?.type === 'command' &&
         !markedLines.has(lineNumber)) {

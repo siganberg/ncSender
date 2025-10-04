@@ -32,7 +32,7 @@ defineProps<{
     feedRate: number;
     spindleRpm: number;
   };
-  consoleLines: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response' }>;
+  consoleLines: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response'; sourceId?: string }>;
   jogConfig: {
     stepSize: number;
     stepOptions: number[];

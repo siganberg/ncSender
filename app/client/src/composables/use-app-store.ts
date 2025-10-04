@@ -12,6 +12,7 @@ interface ConsoleLine {
   timestamp: string;
   status?: ConsoleStatus;
   type?: 'command' | 'response';
+  sourceId?: string;
   meta?: any;
 }
 
@@ -170,6 +171,7 @@ const addOrUpdateCommandLine = (payload: any) => {
       message,
       status: payload.status ?? existingEntry.line.status,
       level: payload.status === 'error' ? 'error' : existingEntry.line.level,
+      sourceId: payload.sourceId ?? existingEntry.line.sourceId,
       meta: payload.meta ?? existingEntry.line.meta
     };
 
@@ -190,6 +192,7 @@ const addOrUpdateCommandLine = (payload: any) => {
     timestamp,
     status: payload.status ?? 'pending',
     type: 'command',
+    sourceId: payload.sourceId,
     meta: payload.meta
   };
 
@@ -380,7 +383,7 @@ export function initializeStore() {
 
     // Update completed line tracking for viewers
     const ln = (result as any)?.meta?.lineNumber;
-    if (typeof ln === 'number' && ln > 0) {
+    if ((result as any)?.sourceId === 'gcode-runner' && typeof ln === 'number' && ln > 0) {
       if (ln > gcodeCompletedUpTo.value) {
         gcodeCompletedUpTo.value = ln;
       }

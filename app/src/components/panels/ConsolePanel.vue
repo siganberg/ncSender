@@ -26,9 +26,11 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  lines: Array<{ id: number; level: string; message: string; timestamp: string }>;
-}>();
+withDefaults(defineProps<{
+  lines?: Array<{ id: number; level: string; message: string; timestamp: string }>;
+}>(), {
+  lines: () => []
+});
 </script>
 
 <style scoped>

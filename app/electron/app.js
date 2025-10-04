@@ -506,9 +506,11 @@ export async function createApp(options = {}) {
 
     // Filter out server-only meta fields from broadcast (do not expose jog/originId)
     let filteredMeta = null;
+    let sourceId;
     if (event.meta) {
       // Remove internal-only fields and redundant ones from meta
-      const { jobControl, continuous, job, jog, originId, ...clientMeta } = event.meta;
+      const { jobControl, continuous, job, jog, originId, sourceId: src, ...clientMeta } = event.meta;
+      sourceId = src;
       filteredMeta = Object.keys(clientMeta).length > 0 ? clientMeta : null;
     }
 
@@ -523,6 +525,11 @@ export async function createApp(options = {}) {
     // Only include meta if present
     if (filteredMeta) {
       payload.meta = filteredMeta;
+    }
+
+    // Only include sourceId if provided
+    if (sourceId) {
+      payload.sourceId = sourceId;
     }
 
     if (includeTimestamp) {
