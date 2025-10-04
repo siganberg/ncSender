@@ -263,7 +263,8 @@ async function queryFirmwareStructure(cncController) {
       try {
         await cncController.sendCommand(cmd, {
           commandId: `${cmd}-${Date.now()}`,
-          displayCommand: cmd
+          displayCommand: cmd,
+          meta: { sourceId: 'no-broadcast' }
         });
         // Wait a bit before sending next command
         setTimeout(() => sendNext(index + 1), 100);
@@ -324,7 +325,8 @@ async function queryCurrentValues(cncController) {
     // Send $$ command
     cncController.sendCommand('$$', {
       commandId: `$$-${Date.now()}`,
-      displayCommand: '$$'
+      displayCommand: '$$',
+      meta: { sourceId: 'no-broadcast' }
     }).catch((error) => {
       cleanup();
       reject(new Error(`Failed to send $$ command: ${error.message}`));
@@ -484,7 +486,8 @@ async function querySingleCommand(cncController, command) {
 
     cncController.sendCommand(command, {
       commandId: `${command}-${Date.now()}`,
-      displayCommand: command
+      displayCommand: command,
+      meta: { sourceId: 'no-broadcast' }
     }).catch((error) => {
       cleanup();
       reject(new Error(`Failed to send ${command}: ${error.message}`));

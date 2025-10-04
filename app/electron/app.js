@@ -552,6 +552,11 @@ export async function createApp(options = {}) {
   };
 
   const broadcastQueuedCommand = (event) => {
+    // Skip broadcasting commands marked as no-broadcast
+    if (event.meta?.sourceId === 'no-broadcast') {
+      return;
+    }
+
     const payload = toCommandPayload(event, { status: 'pending' });
     broadcast('cnc-command', payload);
 
@@ -567,6 +572,11 @@ export async function createApp(options = {}) {
   };
 
   const broadcastCommandResult = (event) => {
+    // Skip broadcasting command results marked as no-broadcast
+    if (event.meta?.sourceId === 'no-broadcast') {
+      return;
+    }
+
     if (event.status === 'success' && event.meta?.continuous) {
       return;
     }

@@ -226,7 +226,7 @@ export class CNCController extends EventEmitter {
       // Only send status requests if connected
       if (this.isConnected && this.connection) {
         try {
-          this.sendCommand('?');
+          this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } });
         } catch (error) {
           console.warn('Status polling failed, stopping polling:', error.message);
           this.stopPolling();
@@ -312,7 +312,7 @@ export class CNCController extends EventEmitter {
     this.startPolling();
 
     // Request initial G-code modes to get workspace and tool number
-    this.sendCommand('$G');
+    this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } });
   }
 
   onConnectionClosed(type) {
@@ -622,14 +622,6 @@ export class CNCController extends EventEmitter {
     }
 
     if (isRealTimeCommand) {
-      if (cleanCommand === '?') {
-        await this.writeToConnection(commandToSend, {
-          rawCommand: cleanCommand,
-          isRealTime: true
-        });
-        return { id: resolvedCommandId, command: cleanCommand, status: 'success' };
-      }
-
       const display = displayCommand || cleanCommand;
       const pendingPayload = {
         id: resolvedCommandId,
