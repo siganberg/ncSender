@@ -1,5 +1,9 @@
 import { Router } from 'express';
 
+const log = (...args) => {
+  console.log(`[${new Date().toISOString()}]`, ...args);
+};
+
 export function createSystemRoutes(serverState, cncController) {
   const router = Router();
 
@@ -19,7 +23,7 @@ export function createSystemRoutes(serverState, cncController) {
       };
       res.json(safeServerState);
     } catch (error) {
-      console.error('Error getting server state:', error);
+      log('Error getting server state:', error);
       res.status(500).json({ error: 'Failed to get server state' });
     }
   });
@@ -34,7 +38,7 @@ export function createSystemRoutes(serverState, cncController) {
       const ports = await cncController.listAvailablePorts();
       res.json(ports);
     } catch (error) {
-      console.error('Error getting USB ports:', error);
+      log('Error getting USB ports:', error);
       res.status(500).json({ error: 'Failed to get USB ports' });
     }
   });

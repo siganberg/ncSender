@@ -3,6 +3,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+const log = (...args) => {
+  console.log(`[${new Date().toISOString()}]`, ...args);
+};
+
 const DEFAULT_SETTINGS = {
   pauseBeforeStop: 500,
   ip: '192.168.5.1',
@@ -46,7 +50,7 @@ function ensureSettingsFile() {
       fs.mkdirSync(settingsDir, { recursive: true });
       fs.writeFileSync(SETTINGS_PATH, JSON.stringify(DEFAULT_SETTINGS, null, 2), 'utf8');
     } catch (error) {
-      console.error('Failed to create default settings file:', error);
+      log('Failed to create default settings file:', error);
     }
   }
 }
@@ -65,7 +69,7 @@ export function readSettings() {
     const parsed = JSON.parse(raw);
     return { ...DEFAULT_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
   } catch (error) {
-    console.error('Failed to load settings. Using defaults.', error);
+    log('Failed to load settings. Using defaults.', error);
     return { ...DEFAULT_SETTINGS };
   }
 }
@@ -102,7 +106,7 @@ export function saveSettings(newSettings) {
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2), 'utf8');
     return updatedSettings;
   } catch (error) {
-    console.error('Failed to save settings:', error);
+    log('Failed to save settings:', error);
     throw error;
   }
 }
@@ -130,7 +134,7 @@ export function removeSetting(key) {
     }
     return currentSettings;
   } catch (error) {
-    console.error(`Failed to remove setting '${key}':`, error);
+    log(`Failed to remove setting '${key}':`, error);
     throw error;
   }
 }

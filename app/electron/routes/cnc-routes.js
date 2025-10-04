@@ -71,7 +71,7 @@ export function createCNCRoutes(cncController, broadcast) {
       const ports = await cncController.listAvailablePorts();
       res.json(ports);
     } catch (error) {
-      console.error('Error listing serial ports:', error);
+      log('Error listing serial ports:', error);
       res.status(500).json({ error: 'Failed to list serial ports' });
     }
   });
@@ -98,7 +98,7 @@ export function createCNCRoutes(cncController, broadcast) {
         }
       }
     } catch (error) {
-      console.error('Error connecting to CNC:', error);
+      log('Error connecting to CNC:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -109,7 +109,7 @@ export function createCNCRoutes(cncController, broadcast) {
       cncController.disconnect();
       res.json({ success: true });
     } catch (error) {
-      console.error('Error disconnecting from CNC:', error);
+      log('Error disconnecting from CNC:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -120,7 +120,7 @@ export function createCNCRoutes(cncController, broadcast) {
       const status = cncController.getConnectionStatus();
       res.json(status);
     } catch (error) {
-      console.error('Error getting status:', error);
+      log('Error getting status:', error);
       res.status(500).json({ error: 'Failed to get status' });
     }
   });
@@ -179,7 +179,7 @@ export function createCNCRoutes(cncController, broadcast) {
 
       res.json({ success: true, commandId: commandMeta.id });
     } catch (error) {
-      console.error('Error sending command:', error);
+      log('Error sending command:', error);
       const errorPayload = {
         message: error?.message || error,
         code: error?.code

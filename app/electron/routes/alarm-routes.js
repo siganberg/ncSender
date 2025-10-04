@@ -135,7 +135,7 @@ export function createAlarmRoutes(serverState, cncController) {
       const description = alarms[id] || 'Unknown Alarm';
       res.json({ id, description });
     } catch (error) {
-      console.error('Error getting alarm description:', error);
+      log('Error getting alarm description:', error);
       res.status(500).json({ error: 'Failed to get alarm description' });
     }
   });

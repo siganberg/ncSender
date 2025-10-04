@@ -123,7 +123,7 @@ export async function createApp(options = {}) {
     await fs.mkdir(filesDir, { recursive: true });
     log('Files directory created/verified:', filesDir);
   } catch (error) {
-    console.error('Failed to create files directory:', error);
+    log('Failed to create files directory:', error);
   }
 
   // Load last loaded file from settings on server start
@@ -335,7 +335,7 @@ export async function createApp(options = {}) {
     });
 
     ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
+      log('WebSocket error:', error);
       clients.delete(ws);
       if (jogManager) {
         jogManager.handleDisconnect(ws).catch((disconnectError) => {
@@ -401,8 +401,8 @@ export async function createApp(options = {}) {
         }
       });
     } catch (error) {
-      console.error('Error broadcasting message:', error.message);
-      console.error('Problematic data:', type, typeof data);
+      log('Error broadcasting message:', error.message);
+      log('Problematic data:', type, typeof data);
     }
   }
 

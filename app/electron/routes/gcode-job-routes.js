@@ -49,7 +49,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       log('G-code job started:', filename);
       res.json({ success: true, message: 'G-code job started', filename });
     } catch (error) {
-      console.error('Error starting G-code job:', error);
+      log('Error starting G-code job:', error);
       const errorMessage = error.message || 'Failed to start G-code job';
       res.status(500).json({ error: errorMessage });
     }
@@ -104,7 +104,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       log(`G-code job stop issued (delay ${isActiveMotion ? pauseBeforeStop : 0}ms, active=${!!isActiveMotion})`);
       return res.json({ success: true, pauseBeforeStop });
     } catch (error) {
-      console.error('Error stopping G-code job:', error);
+      log('Error stopping G-code job:', error);
       return res.status(500).json({ error: 'Failed to stop G-code job' });
     }
   });
@@ -176,7 +176,7 @@ export class GCodeJobProcessor {
       try {
         callback();
       } catch (error) {
-        console.error('Error in job completion callback:', error);
+        log('Error in job completion callback:', error);
       }
     });
     this.completionCallbacks = [];

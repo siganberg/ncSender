@@ -57,7 +57,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         message: 'File uploaded and clients notified'
       });
     } catch (error) {
-      console.error('Error uploading G-code file:', error);
+      log('Error uploading G-code file:', error);
       res.status(500).json({ error: 'Failed to upload file' });
     }
   });
@@ -89,7 +89,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
 
       res.json({ files: filesWithMetadata });
     } catch (error) {
-      console.error('Error listing G-code files:', error);
+      log('Error listing G-code files:', error);
       res.status(500).json({ error: 'Failed to list files' });
     }
   });
@@ -102,7 +102,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       const content = await fs.readFile(filePath, 'utf8');
       res.json({ filename, content });
     } catch (error) {
-      console.error('Error reading G-code file:', filename, 'from path:', filePath, error);
+      log('Error reading G-code file:', filename, 'from path:', filePath, error);
       res.status(404).json({ error: 'File not found' });
     }
   });
@@ -144,7 +144,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         message: 'File loaded and clients notified'
       });
     } catch (error) {
-      console.error('Error loading G-code file:', error);
+      log('Error loading G-code file:', error);
       res.status(404).json({ error: 'File not found' });
     }
   });
@@ -165,7 +165,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         message: 'File deleted successfully'
       });
     } catch (error) {
-      console.error('Error deleting G-code file:', error);
+      log('Error deleting G-code file:', error);
       res.status(404).json({ error: 'File not found' });
     }
   });

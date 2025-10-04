@@ -27,7 +27,7 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
         message: 'G-code preview cleared and clients notified'
       });
     } catch (error) {
-      console.error('Error clearing G-code preview:', error);
+      log('Error clearing G-code preview:', error);
       res.status(500).json({ error: 'Failed to clear G-code preview' });
     }
   });

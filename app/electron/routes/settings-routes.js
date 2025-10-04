@@ -18,7 +18,7 @@ export function createSettingsRoutes(serverState, cncController) {
       }
       res.json(settings);
     } catch (error) {
-      console.error('Error getting settings:', error);
+      log('Error getting settings:', error);
       res.status(500).json({ error: 'Failed to get settings' });
     }
   });
@@ -39,7 +39,7 @@ export function createSettingsRoutes(serverState, cncController) {
 
       res.json({ [name]: settings[name] });
     } catch (error) {
-      console.error('Error getting setting:', error);
+      log('Error getting setting:', error);
       res.status(500).json({ error: 'Failed to get setting' });
     }
   });
@@ -91,7 +91,7 @@ export function createSettingsRoutes(serverState, cncController) {
         settings: savedSettings
       });
     } catch (error) {
-      console.error('Error updating settings:', error);
+      log('Error updating settings:', error);
       res.status(500).json({ error: 'Failed to update settings' });
     }
   });
@@ -139,7 +139,7 @@ export function createSettingsRoutes(serverState, cncController) {
         settings: savedSettings
       });
     } catch (error) {
-      console.error('Error saving settings:', error);
+      log('Error saving settings:', error);
       res.status(500).json({ error: 'Failed to save settings' });
     }
   });

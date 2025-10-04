@@ -57,7 +57,7 @@ const saveCommandHistory = async (history) => {
     // Save history to file
     await fs.writeFile(historyPath, JSON.stringify(history, null, 2));
   } catch (error) {
-    console.error('Error saving command history:', error);
+    log('Error saving command history:', error);
   }
 };
 
@@ -78,7 +78,7 @@ export function createCommandHistoryRoutes(initialCommandHistory, MAX_HISTORY_SI
     try {
       res.json(commandHistory);
     } catch (error) {
-      console.error('Error getting command history:', error);
+      log('Error getting command history:', error);
       res.status(500).json({ error: 'Failed to get command history' });
     }
   });
@@ -113,7 +113,7 @@ export function createCommandHistoryRoutes(initialCommandHistory, MAX_HISTORY_SI
 
       res.json({ success: true, historySize: commandHistory.length, command });
     } catch (error) {
-      console.error('Error adding command to history:', error);
+      log('Error adding command to history:', error);
       res.status(500).json({ error: 'Failed to add command to history' });
     }
   });

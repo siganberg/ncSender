@@ -98,7 +98,7 @@ export class CNCController extends EventEmitter {
       this.writeToConnection('\n');
       log('Sent newline to reset firmware parser state after error');
     } catch (error) {
-      console.error('Failed to send recovery newline:', error);
+      log('Failed to send recovery newline:', error);
     }
   }
 
@@ -252,7 +252,7 @@ export class CNCController extends EventEmitter {
         !port.path.toLowerCase().includes('wifi')
       );
     } catch (error) {
-      console.error('Error listing serial ports:', error);
+      log('Error listing serial ports:', error);
       return [];
     }
   }
@@ -363,7 +363,7 @@ export class CNCController extends EventEmitter {
 
         this.connection.on('error', (error) => {
           clearTimeout(timeoutId);
-          console.error('CNC controller ethernet connection error:', error);
+          log('CNC controller ethernet connection error:', error);
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.handleConnectionError(error);
@@ -376,7 +376,7 @@ export class CNCController extends EventEmitter {
       });
 
     } catch (error) {
-      console.error('Failed to connect to CNC controller via ethernet:', error);
+      log('Failed to connect to CNC controller via ethernet:', error);
       this.handleConnectionError(error);
       throw error;
     }
@@ -430,7 +430,7 @@ export class CNCController extends EventEmitter {
 
         this.connection.on('error', (error) => {
           clearTimeout(timeoutId);
-          console.error('CNC controller connection error:', error);
+          log('CNC controller connection error:', error);
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.handleConnectionError(error);
@@ -453,7 +453,7 @@ export class CNCController extends EventEmitter {
       });
 
     } catch (error) {
-      console.error('Failed to connect to CNC controller:', error);
+      log('Failed to connect to CNC controller:', error);
       this.isConnecting = false;
       this.connectionAttempt = null;
       this.handleConnectionError(error);
@@ -569,7 +569,7 @@ export class CNCController extends EventEmitter {
     return new Promise((resolve, reject) => {
       this.connection.write(commandToSend, (error) => {
         if (error) {
-          console.error('Error sending command:', error);
+          log('Error sending command:', error);
           reject(error);
           return;
         }
