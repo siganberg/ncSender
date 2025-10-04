@@ -34,7 +34,6 @@ export function createCNCRoutes(cncController, broadcast) {
     const {
       command: rawCommand,
       commandId,
-      clientId,
       displayCommand,
       meta,
       completesCommandId
@@ -55,7 +54,6 @@ export function createCNCRoutes(cncController, broadcast) {
       id: normalizedCommandId,
       command: commandValue,
       displayCommand: displayCommand || translation.displayCommand || commandValue,
-      originId: clientId ?? null,
       timestamp: new Date().toISOString(),
       meta: normalizedMeta
     };
@@ -164,9 +162,7 @@ export function createCNCRoutes(cncController, broadcast) {
       if (targetCompletionId) {
         metaPayload.completesCommandId = targetCompletionId;
       }
-      if (commandMeta.originId) {
-        metaPayload.originId = commandMeta.originId;
-      }
+      // Do not attach originId
 
       await cncController.sendCommand(commandValue, {
         commandId: commandMeta.id,

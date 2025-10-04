@@ -7,35 +7,10 @@ class NCClient {
     this.eventListeners = new Map();
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
-    this.clientId = this.ensureClientId();
     this.jogAckTimeoutMs = 1500;
     this.discoveredPort = null;
     this.lastServerState = null;
     this.messageStates = new Map(); // Track state for each message type
-  }
-
-  ensureClientId() {
-    const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    try {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-        const storageKey = 'ncSenderClientId';
-        const existingId = window.sessionStorage.getItem(storageKey);
-        if (existingId) {
-          return existingId;
-        }
-
-        const newId = generateId();
-        window.sessionStorage.setItem(storageKey, newId);
-        return newId;
-      }
-    } catch (error) {
-      console.warn('Unable to persist client ID to sessionStorage:', error);
-    }
-
-    return generateId();
   }
 
   describeCommand(command) {
@@ -131,7 +106,6 @@ class NCClient {
         body: JSON.stringify({
           command,
           commandId,
-          clientId: this.clientId,
           displayCommand,
           meta,
           completesCommandId
@@ -170,8 +144,7 @@ class NCClient {
       commandId: normalizedCommandId,
       displayCommand,
       meta,
-      completesCommandId,
-      clientId: this.clientId
+      completesCommandId
     };
 
     return new Promise((resolve, reject) => {
@@ -232,8 +205,7 @@ class NCClient {
       displayCommand,
       axis,
       direction,
-      feedRate,
-      clientId: this.clientId
+      feedRate
     };
 
     return new Promise((resolve, reject) => {
@@ -285,7 +257,7 @@ class NCClient {
 
     await this.ensureWebSocketReady();
 
-    const payload = { jogId, reason, clientId: this.clientId };
+    const payload = { jogId, reason };
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -348,8 +320,7 @@ class NCClient {
       direction,
       feedRate,
       distance,
-      commandId: resolvedCommandId,
-      clientId: this.clientId
+      commandId: resolvedCommandId
     };
 
     return new Promise((resolve, reject) => {
@@ -357,39 +328,37 @@ class NCClient {
 
       const cleanup = () => {
         settled = true;
-        clearTimeout(timer);
-        if (offAck) offAck();
-        if (offFailed) offFailed();
+        clearTimeout(resultTimer);
+        if (offResult) offResult();
       };
 
-      const timer = setTimeout(() => {
+      const rejectWith = (error) => {
         if (!settled) {
           cleanup();
-          reject(new Error('Timed out waiting for jog step acknowledgement'));
+          reject(error instanceof Error ? error : new Error(error?.message || 'Jog step failed'));
         }
-      }, this.jogAckTimeoutMs);
+      };
 
-      const offAck = this.on('jog:step-ack', (data) => {
-        if (!data || data.commandId !== resolvedCommandId || settled) {
+      const resultTimeoutMs = Math.max(this.jogAckTimeoutMs * 4, 6000);
+      const resultTimer = setTimeout(() => {
+        rejectWith(new Error('Timed out waiting for jog step result'));
+      }, resultTimeoutMs);
+
+      const offResult = this.on('cnc-command-result', (result) => {
+        if (!result || result.id !== resolvedCommandId || settled) {
           return;
         }
         cleanup();
-        resolve(data);
-      });
-
-      const offFailed = this.on('jog:step-failed', (data) => {
-        if (!data || data.commandId !== resolvedCommandId || settled) {
-          return;
+        if (result.status === 'success') {
+          resolve(result);
+        } else {
+          const message = result.error?.message || 'Jog step failed';
+          reject(new Error(message));
         }
-        cleanup();
-        reject(new Error(data?.message || 'Jog step failed'));
       });
 
       this.sendWebSocketMessage('jog:step', payload, { skipReadyCheck: true }).catch((error) => {
-        if (!settled) {
-          cleanup();
-          reject(error instanceof Error ? error : new Error('Failed to send jog step'));
-        }
+        rejectWith(error);
       });
     });
   }

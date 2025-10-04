@@ -12,7 +12,6 @@ interface ConsoleLine {
   timestamp: string;
   status?: ConsoleStatus;
   type?: 'command' | 'response';
-  originId?: string | null;
   meta?: any;
 }
 
@@ -171,7 +170,6 @@ const addOrUpdateCommandLine = (payload: any) => {
       message,
       status: payload.status ?? existingEntry.line.status,
       level: payload.status === 'error' ? 'error' : existingEntry.line.level,
-      originId: payload.originId ?? existingEntry.line.originId,
       meta: payload.meta ?? existingEntry.line.meta
     };
 
@@ -192,8 +190,7 @@ const addOrUpdateCommandLine = (payload: any) => {
     timestamp,
     status: payload.status ?? 'pending',
     type: 'command',
-    originId: payload.originId ?? null,
-    meta: payload.meta ?? null
+    meta: payload.meta
   };
 
   // Add to both array (for reactivity) and map (for fast lookup)

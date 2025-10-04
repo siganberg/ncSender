@@ -61,8 +61,7 @@ export class JogSessionManager {
       displayCommand,
       axis = null,
       direction = null,
-      feedRate = null,
-      clientId = null
+      feedRate = null
     } = data || {};
 
     if (!jogId || typeof jogId !== 'string') {
@@ -96,8 +95,7 @@ export class JogSessionManager {
         displayCommand: displayCommand || command,
         meta: {
           continuous: true,
-          jog: { axis, direction, feedRate },
-          originId: clientId
+          // internal jog details no longer forwarded in meta
         }
       });
     } catch (error) {
@@ -120,7 +118,7 @@ export class JogSessionManager {
       axis,
       direction,
       feedRate,
-      clientId,
+      // clientId removed; no longer tracked
       startedAt: now,
       lastHeartbeatAt: now,
       heartbeatTimer: null,
@@ -131,7 +129,7 @@ export class JogSessionManager {
     this.sessionsById.set(jogId, session);
     sessionSet.add(jogId);
 
-    this.log('Jog started', `jogId=${jogId}`, axis ? `axis=${axis}` : '', direction != null ? `direction=${direction}` : '', feedRate ? `feed=${feedRate}` : '', clientId ? `clientId=${clientId}` : '');
+    this.log('Jog started', `jogId=${jogId}`, axis ? `axis=${axis}` : '', direction != null ? `direction=${direction}` : '', feedRate ? `feed=${feedRate}` : '');
 
     this.scheduleHeartbeatTimeout(session);
     this.scheduleMaxDurationTimeout(session);
@@ -231,12 +229,6 @@ export class JogSessionManager {
 
     const cancelMeta = {
       completesCommandId: session.jogId,
-      jog: {
-        axis: session.axis,
-        direction: session.direction,
-        feedRate: session.feedRate
-      },
-      originId: session.clientId,
       stopReason: reason
     };
 
@@ -281,7 +273,6 @@ export class JogSessionManager {
       commandId,
       axis = null,
       direction = null,
-      clientId = null,
       feedRate = null,
       distance = null
     } = data || {};
@@ -300,21 +291,12 @@ export class JogSessionManager {
       await this.cncController.sendCommand(command, {
         commandId: resolvedCommandId,
         displayCommand: displayCommand || command,
-        meta: {
-          jog: { axis, direction, feedRate, distance },
-          originId: clientId
-        }
+        // Do not include jog details or originId in meta
       });
-      this.sendSafe(ws, {
-        type: 'jog:step-ack',
-        data: { commandId: resolvedCommandId }
-      });
+      // No per-step acknowledgements sent; clients will observe cnc-command/cnc-command-result
     } catch (error) {
-      const message = error?.message || 'Failed to execute jog step';
-      this.sendSafe(ws, {
-        type: 'jog:step-failed',
-        data: { commandId: resolvedCommandId, message }
-      });
+      // Log only; client will timeout if no result is observed
+      this.log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
     }
   }
 

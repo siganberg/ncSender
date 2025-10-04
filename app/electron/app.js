@@ -205,8 +205,7 @@ export async function createApp(options = {}) {
       commandId,
       displayCommand,
       meta,
-      completesCommandId,
-      clientId
+      completesCommandId
     } = payload || {};
 
     const translation = translateCommandInput(rawCommand);
@@ -224,7 +223,6 @@ export async function createApp(options = {}) {
       id: normalizedCommandId,
       command: commandValue,
       displayCommand: displayCommand || translation.displayCommand || commandValue,
-      originId: clientId ?? null,
       timestamp: new Date().toISOString(),
       meta: normalizedMeta,
       completesCommandId: completesCommandId ?? null
@@ -236,9 +234,7 @@ export async function createApp(options = {}) {
     if (commandMeta.completesCommandId) {
       metaPayload.completesCommandId = commandMeta.completesCommandId;
     }
-    if (commandMeta.originId) {
-      metaPayload.originId = commandMeta.originId;
-    }
+    // Do not attach originId to meta/broadcasts
 
     try {
       const realtimeJobCommands = new Set(['!', '~', '\x18']);
@@ -508,10 +504,11 @@ export async function createApp(options = {}) {
     const command = typeof event.command === 'string' ? event.command : (event.displayCommand || '');
     const displayCommand = formatCommandText(event.displayCommand ?? command);
 
-    // Filter out server-only meta fields from broadcast
+    // Filter out server-only meta fields from broadcast (do not expose jog/originId)
     let filteredMeta = null;
     if (event.meta) {
-      const { jobControl, continuous, job, ...clientMeta } = event.meta;
+      // Remove internal-only fields and redundant ones from meta
+      const { jobControl, continuous, job, jog, originId, ...clientMeta } = event.meta;
       filteredMeta = Object.keys(clientMeta).length > 0 ? clientMeta : null;
     }
 
@@ -520,10 +517,13 @@ export async function createApp(options = {}) {
       command,
       displayCommand,
       status: event.status || 'pending',
-      originId: event.meta?.originId ?? null,
-      meta: filteredMeta,
       ...overrides
     };
+
+    // Only include meta if present
+    if (filteredMeta) {
+      payload.meta = filteredMeta;
+    }
 
     if (includeTimestamp) {
       payload.timestamp = event.timestamp || new Date().toISOString();
