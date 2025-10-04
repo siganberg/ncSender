@@ -689,6 +689,8 @@ h2 {
 .console-output--virtual {
   display: block; /* prevent flex gap from affecting spacer/items */
   gap: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .terminal-spacer { width: 1px; height: 0; opacity: 0; }
