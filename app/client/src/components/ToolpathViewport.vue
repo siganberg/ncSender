@@ -111,8 +111,17 @@
       </div>
 
       <!-- Progress bar above controls -->
-      <div class="progress-bar-container">
-        <ProgressBar />
+      <div class="progress-bar-container" v-if="showJobProgress">
+        <ProgressBar
+          :current-line="currentLineForProgress"
+          :total-lines="totalLinesForProgress"
+          :total-seconds="estimatedTotalSec || 0"
+          :elapsed-sec="elapsedSec"
+          :status="progressStatus"
+          :timeline-done-sec="predictedDoneSec"
+          :actual-seconds="actualTotalSec || undefined"
+          @close="handleClearProgress"
+        />
       </div>
 
       <!-- Control buttons - bottom center -->
@@ -214,6 +223,7 @@ import { useAppStore } from '../composables/use-app-store';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
 import ProgressBar from './ProgressBar.vue';
+import { estimateFromGCodeAndSettings } from '../lib/estimator.ts';
 
 const store = useAppStore();
 
@@ -258,6 +268,86 @@ const emit = defineEmits<{
 const isOnHold = computed(() => {
   const state = props.machineState?.toLowerCase();
   return state === 'hold' || state === 'door';
+});
+
+// Progress bar state and calculations
+const showJobProgress = ref(false);
+const progressStatus = ref<'running' | 'paused' | 'stopped' | 'completed' | undefined>(undefined);
+const jobStartedAt = ref<number | null>(null);
+const elapsedSec = ref(0);
+let progressTimer: number | null = null;
+const jobCompletedFlag = ref(false);
+const estimatedTotalSec = ref<number | null>(null);
+const cumulativePredictedSec = ref<number[] | null>(null);
+const actualTotalSec = ref<number | null>(null);
+
+const currentLineForProgress = computed(() => {
+  // Prefer server-reported currentLine when running; otherwise fall back to completed lines
+  const ln = props.jobLoaded?.currentLine || 0;
+  return ln > 0 ? ln : store.gcodeCompletedUpTo.value;
+});
+const totalLinesForProgress = computed(() => props.jobLoaded?.totalLines || store.gcodeLineCount.value || 0);
+const predictedDoneSec = computed(() => {
+  const ln = Math.max(0, (currentLineForProgress.value || 0) - 1);
+  const arr = cumulativePredictedSec.value || [];
+  if (ln < 0 || ln >= arr.length) return 0;
+  return Math.max(0, Math.round(arr[ln]));
+});
+
+async function computeJobEstimate() {
+  try {
+    const filename = props.jobLoaded?.filename || store.currentJobFilename.value || '';
+    if (!filename) return;
+    const [firmware, fileData] = await Promise.all([
+      api.getFirmwareSettings(false).catch(() => null),
+      api.getGCodeFile(filename).catch(() => null)
+    ]);
+    const content = fileData?.content || '';
+    if (!content) return;
+    const { totalSeconds, cumulativePerLine } = estimateFromGCodeAndSettings(content, firmware);
+    estimatedTotalSec.value = Math.max(0, totalSeconds || 0);
+    cumulativePredictedSec.value = cumulativePerLine || [];
+  } catch (e) {
+    console.warn('Failed to compute job estimate:', e);
+    estimatedTotalSec.value = null;
+    cumulativePredictedSec.value = null;
+  }
+}
+
+function startProgressTimer() {
+  if (progressTimer) return;
+  progressTimer = window.setInterval(() => {
+    if (progressStatus.value === 'running' && jobStartedAt.value) {
+      elapsedSec.value = Math.max(0, (Date.now() - jobStartedAt.value) / 1000);
+    }
+  }, 250);
+}
+
+function stopProgressTimer() {
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+}
+
+function handleClearProgress() {
+  showJobProgress.value = false;
+  progressStatus.value = undefined;
+  jobStartedAt.value = null;
+  elapsedSec.value = 0;
+  jobCompletedFlag.value = false;
+  stopProgressTimer();
+}
+
+// If lines start advancing (e.g., late listener), ensure progress is visible and timer is running
+watch(currentLineForProgress, (ln, prev) => {
+  if ((ln || 0) > 0 && (prev || 0) === 0) {
+    if (!showJobProgress.value) showJobProgress.value = true;
+    if (!progressStatus.value) progressStatus.value = 'running';
+    if (!jobStartedAt.value) jobStartedAt.value = Date.now();
+    startProgressTimer();
+    if (!estimatedTotalSec.value) computeJobEstimate();
+  }
 });
 
 const canStartOrResume = computed(() => {
@@ -859,6 +949,8 @@ const handleGCodeClear = () => {
   if (fileInput.value) {
     fileInput.value.value = '';
   }
+  // Hide progress when program cleared
+  handleClearProgress();
 };
 
 const toggleRapids = () => {
@@ -1533,12 +1625,28 @@ onMounted(async () => {
         gcodeVisualizer.resetCompletedLines();
       }
       markedLines.clear();
+
+      // Progress bar: show and initialize (do not reset timer on resume)
+      showJobProgress.value = true;
+      progressStatus.value = 'running';
+      jobCompletedFlag.value = false;
+      if (!jobStartedAt.value) {
+        jobStartedAt.value = Date.now();
+        elapsedSec.value = 0;
+      }
+      startProgressTimer();
+      computeJobEstimate();
     }
 
     if (state.jobLoaded && state.jobLoaded.currentLine && status === 'running') {
       if (state.jobLoaded.currentLine > lastExecutedLine.value) {
         lastExecutedLine.value = state.jobLoaded.currentLine;
       }
+    }
+
+    // Update progress status on pause/resume
+    if (status === 'paused' && showJobProgress.value) {
+      progressStatus.value = 'paused';
     }
 
     // Reset visualizer segments when job stops/completes or when program is cleared
@@ -1548,6 +1656,15 @@ onMounted(async () => {
         gcodeVisualizer.resetCompletedLines();
       }
       markedLines.clear();
+
+      // Progress bar: keep showing but update status to stopped/completed
+      if (showJobProgress.value) {
+        progressStatus.value = jobCompletedFlag.value ? 'completed' : 'stopped';
+        if (jobCompletedFlag.value) {
+          actualTotalSec.value = elapsedSec.value;
+        }
+        stopProgressTimer();
+      }
     }
 
     prevJobStatus = status;
@@ -1579,6 +1696,17 @@ onMounted(async () => {
     // Check for existing G-code program after viewport is fully initialized
     if (api.ws && api.ws.readyState === WebSocket.OPEN) {
       api.checkCurrentProgram();
+    }
+
+    // Initialize progress bar if a job is already running
+    if (props.jobLoaded?.status === 'running' && !showJobProgress.value) {
+      showJobProgress.value = true;
+      progressStatus.value = 'running';
+      jobCompletedFlag.value = false;
+      jobStartedAt.value = Date.now();
+      elapsedSec.value = 0;
+      startProgressTimer();
+      computeJobEstimate();
     }
   }, 100);
 });
@@ -1619,6 +1747,15 @@ watch(() => store.consoleLines.value, (lines) => {
         !markedLines.has(lineNumber)) {
       gcodeVisualizer.markLineCompleted(lineNumber);
       markedLines.add(lineNumber);
+    }
+
+    // Detect job completion message
+    if (line?.sourceId === 'gcode-runner' && line?.meta?.jobComplete) {
+      jobCompletedFlag.value = true;
+      if (showJobProgress.value) {
+        progressStatus.value = 'completed';
+        stopProgressTimer();
+      }
     }
   });
 }, { deep: true });
