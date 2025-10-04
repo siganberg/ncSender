@@ -61,13 +61,17 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         return res.status(400).json({ error: 'No active job to stop' });
       }
 
+      // If job is no longer running/paused, avoid sending real-time stop commands.
+      const status = jobManager.getJobStatus();
+      const isActiveMotion = status && (status.status === 'running' || status.status === 'paused');
+
       const rawSetting = getSetting('pauseBeforeStop', DEFAULT_SETTINGS.pauseBeforeStop);
       let pauseBeforeStop = Number(rawSetting);
       if (!Number.isFinite(pauseBeforeStop) || pauseBeforeStop < 0) {
         pauseBeforeStop = DEFAULT_SETTINGS.pauseBeforeStop;
       }
 
-      if (pauseBeforeStop > 0) {
+      if (isActiveMotion && pauseBeforeStop > 0) {
         try {
           await cncController.sendCommand('!', {
             meta: { jobControl: true }
@@ -79,13 +83,16 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         await delay(pauseBeforeStop);
       }
 
-      try {
-        await cncController.sendCommand('\x18', {
-          meta: { jobControl: true }
-        });
-      } catch (error) {
-        log('Failed to send soft reset during stop:', error?.message || error);
-        return res.status(500).json({ error: 'Failed to stop G-code job' });
+      // Only issue soft reset when motion is active; otherwise, skip sending \x18
+      if (isActiveMotion) {
+        try {
+          await cncController.sendCommand('\x18', {
+            meta: { jobControl: true }
+          });
+        } catch (error) {
+          log('Failed to send soft reset during stop:', error?.message || error);
+          return res.status(500).json({ error: 'Failed to stop G-code job' });
+        }
       }
 
       try {
@@ -94,7 +101,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         log('Job manager stop error:', error?.message || error);
       }
 
-      log(`G-code job stop issued (delay ${pauseBeforeStop}ms)`);
+      log(`G-code job stop issued (delay ${isActiveMotion ? pauseBeforeStop : 0}ms, active=${!!isActiveMotion})`);
       return res.json({ success: true, pauseBeforeStop });
     } catch (error) {
       console.error('Error stopping G-code job:', error);

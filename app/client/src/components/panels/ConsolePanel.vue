@@ -142,8 +142,8 @@ const historyIndex = ref(-1);
 const currentInput = ref('');
 const activeTab = ref('terminal');
 const tabs = [
-  { id: 'terminal', label: 'Terminal' },
   { id: 'gcode-viewer', label: 'G-Code Viewer' },
+  { id: 'terminal', label: 'Terminal' },
   { id: 'macros', label: 'Macros' }
 ];
 
@@ -190,9 +190,18 @@ watch(completedUpTo, (val) => {
   }
 });
 
-watch(isProgramRunning, (running) => {
-  if (running && activeTab.value === 'gcode-viewer' && autoScrollGcode.value) {
-    scrollToLineCentered(completedUpTo.value);
+watch(isProgramRunning, async (running) => {
+  if (running) {
+    // Auto-switch to G-Code Viewer when job starts
+    if (activeTab.value !== 'gcode-viewer') {
+      activeTab.value = 'gcode-viewer';
+      await nextTick();
+      measureLineHeight();
+      updateVisibleRange();
+    }
+    if (autoScrollGcode.value) {
+      scrollToLineCentered(completedUpTo.value);
+    }
   }
 });
 
