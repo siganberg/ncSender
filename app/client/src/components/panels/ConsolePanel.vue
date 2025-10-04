@@ -57,22 +57,26 @@
 
     <!-- G-Code File Viewer Tab -->
     <div v-if="activeTab === 'gcode-viewer'" class="tab-content">
-      <div v-if="!gcodeLines.length" class="placeholder-content">
+      <div v-if="!totalLines" class="placeholder-content">
         <p>No G-code file loaded</p>
       </div>
       <div v-else class="gcode-viewer">
         <div class="gcode-header">
           <span class="gcode-filename">{{ store.gcodeFilename.value || 'Untitled' }}</span>
-          <span class="gcode-line-count">{{ gcodeLines.length }} lines</span>
+          <span class="gcode-line-count">{{ totalLines }} lines</span>
         </div>
-        <div class="gcode-content" ref="gcodeOutput">
-          <div
-            v-for="(line, index) in gcodeLines"
-            :key="index"
-            class="gcode-line"
-          >
-            <span class="line-number">Line {{ index + 1 }}:</span>
-            <span class="line-content">{{ line }}</span>
+        <div class="gcode-content" ref="gcodeOutput" @scroll="onGcodeScroll">
+          <div class="gcode-spacer" :style="{ height: totalHeight + 'px' }"></div>
+          <div class="gcode-items" :style="{ transform: 'translateY(' + offsetY + 'px)' }">
+            <div
+              v-for="item in visibleLines"
+              :key="item.index"
+              class="gcode-line"
+              :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
+            >
+              <span class="line-number">Line {{ item.index + 1 }}:</span>
+              <span class="line-content">{{ item.text }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -83,6 +87,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
 import { api } from '../../lib/api.js';
+import { getLinesRangeFromIDB } from '../../lib/gcode-store.js';
 import { useAppStore } from '../../composables/use-app-store';
 
 const store = useAppStore();
@@ -99,6 +104,7 @@ const emit = defineEmits<{
 const commandToSend = ref('');
 const autoScroll = ref(true);
 const consoleOutput = ref<HTMLElement | null>(null);
+const gcodeOutput = ref<HTMLElement | null>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
@@ -109,17 +115,136 @@ const tabs = [
   { id: 'gcode-viewer', label: 'G-Code File Viewer' }
 ];
 
-const gcodeLines = computed(() => {
-  if (!store.gcodeContent.value) return [];
-  const lines = store.gcodeContent.value.split('\n');
-
-  // Remove trailing empty lines only
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-    lines.pop();
+// Virtualized G-code viewer state
+const lineHeight = ref(18); // height of a .gcode-line (no gap)
+const rowHeight = computed(() => lineHeight.value); // fixed per-row height
+const overscan = 20;
+const totalLines = computed(() => {
+  const count = store.gcodeLineCount?.value ?? 0;
+  if (count > 0) return count;
+  // Fallback to in-memory content if IDB failed
+  if (store.gcodeContent.value) {
+    const arr = store.gcodeContent.value.split('\n');
+    while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
+    return arr.length;
   }
-
-  return lines;
+  return 0;
 });
+
+const renderStart = ref(0); // 0-based index
+const renderEnd = ref(0);   // exclusive
+const visibleLines = ref<Array<{ index: number; text: string }>>([]);
+const offsetY = computed(() => renderStart.value * rowHeight.value);
+const totalHeight = computed(() => totalLines.value * rowHeight.value);
+
+async function fetchLines(startIdx: number, endIdx: number) {
+  // Convert to 1-based inclusive for IDB
+  if (endIdx <= startIdx || startIdx >= totalLines.value) {
+    visibleLines.value = [];
+    return;
+  }
+  const startLine = startIdx + 1;
+  const endLine = Math.min(totalLines.value, endIdx);
+
+  try {
+    const lines = await getLinesRangeFromIDB(startLine, endLine);
+    visibleLines.value = lines.map((text, i) => ({ index: startIdx + i, text }));
+  } catch (e) {
+    // Fallback to in-memory content if available
+    if (store.gcodeContent.value) {
+      const arr = store.gcodeContent.value.split('\n');
+      while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
+      const slice = arr.slice(startIdx, endLine);
+      visibleLines.value = slice.map((text, i) => ({ index: startIdx + i, text }));
+    } else {
+      visibleLines.value = [];
+    }
+  }
+}
+
+let fetchVersion = 0;
+
+async function updateVisibleRange() {
+  const el = gcodeOutput.value;
+  if (!el) return;
+  const vh = el.clientHeight || 0;
+  const scrollTop = el.scrollTop || 0;
+  const firstVisible = Math.floor(scrollTop / rowHeight.value);
+  const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
+  const start = Math.max(0, firstVisible - Math.floor(overscan / 2));
+  const end = Math.min(totalLines.value, start + visibleCount);
+  renderStart.value = start;
+  renderEnd.value = end;
+  const currentVersion = ++fetchVersion;
+  const lines = await (async () => {
+    if (end <= start || start >= totalLines.value) return [];
+    const startLine = start + 1;
+    const endLine = Math.min(totalLines.value, end);
+    try {
+      const lines = await getLinesRangeFromIDB(startLine, endLine);
+      return lines.map((text, i) => ({ index: start + i, text }));
+    } catch (e) {
+      if (store.gcodeContent.value) {
+        const arr = store.gcodeContent.value.split('\n');
+        while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
+        const slice = arr.slice(start, endLine);
+        return slice.map((text, i) => ({ index: start + i, text }));
+      }
+      return [];
+    }
+  })();
+  if (currentVersion === fetchVersion) {
+    visibleLines.value = lines;
+  }
+}
+
+function measureLineHeight() {
+  const el = gcodeOutput.value;
+  if (!el) return;
+  const temp = document.createElement('div');
+  temp.className = 'gcode-line';
+  temp.style.visibility = 'hidden';
+  temp.innerHTML = '<span class="line-number">Line 1:</span><span class="line-content">X0 Y0</span>';
+  el.appendChild(temp);
+  const h = temp.getBoundingClientRect().height;
+  el.removeChild(temp);
+  if (h && h > 0) lineHeight.value = Math.round(h); // snap to whole px to avoid drift
+}
+
+onMounted(() => {
+  nextTick(() => {
+    measureLineHeight();
+    updateVisibleRange();
+  });
+});
+
+watch(totalLines, async () => {
+  await nextTick();
+  const el = gcodeOutput.value;
+  if (el) el.scrollTop = 0;
+  renderStart.value = 0;
+  renderEnd.value = 0;
+  await updateVisibleRange();
+});
+
+watch(activeTab, async (tab) => {
+  if (tab === 'gcode-viewer') {
+    await nextTick();
+    measureLineHeight();
+    updateVisibleRange();
+  }
+});
+
+// rAF scroll handler to reduce jank
+let scrolling = false;
+function onGcodeScroll() {
+  if (scrolling) return;
+  scrolling = true;
+  requestAnimationFrame(() => {
+    scrolling = false;
+    updateVisibleRange();
+  });
+}
 
 const sendCommand = async () => {
   if (!commandToSend.value) return;
@@ -534,11 +659,10 @@ h2 {
   background: #141414;
   border-radius: var(--radius-small);
   padding: var(--gap-xs);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  position: relative;
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.75rem;
   cursor: text;
@@ -546,6 +670,22 @@ h2 {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
   user-select: text !important;
+  contain: content;
+  will-change: scroll-position;
+}
+
+.gcode-spacer {
+  width: 1px;
+  height: 0;
+  opacity: 0;
+}
+
+.gcode-items {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
 }
 
 /* Ensure all descendants remain selectable, except line numbers */
@@ -559,8 +699,7 @@ h2 {
 .gcode-line {
   display: flex;
   gap: var(--gap-sm);
-  line-height: 1.4;
-  padding: 2px 0;
+  padding: 0;
   cursor: text;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
@@ -583,6 +722,7 @@ h2 {
   color: #bdc3c7;
   flex: 1;
   cursor: text;
+  white-space: pre;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;

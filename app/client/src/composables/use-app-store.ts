@@ -1,5 +1,6 @@
 import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
+import { saveGCodeToIDB, clearGCodeIDB } from '@/lib/gcode-store.js';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -68,8 +69,9 @@ const gridSizeY = ref(1284);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
 const zMaxTravel = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
-const gcodeContent = ref<string>('');
+const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for compatibility
 const gcodeFilename = ref<string>('');
+const gcodeLineCount = ref<number>(0);
 
 // INTERNAL STATE
 let storeInitialized = false;
@@ -358,6 +360,17 @@ export function initializeStore() {
     if (status.connected && websocketConnected.value) {
       await tryLoadMachineDimensionsOnce();
     }
+
+    // Keep G-code viewer in sync with preview state
+    // If no job is loaded, clear the gcode content and filename
+    if (!serverState.jobLoaded || !serverState.jobLoaded.filename) {
+      try {
+        await clearGCodeIDB();
+      } catch {}
+      gcodeContent.value = '';
+      gcodeFilename.value = '';
+      gcodeLineCount.value = 0;
+    }
   });
 
   // Console/command events
@@ -378,8 +391,24 @@ export function initializeStore() {
   // G-code content updates
   api.onGCodeUpdated((data) => {
     if (data?.content) {
-      gcodeContent.value = data.content;
-      gcodeFilename.value = data.filename || '';
+      saveGCodeToIDB(data.filename || '', data.content)
+        .then(({ lineCount }) => {
+          gcodeLineCount.value = lineCount;
+          gcodeFilename.value = data.filename || '';
+          // Avoid keeping the entire content string in reactive state for memory
+          gcodeContent.value = '';
+        })
+        .catch((err) => {
+          console.error('Failed to persist G-code to IndexedDB:', err);
+          // Fallback: keep in memory if save failed
+          gcodeContent.value = data.content;
+          gcodeFilename.value = data.filename || '';
+          const lines = data.content.split('\n');
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+          gcodeLineCount.value = lines.length;
+        });
     }
   });
 
@@ -442,6 +471,7 @@ export function useAppStore() {
       zMaxTravel: readonly(zMaxTravel),
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),
+      gcodeLineCount: readonly(gcodeLineCount),
 
     // Computed properties
     isConnected,
@@ -452,6 +482,13 @@ export function useAppStore() {
     clearConsole: () => {
       consoleLines.value = [];
       commandLinesMap.clear();
+    },
+
+    clearGCodeViewer: () => {
+      clearGCodeIDB().catch(() => {});
+      gcodeContent.value = '';
+      gcodeFilename.value = '';
+      gcodeLineCount.value = 0;
     },
 
     setLastAlarmCode: async (code: number | string | undefined) => {
