@@ -141,10 +141,11 @@ const gcodeScrollerRef = ref<any>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
-const activeTab = ref('gcode-viewer');
+// Make Terminal the default tab and list it first
+const activeTab = ref('terminal');
 const tabs = [
-  { id: 'gcode-viewer', label: 'G-Code Viewer' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'gcode-viewer', label: 'G-Code Preview' },
   { id: 'macros', label: 'Macros' }
 ];
 
