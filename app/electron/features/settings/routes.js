@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readSettings, saveSettings } from '../settings-manager.js';
+import { readSettings, saveSettings } from '../../core/settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);

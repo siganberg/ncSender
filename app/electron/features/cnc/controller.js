@@ -4,7 +4,7 @@ import { EventEmitter } from 'events';
 import net from 'net';
 import { grblErrors } from './grbl-errors.js';
 import { CommandQueue } from './command-queue.js';
-import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
+import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);

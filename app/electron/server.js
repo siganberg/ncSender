@@ -1,4 +1,4 @@
-import { getSetting, DEFAULT_SETTINGS } from './settings-manager.js';
+import { getSetting, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { createApp } from './app.js';
 
 // Bootstrap: load config/env, initialize the app, and start the server
@@ -14,4 +14,3 @@ export async function createServer() {
     close: instance.close
   };
 }
-

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { jobManager } from '../job-processor-manager.js';
+import { jobManager } from '../gcode/job-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
