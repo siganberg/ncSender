@@ -68,6 +68,23 @@
         </div>
       </div>
 
+      <!-- Tools list - bottom right above current tool -->
+      <div v-if="toolsUsed.length > 0" class="tools-legend tools-legend--bottom">
+        <div
+          v-for="t in toolsUsed"
+          :key="t"
+          class="tools-legend__item"
+          :class="{ active: currentTool === t }"
+          :title="`Tool T${t}`"
+        >
+          <span class="tools-legend__label">T{{ t }}</span>
+          <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
+            <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
+          </svg>
+        </div>
+      </div>
+
       <!-- Tool indicator - lower right -->
       <div class="tool-indicator" v-if="currentTool !== undefined">
         <div class="tool-label">Tool:</div>
@@ -342,6 +359,9 @@ const outOfBoundsMessage = computed(() => {
 });
 let currentGCodeBounds: any = null; // Store current G-code bounds
 let isInitialLoad = true; // Flag to prevent watchers from firing during initial settings load
+
+// Tools detected from program (lines containing M6 with Tn)
+const toolsUsed = ref<number[]>([]);
 
 // Three.js objects
 let scene: THREE.Scene;
@@ -795,6 +815,9 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
 
     gcodeVisualizer.render(data.content);
 
+    // Detect tools used based on M6 lines with tool numbers
+    toolsUsed.value = extractToolsFromGCode(data.content);
+
     // Check if G-code has out of bounds movements
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
     outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
@@ -862,6 +885,7 @@ const handleGCodeClear = () => {
   }
   hasFile.value = false;
   showOutOfBoundsWarning.value = false;
+  toolsUsed.value = [];
   if (fileInput.value) {
     fileInput.value.value = '';
   }
@@ -1573,6 +1597,34 @@ const toggleMist = async () => {
   }
 };
 
+// Parse tools from G-code content by scanning for lines that include M6 and Tn
+function extractToolsFromGCode(content: string): number[] {
+  if (typeof content !== 'string' || !content) return [];
+
+  const lines = content.split('\n');
+  const seen = new Set<number>();
+  const order: number[] = [];
+
+  for (const raw of lines) {
+    const line = raw.replace(/\((?:[^)]*)\)/g, '').replace(/;.*$/, '').trim(); // strip comments
+    if (!line) continue;
+
+    if (/\bM0?6\b/i.test(line)) {
+      // Try to find Tn on same line
+      const m = line.match(/\bT(\d+)\b/i);
+      if (m) {
+        const t = parseInt(m[1], 10);
+        if (Number.isFinite(t) && !seen.has(t)) {
+          seen.add(t);
+          order.push(t);
+        }
+      }
+    }
+  }
+
+  return order;
+}
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
@@ -1777,6 +1829,55 @@ watch(() => store.status.mistCoolant, (newValue) => {
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
+}
+
+.tools-legend {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tools-legend--bottom {
+  position: absolute;
+  right: 16px;
+  bottom: 84px; /* slight nudge down from previous to reduce gap */
+  pointer-events: none; /* display-only to avoid blocking controls */
+}
+
+.tools-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.tools-legend__item.active {
+  background: rgba(26, 188, 156, 0.2); /* accent tint */
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+.tools-legend__label {
+  min-width: 30px;
+  text-align: right;
+  font-size: 0.85rem;
+}
+
+.tools-legend__icon {
+  display: block;
+}
+
+.tools-legend__icon .bit-body {
+  fill: rgba(255, 255, 255, 0.25);
+}
+
+.tools-legend__icon .bit-shank {
+  fill: rgba(255, 255, 255, 0.5);
 }
 
 .floating-toolbar.floating-toolbar--bottom {
