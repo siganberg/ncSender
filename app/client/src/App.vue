@@ -529,10 +529,10 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue';
-import AppShell from './components/AppShell.vue';
-import TopToolbar from './components/TopToolbar.vue';
+import AppShell from './shell/AppShell.vue';
+import TopToolbar from './shell/TopToolbar.vue';
 import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
-import RightPanel from './components/RightPanel.vue';
+import RightPanel from './shell/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import { api } from './lib/api.js';
