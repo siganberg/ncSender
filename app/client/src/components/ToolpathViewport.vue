@@ -214,7 +214,6 @@ import { useAppStore } from '../composables/use-app-store';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
 import ProgressBar from './ProgressBar.vue';
-import { estimateEtaSeconds } from '../lib/eta-estimator.ts';
 
 const store = useAppStore();
 
@@ -979,19 +978,6 @@ const handleCycle = async () => {
       // Resume job
       await api.controlGCodeJob('resume');
     } else {
-      // Compute ETA and broadcast before starting job (best-effort)
-      try {
-        const [fileData, firmware] = await Promise.all([
-          api.getGCodeFile(props.jobLoaded.filename),
-          api.getFirmwareSettings(false).catch(() => null)
-        ]);
-        const eta = estimateEtaSeconds(fileData?.content || '', firmware || undefined);
-        const startTime = new Date().toISOString();
-        await api.sendJobETA({ etaSeconds: Math.max(1, Math.round(eta.seconds)), startTime });
-      } catch (e) {
-        console.warn('[ToolpathViewport] ETA broadcast failed, proceeding to start job:', e?.message || e);
-      }
-
       // Start new job
       await api.startGCodeJob(props.jobLoaded.filename);
     }

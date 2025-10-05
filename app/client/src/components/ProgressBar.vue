@@ -4,27 +4,39 @@
       <span class="title">Job Progress</span>
       <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
       <span class="spacer"></span>
-      <span class="percent" aria-live="polite">{{ displayPercent }}%</span>
       <button class="close-btn" :disabled="!canClose" @click="handleClose" title="Hide progress">Close</button>
     </div>
-  <div class="bar" :class="{ overdue: isOverdue }" aria-hidden="true">
-      <div class="fill" :class="{ overdue: isOverdue }" :style="{ width: percent + '%' }">
-        <div class="shine"></div>
+    <div class="bar-wrap">
+      <div class="bar" :class="{ overdue: isOverdue }" aria-hidden="true">
+        <div class="fill" :class="{ overdue: isOverdue }" :style="{ width: percent + '%' }">
+          <div class="shine"></div>
+        </div>
       </div>
+      <div class="percent-overlay" aria-live="polite">{{ displayPercent }}%</div>
     </div>
     <div class="meta">
-      <div class="meta-item">
-        <span class="label">Elapsed</span>
-        <span class="value">{{ formatTime(elapsedSec) }}</span>
-      </div>
-      <div class="meta-item">
-        <span class="label">Remaining</span>
-        <span class="value">{{ formatTime(remainingSec) }}</span>
-      </div>
-      <div class="meta-item">
-        <span class="label">ETA</span>
-        <span class="value">{{ etaDisplay }}</span>
-      </div>
+      <template v-if="isFinished">
+        <div class="meta-item">
+          <span class="label">Total Time</span>
+          <span class="value">{{ formatTime(effectiveElapsedSec) }}</span>
+        </div>
+        <div class="meta-item"></div>
+        <div class="meta-item">
+          <span class="label">Lines</span>
+          <span class="value">{{ linesDisplay }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div class="meta-item">
+          <span class="label">Remaining</span>
+          <span class="value">{{ remainingDisplay }}</span>
+        </div>
+        <div class="meta-item"></div>
+        <div class="meta-item">
+          <span class="label">Lines</span>
+          <span class="value">{{ linesDisplay }}</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -36,10 +48,8 @@ import { api } from '@/lib/api.js';
 
 const store = useAppStore();
 const startTimeIso = computed(() => store.serverState?.jobLoaded?.jobStartTime as string | undefined);
-const etaSeconds = computed(() => {
-  const v = store.serverState?.jobLoaded?.jobETASeconds as number | undefined;
-  return typeof v === 'number' ? v : undefined;
-});
+const totalLines = computed(() => store.serverState?.jobLoaded?.totalLines as number | undefined);
+const currentLine = computed(() => store.serverState?.jobLoaded?.currentLine as number | undefined);
 const hasLoadedFile = computed(() => !!store.serverState?.jobLoaded?.filename);
 const statusRaw = computed(() => store.serverState?.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined);
 const statusLabel = computed(() => {
@@ -90,7 +100,7 @@ const baseNowMs = computed(() => {
   return Number.isFinite(endMs) ? (endMs as number) : nowMs.value;
 });
 
-const elapsedSec = computed(() => {
+const effectiveElapsedSec = computed(() => {
   if (!startAtMs.value) return 0;
   let totalMs = baseNowMs.value - startAtMs.value;
   // Subtract accumulated paused time
@@ -105,23 +115,40 @@ const elapsedSec = computed(() => {
   return Math.max(0, Math.floor(totalMs / 1000));
 });
 
+const isFinished = computed(() => statusRaw.value === 'completed' || statusRaw.value === 'stopped');
+
 const remainingSec = computed(() => {
-  if (!etaSeconds.value) return 0;
-  return Math.round(etaSeconds.value - elapsedSec.value);
+  const tl = totalLines.value || 0;
+  const cl = currentLine.value || 0;
+  if (tl <= 0 || cl <= 0) return 0;
+  const linesRemaining = Math.max(0, tl - cl);
+  const avg = effectiveElapsedSec.value / cl; // sec per line
+  return Math.round(linesRemaining * avg);
 });
-const isOverdue = computed(() => remainingSec.value < 0);
+const isOverdue = computed(() => false);
 
 const percent = computed(() => {
-  if (!etaSeconds.value || etaSeconds.value <= 0) return 0;
-  const p = (elapsedSec.value / etaSeconds.value) * 100;
+  const tl = totalLines.value || 0;
+  const cl = currentLine.value || 0;
+  if (tl <= 0) return 0;
+  const p = (cl / tl) * 100;
   return Math.max(0, Math.min(100, Math.round(p)));
 });
 const displayPercent = computed(() => percent.value);
 
-const etaDisplay = computed(() => {
-  if (!startAtMs.value || !etaSeconds.value) return '--:--';
-  const eta = new Date(startAtMs.value + etaSeconds.value * 1000);
-  return eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const remainingDisplay = computed(() => {
+  if (isFinished.value) return '';
+  const tl = totalLines.value || 0;
+  const cl = currentLine.value || 0;
+  if (tl <= 0 || cl <= 0) return '--:--';
+  return formatTime(remainingSec.value);
+});
+
+const linesDisplay = computed(() => {
+  const tl = totalLines.value || 0;
+  const cl = currentLine.value || 0;
+  if (isFinished.value) return `${Math.max(0, tl)} / ${Math.max(0, tl)}`;
+  return `${Math.max(0, cl)} / ${Math.max(0, tl)}`;
 });
 
 function formatTime(s: number) {
@@ -164,6 +191,8 @@ async function handleClose() {
 .header { display: flex; align-items: baseline; justify-content: space-between; }
 .title { font-weight: 600; color: var(--color-text-primary); }
 .percent { font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.bar-wrap { position: relative; }
+.percent-overlay { position: absolute; left: 50%; transform: translateX(-50%); top: calc(100% + 2px); font-variant-numeric: tabular-nums; color: var(--color-text-secondary); pointer-events: none; }
 .status-pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
 .status-pill.running { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
 .status-pill.paused { background: rgba(241, 196, 15, 0.25); color: #f1c40f; }

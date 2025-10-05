@@ -318,26 +318,6 @@ export async function createApp(options = {}) {
             log('Error handling CNC command', error?.message || error);
           });
           break;
-        case 'job:eta': {
-          try {
-            const eta = parsed.data;
-            // Expect { etaSeconds: number, startTime: string }
-            const etaSeconds = Number(eta?.etaSeconds);
-            const startTime = typeof eta?.startTime === 'string' ? eta.startTime : null;
-            if (Number.isFinite(etaSeconds) && etaSeconds > 0 && startTime && serverState.jobLoaded) {
-              serverState.jobLoaded.jobETASeconds = Math.round(etaSeconds);
-              serverState.jobLoaded.jobStartTime = startTime;
-              serverState.jobLoaded.jobEndTime = null;
-              serverState.jobLoaded.jobPauseAt = null;
-              serverState.jobLoaded.jobPausedTotalSec = 0;
-              serverState.jobLoaded.showProgress = true;
-              broadcast('server-state-updated', serverState);
-            }
-          } catch (err) {
-            log('Error handling job:eta message', err?.message || err);
-          }
-          break;
-        }
         case 'job:progress:close': {
           try {
             if (serverState.jobLoaded) {
@@ -911,7 +891,7 @@ export async function createApp(options = {}) {
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
-  app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, firmwareFilePath));
+  app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
 
   // Fallback route for SPA - handle all non-API routes

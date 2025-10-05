@@ -677,17 +677,7 @@ class NCClient {
     }
   }
 
-  // Send job ETA and start time for broadcast
-  async sendJobETA({ etaSeconds, startTime }) {
-    if (!Number.isFinite(etaSeconds) || etaSeconds <= 0) {
-      throw new Error('Invalid etaSeconds');
-    }
-    if (typeof startTime !== 'string' || !startTime) {
-      throw new Error('Invalid startTime');
-    }
-    await this.ensureWebSocketReady();
-    return this.sendWebSocketMessage('job:eta', { etaSeconds, startTime }, { skipReadyCheck: true });
-  }
+  // No longer broadcasting ETA from client
 
   // G-code Job Control Methods
   async startGCodeJob(filename) {
