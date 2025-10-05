@@ -140,7 +140,7 @@ import { useStatusStore } from './store';
 const store = useStatusStore();
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
-const isHoming = computed(() => (store.status.machineState || '').toLowerCase() === 'home');
+const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
 const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value);
 
 const props = defineProps<{
