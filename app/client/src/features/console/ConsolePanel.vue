@@ -169,7 +169,7 @@ const totalLines = computed(() => {
 
 const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
 const completedUpTo = computed(() => store.gcodeCompletedUpTo?.value ?? 0);
-const isProgramRunning = computed(() => store.serverState.jobLoaded?.status === 'running');
+const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'running'));
 
 // Minimal line cache for IDB mode
 const gcodeCache = reactive<{ [key: number]: string }>({});
@@ -355,7 +355,7 @@ function onGcodeScroll() {
 }
 
 // Reset cross-out and scroll to top when user closes Job Progress panel
-watch(() => store.serverState.jobLoaded?.showProgress as any, async (val, oldVal) => {
+watch(() => store.jobLoaded.value?.showProgress, async (val, oldVal) => {
   if (oldVal === true && val === false) {
     await nextTick();
     if (gcodeScrollerRef.value?.scrollToPosition) {
@@ -371,7 +371,7 @@ const sendCommand = async () => {
   if (!commandToSend.value) return;
 
   // Add to history and save to server
-  await api.addCommandToHistory(commandToSend.value);
+  await store.addToHistory(commandToSend.value);
 
   api.sendCommandViaWebSocket({
     command: commandToSend.value,
@@ -439,7 +439,7 @@ const appendCommandToHistory = (command) => {
 // Load command history on component mount and sync when other clients submit commands
 onMounted(() => {
   loadCommandHistory();
-  unsubscribeHistory = api.onCommandHistoryAppended((event) => {
+  unsubscribeHistory = store.onHistoryAppended((event) => {
     if (event?.command) {
       appendCommandToHistory(event.command);
     }
