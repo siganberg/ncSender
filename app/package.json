@@ -40,22 +40,17 @@
     "electron": "^38.2.0",
     "electron-builder": "^26.0.12"
   },
-  "build": {
+    "build": {
     "appId": "com.ncsender.app",
     "productName": "ncSender",
     "directories": {
       "output": "dist-electron"
     },
-    "files": [
-      "electron/**/*",
-      "client/dist/**/*",
-      "node_modules/**/*",
-      {
-        "from": "client/dist/assets",
-        "to": "client/dist/assets",
-        "filter": ["*.obj", "*.mtl"]
-      }
-    ],
+      "files": [
+        "electron/**/*",
+        "client/dist/**/*",
+        "node_modules/**/*"
+      ],
     "mac": {
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity"
