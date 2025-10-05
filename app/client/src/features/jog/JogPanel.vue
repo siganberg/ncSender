@@ -329,7 +329,7 @@ const panelDisabled = computed(() => !store.isConnected.value || props.isDisable
 const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value);
 
 // Computed to check if homing is in progress
-const isHoming = computed(() => store.status.machineState?.toLowerCase() === 'home');
+const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
 
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;

@@ -1,7 +1,15 @@
+import { computed } from 'vue';
 import { useAppStore } from '../../composables/use-app-store';
 
-// Thin feature facade over the centralized store. Enables gradual migration.
+// Feature-scoped jog store exposing only what JogPanel needs.
 export function useJogStore() {
-  return useAppStore();
-}
+  const app = useAppStore();
 
+  const machineState = computed(() => app.status.machineState);
+
+  return {
+    isConnected: app.isConnected,
+    isHomed: app.isHomed,
+    machineState
+  };
+}
