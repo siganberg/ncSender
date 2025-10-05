@@ -23,6 +23,7 @@ export class CNCController extends EventEmitter {
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
+    this.lastCommandSourceId = null; // Track sourceId for broadcast filtering
     this.commandQueue = new CommandQueue({
       log,
       sendCommand: async (entry) => {
@@ -74,7 +75,7 @@ export class CNCController extends EventEmitter {
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
       this.parseGCodeModes(trimmedData);
-      this.emit('data', trimmedData);
+      this.emit('data', trimmedData, this.lastCommandSourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
       const code = parseInt(trimmedData.split(':')[1]);
       const message = grblErrors[code] || 'Unknown error';
@@ -89,7 +90,7 @@ export class CNCController extends EventEmitter {
       this.commandQueue.handleOk();
     } else {
       log('CNC data:', trimmedData);
-      this.emit('data', trimmedData);
+      this.emit('data', trimmedData, this.lastCommandSourceId);
     }
   }
 
@@ -606,6 +607,9 @@ export class CNCController extends EventEmitter {
     const { meta = null, commandId = null, displayCommand = null } = options || {};
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    // Track sourceId for broadcast filtering
+    this.lastCommandSourceId = normalizedMeta?.sourceId || null;
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];

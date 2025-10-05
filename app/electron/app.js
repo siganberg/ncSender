@@ -261,7 +261,7 @@ export async function createApp(options = {}) {
         meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
       });
 
-      if (commandValue === '?') {
+      if (commandValue === '?' && metaPayload.sourceId !== 'no-broadcast') {
         const rawData = cncController.getRawData();
         if (rawData) {
           broadcast('cnc-data', rawData);
@@ -708,7 +708,12 @@ export async function createApp(options = {}) {
     }
   });
 
-  cncController.on('data', (data) => broadcast('cnc-data', data));
+  cncController.on('data', (data, sourceId) => {
+    if (sourceId === 'no-broadcast') {
+      return;
+    }
+    broadcast('cnc-data', data);
+  });
   cncController.on('status-report', (status) => {
     const prevMachineState = { ...serverState.machineState };
     // Do not allow controller status to overwrite our authoritative workspace
