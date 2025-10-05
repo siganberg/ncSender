@@ -167,17 +167,55 @@ jobs:
         with:
           path: artifacts
 
-      - name: Prepare release assets
+      - name: Prepare and rename release assets
         run: |
-          # Find all release files (exclude builder metadata files)
-          find artifacts -type f \
-            ! -name "builder-*.yml" \
-            ! -name "*.blockmap" \
-            -exec cp {} artifacts/ \;
+          mkdir -p release-assets
+          TAG="${{ github.ref_name }}"
 
-          # List what we're uploading
-          echo "Release assets:"
-          ls -lh artifacts/*.{dmg,pkg,deb,AppImage,exe,zip} 2>/dev/null || ls -lh artifacts/
+          echo "Downloaded artifacts structure:"
+          find artifacts -type f
+
+          # Rename and copy macOS x64 assets
+          if [ -d "artifacts/macos-x64-artifacts" ]; then
+            for file in artifacts/macos-x64-artifacts/*.{dmg,zip}; do
+              if [ -f "$file" ]; then
+                ext="${file##*.}"
+                cp "$file" "release-assets/ncSender_${TAG}_macos_x64.${ext}"
+              fi
+            done
+          fi
+
+          # Rename and copy macOS arm64 assets
+          if [ -d "artifacts/macos-arm64-artifacts" ]; then
+            for file in artifacts/macos-arm64-artifacts/*.{dmg,zip}; do
+              if [ -f "$file" ]; then
+                ext="${file##*.}"
+                cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.${ext}"
+              fi
+            done
+          fi
+
+          # Rename and copy Linux x64 assets
+          if [ -d "artifacts/linux-x64-artifacts" ]; then
+            for file in artifacts/linux-x64-artifacts/*.{deb,AppImage,rpm}; do
+              if [ -f "$file" ]; then
+                ext="${file##*.}"
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.${ext}"
+              fi
+            done
+          fi
+
+          # Rename and copy Windows x64 assets
+          if [ -d "artifacts/windows-x64-artifacts" ]; then
+            for file in artifacts/windows-x64-artifacts/*.exe; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.exe"
+              fi
+            done
+          fi
+
+          echo "Release assets to upload:"
+          ls -lh release-assets/
 
       - name: Create Release
         env:
@@ -187,8 +225,4 @@ jobs:
             --repo ${{ github.repository }} \
             --title "Release ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*.{dmg,pkg,deb,AppImage,exe,zip} 2>/dev/null || \
-          gh release create ${{ github.ref_name }} \
-            --repo ${{ github.repository }} \
-            --title "Release ${{ github.ref_name }}" \
-            --generate-notes
+            release-assets/*
