@@ -560,7 +560,7 @@ export function useAppStore() {
       }
     },
 
-    clearGCodeViewer: () => {
+    clearGCodePreview: () => {
       if (isIDBEnabled()) {
         clearGCodeIDB().catch(() => {});
       }

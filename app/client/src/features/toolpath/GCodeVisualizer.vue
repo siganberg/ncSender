@@ -856,9 +856,9 @@ const handleGCodeClear = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.clear();
   }
-  // Also clear G-code viewer content
-  if (store && typeof store.clearGCodeViewer === 'function') {
-    store.clearGCodeViewer();
+  // Also clear G-code preview content
+  if (store && typeof store.clearGCodePreview === 'function') {
+    store.clearGCodePreview();
   }
   hasFile.value = false;
   showOutOfBoundsWarning.value = false;

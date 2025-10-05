@@ -18,7 +18,7 @@
           <div class="toggle-handle"></div>
         </div>
       </div>
-      <div class="auto-scroll-toggle" @click="autoScrollGcode = !autoScrollGcode" :class="{ active: autoScrollGcode }" v-if="activeTab === 'gcode-viewer'">
+      <div class="auto-scroll-toggle" @click="autoScrollGcode = !autoScrollGcode" :class="{ active: autoScrollGcode }" v-if="activeTab === 'gcode-preview'">
         <span class="toggle-label">Auto-Scroll</span>
         <div class="toggle-switch">
           <div class="toggle-handle"></div>
@@ -72,12 +72,12 @@
       </div>
     </div>
 
-    <!-- G-Code Viewer Tab -->
-    <div v-if="activeTab === 'gcode-viewer'" class="tab-content">
+    <!-- G-Code Preview Tab -->
+    <div v-if="activeTab === 'gcode-preview'" class="tab-content">
       <div v-if="!totalLines" class="placeholder-content">
         <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
-      <div v-else class="gcode-viewer">
+      <div v-else class="gcode-preview">
         <div class="gcode-content" ref="gcodeOutput">
           <RecycleScroller
             class="gcode-scroller"
@@ -145,7 +145,7 @@ const currentInput = ref('');
 const activeTab = ref('terminal');
 const tabs = [
   { id: 'terminal', label: 'Terminal' },
-  { id: 'gcode-viewer', label: 'G-Code Preview' },
+  { id: 'gcode-preview', label: 'G-Code Preview' },
   { id: 'macros', label: 'Macros' }
 ];
 
@@ -251,16 +251,16 @@ function scrollToLineCentered(lineNumber: number) {
 }
 
 watch(completedUpTo, (val) => {
-  if (activeTab.value === 'gcode-viewer' && autoScrollGcode.value && isProgramRunning.value) {
+  if (activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
     scrollToLineCentered(val);
   }
 });
 
 watch(isProgramRunning, async (running) => {
   if (running) {
-    // Auto-switch to G-Code Viewer when job starts
-    if (activeTab.value !== 'gcode-viewer') {
-      activeTab.value = 'gcode-viewer';
+    // Auto-switch to G-Code Preview when job starts
+    if (activeTab.value !== 'gcode-preview') {
+      activeTab.value = 'gcode-preview';
       await nextTick();
       measureLineHeight();
     }
@@ -317,7 +317,7 @@ watch(totalLines, async () => {
 });
 
 watch(activeTab, async (tab) => {
-  if (tab === 'gcode-viewer') {
+  if (tab === 'gcode-preview') {
     await nextTick();
     measureLineHeight();
     // Warm up cache for initial window
@@ -534,8 +534,8 @@ watch(() => props.lines, async () => {
   pointer-events: none;
 }
 
-/* Keep G-Code viewer selectable even when disconnected */
-.card-disabled .gcode-viewer {
+/* Keep G-Code preview selectable even when disconnected */
+.card-disabled .gcode-preview {
   opacity: 0.5;
   pointer-events: auto;
 }
@@ -802,8 +802,8 @@ h2 {
   font-size: 0.9rem;
 }
 
-/* G-Code Viewer */
-.gcode-viewer {
+/* G-Code Preview */
+.gcode-preview {
   display: flex;
   flex-direction: column;
   flex: 1;
