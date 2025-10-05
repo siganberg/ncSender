@@ -91,7 +91,7 @@
             <template #default="{ item }">
               <div
                 class="gcode-line"
-                :class="{ 'gcode-line--completed': (item.index + 1 <= completedUpTo) }"
+                :class="getGcodeLineClasses(item.index)"
                 :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
               >
                 <span class="line-number">Line {{ item.index + 1 }}:</span>
@@ -188,6 +188,33 @@ function getGcodeText(index: number) {
   if (mem) return mem[index] ?? '';
   const cached = gcodeCache[index];
   return cached ?? '';
+}
+
+// Classify a G-code line for coloring (rapid vs cutting)
+function classifyGcode(line: string): 'rapid' | 'cutting' | null {
+  if (!line) return null;
+  const upper = line.toUpperCase();
+  // Strip comments: ( ... ) and ; ...
+  const noParen = upper.replace(/\([^)]*\)/g, '');
+  const code = noParen.split(';')[0] || '';
+  if (!code.trim()) return null;
+  // Detect motion words
+  const isG0 = /\bG0+(?:\.0+)?\b/.test(code);
+  const isG1 = /\bG1+(?:\.0+)?\b/.test(code);
+  const isG2 = /\bG2+(?:\.0+)?\b/.test(code);
+  const isG3 = /\bG3+(?:\.0+)?\b/.test(code);
+  if (isG0) return 'rapid';
+  if (isG1 || isG2 || isG3) return 'cutting';
+  // Default to 'cutting' when no explicit motion matches
+  return 'cutting';
+}
+
+function getGcodeLineClasses(index: number) {
+  const base: Record<string, boolean> = { 'gcode-line--completed': (index + 1 <= completedUpTo.value) };
+  const kind = classifyGcode(getGcodeText(index));
+  if (kind === 'rapid') base['gcode-line--rapid'] = true;
+  if (kind === 'cutting') base['gcode-line--cutting'] = true;
+  return base;
 }
 
 async function fillGcodeCache(startIndex: number, endIndex: number) {
@@ -870,6 +897,23 @@ h2 {
   opacity: 0.7;
 }
 
+/* Color lines to match visualizer colors */
+.gcode-line--rapid .line-content {
+  color: #00ff66 !important; /* match visualizer rapid */
+}
+
+.gcode-line--cutting .line-content {
+  color: #3e85c7 !important; /* same as visualizer cutting */
+}
+
+/* Completed lines: gray them like visualizer */
+.gcode-line--completed.gcode-line--rapid .line-content {
+  color: #333333 !important;
+}
+.gcode-line--completed.gcode-line--cutting .line-content {
+  color: #444444 !important;
+}
+
 .line-number {
   color: var(--color-text-secondary);
   min-width: 80px;
@@ -903,4 +947,10 @@ body.theme-light .gcode-content {
 body.theme-light .line-content {
   color: var(--color-text-primary) !important;
 }
+
+/* Preserve motion coloring in light theme */
+body.theme-light .gcode-line--rapid .line-content { color: #00ff66 !important; }
+body.theme-light .gcode-line--cutting .line-content { color: #3e85c7 !important; }
+body.theme-light .gcode-line--completed.gcode-line--rapid .line-content { color: #333333 !important; }
+body.theme-light .gcode-line--completed.gcode-line--cutting .line-content { color: #444444 !important; }
 </style>
