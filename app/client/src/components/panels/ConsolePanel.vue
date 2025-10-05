@@ -327,6 +327,19 @@ function onGcodeScroll() {
   });
 }
 
+// Reset cross-out and scroll to top when user closes Job Progress panel
+watch(() => store.serverState.jobLoaded?.showProgress as any, async (val, oldVal) => {
+  if (oldVal === true && val === false) {
+    await nextTick();
+    if (gcodeScrollerRef.value?.scrollToPosition) {
+      gcodeScrollerRef.value.scrollToPosition(0);
+    } else {
+      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+      if (root) (root as HTMLElement).scrollTop = 0;
+    }
+  }
+});
+
 const sendCommand = async () => {
   if (!commandToSend.value) return;
 

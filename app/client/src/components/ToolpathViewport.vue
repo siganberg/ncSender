@@ -1564,6 +1564,16 @@ onMounted(async () => {
       markedLines.clear();
     }
 
+    // If the user closed the job progress panel, also reset completed segments
+    const sp = (state.jobLoaded as any)?.showProgress;
+    if (sp === false) {
+      lastExecutedLine.value = 0;
+      if (gcodeVisualizer) {
+        gcodeVisualizer.resetCompletedLines();
+      }
+      markedLines.clear();
+    }
+
     prevJobStatus = status;
   });
 

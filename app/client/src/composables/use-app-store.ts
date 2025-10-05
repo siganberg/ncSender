@@ -93,6 +93,7 @@ let storeInitialized = false;
 let lastJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
 let lastJobFilename: string | undefined = undefined;
 let responseLineIdCounter = 0;
+let prevShowProgress: boolean | undefined = undefined;
 
 // COMPUTED PROPERTIES (created once at module level)
 const isConnected = computed(() => status.connected && websocketConnected.value);
@@ -390,6 +391,14 @@ export function initializeStore() {
     if (currentStatus === 'running' && lastJobStatus !== 'running') {
       gcodeCompletedUpTo.value = 0;
     }
+    // If user closed the job progress panel, reset G-code completion markers
+    try {
+      const sp = (serverState.jobLoaded as any)?.showProgress;
+      if (prevShowProgress === true && sp === false) {
+        gcodeCompletedUpTo.value = 0;
+      }
+      prevShowProgress = sp as boolean | undefined;
+    } catch {}
     lastJobStatus = currentStatus;
     if (currentFilename) lastJobFilename = currentFilename;
 
