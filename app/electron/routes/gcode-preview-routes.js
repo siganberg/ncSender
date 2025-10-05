@@ -13,6 +13,7 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
     try {
       // Clear the loaded program from server state
       serverState.jobLoaded = null;
+      // No additional timing fields to reset; timing lives under jobLoaded
 
       // Clear from settings for persistence
       saveSettings({ lastLoadedFile: null });

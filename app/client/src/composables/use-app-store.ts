@@ -36,7 +36,18 @@ interface StatusReport {
 // SHARED STATE (synchronized across all clients via WebSocket broadcasts)
 const serverState = reactive({
   machineState: null as any,
-  jobLoaded: null as { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null
+  jobLoaded: null as {
+    filename: string;
+    currentLine: number;
+    totalLines: number;
+    status: 'running' | 'paused' | 'stopped' | 'completed';
+    jobETASeconds?: number | null;
+    jobStartTime?: string | null;
+    jobEndTime?: string | null;
+    jobPauseAt?: string | null;
+    jobPausedTotalSec?: number;
+    showProgress?: boolean;
+  } | null
 });
 
 const status = reactive({
@@ -466,11 +477,22 @@ export async function seedInitialState() {
     websocketConnected.value = false;
   }
 
-  // Seed UI from last known server state (in case initial WS events were missed)
+  // Seed UI from last known server state; if incomplete, fetch full server-state snapshot
   try {
-    const last = api.lastServerState;
-    if (last && typeof last === 'object') {
-      Object.assign(serverState, last);
+    let state = api.lastServerState;
+    const needsFetch = !state || typeof state !== 'object' || state.jobLoaded === undefined || state.machineState === undefined;
+    if (needsFetch) {
+      try {
+        state = await api.getServerState();
+        // Hydrate api cache too, so future deltas merge correctly
+        api.lastServerState = state;
+      } catch (fetchErr) {
+        console.warn('Failed to fetch full server state; proceeding with partial WS cache:', (fetchErr as any)?.message || fetchErr);
+      }
+    }
+
+    if (state && typeof state === 'object') {
+      Object.assign(serverState, state);
 
       // Only treat as connected when payload reports connected
       status.connected = !!serverState.machineState?.connected;

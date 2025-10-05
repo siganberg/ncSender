@@ -88,6 +88,12 @@ class NCClient {
     return await response.json();
   }
 
+  async getServerState() {
+    const response = await fetch(`${this.baseUrl}/api/server-state`);
+    if (!response.ok) throw new Error('Failed to get server state');
+    return await response.json();
+  }
+
   async sendCommand(command, options = {}) {
     const {
       commandId: providedCommandId,
@@ -563,7 +569,13 @@ class NCClient {
 
       // Handle nested objects (one level deep)
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        merged[key] = { ...merged[key], ...value };
+        const prev = merged[key];
+        if (typeof prev === 'object' && prev !== null && !Array.isArray(prev)) {
+          merged[key] = { ...prev, ...value };
+        } else {
+          // If previous is null/undefined or not an object, replace it entirely
+          merged[key] = { ...value };
+        }
       } else {
         merged[key] = value;
       }
@@ -663,6 +675,18 @@ class NCClient {
     } catch (error) {
       console.error('Error checking current program:', error);
     }
+  }
+
+  // Send job ETA and start time for broadcast
+  async sendJobETA({ etaSeconds, startTime }) {
+    if (!Number.isFinite(etaSeconds) || etaSeconds <= 0) {
+      throw new Error('Invalid etaSeconds');
+    }
+    if (typeof startTime !== 'string' || !startTime) {
+      throw new Error('Invalid startTime');
+    }
+    await this.ensureWebSocketReady();
+    return this.sendWebSocketMessage('job:eta', { etaSeconds, startTime }, { skipReadyCheck: true });
   }
 
   // G-code Job Control Methods

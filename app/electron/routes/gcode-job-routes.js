@@ -2,13 +2,14 @@ import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { jobManager } from '../job-processor-manager.js';
+import { estimateEtaSeconds } from '../utils/eta-estimator.js';
 import { getSetting, DEFAULT_SETTINGS } from '../settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast) {
+export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, firmwareFilePath) {
   const router = Router();
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -41,6 +42,33 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       const machineStatus = serverState.machineState?.status?.toLowerCase();
       if (machineStatus !== 'idle') {
         return res.status(400).json({ error: `Cannot start job. Machine state is: ${machineStatus}` });
+      }
+
+      // Compute ETA server-side (best-effort) before starting
+      try {
+        const content = await fs.readFile(filePath, 'utf8');
+        let firmware = null;
+        try {
+          if (firmwareFilePath) {
+            const fwRaw = await fs.readFile(firmwareFilePath, 'utf8');
+            firmware = JSON.parse(fwRaw);
+          }
+        } catch {}
+
+        const { seconds } = estimateEtaSeconds(content, firmware || undefined);
+        const etaSeconds = Math.max(1, Math.round(seconds));
+        const startTime = new Date().toISOString();
+        if (serverState.jobLoaded) {
+          serverState.jobLoaded.jobETASeconds = etaSeconds;
+          serverState.jobLoaded.jobStartTime = startTime;
+          serverState.jobLoaded.jobEndTime = null;
+          serverState.jobLoaded.jobPauseAt = null;
+          serverState.jobLoaded.jobPausedTotalSec = 0;
+          serverState.jobLoaded.showProgress = true;
+        }
+        broadcast('server-state-updated', serverState);
+      } catch (etaError) {
+        log('ETA computation failed, continuing without ETA:', etaError?.message || etaError);
       }
 
       // Start the job processor using singleton manager

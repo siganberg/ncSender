@@ -32,7 +32,13 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         filename: originalName,
         currentLine: 0,
         totalLines: content.split('\n').length,
-        status: 'stopped'
+        status: 'stopped',
+        jobETASeconds: null,
+        jobStartTime: null,
+        jobEndTime: null,
+        jobPauseAt: null,
+        jobPausedTotalSec: 0,
+        showProgress: false
       };
 
       // Save to settings for persistence
@@ -119,7 +125,13 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         filename: filename,
         currentLine: 0,
         totalLines: content.split('\n').length,
-        status: 'stopped'
+        status: 'stopped',
+        jobETASeconds: null,
+        jobStartTime: null,
+        jobEndTime: null,
+        jobPauseAt: null,
+        jobPausedTotalSec: 0,
+        showProgress: false
       };
 
       // Save to settings for persistence
