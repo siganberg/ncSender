@@ -618,6 +618,7 @@ export async function createApp(options = {}) {
 
   const setToolChanging = (value) => {
     if (serverState.machineState.isToolChanging !== value) {
+      log(`isToolChanging -> ${value ? 'true' : 'false'}`);
       serverState.machineState.isToolChanging = value;
       broadcast('server-state-updated', serverState);
     }
@@ -626,6 +627,14 @@ export async function createApp(options = {}) {
   const isToolChangeCommand = (cmd) => {
     if (!cmd || typeof cmd !== 'string') return false;
     return /M6(?!\d)/i.test(cmd);
+  };
+
+  const parseToolParam = (cmd) => {
+    if (!cmd || typeof cmd !== 'string') return undefined;
+    const m = cmd.match(/(^|\s)T(\d+)/i);
+    if (!m) return undefined;
+    const n = parseInt(m[2], 10);
+    return Number.isFinite(n) ? n : undefined;
   };
 
   const broadcastQueuedCommand = (event) => {
@@ -638,9 +647,22 @@ export async function createApp(options = {}) {
     broadcast('cnc-command', payload);
 
     if (isToolChangeCommand(payload.command)) {
-      setToolChanging(true);
-    } else if (serverState.machineState.isToolChanging) {
-      setToolChanging(false);
+      try {
+        const requestedTool = parseToolParam(payload.command);
+        const currentTool = Number(serverState?.machineState?.tool);
+        if (
+          requestedTool !== undefined &&
+          Number.isFinite(currentTool) &&
+          requestedTool === currentTool
+        ) {
+          log(`M6 queued for current tool T${requestedTool}; skipping isToolChanging toggle`);
+        } else {
+          setToolChanging(true);
+        }
+      } catch (e) {
+        // Fallback to setting toolchange on any M6 if parsing/state fails
+        setToolChanging(true);
+      }
     }
 
     if (event.meta?.continuous) {

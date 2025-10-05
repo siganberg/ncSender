@@ -21,6 +21,7 @@
         :theme="theme"
         :connected="isConnected"
         :machine-state="status.machineState"
+        :is-tool-changing="serverState.machineState?.isToolChanging"
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :work-offset="status.wco"
