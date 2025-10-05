@@ -206,14 +206,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import * as THREE from 'three';
-import GCodeVisualizer from '../lib/visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../lib/visualizer/helpers.js';
-import { api } from '../lib/api.js';
-import { getSettings, updateSettings } from '../lib/settings-store.js';
-import { useAppStore } from '../composables/use-app-store';
-import Dialog from './Dialog.vue';
-import ConfirmPanel from './ConfirmPanel.vue';
-import ProgressBar from './ProgressBar.vue';
+import GCodeVisualizer from '../../lib/visualizer/gcode-visualizer.js';
+import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../../lib/visualizer/helpers.js';
+import { api } from '../../lib/api.js';
+import { getSettings, updateSettings } from '../../lib/settings-store.js';
+import { useAppStore } from '../../composables/use-app-store';
+import Dialog from '../../components/Dialog.vue';
+import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import ProgressBar from '../../components/ProgressBar.vue';
 
 const store = useAppStore();
 
@@ -1152,7 +1152,7 @@ const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso') => {
   try {
     await updateSettings({ defaultGcodeView: viewType });
   } catch (error) {
-    console.error('[GCodeVisualizer] Failed to save view setting', JSON.stringify({ error: error.message }));
+    console.error('[GCodeVisualizer] Failed to save view setting.', JSON.stringify({ error: error.message }));
   }
 
   // Reset all line type visibility to true when changing views

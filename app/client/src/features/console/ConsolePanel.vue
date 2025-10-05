@@ -538,7 +538,7 @@ watch(() => props.lines, async () => {
 </script>
 
 <style scoped>
-/* Disable console when not connected */
+/* Disable console when not connected. */
 .card-disabled .console-output,
 .card-disabled .console-input {
   opacity: 0.5;

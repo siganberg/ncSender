@@ -250,8 +250,8 @@
 import { api } from '../../lib/api.js';
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useAppStore } from '../../composables/use-app-store';
-import Dialog from '../Dialog.vue';
-import ConfirmPanel from '../ConfirmPanel.vue';
+import Dialog from '../../components/Dialog.vue';
+import ConfirmPanel from '../../components/ConfirmPanel.vue';
 
 const store = useAppStore();
 
@@ -1620,7 +1620,7 @@ h2 {
   color: white;
 }
 
-/* Simple confirm dialog styling (mirrors GCodeVisualizer) */
+/* Simple confirm dialog styling (mirrors GCodeVisualizer). */
 .confirm-dialog {
   display: flex;
   flex-direction: column;

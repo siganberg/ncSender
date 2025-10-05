@@ -437,7 +437,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Disable entire status card when not homed or while homing */
+/* Disable entire status card when not homed or while homing. */
 .card-disabled {
   opacity: 0.5;
   pointer-events: none;

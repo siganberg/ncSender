@@ -531,7 +531,7 @@
 import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue';
 import AppShell from './components/AppShell.vue';
 import TopToolbar from './components/TopToolbar.vue';
-import GCodeVisualizer from './components/GCodeVisualizer.vue';
+import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
 import RightPanel from './components/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';

@@ -14,9 +14,9 @@
 </template>
 
 <script setup lang="ts">
-import JogPanel from './panels/JogPanel.vue';
-import StatusPanel from './panels/StatusPanel.vue';
-import ConsolePanel from './panels/ConsolePanel.vue';
+import JogPanel from '../features/jog/JogPanel.vue';
+import StatusPanel from '../features/status/StatusPanel.vue';
+import ConsolePanel from '../features/console/ConsolePanel.vue';
 
 const emit = defineEmits<{
   (e: 'update:jogStep', value: number): void;
