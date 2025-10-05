@@ -1451,8 +1451,22 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
 
     // Respect Auto-Fit setting when exiting spindle view mode
-    if (autoFitMode.value && currentGCodeBounds) {
-      fitCameraToBounds(currentGCodeBounds);
+    // Important: recompute bounds after resetting transforms so we don't use
+    // stale, offset bounds captured while in spindle view.
+    if (autoFitMode.value) {
+      if (gcodeVisualizer && gcodeVisualizer.group) {
+        const box = new THREE.Box3().setFromObject(gcodeVisualizer.group);
+        const freshBounds = {
+          min: box.min,
+          max: box.max,
+          center: box.getCenter(new THREE.Vector3()),
+          size: box.getSize(new THREE.Vector3())
+        };
+        currentGCodeBounds = freshBounds;
+        fitCameraToBounds(freshBounds);
+      } else {
+        fitCameraToBounds(getGridBounds());
+      }
     } else {
       fitCameraToBounds(getGridBounds());
     }
