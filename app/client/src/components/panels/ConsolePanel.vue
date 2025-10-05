@@ -78,20 +78,27 @@
         <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
       <div v-else class="gcode-viewer">
-        <div class="gcode-content" ref="gcodeOutput" @scroll="onGcodeScroll">
-          <div class="gcode-spacer" :style="{ height: totalHeight + 'px' }"></div>
-          <div class="gcode-items" :style="{ transform: 'translateY(' + offsetY + 'px)' }">
-            <div
-              v-for="item in visibleLines"
-              :key="item.index"
-              class="gcode-line"
-              :class="{ 'gcode-line--completed': (item.index + 1 <= completedUpTo) }"
-              :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
-            >
-              <span class="line-number">Line {{ item.index + 1 }}:</span>
-              <span class="line-content">{{ item.text }}</span>
-            </div>
-          </div>
+        <div class="gcode-content" ref="gcodeOutput">
+          <RecycleScroller
+            class="gcode-scroller"
+            :items="gcodeItems"
+            :item-size="rowHeight"
+            key-field="index"
+            :buffer="overscan"
+            ref="gcodeScrollerRef"
+            @scroll="onGcodeScroll"
+          >
+            <template #default="{ item }">
+              <div
+                class="gcode-line"
+                :class="{ 'gcode-line--completed': (item.index + 1 <= completedUpTo) }"
+                :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
+              >
+                <span class="line-number">Line {{ item.index + 1 }}:</span>
+                <span class="line-content">{{ getGcodeText(item.index) }}</span>
+              </div>
+            </template>
+          </RecycleScroller>
         </div>
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
@@ -103,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive } from 'vue';
 import { api } from '../../lib/api.js';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
@@ -130,6 +137,7 @@ const autoScrollGcode = ref(true);
 const consoleOutput = ref<HTMLElement | null>(null);
 const scrollerRef = ref<any>(null);
 const gcodeOutput = ref<HTMLElement | null>(null);
+const gcodeScrollerRef = ref<any>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
@@ -143,7 +151,7 @@ const tabs = [
 // Filter console lines to hide job-runner chatter
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
 
-// Virtualized G-code viewer state
+// G-code viewer state (virtualized via RecycleScroller)
 const lineHeight = ref(18); // height of a .gcode-line (no gap)
 const rowHeight = computed(() => lineHeight.value); // fixed per-row height
 const overscan = 20;
@@ -163,6 +171,35 @@ const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
 const completedUpTo = computed(() => store.gcodeCompletedUpTo?.value ?? 0);
 const isProgramRunning = computed(() => store.serverState.jobLoaded?.status === 'running');
 
+// Minimal line cache for IDB mode
+const gcodeCache = reactive<{ [key: number]: string }>({});
+const memLines = computed(() => {
+  const content = store.gcodeContent.value;
+  if (!content) return null;
+  const arr = content.split('\n');
+  while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
+  return arr;
+});
+
+const gcodeItems = computed(() => Array.from({ length: totalLines.value }, (_, i) => ({ index: i })));
+
+function getGcodeText(index: number) {
+  const mem = memLines.value;
+  if (mem) return mem[index] ?? '';
+  const cached = gcodeCache[index];
+  return cached ?? '';
+}
+
+async function fillGcodeCache(startIndex: number, endIndex: number) {
+  if (!isIDBEnabled() || memLines.value) return;
+  try {
+    const endLine = Math.min(totalLines.value, endIndex); // convert to 1-based inclusive
+    if (endLine <= startIndex) return;
+    const rows = await getLinesRangeFromIDB(startIndex + 1, endLine);
+    rows.forEach((text, i) => { gcodeCache[startIndex + i] = text; });
+  } catch {}
+}
+
 function scrollToLineCentered(lineNumber: number) {
   const el = gcodeOutput.value;
   if (!el || !lineNumber || totalLines.value === 0) return;
@@ -172,9 +209,17 @@ function scrollToLineCentered(lineNumber: number) {
   const desired = targetIndex * rowHeight.value - centerOffset;
   const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
   const clamped = Math.max(0, Math.min(maxScroll, desired));
-  el.scrollTop = clamped;
-  // Ensure visible range updates
-  requestAnimationFrame(() => updateVisibleRange());
+  if (gcodeScrollerRef.value?.scrollToPosition) {
+    gcodeScrollerRef.value.scrollToPosition(clamped);
+  } else if (gcodeScrollerRef.value?.scrollToItem) {
+    gcodeScrollerRef.value.scrollToItem(targetIndex);
+    // Adjust closer to center via direct scrollTop tweak
+    const root = gcodeScrollerRef.value?.$el || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (root) root.scrollTop = clamped;
+  } else {
+    const root = gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (root) root.scrollTop = clamped;
+  }
 }
 
 watch(completedUpTo, (val) => {
@@ -190,86 +235,12 @@ watch(isProgramRunning, async (running) => {
       activeTab.value = 'gcode-viewer';
       await nextTick();
       measureLineHeight();
-      updateVisibleRange();
     }
     if (autoScrollGcode.value) {
       scrollToLineCentered(completedUpTo.value);
     }
   }
 });
-
-const renderStart = ref(0); // 0-based index
-const renderEnd = ref(0);   // exclusive
-const visibleLines = ref<Array<{ index: number; text: string }>>([]);
-const offsetY = computed(() => renderStart.value * rowHeight.value);
-const totalHeight = computed(() => totalLines.value * rowHeight.value);
-
-async function fetchLines(startIdx: number, endIdx: number) {
-  // Convert to 1-based inclusive for IDB
-  if (endIdx <= startIdx || startIdx >= totalLines.value) {
-    visibleLines.value = [];
-    return;
-  }
-  const startLine = startIdx + 1;
-  const endLine = Math.min(totalLines.value, endIdx);
-
-  try {
-    const lines = await getLinesRangeFromIDB(startLine, endLine);
-    visibleLines.value = lines.map((text, i) => ({ index: startIdx + i, text }));
-  } catch (e) {
-    // Fallback to in-memory content if available
-    if (store.gcodeContent.value) {
-      const arr = store.gcodeContent.value.split('\n');
-      while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
-      const slice = arr.slice(startIdx, endLine);
-      visibleLines.value = slice.map((text, i) => ({ index: startIdx + i, text }));
-    } else {
-      visibleLines.value = [];
-    }
-  }
-}
-
-let fetchVersion = 0;
-
-async function updateVisibleRange() {
-  const el = gcodeOutput.value;
-  if (!el) return;
-  const vh = el.clientHeight || 0;
-  const scrollTop = el.scrollTop || 0;
-  const firstVisible = Math.floor(scrollTop / rowHeight.value);
-  const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-  const start = Math.max(0, firstVisible - Math.floor(overscan / 2));
-  const end = Math.min(totalLines.value, start + visibleCount);
-  renderStart.value = start;
-  renderEnd.value = end;
-  const currentVersion = ++fetchVersion;
-  const useIDB = isIDBEnabled();
-  const lines = await (async () => {
-    if (end <= start || start >= totalLines.value) return [];
-    const startLine = start + 1;
-    const endLine = Math.min(totalLines.value, end);
-    if (useIDB) {
-      try {
-        const lines = await getLinesRangeFromIDB(startLine, endLine);
-        return lines.map((text, i) => ({ index: start + i, text }));
-      } catch (e) {
-        // fallthrough to memory
-      }
-    }
-    {
-      if (store.gcodeContent.value) {
-        const arr = store.gcodeContent.value.split('\n');
-        while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
-        const slice = arr.slice(start, endLine);
-        return slice.map((text, i) => ({ index: start + i, text }));
-      }
-      return [];
-    }
-  })();
-  if (currentVersion === fetchVersion) {
-    visibleLines.value = lines;
-  }
-}
 
 function measureLineHeight() {
   const el = gcodeOutput.value;
@@ -287,7 +258,19 @@ function measureLineHeight() {
 onMounted(() => {
   nextTick(() => {
     measureLineHeight();
-    updateVisibleRange();
+    // Warm up cache for initial visible window
+    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (!memLines.value) {
+      if (root && (root as HTMLElement).clientHeight) {
+        onGcodeScroll();
+      } else {
+        // Prefetch first chunk to avoid empty lines before any scroll
+        fillGcodeCache(0, Math.max(overscan, 200));
+      }
+    }
+    if (isProgramRunning.value && autoScrollGcode.value) {
+      scrollToLineCentered(completedUpTo.value);
+    }
   });
 });
 
@@ -295,16 +278,22 @@ watch(totalLines, async () => {
   await nextTick();
   const el = gcodeOutput.value;
   if (el) el.scrollTop = 0;
-  renderStart.value = 0;
-  renderEnd.value = 0;
-  await updateVisibleRange();
+  if (!memLines.value) {
+    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (root && (root as HTMLElement).clientHeight) {
+      onGcodeScroll();
+    } else {
+      fillGcodeCache(0, Math.max(overscan, 200));
+    }
+  }
 });
 
 watch(activeTab, async (tab) => {
   if (tab === 'gcode-viewer') {
     await nextTick();
     measureLineHeight();
-    updateVisibleRange();
+    // Warm up cache for initial window
+    onGcodeScroll();
   } else if (tab === 'terminal') {
     await nextTick();
     measureTerminalRowHeight();
@@ -324,7 +313,17 @@ function onGcodeScroll() {
   scrolling = true;
   requestAnimationFrame(() => {
     scrolling = false;
-    updateVisibleRange();
+    // Prefetch IDB window to keep text cache warm
+    if (!memLines.value) {
+      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
+      if (!root) return;
+      const vh = (root as HTMLElement).clientHeight || 0;
+      const scrollTop = (root as HTMLElement).scrollTop || 0;
+      const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
+      const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
+      const end = Math.min(totalLines.value, start + visibleCount);
+      fillGcodeCache(start, end);
+    }
   });
 }
 
@@ -804,8 +803,7 @@ h2 {
   padding: var(--gap-xs);
   position: relative;
   flex: 1;
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: hidden; /* RecycleScroller handles scroll */
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.75rem;
   cursor: text;
@@ -814,7 +812,11 @@ h2 {
   -ms-user-select: text !important;
   user-select: text !important;
   contain: content;
-  will-change: scroll-position;
+}
+
+.gcode-scroller {
+  height: 100%;
+  overflow: auto;
 }
 
 .gcode-spacer {
