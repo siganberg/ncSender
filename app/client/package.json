@@ -15,7 +15,8 @@
   "dependencies": {
     "lodash": "^4.17.21",
     "three": "^0.146.0",
-    "vue": "^3.4.21"
+    "vue": "^3.4.21",
+    "vue-virtual-scroller": "^2.0.0-beta.8"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
