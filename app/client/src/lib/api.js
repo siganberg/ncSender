@@ -130,7 +130,7 @@ class NCClient {
     }
   }
 
-  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
+  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId, timeout } = {}) {
     if (typeof command !== 'string' || command.trim() === '') {
       throw new Error('sendCommandViaWebSocket requires a command');
     }
@@ -152,7 +152,7 @@ class NCClient {
 
       const cleanup = () => {
         settled = true;
-        clearTimeout(resultTimer);
+        if (resultTimer) clearTimeout(resultTimer);
         if (offResult) offResult();
       };
 
@@ -163,10 +163,12 @@ class NCClient {
         }
       };
 
-      const resultTimeoutMs = Math.max(this.jogAckTimeoutMs * 4, 6000);
-      const resultTimer = setTimeout(() => {
-        rejectWith(new Error('Timed out waiting for command result'));
-      }, resultTimeoutMs);
+      // Timeout disabled for now - some commands can take a long time
+      // const resultTimeoutMs = timeout !== undefined ? timeout : Math.max(this.jogAckTimeoutMs * 4, 6000);
+      // const resultTimer = resultTimeoutMs > 0 ? setTimeout(() => {
+      //   rejectWith(new Error('Timed out waiting for command result'));
+      // }, resultTimeoutMs) : null;
+      const resultTimer = null;
 
       const offResult = this.on('cnc-command-result', (result) => {
         if (!result || result.id !== normalizedCommandId || settled) {

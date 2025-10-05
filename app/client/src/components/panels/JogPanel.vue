@@ -692,7 +692,10 @@ onBeforeUnmount(() => {
 
 const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
   try {
-    await api.sendCommandViaWebSocket({ command: `$H${axis}`, displayCommand: `$H${axis}` });
+    await api.sendCommandViaWebSocket({
+      command: `$H${axis}`,
+      displayCommand: `$H${axis}`
+    });
   } catch (error) {
     console.error(`Failed to home ${axis}:`, error);
   }
