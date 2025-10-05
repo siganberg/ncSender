@@ -175,17 +175,17 @@ export class GCodeJobProcessor {
     this.isPaused = false;
 
     // Trigger completion callbacks when manually stopped
-    this.triggerCompletion();
+    this.triggerCompletion('stopped');
   }
 
   onComplete(callback) {
     this.completionCallbacks.push(callback);
   }
 
-  triggerCompletion() {
+  triggerCompletion(reason = 'completed') {
     this.completionCallbacks.forEach(callback => {
       try {
-        callback();
+        callback(reason);
       } catch (error) {
         log('Error in job completion callback:', error);
       }
@@ -300,7 +300,7 @@ export class GCodeJobProcessor {
       // Trigger completion callbacks after a small delay to ensure all state updates propagate
       setTimeout(() => {
         log('Triggering job completion callbacks');
-        this.triggerCompletion();
+        this.triggerCompletion('completed');
       }, 100);
     }
   }

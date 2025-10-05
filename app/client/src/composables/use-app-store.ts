@@ -46,6 +46,9 @@ const serverState = reactive({
     jobPauseAt?: string | null;
     jobPausedTotalSec?: number;
     showProgress?: boolean;
+    remainingSec?: number | null;
+    progressPercent?: number | null;
+    runtimeSec?: number | null;
   } | null
 });
 

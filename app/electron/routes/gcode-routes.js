@@ -37,7 +37,10 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         jobEndTime: null,
         jobPauseAt: null,
         jobPausedTotalSec: 0,
-        showProgress: false
+        showProgress: false,
+        remainingSec: null,
+        progressPercent: null,
+        runtimeSec: null
       };
 
       // Save to settings for persistence
@@ -129,7 +132,10 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         jobEndTime: null,
         jobPauseAt: null,
         jobPausedTotalSec: 0,
-        showProgress: false
+        showProgress: false,
+        remainingSec: null,
+        progressPercent: null,
+        runtimeSec: null
       };
 
       // Save to settings for persistence

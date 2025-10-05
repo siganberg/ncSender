@@ -356,6 +356,7 @@ export async function createApp(options = {}) {
     });
 
     // Send server state (includes machine state and connection status)
+    computeJobProgressFields();
     sendWsMessage(ws, 'server-state-updated', serverState);
   });
 
@@ -364,7 +365,9 @@ export async function createApp(options = {}) {
     const jobStatus = jobManager.getJobStatus();
     // Only update if there's an active job, otherwise keep the loaded file info
     if (jobStatus) {
-      serverState.jobLoaded = jobStatus;
+      const prev = serverState.jobLoaded || {};
+      // Merge to preserve extended fields (e.g., runtimeSec, remainingSec, showProgress)
+      serverState.jobLoaded = { ...prev, ...jobStatus };
     }
   };
 
@@ -372,16 +375,31 @@ export async function createApp(options = {}) {
     // Always include current job status in server-state-updated messages
     if (type === 'server-state-updated') {
       updateJobStatus();
+      computeJobProgressFields();
 
       // Check if delta broadcast is enabled
       const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
 
       if (enableStateDeltaBroadcast) {
         // Get delta for server-state-updated only
-        const changes = messageStateTracker.getDelta(type, data);
+        let changes = messageStateTracker.getDelta(type, data);
         if (!changes) {
           return; // No changes, skip broadcast
         }
+
+        // Ensure progress fields are present alongside jobLoaded deltas
+        try {
+          if (changes.jobLoaded && serverState.jobLoaded) {
+            const jl = serverState.jobLoaded;
+            if (typeof changes.jobLoaded !== 'object' || changes.jobLoaded === null) {
+              changes.jobLoaded = {};
+            }
+            changes.jobLoaded.remainingSec = jl.remainingSec ?? null;
+            changes.jobLoaded.progressPercent = jl.progressPercent ?? null;
+            changes.jobLoaded.runtimeSec = jl.runtimeSec ?? null;
+          }
+        } catch {}
+
         data = changes;
       }
     }
@@ -416,6 +434,48 @@ export async function createApp(options = {}) {
       log('Problematic data:', type, typeof data);
     }
   }
+
+  // Compute server-driven job progress fields so all clients stay in sync
+  const computeJobProgressFields = () => {
+    if (!serverState || !serverState.jobLoaded) return;
+    const jl = serverState.jobLoaded;
+    const tl = Number(jl.totalLines) || 0;
+    const cl = Number(jl.currentLine) || 0;
+
+    // Runtime (excludes paused time)
+    const startIso = jl.jobStartTime;
+    if (startIso) {
+      const endOrNowMs = jl.jobEndTime ? Date.parse(jl.jobEndTime) : Date.now();
+      let elapsedMs = endOrNowMs - Date.parse(startIso);
+      if (!Number.isFinite(elapsedMs) || elapsedMs < 0) elapsedMs = 0;
+      let pausedMs = (Number(jl.jobPausedTotalSec) || 0) * 1000;
+      if (!jl.jobEndTime && jl.jobPauseAt) {
+        const pauseAtMs = Date.parse(jl.jobPauseAt);
+        if (Number.isFinite(pauseAtMs) && pauseAtMs < endOrNowMs) {
+          pausedMs += (endOrNowMs - pauseAtMs);
+        }
+      }
+      const runtimeSec = Math.max(0, Math.floor((elapsedMs - pausedMs) / 1000));
+      jl.runtimeSec = runtimeSec;
+
+      // Percent
+      let percent = 0;
+      if (tl > 0) {
+        percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
+      }
+      if (jl.status === 'completed') percent = 100;
+      jl.progressPercent = percent;
+
+      // Remaining based on avg seconds per executed line, frozen implicitly when paused
+      if (cl > 0 && tl > 0) {
+        const linesRemaining = Math.max(0, tl - cl);
+        const avg = runtimeSec / cl; // sec per line
+        jl.remainingSec = Math.round(linesRemaining * avg);
+      } else {
+        jl.remainingSec = null;
+      }
+    }
+  };
 
   jogManager = new JogSessionManager({
     cncController,
@@ -608,6 +668,10 @@ export async function createApp(options = {}) {
 
     broadcast('cnc-command-result', payload);
 
+    // After each acknowledged command, update job progress fields and broadcast state
+    computeJobProgressFields();
+    broadcast('server-state-updated', serverState);
+
     if (isToolChangeCommand(payload.command)) {
       setToolChanging(false);
     }
@@ -790,7 +854,7 @@ export async function createApp(options = {}) {
     // Update jobLoaded status to stopped
     if (serverState.jobLoaded) {
       serverState.jobLoaded.status = 'stopped';
-      serverState.jobLoaded.currentLine = 0;
+      // Preserve currentLine so UI can reflect partial progress
     }
 
     // Mark end time and finalize pause accounting
@@ -808,6 +872,7 @@ export async function createApp(options = {}) {
       serverState.jobLoaded.showProgress = true; // keep visible until explicit close
     }
 
+    computeJobProgressFields();
     broadcast('server-state-updated', serverState);
   });
 
@@ -825,6 +890,7 @@ export async function createApp(options = {}) {
       serverState.jobLoaded.jobPauseAt = new Date().toISOString();
     }
 
+    computeJobProgressFields();
     broadcast('server-state-updated', serverState);
   });
 
@@ -849,16 +915,16 @@ export async function createApp(options = {}) {
       serverState.jobLoaded.jobEndTime = null;
     }
 
+    computeJobProgressFields();
     broadcast('server-state-updated', serverState);
   });
 
   // Set up job completion callback to reset job status and broadcast state update
-  jobManager.setJobCompleteCallback(() => {
-    log('Job completed, resetting jobLoaded status to stopped');
-    // Keep the loaded file info but reset status to stopped
-    if (serverState.jobLoaded) {
+  jobManager.setJobCompleteCallback((reason) => {
+    log('Job lifecycle ended:', reason);
+    // Update status for natural completion only
+    if (serverState.jobLoaded && reason === 'completed') {
       serverState.jobLoaded.status = 'completed';
-      serverState.jobLoaded.currentLine = 0;
     }
     // Mark end time and finalize pause accounting
     const nowIso = new Date().toISOString();
@@ -874,6 +940,7 @@ export async function createApp(options = {}) {
       serverState.jobLoaded.jobEndTime = nowIso;
       serverState.jobLoaded.showProgress = true; // keep visible until explicit close
     }
+    computeJobProgressFields();
     broadcast('server-state-updated', serverState);
   });
 

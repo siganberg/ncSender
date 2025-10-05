@@ -7,8 +7,8 @@
       <button class="close-btn" :disabled="!canClose" @click="handleClose" title="Hide progress">Close</button>
     </div>
     <div class="bar-wrap">
-      <div class="bar" :class="{ overdue: isOverdue }" aria-hidden="true">
-        <div class="fill" :class="{ overdue: isOverdue }" :style="{ width: percent + '%' }">
+      <div class="bar" :class="{ stopped: isStopped }" aria-hidden="true">
+        <div class="fill" :class="{ stopped: isStopped }" :style="{ width: percent + '%' }">
           <div class="shine"></div>
         </div>
       </div>
@@ -42,12 +42,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue';
+import { computed } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { api } from '@/lib/api.js';
 
 const store = useAppStore();
-const startTimeIso = computed(() => store.serverState?.jobLoaded?.jobStartTime as string | undefined);
+const runtimeSecFromServer = computed(() => store.serverState?.jobLoaded?.runtimeSec as number | undefined);
 const totalLines = computed(() => store.serverState?.jobLoaded?.totalLines as number | undefined);
 const currentLine = computed(() => store.serverState?.jobLoaded?.currentLine as number | undefined);
 const hasLoadedFile = computed(() => !!store.serverState?.jobLoaded?.filename);
@@ -75,61 +75,24 @@ const shouldShow = computed(() => {
   return !!(jl && jl.showProgress);
 });
 
-const startAtMs = computed(() => {
-  if (!startTimeIso.value) return undefined;
-  const t = Date.parse(startTimeIso.value);
-  return Number.isFinite(t) ? t : undefined;
-});
+const effectiveElapsedSec = computed(() => Math.max(0, Number(runtimeSecFromServer.value || 0)));
 
-const nowMs = ref(Date.now());
-let timer: number | null = null;
-onMounted(() => {
-  timer = window.setInterval(() => { nowMs.value = Date.now(); }, 200);
-});
-onUnmounted(() => { if (timer) clearInterval(timer); });
+const isCompleted = computed(() => statusRaw.value === 'completed');
+const isStopped = computed(() => statusRaw.value === 'stopped');
+const isFinished = computed(() => isCompleted.value || isStopped.value);
 
-const jobPauseAtIso = computed(() => store.serverState?.jobLoaded?.jobPauseAt as string | undefined);
-const jobPausedTotalSec = computed(() => {
-  const v = store.serverState?.jobLoaded?.jobPausedTotalSec as number | undefined;
-  return typeof v === 'number' ? v : 0;
+const currRemainingSec = computed(() => {
+  const v = store.serverState?.jobLoaded?.remainingSec as number | null | undefined;
+  return typeof v === 'number' && v >= 0 ? v : null;
 });
-const jobEndTimeIso = computed(() => store.serverState?.jobLoaded?.jobEndTime as string | undefined);
-
-const baseNowMs = computed(() => {
-  const endMs = jobEndTimeIso.value ? Date.parse(jobEndTimeIso.value) : undefined;
-  return Number.isFinite(endMs) ? (endMs as number) : nowMs.value;
-});
-
-const effectiveElapsedSec = computed(() => {
-  if (!startAtMs.value) return 0;
-  let totalMs = baseNowMs.value - startAtMs.value;
-  // Subtract accumulated paused time
-  totalMs -= (jobPausedTotalSec.value * 1000);
-  // If currently paused and not ended, subtract ongoing pause duration
-  if (!jobEndTimeIso.value && jobPauseAtIso.value) {
-    const pauseAtMs = Date.parse(jobPauseAtIso.value);
-    if (Number.isFinite(pauseAtMs)) {
-      totalMs -= (baseNowMs.value - (pauseAtMs as number));
-    }
-  }
-  return Math.max(0, Math.floor(totalMs / 1000));
-});
-
-const isFinished = computed(() => statusRaw.value === 'completed' || statusRaw.value === 'stopped');
-
-const remainingSec = computed(() => {
-  const tl = totalLines.value || 0;
-  const cl = currentLine.value || 0;
-  if (tl <= 0 || cl <= 0) return 0;
-  const linesRemaining = Math.max(0, tl - cl);
-  const avg = effectiveElapsedSec.value / cl; // sec per line
-  return Math.round(linesRemaining * avg);
-});
-const isOverdue = computed(() => false);
+// Color handled via stopped class
 
 const percent = computed(() => {
+  const pv = store.serverState?.jobLoaded?.progressPercent as number | undefined;
+  if (typeof pv === 'number') return Math.max(0, Math.min(100, Math.round(pv)));
   const tl = totalLines.value || 0;
   const cl = currentLine.value || 0;
+  if (isCompleted.value) return 100;
   if (tl <= 0) return 0;
   const p = (cl / tl) * 100;
   return Math.max(0, Math.min(100, Math.round(p)));
@@ -141,13 +104,14 @@ const remainingDisplay = computed(() => {
   const tl = totalLines.value || 0;
   const cl = currentLine.value || 0;
   if (tl <= 0 || cl <= 0) return '--:--';
-  return formatTime(remainingSec.value);
+  if (currRemainingSec.value === null) return '--:--';
+  return formatTime(currRemainingSec.value);
 });
 
 const linesDisplay = computed(() => {
   const tl = totalLines.value || 0;
   const cl = currentLine.value || 0;
-  if (isFinished.value) return `${Math.max(0, tl)} / ${Math.max(0, tl)}`;
+  if (isCompleted.value) return `${Math.max(0, tl)} / ${Math.max(0, tl)}`;
   return `${Math.max(0, cl)} / ${Math.max(0, tl)}`;
 });
 
@@ -212,8 +176,8 @@ async function handleClose() {
   overflow: hidden;
 }
 .fill { position: absolute; inset: 0 auto 0 0; background: var(--gradient-accent); border-radius: 999px; transition: width 140ms ease; }
-.bar.overdue { background: rgba(255, 107, 107, 0.15); }
-.fill.overdue { background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8)); }
+.bar.stopped { background: rgba(255, 107, 107, 0.15); }
+.fill.stopped { background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8)); }
 .shine {
   position: absolute; inset: 0;
   background: repeating-linear-gradient(45deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px);
