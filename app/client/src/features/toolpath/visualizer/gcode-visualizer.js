@@ -1,3 +1,4 @@
+// Moved into toolpath feature (verticalization).
 import * as THREE from 'three';
 import { ArcCurve } from 'three';
 

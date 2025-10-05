@@ -206,8 +206,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import * as THREE from 'three';
-import GCodeVisualizer from '../../lib/visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from '../../lib/visualizer/helpers.js';
+import GCodeVisualizer from './visualizer/gcode-visualizer.js';
+import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from '../../lib/api.js';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useAppStore } from '../../composables/use-app-store';
