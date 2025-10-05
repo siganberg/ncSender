@@ -949,7 +949,7 @@ body.theme-light .line-content {
 }
 
 /* Preserve motion coloring in light theme */
-body.theme-light .gcode-line--rapid .line-content { color: #00ff66 !important; }
+body.theme-light .gcode-line--rapid .line-content { color: #E67E22 !important; }
 body.theme-light .gcode-line--cutting .line-content { color: #3e85c7 !important; }
 body.theme-light .gcode-line--completed.gcode-line--rapid .line-content { color: #333333 !important; }
 body.theme-light .gcode-line--completed.gcode-line--cutting .line-content { color: #444444 !important; }

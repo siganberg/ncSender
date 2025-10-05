@@ -8,7 +8,7 @@ class GCodeVisualizer {
 
         // G-code movement types colors
         this.moveColors = {
-            rapid: 0x00ff66,  // Rapid moves - Brighter Green
+            rapid: 0x00ff66,  // Rapid moves (dark theme default)
             cutting: 0x3e85c7,  // Cutting moves - Light Blue
             completedRapid: 0x333333,  // Completed rapid - Dark Gray
             completedCutting: 0x444444,  // Completed cutting - Dark Gray
@@ -324,6 +324,20 @@ class GCodeVisualizer {
 
     setRapidVisibility(visible) {
         this.setMoveTypeVisibility('rapid', visible);
+    }
+
+    // Update rapid color and recolor existing geometry based on new palette
+    setRapidColor(hex) {
+        if (!hex) return;
+        this.moveColors.rapid = hex;
+        // Update shader uniform reference color (used for visibility masking)
+        this.pathLines.forEach(line => {
+            if (line.material && line.material.uniforms && line.material.uniforms.rapidColor) {
+                line.material.uniforms.rapidColor.value = new THREE.Color(hex);
+            }
+        });
+        // Recompute colors for all vertices based on new palette
+        this.updateOutOfBoundsColors();
     }
 
     markLineCompleted(lineNumber) {

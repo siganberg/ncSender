@@ -139,8 +139,9 @@ import { useAppStore } from '../../composables/use-app-store';
 
 const store = useAppStore();
 
-// Computed to check if coordinate zeroing should be disabled (not connected or not homed)
-const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value);
+// Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
+const isHoming = computed(() => (store.status.machineState || '').toLowerCase() === 'home');
+const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value);
 
 const props = defineProps<{
   status: {
@@ -436,7 +437,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Disable entire status card when not homed */
+/* Disable entire status card when not homed or while homing */
 .card-disabled {
   opacity: 0.5;
   pointer-events: none;

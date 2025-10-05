@@ -430,6 +430,10 @@ const initThreeJS = () => {
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
   scene.add(gcodeVisualizer.group);
+  // Improve rapid color contrast in light theme
+  if (props.theme === 'light') {
+    gcodeVisualizer.setRapidColor(0xE67E22); // orange for light theme
+  }
 
   // Add cutting pointer/spindle
   cuttingPointer = generateCuttingPointer();
@@ -1264,6 +1268,14 @@ watch(() => props.theme, (newTheme) => {
       directionalLight.position.set(50, -20, 20);
     }
   }
+  // Update rapid color for visibility by theme
+  if (gcodeVisualizer) {
+    if (newTheme === 'light') {
+      gcodeVisualizer.setRapidColor(0xE67E22);
+    } else {
+      gcodeVisualizer.setRapidColor(0x00FF66);
+    }
+  }
 });
 
 // Watch for work coordinate changes to update cutting pointer target position
@@ -2041,7 +2053,7 @@ input:checked + .slider:before {
 }
 
 .dot--rapid {
-  background: #00ff00;
+  background: #00ff66; /* match visualizer rapid (dark theme) */
 }
 
 .dot--cutting {
@@ -2050,6 +2062,11 @@ input:checked + .slider:before {
 
 .dot--spindle {
   background: #ffffff;
+}
+
+/* Light theme: use high-contrast rapid color */
+body.theme-light .dot--rapid {
+  background: #E67E22;
 }
 
 @media (max-width: 1279px) and (orientation: portrait) {
