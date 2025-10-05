@@ -2114,7 +2114,7 @@ input:checked + .slider:before {
   position: absolute;
   bottom: 16px;
   right: 16px;
-  background: var(--color-surface-muted);
+  background: rgba(26, 188, 156, 0.2); /* accent tint */
   padding: 8px 16px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
@@ -2124,6 +2124,7 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
 .tool-label {
@@ -2134,6 +2135,7 @@ input:checked + .slider:before {
 .tool-value {
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--color-accent);
 }
 
 .legend-item--disabled:hover {
