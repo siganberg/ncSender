@@ -1152,7 +1152,7 @@ const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso') => {
   try {
     await updateSettings({ defaultGcodeView: viewType });
   } catch (error) {
-    console.error('[ToolpathViewport] Failed to save view setting', JSON.stringify({ error: error.message }));
+    console.error('[GCodeVisualizer] Failed to save view setting', JSON.stringify({ error: error.message }));
   }
 
   // Reset all line type visibility to true when changing views
@@ -1462,7 +1462,7 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
     try {
       await updateSettings({ autoFit: isAutoFit });
     } catch (error) {
-      console.error('[ToolpathViewport] Failed to save auto-fit setting', JSON.stringify({ error: error.message }));
+      console.error('[GCodeVisualizer] Failed to save auto-fit setting', JSON.stringify({ error: error.message }));
     }
   }
 
@@ -1481,7 +1481,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     try {
       await updateSettings({ spindleView: isSpindleView });
     } catch (error) {
-      console.error('[ToolpathViewport] Failed to save spindle view setting', JSON.stringify({ error: error.message }));
+      console.error('[GCodeVisualizer] Failed to save spindle view setting', JSON.stringify({ error: error.message }));
     }
   }
 

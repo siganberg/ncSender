@@ -13,7 +13,7 @@
     </template>
 
     <template #main>
-      <ToolpathViewport
+      <GCodeVisualizer
         :view="viewport"
         :theme="theme"
         @change-view="viewport = $event"
@@ -46,7 +46,7 @@
 import { computed, reactive, ref, watchEffect, onMounted, onUnmounted } from 'vue';
 import AppShell from './components/AppShell.vue';
 import TopToolbar from './components/TopToolbar.vue';
-import ToolpathViewport from './components/ToolpathViewport.vue';
+import GCodeVisualizer from './components/GCodeVisualizer.vue';
 import RightPanel from './components/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import ConnectionModal from './components/ConnectionModal.vue';

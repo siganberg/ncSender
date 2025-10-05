@@ -1620,7 +1620,7 @@ h2 {
   color: white;
 }
 
-/* Simple confirm dialog styling (mirrors ToolpathViewport) */
+/* Simple confirm dialog styling (mirrors GCodeVisualizer) */
 .confirm-dialog {
   display: flex;
   flex-direction: column;

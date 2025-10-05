@@ -37,7 +37,7 @@
 - `AppShell`
   - `TopToolbar`
   - `MainLayout`
-    - `ToolpathViewport`
+    - `GCodeVisualizer`
       - `ViewportControls`
       - `LayerLegend` (future)
     - `RightPanel`
@@ -98,8 +98,7 @@
 ## Implementation Notes & Next Steps
 - Establish Vue 3 + Vite + Electron project scaffold; integrate Tailwind or UnoCSS for rapid theming
 - Define shared design tokens (colors, spacing, typography) via CSS variables for theme switching
-- Build core layout components first (`AppShell`, `MainLayout`, `ToolpathViewport` placeholder) before integrating CNC-specific logic
+- Build core layout components first (`AppShell`, `MainLayout`, `GCodeVisualizer` placeholder) before integrating CNC-specific logic
 - Create mock data for toolpath visualization and status panels to validate layout responsiveness
 - Plan for future extensibility (macro panel, probing wizard) by reserving slots within right panel and toolbar
 - Conduct usability testing on touch-enabled devices once initial prototype is interactive (focus on jog controls and viewport gestures)
-

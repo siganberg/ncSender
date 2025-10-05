@@ -16,7 +16,7 @@
     </template>
 
     <template #main>
-      <ToolpathViewport
+      <GCodeVisualizer
         :view="viewport"
         :theme="theme"
         :connected="isConnected"
@@ -531,7 +531,7 @@
 import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue';
 import AppShell from './components/AppShell.vue';
 import TopToolbar from './components/TopToolbar.vue';
-import ToolpathViewport from './components/ToolpathViewport.vue';
+import GCodeVisualizer from './components/GCodeVisualizer.vue';
 import RightPanel from './components/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
