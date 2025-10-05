@@ -72,6 +72,71 @@ cd app
 npm run build
 ```
 
+### Local Build & Testing
+
+#### Prerequisites
+- **Node.js 20+**: Required for building the application
+- **GitHub CLI (`gh`)**: Required for downloading release artifacts
+  ```bash
+  brew install gh
+  gh auth login
+  ```
+- **act**: For testing CI workflows locally (optional)
+  ```bash
+  brew install act
+  ```
+- **actionlint**: For validating workflow syntax (optional)
+  ```bash
+  brew install actionlint
+  ```
+
+#### Building Locally
+```bash
+# Build for current platform only (auto-detects OS)
+./.scripts/build-local.sh --all
+
+# Build for specific platform (only works on matching OS)
+./.scripts/build-local.sh --macos-x64      # macOS only
+./.scripts/build-local.sh --macos-arm64    # macOS only
+./.scripts/build-local.sh --linux-x64      # Linux only
+./.scripts/build-local.sh --windows-x64    # Windows only
+
+# Artifacts will be in releases/[platform-arch]/
+```
+
+**Important:** Local builds are limited to your current OS due to native modules (serialport):
+- On **macOS**: Can only build macOS (x64, arm64)
+- On **Linux**: Can only build Linux (x64)
+- On **Windows**: Can only build Windows (x64)
+- **For multi-platform builds**, use GitHub Actions CI (see "Creating a Release" below)
+
+#### Testing CI Workflow Locally
+```bash
+# Validate workflow syntax
+actionlint .github/workflows/release-build.yml
+
+# Dry run workflow locally (shows what would execute)
+act push -e <(echo '{"ref": "refs/tags/v1.0.0"}') -n
+
+# Run Linux build locally (requires Docker)
+act -j linux push -e <(echo '{"ref": "refs/tags/v1.0.0"}')
+```
+
+#### Creating a Release
+```bash
+# Create and push a tag to trigger release workflow
+git tag v1.0.0
+git push origin v1.0.0
+
+# Download built artifacts from GitHub Actions
+./.scripts/download-latest-release.sh
+```
+
+The release workflow will:
+1. Build for macOS (x64, arm64), Linux (x64), and Windows (x64)
+2. Create a GitHub release with the tag name
+3. Attach all build artifacts to the release
+
 ### Production
 
 Run in production mode:

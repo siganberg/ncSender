@@ -2,9 +2,8 @@ name: Build Release Binaries
 
 on:
   push:
-    branches: [main]
-  release:
-    types: [created, edited]
+    tags:
+      - 'v*'
 
 jobs:
   macos:
@@ -155,3 +154,25 @@ jobs:
   #       with:
   #         name: raspberry-pi-artifacts
   #         path: app/dist-electron/**
+
+  release:
+    name: Create Release
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/**/*
