@@ -501,6 +501,8 @@ function measureTerminalRowHeight() {
   if (h && h > 0) terminalRowHeight.value = Math.ceil(h);
 }
 
+let stopAutoScrollBindings: (() => void) | undefined;
+
 onMounted(async () => {
   await nextTick();
   measureTerminalRowHeight();
@@ -508,14 +510,19 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
-  const off = store.startAutoScrollBindings(async () => {
+  stopAutoScrollBindings = store.startAutoScrollBindings(async () => {
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
   });
+});
 
-  onBeforeUnmount(() => { off?.(); });
+onBeforeUnmount(() => {
+  if (typeof stopAutoScrollBindings === 'function') {
+    try { stopAutoScrollBindings(); } catch {}
+    stopAutoScrollBindings = undefined;
+  }
 });
 
 watch(() => props.lines, async () => {
