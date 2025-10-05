@@ -1,6 +1,6 @@
-import { GCodeJobProcessor } from './routes/gcode-job-routes.js';
-import { GrblHalTelemetryProvider } from './providers/telemetry-provider.js';
-import { JobProgressEstimator } from './providers/job-progress-estimator.js';
+import { GCodeJobProcessor } from './features/gcode/job-routes.js';
+import { GrblHalTelemetryProvider } from './features/cnc/telemetry-provider.js';
+import { JobProgressEstimator } from './features/gcode/job-progress-estimator.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [JOB MANAGER]`, ...args);

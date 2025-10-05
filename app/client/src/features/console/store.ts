@@ -20,6 +20,18 @@ export function useConsoleStore() {
     addToHistory: (command: string) => api.addCommandToHistory(command),
     // Console auto-scroll helpers: delegate event subscription to API
     onCncCommand: (handler: (evt: any) => void) => api.on('cnc-command', handler),
-    onCncCommandResult: (handler: (evt: any) => void) => api.on('cnc-command-result', handler)
+    onCncCommandResult: (handler: (evt: any) => void) => api.on('cnc-command-result', handler),
+    onCncData: (handler: (evt: any) => void) => api.on('cnc-data', handler),
+    // Bundle useful auto-scroll wiring
+    startAutoScrollBindings: (onActivity: () => void | Promise<void>) => {
+      const off1 = api.on('cnc-command', onActivity);
+      const off2 = api.on('cnc-command-result', onActivity);
+      const off3 = api.on('cnc-data', onActivity);
+      return () => {
+        try { off1 && off1(); } catch {}
+        try { off2 && off2(); } catch {}
+        try { off3 && off3(); } catch {}
+      };
+    }
   };
 }

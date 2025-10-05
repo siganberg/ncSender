@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getUserDataDir } from '../utils/paths.js';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const FIRMWARE_FILENAME = 'firmware.json';
 

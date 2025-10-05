@@ -18,4 +18,13 @@ export function sendRealtime(command: string) {
   return api.sendCommandViaWebSocket({ command });
 }
 
+export function zeroXY() {
+  return api.sendCommandViaWebSocket({ command: 'G10 L20 X0 Y0', displayCommand: 'G10 L20 X0 Y0' });
+}
+
+export function zeroAxis(axis: 'X'|'Y'|'Z'|'A') {
+  const a = String(axis).toUpperCase();
+  return api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0` });
+}
+
 export { api };

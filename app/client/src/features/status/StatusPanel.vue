@@ -134,7 +134,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
-import { api } from './api';
+import { api, sendRealtime, REALTIME, zeroAxis, zeroXY } from './api';
 import { useStatusStore } from './store';
 
 const store = useStatusStore();
@@ -208,7 +208,7 @@ watch(() => props.status.spindleOverride, (newValue) => {
 }, { immediate: true });
 
 const sendRealtimeCommand = (command: string) => {
-  api.sendCommandViaWebSocket({ command }).catch((error) => {
+  sendRealtime(command).catch((error) => {
     console.error('Failed to send real-time command:', command, error);
   });
 };
@@ -233,15 +233,11 @@ const updateFeedOverride = () => {
     if (diff > 0) {
       // Increase - use +10% command
       const steps = Math.abs(diff) / 10;
-      for (let i = 0; i < steps; i++) {
-        sendRealtimeCommand('\\x91'); // Feed rate override +10%
-      }
+      for (let i = 0; i < steps; i++) sendRealtimeCommand(REALTIME.FEED_PLUS_10);
     } else {
       // Decrease - use -10% command
       const steps = Math.abs(diff) / 10;
-      for (let i = 0; i < steps; i++) {
-        sendRealtimeCommand('\\x92'); // Feed rate override -10%
-      }
+      for (let i = 0; i < steps; i++) sendRealtimeCommand(REALTIME.FEED_MINUS_10);
     }
 
     previousFeedOverride.value = target;
@@ -256,7 +252,7 @@ const handleFeedOverrideComplete = () => {
 };
 
 const resetFeedOverride = () => {
-  sendRealtimeCommand('\\x90'); // Feed rate override reset
+  sendRealtimeCommand(REALTIME.FEED_RESET);
   feedOverride.value = 100;
   previousFeedOverride.value = 100;
 };
@@ -281,15 +277,11 @@ const updateSpindleOverride = () => {
     if (diff > 0) {
       // Increase - use +10% command
       const steps = Math.abs(diff) / 10;
-      for (let i = 0; i < steps; i++) {
-        sendRealtimeCommand('\\x9A'); // Spindle speed override +10%
-      }
+      for (let i = 0; i < steps; i++) sendRealtimeCommand(REALTIME.SPINDLE_PLUS_10);
     } else {
       // Decrease - use -10% command
       const steps = Math.abs(diff) / 10;
-      for (let i = 0; i < steps; i++) {
-        sendRealtimeCommand('\\x9B'); // Spindle speed override -10%
-      }
+      for (let i = 0; i < steps; i++) sendRealtimeCommand(REALTIME.SPINDLE_MINUS_10);
     }
 
     previousSpindleOverride.value = target;
@@ -304,7 +296,7 @@ const handleSpindleOverrideComplete = () => {
 };
 
 const resetSpindleOverride = () => {
-  sendRealtimeCommand('\\x99'); // Spindle speed override reset
+  sendRealtimeCommand(REALTIME.SPINDLE_RESET);
   spindleOverride.value = 100;
   previousSpindleOverride.value = 100;
 };
@@ -354,10 +346,10 @@ const startLongPress = (axis: AxisKey, _evt: Event) => {
       state.triggered = true;
       // Send zero command(s)
       const a = String(axis).toUpperCase();
-      if (a === 'XY' || a === 'YX' || a === 'XY0') {
-        api.sendCommandViaWebSocket({ command: 'G10 L20 X0 Y0', displayCommand: 'G10 L20 X0 Y0' }).catch(() => {});
+      if (a === 'XY' || a === 'YX') {
+        zeroXY().catch(() => {});
       } else {
-        api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0` }).catch(() => {});
+        zeroAxis(a as any).catch(() => {});
       }
     }
 

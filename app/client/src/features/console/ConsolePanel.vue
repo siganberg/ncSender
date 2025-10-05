@@ -507,26 +507,14 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
-  const offCmd = store.onCncCommand(async () => {
-    if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
-      await nextTick();
-      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
-    }
-  });
-  const offRes = store.onCncCommandResult(async () => {
-    if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
-      await nextTick();
-      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
-    }
-  });
-  const offData = api.on('cnc-data', async () => {
+  const off = store.startAutoScrollBindings(async () => {
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
   });
 
-  onBeforeUnmount(() => { offCmd?.(); offRes?.(); offData?.(); });
+  onBeforeUnmount(() => { off?.(); });
 });
 
 watch(() => props.lines, async () => {

@@ -2,8 +2,8 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getUserDataDir } from '../utils/paths.js';
-import { FIRMWARE_DATA_TYPES, DATA_TYPE_NAMES } from '../constants/firmware-types.js';
+import { getUserDataDir } from '../../utils/paths.js';
+import { FIRMWARE_DATA_TYPES, DATA_TYPE_NAMES } from '../../constants/firmware-types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,7 +47,7 @@ function parseSettingGroups(response) {
  * Parse $ES (enumerate settings) response
  * Format: [SETTING:<id>|<group id>|<name>|{<unit>}|<data type>|{<format>}|{<min>}|{<max>}]
  *
- * Data types are defined in ../constants/firmware-types.js:
+ * Data types are defined in ../../constants/firmware-types.js:
  * 0 = int8, 1 = uint8, 2 = int16, 3 = uint16, 4 = int32, 5 = uint32
  * 6 = float, 7 = bitfield, 8 = string, 9 = mask (bitmask)
  */

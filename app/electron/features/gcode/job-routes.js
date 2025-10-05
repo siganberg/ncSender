@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { jobManager } from '../job-processor-manager.js';
-import { getSetting, DEFAULT_SETTINGS } from '../settings-manager.js';
+import { jobManager } from '../../job-processor-manager.js';
+import { getSetting, DEFAULT_SETTINGS } from '../../settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
