@@ -1,5 +1,5 @@
 import { GCodePreAnalyzer } from './gcode-preanalyzer.js';
-import { readMachineProfileFromCache } from './machine-profile.js';
+import { readMachineProfileFromCache } from '../firmware/machine-profile.js';
 
 export class JobProgressEstimator {
   constructor({ telemetry, preAnalyzer } = {}) {
