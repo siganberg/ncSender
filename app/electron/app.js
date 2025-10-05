@@ -165,7 +165,12 @@ export async function createApp(options = {}) {
   });
 
   // Serve static files for browser clients (includes /assets folder from Vite build)
+  // In production (packaged app), __dirname will be inside app.asar
+  // Electron handles asar paths transparently, so we can use them directly
   const clientDistPath = path.join(__dirname, '../client/dist');
+  log('Serving client files from:', clientDistPath);
+
+  // Serve from asar (for most files)
   app.use(express.static(clientDistPath, {
     setHeaders: (res, filePath) => {
       // Set proper MIME types for 3D model files
@@ -176,7 +181,21 @@ export async function createApp(options = {}) {
       }
     }
   }));
-  log('Serving client files from:', clientDistPath);
+
+  // Also serve from unpacked folder (for .obj and other unpacked files)
+  const unpackedPath = clientDistPath.replace('app.asar', 'app.asar.unpacked');
+  if (unpackedPath !== clientDistPath) {
+    log('Also serving unpacked files from:', unpackedPath);
+    app.use(express.static(unpackedPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.obj')) {
+          res.setHeader('Content-Type', 'text/plain');
+        } else if (filePath.endsWith('.mtl')) {
+          res.setHeader('Content-Type', 'text/plain');
+        }
+      }
+    }));
+  }
 
   const translateCommandInput = (rawCommand) => {
     if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
@@ -514,6 +533,17 @@ export async function createApp(options = {}) {
         usbPort: getSetting('usbPort'),
         baudRate: getSetting('baudRate')
       };
+
+      // Validate settings are complete before attempting connection
+      const isSettingsComplete = connectionType === 'ethernet'
+        ? (currentSettings.ip && currentSettings.port)
+        : (currentSettings.usbPort && currentSettings.baudRate);
+
+      if (!isSettingsComplete) {
+        // Settings incomplete, skip this iteration
+        previousSettings = JSON.parse(JSON.stringify(currentSettings));
+        continue;
+      }
 
       const settingsChanged = !previousSettings || JSON.stringify(currentSettings) !== JSON.stringify(previousSettings);
 
@@ -995,7 +1025,7 @@ export async function createApp(options = {}) {
       return next();
     }
 
-    const indexPath = path.join(__dirname, '../client/dist/index.html');
+    const indexPath = path.join(clientDistPath, 'index.html');
     res.sendFile(indexPath, (err) => {
       if (err) {
         log('Client index.html not found, serving basic response');

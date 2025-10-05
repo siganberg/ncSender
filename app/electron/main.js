@@ -100,7 +100,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   // In server-only mode, don't quit when windows are closed (there are none)
-  if (!isServerOnly && process.platform !== 'darwin') {
+  // For regular mode, quit on all platforms to ensure the server is properly shut down
+  if (!isServerOnly) {
     app.quit();
   }
 });

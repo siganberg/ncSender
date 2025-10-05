@@ -1,209 +1,103 @@
-# ncSender - CNC Controller
+# ncSender — Simple, Fast G‑Code Sender for GRBL/GrblHAL
 
-## 🏗️ Development
+ncSender is a lightweight, cross‑platform CNC controller with a clean UI and built‑in 3D toolpath preview. It connects to GRBL/GrblHAL controllers over USB serial or Ethernet and can run either as a desktop app (Electron) or as a small local server you access from any browser on your network.
 
-### Project Structure
-```
-├── app/
-│   ├── electron/              # Backend server and Electron main process
-│   │   ├── main.js           # Electron app entry point
-│   │   ├── server.js         # Express server with API & WebSocket
-│   │   ├── cnc-controller.js # CNC communication logic
-│   │   └── routes/           # API route modules
-│   ├── client/               # Vue.js frontend application
-│   │   ├── src/              # Vue source code
-│   │   ├── dist/             # Built client files
-│   │   └── package.json      # Client dependencies
-│   └── package.json          # Main app configuration
-```
+## Why ncSender
+- Cross‑platform desktop app (macOS, Windows, Linux).
+- USB serial and Ethernet (telnet‑style) connectivity.
+- Live console with command history and real‑time GRBL controls (hold, resume, soft reset).
+- 3D toolpath preview with progress tracking and ETA.
+- Jog controls (continuous and step), workspace selection (G54–G59), and homing prompts.
+- Firmware settings browser for GrblHAL (read/submit, import/export).
+- Safe job controls: pause before stop, resume.
+- Headless mode: run just the server and use it from a browser.
+- UI theme support (light/dark) and configurable accent/gradient colors.
 
-### Installation
+## Install
 
-Install dependencies for both backend and frontend:
-```bash
-cd app
-npm install
-cd client && npm install
-```
+Option 1 — Download a release
+- Visit the repository’s Releases page and download the installer for your OS.
+- macOS: open the `.dmg`, drag ncSender to Applications. If Gatekeeper warns about an unknown developer, right‑click the app, choose Open, then Open again.
+- Windows: run the `.exe` and follow the prompts (you may see a SmartScreen warning for an unsigned app).
+- Linux: use the `.AppImage` or `.deb` (depending on your distro). Mark the AppImage as executable.
 
-### Development Mode
+Option 2 — Run from source (Node.js 20+)
+- Open a terminal, then:
+  - `cd app`
+  - `npm run install:all`
+  - `npm run start`
 
-Start the development environment:
-```bash
-cd app
-npm run dev
-```
+This builds the UI and launches the Electron app with the embedded server.
 
-This will:
-1. Build the client UI with Vite
-2. Start the Electron app with embedded server
-3. Open the UI in the Electron window
-4. Make the server accessible at `http://localhost:8090`
+## Quick Start
+1) Connect your controller
+- USB: plug your controller via USB. Default baud is 115200.
+- Ethernet: ensure you know the controller’s IP and port (default GRBL telnet‑style ports are often 23 or device‑specific).
 
-### Client Development
+2) Launch ncSender
+- On first launch, a setup dialog guides you to choose USB or Ethernet, pick the port, and confirm baud/IP/port. Save to connect.
 
-For frontend development with hot reload:
-```bash
-cd app/client
-npm run dev:hot   # Starts Vite dev server on port 5174
-```
+3) Load a G‑code file
+- Use the Visualizer panel to upload or load a file. You’ll see a 3D preview, line count, and file name.
 
-Visit `http://localhost:5174` in your browser for the hot reload development server.
+4) Prepare the machine
+- Home (if required), set work offsets, and verify workspace (G54–G59) from the toolbar.
 
-### Testing with Fake CNC Controller
+5) Run the job
+- Click Run. The status shows Running, with progress and ETA. Use Pause/Resume as needed. Stop safely pauses briefly before soft‑reset to reduce marks.
 
-For testing G-code job functionality without real hardware:
-```bash
-cd app
-USE_FAKE_CNC=true npm run dev
-```
+Theme and colors
+- Toggle light/dark from the toolbar sun icon.
+- Change accent/gradient colors under Settings → Application Settings.
 
-This enables a simulated CNC controller that:
-- Responds to all commands with success after 50ms delay
-- Simulates machine states (Idle, Run, Hold)
-- Handles pause/resume/stop commands properly
-- Provides realistic status reports
+## Using Headless Mode (advanced)
+Run the embedded server without the Electron window and access ncSender from any browser on your network.
 
-### Building
+Option 1 — Installed app
+- macOS: `/Applications/ncSender.app/Contents/MacOS/ncSender --headless`
+- Windows: `"C:\\Program Files\\ncSender\\ncSender.exe" --headless`
+- Linux (AppImage): `./ncSender-*.AppImage --headless` or `ncSender --headless` if installed in PATH
 
-Build the client for production:
-```bash
-cd app
-npm run build
-```
+Option 2 — From source
+- `cd app && npm run start:headless`
 
-### Local Build & Testing
+Then open `http://<this-computer-ip>:8090` in a browser (replace with your machine’s LAN IP). The port is configurable in Settings (Remote Control Port) and requires an app restart to take effect.
 
-#### Prerequisites
-- **Node.js 20+**: Required for building the application
-- **GitHub CLI (`gh`)**: Required for downloading release artifacts
-  ```bash
-  brew install gh
-  gh auth login
-  ```
-- **act**: For testing CI workflows locally (optional)
-  ```bash
-  brew install act
-  ```
-- **actionlint**: For validating workflow syntax (optional)
-  ```bash
-  brew install actionlint
-  ```
+## Data & Settings
+ncSender stores its data per‑platform:
+- macOS
+  - G‑code: `~/Library/Application Support/ncSender/gcode-files/`
+  - Settings: `~/Library/Application Support/ncSender/settings.json`
+- Windows
+  - G‑code: `%APPDATA%/ncSender/gcode-files/`
+  - Settings: `%APPDATA%/ncSender/settings.json`
+- Linux / Raspberry Pi
+  - G‑code: `~/.config/ncSender/gcode-files/`
+  - Settings: `~/.config/ncSender/settings.json`
 
-#### Building Locally
-```bash
-# Build for current platform only (auto-detects OS)
-./.scripts/build-local.sh --all
+These folders are created automatically. Files persist across updates and are easy to back up.
 
-# Build for specific platform (only works on matching OS)
-./.scripts/build-local.sh --macos-x64      # macOS only
-./.scripts/build-local.sh --macos-arm64    # macOS only
-./.scripts/build-local.sh --linux-x64      # Linux only
-./.scripts/build-local.sh --windows-x64    # Windows only
+## Tips & Troubleshooting
+- Can’t find the USB port
+  - Unplug/replug the device and reopen Settings. On Windows you may need the correct USB‑serial driver. On macOS, avoid Bluetooth ports.
+- Connection fails
+  - Confirm baud rate (115200 is common). For Ethernet, confirm the IP/port and network reachability (firewall). Try power‑cycling the controller.
+- “Homing Required”
+  - Home the machine first (per your controller/firmware) to clear the prompt.
+- Alarm/Locked
+  - Use “Unlock” or send `$X` from the console if you understand the risks. Review the last alarm code for details.
+- Nothing moves when sending a job
+  - Ensure the machine is Idle (not Alarm/Hold), correct workspace selected, and your file units/modes match the machine (G20/G21, G90/G91, etc.).
 
-# Artifacts will be in releases/[platform-arch]/
-```
+## Privacy
+Everything runs locally. ncSender does not send your files or machine data to remote servers.
 
-**Important:** Local builds are limited to your current OS due to native modules (serialport):
-- On **macOS**: Can only build macOS (x64, arm64)
-- On **Linux**: Can only build Linux (x64)
-- On **Windows**: Can only build Windows (x64)
-- **For multi-platform builds**, use GitHub Actions CI (see "Creating a Release" below)
+## Need Help?
+This is a personal, for‑fun project that I’m actively iterating on. I’m not providing support at the moment, and I’m not accepting new issue submissions yet. Once things are more stable, I may start accepting GitHub Issues for bug reports and feature requests.
 
-#### Testing CI Workflow Locally
-```bash
-# Validate workflow syntax
-actionlint .github/workflows/release-build.yml
-
-# Dry run workflow locally (shows what would execute)
-act push -e <(echo '{"ref": "refs/tags/v1.0.0"}') -n
-
-# Run Linux build locally (requires Docker)
-act -j linux push -e <(echo '{"ref": "refs/tags/v1.0.0"}')
-```
-
-#### Creating a Release
-```bash
-# Create and push a tag to trigger release workflow
-git tag v1.0.0
-git push origin v1.0.0
-
-# Download built artifacts from GitHub Actions
-./.scripts/download-latest-release.sh
-```
-
-The release workflow will:
-1. Build for macOS (x64, arm64), Linux (x64), and Windows (x64)
-2. Create a GitHub release with the tag name
-3. Attach all build artifacts to the release
-
-### Production
-
-Run in production mode:
-```bash
-cd app
-npm run start
-```
-
-## 📁 Data Storage
-
-ncSender stores user data in platform-specific directories following OS conventions:
-
-### macOS
-- **G-code files**: `~/Library/Application Support/ncSender/gcode-files/`
-- **Settings**: `~/Library/Application Support/ncSender/settings.json`
-- **Command history**: `~/Library/Application Support/ncSender/command-history.json`
-
-### Windows
-- **G-code files**: `%APPDATA%/ncSender/gcode-files/`
-- **Settings**: `%APPDATA%/ncSender/settings.json`
-- **Command history**: `%APPDATA%/ncSender/command-history.json`
-
-### Linux / Raspberry Pi
-- **G-code files**: `~/.config/ncSender/gcode-files/`
-- **Settings**: `~/.config/ncSender/settings.json`
-- **Command history**: `~/.config/ncSender/command-history.json`
-
-These directories are automatically created when the application first runs. Files stored here will persist between app updates and are easily accessible for backup purposes.
-
-## 🌐 Port Architecture
-
-ncSender uses a smart port architecture that works seamlessly in both development and production environments:
-
-### Production (Electron App)
-- **Single Port**: Everything served from one configurable port (default: 8090)
-- **Client Auto-detection**: Frontend automatically uses the current URL's port for API/WebSocket calls
-- **Configuration**: Server port can be changed in `settings.json` → `serverPort` field
-- **URLs**: All API calls use relative URLs (`/api/settings`, `/api/status`, etc.)
-
-### Development (Hot Reload)
-- **Frontend**: Vite dev server runs on port 5174 for hot reload
-- **Backend**: API/WebSocket server runs on port 8090 (development fallback)
-- **Vite Proxy**: Automatically forwards `/api/*` requests from 5174 → 8090
-- **Reason**: Separation needed for hot reload functionality
-
-### API Configuration
-The frontend uses relative URLs in all environments:
-```javascript
-// Works in both development and production
-fetch('/api/settings')           // Development: 5174 → proxy → 8090
-                                // Production: same origin (any port)
-```
-
-### Development Commands
-```bash
-# Start both frontend and backend with hot reload
-npm run dev:hot
-
-# Frontend only (requires backend running separately)
-cd client && npm run dev
-
-# Backend only
-npm run server:dev
-```
-
-This architecture ensures that:
-- Production builds work on any configurable port
-- Development has full hot reload capabilities
-- API calls automatically route to the correct backend
-- No hardcoded URLs in the frontend code
+## For Developers
+Looking to build, contribute, or extend ncSender? See `docs/DEVELOPER_GUIDE.md` for:
+- Project structure and architecture
+- Development workflow (hot reload)
+- Scripts and local packaging
+- CI/CD and release process
