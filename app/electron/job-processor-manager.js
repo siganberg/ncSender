@@ -1,4 +1,6 @@
 import { GCodeJobProcessor } from './routes/gcode-job-routes.js';
+import { GrblHalTelemetryProvider } from './providers/telemetry-provider.js';
+import { JobProgressEstimator } from './providers/job-progress-estimator.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [JOB MANAGER]`, ...args);
@@ -7,6 +9,7 @@ const log = (...args) => {
 class JobProcessorManager {
   constructor() {
     this.currentJob = null;
+    this.progressProviderFactory = null;
   }
 
   async startJob(filePath, filename, cncController, broadcast) {
@@ -14,7 +17,18 @@ class JobProcessorManager {
       throw new Error('A job is already running. Stop the current job before starting a new one.');
     }
 
-    this.currentJob = new GCodeJobProcessor(filePath, filename, cncController, broadcast);
+    // Create a swappable telemetry-backed progress provider
+    const progressProvider = this.progressProviderFactory
+      ? this.progressProviderFactory(cncController, { filePath, filename })
+      : new JobProgressEstimator({ telemetry: new GrblHalTelemetryProvider(cncController) });
+
+    this.currentJob = new GCodeJobProcessor(
+      filePath,
+      filename,
+      cncController,
+      broadcast,
+      { progressProvider }
+    );
     await this.currentJob.start();
     log('Job started:', filename);
 
@@ -93,16 +107,29 @@ class JobProcessorManager {
       status = 'paused';
     }
 
-    return {
+    const est = this.currentJob.getEstimate?.() || null;
+
+    const base = {
       filename: this.currentJob.filename,
       currentLine: this.currentJob.currentLine,
       totalLines: this.currentJob.lines.length,
       status: status
     };
+
+    // Merge estimator output if present
+    if (est && typeof est === 'object') {
+      return { ...base, ...est };
+    }
+    return base;
   }
 
   setJobCompleteCallback(callback) {
     this.onJobCompleteCallback = callback;
+  }
+
+  setProgressProviderFactory(factory) {
+    // factory: (cncController, { filePath, filename }) => { getEstimate(), startWithContent(), ... }
+    this.progressProviderFactory = typeof factory === 'function' ? factory : null;
   }
 }
 

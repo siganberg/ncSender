@@ -397,6 +397,9 @@ export async function createApp(options = {}) {
             changes.jobLoaded.remainingSec = jl.remainingSec ?? null;
             changes.jobLoaded.progressPercent = jl.progressPercent ?? null;
             changes.jobLoaded.runtimeSec = jl.runtimeSec ?? null;
+            // Include provider-driven fields to keep UI in sync
+            changes.jobLoaded.totalEstimatedSec = jl.totalEstimatedSec ?? null;
+            changes.jobLoaded.progressProvider = jl.progressProvider ?? null;
           }
         } catch {}
 
@@ -458,21 +461,24 @@ export async function createApp(options = {}) {
       const runtimeSec = Math.max(0, Math.floor((elapsedMs - pausedMs) / 1000));
       jl.runtimeSec = runtimeSec;
 
-      // Percent
-      let percent = 0;
-      if (tl > 0) {
-        percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
-      }
-      if (jl.status === 'completed') percent = 100;
-      jl.progressPercent = percent;
+      // If an external progress provider is not attached, compute naive percent/remaining
+      if (!jl.progressProvider) {
+        // Percent
+        let percent = 0;
+        if (tl > 0) {
+          percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
+        }
+        if (jl.status === 'completed') percent = 100;
+        jl.progressPercent = percent;
 
-      // Remaining based on avg seconds per executed line, frozen implicitly when paused
-      if (cl > 0 && tl > 0) {
-        const linesRemaining = Math.max(0, tl - cl);
-        const avg = runtimeSec / cl; // sec per line
-        jl.remainingSec = Math.round(linesRemaining * avg);
-      } else {
-        jl.remainingSec = null;
+        // Remaining based on avg seconds per executed line, frozen implicitly when paused
+        if (cl > 0 && tl > 0) {
+          const linesRemaining = Math.max(0, tl - cl);
+          const avg = runtimeSec / cl; // sec per line
+          jl.remainingSec = Math.round(linesRemaining * avg);
+        } else {
+          jl.remainingSec = null;
+        }
       }
     }
   };

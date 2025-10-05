@@ -125,7 +125,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
 }
 
 export class GCodeJobProcessor {
-  constructor(filePath, filename, cncController, broadcast) {
+  constructor(filePath, filename, cncController, broadcast, options = {}) {
     this.filePath = filePath;
     this.filename = filename;
     this.cncController = cncController;
@@ -136,12 +136,20 @@ export class GCodeJobProcessor {
     this.isPaused = false;
     this.isStopped = false;
     this.completionCallbacks = [];
+    this.progressProvider = options.progressProvider || null;
   }
 
   async start() {
     // Read and parse the G-code file
     const content = await fs.readFile(this.filePath, 'utf8');
     this.lines = this.parseGCodeLines(content);
+
+    // Initialize progress provider with full content pre-analysis
+    try {
+      if (this.progressProvider?.startWithContent) {
+        await this.progressProvider.startWithContent(content);
+      }
+    } catch {}
 
     this.isRunning = true;
     this.isPaused = false;
@@ -176,6 +184,7 @@ export class GCodeJobProcessor {
 
     // Trigger completion callbacks when manually stopped
     this.triggerCompletion('stopped');
+    try { this.progressProvider?.stop?.(); } catch {}
   }
 
   onComplete(callback) {
@@ -271,6 +280,8 @@ export class GCodeJobProcessor {
             sourceId: 'gcode-runner'
           }
         });
+        // Notify progress provider that we've advanced a (1-based) line number
+        try { this.progressProvider?.onAdvanceToLine?.(this.currentLine); } catch {}
       } catch (error) {
         this.isStopped = true;
         this.isRunning = false;
@@ -280,6 +291,7 @@ export class GCodeJobProcessor {
 
     // Job completed or stopped
     this.isRunning = false;
+    try { if (this.isStopped) this.progressProvider?.stop?.(); } catch {}
 
     if (!this.isStopped && this.currentLine >= this.lines.length) {
       // Job completed successfully
@@ -301,7 +313,16 @@ export class GCodeJobProcessor {
       setTimeout(() => {
         log('Triggering job completion callbacks');
         this.triggerCompletion('completed');
+        try { this.progressProvider?.stop?.(); } catch {}
       }, 100);
+    }
+  }
+
+  getEstimate() {
+    try {
+      return this.progressProvider?.getEstimate?.() || null;
+    } catch {
+      return null;
     }
   }
 }
