@@ -167,6 +167,18 @@ jobs:
         with:
           path: artifacts
 
+      - name: Prepare release assets
+        run: |
+          # Find all release files (exclude builder metadata files)
+          find artifacts -type f \
+            ! -name "builder-*.yml" \
+            ! -name "*.blockmap" \
+            -exec cp {} artifacts/ \;
+
+          # List what we're uploading
+          echo "Release assets:"
+          ls -lh artifacts/*.{dmg,pkg,deb,AppImage,exe,zip} 2>/dev/null || ls -lh artifacts/
+
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,4 +187,8 @@ jobs:
             --repo ${{ github.repository }} \
             --title "Release ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/**/*
+            artifacts/*.{dmg,pkg,deb,AppImage,exe,zip} 2>/dev/null || \
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes
