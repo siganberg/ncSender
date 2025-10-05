@@ -17,6 +17,9 @@ export function useConsoleStore() {
     jobLoaded,
     // History helpers (delegate to API): return unsubscribe for convenience
     onHistoryAppended: (callback: (event: any) => void) => api.onCommandHistoryAppended(callback),
-    addToHistory: (command: string) => api.addCommandToHistory(command)
+    addToHistory: (command: string) => api.addCommandToHistory(command),
+    // Console auto-scroll helpers: delegate event subscription to API
+    onCncCommand: (handler: (evt: any) => void) => api.on('cnc-command', handler),
+    onCncCommandResult: (handler: (evt: any) => void) => api.on('cnc-command-result', handler)
   };
 }

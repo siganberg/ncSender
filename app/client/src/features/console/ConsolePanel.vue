@@ -507,13 +507,13 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
-  const offCmd = api.on('cnc-command', async () => {
+  const offCmd = store.onCncCommand(async () => {
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
   });
-  const offRes = api.on('cnc-command-result', async () => {
+  const offRes = store.onCncCommandResult(async () => {
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);

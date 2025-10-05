@@ -247,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { api } from './api';
+import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
@@ -342,9 +342,9 @@ const createJogId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 const startHeartbeat = (jogId: string) => {
   stopHeartbeat();
-  api.sendJogHeartbeat(jogId);
+  jogHeartbeat(jogId);
   heartbeatTimer = window.setInterval(() => {
-    api.sendJogHeartbeat(jogId);
+    jogHeartbeat(jogId);
   }, HEARTBEAT_INTERVAL_MS);
 };
 
@@ -362,7 +362,7 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const distance = props.jogConfig.stepSize * direction;
   const command = `$J=G21 G91 ${axis}${distance} F5000`;
   try {
-    await api.sendJogStep({
+    await jogStep({
       command,
       displayCommand: command,
       axis,
@@ -380,7 +380,7 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
   const yDistance = props.jogConfig.stepSize * yDirection;
   const command = `$J=G21 G91 X${xDistance} Y${yDistance} F5000`;
   try {
-    await api.sendJogStep({
+    await jogStep({
       command,
       displayCommand: command,
       axis: 'XY',
@@ -400,7 +400,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   activeJogId = jogId;
 
   try {
-    await api.startJogSession({
+    await jogStart({
       jogId,
       command,
       displayCommand: command,
@@ -424,7 +424,7 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
   activeJogId = jogId;
 
   try {
-    await api.startJogSession({
+    await jogStart({
       jogId,
       command,
       displayCommand: command,
@@ -527,7 +527,7 @@ const stopJog = () => {
   activeJogId = null;
   stopHeartbeat();
 
-  api.stopJogSession(jogId).catch((error) => {
+  jogStop(jogId).catch((error) => {
     console.error('Failed to stop jog session:', error);
   });
 };
