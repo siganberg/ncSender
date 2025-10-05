@@ -111,14 +111,14 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive } from 'vue';
-import { api } from '../../lib/api.js';
+import { api } from './api';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
-import { useAppStore } from '../../composables/use-app-store';
+import { useConsoleStore } from './store';
 import { RecycleScroller } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
-const store = useAppStore();
+const store = useConsoleStore();
 
 const props = withDefaults(defineProps<{
   lines?: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response'; sourceId?: string }>;

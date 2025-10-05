@@ -134,10 +134,10 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
-import { api } from '../../lib/api.js';
-import { useAppStore } from '../../composables/use-app-store';
+import { api } from './api';
+import { useStatusStore } from './store';
 
-const store = useAppStore();
+const store = useStatusStore();
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
 const isHoming = computed(() => (store.status.machineState || '').toLowerCase() === 'home');

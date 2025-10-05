@@ -247,13 +247,13 @@
 </template>
 
 <script setup lang="ts">
-import { api } from '../../lib/api.js';
+import { api } from './api';
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue';
-import { useAppStore } from '../../composables/use-app-store';
+import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 
-const store = useAppStore();
+const store = useJogStore();
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;

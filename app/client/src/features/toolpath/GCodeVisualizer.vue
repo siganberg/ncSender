@@ -208,14 +208,14 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
-import { api } from '../../lib/api.js';
+import { api } from './api';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
-import { useAppStore } from '../../composables/use-app-store';
+import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 
-const store = useAppStore();
+const store = useToolpathStore();
 
 const presets = [
   { id: 'top', label: 'Top' },
