@@ -169,8 +169,112 @@
           Stop
         </button>
       </div>
+
+      <!-- Probe button - bottom right -->
+      <button class="probe-button" @click="showProbeDialog = true" title="Probe">
+        <span class="probe-label">Probe</span>
+        <img src="/assets/probe.svg" alt="Probe" class="probe-icon" />
+      </button>
     </div>
   </section>
+
+  <!-- Probe Dialog -->
+  <Dialog v-if="showProbeDialog" @close="showProbeDialog = false" size="medium-minus">
+    <div class="probe-dialog">
+      <div class="probe-dialog__header">
+        <h2 class="probe-dialog__title">Probe</h2>
+      </div>
+      <div class="probe-dialog__content">
+        <div class="probe-dialog__columns">
+          <div class="probe-dialog__column probe-dialog__column--controls">
+            <p class="probe-instructions">
+              Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.
+            </p>
+
+            <div class="probe-control-row">
+              <div class="probe-control-group">
+                <label class="probe-label">Probe Type</label>
+                <select v-model="probeType" class="probe-select">
+                  <option value="3d-touch">3D-Touch Probe</option>
+                  <option value="standard-block">Standard Block</option>
+                </select>
+              </div>
+
+              <div class="probe-control-group">
+                <label class="probe-label">Probing Axis</label>
+                <select v-model="probingAxis" class="probe-select">
+                  <option value="Z">Z</option>
+                  <option value="XYZ">XYZ</option>
+                  <option value="XY">XY</option>
+                  <option value="X">X</option>
+                  <option value="Y">Y</option>
+                  <option value="Center">Center</option>
+                </select>
+              </div>
+            </div>
+
+            <template v-if="probeType === '3d-touch'">
+              <div class="probe-control-row probe-control-row--three">
+                <div class="probe-control-group">
+                  <label class="probe-label">Diameter</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="ballPointDiameter"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      @input="validateBallPointDiameter"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.ballPointDiameter" class="probe-error">{{ errors.ballPointDiameter }}</span>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Z-Plunge</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="zPlunge"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      @input="validateZPlunge"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.zPlunge" class="probe-error">{{ errors.zPlunge }}</span>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Z-Offset</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="zOffset"
+                      type="number"
+                      step="0.01"
+                      class="probe-input"
+                      @input="validateZOffset"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="probe-dialog__column probe-dialog__column--viewer">
+            <ProbeVisualizer :probe-type="probeType" />
+          </div>
+        </div>
+      </div>
+      <div class="probe-dialog__footer">
+        <button @click="showProbeDialog = false" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
+        <button class="probe-dialog__btn probe-dialog__btn--primary">Start Probe</button>
+      </div>
+    </div>
+  </Dialog>
 
   <!-- Delete Confirmation Dialog -->
   <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
@@ -238,6 +342,7 @@ import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
+import ProbeVisualizer from '../../components/ProbeVisualizer.vue';
 
 const store = useToolpathStore();
 
@@ -337,6 +442,19 @@ const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
 const fileToDelete = ref<string | null>(null);
+const showProbeDialog = ref(false);
+
+// Probe dialog state
+const probeType = ref<'3d-touch' | 'standard-block'>('3d-touch');
+const ballPointDiameter = ref(2);
+const zPlunge = ref(3);
+const zOffset = ref(-0.1);
+const probingAxis = ref('Z');
+const errors = ref({
+  ballPointDiameter: '',
+  zPlunge: '',
+  zOffset: ''
+});
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 const outOfBoundsAxes = ref<string[]>([]);
@@ -1638,6 +1756,31 @@ function extractToolsFromGCode(content: string): number[] {
   return order;
 }
 
+// Probe validation functions
+const validateBallPointDiameter = () => {
+  if (ballPointDiameter.value <= 0) {
+    errors.value.ballPointDiameter = 'Must be a positive number';
+  } else {
+    errors.value.ballPointDiameter = '';
+  }
+};
+
+const validateZPlunge = () => {
+  if (zPlunge.value <= 0) {
+    errors.value.zPlunge = 'Must be a positive number';
+  } else {
+    errors.value.zPlunge = '';
+  }
+};
+
+const validateZOffset = () => {
+  if (isNaN(zOffset.value)) {
+    errors.value.zOffset = 'Must be a valid number';
+  } else {
+    errors.value.zOffset = '';
+  }
+};
+
 // Tool press functionality - long press to change tool
 const LONG_PRESS_MS_TOOL = 1500;
 const DELAY_BEFORE_VISUAL_MS = 150;
@@ -1970,7 +2113,6 @@ watch(() => store.status.mistCoolant, (newValue) => {
   color: var(--color-text-primary);
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   box-shadow: inset 0 0 0 1px var(--color-border);
-  opacity: 0.5;
   overflow: hidden;
   cursor: pointer;
   user-select: none;
@@ -1978,7 +2120,6 @@ watch(() => store.status.mistCoolant, (newValue) => {
 }
 
 .tools-legend__item.used {
-  opacity: 1;
   background: rgba(26, 188, 156, 0.1);
   box-shadow: inset 0 0 0 1px var(--color-accent);
 }
@@ -1990,6 +2131,11 @@ watch(() => store.status.mistCoolant, (newValue) => {
   box-shadow: none;
   transform: none;
   cursor: default;
+}
+
+/* When tool is both active AND used by program, add inner border to show it's in the program */
+.tools-legend__item.active.used {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
 .tools-legend__item.disabled {
@@ -2697,6 +2843,231 @@ body.theme-light .dot--rapid {
   background: var(--color-surface);
   border-color: var(--color-accent);
   transform: translateY(-1px);
+}
+
+/* Probe button - bottom right */
+.probe-button {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: var(--color-surface-muted);
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.probe-button:hover {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.probe-button:active {
+  transform: translateY(0);
+}
+
+.probe-icon {
+  width: 48px;
+  height: 48px;
+  filter: invert(64%) sepia(48%) saturate(527%) hue-rotate(115deg) brightness(93%) contrast(91%);
+}
+
+.probe-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.probe-button:hover .probe-icon {
+  filter: brightness(0) invert(1);
+}
+
+.probe-button:hover .probe-label {
+  color: white;
+}
+
+/* Probe dialog */
+.probe-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: 900px !important;
+}
+
+.probe-dialog__header {
+  padding-bottom: 12px;
+  padding: 10px 10px 12px 10px;
+  text-align: center;
+}
+
+.probe-dialog__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__content {
+  padding: 20px;
+  min-width: 900px;
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__columns {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+  min-height: 400px;
+}
+
+.probe-dialog__column {
+  display: flex;
+  flex-direction: column;
+}
+
+.probe-dialog__column h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__column--controls {
+  padding-right: 20px;
+}
+
+.probe-dialog__column--viewer {
+  padding-left: 20px;
+}
+
+.probe-instructions {
+  margin: 0 0 20px 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.probe-control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.probe-control-row--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.probe-control-group {
+  margin-bottom: 12px;
+}
+
+.probe-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.probe-input,
+.probe-select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.2s ease;
+  text-align: right;
+}
+
+.probe-input:focus,
+.probe-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.probe-input[type="number"] {
+  -moz-appearance: textfield;
+  text-align: right;
+}
+
+.probe-input::-webkit-outer-spin-button,
+.probe-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.probe-input-with-unit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.probe-unit {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.probe-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #ff6b6b;
+}
+
+.probe-dialog__footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 10px 20px 10px;
+}
+
+.probe-dialog__btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--color-border);
+}
+
+.probe-dialog__btn--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__btn--secondary:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.probe-dialog__btn--primary {
+  background: var(--gradient-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+.probe-dialog__btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
 }
 
 /* Confirmation Dialog */

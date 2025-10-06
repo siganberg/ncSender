@@ -15,7 +15,7 @@
 <script setup lang="ts">
 defineProps<{
   showHeader?: boolean;
-  size?: 'small' | 'small-plus' | 'medium' | 'large';
+  size?: 'small' | 'small-plus' | 'medium-minus' | 'medium' | 'large';
   zIndex?: number;
 }>()
 
@@ -59,6 +59,11 @@ defineEmits<{
 .dialog--small-plus {
   max-width: 680px;
   width: auto;
+}
+
+.dialog--medium-minus {
+  width: auto;
+  height: auto;
 }
 
 .dialog--medium {
