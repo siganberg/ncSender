@@ -266,7 +266,10 @@
             </template>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
-            <ProbeVisualizer :probe-type="probeType" :probing-axis="probingAxis" />
+            <ProbeVisualizer :probe-type="probeType" :probing-axis="probingAxis" :selected-corner="selectedCorner" @corner-selected="selectedCorner = $event" />
+            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-instruction">
+              Click on a corner to select where to start probing
+            </div>
           </div>
         </div>
       </div>
@@ -451,6 +454,7 @@ const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
 const probingAxis = ref('Z');
+const selectedCorner = ref<string | null>(null);
 const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',
@@ -1630,6 +1634,67 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
   }
 });
 
+// Watch for probe settings changes
+watch(() => probeType.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeType: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probe type setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => probingAxis.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probingAxis: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probing axis setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => selectedCorner.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeSelectedCorner: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => ballPointDiameter.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeBallPointDiameter: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save ball point diameter setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => zPlunge.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZPlunge: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z plunge setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => zOffset.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZOffset: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z offset setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
   // Don't save during initial load
@@ -1879,6 +1944,25 @@ onMounted(async () => {
     }
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
+    }
+    // Load probe settings
+    if (settings.probeType) {
+      probeType.value = settings.probeType;
+    }
+    if (settings.probingAxis) {
+      probingAxis.value = settings.probingAxis;
+    }
+    if (settings.probeSelectedCorner) {
+      selectedCorner.value = settings.probeSelectedCorner;
+    }
+    if (typeof settings.probeBallPointDiameter === 'number') {
+      ballPointDiameter.value = settings.probeBallPointDiameter;
+    }
+    if (typeof settings.probeZPlunge === 'number') {
+      zPlunge.value = settings.probeZPlunge;
+    }
+    if (typeof settings.probeZOffset === 'number') {
+      zOffset.value = settings.probeZOffset;
     }
   }
 
@@ -2959,6 +3043,16 @@ body.theme-light .dot--rapid {
   font-size: 0.9rem;
   line-height: 1.5;
   color: var(--color-text-primary);
+}
+
+.probe-instruction {
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
 }
 
 .probe-control-row {

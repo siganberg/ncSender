@@ -12,6 +12,11 @@ import { loadOBJWithGroups } from './custom-obj-loader';
 const props = defineProps<{
   probeType: '3d-touch' | 'standard-block';
   probingAxis: string;
+  selectedCorner: string | null;
+}>();
+
+const emit = defineEmits<{
+  cornerSelected: [corner: string | null];
 }>();
 
 const containerRef = ref<HTMLElement>();
@@ -22,6 +27,7 @@ let controls: OrbitControls;
 let probeModel: THREE.Group | null = null;
 let plateModel: THREE.Group | null = null;
 const blinkIntervals = ref<number[]>([]);
+let selectedCorner: string | null = null;
 
 const initScene = () => {
   if (!containerRef.value) return;
@@ -73,7 +79,7 @@ const initScene = () => {
   const mouse = new THREE.Vector2();
 
   renderer.domElement.addEventListener('click', (event) => {
-    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) return;
+    if (!['XYZ', 'XY'].includes(props.probingAxis)) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -86,14 +92,76 @@ const initScene = () => {
       const clickedObject = intersects[0].object;
       const groupName = clickedObject.userData.group?.toLowerCase() || '';
 
-      if (groupName.includes('corner')) {
-        alert(clickedObject.userData.group);
+      if (groupName.includes('corner') && plateModel) {
+        // Reset previously selected corner to darker gray
+        if (selectedCorner) {
+          setGroupColor(plateModel, selectedCorner, 0x555555);
+        }
+
+        // Change clicked corner to accent color
+        selectedCorner = clickedObject.userData.group;
+        setGroupColor(plateModel, selectedCorner, 0x4caf50);
+
+        // Emit corner selection to parent
+        emit('cornerSelected', selectedCorner);
+
+        // Move probe to selected corner in XYZ or XY mode
+        if (['XYZ', 'XY'].includes(props.probingAxis) && probeModel && plateModel) {
+          // Get the bounding box of the plate to find corner positions
+          const plateBBox = new THREE.Box3().setFromObject(plateModel);
+          const plateMin = plateBBox.min;
+          const plateMax = plateBBox.max;
+
+          console.log('[CORNER] Clicked corner:', selectedCorner);
+          console.log('[PLATE] BBox min:', JSON.stringify({x: plateMin.x, y: plateMin.y, z: plateMin.z}));
+          console.log('[PLATE] BBox max:', JSON.stringify({x: plateMax.x, y: plateMax.y, z: plateMax.z}));
+
+          // Determine corner position based on corner name
+          // Note: X and Y are swapped due to model orientation
+          const cornerName = selectedCorner.toLowerCase();
+          let targetX = 0, targetY = 0;
+          let mappedCorner = '';
+
+          // Inset amount - negative for XY (more outer), positive for XYZ (more inner)
+          const inset = props.probingAxis === 'XY' ? -1 : 2;
+
+          if (cornerName.includes('front') && cornerName.includes('right')) {
+            targetX = plateMin.x + inset;
+            targetY = plateMin.y + inset;
+            mappedCorner = 'FrontRight (min.x, min.y)';
+          } else if (cornerName.includes('front') && cornerName.includes('left')) {
+            targetX = plateMin.x + inset;
+            targetY = plateMax.y - inset;
+            mappedCorner = 'FrontLeft (min.x, max.y)';
+          } else if (cornerName.includes('back') && cornerName.includes('right')) {
+            targetX = plateMax.x - inset;
+            targetY = plateMin.y + inset;
+            mappedCorner = 'BackRight (max.x, min.y)';
+          } else if (cornerName.includes('back') && cornerName.includes('left')) {
+            targetX = plateMax.x - inset;
+            targetY = plateMax.y - inset;
+            mappedCorner = 'BackLeft (max.x, max.y)';
+          }
+
+          console.log('[PROBE] Mapped corner:', mappedCorner);
+          console.log('[PROBE] Moving to:', JSON.stringify({x: targetX, y: targetY}));
+
+          // Move probe to corner position
+          probeModel.position.x = targetX;
+          probeModel.position.y = targetY;
+          // Set Z height based on mode
+          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        }
+
+        if (renderer) {
+          renderer.render(scene, camera);
+        }
       }
     }
   });
 
   renderer.domElement.addEventListener('mousemove', (event) => {
-    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+    if (!['XYZ', 'XY'].includes(props.probingAxis)) {
       renderer.domElement.style.cursor = 'default';
       return;
     }
@@ -133,8 +201,8 @@ const initScene = () => {
   // Reset view on right click
   renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    camera.position.set(0, -33.85, 10.19);
-    camera.lookAt(0, 0, 5);
+    camera.position.set(0, -35.631578947368226, 10.726315789473626);
+    camera.lookAt(0, 0, 0);
     controls.update();
     renderer.render(scene, camera);
   });
@@ -211,9 +279,41 @@ const loadProbeModel = async () => {
     await loadPlateModel(center, scale);
 
     // Update camera to view the scaled model
-    camera.position.set(0, -33.85, 10.19);
-    camera.lookAt(0, 0, 5);
+    camera.position.set(0, -35.631578947368226, 10.726315789473626);
+    camera.lookAt(0, 0, 0);
     controls.update();
+
+    // Apply saved corner selection after models are loaded
+    if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && plateModel && probeModel) {
+      selectedCorner = props.selectedCorner;
+      setGroupColor(plateModel, props.selectedCorner, 0x4caf50);
+
+      // Move probe to saved corner position
+      const plateBBox = new THREE.Box3().setFromObject(plateModel);
+      const plateMin = plateBBox.min;
+      const plateMax = plateBBox.max;
+      const cornerName = props.selectedCorner.toLowerCase();
+      const inset = props.probingAxis === 'XY' ? -1 : 2;
+      let targetX = 0, targetY = 0;
+
+      if (cornerName.includes('front') && cornerName.includes('right')) {
+        targetX = plateMin.x + inset;
+        targetY = plateMin.y + inset;
+      } else if (cornerName.includes('front') && cornerName.includes('left')) {
+        targetX = plateMin.x + inset;
+        targetY = plateMax.y - inset;
+      } else if (cornerName.includes('back') && cornerName.includes('right')) {
+        targetX = plateMax.x - inset;
+        targetY = plateMin.y + inset;
+      } else if (cornerName.includes('back') && cornerName.includes('left')) {
+        targetX = plateMax.x - inset;
+        targetY = plateMax.y - inset;
+      }
+
+      probeModel.position.x = targetX;
+      probeModel.position.y = targetY;
+      probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+    }
 
     // Re-render after model is loaded
     if (renderer) {
@@ -272,14 +372,22 @@ const applyMeshVisibilityRules = (object: THREE.Group) => {
   // Apply visibility and color rules based on probing axis
   if (props.probingAxis === 'Center - Inner') {
     hideGroup(object, 'center');
+    hideGroup(object, 'EdgeOuter');
+    showGroup(object, 'EdgeCenter');
     setGroupColor(object, 'Inner', 0x4caf50); // Green highlight for Inner parts
   } else if (props.probingAxis === 'Center - Outer') {
+    hideGroup(object, 'EdgeCenter');
+    showGroup(object, 'EdgeOuter');
     setGroupColor(object, 'Outer', 0x4caf50); // Green highlight for Outer parts
   } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
     showGroup(object, 'center');
+    hideGroup(object, 'EdgeOuter');
+    hideGroup(object, 'EdgeCenter');
     setGroupColor(object, 'Corner', 0x555555); // Darker gray for corners
   } else {
     showGroup(object, 'center');
+    hideGroup(object, 'EdgeOuter');
+    hideGroup(object, 'EdgeCenter');
   }
 };
 
@@ -299,6 +407,50 @@ watch(() => props.probeType, () => {
   loadProbeModel();
 });
 
+// Watch for selected corner prop changes (from settings)
+watch(() => props.selectedCorner, (newCorner) => {
+  if (plateModel && newCorner && ['XYZ', 'XY'].includes(props.probingAxis)) {
+    // Reset all corners to default color
+    setGroupColor(plateModel, 'Corner', 0x555555);
+
+    // Set the loaded corner to accent color
+    selectedCorner = newCorner;
+    setGroupColor(plateModel, newCorner, 0x4caf50);
+
+    // Move probe to the corner position
+    if (probeModel) {
+      const plateBBox = new THREE.Box3().setFromObject(plateModel);
+      const plateMin = plateBBox.min;
+      const plateMax = plateBBox.max;
+      const cornerName = newCorner.toLowerCase();
+      const inset = props.probingAxis === 'XY' ? -1 : 2;
+      let targetX = 0, targetY = 0;
+
+      if (cornerName.includes('front') && cornerName.includes('right')) {
+        targetX = plateMin.x + inset;
+        targetY = plateMin.y + inset;
+      } else if (cornerName.includes('front') && cornerName.includes('left')) {
+        targetX = plateMin.x + inset;
+        targetY = plateMax.y - inset;
+      } else if (cornerName.includes('back') && cornerName.includes('right')) {
+        targetX = plateMax.x - inset;
+        targetY = plateMin.y + inset;
+      } else if (cornerName.includes('back') && cornerName.includes('left')) {
+        targetX = plateMax.x - inset;
+        targetY = plateMax.y - inset;
+      }
+
+      probeModel.position.x = targetX;
+      probeModel.position.y = targetY;
+      probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+    }
+
+    if (renderer) {
+      renderer.render(scene, camera);
+    }
+  }
+});
+
 // Watch for probing axis changes and update Center group visibility
 watch(() => props.probingAxis, () => {
   if (plateModel) {
@@ -313,30 +465,83 @@ watch(() => props.probingAxis, () => {
 
     if (props.probingAxis === 'Center - Inner') {
       hideGroup(plateModel, 'center');
+      hideGroup(plateModel, 'EdgeOuter');
+      showGroup(plateModel, 'EdgeCenter');
       setGroupColor(plateModel, 'Inner', 0x4caf50); // Green highlight for Inner parts
+      setGroupColor(plateModel, 'EdgeCenter', 0x4caf50); // Green highlight for EdgeCenter
       // Lower the probe
       if (probeModel) {
-        probeModel.position.z = 1; // Lower position
+        probeModel.position.set(0, 0, 1); // Lower position
       }
     } else if (props.probingAxis === 'Center - Outer') {
       showGroup(plateModel, 'center');
+      hideGroup(plateModel, 'EdgeCenter');
+      showGroup(plateModel, 'EdgeOuter');
       setGroupColor(plateModel, 'Outer', 0x4caf50); // Green highlight for Outer parts
+      setGroupColor(plateModel, 'EdgeOuter', 0x4caf50); // Green highlight for EdgeOuter
       // Reset probe position
       if (probeModel) {
-        probeModel.position.z = 4; // Original position
+        probeModel.position.set(0, 0, 4); // Original position
       }
     } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
       showGroup(plateModel, 'center');
+      hideGroup(plateModel, 'EdgeOuter');
+      hideGroup(plateModel, 'EdgeCenter');
       setGroupColor(plateModel, 'Corner', 0x555555); // Darker gray for corners
-      // Reset probe position
-      if (probeModel) {
-        probeModel.position.z = 4; // Original position
+
+      // Handle X axis - color SideLeft and SideRight
+      if (props.probingAxis === 'X') {
+        setGroupColor(plateModel, 'SideLeft', 0x555555); // Darker gray for SideLeft
+        setGroupColor(plateModel, 'SideRight', 0x555555); // Darker gray for SideRight
+      }
+
+      // Restore saved corner selection for XYZ/XY modes
+      if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
+        selectedCorner = props.selectedCorner;
+        setGroupColor(plateModel, props.selectedCorner, 0x4caf50);
+
+        // Move probe to saved corner position
+        if (probeModel) {
+          const plateBBox = new THREE.Box3().setFromObject(plateModel);
+          const plateMin = plateBBox.min;
+          const plateMax = plateBBox.max;
+          const cornerName = props.selectedCorner.toLowerCase();
+          const inset = props.probingAxis === 'XY' ? -1 : 2;
+          let targetX = 0, targetY = 0;
+
+          if (cornerName.includes('front') && cornerName.includes('right')) {
+            targetX = plateMin.x + inset;
+            targetY = plateMin.y + inset;
+          } else if (cornerName.includes('front') && cornerName.includes('left')) {
+            targetX = plateMin.x + inset;
+            targetY = plateMax.y - inset;
+          } else if (cornerName.includes('back') && cornerName.includes('right')) {
+            targetX = plateMax.x - inset;
+            targetY = plateMin.y + inset;
+          } else if (cornerName.includes('back') && cornerName.includes('left')) {
+            targetX = plateMax.x - inset;
+            targetY = plateMax.y - inset;
+          }
+
+          probeModel.position.x = targetX;
+          probeModel.position.y = targetY;
+          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        }
+      } else {
+        selectedCorner = null; // Reset corner selection for X/Y modes
+        emit('cornerSelected', null); // Emit reset to parent
+        // Reset probe position
+        if (probeModel) {
+          probeModel.position.set(0, 0, 4); // Original position
+        }
       }
     } else {
       showGroup(plateModel, 'center');
-      // Reset probe position
+      hideGroup(plateModel, 'EdgeOuter');
+      hideGroup(plateModel, 'EdgeCenter');
+      // Reset probe position to center
       if (probeModel) {
-        probeModel.position.z = 4; // Original position
+        probeModel.position.set(0, 0, 4); // Original position
       }
     }
     if (renderer) {
