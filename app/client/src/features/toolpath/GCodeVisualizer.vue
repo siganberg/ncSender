@@ -342,7 +342,7 @@ import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
-import ProbeVisualizer from '../../components/ProbeVisualizer.vue';
+import ProbeVisualizer from './probe/ProbeVisualizer.vue';
 
 const store = useToolpathStore();
 
