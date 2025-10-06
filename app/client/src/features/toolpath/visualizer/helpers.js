@@ -56,7 +56,7 @@ export const generateCuttingPointer = () => {
             const objLoader = new OBJLoader();
             objLoader.setMaterials(materials);
             objLoader.load(
-                '/assets/cnc-bit.obj',
+                '/assets/cnc-bit.txt',
                 (obj) => {
                     // Collect meshes in encounter order
                     const meshes = [];
@@ -144,7 +144,7 @@ export const generateCuttingPointer = () => {
             // Fallback: load OBJ without materials
             const objLoader = new OBJLoader();
             objLoader.load(
-                '/assets/cnc-bit.obj',
+                '/assets/cnc-bit.txt',
                 (obj) => {
                     // Collect meshes first; without MTL, material names are not available
                     const meshes = [];

@@ -52,7 +52,6 @@
       "node_modules/**/*"
     ],
     "asarUnpack": [
-      "**/*.obj",
       "**/*.mtl"
     ],
     "mac": {
