@@ -181,6 +181,10 @@ const loadProbeModel = async () => {
           child.material.side = THREE.DoubleSide;
           child.material.flatShading = false; // Use smooth shading
         }
+        // Lighten the Body group
+        if (child.userData.group?.toLowerCase().includes('body')) {
+          setGroupColor(object, 'Body', 0x666666); // Lighter gray for body
+        }
       }
     });
 
