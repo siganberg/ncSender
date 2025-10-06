@@ -174,12 +174,11 @@ const loadProbeModel = async () => {
 
     probeModel = object;
 
-    // Ensure materials render both sides with smooth shading
+    // Ensure materials render both sides
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
-          child.material.flatShading = false; // Use smooth shading
         }
         // Lighten the Body group
         if (child.userData.group?.toLowerCase().includes('body')) {
@@ -237,11 +236,13 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     plateModel = object;
 
-    // Ensure smooth shading for seamless appearance
+    // Set all plate parts to same color
+    const plateColor = 0xcccccc;
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
-          child.material.flatShading = false; // Use smooth shading
+          child.material.side = THREE.DoubleSide;
+          child.material.color.setHex(plateColor);
         }
       }
     });
@@ -268,20 +269,12 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 };
 
 const applyMeshVisibilityRules = (object: THREE.Group) => {
-  // Set all plate groups to the same color (darker gray)
-  const plateColor = 0xcccccc;
-  setGroupColor(object, 'Plate', plateColor);
-  setGroupColor(object, 'OuterPlate', plateColor);
-  setGroupColor(object, 'InnerPlate', plateColor);
-  setGroupColor(object, 'Center', plateColor);
-  setGroupColor(object, 'Corner', plateColor); // Matches all Corner groups
-
   // Apply visibility and color rules based on probing axis
   if (props.probingAxis === 'Center - Inner') {
     hideGroup(object, 'center');
-    setGroupColor(object, 'InnerPlate', 0x4caf50); // Green highlight
+    setGroupColor(object, 'Inner', 0x4caf50); // Green highlight for Inner parts
   } else if (props.probingAxis === 'Center - Outer') {
-    setGroupColor(object, 'OuterPlate', 0x4caf50); // Green highlight
+    setGroupColor(object, 'Outer', 0x4caf50); // Green highlight for Outer parts
   } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
     showGroup(object, 'center');
     setGroupColor(object, 'Corner', 0x555555); // Darker gray for corners
@@ -311,21 +304,23 @@ watch(() => props.probingAxis, () => {
   if (plateModel) {
     const plateColor = 0xcccccc;
 
-    // Reset all colors first
-    setGroupColor(plateModel, 'InnerPlate', plateColor);
-    setGroupColor(plateModel, 'OuterPlate', plateColor);
-    setGroupColor(plateModel, 'Corner', plateColor);
+    // Reset all parts to default color
+    plateModel.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        child.material.color.setHex(plateColor);
+      }
+    });
 
     if (props.probingAxis === 'Center - Inner') {
       hideGroup(plateModel, 'center');
-      setGroupColor(plateModel, 'InnerPlate', 0x4caf50); // Green highlight
+      setGroupColor(plateModel, 'Inner', 0x4caf50); // Green highlight for Inner parts
       // Lower the probe
       if (probeModel) {
         probeModel.position.z = 1; // Lower position
       }
     } else if (props.probingAxis === 'Center - Outer') {
       showGroup(plateModel, 'center');
-      setGroupColor(plateModel, 'OuterPlate', 0x4caf50); // Green highlight
+      setGroupColor(plateModel, 'Outer', 0x4caf50); // Green highlight for Outer parts
       // Reset probe position
       if (probeModel) {
         probeModel.position.z = 4; // Original position
