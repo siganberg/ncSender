@@ -266,9 +266,22 @@
             </template>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
-            <ProbeVisualizer :probe-type="probeType" :probing-axis="probingAxis" :selected-corner="selectedCorner" @corner-selected="selectedCorner = $event" />
+            <ProbeVisualizer
+              :probe-type="probeType"
+              :probing-axis="probingAxis"
+              :selected-corner="selectedCorner"
+              :selected-side="selectedSide"
+              @corner-selected="selectedCorner = $event"
+              @side-selected="selectedSide = $event"
+            />
             <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-instruction">
               Click on a corner to select where to start probing
+            </div>
+            <div v-if="probingAxis === 'X'" class="probe-instruction">
+              Click on the left or right side to select where to probe
+            </div>
+            <div v-if="probingAxis === 'Y'" class="probe-instruction">
+              Click on the front or back side to select where to probe
             </div>
           </div>
         </div>
@@ -455,6 +468,7 @@ const zPlunge = ref(3);
 const zOffset = ref(-0.1);
 const probingAxis = ref('Z');
 const selectedCorner = ref<string | null>(null);
+const selectedSide = ref<string | null>(null); // For X mode (not persisted)
 const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',
@@ -1646,6 +1660,9 @@ watch(() => probeType.value, async (value) => {
 });
 
 watch(() => probingAxis.value, async (value) => {
+  // Reset side selection when switching probing axis
+  selectedSide.value = null;
+
   if (!isInitialLoad) {
     try {
       await updateSettings({ probingAxis: value });
@@ -1657,11 +1674,15 @@ watch(() => probingAxis.value, async (value) => {
 
 watch(() => selectedCorner.value, async (value) => {
   if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeSelectedCorner: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
+    // Only save corner selection for XYZ/XY modes (not for X/Y modes which use sides)
+    if (value && !['Left', 'Right'].includes(value)) {
+      try {
+        await updateSettings({ probeSelectedCorner: value });
+      } catch (error) {
+        console.error('[GCodeVisualizer] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
+      }
     }
+    // Don't save or clear when selecting sides (Left/Right)
   }
 });
 

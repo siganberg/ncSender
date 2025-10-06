@@ -13,10 +13,12 @@ const props = defineProps<{
   probeType: '3d-touch' | 'standard-block';
   probingAxis: string;
   selectedCorner: string | null;
+  selectedSide: string | null;
 }>();
 
 const emit = defineEmits<{
   cornerSelected: [corner: string | null];
+  sideSelected: [side: string | null];
 }>();
 
 const containerRef = ref<HTMLElement>();
@@ -79,7 +81,7 @@ const initScene = () => {
   const mouse = new THREE.Vector2();
 
   renderer.domElement.addEventListener('click', (event) => {
-    if (!['XYZ', 'XY'].includes(props.probingAxis)) return;
+    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -88,11 +90,113 @@ const initScene = () => {
     raycaster.setFromCamera(mouse, camera);
 
     const intersects = raycaster.intersectObjects(scene.children, true);
-    if (intersects.length > 0) {
-      const clickedObject = intersects[0].object;
-      const groupName = clickedObject.userData.group?.toLowerCase() || '';
+    // Filter out hidden/invisible objects
+    const visibleIntersects = intersects.filter(i => i.object.visible);
 
-      if (groupName.includes('corner') && plateModel) {
+    if (visibleIntersects.length > 0) {
+      // Log all intersected objects for debugging
+      console.log('[CLICK] Visible Intersects:', visibleIntersects.map(i => ({
+        group: i.object.userData.group,
+        distance: i.distance
+      })));
+
+      const clickedObject = visibleIntersects[0].object;
+      const groupName = clickedObject.userData.group?.toLowerCase() || '';
+      console.log('[CLICK] Clicked group:', clickedObject.userData.group, 'groupName:', groupName);
+
+      // Handle X axis - clicking on sides (left or right group)
+      if (props.probingAxis === 'X' && plateModel) {
+        let sideGroup: string | null = null;
+
+        if (groupName.includes('left')) {
+          sideGroup = 'Left'; // This will match SideLeft, BackLeft, FrontLeft
+        } else if (groupName.includes('right')) {
+          sideGroup = 'Right'; // This will match SideRight, BackRight, FrontRight
+        }
+
+        if (sideGroup) {
+          // Reset previously selected side to dark gray
+          setGroupColor(plateModel, 'Left', 0x555555);
+          setGroupColor(plateModel, 'Right', 0x555555);
+
+          // Highlight all parts of the clicked side
+          setGroupColor(plateModel, sideGroup, 0x4caf50);
+
+          // Move probe to selected side - outside and lower Z
+          if (probeModel && plateModel) {
+            const plateBBox = new THREE.Box3().setFromObject(plateModel);
+            const plateMin = plateBBox.min;
+            const plateMax = plateBBox.max;
+
+            // Position probe outside the selected side
+            if (sideGroup === 'Left') {
+              probeModel.position.x = plateMin.x - 2; // Outside left side
+            } else if (sideGroup === 'Right') {
+              probeModel.position.x = plateMax.x + 2; // Outside right side
+            }
+            probeModel.position.y = 0; // Center on Y axis
+            probeModel.position.z = 1; // Lower Z
+          }
+
+          // Emit side selection to parent (separate event, won't affect selectedCorner)
+          emit('sideSelected', sideGroup);
+
+          if (renderer) {
+            renderer.render(scene, camera);
+          }
+        }
+      }
+      // Handle Y axis - clicking on sides (front or back group)
+      else if (props.probingAxis === 'Y' && plateModel) {
+        let sideGroup: string | null = null;
+
+        if (groupName.includes('front') || groupName.includes('sidefront')) {
+          sideGroup = 'Front'; // This will match SideFront, FrontLeft, FrontRight
+        } else if (groupName.includes('back') || groupName.includes('sideback')) {
+          sideGroup = 'Back'; // This will match SideBack, BackLeft, BackRight
+        }
+
+        if (sideGroup) {
+          // Reset previously selected side to dark gray
+          setGroupColor(plateModel, 'Front', 0x555555);
+          setGroupColor(plateModel, 'Back', 0x555555);
+          setGroupColor(plateModel, 'SideFront', 0x555555);
+          setGroupColor(plateModel, 'SideBack', 0x555555);
+
+          // Highlight all parts of the clicked side
+          setGroupColor(plateModel, sideGroup, 0x4caf50);
+          if (sideGroup === 'Front') {
+            setGroupColor(plateModel, 'SideFront', 0x4caf50);
+          } else if (sideGroup === 'Back') {
+            setGroupColor(plateModel, 'SideBack', 0x4caf50);
+          }
+
+          // Move probe to selected side - outside and lower Z
+          if (probeModel && plateModel) {
+            const plateBBox = new THREE.Box3().setFromObject(plateModel);
+            const plateMin = plateBBox.min;
+            const plateMax = plateBBox.max;
+
+            // Position probe outside the selected side
+            if (sideGroup === 'Front') {
+              probeModel.position.y = plateMin.y - 2; // Outside front side
+            } else if (sideGroup === 'Back') {
+              probeModel.position.y = plateMax.y + 2; // Outside back side
+            }
+            probeModel.position.x = 0; // Center on X axis
+            probeModel.position.z = 1; // Lower Z
+          }
+
+          // Emit side selection to parent (separate event, won't affect selectedCorner)
+          emit('sideSelected', sideGroup);
+
+          if (renderer) {
+            renderer.render(scene, camera);
+          }
+        }
+      }
+      // Handle XYZ/XY - clicking on corners
+      else if (groupName.includes('corner') && plateModel) {
         // Reset previously selected corner to darker gray
         if (selectedCorner) {
           setGroupColor(plateModel, selectedCorner, 0x555555);
@@ -117,7 +221,7 @@ const initScene = () => {
           console.log('[PLATE] BBox max:', JSON.stringify({x: plateMax.x, y: plateMax.y, z: plateMax.z}));
 
           // Determine corner position based on corner name
-          // Note: X and Y are swapped due to model orientation
+          // Now with proper orientation from the start
           const cornerName = selectedCorner.toLowerCase();
           let targetX = 0, targetY = 0;
           let mappedCorner = '';
@@ -126,21 +230,21 @@ const initScene = () => {
           const inset = props.probingAxis === 'XY' ? -1 : 2;
 
           if (cornerName.includes('front') && cornerName.includes('right')) {
-            targetX = plateMin.x + inset;
+            targetX = plateMax.x - inset;
             targetY = plateMin.y + inset;
-            mappedCorner = 'FrontRight (min.x, min.y)';
+            mappedCorner = 'FrontRight (max.x, min.y)';
           } else if (cornerName.includes('front') && cornerName.includes('left')) {
             targetX = plateMin.x + inset;
-            targetY = plateMax.y - inset;
-            mappedCorner = 'FrontLeft (min.x, max.y)';
+            targetY = plateMin.y + inset;
+            mappedCorner = 'FrontLeft (min.x, min.y)';
           } else if (cornerName.includes('back') && cornerName.includes('right')) {
             targetX = plateMax.x - inset;
-            targetY = plateMin.y + inset;
-            mappedCorner = 'BackRight (max.x, min.y)';
-          } else if (cornerName.includes('back') && cornerName.includes('left')) {
-            targetX = plateMax.x - inset;
             targetY = plateMax.y - inset;
-            mappedCorner = 'BackLeft (max.x, max.y)';
+            mappedCorner = 'BackRight (max.x, max.y)';
+          } else if (cornerName.includes('back') && cornerName.includes('left')) {
+            targetX = plateMin.x + inset;
+            targetY = plateMax.y - inset;
+            mappedCorner = 'BackLeft (min.x, max.y)';
           }
 
           console.log('[PROBE] Mapped corner:', mappedCorner);
@@ -161,7 +265,7 @@ const initScene = () => {
   });
 
   renderer.domElement.addEventListener('mousemove', (event) => {
-    if (!['XYZ', 'XY'].includes(props.probingAxis)) {
+    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
       renderer.domElement.style.cursor = 'default';
       return;
     }
@@ -173,11 +277,19 @@ const initScene = () => {
     raycaster.setFromCamera(mouse, camera);
 
     const intersects = raycaster.intersectObjects(scene.children, true);
-    if (intersects.length > 0) {
-      const hoveredObject = intersects[0].object;
+    // Filter out hidden/invisible objects
+    const visibleIntersects = intersects.filter(i => i.object.visible);
+
+    if (visibleIntersects.length > 0) {
+      const hoveredObject = visibleIntersects[0].object;
       const groupName = hoveredObject.userData.group?.toLowerCase() || '';
 
-      if (groupName.includes('corner')) {
+      // Show pointer for corners (XYZ/XY mode) or sides (X/Y modes)
+      const isCornerHover = groupName.includes('corner');
+      const isXSideHover = props.probingAxis === 'X' && (groupName.includes('left') || groupName.includes('right'));
+      const isYSideHover = props.probingAxis === 'Y' && (groupName.includes('front') || groupName.includes('back') || groupName.includes('sidefront') || groupName.includes('sideback'));
+
+      if (isCornerHover || isXSideHover || isYSideHover) {
         renderer.domElement.style.cursor = 'pointer';
       } else {
         renderer.domElement.style.cursor = 'default';
@@ -258,7 +370,11 @@ const loadProbeModel = async () => {
     // Apply mesh visibility rules
     applyMeshVisibilityRules(object);
 
-    // Keep original orientation - only center and scale
+    // Fix orientation first - rotate to align with standard CNC coordinate system
+    // Z-up (already correct), but we need to rotate around Z axis to fix X/Y orientation
+    object.rotation.z = Math.PI / 2; // Rotate 90 degrees around Z axis
+
+    // Center and scale after rotation
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
@@ -297,16 +413,16 @@ const loadProbeModel = async () => {
       let targetX = 0, targetY = 0;
 
       if (cornerName.includes('front') && cornerName.includes('right')) {
-        targetX = plateMin.x + inset;
+        targetX = plateMax.x - inset;
         targetY = plateMin.y + inset;
       } else if (cornerName.includes('front') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
-        targetY = plateMax.y - inset;
+        targetY = plateMin.y + inset;
       } else if (cornerName.includes('back') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
-        targetY = plateMin.y + inset;
+        targetY = plateMax.y - inset;
       } else if (cornerName.includes('back') && cornerName.includes('left')) {
-        targetX = plateMax.x - inset;
+        targetX = plateMin.x + inset;
         targetY = plateMax.y - inset;
       }
 
@@ -336,19 +452,27 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     plateModel = object;
 
-    // Set all plate parts to same color
-    const plateColor = 0xcccccc;
+    // Set plate colors - corners and sides should be dark gray by default
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
-          child.material.color.setHex(plateColor);
+          const groupName = child.userData.group?.toLowerCase() || '';
+          // Set corners and sides to dark gray, everything else to light gray
+          if (groupName.includes('corner') || groupName.includes('side')) {
+            child.material.color.setHex(0x555555); // Dark gray for corners and sides
+          } else {
+            child.material.color.setHex(0xcccccc); // Light gray for other parts
+          }
         }
       }
     });
 
     // Apply mesh visibility rules
     applyMeshVisibilityRules(object);
+
+    // Fix orientation - same rotation as probe
+    object.rotation.z = Math.PI / 2; // Rotate 90 degrees around Z axis
 
     // Apply same centering and scaling as probe
     object.position.sub(probeCenter);
@@ -427,16 +551,16 @@ watch(() => props.selectedCorner, (newCorner) => {
       let targetX = 0, targetY = 0;
 
       if (cornerName.includes('front') && cornerName.includes('right')) {
-        targetX = plateMin.x + inset;
+        targetX = plateMax.x - inset;
         targetY = plateMin.y + inset;
       } else if (cornerName.includes('front') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
-        targetY = plateMax.y - inset;
+        targetY = plateMin.y + inset;
       } else if (cornerName.includes('back') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
-        targetY = plateMin.y + inset;
+        targetY = plateMax.y - inset;
       } else if (cornerName.includes('back') && cornerName.includes('left')) {
-        targetX = plateMax.x - inset;
+        targetX = plateMin.x + inset;
         targetY = plateMax.y - inset;
       }
 
@@ -454,12 +578,15 @@ watch(() => props.selectedCorner, (newCorner) => {
 // Watch for probing axis changes and update Center group visibility
 watch(() => props.probingAxis, () => {
   if (plateModel) {
-    const plateColor = 0xcccccc;
-
-    // Reset all parts to default color
+    // Reset all non-corner/side parts to default light gray, keep corners/sides dark
     plateModel.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
-        child.material.color.setHex(plateColor);
+        const groupName = child.userData.group?.toLowerCase() || '';
+        if (!groupName.includes('corner') && !groupName.includes('side')) {
+          child.material.color.setHex(0xcccccc); // Reset non-corner/side parts to light gray
+        } else {
+          child.material.color.setHex(0x555555); // Keep corners and sides dark gray
+        }
       }
     });
 
@@ -487,13 +614,14 @@ watch(() => props.probingAxis, () => {
       showGroup(plateModel, 'center');
       hideGroup(plateModel, 'EdgeOuter');
       hideGroup(plateModel, 'EdgeCenter');
-      setGroupColor(plateModel, 'Corner', 0x555555); // Darker gray for corners
 
-      // Handle X axis - color SideLeft and SideRight
-      if (props.probingAxis === 'X') {
-        setGroupColor(plateModel, 'SideLeft', 0x555555); // Darker gray for SideLeft
-        setGroupColor(plateModel, 'SideRight', 0x555555); // Darker gray for SideRight
-      }
+      // Reset all side colors to dark gray (no restoration for X/Y modes)
+      setGroupColor(plateModel, 'Left', 0x555555);
+      setGroupColor(plateModel, 'Right', 0x555555);
+      setGroupColor(plateModel, 'Front', 0x555555);
+      setGroupColor(plateModel, 'Back', 0x555555);
+      setGroupColor(plateModel, 'SideFront', 0x555555);
+      setGroupColor(plateModel, 'SideBack', 0x555555);
 
       // Restore saved corner selection for XYZ/XY modes
       if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
@@ -510,16 +638,16 @@ watch(() => props.probingAxis, () => {
           let targetX = 0, targetY = 0;
 
           if (cornerName.includes('front') && cornerName.includes('right')) {
-            targetX = plateMin.x + inset;
+            targetX = plateMax.x - inset;
             targetY = plateMin.y + inset;
           } else if (cornerName.includes('front') && cornerName.includes('left')) {
             targetX = plateMin.x + inset;
-            targetY = plateMax.y - inset;
+            targetY = plateMin.y + inset;
           } else if (cornerName.includes('back') && cornerName.includes('right')) {
             targetX = plateMax.x - inset;
-            targetY = plateMin.y + inset;
+            targetY = plateMax.y - inset;
           } else if (cornerName.includes('back') && cornerName.includes('left')) {
-            targetX = plateMax.x - inset;
+            targetX = plateMin.x + inset;
             targetY = plateMax.y - inset;
           }
 
