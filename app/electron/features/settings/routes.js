@@ -5,7 +5,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSettingsRoutes(serverState, cncController) {
+export function createSettingsRoutes(serverState, cncController, broadcast) {
   const router = Router();
 
   // Get all settings
@@ -84,6 +84,11 @@ export function createSettingsRoutes(serverState, cncController) {
 
       const savedSettings = saveSettings(mergedSettings);
       log('Settings updated:', updates);
+
+      // Broadcast only the changed settings (delta/partial update)
+      if (broadcast) {
+        broadcast('settings-changed', updates);
+      }
 
       res.json({
         success: true,

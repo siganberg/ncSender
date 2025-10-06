@@ -1010,7 +1010,7 @@ export async function createApp(options = {}) {
 
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState, cncController));
-  app.use('/api', createSettingsRoutes(serverState, cncController));
+  app.use('/api', createSettingsRoutes(serverState, cncController, broadcast));
   app.use('/api', createAlarmRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));

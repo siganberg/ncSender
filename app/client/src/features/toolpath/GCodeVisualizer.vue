@@ -69,26 +69,33 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="toolsUsed.length > 0" class="tools-legend tools-legend--bottom">
+      <div v-if="numberOfToolsToShow > 0" class="tools-legend tools-legend--bottom">
         <div
-          v-for="t in toolsUsed"
+          v-for="t in numberOfToolsToShow"
           :key="t"
           class="tools-legend__item"
-          :class="{ active: currentTool === t }"
-          :title="`Tool T${t}`"
+          :class="{
+            'active': currentTool === t,
+            'used': toolsUsed.includes(t),
+            'disabled': isToolChanging,
+            'long-press-triggered': toolPress[t]?.triggered,
+            'blink-border': toolPress[t]?.blinking
+          }"
+          :title="currentTool === t ? `Tool T${t} (Current)` : `Tool T${t} (Hold to change)`"
+          @mousedown="startToolPress(t, $event)"
+          @mouseup="endToolPress(t)"
+          @mouseleave="cancelToolPress(t)"
+          @touchstart="startToolPress(t, $event)"
+          @touchend="endToolPress(t)"
+          @touchcancel="cancelToolPress(t)"
         >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
           <span class="tools-legend__label">T{{ t }}</span>
           <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
             <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
           </svg>
         </div>
-      </div>
-
-      <!-- Tool indicator - lower right -->
-      <div class="tool-indicator" v-if="currentTool !== undefined">
-        <div class="tool-label">Tool:</div>
-        <div class="tool-value">T{{ currentTool }}</div>
       </div>
 
       <!-- Coolant controls - lower left -->
@@ -362,6 +369,12 @@ let isInitialLoad = true; // Flag to prevent watchers from firing during initial
 
 // Tools detected from program (lines containing M6 with Tn)
 const toolsUsed = ref<number[]>([]);
+
+// Number of tools to display (from settings)
+const numberOfToolsToShow = ref<number>(4);
+
+// Tool press state for long-press interaction
+const toolPress = ref<Record<number, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});
 
 // Three.js objects
 let scene: THREE.Scene;
@@ -1625,10 +1638,98 @@ function extractToolsFromGCode(content: string): number[] {
   return order;
 }
 
+// Tool press functionality - long press to change tool
+const LONG_PRESS_MS_TOOL = 1500;
+const DELAY_BEFORE_VISUAL_MS = 150;
+
+const startToolPress = (toolNumber: number, _evt?: Event) => {
+  if (_evt) _evt.preventDefault();
+  if (props.isToolChanging || props.currentTool === toolNumber) return;
+
+  if (!toolPress.value[toolNumber]) {
+    toolPress.value[toolNumber] = { start: 0, progress: 0, raf: undefined, active: false, triggered: false, blinking: false };
+  }
+
+  const state = toolPress.value[toolNumber];
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_TOOL - DELAY_BEFORE_VISUAL_MS)) * 100);
+      state.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
+      state.triggered = true;
+      // Send M6 T{toolNumber} command
+      api.sendCommandViaWebSocket({ command: `M6 T${toolNumber}`, displayCommand: `M6 T${toolNumber}` });
+      state.progress = 0;
+      state.active = false;
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endToolPress = (toolNumber: number) => {
+  const state = toolPress.value[toolNumber];
+  if (!state) return;
+
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  // If not triggered (incomplete press), show blink feedback
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => {
+      state.blinking = false;
+    }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  // Reset triggered after delay
+  setTimeout(() => {
+    state.triggered = false;
+  }, 100);
+};
+
+const cancelToolPress = (toolNumber: number) => {
+  const state = toolPress.value[toolNumber];
+  if (!state) return;
+
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+};
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
   if (settings) {
+    if (typeof settings.numberOfTools === 'number') {
+      numberOfToolsToShow.value = settings.numberOfTools;
+    }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
     }
@@ -1645,6 +1746,18 @@ onMounted(async () => {
 
   initThreeJS();
   window.addEventListener('resize', handleResize);
+
+  // Listen for settings changes (partial/delta updates)
+  window.addEventListener('settings-changed', (event: any) => {
+    const changedSettings = event.detail;
+
+    // Apply only the changed settings
+    if ('numberOfTools' in changedSettings) {
+      numberOfToolsToShow.value = changedSettings.numberOfTools;
+    }
+    // Future settings can be added here
+    // if ('someOtherSetting' in changedSettings) { ... }
+  });
 
   // Watch for container size changes
   if (canvas.value) {
@@ -1835,49 +1948,117 @@ watch(() => store.status.mistCoolant, (newValue) => {
   margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .tools-legend--bottom {
   position: absolute;
   right: 16px;
-  bottom: 84px; /* slight nudge down from previous to reduce gap */
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none; /* display-only to avoid blocking controls */
 }
 
 .tools-legend__item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: var(--color-surface-muted);
-  padding: 4px 8px;
+  padding: 6px 12px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   box-shadow: inset 0 0 0 1px var(--color-border);
+  opacity: 0.5;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.tools-legend__item.used {
+  opacity: 1;
+  background: rgba(26, 188, 156, 0.1);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
 .tools-legend__item.active {
-  background: rgba(26, 188, 156, 0.2); /* accent tint */
-  box-shadow: inset 0 0 0 2px var(--color-accent);
+  opacity: 1;
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+
+.tools-legend__item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tools-legend__item .long-press-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+  transition: width 0.05s linear;
+}
+
+.tools-legend__item:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
+.tools-legend__item.long-press-triggered {
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
+  transform: none !important;
+  box-shadow: inset 0 0 0 1px var(--color-border) !important;
+}
+
+@keyframes blink-border-tool {
+  0%, 100% { box-shadow: inset 0 0 0 2px #ff6b6b; }
+  50% { box-shadow: inset 0 0 0 1px var(--color-border); }
+}
+
+.tools-legend__item.blink-border {
+  animation: blink-border-tool 0.4s ease-in-out;
 }
 
 .tools-legend__label {
-  min-width: 30px;
+  min-width: 32px;
   text-align: right;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .tools-legend__icon {
   display: block;
+  width: 40px;
+  height: 16px;
 }
 
 .tools-legend__icon .bit-body {
-  fill: rgba(255, 255, 255, 0.25);
+  fill: currentColor;
+  opacity: 0.3;
 }
 
 .tools-legend__icon .bit-shank {
-  fill: rgba(255, 255, 255, 0.5);
+  fill: currentColor;
+  opacity: 0.6;
+}
+
+.tools-legend__item.active .bit-body {
+  opacity: 0.5;
+}
+
+.tools-legend__item.active .bit-shank {
+  opacity: 0.8;
 }
 
 .floating-toolbar.floating-toolbar--bottom {

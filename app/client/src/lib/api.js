@@ -524,6 +524,14 @@ class NCClient {
           this.lastServerState = this.mergeState(this.lastServerState, message.data);
           // Emit the full merged state
           this.emit(message.type, this.lastServerState);
+        } else if (message && message.type === 'settings-changed' && message.data) {
+          // Broadcast settings-changed event globally for all listeners (partial/delta update)
+          try {
+            window.dispatchEvent(new CustomEvent('settings-changed', {
+              detail: message.data
+            }));
+          } catch {}
+          this.emit(message.type, message.data);
         } else {
           this.emit(message.type, message.data);
         }

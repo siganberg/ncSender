@@ -784,10 +784,12 @@ h2 {
 .console-input .primary {
   border: none;
   border-radius: var(--radius-small);
-  padding: 12px 18px;
+  padding: 8px 14px;
   cursor: pointer;
   background: var(--gradient-accent);
   color: #fff;
+  font-size: 1rem;
+  font-weight: 500;
 }
 
 /* Tab Content */

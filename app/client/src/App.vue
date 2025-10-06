@@ -167,10 +167,30 @@
                 max="65535"
               >
             </div>
+            <div class="setting-item">
+              <label class="setting-label"></label>
+              <button class="save-connection-button" @click="saveConnectionSettings">
+                Save
+              </button>
+            </div>
           </div>
 
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Number of Tools</label>
+              <select class="setting-select" v-model.number="numberOfTools">
+                <option :value="0">0</option>
+                <option :value="1">1</option>
+                <option :value="2">2</option>
+                <option :value="3">3</option>
+                <option :value="4">4</option>
+                <option :value="5">5</option>
+                <option :value="6">6</option>
+                <option :value="7">7</option>
+                <option :value="8">8</option>
+              </select>
+            </div>
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
@@ -407,9 +427,6 @@
 
       <!-- Footer with Close Button -->
       <div class="settings-footer">
-        <button v-if="activeTab === 'general'" class="close-button" @click="saveConnectionSettings">
-          Save
-        </button>
         <button class="close-button" @click="closeSettings">
           Close
         </button>
@@ -582,6 +599,9 @@ const gradientColor = ref(initialSettings?.gradientColor || '#34d399');
 const currentGradient = computed(() => {
   return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
 });
+
+// Number of tools setting
+const numberOfTools = ref(initialSettings?.numberOfTools ?? 4);
 
 // Connection settings (from settings store)
 const connectionSettings = reactive({
@@ -1050,7 +1070,7 @@ const updateGradientColor = (color: string) => {
   applyColors();
 };
 
-const applyColors = () => {
+const applyColors = async () => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
@@ -1058,7 +1078,23 @@ const applyColors = () => {
   try {
     window.dispatchEvent(new CustomEvent('accent-color-change', { detail: { color: accentColor.value } }));
   } catch {}
+
+  // Save color settings
+  const { saveSettings } = await import('./lib/settings-store.js');
+  await saveSettings({
+    accentColor: accentColor.value,
+    gradientColor: gradientColor.value
+  });
 };
+
+// Watch numberOfTools and save changes (server will broadcast to all clients)
+watch(numberOfTools, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    numberOfTools: newValue
+  });
+  // Note: No local update here - wait for server broadcast to ensure all clients update together
+});
 
 const validateIP = () => {
   if (connectionSettings.type === 'USB') {
@@ -1709,6 +1745,29 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   justify-content: flex-end;
   padding-top: var(--gap-md);
   border-bottom: none;
+}
+
+.save-connection-button {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 12px 32px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
+  min-width: 120px;
+}
+
+.save-connection-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.save-connection-button:active {
+  transform: translateY(0);
 }
 
 .save-button {
