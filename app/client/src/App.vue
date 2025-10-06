@@ -180,20 +180,6 @@
             </div>
           </div>
 
-          <div class="settings-section">
-            <h3 class="section-title">Console Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Auto-clear console on new job</label>
-              <label class="toggle-switch">
-                <input type="checkbox" v-model="consoleSettings.autoClearConsole">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Console buffer size</label>
-              <span class="setting-value">50 lines (optimized for performance)</span>
-            </div>
-          </div>
         </div>
 
         <!-- Firmware Tab -->

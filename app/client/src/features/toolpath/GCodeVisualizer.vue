@@ -40,14 +40,14 @@
             @change="handleFileLoad"
             style="display: none"
           />
+          <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
+            Clear
+          </button>
           <button @click="fileInput?.click()" class="load-button upload-button" title="Upload G-code" :disabled="isJobRunning">
             <svg width="26" height="26"><use href="#emoji-upload"></use></svg>
           </button>
           <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
             <svg width="24" height="24"><use href="#emoji-folder"></use></svg>
-          </button>
-          <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
-            Clear
           </button>
         </div>
       </div>
@@ -1973,15 +1973,15 @@ h2 {
 .spindle-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 8px;
+  padding: 6px 10px;
   background: transparent;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .spindle-toggle:hover {
@@ -1991,8 +1991,9 @@ h2 {
 .switch {
   position: relative;
   display: inline-block;
-  width: 32px;
-  height: 16px;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
 .switch input {
@@ -2010,17 +2011,17 @@ h2 {
   bottom: 0;
   background-color: #ccc;
   transition: 0.3s;
-  border-radius: 20px;
+  border-radius: 22px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 12px;
-  width: 12px;
-  left: 2px;
-  bottom: 2px;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
   background-color: white;
   transition: 0.3s;
   border-radius: 50%;
@@ -2031,7 +2032,7 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 
 .viewport__canvas {
@@ -2064,11 +2065,11 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   background: transparent;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-small);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--color-text-primary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2143,8 +2144,8 @@ input:checked + .slider:before {
 }
 
 .dot {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   display: inline-block;
   transition: all 0.15s ease;

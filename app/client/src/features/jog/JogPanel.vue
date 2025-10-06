@@ -1204,7 +1204,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 50px;
+  width: 60px;
 }
 
 .center-indicator {
@@ -1371,7 +1371,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 70px;
+  min-width: 55px;
 }
 
 .axis-zero-btn {
