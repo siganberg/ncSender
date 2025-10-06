@@ -56,7 +56,8 @@
     ],
     "mac": {
       "icon": "assets/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "target": ["dmg"]
     },
     "win": {
       "icon": "assets/icon.ico"
