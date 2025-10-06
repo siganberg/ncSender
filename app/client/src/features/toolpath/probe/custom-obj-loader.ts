@@ -52,8 +52,6 @@ export class CustomOBJLoader {
     let currentGroup: ParsedGroup | null = null;
     let currentMaterial: string | undefined;
 
-    console.log('[CUSTOM_OBJ] Starting parse...');
-
     lines.forEach((line, lineIndex) => {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return;
@@ -99,7 +97,6 @@ export class CustomOBJLoader {
             faces: []
           };
           groups.push(currentGroup);
-          console.log(`[CUSTOM_OBJ] Found group: ${groupName}`);
           break;
         }
 
@@ -151,16 +148,11 @@ export class CustomOBJLoader {
       }
     });
 
-    console.log(`[CUSTOM_OBJ] Parsed ${groups.length} groups`);
-    console.log(`[CUSTOM_OBJ] Total vertices: ${globalVertices.length - 1}`);
-
     // Build Three.js Group with a mesh for each OBJ group
     const rootGroup = new THREE.Group();
 
     groups.forEach((group) => {
       if (group.faces.length === 0) return;
-
-      console.log(`[CUSTOM_OBJ] Building mesh for group: ${group.name} (${group.faces.length} faces)`);
 
       const geometry = new THREE.BufferGeometry();
       const positions: number[] = [];
@@ -221,7 +213,6 @@ export class CustomOBJLoader {
       rootGroup.add(mesh);
     });
 
-    console.log(`[CUSTOM_OBJ] Created ${rootGroup.children.length} meshes`);
     return rootGroup;
   }
 }

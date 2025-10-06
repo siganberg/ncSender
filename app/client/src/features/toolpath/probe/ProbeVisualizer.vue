@@ -6,11 +6,12 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { hideGroup, applyToGroup } from './probe-mesh-utils';
+import { hideGroup, showGroup, applyToGroup, setGroupColor } from './probe-mesh-utils';
 import { loadOBJWithGroups } from './custom-obj-loader';
 
 const props = defineProps<{
   probeType: '3d-touch' | 'standard-block';
+  probingAxis: string;
 }>();
 
 const containerRef = ref<HTMLElement>();
@@ -62,14 +63,26 @@ const initScene = () => {
   controls.enableZoom = true;
   controls.enablePan = true;
   controls.enableRotate = true;
+
+  // Lock horizontal rotation - only allow vertical (X-axis) rotation
+  controls.minAzimuthAngle = 0;
+  controls.maxAzimuthAngle = 0;
+
+  let lastLogTime = 0;
   controls.addEventListener('change', () => {
+    const now = Date.now();
+    if (now - lastLogTime > 500) { // Log every 500ms max
+      console.log('[CAMERA] Position:', JSON.stringify({x: camera.position.x, y: camera.position.y, z: camera.position.z}));
+      console.log('[CAMERA] Target:', JSON.stringify({x: controls.target.x, y: controls.target.y, z: controls.target.z}));
+      lastLogTime = now;
+    }
     renderer.render(scene, camera);
   });
 
   // Reset view on right click
   renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    camera.position.set(0, 35, 5);
+    camera.position.set(0, -33.85, 10.19);
     camera.lookAt(0, 0, 5);
     controls.update();
     renderer.render(scene, camera);
@@ -110,29 +123,15 @@ const loadProbeModel = async () => {
 
     probeModel = object;
 
-    // Debug: log the object structure
-    const meshes: any[] = [];
+    // Ensure materials render both sides with smooth shading
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        meshes.push({
-          name: child.name,
-          group: child.userData.group,
-          materialName: child.material?.name,
-          materialType: child.material?.type,
-          geometry: {
-            vertices: child.geometry.attributes.position?.count || 0
-          }
-        });
-
-        // Ensure materials render both sides
         if (child.material) {
           child.material.side = THREE.DoubleSide;
+          child.material.flatShading = false; // Use smooth shading
         }
       }
     });
-
-    console.log('[CUSTOM_OBJ] Probe meshes:', JSON.stringify(meshes, null, 2));
-    console.log('[CUSTOM_OBJ] Children count:', object.children.length);
 
     // Apply mesh visibility rules
     applyMeshVisibilityRules(object);
@@ -141,9 +140,6 @@ const loadProbeModel = async () => {
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-
-    console.log('[CUSTOM_OBJ] Bounding box size:', JSON.stringify({x: size.x, y: size.y, z: size.z}));
-    console.log('[CUSTOM_OBJ] Center:', JSON.stringify({x: center.x, y: center.y, z: center.z}));
 
     object.position.sub(center);
 
@@ -161,7 +157,7 @@ const loadProbeModel = async () => {
     await loadPlateModel(center, scale);
 
     // Update camera to view the scaled model
-    camera.position.set(0, 35, 5);
+    camera.position.set(0, -33.85, 10.19);
     camera.lookAt(0, 0, 5);
     controls.update();
 
@@ -186,21 +182,14 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     plateModel = object;
 
-    console.log('[CUSTOM_OBJ] Loaded plate model');
-
-    // Log plate meshes for debugging
-    const plateMeshes: any[] = [];
+    // Ensure smooth shading for seamless appearance
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        plateMeshes.push({
-          name: child.name,
-          group: child.userData.group,
-          materialName: child.material?.name,
-          vertices: child.geometry.attributes.position?.count || 0
-        });
+        if (child.material) {
+          child.material.flatShading = false; // Use smooth shading
+        }
       }
     });
-    console.log('[CUSTOM_OBJ] Plate meshes:', JSON.stringify(plateMeshes, null, 2));
 
     // Apply mesh visibility rules
     applyMeshVisibilityRules(object);
@@ -224,16 +213,23 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 };
 
 const applyMeshVisibilityRules = (object: THREE.Group) => {
-  // Hide the Center group (the circular hole in the middle of the plate)
-  hideGroup(object, 'center');
+  // Set all plate groups to the same color (darker gray)
+  const plateColor = 0xcccccc;
+  setGroupColor(object, 'Plate', plateColor);
+  setGroupColor(object, 'OuterPlate', plateColor);
+  setGroupColor(object, 'InnerPlate', plateColor);
+  setGroupColor(object, 'Center', plateColor);
+  setGroupColor(object, 'Corner', plateColor); // Matches all Corner groups
 
-  // Future customizations can be added here:
-  // setGroupColor(object, 'plate', 0xff0000);  // Red plate
-  // setGroupOpacity(object, 'led', 0.5);       // Semi-transparent LED
-  // const blinkId = blinkGroup(object, 'led', 500, () => {
-  //   if (renderer) renderer.render(scene, camera);
-  // });
-  // blinkIntervals.value.push(blinkId);
+  // Apply visibility and color rules based on probing axis
+  if (props.probingAxis === 'Center - Inner') {
+    hideGroup(object, 'center');
+    setGroupColor(object, 'InnerPlate', 0x4caf50); // Green highlight
+  } else if (props.probingAxis === 'Center - Outer') {
+    setGroupColor(object, 'OuterPlate', 0x4caf50); // Green highlight
+  } else {
+    showGroup(object, 'center');
+  }
 };
 
 const handleResize = () => {
@@ -250,6 +246,30 @@ const handleResize = () => {
 // Watch for probe type changes
 watch(() => props.probeType, () => {
   loadProbeModel();
+});
+
+// Watch for probing axis changes and update Center group visibility
+watch(() => props.probingAxis, () => {
+  if (plateModel) {
+    const plateColor = 0xcccccc;
+
+    // Reset all colors first
+    setGroupColor(plateModel, 'InnerPlate', plateColor);
+    setGroupColor(plateModel, 'OuterPlate', plateColor);
+
+    if (props.probingAxis === 'Center - Inner') {
+      hideGroup(plateModel, 'center');
+      setGroupColor(plateModel, 'InnerPlate', 0x4caf50); // Green highlight
+    } else if (props.probingAxis === 'Center - Outer') {
+      showGroup(plateModel, 'center');
+      setGroupColor(plateModel, 'OuterPlate', 0x4caf50); // Green highlight
+    } else {
+      showGroup(plateModel, 'center');
+    }
+    if (renderer) {
+      renderer.render(scene, camera);
+    }
+  }
 });
 
 onMounted(() => {

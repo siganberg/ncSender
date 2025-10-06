@@ -35,7 +35,6 @@ export const applyToGroup = (
 ): void => {
   const meshes = findMeshesByGroup(object, groupName);
   meshes.forEach(mesh => action(mesh));
-  console.log(`Applied action to ${meshes.length} meshes in group "${groupName}"`);
 };
 
 /**

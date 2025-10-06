@@ -208,7 +208,8 @@
                   <option value="XY">XY</option>
                   <option value="X">X</option>
                   <option value="Y">Y</option>
-                  <option value="Center">Center</option>
+                  <option value="Center - Inner">Center - Inner</option>
+                  <option value="Center - Outer">Center - Outer</option>
                 </select>
               </div>
             </div>
@@ -265,7 +266,7 @@
             </template>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
-            <ProbeVisualizer :probe-type="probeType" />
+            <ProbeVisualizer :probe-type="probeType" :probing-axis="probingAxis" />
           </div>
         </div>
       </div>
