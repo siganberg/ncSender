@@ -68,6 +68,57 @@ const initScene = () => {
   controls.minAzimuthAngle = 0;
   controls.maxAzimuthAngle = 0;
 
+  // Add click and hover handlers for interactive corners
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  renderer.domElement.addEventListener('click', (event) => {
+    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(scene.children, true);
+    if (intersects.length > 0) {
+      const clickedObject = intersects[0].object;
+      const groupName = clickedObject.userData.group?.toLowerCase() || '';
+
+      if (groupName.includes('corner')) {
+        alert(clickedObject.userData.group);
+      }
+    }
+  });
+
+  renderer.domElement.addEventListener('mousemove', (event) => {
+    if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+      renderer.domElement.style.cursor = 'default';
+      return;
+    }
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(scene.children, true);
+    if (intersects.length > 0) {
+      const hoveredObject = intersects[0].object;
+      const groupName = hoveredObject.userData.group?.toLowerCase() || '';
+
+      if (groupName.includes('corner')) {
+        renderer.domElement.style.cursor = 'pointer';
+      } else {
+        renderer.domElement.style.cursor = 'default';
+      }
+    } else {
+      renderer.domElement.style.cursor = 'default';
+    }
+  });
+
   let lastLogTime = 0;
   controls.addEventListener('change', () => {
     const now = Date.now();
@@ -227,6 +278,9 @@ const applyMeshVisibilityRules = (object: THREE.Group) => {
     setGroupColor(object, 'InnerPlate', 0x4caf50); // Green highlight
   } else if (props.probingAxis === 'Center - Outer') {
     setGroupColor(object, 'OuterPlate', 0x4caf50); // Green highlight
+  } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+    showGroup(object, 'center');
+    setGroupColor(object, 'Corner', 0x555555); // Darker gray for corners
   } else {
     showGroup(object, 'center');
   }
@@ -256,15 +310,35 @@ watch(() => props.probingAxis, () => {
     // Reset all colors first
     setGroupColor(plateModel, 'InnerPlate', plateColor);
     setGroupColor(plateModel, 'OuterPlate', plateColor);
+    setGroupColor(plateModel, 'Corner', plateColor);
 
     if (props.probingAxis === 'Center - Inner') {
       hideGroup(plateModel, 'center');
       setGroupColor(plateModel, 'InnerPlate', 0x4caf50); // Green highlight
+      // Lower the probe
+      if (probeModel) {
+        probeModel.position.z = 1; // Lower position
+      }
     } else if (props.probingAxis === 'Center - Outer') {
       showGroup(plateModel, 'center');
       setGroupColor(plateModel, 'OuterPlate', 0x4caf50); // Green highlight
+      // Reset probe position
+      if (probeModel) {
+        probeModel.position.z = 4; // Original position
+      }
+    } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+      showGroup(plateModel, 'center');
+      setGroupColor(plateModel, 'Corner', 0x555555); // Darker gray for corners
+      // Reset probe position
+      if (probeModel) {
+        probeModel.position.z = 4; // Original position
+      }
     } else {
       showGroup(plateModel, 'center');
+      // Reset probe position
+      if (probeModel) {
+        probeModel.position.z = 4; // Original position
+      }
     }
     if (renderer) {
       renderer.render(scene, camera);
