@@ -244,11 +244,12 @@ const addOrUpdateCommandLine = (payload: any) => {
 
 // Helper function to add response line to console
 const addResponseLine = (data: string) => {
+  const timestamp = new Date().toLocaleTimeString();
   const responseLine: ConsoleLine = {
     id: `response-${Date.now()}-${responseLineIdCounter++}`,
     level: 'info',
     message: data,
-    timestamp: '',
+    timestamp: timestamp,
     type: 'response'
   };
   const newIndex = consoleLines.value.length;

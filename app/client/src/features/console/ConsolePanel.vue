@@ -46,7 +46,7 @@
               :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
               :style="{ height: terminalRowHeight + 'px', lineHeight: terminalRowHeight + 'px' }"
             >
-              <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
+              <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
               <span class="message">{{ item.message }}</span>
             </article>
           </template>
@@ -461,6 +461,8 @@ const getStatusIcon = (line) => {
     return '<svg class="emoji-icon"><use href="#emoji-error"></use></svg>';
   } else if (line.status === 'pending') {
     return '<span class="spinner"></span>';
+  } else if (line.type === 'response') {
+    return '<svg class="emoji-icon"><use href="#emoji-info"></use></svg>';
   }
   return '';
 };
@@ -744,6 +746,7 @@ h2 {
   display: inline-block;
   vertical-align: middle;
   flex-shrink: 0;
+  transform: translateY(-2px);
 }
 
 .message {
