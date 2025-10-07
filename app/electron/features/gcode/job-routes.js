@@ -140,6 +140,7 @@ export class GCodeJobProcessor {
     this.completionCallbacks = [];
     this.progressProvider = options.progressProvider || null;
     this.gcodeContent = options.gcodeContent || null; // Direct G-code content
+    this.sourceId = options.sourceId || 'gcode-runner'; // Source identifier for broadcast filtering
   }
 
   async start() {
@@ -262,7 +263,7 @@ export class GCodeJobProcessor {
             meta: {
               lineNumber: this.currentLineNumber,
               job: { filename: this.filename },
-              sourceId: 'gcode-runner'
+              sourceId: this.sourceId
             }
           });
           // Notify progress provider that we've advanced a (1-based) line number
@@ -291,7 +292,7 @@ export class GCodeJobProcessor {
           status: 'success',
           timestamp: new Date().toISOString(),
           meta: { jobComplete: true },
-          sourceId: 'gcode-runner'
+          sourceId: this.sourceId
         });
 
         // Trigger completion callbacks after a small delay to ensure all state updates propagate

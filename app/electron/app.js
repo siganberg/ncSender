@@ -19,7 +19,7 @@ import { createSystemRoutes } from './features/system/routes.js';
 import { createSettingsRoutes } from './features/settings/routes.js';
 import { createAlarmRoutes, fetchAndSaveAlarmCodes } from './features/alarms/routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './features/firmware/routes.js';
-import { createProbeRoutes } from './features/probe/probe-routes.js';
+import { createProbeRoutes } from './features/probe/routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { MessageStateTracker } from './core/state-diff.js';
 

@@ -149,7 +149,7 @@ const tabs = [
   { id: 'macros', label: 'Macros' }
 ];
 
-// Filter console lines to hide job-runner chatter
+// Filter console lines to hide job-runner chatter but show probing commands
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
 
 // G-code viewer state (virtualized via RecycleScroller)

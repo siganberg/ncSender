@@ -42,7 +42,10 @@ export function createProbeRoutes(cncController, broadcast) {
       `Probe-${options.probingAxis}`, // Job name
       cncController,
       broadcast,
-      { gcodeContent } // Pass G-code content directly
+      {
+        gcodeContent, // Pass G-code content directly
+        sourceId: 'probing' // Tag as probing to broadcast to terminal
+      }
     );
 
     log('Probe job started');
