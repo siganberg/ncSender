@@ -957,6 +957,12 @@ export async function createApp(options = {}) {
   cncController.on('resume', () => {
     log('Resume command detected');
 
+    // Only update job status if there's an active job running
+    if (!jobManager.hasActiveJob()) {
+      log('Resume command ignored - no active job');
+      return;
+    }
+
     // Update jobLoaded status to running
     if (serverState.jobLoaded) {
       serverState.jobLoaded.status = 'running';
