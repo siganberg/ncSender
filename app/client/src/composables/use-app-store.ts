@@ -170,6 +170,12 @@ const addOrUpdateCommandLine = (payload: any) => {
     return null;
   }
 
+  // Skip gcode-runner commands - they're not displayed in terminal
+  // Visualizer listens to cnc-command-result events directly
+  if (payload.sourceId === 'gcode-runner') {
+    return null;
+  }
+
   let message = payload.displayCommand || payload.command || 'Command';
 
   // Format error messages specially
@@ -223,8 +229,8 @@ const addOrUpdateCommandLine = (payload: any) => {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
-  // Keep a modest in-memory buffer for UI watchers; full history in IDB
-  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
+  // Keep a larger buffer since we now exclude gcode-runner (virtual scroller handles this efficiently)
+  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {
@@ -261,8 +267,8 @@ const addResponseLine = (data: string) => {
     appendTerminalLineToIDB(responseLine).catch(() => {});
   }
 
-  // Enforce buffer size limit (keep small buffer if IDB available)
-  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
+  // Enforce buffer size limit (keep larger buffer since we exclude gcode-runner)
+  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {

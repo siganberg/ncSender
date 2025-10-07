@@ -512,7 +512,10 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
-  stopAutoScrollBindings = store.startAutoScrollBindings(async () => {
+  stopAutoScrollBindings = store.startAutoScrollBindings(async (evt) => {
+    // Skip auto-scroll for gcode-runner events (they're not shown in terminal)
+    if (evt?.sourceId === 'gcode-runner') return;
+
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);

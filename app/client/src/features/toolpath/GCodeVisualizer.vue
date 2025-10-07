@@ -2242,6 +2242,22 @@ onMounted(async () => {
     prevJobStatus = status;
   });
 
+  // Listen to cnc-command-result events to mark completed lines
+  // Set up after visualizer is initialized to ensure gcodeVisualizer exists
+  api.on('cnc-command-result', (result: any) => {
+    if (!result || !gcodeVisualizer) return;
+
+    const lineNumber = result?.meta?.lineNumber;
+
+    if (result?.sourceId === 'gcode-runner' &&
+        lineNumber &&
+        result?.status === 'success' &&
+        !markedLines.has(lineNumber)) {
+      gcodeVisualizer.markLineCompleted(lineNumber);
+      markedLines.add(lineNumber);
+    }
+  });
+
   // Watch for jobLoaded changes to handle clearing
   watch(() => props.jobLoaded?.filename, (newValue, oldValue) => {
     if (oldValue && !newValue) {
@@ -2287,27 +2303,6 @@ onUnmounted(() => {
 
 // Track which line numbers have been marked as completed
 const markedLines = new Set<number>();
-
-// Watch console lines from store to mark completed lines
-// This replaces the api.on('cnc-command-result') listener
-watch(() => store.consoleLines.value, (lines) => {
-  if (!lines || lines.length === 0 || !gcodeVisualizer) return;
-
-  // Check all lines for completed commands with line numbers
-  // This handles rapid updates during job execution
-  lines.forEach(line => {
-    const lineNumber = line?.meta?.lineNumber;
-
-    if (line?.sourceId === 'gcode-runner' &&
-        lineNumber &&
-        line?.status === 'success' &&
-        line?.type === 'command' &&
-        !markedLines.has(lineNumber)) {
-      gcodeVisualizer.markLineCompleted(lineNumber);
-      markedLines.add(lineNumber);
-    }
-  });
-}, { deep: true });
 
 // Watch for coolant state changes from machine status
 watch(() => store.status.floodCoolant, (newValue) => {

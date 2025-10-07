@@ -23,7 +23,7 @@ export function useConsoleStore() {
     onCncCommandResult: (handler: (evt: any) => void) => api.on('cnc-command-result', handler),
     onCncData: (handler: (evt: any) => void) => api.on('cnc-data', handler),
     // Bundle useful auto-scroll wiring
-    startAutoScrollBindings: (onActivity: () => void | Promise<void>) => {
+    startAutoScrollBindings: (onActivity: (evt?: any) => void | Promise<void>) => {
       const off1 = api.on('cnc-command', onActivity);
       const off2 = api.on('cnc-command-result', onActivity);
       const off3 = api.on('cnc-data', onActivity);
