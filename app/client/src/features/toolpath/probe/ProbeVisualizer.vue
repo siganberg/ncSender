@@ -464,12 +464,13 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     plateModel = object;
 
-    // Set all plate parts to light gray on init
+    // Set all plate parts to wood color on init
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
-          child.material.color.setHex(0xcccccc); // Light gray for all parts
+          // Light wood-like beige/tan color
+          child.material.color.setHex(0xDEB887); // Burlywood - lighter wood tone
         }
       }
     });
@@ -586,10 +587,10 @@ watch(() => props.selectedCorner, (newCorner) => {
 // Watch for probing axis changes and update Center group visibility
 watch(() => props.probingAxis, () => {
   if (plateModel) {
-    // Reset all parts to light gray first
+    // Reset all parts to wood color first
     plateModel.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
-        child.material.color.setHex(0xcccccc); // Reset all parts to light gray
+        child.material.color.setHex(0xDEB887); // Reset all parts to wood color (burlywood)
       }
     });
 

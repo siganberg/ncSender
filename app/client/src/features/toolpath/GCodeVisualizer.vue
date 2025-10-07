@@ -264,6 +264,67 @@
                 </div>
               </div>
             </template>
+
+            <!-- Center probing fields (Center - Inner and Center - Outer) -->
+            <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
+              <div class="probe-warning">
+                <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
+              </div>
+
+              <!-- Probe Z First toggle - only for Center - Outer -->
+              <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--toggle">
+                <label class="probe-label">Probe Z First</label>
+                <label class="switch">
+                  <input type="checkbox" v-model="probeZFirst">
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <div class="probe-control-row probe-control-row--three">
+                <div class="probe-control-group">
+                  <label class="probe-label">X Dimension</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="xDimension"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Y Dimension</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="yDimension"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Rapid Movement</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="rapidMovement"
+                      type="number"
+                      step="100"
+                      min="1000"
+                      max="5000"
+                      class="probe-input"
+                    />
+                    <span class="probe-unit">mm/min</span>
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
             <ProbeVisualizer
@@ -470,6 +531,12 @@ const probingAxis = ref('Z');
 const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
 const probeStatus = ref<'disconnected' | 'connected'>('disconnected'); // Probe LED status
+
+// Center probing settings
+const xDimension = ref(100);
+const yDimension = ref(100);
+const rapidMovement = ref(2000);
+const probeZFirst = ref(false); // For Center - Outer only
 const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',
@@ -3065,6 +3132,29 @@ body.theme-light .dot--rapid {
   font-size: 0.9rem;
   line-height: 1.5;
   color: var(--color-text-primary);
+}
+
+.probe-warning {
+  margin: 0 0 16px 0;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+}
+
+.probe-control-group--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.probe-control-group--toggle .probe-label {
+  margin-bottom: 0;
 }
 
 .probe-instruction {
