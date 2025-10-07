@@ -2250,9 +2250,6 @@ onMounted(async () => {
     }
   });
 
-  // Fetch uploaded files on mount
-  fetchUploadedFiles();
-
   // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
     setCameraView(props.view);
