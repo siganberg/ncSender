@@ -161,35 +161,28 @@ const initScene = () => {
     const visibleIntersects = intersects.filter(i => i.object.visible);
 
     if (visibleIntersects.length > 0) {
-      // Log all intersected objects for debugging
-      console.log('[CLICK] Visible Intersects:', visibleIntersects.map(i => ({
-        group: i.object.userData.group,
-        distance: i.distance
-      })));
-
       const clickedObject = visibleIntersects[0].object;
       const groupName = clickedObject.userData.group?.toLowerCase() || '';
-      console.log('[CLICK] Clicked group:', clickedObject.userData.group, 'groupName:', groupName);
 
       // Handle X axis - clicking on sides
       if (props.probingAxis === 'X' && plateModel) {
         let sideGroup: string | null = null;
         let visualSide: 'Left' | 'Right' | null = null;
 
-        // plate-xy.txt has FrontLeft and BackLeft groups
-        // After 90-degree rotation: FrontLeft -> visual Right, BackLeft -> visual Left
-        if (groupName === 'frontleft') {
-          sideGroup = 'FrontLeft';
+        // plate-xy.txt has BottomLeft and TopLeft groups
+        // After 90-degree rotation: BottomLeft -> visual Right, TopLeft -> visual Left
+        if (groupName === 'bottomleft') {
+          sideGroup = 'BottomLeft';
           visualSide = 'Right';
-        } else if (groupName === 'backleft') {
-          sideGroup = 'BackLeft';
+        } else if (groupName === 'topleft') {
+          sideGroup = 'TopLeft';
           visualSide = 'Left';
         }
 
         if (sideGroup && visualSide) {
           // Reset previously selected sides to dark gray
-          setGroupColor(plateModel, 'FrontLeft', 0x555555);
-          setGroupColor(plateModel, 'BackLeft', 0x555555);
+          setGroupColor(plateModel, 'BottomLeft', 0x555555);
+          setGroupColor(plateModel, 'TopLeft', 0x555555);
 
           // Highlight the clicked side
           setGroupColor(plateModel, sideGroup, getAccentColor());
@@ -221,27 +214,25 @@ const initScene = () => {
       // Handle Y axis - clicking on sides (front or back group)
       else if (props.probingAxis === 'Y' && plateModel) {
         let sideGroup: string | null = null;
+        let visualSide: 'Front' | 'Back' | null = null;
 
-        if (groupName.includes('front') || groupName.includes('sidefront')) {
-          sideGroup = 'Front'; // This will match SideFront, FrontLeft, FrontRight
-        } else if (groupName.includes('back') || groupName.includes('sideback')) {
-          sideGroup = 'Back'; // This will match SideBack, BackLeft, BackRight
+        // plate-xy.txt has BottomLeft and TopLeft groups
+        // BottomLeft represents the front/bottom side, TopLeft represents the back/top side
+        if (groupName.includes('bottom')) {
+          sideGroup = 'BottomLeft';
+          visualSide = 'Front';
+        } else if (groupName.includes('top')) {
+          sideGroup = 'TopLeft';
+          visualSide = 'Back';
         }
 
-        if (sideGroup) {
-          // Reset previously selected side to dark gray
-          setGroupColor(plateModel, 'Front', 0x555555);
-          setGroupColor(plateModel, 'Back', 0x555555);
-          setGroupColor(plateModel, 'SideFront', 0x555555);
-          setGroupColor(plateModel, 'SideBack', 0x555555);
+        if (sideGroup && visualSide) {
+          // Reset previously selected sides to dark gray
+          setGroupColor(plateModel, 'BottomLeft', 0x555555);
+          setGroupColor(plateModel, 'TopLeft', 0x555555);
 
-          // Highlight all parts of the clicked side
+          // Highlight the clicked side
           setGroupColor(plateModel, sideGroup, getAccentColor());
-          if (sideGroup === 'Front') {
-            setGroupColor(plateModel, 'SideFront', getAccentColor());
-          } else if (sideGroup === 'Back') {
-            setGroupColor(plateModel, 'SideBack', getAccentColor());
-          }
 
           // Move probe to selected side - outside and lower Z
           if (probeModel && plateModel) {
@@ -250,9 +241,9 @@ const initScene = () => {
             const plateMax = plateBBox.max;
 
             // Position probe outside the selected side
-            if (sideGroup === 'Front') {
+            if (visualSide === 'Front') {
               probeModel.position.y = plateMin.y - 2; // Outside front side
-            } else if (sideGroup === 'Back') {
+            } else if (visualSide === 'Back') {
               probeModel.position.y = plateMax.y + 2; // Outside back side
             }
             probeModel.position.x = 0; // Center on X axis
@@ -260,7 +251,7 @@ const initScene = () => {
           }
 
           // Emit side selection to parent (separate event, won't affect selectedCorner)
-          emit('sideSelected', sideGroup);
+          emit('sideSelected', visualSide);
 
           if (renderer) {
             renderer.render(scene, camera);
@@ -269,9 +260,8 @@ const initScene = () => {
       }
       // Handle XYZ/XY - clicking on corners
       else if (['XYZ', 'XY'].includes(props.probingAxis) && plateModel) {
-        // Check if clicked on a corner (old format: includes 'corner', new format: BackRight, BackLeft, FrontRight, FrontLeft)
-        const isCorner = groupName.includes('corner') ||
-                        ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName);
+        // Check if clicked on a corner (TopRight, TopLeft, BottomRight, BottomLeft)
+        const isCorner = ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName);
 
         if (isCorner) {
           // Reset previously selected corner to darker gray
@@ -293,16 +283,9 @@ const initScene = () => {
             const plateMin = plateBBox.min;
             const plateMax = plateBBox.max;
 
-            console.log('[CORNER] Clicked corner:', selectedCorner);
-            console.log('[CORNER] Probing axis:', props.probingAxis);
-            console.log('[PLATE] BBox min:', JSON.stringify({x: plateMin.x, y: plateMin.y, z: plateMin.z}));
-            console.log('[PLATE] BBox max:', JSON.stringify({x: plateMax.x, y: plateMax.y, z: plateMax.z}));
-
             // Determine corner position based on corner name
             const cornerName = selectedCorner.toLowerCase();
-            console.log('[CORNER] cornerName toLowerCase:', cornerName);
             let targetX = 0, targetY = 0;
-            let mappedCorner = '';
 
             // Inset amount - negative for XY (more outer), positive for XYZ (more inner)
             const inset = props.probingAxis === 'XY' ? -1 : 2;
@@ -311,34 +294,22 @@ const initScene = () => {
             if (cornerName.includes('bottom') && cornerName.includes('right')) {
               targetX = plateMax.x - inset;
               targetY = plateMin.y + inset;
-              mappedCorner = 'BottomRight (max.x, min.y)';
             } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
               targetX = plateMin.x + inset;
               targetY = plateMin.y + inset;
-              mappedCorner = 'BottomLeft (min.x, min.y)';
             } else if (cornerName.includes('top') && cornerName.includes('right')) {
               targetX = plateMax.x - inset;
               targetY = plateMax.y - inset;
-              mappedCorner = 'TopRight (max.x, max.y)';
             } else if (cornerName.includes('top') && cornerName.includes('left')) {
               targetX = plateMin.x + inset;
               targetY = plateMax.y - inset;
-              mappedCorner = 'TopLeft (min.x, max.y)';
-            } else {
-              console.warn('[CORNER] No corner match found for:', cornerName);
             }
-
-            console.log('[PROBE] Mapped corner:', mappedCorner);
-            console.log('[PROBE] Moving to:', JSON.stringify({x: targetX, y: targetY}));
-            console.log('[PROBE] Before move - probe position:', JSON.stringify({x: probeModel.position.x, y: probeModel.position.y, z: probeModel.position.z}));
 
             // Move probe to corner position
             probeModel.position.x = targetX;
             probeModel.position.y = targetY;
             // Set Z height based on mode
             probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
-
-            console.log('[PROBE] After move - probe position:', JSON.stringify({x: probeModel.position.x, y: probeModel.position.y, z: probeModel.position.z}));
           }
 
           if (renderer) {
@@ -370,9 +341,9 @@ const initScene = () => {
       const groupName = hoveredObject.userData.group?.toLowerCase() || '';
 
       // Show pointer for corners (XYZ/XY mode) or sides (X/Y modes)
-      const isCornerHover = (groupName.includes('corner') || ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName)) && ['XYZ', 'XY'].includes(props.probingAxis);
+      const isCornerHover = ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName) && ['XYZ', 'XY'].includes(props.probingAxis);
       const isXSideHover = props.probingAxis === 'X' && (groupName.includes('left') || groupName.includes('right'));
-      const isYSideHover = props.probingAxis === 'Y' && (groupName.includes('front') || groupName.includes('back') || groupName.includes('sidefront') || groupName.includes('sideback'));
+      const isYSideHover = props.probingAxis === 'Y' && (groupName.includes('bottom') || groupName.includes('top'));
 
       if (isCornerHover || isXSideHover || isYSideHover) {
         renderer.domElement.style.cursor = 'pointer';
@@ -545,7 +516,6 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
     plateFile = 'plate-solid.txt';
   }
 
-  console.log('[loadPlateModel] Loading plate file:', plateFile);
   currentPlateFile = plateFile;
 
   try {
@@ -555,8 +525,6 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
       '/assets/'
     );
 
-    console.log('[loadPlateModel] OBJ loaded, setting plateModel');
-    console.log('[loadPlateModel] probeCenter:', probeCenter, 'probeScale:', probeScale);
     plateModel = object;
 
     // Set all plate parts to wood color
@@ -579,8 +547,8 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     // For plate-xy.txt, color the sides dark gray (clickable indicator)
     if (plateFile === 'plate-xy.txt') {
-      setGroupColor(object, 'FrontLeft', 0x555555);
-      setGroupColor(object, 'BackLeft', 0x555555);
+      setGroupColor(object, 'BottomLeft', 0x555555);
+      setGroupColor(object, 'TopLeft', 0x555555);
     }
 
     // Rotate plate for X mode (90 degrees around Z axis)
@@ -595,13 +563,7 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
     // Move plate up same as probe (appears higher in view)
     object.position.z += 3;
 
-    console.log('[loadPlateModel] Adding plate to scene');
     scene.add(object);
-    console.log('[loadPlateModel] Scene children count:', scene.children.length);
-    console.log('[loadPlateModel] Plate position:', object.position);
-    console.log('[loadPlateModel] Plate scale:', object.scale);
-    console.log('[loadPlateModel] Plate rotation:', object.rotation);
-    console.log('[loadPlateModel] Plate visible:', object.visible);
 
     // Re-render after plate is loaded
     if (renderer) {
@@ -687,8 +649,6 @@ watch(() => props.selectedCorner, (newCorner) => {
 
 // Watch for probing axis changes
 watch(() => props.probingAxis, async () => {
-  console.log('[ProbeVisualizer] Probing axis changed to:', props.probingAxis);
-
   // Determine which plate file should be loaded
   let requiredPlateFile = 'plate-solid.txt';
   if (['XYZ', 'XY'].includes(props.probingAxis)) {
@@ -701,19 +661,11 @@ watch(() => props.probingAxis, async () => {
     requiredPlateFile = 'plate-solid.txt';
   }
 
-  console.log('[ProbeVisualizer] Current plate file:', currentPlateFile, 'Required:', requiredPlateFile, 'plateModel exists:', !!plateModel);
-
   // Check if the correct plate is already loaded
   // For X/Y modes, we need to reload because rotation is different
-  const needsReload = currentPlateFile !== requiredPlateFile ||
-                      (requiredPlateFile === 'plate-xy.txt' && plateModel);
-
   if (currentPlateFile === requiredPlateFile && plateModel && !['X', 'Y'].includes(props.probingAxis)) {
-    console.log('[ProbeVisualizer] Correct plate already loaded, skipping reload');
-
     // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
     if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis) && probeModel) {
-      console.log('[ProbeVisualizer]', props.probingAxis, 'mode - resetting probe to center');
       probeModel.position.set(0, 0, 4);
       if (renderer) {
         renderer.render(scene, camera);
@@ -722,7 +674,6 @@ watch(() => props.probingAxis, async () => {
 
     // Start glow animation for Center - Inner mode
     if (props.probingAxis === 'Center - Inner') {
-      console.log('[ProbeVisualizer] Starting inner edge glow for Center - Inner');
       startEdgeGlow('InnerEdge');
     } else {
       // Stop glow when switching away from Center - Inner
@@ -731,15 +682,13 @@ watch(() => props.probingAxis, async () => {
 
           // Update probe position for XYZ/XY modes (same plate, but different inset/Z)
           if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && probeModel) {
-            console.log('[ProbeVisualizer] Updating probe position for', props.probingAxis, 'mode');
-    
             const plateBBox = new THREE.Box3().setFromObject(plateModel);
             const plateMin = plateBBox.min;
             const plateMax = plateBBox.max;
             const cornerName = props.selectedCorner.toLowerCase();
             const inset = props.probingAxis === 'XY' ? -1 : 2;
             let targetX = 0, targetY = 0;
-    
+
             if (cornerName.includes('bottom') && cornerName.includes('right')) {
               targetX = plateMax.x - inset;
               targetY = plateMin.y + inset;
@@ -757,8 +706,6 @@ watch(() => props.probingAxis, async () => {
       probeModel.position.y = targetY;
       probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
 
-      console.log('[ProbeVisualizer] Updated probe position:', JSON.stringify({x: targetX, y: targetY, z: probeModel.position.z}));
-
       if (renderer) {
         renderer.render(scene, camera);
       }
@@ -769,7 +716,6 @@ watch(() => props.probingAxis, async () => {
 
   // Prevent concurrent plate loading
   if (isLoadingPlate) {
-    console.log('[ProbeVisualizer] Already loading plate, skipping');
     return;
   }
 
@@ -779,7 +725,6 @@ watch(() => props.probingAxis, async () => {
 
     // Remove old plate model if it exists
     if (plateModel) {
-      console.log('[ProbeVisualizer] Removing old plate model');
       scene.remove(plateModel);
 
       // Dispose of old geometry and materials
@@ -806,10 +751,8 @@ watch(() => props.probingAxis, async () => {
       return;
     }
 
-    console.log('[ProbeVisualizer] Loading new plate model');
     // Reload plate with correct model using saved values
     await loadPlateModel(savedProbeCenter, savedProbeScale);
-    console.log('[ProbeVisualizer] Plate model loaded, plateModel:', plateModel);
 
     isLoadingPlate = false;
 
@@ -817,13 +760,11 @@ watch(() => props.probingAxis, async () => {
     if (plateModel && probeModel) {
       // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
       if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis)) {
-        console.log('[ProbeVisualizer]', props.probingAxis, 'mode - resetting probe to center');
         probeModel.position.set(0, 0, 4);
       }
 
       // Start glow animation for Center - Inner mode
       if (props.probingAxis === 'Center - Inner') {
-        console.log('[ProbeVisualizer] Starting inner edge glow for Center - Inner');
         startEdgeGlow('InnerEdge');
       } else {
         // Stop glow when switching away from Center - Inner
@@ -832,7 +773,6 @@ watch(() => props.probingAxis, async () => {
 
       // Restore corner highlight for XYZ/XY modes
       if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
-        console.log('[ProbeVisualizer] Restoring corner highlight after reload:', props.selectedCorner);
         setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
         // Also move probe to saved corner position
