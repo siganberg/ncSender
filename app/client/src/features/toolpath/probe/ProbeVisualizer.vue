@@ -30,11 +30,63 @@ let probeModel: THREE.Group | null = null;
 let plateModel: THREE.Group | null = null;
 const blinkIntervals = ref<number[]>([]);
 let selectedCorner: string | null = null;
+let glowInterval: number | null = null;
 
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
   const accentColorStr = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
   return parseInt(accentColorStr.replace('#', '0x'), 16);
+};
+
+// Start glowing effect for edge groups
+const startEdgeGlow = (groupName: string) => {
+  if (!plateModel) return;
+
+  // Clear any existing glow interval
+  if (glowInterval) {
+    clearInterval(glowInterval);
+  }
+
+  let increasing = true;
+  let opacity = 0.3;
+  const step = 0.05;
+
+  glowInterval = window.setInterval(() => {
+    if (increasing) {
+      opacity += step;
+      if (opacity >= 1.0) {
+        opacity = 1.0;
+        increasing = false;
+      }
+    } else {
+      opacity -= step;
+      if (opacity <= 0.3) {
+        opacity = 0.3;
+        increasing = true;
+      }
+    }
+
+    applyToGroup(plateModel!, groupName, (mesh) => {
+      if (mesh.material) {
+        mesh.material.transparent = true;
+        mesh.material.opacity = opacity;
+        mesh.material.emissive = new THREE.Color(getAccentColor());
+        mesh.material.emissiveIntensity = opacity;
+      }
+    });
+
+    if (renderer) {
+      renderer.render(scene, camera);
+    }
+  }, 50);
+};
+
+// Stop glowing effect
+const stopEdgeGlow = () => {
+  if (glowInterval) {
+    clearInterval(glowInterval);
+    glowInterval = null;
+  }
 };
 
 const initScene = () => {
@@ -600,6 +652,7 @@ watch(() => props.probingAxis, () => {
       showGroup(plateModel, 'EdgeCenter');
       setGroupColor(plateModel, 'Inner', getAccentColor()); // Green highlight for Inner parts
       setGroupColor(plateModel, 'EdgeCenter', getAccentColor()); // Green highlight for EdgeCenter
+      startEdgeGlow('EdgeCenter'); // Start glowing effect for EdgeCenter
       // Lower the probe
       if (probeModel) {
         probeModel.position.set(0, 0, 1); // Lower position
@@ -610,11 +663,13 @@ watch(() => props.probingAxis, () => {
       showGroup(plateModel, 'EdgeOuter');
       setGroupColor(plateModel, 'Outer', getAccentColor()); // Green highlight for Outer parts
       setGroupColor(plateModel, 'EdgeOuter', getAccentColor()); // Green highlight for EdgeOuter
+      startEdgeGlow('EdgeOuter'); // Start glowing effect for EdgeOuter
       // Reset probe position
       if (probeModel) {
         probeModel.position.set(0, 0, 4); // Original position
       }
     } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+      stopEdgeGlow(); // Stop glowing effect
       showGroup(plateModel, 'center');
       hideGroup(plateModel, 'EdgeOuter');
       hideGroup(plateModel, 'EdgeCenter');
@@ -676,6 +731,7 @@ watch(() => props.probingAxis, () => {
         }
       }
     } else {
+      stopEdgeGlow(); // Stop glowing effect
       showGroup(plateModel, 'center');
       hideGroup(plateModel, 'EdgeOuter');
       hideGroup(plateModel, 'EdgeCenter');
@@ -700,6 +756,9 @@ onUnmounted(() => {
 
   // Clear all blink intervals
   blinkIntervals.value.forEach(id => clearInterval(id));
+
+  // Clear glow interval
+  stopEdgeGlow();
 
   if (controls) {
     controls.dispose();
