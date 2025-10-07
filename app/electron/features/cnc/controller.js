@@ -25,7 +25,6 @@ export class CNCController extends EventEmitter {
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
-    this.lastCommandSourceId = null; // Track sourceId for broadcast filtering
 
     this.commandQueue = new PQueue({ concurrency: 1 });
     this.activeCommand = null;
@@ -51,7 +50,8 @@ export class CNCController extends EventEmitter {
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
       this.parseGCodeModes(trimmedData);
-      this.emit('data', trimmedData, this.lastCommandSourceId);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
       const code = parseInt(trimmedData.split(':')[1]);
       const message = grblErrors[code] || 'Unknown error';
@@ -66,7 +66,8 @@ export class CNCController extends EventEmitter {
       this.handleCommandOk();
     } else {
       log('CNC data:', trimmedData);
-      this.emit('data', trimmedData, this.lastCommandSourceId);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
     }
   }
 
@@ -710,8 +711,34 @@ export class CNCController extends EventEmitter {
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    // Track sourceId for broadcast filtering
-    this.lastCommandSourceId = normalizedMeta?.sourceId || null;
+    // Intercept user ? command - return cached status instead of sending to controller
+    // But allow polling (sourceId: 'no-broadcast') to go through
+    if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'no-broadcast') {
+      const display = displayCommand || cleanCommand;
+      const pendingPayload = {
+        id: resolvedCommandId,
+        command: cleanCommand,
+        displayCommand: display,
+        meta: normalizedMeta,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        realTime: true
+      };
+
+      this.emit('command-queued', pendingPayload);
+
+      // Return cached rawData from polling
+      const cachedData = this.rawData || '<Idle>';
+
+      const ackPayload = {
+        ...pendingPayload,
+        status: 'success',
+        data: cachedData,
+        timestamp: new Date().toISOString()
+      };
+      this.emit('command-ack', ackPayload);
+      return ackPayload;
+    }
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
