@@ -288,7 +288,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="showProbeDialog = false" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
-        <button class="probe-dialog__btn probe-dialog__btn--primary">Start Probe</button>
+        <button class="probe-dialog__btn probe-dialog__btn--primary" :disabled="probeStatus !== 'connected'">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -469,6 +469,7 @@ const zOffset = ref(-0.1);
 const probingAxis = ref('Z');
 const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
+const probeStatus = ref<'disconnected' | 'connected'>('disconnected'); // Probe LED status
 const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',

@@ -31,6 +31,12 @@ let plateModel: THREE.Group | null = null;
 const blinkIntervals = ref<number[]>([]);
 let selectedCorner: string | null = null;
 
+// Get accent color from CSS variable
+const getAccentColor = (): number => {
+  const accentColorStr = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
+  return parseInt(accentColorStr.replace('#', '0x'), 16);
+};
+
 const initScene = () => {
   if (!containerRef.value) return;
 
@@ -120,7 +126,7 @@ const initScene = () => {
           setGroupColor(plateModel, 'Right', 0x555555);
 
           // Highlight all parts of the clicked side
-          setGroupColor(plateModel, sideGroup, 0x4caf50);
+          setGroupColor(plateModel, sideGroup, getAccentColor());
 
           // Move probe to selected side - outside and lower Z
           if (probeModel && plateModel) {
@@ -164,11 +170,11 @@ const initScene = () => {
           setGroupColor(plateModel, 'SideBack', 0x555555);
 
           // Highlight all parts of the clicked side
-          setGroupColor(plateModel, sideGroup, 0x4caf50);
+          setGroupColor(plateModel, sideGroup, getAccentColor());
           if (sideGroup === 'Front') {
-            setGroupColor(plateModel, 'SideFront', 0x4caf50);
+            setGroupColor(plateModel, 'SideFront', getAccentColor());
           } else if (sideGroup === 'Back') {
-            setGroupColor(plateModel, 'SideBack', 0x4caf50);
+            setGroupColor(plateModel, 'SideBack', getAccentColor());
           }
 
           // Move probe to selected side - outside and lower Z
@@ -204,7 +210,7 @@ const initScene = () => {
 
         // Change clicked corner to accent color
         selectedCorner = clickedObject.userData.group;
-        setGroupColor(plateModel, selectedCorner, 0x4caf50);
+        setGroupColor(plateModel, selectedCorner, getAccentColor());
 
         // Emit corner selection to parent
         emit('cornerSelected', selectedCorner);
@@ -314,7 +320,8 @@ const initScene = () => {
   renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     camera.position.set(0, -35.631578947368226, 10.726315789473626);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
+    controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.update();
     renderer.render(scene, camera);
   });
@@ -364,6 +371,10 @@ const loadProbeModel = async () => {
         if (child.userData.group?.toLowerCase().includes('body')) {
           setGroupColor(object, 'Body', 0x666666); // Lighter gray for body
         }
+        // Color LED red on init (disconnected state)
+        if (child.userData.group?.toLowerCase().includes('led')) {
+          setGroupColor(object, 'LED', 0xff0000); // Red for disconnected
+        }
       }
     });
 
@@ -396,13 +407,14 @@ const loadProbeModel = async () => {
 
     // Update camera to view the scaled model
     camera.position.set(0, -35.631578947368226, 10.726315789473626);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
+    controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.update();
 
     // Apply saved corner selection after models are loaded
     if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && plateModel && probeModel) {
       selectedCorner = props.selectedCorner;
-      setGroupColor(plateModel, props.selectedCorner, 0x4caf50);
+      setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
       // Move probe to saved corner position
       const plateBBox = new THREE.Box3().setFromObject(plateModel);
@@ -452,18 +464,12 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     plateModel = object;
 
-    // Set plate colors - corners and sides should be dark gray by default
+    // Set all plate parts to light gray on init
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
-          const groupName = child.userData.group?.toLowerCase() || '';
-          // Set corners and sides to dark gray, everything else to light gray
-          if (groupName.includes('corner') || groupName.includes('side')) {
-            child.material.color.setHex(0x555555); // Dark gray for corners and sides
-          } else {
-            child.material.color.setHex(0xcccccc); // Light gray for other parts
-          }
+          child.material.color.setHex(0xcccccc); // Light gray for all parts
         }
       }
     });
@@ -498,11 +504,13 @@ const applyMeshVisibilityRules = (object: THREE.Group) => {
     hideGroup(object, 'center');
     hideGroup(object, 'EdgeOuter');
     showGroup(object, 'EdgeCenter');
-    setGroupColor(object, 'Inner', 0x4caf50); // Green highlight for Inner parts
+    setGroupColor(object, 'Inner', getAccentColor()); // Green highlight for Inner parts
+    setGroupColor(object, 'EdgeCenter', getAccentColor()); // Green highlight for EdgeCenter
   } else if (props.probingAxis === 'Center - Outer') {
     hideGroup(object, 'EdgeCenter');
     showGroup(object, 'EdgeOuter');
-    setGroupColor(object, 'Outer', 0x4caf50); // Green highlight for Outer parts
+    setGroupColor(object, 'Outer', getAccentColor()); // Green highlight for Outer parts
+    setGroupColor(object, 'EdgeOuter', getAccentColor()); // Green highlight for EdgeOuter
   } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
     showGroup(object, 'center');
     hideGroup(object, 'EdgeOuter');
@@ -539,7 +547,7 @@ watch(() => props.selectedCorner, (newCorner) => {
 
     // Set the loaded corner to accent color
     selectedCorner = newCorner;
-    setGroupColor(plateModel, newCorner, 0x4caf50);
+    setGroupColor(plateModel, newCorner, getAccentColor());
 
     // Move probe to the corner position
     if (probeModel) {
@@ -578,15 +586,10 @@ watch(() => props.selectedCorner, (newCorner) => {
 // Watch for probing axis changes and update Center group visibility
 watch(() => props.probingAxis, () => {
   if (plateModel) {
-    // Reset all non-corner/side parts to default light gray, keep corners/sides dark
+    // Reset all parts to light gray first
     plateModel.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
-        const groupName = child.userData.group?.toLowerCase() || '';
-        if (!groupName.includes('corner') && !groupName.includes('side')) {
-          child.material.color.setHex(0xcccccc); // Reset non-corner/side parts to light gray
-        } else {
-          child.material.color.setHex(0x555555); // Keep corners and sides dark gray
-        }
+        child.material.color.setHex(0xcccccc); // Reset all parts to light gray
       }
     });
 
@@ -594,8 +597,8 @@ watch(() => props.probingAxis, () => {
       hideGroup(plateModel, 'center');
       hideGroup(plateModel, 'EdgeOuter');
       showGroup(plateModel, 'EdgeCenter');
-      setGroupColor(plateModel, 'Inner', 0x4caf50); // Green highlight for Inner parts
-      setGroupColor(plateModel, 'EdgeCenter', 0x4caf50); // Green highlight for EdgeCenter
+      setGroupColor(plateModel, 'Inner', getAccentColor()); // Green highlight for Inner parts
+      setGroupColor(plateModel, 'EdgeCenter', getAccentColor()); // Green highlight for EdgeCenter
       // Lower the probe
       if (probeModel) {
         probeModel.position.set(0, 0, 1); // Lower position
@@ -604,8 +607,8 @@ watch(() => props.probingAxis, () => {
       showGroup(plateModel, 'center');
       hideGroup(plateModel, 'EdgeCenter');
       showGroup(plateModel, 'EdgeOuter');
-      setGroupColor(plateModel, 'Outer', 0x4caf50); // Green highlight for Outer parts
-      setGroupColor(plateModel, 'EdgeOuter', 0x4caf50); // Green highlight for EdgeOuter
+      setGroupColor(plateModel, 'Outer', getAccentColor()); // Green highlight for Outer parts
+      setGroupColor(plateModel, 'EdgeOuter', getAccentColor()); // Green highlight for EdgeOuter
       // Reset probe position
       if (probeModel) {
         probeModel.position.set(0, 0, 4); // Original position
@@ -615,18 +618,26 @@ watch(() => props.probingAxis, () => {
       hideGroup(plateModel, 'EdgeOuter');
       hideGroup(plateModel, 'EdgeCenter');
 
-      // Reset all side colors to dark gray (no restoration for X/Y modes)
-      setGroupColor(plateModel, 'Left', 0x555555);
-      setGroupColor(plateModel, 'Right', 0x555555);
-      setGroupColor(plateModel, 'Front', 0x555555);
-      setGroupColor(plateModel, 'Back', 0x555555);
-      setGroupColor(plateModel, 'SideFront', 0x555555);
-      setGroupColor(plateModel, 'SideBack', 0x555555);
+      // Set clickable parts to dark gray based on mode
+      if (props.probingAxis === 'X') {
+        // Make left and right sides dark (clickable)
+        setGroupColor(plateModel, 'Left', 0x555555);
+        setGroupColor(plateModel, 'Right', 0x555555);
+      } else if (props.probingAxis === 'Y') {
+        // Make front and back sides dark (clickable)
+        setGroupColor(plateModel, 'Front', 0x555555);
+        setGroupColor(plateModel, 'Back', 0x555555);
+        setGroupColor(plateModel, 'SideFront', 0x555555);
+        setGroupColor(plateModel, 'SideBack', 0x555555);
+      } else if (['XYZ', 'XY'].includes(props.probingAxis)) {
+        // Make corners dark (clickable)
+        setGroupColor(plateModel, 'Corner', 0x555555);
+      }
 
       // Restore saved corner selection for XYZ/XY modes
       if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
         selectedCorner = props.selectedCorner;
-        setGroupColor(plateModel, props.selectedCorner, 0x4caf50);
+        setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
         // Move probe to saved corner position
         if (probeModel) {
