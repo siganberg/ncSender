@@ -85,16 +85,13 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
       const savedSettings = saveSettings(mergedSettings);
       log('Settings updated:', updates);
 
-      // Broadcast only the changed settings (delta/partial update)
-      // Check if broadcast is explicitly disabled via query parameter
-
       broadcast('settings-changed', updates);
 
       res.json({
         success: true,
-        message: 'Settings updated successfully',
-        settings: savedSettings
+        message: 'Settings updated successfully'
       });
+
     } catch (error) {
       log('Error updating settings:', error);
       res.status(500).json({ error: 'Failed to update settings' });
