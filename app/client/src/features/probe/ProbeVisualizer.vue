@@ -660,16 +660,16 @@ watch(() => props.selectedCorner, (newCorner) => {
       const inset = props.probingAxis === 'XY' ? -1 : 2;
       let targetX = 0, targetY = 0;
 
-      if (cornerName.includes('front') && cornerName.includes('right')) {
+      if (cornerName.includes('bottom') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
         targetY = plateMin.y + inset;
-      } else if (cornerName.includes('front') && cornerName.includes('left')) {
+      } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
         targetY = plateMin.y + inset;
-      } else if (cornerName.includes('back') && cornerName.includes('right')) {
+      } else if (cornerName.includes('top') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
         targetY = plateMax.y - inset;
-      } else if (cornerName.includes('back') && cornerName.includes('left')) {
+      } else if (cornerName.includes('top') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
         targetY = plateMax.y - inset;
       }
@@ -729,31 +729,30 @@ watch(() => props.probingAxis, async () => {
       stopEdgeGlow();
     }
 
-    // Update probe position for XYZ/XY modes (same plate, but different inset/Z)
-    if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && probeModel) {
-      console.log('[ProbeVisualizer] Updating probe position for', props.probingAxis, 'mode');
-
-      const plateBBox = new THREE.Box3().setFromObject(plateModel);
-      const plateMin = plateBBox.min;
-      const plateMax = plateBBox.max;
-      const cornerName = props.selectedCorner.toLowerCase();
-      const inset = props.probingAxis === 'XY' ? -1 : 2;
-      let targetX = 0, targetY = 0;
-
-      if (cornerName.includes('front') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('front') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('back') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMax.y - inset;
-      } else if (cornerName.includes('back') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMax.y - inset;
-      }
-
+          // Update probe position for XYZ/XY modes (same plate, but different inset/Z)
+          if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && probeModel) {
+            console.log('[ProbeVisualizer] Updating probe position for', props.probingAxis, 'mode');
+    
+            const plateBBox = new THREE.Box3().setFromObject(plateModel);
+            const plateMin = plateBBox.min;
+            const plateMax = plateBBox.max;
+            const cornerName = props.selectedCorner.toLowerCase();
+            const inset = props.probingAxis === 'XY' ? -1 : 2;
+            let targetX = 0, targetY = 0;
+    
+            if (cornerName.includes('bottom') && cornerName.includes('right')) {
+              targetX = plateMax.x - inset;
+              targetY = plateMin.y + inset;
+            } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
+              targetX = plateMin.x + inset;
+              targetY = plateMin.y + inset;
+            } else if (cornerName.includes('top') && cornerName.includes('right')) {
+              targetX = plateMax.x - inset;
+              targetY = plateMax.y - inset;
+            } else if (cornerName.includes('top') && cornerName.includes('left')) {
+              targetX = plateMin.x + inset;
+              targetY = plateMax.y - inset;
+            }
       probeModel.position.x = targetX;
       probeModel.position.y = targetY;
       probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
@@ -844,16 +843,16 @@ watch(() => props.probingAxis, async () => {
         const inset = props.probingAxis === 'XY' ? -1 : 2;
         let targetX = 0, targetY = 0;
 
-        if (cornerName.includes('front') && cornerName.includes('right')) {
+        if (cornerName.includes('bottom') && cornerName.includes('right')) {
           targetX = plateMax.x - inset;
           targetY = plateMin.y + inset;
-        } else if (cornerName.includes('front') && cornerName.includes('left')) {
+        } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
           targetX = plateMin.x + inset;
           targetY = plateMin.y + inset;
-        } else if (cornerName.includes('back') && cornerName.includes('right')) {
+        } else if (cornerName.includes('top') && cornerName.includes('right')) {
           targetX = plateMax.x - inset;
           targetY = plateMax.y - inset;
-        } else if (cornerName.includes('back') && cornerName.includes('left')) {
+        } else if (cornerName.includes('top') && cornerName.includes('left')) {
           targetX = plateMin.x + inset;
           targetY = plateMax.y - inset;
         }

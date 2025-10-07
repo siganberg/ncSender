@@ -778,29 +778,31 @@ const hasFirmwareChanges = computed(() => {
 });
 
 // Computed property to filter firmware settings based on search query
+/*
 const filteredFirmwareSettings = computed(() => {
   if (!firmwareData.value || !firmwareData.value.settings) {
     return [];
   }
 
-  const settings = Object.values(firmwareData.value.settings).map((setting: any) => ({
+  const settings = Object.values(firmwareData.value.settings).map((setting) => ({
     ...setting,
     id: setting.id.toString()
   }));
 
   if (!firmwareSearchQuery.value) {
-    return settings.sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+    return settings.sort((a, b) => parseInt(a.id) - parseInt(b.id));
   }
 
   const query = firmwareSearchQuery.value.toLowerCase();
-  return settings.filter((setting: any) => {
+  return settings.filter((setting) => {
     return (
       setting.id.includes(query) ||
-      setting.name?.toLowerCase().includes(query) ||
-      setting.group?.name?.toLowerCase().includes(query)
+      setting.name && setting.name.toLowerCase().includes(query) ||
+      setting.group && setting.group.name && setting.group.name.toLowerCase().includes(query)
     );
-  }).sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+  }).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 });
+*/
 
 // Helper function to check if a bit is set
 const isBitSet = (value: string | number, bitIndex: number): boolean => {
@@ -1062,15 +1064,15 @@ const importFirmwareSettings = () => {
 
 const updateAccentColor = (color: string) => {
   accentColor.value = color;
-  applyColors();
+  applyColors(true);
 };
 
 const updateGradientColor = (color: string) => {
   gradientColor.value = color;
-  applyColors();
+  applyColors(true);
 };
 
-const applyColors = async () => {
+const applyColors = async (shouldSave = false) => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
@@ -1079,12 +1081,14 @@ const applyColors = async () => {
     window.dispatchEvent(new CustomEvent('accent-color-change', { detail: { color: accentColor.value } }));
   } catch {}
 
-  // Save color settings
-  const { saveSettings } = await import('./lib/settings-store.js');
-  await saveSettings({
-    accentColor: accentColor.value,
-    gradientColor: gradientColor.value
-  });
+  // Only save color settings if explicitly requested (i.e., when user changes them)
+  if (shouldSave) {
+    const { saveSettings } = await import('./lib/settings-store.js');
+    await saveSettings({
+      accentColor: accentColor.value,
+      gradientColor: gradientColor.value
+    });
+  }
 };
 
 // Watch numberOfTools and save changes (server will broadcast to all clients)
@@ -1312,15 +1316,14 @@ const saveSetupSettings = async () => {
 const clearConsole = store.clearConsole;
 
 onMounted(async () => {
+  // Settings are already loaded in main.ts, just get them from the store
+  const { getSettings } = await import('./lib/settings-store.js');
+  const initialSettings = getSettings();
+
   // Check if settings are valid, show setup dialog if not
   if (!isSettingsValid(initialSettings)) {
     showSetupDialog.value = true;
     await loadSetupUsbPorts();
-  } else {
-    // Load USB ports if USB connection type
-    if (connectionSettings.type === 'USB') {
-      await loadMainUsbPorts();
-    }
   }
 
   // Fetch alarm description on page load if lastAlarmCode exists
