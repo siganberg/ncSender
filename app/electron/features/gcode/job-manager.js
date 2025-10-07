@@ -111,8 +111,8 @@ class JobProcessorManager {
 
     const base = {
       filename: this.currentJob.filename,
-      currentLine: this.currentJob.currentLine,
-      totalLines: this.currentJob.lines.length,
+      currentLine: this.currentJob.currentLineNumber,
+      totalLines: this.currentJob.totalLines || 0,
       status: status
     };
 
