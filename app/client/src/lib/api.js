@@ -789,8 +789,10 @@ class NCClient {
     return response.json();
   }
 
-  async updateSettings(updates) {
-    const response = await fetch(`${this.baseUrl}/api/settings`, {
+  async updateSettings(updates, options = {}) {
+    const { broadcast = true } = options;
+    const url = `${this.baseUrl}/api/settings${broadcast ? '' : '?broadcast=false'}`;
+    const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)

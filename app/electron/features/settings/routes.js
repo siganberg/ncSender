@@ -86,7 +86,9 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
       log('Settings updated:', updates);
 
       // Broadcast only the changed settings (delta/partial update)
-      if (broadcast) {
+      // Check if broadcast is explicitly disabled via query parameter
+      const shouldBroadcast = req.query.broadcast !== 'false';
+      if (broadcast && shouldBroadcast) {
         broadcast('settings-changed', updates);
       }
 

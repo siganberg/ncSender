@@ -420,7 +420,7 @@ import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
-import ProbeVisualizer from './probe/ProbeVisualizer.vue';
+import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
 
 const store = useToolpathStore();
 
@@ -1733,7 +1733,7 @@ watch(() => probingAxis.value, async (value) => {
 
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probingAxis: value });
+      await updateSettings({ probingAxis: value }, { broadcast: false });
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save probing axis setting', JSON.stringify({ error: error.message }));
     }

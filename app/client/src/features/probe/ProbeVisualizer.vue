@@ -31,6 +31,8 @@ let plateModel: THREE.Group | null = null;
 const blinkIntervals = ref<number[]>([]);
 let selectedCorner: string | null = null;
 let glowInterval: number | null = null;
+let isLoadingPlate = false;
+let currentPlateFile = '';
 
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
@@ -99,8 +101,8 @@ const initScene = () => {
   // Camera setup with front perspective view (Z-up, looking along Y-axis)
   const aspect = containerRef.value.clientWidth / containerRef.value.clientHeight;
   camera = new THREE.PerspectiveCamera(45, aspect, 0.001, 1000);
-  camera.position.set(0, 2, .5);
-  camera.lookAt(0, 0, 0.01);
+  camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
+  camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
   camera.up.set(0, 0, 1);
 
   // Renderer setup with transparent background
@@ -133,6 +135,10 @@ const initScene = () => {
   // Lock horizontal rotation - only allow vertical (X-axis) rotation
   controls.minAzimuthAngle = 0;
   controls.maxAzimuthAngle = 0;
+
+  // Set camera target
+  controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
+  controls.update();
 
   // Add click and hover handlers for interactive corners
   const raycaster = new THREE.Raycaster();
@@ -371,7 +377,7 @@ const initScene = () => {
   // Reset view on right click
   renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    camera.position.set(0, -35.631578947368226, 10.726315789473626);
+    camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
     camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.update();
@@ -423,15 +429,8 @@ const loadProbeModel = async () => {
         if (child.userData.group?.toLowerCase().includes('body')) {
           setGroupColor(object, 'Body', 0x666666); // Lighter gray for body
         }
-        // Color LED red on init (disconnected state)
-        if (child.userData.group?.toLowerCase().includes('led')) {
-          setGroupColor(object, 'LED', 0xff0000); // Red for disconnected
-        }
       }
     });
-
-    // Apply mesh visibility rules
-    applyMeshVisibilityRules(object);
 
     // Fix orientation first - rotate to align with standard CNC coordinate system
     // Z-up (already correct), but we need to rotate around Z axis to fix X/Y orientation
@@ -458,7 +457,7 @@ const loadProbeModel = async () => {
     await loadPlateModel(center, scale);
 
     // Update camera to view the scaled model
-    camera.position.set(0, -35.631578947368226, 10.726315789473626);
+    camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
     camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
     controls.update();
@@ -507,28 +506,34 @@ const loadProbeModel = async () => {
 const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) => {
   const cacheBust = `?t=${Date.now()}`;
 
+  // Determine which plate model to load based on probing axis
+  let plateFile = 'plate-solid.txt';
+  if (['XYZ', 'XY'].includes(props.probingAxis)) {
+    plateFile = 'plate-xyz.txt';
+  }
+
+  console.log('[loadPlateModel] Loading plate file:', plateFile);
+  currentPlateFile = plateFile;
+
   try {
     const object = await loadOBJWithGroups(
-      `plate.txt${cacheBust}`,
+      `${plateFile}${cacheBust}`,
       `plate.mtl${cacheBust}`,
       '/assets/'
     );
 
+    console.log('[loadPlateModel] OBJ loaded, setting plateModel');
     plateModel = object;
 
-    // Set all plate parts to wood color on init
+    // Set all plate parts to wood color
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
-          // Light wood-like beige/tan color
           child.material.color.setHex(0xDEB887); // Burlywood - lighter wood tone
         }
       }
     });
-
-    // Apply mesh visibility rules
-    applyMeshVisibilityRules(object);
 
     // Fix orientation - same rotation as probe
     object.rotation.z = Math.PI / 2; // Rotate 90 degrees around Z axis
@@ -540,7 +545,9 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
     // Move plate up same as probe (appears higher in view)
     object.position.z += 3;
 
+    console.log('[loadPlateModel] Adding plate to scene');
     scene.add(object);
+    console.log('[loadPlateModel] Scene children count:', scene.children.length);
 
     // Re-render after plate is loaded
     if (renderer) {
@@ -548,31 +555,6 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
     }
   } catch (error) {
     console.error('[CUSTOM_OBJ] Error loading plate model:', error);
-  }
-};
-
-const applyMeshVisibilityRules = (object: THREE.Group) => {
-  // Apply visibility and color rules based on probing axis
-  if (props.probingAxis === 'Center - Inner') {
-    hideGroup(object, 'center');
-    hideGroup(object, 'EdgeOuter');
-    showGroup(object, 'EdgeCenter');
-    setGroupColor(object, 'Inner', getAccentColor()); // Green highlight for Inner parts
-    setGroupColor(object, 'EdgeCenter', getAccentColor()); // Green highlight for EdgeCenter
-  } else if (props.probingAxis === 'Center - Outer') {
-    hideGroup(object, 'EdgeCenter');
-    showGroup(object, 'EdgeOuter');
-    setGroupColor(object, 'Outer', getAccentColor()); // Green highlight for Outer parts
-    setGroupColor(object, 'EdgeOuter', getAccentColor()); // Green highlight for EdgeOuter
-  } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
-    showGroup(object, 'center');
-    hideGroup(object, 'EdgeOuter');
-    hideGroup(object, 'EdgeCenter');
-    setGroupColor(object, 'Corner', 0x555555); // Darker gray for corners
-  } else {
-    showGroup(object, 'center');
-    hideGroup(object, 'EdgeOuter');
-    hideGroup(object, 'EdgeCenter');
   }
 };
 
@@ -636,111 +618,70 @@ watch(() => props.selectedCorner, (newCorner) => {
   }
 });
 
-// Watch for probing axis changes and update Center group visibility
-watch(() => props.probingAxis, () => {
-  if (plateModel) {
-    // Reset all parts to wood color first
-    plateModel.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        child.material.color.setHex(0xDEB887); // Reset all parts to wood color (burlywood)
-      }
-    });
+// Watch for probing axis changes
+watch(() => props.probingAxis, async () => {
+  console.log('[ProbeVisualizer] Probing axis changed to:', props.probingAxis);
 
-    if (props.probingAxis === 'Center - Inner') {
-      hideGroup(plateModel, 'center');
-      hideGroup(plateModel, 'EdgeOuter');
-      showGroup(plateModel, 'EdgeCenter');
-      setGroupColor(plateModel, 'Inner', getAccentColor()); // Green highlight for Inner parts
-      setGroupColor(plateModel, 'EdgeCenter', getAccentColor()); // Green highlight for EdgeCenter
-      startEdgeGlow('EdgeCenter'); // Start glowing effect for EdgeCenter
-      // Lower the probe
-      if (probeModel) {
-        probeModel.position.set(0, 0, 1); // Lower position
-      }
-    } else if (props.probingAxis === 'Center - Outer') {
-      showGroup(plateModel, 'center');
-      hideGroup(plateModel, 'EdgeCenter');
-      showGroup(plateModel, 'EdgeOuter');
-      setGroupColor(plateModel, 'Outer', getAccentColor()); // Green highlight for Outer parts
-      setGroupColor(plateModel, 'EdgeOuter', getAccentColor()); // Green highlight for EdgeOuter
-      startEdgeGlow('EdgeOuter'); // Start glowing effect for EdgeOuter
-      // Reset probe position
-      if (probeModel) {
-        probeModel.position.set(0, 0, 4); // Original position
-      }
-    } else if (['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
-      stopEdgeGlow(); // Stop glowing effect
-      showGroup(plateModel, 'center');
-      hideGroup(plateModel, 'EdgeOuter');
-      hideGroup(plateModel, 'EdgeCenter');
+  // Determine which plate file should be loaded
+  let requiredPlateFile = 'plate-solid.txt';
+  if (['XYZ', 'XY'].includes(props.probingAxis)) {
+    requiredPlateFile = 'plate-xyz.txt';
+  }
 
-      // Set clickable parts to dark gray based on mode
-      if (props.probingAxis === 'X') {
-        // Make left and right sides dark (clickable)
-        setGroupColor(plateModel, 'Left', 0x555555);
-        setGroupColor(plateModel, 'Right', 0x555555);
-      } else if (props.probingAxis === 'Y') {
-        // Make front and back sides dark (clickable)
-        setGroupColor(plateModel, 'Front', 0x555555);
-        setGroupColor(plateModel, 'Back', 0x555555);
-        setGroupColor(plateModel, 'SideFront', 0x555555);
-        setGroupColor(plateModel, 'SideBack', 0x555555);
-      } else if (['XYZ', 'XY'].includes(props.probingAxis)) {
-        // Make corners dark (clickable)
-        setGroupColor(plateModel, 'Corner', 0x555555);
-      }
+  // Check if the correct plate is already loaded
+  if (currentPlateFile === requiredPlateFile && plateModel) {
+    console.log('[ProbeVisualizer] Correct plate already loaded, skipping reload');
+    return;
+  }
 
-      // Restore saved corner selection for XYZ/XY modes
-      if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
-        selectedCorner = props.selectedCorner;
-        setGroupColor(plateModel, props.selectedCorner, getAccentColor());
+  // Prevent concurrent plate loading
+  if (isLoadingPlate) {
+    console.log('[ProbeVisualizer] Already loading plate, skipping');
+    return;
+  }
 
-        // Move probe to saved corner position
-        if (probeModel) {
-          const plateBBox = new THREE.Box3().setFromObject(plateModel);
-          const plateMin = plateBBox.min;
-          const plateMax = plateBBox.max;
-          const cornerName = props.selectedCorner.toLowerCase();
-          const inset = props.probingAxis === 'XY' ? -1 : 2;
-          let targetX = 0, targetY = 0;
+  // Reload plate model when switching between modes
+  if (probeModel && scene) {
+    isLoadingPlate = true;
 
-          if (cornerName.includes('front') && cornerName.includes('right')) {
-            targetX = plateMax.x - inset;
-            targetY = plateMin.y + inset;
-          } else if (cornerName.includes('front') && cornerName.includes('left')) {
-            targetX = plateMin.x + inset;
-            targetY = plateMin.y + inset;
-          } else if (cornerName.includes('back') && cornerName.includes('right')) {
-            targetX = plateMax.x - inset;
-            targetY = plateMax.y - inset;
-          } else if (cornerName.includes('back') && cornerName.includes('left')) {
-            targetX = plateMin.x + inset;
-            targetY = plateMax.y - inset;
+    // Remove old plate model if it exists
+    if (plateModel) {
+      console.log('[ProbeVisualizer] Removing old plate model');
+      scene.remove(plateModel);
+
+      // Dispose of old geometry and materials
+      plateModel.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => mat.dispose());
+            } else {
+              child.material.dispose();
+            }
           }
+        }
+      });
 
-          probeModel.position.x = targetX;
-          probeModel.position.y = targetY;
-          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
-        }
-      } else {
-        selectedCorner = null; // Reset corner selection for X/Y modes
-        emit('cornerSelected', null); // Emit reset to parent
-        // Reset probe position
-        if (probeModel) {
-          probeModel.position.set(0, 0, 4); // Original position
-        }
-      }
-    } else {
-      stopEdgeGlow(); // Stop glowing effect
-      showGroup(plateModel, 'center');
-      hideGroup(plateModel, 'EdgeOuter');
-      hideGroup(plateModel, 'EdgeCenter');
-      // Reset probe position to center
-      if (probeModel) {
-        probeModel.position.set(0, 0, 4); // Original position
-      }
+      plateModel = null;
     }
-    if (renderer) {
+
+    // Get probe centering and scale info
+    const box = new THREE.Box3().setFromObject(probeModel);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 10 / maxDim;
+
+    console.log('[ProbeVisualizer] Loading new plate model');
+    // Reload plate with correct model
+    await loadPlateModel(center, scale);
+    console.log('[ProbeVisualizer] Plate model loaded, plateModel:', plateModel);
+
+    isLoadingPlate = false;
+
+    // Force render after reload
+    if (renderer && camera) {
       renderer.render(scene, camera);
     }
   }
