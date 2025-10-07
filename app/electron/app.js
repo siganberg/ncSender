@@ -19,6 +19,7 @@ import { createSystemRoutes } from './features/system/routes.js';
 import { createSettingsRoutes } from './features/settings/routes.js';
 import { createAlarmRoutes, fetchAndSaveAlarmCodes } from './features/alarms/routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './features/firmware/routes.js';
+import { createProbeRoutes } from './features/probe/probe-routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { MessageStateTracker } from './core/state-diff.js';
 
@@ -1018,6 +1019,7 @@ export async function createApp(options = {}) {
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
+  app.use('/api/probe', createProbeRoutes(cncController, broadcast));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

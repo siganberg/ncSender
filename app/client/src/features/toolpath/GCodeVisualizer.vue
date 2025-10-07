@@ -348,8 +348,8 @@
         </div>
       </div>
       <div class="probe-dialog__footer">
-        <button @click="showProbeDialog = false" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
-        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="!probeEverActivated">Start Probe</button>
+        <button @click="closeProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
+        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="!isProbeReady">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -422,7 +422,7 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
-import { generateProbeCode } from '../probe/probing-utils.js';
+// Probing is now handled server-side
 
 const store = useToolpathStore();
 
@@ -534,6 +534,26 @@ const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
 const probeActive = ref(false); // Probe pin active state from CNC
 const probeEverActivated = ref(false); // Track if probe was ever activated (doesn't reset to false)
+const probingInProgress = ref(false); // Track if probing is currently running
+let abortProbing = false; // Flag to abort probing sequence
+
+// Computed property to check if probe button should be enabled
+const isProbeReady = computed(() => {
+  if (!probeEverActivated.value) return false;
+
+  // For X and Y modes, also require a side to be selected
+  if (probingAxis.value === 'X' || probingAxis.value === 'Y') {
+    return selectedSide.value !== null && selectedSide.value !== '';
+  }
+
+  // For XY and XYZ modes, require a corner to be selected
+  if (probingAxis.value === 'XY' || probingAxis.value === 'XYZ') {
+    return selectedCorner.value !== null && selectedCorner.value !== '';
+  }
+
+  // For other modes (Z, Center-Inner, Center-Outer), just need probe active
+  return true;
+});
 
 // Center probing settings
 const xDimension = ref(100);
@@ -1142,6 +1162,9 @@ const openProbeDialog = () => {
 
 const startProbe = async () => {
   try {
+    probingInProgress.value = true;
+    abortProbing = false;
+
     const options = {
       probingAxis: probingAxis.value,
       selectedCorner: selectedCorner.value,
@@ -1153,31 +1176,53 @@ const startProbe = async () => {
       toolDiameter: ballPointDiameter.value || 6
     };
 
-    const gcodeCommands = generateProbeCode(options);
+    console.log('[Probe] Starting probe operation:', options);
 
-    if (gcodeCommands.length === 0) {
-      console.error('[Probe] No G-code generated for probing axis:', probingAxis.value);
-      return;
+    // Call server API to start probing
+    const response = await fetch('/api/probe/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(options),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to start probe');
     }
 
-    console.log('[Probe] Generated G-code:', gcodeCommands);
-
-    // Send G-code commands sequentially
-    for (const command of gcodeCommands) {
-      if (command.startsWith(';') || command.trim() === '') {
-        // Skip comments and empty lines
-        continue;
-      }
-
-      await mainApi.sendCommand(command);
-      // Small delay between commands for stability
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    console.log('[Probe] Probe sequence completed');
+    console.log('[Probe] Probe operation started:', result);
   } catch (error) {
-    console.error('[Probe] Error executing probe:', error);
+    console.error('[Probe] Error starting probe:', error);
+    probingInProgress.value = false;
   }
+};
+
+const closeProbeDialog = async () => {
+  if (probingInProgress.value) {
+    try {
+      console.log('[Probe] Closing dialog - stopping probe job');
+
+      // Call server API to stop probing
+      const response = await fetch('/api/probe/stop', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log('[Probe] Probe stopped:', result);
+      } else {
+        console.error('[Probe] Error stopping probe:', result.error);
+      }
+    } catch (error) {
+      console.error('[Probe] Error stopping probe:', error);
+    }
+  }
+  showProbeDialog.value = false;
+  probingInProgress.value = false;
 };
 
 // File manager helpers
@@ -2092,7 +2137,14 @@ onMounted(async () => {
       probingAxis.value = settings.probingAxis;
     }
     if (settings.probeSelectedCorner) {
-      selectedCorner.value = settings.probeSelectedCorner;
+      // Migrate old corner names to new terminology
+      const cornerMigrationMap: Record<string, string> = {
+        'FrontRight': 'BottomRight',
+        'FrontLeft': 'BottomLeft',
+        'BackRight': 'TopRight',
+        'BackLeft': 'TopLeft'
+      };
+      selectedCorner.value = cornerMigrationMap[settings.probeSelectedCorner] || settings.probeSelectedCorner;
     }
     if (typeof settings.probeBallPointDiameter === 'number') {
       ballPointDiameter.value = settings.probeBallPointDiameter;

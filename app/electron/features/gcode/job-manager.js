@@ -12,7 +12,7 @@ class JobProcessorManager {
     this.progressProviderFactory = null;
   }
 
-  async startJob(filePath, filename, cncController, broadcast) {
+  async startJob(filePath, filename, cncController, broadcast, options = {}) {
     if (this.currentJob) {
       throw new Error('A job is already running. Stop the current job before starting a new one.');
     }
@@ -27,7 +27,7 @@ class JobProcessorManager {
       filename,
       cncController,
       broadcast,
-      { progressProvider }
+      { progressProvider, ...options }
     );
     await this.currentJob.start();
     log('Job started:', filename);

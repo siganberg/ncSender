@@ -137,11 +137,17 @@ export class GCodeJobProcessor {
     this.isStopped = false;
     this.completionCallbacks = [];
     this.progressProvider = options.progressProvider || null;
+    this.gcodeContent = options.gcodeContent || null; // Direct G-code content
   }
 
   async start() {
-    // Read and parse the G-code file
-    const content = await fs.readFile(this.filePath, 'utf8');
+    // Read and parse the G-code - either from file or from provided content
+    let content;
+    if (this.gcodeContent) {
+      content = this.gcodeContent;
+    } else {
+      content = await fs.readFile(this.filePath, 'utf8');
+    }
     this.lines = this.parseGCodeLines(content);
 
     // Initialize progress provider with full content pre-analysis

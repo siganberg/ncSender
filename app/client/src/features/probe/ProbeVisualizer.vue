@@ -271,7 +271,7 @@ const initScene = () => {
       else if (['XYZ', 'XY'].includes(props.probingAxis) && plateModel) {
         // Check if clicked on a corner (old format: includes 'corner', new format: BackRight, BackLeft, FrontRight, FrontLeft)
         const isCorner = groupName.includes('corner') ||
-                        ['backright', 'backleft', 'frontright', 'frontleft'].includes(groupName);
+                        ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName);
 
         if (isCorner) {
           // Reset previously selected corner to darker gray
@@ -308,22 +308,22 @@ const initScene = () => {
             const inset = props.probingAxis === 'XY' ? -1 : 2;
 
             // No rotation applied, so corner names match visual positions directly
-            if (cornerName.includes('front') && cornerName.includes('right')) {
+            if (cornerName.includes('bottom') && cornerName.includes('right')) {
               targetX = plateMax.x - inset;
               targetY = plateMin.y + inset;
-              mappedCorner = 'FrontRight (max.x, min.y)';
-            } else if (cornerName.includes('front') && cornerName.includes('left')) {
+              mappedCorner = 'BottomRight (max.x, min.y)';
+            } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
               targetX = plateMin.x + inset;
               targetY = plateMin.y + inset;
-              mappedCorner = 'FrontLeft (min.x, min.y)';
-            } else if (cornerName.includes('back') && cornerName.includes('right')) {
+              mappedCorner = 'BottomLeft (min.x, min.y)';
+            } else if (cornerName.includes('top') && cornerName.includes('right')) {
               targetX = plateMax.x - inset;
               targetY = plateMax.y - inset;
-              mappedCorner = 'BackRight (max.x, max.y)';
-            } else if (cornerName.includes('back') && cornerName.includes('left')) {
+              mappedCorner = 'TopRight (max.x, max.y)';
+            } else if (cornerName.includes('top') && cornerName.includes('left')) {
               targetX = plateMin.x + inset;
               targetY = plateMax.y - inset;
-              mappedCorner = 'BackLeft (min.x, max.y)';
+              mappedCorner = 'TopLeft (min.x, max.y)';
             } else {
               console.warn('[CORNER] No corner match found for:', cornerName);
             }
@@ -370,7 +370,7 @@ const initScene = () => {
       const groupName = hoveredObject.userData.group?.toLowerCase() || '';
 
       // Show pointer for corners (XYZ/XY mode) or sides (X/Y modes)
-      const isCornerHover = (groupName.includes('corner') || ['backright', 'backleft', 'frontright', 'frontleft'].includes(groupName)) && ['XYZ', 'XY'].includes(props.probingAxis);
+      const isCornerHover = (groupName.includes('corner') || ['topright', 'topleft', 'bottomright', 'bottomleft'].includes(groupName)) && ['XYZ', 'XY'].includes(props.probingAxis);
       const isXSideHover = props.probingAxis === 'X' && (groupName.includes('left') || groupName.includes('right'));
       const isYSideHover = props.probingAxis === 'Y' && (groupName.includes('front') || groupName.includes('back') || groupName.includes('sidefront') || groupName.includes('sideback'));
 
@@ -571,10 +571,10 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
 
     // For plate-xyz.txt, color the corners dark gray (clickable indicator)
     if (plateFile === 'plate-xyz.txt') {
-      setGroupColor(object, 'BackRight', 0x555555);
-      setGroupColor(object, 'BackLeft', 0x555555);
-      setGroupColor(object, 'FrontRight', 0x555555);
-      setGroupColor(object, 'FrontLeft', 0x555555);
+      setGroupColor(object, 'TopRight', 0x555555);
+      setGroupColor(object, 'TopLeft', 0x555555);
+      setGroupColor(object, 'BottomRight', 0x555555);
+      setGroupColor(object, 'BottomLeft', 0x555555);
     }
 
     // For plate-xy.txt, color the sides dark gray (clickable indicator)
