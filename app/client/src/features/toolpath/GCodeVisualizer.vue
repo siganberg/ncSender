@@ -267,19 +267,6 @@
 
             <!-- Center probing fields (Center - Inner and Center - Outer) -->
             <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
-              <div class="probe-warning">
-                <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
-              </div>
-
-              <!-- Probe Z First toggle - only for Center - Outer -->
-              <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--toggle">
-                <label class="probe-label">Probe Z First</label>
-                <label class="switch">
-                  <input type="checkbox" v-model="probeZFirst">
-                  <span class="slider"></span>
-                </label>
-              </div>
-
               <div class="probe-control-row probe-control-row--three">
                 <div class="probe-control-group">
                   <label class="probe-label">X Dimension</label>
@@ -324,6 +311,15 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Probe Z First toggle - only for Center - Outer -->
+              <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--toggle probe-control-group--toggle-left">
+                <label class="probe-label">Probe Z First</label>
+                <label class="switch">
+                  <input type="checkbox" v-model="probeZFirst">
+                  <span class="slider"></span>
+                </label>
+              </div>
             </template>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
@@ -335,6 +331,9 @@
               @corner-selected="selectedCorner = $event"
               @side-selected="selectedSide = $event"
             />
+            <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-warning">
+              <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
+            </div>
             <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-instruction">
               Click on a corner to select where to start probing
             </div>
@@ -349,7 +348,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="showProbeDialog = false" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
-        <button class="probe-dialog__btn probe-dialog__btn--primary" :disabled="probeStatus !== 'connected'">Start Probe</button>
+        <button class="probe-dialog__btn probe-dialog__btn--primary" disabled>Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -3095,7 +3094,7 @@ body.theme-light .dot--rapid {
 }
 
 .probe-dialog__content {
-  padding: 20px;
+  padding: 10px 20px 10px 20px;
   min-width: 900px;
   color: var(--color-text-primary);
 }
@@ -3141,7 +3140,6 @@ body.theme-light .dot--rapid {
   line-height: 1.4;
   color: #ff9800;
   background: rgba(255, 152, 0, 0.1);
-  border-left: 3px solid #ff9800;
   border-radius: 4px;
 }
 
@@ -3151,6 +3149,10 @@ body.theme-light .dot--rapid {
   justify-content: flex-end;
   gap: 12px;
   width: 100%;
+}
+
+.probe-control-group--toggle-left {
+  justify-content: flex-start;
 }
 
 .probe-control-group--toggle .probe-label {
@@ -3243,7 +3245,7 @@ body.theme-light .dot--rapid {
   display: flex;
   justify-content: center;
   gap: 12px;
-  padding: 10px 10px 20px 10px;
+  padding: 0 10px 20px 10px;
 }
 
 .probe-dialog__btn {
@@ -3275,6 +3277,19 @@ body.theme-light .dot--rapid {
 .probe-dialog__btn--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.probe-dialog__btn--primary:disabled {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.probe-dialog__btn--primary:disabled:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 /* Confirmation Dialog */
