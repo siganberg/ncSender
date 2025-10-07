@@ -148,6 +148,10 @@ export class CNCController extends EventEmitter {
           newStatus.floodCoolant = false;
           newStatus.mistCoolant = false;
         }
+      } else if (key === 'Pn') {
+        // Pin state: P=Probe, X/Y/Z=Limit switches, etc.
+        newStatus.probeActive = value ? value.includes('P') : false;
+        newStatus.Pn = value;
       } else if (key && value) {
         newStatus[key] = value;
       }
@@ -169,7 +173,7 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

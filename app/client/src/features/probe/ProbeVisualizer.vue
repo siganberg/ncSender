@@ -14,6 +14,7 @@ const props = defineProps<{
   probingAxis: string;
   selectedCorner: string | null;
   selectedSide: string | null;
+  probeActive: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -452,6 +453,9 @@ const loadProbeModel = async () => {
       }
     });
 
+    // Set initial LED color to green (ready state)
+    setGroupColor(object, 'Led', 0x00ff00);
+
     // Don't rotate - keep original orientation to match corner/group names
     // object.rotation.z = Math.PI / 2; // Rotate 90 degrees around Z axis
 
@@ -622,6 +626,19 @@ const handleResize = () => {
 // Watch for probe type changes
 watch(() => props.probeType, () => {
   loadProbeModel();
+});
+
+// Watch for probe active state changes to update LED color
+watch(() => props.probeActive, (isActive) => {
+  if (probeModel) {
+    // Red when active (triggered), Green when inactive (ready)
+    const ledColor = isActive ? 0xff0000 : 0x00ff00;
+    setGroupColor(probeModel, 'Led', ledColor);
+
+    if (renderer) {
+      renderer.render(scene, camera);
+    }
+  }
 });
 
 // Watch for selected corner prop changes (from settings)

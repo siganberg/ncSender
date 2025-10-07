@@ -171,7 +171,7 @@
       </div>
 
       <!-- Probe button - bottom right -->
-      <button class="probe-button" @click="showProbeDialog = true" title="Probe">
+      <button class="probe-button" @click="openProbeDialog" title="Probe">
         <span class="probe-label">Probe</span>
         <img src="/assets/probe.svg" alt="Probe" class="probe-icon" />
       </button>
@@ -328,6 +328,7 @@
               :probing-axis="probingAxis"
               :selected-corner="selectedCorner"
               :selected-side="selectedSide"
+              :probe-active="probeActive"
               @corner-selected="selectedCorner = $event"
               @side-selected="selectedSide = $event"
             />
@@ -348,7 +349,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="showProbeDialog = false" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
-        <button class="probe-dialog__btn probe-dialog__btn--primary" disabled>Start Probe</button>
+        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="!probeEverActivated">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -414,12 +415,14 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
+import { api as mainApi } from '../../lib/api.js';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
+import { generateProbeCode } from '../probe/probing-utils.js';
 
 const store = useToolpathStore();
 
@@ -529,7 +532,8 @@ const zOffset = ref(-0.1);
 const probingAxis = ref('Z');
 const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
-const probeStatus = ref<'disconnected' | 'connected'>('disconnected'); // Probe LED status
+const probeActive = ref(false); // Probe pin active state from CNC
+const probeEverActivated = ref(false); // Track if probe was ever activated (doesn't reset to false)
 
 // Center probing settings
 const xDimension = ref(100);
@@ -1126,6 +1130,53 @@ const toggleSpindle = () => {
   showSpindle.value = !showSpindle.value;
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
+  }
+};
+
+// Probe functions
+const openProbeDialog = () => {
+  // Reset probe activation state when opening dialog
+  probeEverActivated.value = false;
+  showProbeDialog.value = true;
+};
+
+const startProbe = async () => {
+  try {
+    const options = {
+      probingAxis: probingAxis.value,
+      selectedCorner: selectedCorner.value,
+      selectedSide: selectedSide.value,
+      xDimension: xDimension.value,
+      yDimension: yDimension.value,
+      rapidMovement: rapidMovement.value,
+      probeZFirst: probeZFirst.value,
+      toolDiameter: ballPointDiameter.value || 6
+    };
+
+    const gcodeCommands = generateProbeCode(options);
+
+    if (gcodeCommands.length === 0) {
+      console.error('[Probe] No G-code generated for probing axis:', probingAxis.value);
+      return;
+    }
+
+    console.log('[Probe] Generated G-code:', gcodeCommands);
+
+    // Send G-code commands sequentially
+    for (const command of gcodeCommands) {
+      if (command.startsWith(';') || command.trim() === '') {
+        // Skip comments and empty lines
+        continue;
+      }
+
+      await mainApi.sendCommand(command);
+      // Small delay between commands for stability
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    console.log('[Probe] Probe sequence completed');
+  } catch (error) {
+    console.error('[Probe] Error executing probe:', error);
   }
 };
 
@@ -2092,6 +2143,15 @@ onMounted(async () => {
   let prevJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
   api.onServerStateUpdated((state) => {
     const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | undefined;
+
+    // Update probe active state
+    if (state.machineState?.probeActive !== undefined) {
+      probeActive.value = state.machineState.probeActive;
+      // Once probe is activated, keep button enabled
+      if (state.machineState.probeActive) {
+        probeEverActivated.value = true;
+      }
+    }
 
     // If a run is starting, reset completed markers so we start fresh
     if (status === 'running' && prevJobStatus !== 'running') {
