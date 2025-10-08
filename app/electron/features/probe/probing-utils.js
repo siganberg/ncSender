@@ -31,7 +31,7 @@ export const getZProbeRoutine = () => {
     'G0 Z4',
     'G38.2 Z-5 F75',
     'G4 P0.3',
-    'G10 L20 P0 Z0',
+    'G10 L20 Z0',
     'G0 Z4',
     'G90',
   ];
@@ -54,7 +54,7 @@ export const getSingleAxisStandardRoutine = (axis, probeDistance, retract, probe
     `G91 G0 ${axis}${retract}`,
     `G38.2 ${axis}${-Math.abs(retract) - 1} F${probeSlow}`,
     'G4 P0.3',
-    `G10 L20 P0 ${axis}${thickness}`,
+    `G10 L20 ${axis}${thickness}`,
     `G0 ${axis}${retract}`,
   ];
 };
@@ -74,13 +74,13 @@ export const getXProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
 
   return [
     `; Probe X - ${selectedSide}`,
-    'G10 L20 P0 X0',
+    'G10 L20 X0',
     'G91 G21',
     `G38.2 X${fastProbe} F150`,
     `G91 G0 X${bounce}`,
     `G38.2 X${slowProbe} F75`,
     'G4 P0.3',
-    `G10 L20 P0 X${offset}`,
+    `G10 L20 X${offset}`,
     `G0 X${moveAway}`,
     'G90',
   ];
@@ -101,13 +101,13 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
 
   return [
     `; Probe Y - ${selectedSide}`,
-    'G10 L20 P0 Y0',
+    'G10 L20 Y0',
     'G91 G21',
     `G38.2 Y${fastProbe} F150`,
     `G91 G0 Y${bounce}`,
     `G38.2 Y${slowProbe} F75`,
     'G4 P0.3',
-    `G10 L20 P0 Y${offset}`,
+    `G10 L20 Y${offset}`,
     `G0 Y${moveAway}`,
     'G90',
   ];
@@ -159,7 +159,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
     `G0 X${xRetract}`,
     `G38.2 X${xSlow} F75`,
     'G4 P0.3',
-    `G10 L20 P0 X${xOffset}`,
+    `G10 L20 X${xOffset}`,
   );
 
   // Position for Y probe
@@ -175,7 +175,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
     `G91 G0 Y${yRetract}`,
     `G38.2 Y${ySlow} F75`,
     'G4 P0.3',
-    `G10 L20 P0 Y${yOffset}`,
+    `G10 L20 Y${yOffset}`,
     `G0 Y${yRetract}`,
   );
 
@@ -221,29 +221,26 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
 /**
  * Generate G-code for Center - Inner probing
  */
-export const getCenterInnerRoutine = ({ xDimension, yDimension, ballPointDiameter = 6 }) => {
-  const ballRadius = ballPointDiameter / 2;
+export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6, rapidMovement = 2000 }) => {
+
+  const ballPointDiameter = toolDiameter;
   const halfX = xDimension / 2;
   const halfY = yDimension / 2;
-  const clearance = 8 + ballRadius;
   const searchFeed = 150;
   const slowFeed = 75;
   const bounce = 2;
   const maxSearchLimit = 30;
 
 
-  const safeRapidX = halfX - (ballPointDiameter/2) - 7;
-  const safeRapidY = halfY - (ballPointDiameter/2) - 7;
+  const safeRapidX = halfX - (toolDiameter/2) - 7;
+  const safeRapidY = halfY - (toolDiameter/2) - 7;
 
-  const searchFeedRate = 2000;
 
   const code = [
-    '(--- Probe Center Macro ---)',
-    '(Works for round or rectangular holes using X and Y sizes)',
-    '(Assumes tool tip starts roughly center area)',
+    '; Probing Center - Inner',
     `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
-    '#<RAPID_SEARCH> = 2000', // TODO; pass the rapid movement
+    `#<RAPID_SEARCH> = ${rapidMovement}`,
     'G21 (mm mode)',
     "G91 (incremental)",
   ];
@@ -255,19 +252,19 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, ballPointDiamete
 
   code.push(
     `G38.2 X-${maxSearchLimit} F${searchFeed}`,
-    'G0 X2',
+    `G0 X${bounce}`,
     `G38.2 X-3 F${slowFeed}`,
     `#<X1> = #5061`,
-     'G0 X2'
+    `G0 X${bounce}`
   );
 
   if (safeRapidX > 0) {
-    code.push(`G38.3 X${xDimension-(ballPointDiameter/2) - 5 - 7} F#<RAPID_SEARCH>`);
+    code.push(`G38.3 X${xDimension-(toolDiameter) - 10} F#<RAPID_SEARCH>`);
   }
 
   code.push(
     `G38.2 X${maxSearchLimit} F${searchFeed}`,
-    `G0 X-2`,
+    `G0 X-${bounce}`,
     `G38.2 X3 F${slowFeed}`,
     `#<X2> = #5061`,
     'G0 X-[[#<X2>-#<X1>]/2]'
@@ -280,25 +277,25 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, ballPointDiamete
 
   code.push(
     `G38.2 Y-${maxSearchLimit} F${searchFeed}`,
-    'G0 Y2',
+    `G0 Y${bounce}`,
     `G38.2 Y-3 F${slowFeed}`,
     `#<Y1> = #5062`,
-    'G0 Y2'
+    `G0 Y${bounce}`
   );
 
   if (safeRapidY > 0) {
-    code.push(`G38.3 Y${yDimension-(ballPointDiameter/2) - 5 - 7} F#<RAPID_SEARCH>`);
+    code.push(`G38.3 Y${yDimension-(ballPointDiameter) - 10} F#<RAPID_SEARCH>`);
   }
 
   code.push(
     `G38.2 Y${maxSearchLimit} F${searchFeed}`,
-    'G0 Y-2',
+    `G0 Y-${bounce}`,
     `G38.2 Y3 F${slowFeed}`,
     `#<Y2> = #5062`,
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
-    'G10 L20 P0 X0 Y0',
+    'G10 L20 X0 Y0',
     'G90',
-    '(Proble Complete)',
+    '(MSG,Hole diameter = [#<X2>-#<X1>])',
   );
 
   return code;
@@ -307,7 +304,8 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, ballPointDiamete
 /**
  * Generate G-code for Center - Outer probing
  */
-export const getCenterOuterRoutine = ({ xDimension, yDimension, ballPointDiameter = 6, probeZFirst }) => {
+export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 6, probeZFirst }) => {
+  const ballPointDiameter = toolDiameter;
   const ballRadius = ballPointDiameter / 2;
   const clearance = 10 + ballRadius;
   const maxSearchLimit = 30;
@@ -339,7 +337,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, ballPointDiamete
       'G0 Z4',
       'G38.2 Z-5 F75',
       'G4 P0.3',
-      'G10 L20 P0 Z0',
+      'G10 L20 Z0',
       'G0 Z5',
       'G90',
     );
@@ -408,7 +406,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, ballPointDiamete
     '%CENTER_X=[(X_LEFT + X_RIGHT) / 2]',
     '%CENTER_Y=[(Y_BACK + Y_FRONT) / 2]',
     'G0 X[CENTER_X] Y[CENTER_Y]',
-    'G10 L20 P0 X0 Y0',
+    'G10 L20 X0 Y0',
   );
 
   return code;
