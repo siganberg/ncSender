@@ -5,6 +5,7 @@ import net from 'net';
 import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
+import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-watchdog.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -31,9 +32,10 @@ export class CNCController extends EventEmitter {
     this.pendingCommands = new Map();
 
     // Dead-man switch for continuous jogging
-    this.jogWatchdog = null; // Timer for continuous jog dead-man switch
-    this.activeJogCommand = null; // Track active continuous jog
-    this.jogTimeoutMs = 750; // Dead-man timeout (matches heartbeat expectations)
+    this.jogWatchdog = new JogWatchdog({
+      timeoutMs: 750,
+      onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
+    });
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -662,43 +664,10 @@ export class CNCController extends EventEmitter {
     this.emitConnectionStatus('disconnected', false);
   }
 
-  startJogWatchdog(commandId, command) {
-    // Clear any existing watchdog
-    this.clearJogWatchdog();
-
-    this.activeJogCommand = { id: commandId, command };
-
-    this.jogWatchdog = setTimeout(() => {
-      log('Jog watchdog timeout - sending emergency cancel');
-      this.sendEmergencyJogCancel('watchdog-timeout');
-    }, this.jogTimeoutMs);
-  }
-
-  extendJogWatchdog() {
-    if (!this.jogWatchdog) return;
-
-    // Reset the timer
-    clearTimeout(this.jogWatchdog);
-    this.jogWatchdog = setTimeout(() => {
-      log('Jog watchdog timeout - sending emergency cancel');
-      this.sendEmergencyJogCancel('watchdog-timeout');
-    }, this.jogTimeoutMs);
-  }
-
-  clearJogWatchdog() {
-    if (this.jogWatchdog) {
-      clearTimeout(this.jogWatchdog);
-      this.jogWatchdog = null;
-    }
-    this.activeJogCommand = null;
-  }
-
   async sendEmergencyJogCancel(reason) {
-    const jogCancel = String.fromCharCode(0x85);
-
     try {
-      await this.writeToConnection(jogCancel, {
-        rawCommand: jogCancel,
+      await this.writeToConnection(REALTIME_JOG_CANCEL, {
+        rawCommand: REALTIME_JOG_CANCEL,
         isRealTime: true
       });
 
@@ -706,7 +675,7 @@ export class CNCController extends EventEmitter {
 
       this.emit('command-ack', {
         id: `emergency-cancel-${Date.now()}`,
-        command: jogCancel,
+        command: REALTIME_JOG_CANCEL,
         displayCommand: `\\x85 (Emergency Jog Cancel - ${reason})`,
         status: 'success',
         timestamp: new Date().toISOString(),
@@ -716,7 +685,7 @@ export class CNCController extends EventEmitter {
       log('Failed to send emergency jog cancel:', error);
     }
 
-    this.clearJogWatchdog();
+    this.jogWatchdog.clear();
   }
 
   writeToConnection(commandToSend, { rawCommand, isRealTime } = {}) {
@@ -763,21 +732,22 @@ export class CNCController extends EventEmitter {
       throw new Error('CNC controller is not connected');
     }
 
-    const cleanCommand = command.trim();
-    if (!cleanCommand) {
-      throw new Error('Command is empty');
-    }
-
     const { meta = null, commandId = null, displayCommand = null } = options || {};
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     // Handle jog heartbeat - extend watchdog timer
+    // Check this BEFORE validating command content, as heartbeats can have empty commands
     const isJogHeartbeat = normalizedMeta?.jogHeartbeat === true;
-    if (isJogHeartbeat && this.jogWatchdog) {
-      this.extendJogWatchdog();
+    if (isJogHeartbeat && this.jogWatchdog.isActive()) {
+      this.jogWatchdog.extend();
       // Don't actually queue heartbeat - it's just to keep watchdog alive
       return { status: 'heartbeat-ack', id: resolvedCommandId };
+    }
+
+    const cleanCommand = command.trim();
+    if (!cleanCommand) {
+      throw new Error('Command is empty');
     }
 
     // Intercept user ? command - return cached status instead of sending to controller
@@ -817,7 +787,7 @@ export class CNCController extends EventEmitter {
     // Check if this is a jog cancel command (0x85)
     const isJogCancel = cleanCommand.length === 1 && cleanCommand.charCodeAt(0) === 0x85;
     if (isJogCancel) {
-      this.clearJogWatchdog();
+      this.jogWatchdog.clear();
     }
 
     let commandToSend;
@@ -834,7 +804,7 @@ export class CNCController extends EventEmitter {
     // Detect continuous jog command ($J= with continuous flag in metadata)
     const isContinuousJog = /^\$J=/i.test(cleanCommand) && normalizedMeta?.continuous === true;
     if (isContinuousJog) {
-      this.startJogWatchdog(resolvedCommandId, cleanCommand);
+      this.jogWatchdog.start(resolvedCommandId, cleanCommand);
     }
 
     if (isRealTimeCommand) {
