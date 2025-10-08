@@ -136,7 +136,7 @@ class NCClient {
     }
   }
 
-  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId, timeout } = {}) {
+  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
     if (typeof command !== 'string' || command.trim() === '') {
       throw new Error('sendCommandViaWebSocket requires a command');
     }
@@ -153,43 +153,10 @@ class NCClient {
       completesCommandId
     };
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
-
-      const cleanup = () => {
-        settled = true;
-        if (resultTimer) clearTimeout(resultTimer);
-        if (offResult) offResult();
-      };
-
-      const rejectWith = (error) => {
-        if (!settled) {
-          cleanup();
-          reject(error instanceof Error ? error : new Error(error?.message || 'Command failed'));
-        }
-      };
-
-      // Timeout disabled for now - some commands can take a long time
-      // const resultTimeoutMs = timeout !== undefined ? timeout : Math.max(this.jogAckTimeoutMs * 4, 6000);
-      // const resultTimer = resultTimeoutMs > 0 ? setTimeout(() => {
-      //   rejectWith(new Error('Timed out waiting for command result'));
-      // }, resultTimeoutMs) : null;
-      const resultTimer = null;
-
-      const offResult = this.on('cnc-command-result', (result) => {
-        if (!result || result.id !== normalizedCommandId || settled) {
-          return;
-        }
-
-        cleanup();
-        // Always resolve - errors are handled via cnc-error events and shown in terminal
-        resolve(result);
-      });
-
-      this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true }).catch((error) => {
-        rejectWith(error instanceof Error ? error : new Error('Failed to send command via WebSocket'));
-      });
-    });
+    // Fire-and-forget: send command via WebSocket
+    // Results are broadcast via cnc-command-result and cnc-error events
+    // Only reject if WebSocket fails to send
+    return this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true });
   }
 
   async startJogSession({ jogId, command, displayCommand, axis, direction, feedRate }) {
