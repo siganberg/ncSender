@@ -492,6 +492,12 @@ const loadProbeModel = async () => {
       probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
     }
 
+    // Position probe for Center modes
+    if (['Center - Inner', 'Center - Outer'].includes(props.probingAxis) && probeModel) {
+      const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
+      probeModel.position.set(0, 0, zPosition);
+    }
+
     // Re-render after model is loaded
     if (renderer) {
       renderer.render(scene, camera);
@@ -666,7 +672,8 @@ watch(() => props.probingAxis, async () => {
   if (currentPlateFile === requiredPlateFile && plateModel && !['X', 'Y'].includes(props.probingAxis)) {
     // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
     if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis) && probeModel) {
-      probeModel.position.set(0, 0, 4);
+      const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
+      probeModel.position.set(0, 0, zPosition);
       if (renderer) {
         renderer.render(scene, camera);
       }
@@ -760,7 +767,8 @@ watch(() => props.probingAxis, async () => {
     if (plateModel && probeModel) {
       // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
       if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis)) {
-        probeModel.position.set(0, 0, 4);
+        const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
+        probeModel.position.set(0, 0, zPosition);
       }
 
       // Start glow animation for Center - Inner mode
