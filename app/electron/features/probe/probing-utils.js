@@ -145,21 +145,25 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6 }) => {
     'G91 G21',
   ];
 
+  // Move away first
+  code.push(`G0 X${xRetract} Y${yRetract}`);
+
+
   // Probe X first
   code.push(
+    `G0 Y${yProbe+yRetract}`,
     `G38.2 X${xProbe} F150`,
-    `G91 G0 X${xRetract}`,
+    `G0 X${xRetract}`,
     `G38.2 X${xSlow} F75`,
     'G4 P0.3',
     `G10 L20 P0 X${xOffset}`,
-    `G0 X${xRetract}`,
   );
 
   // Position for Y probe
   code.push(
     `G0 X${xRetract * 2}`,
-    `G0 Y${yMove}`,
-    `G0 X${-xMove}`,
+    `G0 Y${-yMove}`,
+    `G0 X${xMove}`,
   );
 
   // Probe Y
