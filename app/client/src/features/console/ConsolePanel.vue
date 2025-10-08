@@ -737,7 +737,7 @@ h2 {
 .timestamp {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
-  min-width: 112px;
+  min-width: 115px;
   display: flex;
   align-items: center;
   gap: 4px;

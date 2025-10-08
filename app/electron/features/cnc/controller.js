@@ -750,7 +750,9 @@ export class CNCController extends EventEmitter {
       commandToSend = cleanCommand;
     } else {
       // Regular G-code commands get uppercase conversion with newline
-      commandToSend = cleanCommand.toUpperCase() + '\n';
+      // Preserve case for GRBL variable syntax (% assignments and [] expressions)
+      const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
+      commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
     }
 
     if (isRealTimeCommand) {
@@ -802,7 +804,9 @@ export class CNCController extends EventEmitter {
       }
     }
 
-    const normalizedCommand = cleanCommand.toUpperCase();
+    // Preserve case for GRBL variable syntax (% assignments and [] expressions)
+    const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
+    const normalizedCommand = hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase();
     const display = displayCommand || normalizedCommand;
 
     while (this.commandQueue.size >= MAX_QUEUE_SIZE) {

@@ -227,85 +227,78 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, ballPointDiamete
   const halfY = yDimension / 2;
   const clearance = 8 + ballRadius;
   const searchFeed = 150;
-  const latchFeed = 75;
+  const slowFeed = 75;
   const bounce = 2;
   const maxSearchLimit = 30;
 
-  const maxRapidDistanceX = halfX - clearance;
-  const maxRapidDistanceY = halfY - clearance;
-  const useRapidX = maxRapidDistanceX >= clearance;
-  const useRapidY = maxRapidDistanceY >= clearance;
+
+  const safeRapidX = halfX - (ballPointDiameter/2) - 7;
+  const safeRapidY = halfY - (ballPointDiameter/2) - 7;
 
   const searchFeedRate = 2000;
 
   const code = [
-    '; Probe Center - Inner',
-    '%START_X=posx',
-    '%START_Y=posy',
-    '%START_Z=posz',
-    `%BALL_RADIUS=${ballRadius}`,
-    `%SEARCH_FEED=${searchFeed}`,
-    `%LATCH_FEED=${latchFeed}`,
-    'G90',
+    '(--- Probe Center Macro ---)',
+    '(Works for round or rectangular holes using X and Y sizes)',
+    '(Assumes tool tip starts roughly center area)',
+    `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
+    `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
+    '#<RAPID_SEARCH> = 2000', // TODO; pass the rapid movement
+    'G21 (mm mode)',
+    "G91 (incremental)",
   ];
 
-  // Probe X left
-  if (useRapidX) {
-    code.push(`G90 G38.3 X[START_X - ${maxRapidDistanceX}] F${searchFeedRate}`);
+  // X dimension
+  if (safeRapidX > 0) {
+    code.push(`G38.3 X-${safeRapidX} F#<RAPID_SEARCH>`);
   }
+
   code.push(
-    `G91 G38.2 X-${maxSearchLimit} F[SEARCH_FEED]`,
-    `G91 G0 X${bounce}`,
-    `G91 G38.2 X-${maxSearchLimit} F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%X_LEFT=[posx - BALL_RADIUS]',
+    `G38.2 X-${maxSearchLimit} F${searchFeed}`,
+    'G0 X2',
+    `G38.2 X-3 F${slowFeed}`,
+    `#<X1> = #5061`,
+     'G0 X2'
   );
 
-  // Return to center and probe X right
-  code.push(`G90 G0 X[START_X] Y[START_Y]`);
-  if (useRapidX) {
-    code.push(`G90 G38.3 X[START_X + ${maxRapidDistanceX}] F${searchFeedRate}`);
+  if (safeRapidX > 0) {
+    code.push(`G38.3 X${xDimension-(ballPointDiameter/2) - 5 - 7} F#<RAPID_SEARCH>`);
   }
+
   code.push(
-    `G91 G38.2 X${maxSearchLimit} F[SEARCH_FEED]`,
-    `G91 G0 X-${bounce}`,
-    `G91 G38.2 X${maxSearchLimit} F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%X_RIGHT=[posx + BALL_RADIUS]',
+    `G38.2 X${maxSearchLimit} F${searchFeed}`,
+    `G0 X-2`,
+    `G38.2 X3 F${slowFeed}`,
+    `#<X2> = #5061`,
+    'G0 X-[[#<X2>-#<X1>]/2]'
   );
 
-  // Return to center and probe Y back
-  code.push(`G90 G0 X[START_X] Y[START_Y]`);
-  if (useRapidY) {
-    code.push(`G90 G38.3 Y[START_Y - ${maxRapidDistanceY}] F${searchFeedRate}`);
+  // Y dimesion
+  if (safeRapidY > 0) {
+    code.push(`G38.3 Y-${safeRapidY} F#<RAPID_SEARCH>`);
   }
+
   code.push(
-    `G91 G38.2 Y-${maxSearchLimit} F[SEARCH_FEED]`,
-    `G91 G0 Y${bounce}`,
-    `G91 G38.2 Y-${maxSearchLimit} F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%Y_BACK=[posy - BALL_RADIUS]',
+    `G38.2 Y-${maxSearchLimit} F${searchFeed}`,
+    'G0 Y2',
+    `G38.2 Y-3 F${slowFeed}`,
+    `#<Y1> = #5062`,
+    'G0 Y2'
   );
 
-  // Return to center and probe Y front
-  code.push(`G90 G0 X[START_X] Y[START_Y]`);
-  if (useRapidY) {
-    code.push(`G90 G38.3 Y[START_Y + ${maxRapidDistanceY}] F${searchFeedRate}`);
+  if (safeRapidY > 0) {
+    code.push(`G38.3 Y${yDimension-(ballPointDiameter/2) - 5 - 7} F#<RAPID_SEARCH>`);
   }
-  code.push(
-    `G91 G38.2 Y${maxSearchLimit} F[SEARCH_FEED]`,
-    `G91 G0 Y-${bounce}`,
-    `G91 G38.2 Y${maxSearchLimit} F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%Y_FRONT=[posy + BALL_RADIUS]',
-  );
 
-  // Calculate and move to center
   code.push(
-    '%CENTER_X=[(X_LEFT + X_RIGHT) / 2]',
-    '%CENTER_Y=[(Y_BACK + Y_FRONT) / 2]',
-    'G90 G0 X[CENTER_X] Y[CENTER_Y]',
+    `G38.2 Y${maxSearchLimit} F${searchFeed}`,
+    'G0 Y-2',
+    `G38.2 Y3 F${slowFeed}`,
+    `#<Y2> = #5062`,
+    `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 P0 X0 Y0',
+    'G90',
+    '(Proble Complete)',
   );
 
   return code;

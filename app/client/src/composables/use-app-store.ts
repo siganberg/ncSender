@@ -177,7 +177,7 @@ const addOrUpdateCommandLine = (payload: any) => {
     return null;
   }
 
-  let message = payload.displayCommand || payload.command || 'Command';
+  let message = payload.message || payload.displayCommand || payload.command || 'Command';
 
   // Format error messages specially
   if (payload.status === 'error' && payload.error?.message) {
@@ -356,6 +356,18 @@ export function initializeStore() {
   // CNC error events (including alarms)
   api.on('cnc-error', async (errorData) => {
     if (!errorData) return;
+
+    // Add error to terminal with warning icon
+    const errorMessage = errorData.message || 'Unknown error';
+    const errorCode = errorData.code ? `[Error ${errorData.code}] ` : '';
+    addOrUpdateCommandLine({
+      id: `error-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      message: `${errorCode}${errorMessage}`,
+      level: 'error',
+      status: 'error',
+      type: 'response',
+      timestamp: new Date().toISOString()
+    });
 
     // Check if it's an alarm (errorData.message contains "ALARM:X")
     if (errorData.message && errorData.message.toUpperCase().startsWith('ALARM:')) {
