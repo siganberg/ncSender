@@ -182,12 +182,8 @@ class NCClient {
         }
 
         cleanup();
-        if (result.status === 'success') {
-          resolve(result);
-        } else {
-          const errorMessage = result.error?.message || 'Command failed';
-          reject(new Error(errorMessage));
-        }
+        // Always resolve - errors are handled via cnc-error events and shown in terminal
+        resolve(result);
       });
 
       this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true }).catch((error) => {
