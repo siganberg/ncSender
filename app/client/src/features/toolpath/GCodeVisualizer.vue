@@ -182,15 +182,13 @@
   <Dialog v-if="showProbeDialog" @close="showProbeDialog = false" size="medium-minus">
     <div class="probe-dialog">
       <div class="probe-dialog__header">
-        <h2 class="probe-dialog__title">Probe</h2>
+        <p class="probe-dialog__instructions">
+          Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (red light should activate). Ensure the probe is positioned correctly for the selected probing axis.
+        </p>
       </div>
       <div class="probe-dialog__content">
         <div class="probe-dialog__columns">
           <div class="probe-dialog__column probe-dialog__column--controls">
-            <p class="probe-instructions">
-              Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.
-            </p>
-
             <div class="probe-control-row">
               <div class="probe-control-group">
                 <label class="probe-label">Probe Type</label>
@@ -215,7 +213,7 @@
             </div>
 
             <template v-if="probeType === '3d-touch'">
-              <div class="probe-control-row probe-control-row--three">
+              <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Diameter</label>
                   <div class="probe-input-with-unit">
@@ -247,27 +245,27 @@
                   </div>
                   <span v-if="errors.zPlunge" class="probe-error">{{ errors.zPlunge }}</span>
                 </div>
+              </div>
 
-                <div class="probe-control-group">
-                  <label class="probe-label">Z-Offset</label>
-                  <div class="probe-input-with-unit">
-                    <input
-                      v-model.number="zOffset"
-                      type="number"
-                      step="0.01"
-                      class="probe-input"
-                      @input="validateZOffset"
-                    />
-                    <span class="probe-unit">mm</span>
-                  </div>
-                  <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
+              <div class="probe-control-group">
+                <label class="probe-label">Z-Offset</label>
+                <div class="probe-input-with-unit">
+                  <input
+                    v-model.number="zOffset"
+                    type="number"
+                    step="0.01"
+                    class="probe-input"
+                    @input="validateZOffset"
+                  />
+                  <span class="probe-unit">mm</span>
                 </div>
+                <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
               </div>
             </template>
 
             <!-- Center probing fields (Center - Inner and Center - Outer) -->
             <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
-              <div class="probe-control-row probe-control-row--three">
+              <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">X Dimension</label>
                   <div class="probe-input-with-unit">
@@ -295,7 +293,9 @@
                     <span class="probe-unit">mm</span>
                   </div>
                 </div>
+              </div>
 
+              <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Rapid Movement</label>
                   <div class="probe-input-with-unit">
@@ -310,17 +310,31 @@
                     <span class="probe-unit">mm/min</span>
                   </div>
                 </div>
-              </div>
 
-              <!-- Probe Z First toggle - only for Center - Outer -->
-              <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--toggle probe-control-group--toggle-left">
-                <label class="probe-label">Probe Z First</label>
-                <label class="switch">
-                  <input type="checkbox" v-model="probeZFirst">
-                  <span class="slider"></span>
-                </label>
+                <!-- Probe Z First toggle - only for Center - Outer -->
+                <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--align-right">
+                  <label class="probe-label">Probe Z First</label>
+                  <label class="switch">
+                    <input type="checkbox" v-model="probeZFirst">
+                    <span class="slider"></span>
+                  </label>
+                </div>
               </div>
             </template>
+
+            <!-- Contextual instruction - shown at bottom of controls -->
+            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on a corner to select where to start probing
+            </div>
+            <div v-else-if="probingAxis === 'X'" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on the left or right side to select where to probe
+            </div>
+            <div v-else-if="probingAxis === 'Y'" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on the front or back side to select where to probe
+            </div>
+            <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
+            </div>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
             <ProbeVisualizer
@@ -332,23 +346,19 @@
               @corner-selected="selectedCorner = $event"
               @side-selected="selectedSide = $event"
             />
-            <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-warning">
-              <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
-            </div>
-            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-instruction">
-              Click on a corner to select where to start probing
-            </div>
-            <div v-if="probingAxis === 'X'" class="probe-instruction">
-              Click on the left or right side to select where to probe
-            </div>
-            <div v-if="probingAxis === 'Y'" class="probe-instruction">
-              Click on the front or back side to select where to probe
-            </div>
+
+            <!-- Jog Controls -->
+            <JogControls
+              :current-step="probeJogStep"
+              :step-options="[0.1, 1, 10]"
+              @update:step="probeJogStep = $event"
+              @center-click="closeProbeDialog"
+            />
           </div>
         </div>
       </div>
       <div class="probe-dialog__footer">
-        <button @click="closeProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
+        <button @click="dismissProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Close</button>
         <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary">Start Probe</button>
       </div>
     </div>
@@ -422,6 +432,7 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
+import JogControls from '../jog/JogControls.vue';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
@@ -530,6 +541,7 @@ const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
 const probingAxis = ref('Z');
+const probeJogStep = ref(1);
 const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
 const probeActive = ref(false); // Probe pin active state from CNC
@@ -1229,6 +1241,7 @@ const startProbe = async () => {
   }
 };
 
+
 const closeProbeDialog = async () => {
   if (probingInProgress.value) {
     try {
@@ -1252,6 +1265,10 @@ const closeProbeDialog = async () => {
   }
   showProbeDialog.value = false;
   probingInProgress.value = false;
+};
+
+const dismissProbeDialog = () => {
+  showProbeDialog.value = false;
 };
 
 // File manager helpers
@@ -3262,32 +3279,33 @@ body.theme-light .dot--rapid {
 .probe-dialog {
   display: flex;
   flex-direction: column;
-  max-width: 900px !important;
+  max-width: 700px !important;
+  height: 100%;
 }
 
 .probe-dialog__header {
-  padding-bottom: 12px;
-  padding: 10px 10px 12px 10px;
-  text-align: center;
+  padding: 30px 20px 30px 20px;
 }
 
-.probe-dialog__title {
+.probe-dialog__instructions {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  text-align: left;
 }
 
 .probe-dialog__content {
-  padding: 10px 20px 10px 20px;
-  min-width: 900px;
+  padding: 10px 30px 10px 30px;
   color: var(--color-text-primary);
+  height: 100%;
 }
 
 .probe-dialog__columns {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
   min-height: 400px;
 }
 
@@ -3309,6 +3327,7 @@ body.theme-light .dot--rapid {
 
 .probe-dialog__column--viewer {
   padding-left: 20px;
+  gap: 20px;
 }
 
 .probe-instructions {
@@ -3344,21 +3363,29 @@ body.theme-light .dot--rapid {
   margin-bottom: 0;
 }
 
-.probe-instruction {
-  margin-top: 12px;
-  padding: 8px 12px;
+.probe-contextual-instruction {
+  margin-top: 16px;
+  padding: 10px 14px;
   font-size: 0.85rem;
+  font-style: italic;
   text-align: center;
   color: var(--color-text-secondary);
-  background: var(--color-bg-secondary);
-  border-radius: 4px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.probe-contextual-instruction--warning {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border-color: rgba(255, 152, 0, 0.3);
 }
 
 .probe-control-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .probe-control-row--three {
@@ -3367,6 +3394,12 @@ body.theme-light .dot--rapid {
 
 .probe-control-group {
   margin-bottom: 12px;
+}
+
+.probe-control-group--align-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .probe-label {
@@ -3430,7 +3463,7 @@ body.theme-light .dot--rapid {
   display: flex;
   justify-content: center;
   gap: 12px;
-  padding: 0 10px 20px 10px;
+  padding: 10px 10px 20px 10px;
 }
 
 .probe-dialog__btn {

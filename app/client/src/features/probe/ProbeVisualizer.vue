@@ -43,6 +43,16 @@ const getAccentColor = (): number => {
   return parseInt(accentColorStr.replace('#', '0x'), 16);
 };
 
+// Reset camera to default view
+const resetCamera = () => {
+  if (!camera || !controls || !renderer) return;
+  camera.position.set(0, -27.026769063068528, 9.428525574214994);
+  camera.lookAt(0, -0.5914934468668256, -2.038781781675869);
+  controls.target.set(0, -0.5914934468668256, -2.038781781675869);
+  controls.update();
+  renderer.render(scene, camera);
+};
+
 // Start glowing effect for edge groups
 const startEdgeGlow = (groupName: string) => {
   if (!plateModel) return;
@@ -104,8 +114,8 @@ const initScene = () => {
   // Camera setup with front perspective view (Z-up, looking along Y-axis)
   const aspect = containerRef.value.clientWidth / containerRef.value.clientHeight;
   camera = new THREE.PerspectiveCamera(45, aspect, 0.001, 1000);
-  camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
-  camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
+  camera.position.set(0, -27.026769063068528, 9.428525574214994);
+  camera.lookAt(0, -0.5914934468668256, -2.038781781675869);
   camera.up.set(0, 0, 1);
 
   // Renderer setup with transparent background
@@ -134,13 +144,21 @@ const initScene = () => {
   controls.enableZoom = true;
   controls.enablePan = true;
   controls.enableRotate = true;
+  controls.screenSpacePanning = true; // Enable screen space panning for Z-axis
+
+  // Change mouse button mappings: middle button for pan, right button for zoom
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.PAN,
+    RIGHT: THREE.MOUSE.DOLLY
+  };
 
   // Lock horizontal rotation - only allow vertical (X-axis) rotation
   controls.minAzimuthAngle = 0;
   controls.maxAzimuthAngle = 0;
 
   // Set camera target
-  controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
+  controls.target.set(0, -0.5914934468668256, -2.038781781675869);
   controls.update();
 
   // Add click and hover handlers for interactive corners
@@ -369,11 +387,7 @@ const initScene = () => {
   // Reset view on right click
   renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
-    camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
-    controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
-    controls.update();
-    renderer.render(scene, camera);
+    resetCamera();
   });
 
   // Load probe model
@@ -455,10 +469,7 @@ const loadProbeModel = async () => {
     await loadPlateModel(center, scale);
 
     // Update camera to view the scaled model
-    camera.position.set(0.3102797925889344, -35.333541402798375, 11.617066192564842);
-    camera.lookAt(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
-    controls.target.set(0.3102797925889344, -0.18700311367436837, -0.6919443172047409);
-    controls.update();
+    resetCamera();
 
     // Apply saved corner selection after models are loaded
     if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && plateModel && probeModel) {
@@ -844,7 +855,7 @@ onUnmounted(() => {
 <style scoped>
 .probe-visualizer {
   width: 100%;
-  height: 300px;
+  height: 200px;
   position: relative;
 }
 
