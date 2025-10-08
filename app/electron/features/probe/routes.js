@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { generateProbeCode } from './probing-utils.js';
-import { jobManager } from '../gcode/job-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PROBE]`, ...args);
@@ -29,23 +28,25 @@ export function createProbeRoutes(cncController, broadcast) {
       });
     }
 
-    // Join commands into multi-line string
-    const gcodeContent = gcodeCommands.join('\n');
-
     // Log G-code for debugging
-    log(gcodeContent);
+    log('Probe G-code:', gcodeCommands.join('\n'));
 
-    // Start job with G-code content
-    await jobManager.startJob(
-      null, // No file path
-      `Probe-${options.probingAxis}`, // Job name
-      cncController,
-      broadcast,
-      {
-        gcodeContent, // Pass G-code content directly
-        sourceId: 'probing' // Tag as probing to broadcast to terminal
-      }
-    );
+    // Send probe commands directly to controller (don't use jobManager for probing)
+    for (const command of gcodeCommands) {
+      const cleanCommand = command.trim();
+      if (!cleanCommand) continue;
+
+      const commandId = `probe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      await cncController.sendCommand(cleanCommand, {
+        commandId,
+        displayCommand: cleanCommand,
+        meta: {
+          sourceId: 'probing',
+          probeOperation: options.probingAxis
+        }
+      });
+    }
 
     res.json({
       success: true,
@@ -65,23 +66,16 @@ export function createProbeRoutes(cncController, broadcast) {
    * Stop/abort probing operation
    * POST /api/probe/stop
    */
-  router.post('/stop', async (req, res) => {
+  router.post('/stop', async (_req, res) => {
     try {
-      if (!jobManager.hasActiveJob()) {
-        // No active job - this is fine, probe may have already completed
-        log('No active probe operation to stop (already completed)');
-        return res.json({
-          success: true,
-          message: 'No active probe operation'
-        });
-      }
-
       log('Stopping probe operation');
 
-      // Stop the job through job manager
-      jobManager.stop();
+      // Send soft reset to stop any active motion
+      await cncController.sendCommand('\x18', {
+        meta: { probeControl: true }
+      });
 
-      log('Probe operation stopped');
+      log('Probe operation stopped (soft reset sent)');
 
       res.json({
         success: true,

@@ -778,7 +778,6 @@ const hasFirmwareChanges = computed(() => {
 });
 
 // Computed property to filter firmware settings based on search query
-/*
 const filteredFirmwareSettings = computed(() => {
   if (!firmwareData.value || !firmwareData.value.settings) {
     return [];
@@ -802,7 +801,6 @@ const filteredFirmwareSettings = computed(() => {
     );
   }).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 });
-*/
 
 // Helper function to check if a bit is set
 const isBitSet = (value: string | number, bitIndex: number): boolean => {
