@@ -230,10 +230,11 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6
   const slowFeed = 75;
   const bounce = 2;
   const maxSearchLimit = 30;
+  const safeDistane = 5;
 
 
-  const safeRapidX = halfX - (toolDiameter/2) - 7;
-  const safeRapidY = halfY - (toolDiameter/2) - 7;
+  const safeRapidX = halfX - toolDiameter - safeDistane;
+  const safeRapidY = halfY - toolDiameter - safeDistane;
 
 
   const code = [
@@ -255,11 +256,11 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6
     `G0 X${bounce}`,
     `G38.2 X-3 F${slowFeed}`,
     `#<X1> = #5061`,
-    `G0 X${bounce}`
+    `G0 X${halfX}`
   );
 
   if (safeRapidX > 0) {
-    code.push(`G38.3 X${xDimension-(toolDiameter) - 10} F#<RAPID_SEARCH>`);
+    code.push(`G38.3 X${safeRapidX-toolDiameter/2} F#<RAPID_SEARCH>`);
   }
 
   code.push(
@@ -280,11 +281,11 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6
     `G0 Y${bounce}`,
     `G38.2 Y-3 F${slowFeed}`,
     `#<Y1> = #5062`,
-    `G0 Y${bounce}`
+    `G0 Y${halfY}`
   );
 
   if (safeRapidY > 0) {
-    code.push(`G38.3 Y${yDimension-(ballPointDiameter) - 10} F#<RAPID_SEARCH>`);
+    code.push(`G38.3 Y${safeRapidY-toolDiameter/2} F#<RAPID_SEARCH>`);
   }
 
   code.push(
@@ -294,8 +295,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6
     `#<Y2> = #5062`,
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
-    'G90',
-    '(MSG,Hole diameter = [#<X2>-#<X1>])',
+    'G90'
   );
 
   return code;
