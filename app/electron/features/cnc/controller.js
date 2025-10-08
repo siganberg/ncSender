@@ -701,8 +701,7 @@ export class CNCController extends EventEmitter {
       throw new Error('CNC controller is not connected');
     }
 
-    // Clean up command - remove semicolon comments
-    const cleanCommand = command.split(';')[0].trim();
+    const cleanCommand = command.trim();
     if (!cleanCommand) {
       throw new Error('Command is empty');
     }

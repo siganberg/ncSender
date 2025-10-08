@@ -205,18 +205,18 @@ export async function createApp(options = {}) {
       };
     }
 
-    const trimmed = rawCommand.split(';')[0].trim();
+    const trimmed = rawCommand.trim();
 
     const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(trimmed);
     if (hexMatch) {
       const charCode = parseInt(hexMatch[1], 16);
       return {
         command: String.fromCharCode(charCode),
-        displayCommand: rawCommand.trim()
+        displayCommand: trimmed
       };
     }
 
-    return { command: trimmed, displayCommand: rawCommand.trim() };
+    return { command: trimmed, displayCommand: trimmed };
   };
 
   async function handleWebSocketCommand(ws, payload) {
