@@ -11,6 +11,7 @@ class NCClient {
     this.discoveredPort = null;
     this.lastServerState = null;
     this.messageStates = new Map(); // Track state for each message type
+    this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
   }
 
   describeCommand(command) {
@@ -201,6 +202,8 @@ class NCClient {
           return;
         }
         cleanup();
+        // Track active jog session for dead-man switch
+        this.activeJogSessions.add(jogId);
         resolve(data);
       });
 
@@ -251,6 +254,8 @@ class NCClient {
           return;
         }
         cleanup();
+        // Remove from active jog sessions
+        this.activeJogSessions.delete(jogId);
         resolve(data);
       });
 
@@ -505,6 +510,26 @@ class NCClient {
 
     this.ws.onclose = (event) => {
       console.log('WebSocket disconnected', 'Code:', event.code, 'Reason:', event.reason);
+
+      // Dead-man switch: Send emergency jog cancel if any jog sessions are active
+      if (this.activeJogSessions.size > 0) {
+        console.warn('WebSocket disconnected with active jog sessions - sending emergency jog cancel');
+        // Send jog cancel via HTTP as fallback (WebSocket is closed)
+        fetch(`${this.baseUrl}/api/cnc/send-command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: REALTIME_JOG_CANCEL,
+            displayCommand: '\\x85 (Emergency Jog Cancel - WebSocket Disconnected)',
+            meta: { emergencyStop: true }
+          })
+        }).catch((error) => {
+          console.error('Failed to send emergency jog cancel:', error);
+        });
+        // Clear all active jog sessions
+        this.activeJogSessions.clear();
+      }
+
       this.emit('disconnected');
       this.attemptReconnect();
     };
