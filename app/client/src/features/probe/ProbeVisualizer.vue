@@ -473,16 +473,16 @@ const loadProbeModel = async () => {
       const inset = props.probingAxis === 'XY' ? -1 : 2;
       let targetX = 0, targetY = 0;
 
-      if (cornerName.includes('front') && cornerName.includes('right')) {
+      if (cornerName.includes('bottom') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
         targetY = plateMin.y + inset;
-      } else if (cornerName.includes('front') && cornerName.includes('left')) {
+      } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
         targetY = plateMin.y + inset;
-      } else if (cornerName.includes('back') && cornerName.includes('right')) {
+      } else if (cornerName.includes('top') && cornerName.includes('right')) {
         targetX = plateMax.x - inset;
         targetY = plateMax.y - inset;
-      } else if (cornerName.includes('back') && cornerName.includes('left')) {
+      } else if (cornerName.includes('top') && cornerName.includes('left')) {
         targetX = plateMin.x + inset;
         targetY = plateMax.y - inset;
       }
