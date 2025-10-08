@@ -94,7 +94,7 @@ export class JogSessionManager {
         commandId: jogId,
         displayCommand: displayCommand || command,
         meta: {
-          continuous: true,
+          continuous: true, // Enable dead-man switch in controller
           // internal jog details no longer forwarded in meta
         }
       });
@@ -179,6 +179,14 @@ export class JogSessionManager {
 
     session.lastHeartbeatAt = Date.now();
     this.scheduleHeartbeatTimeout(session);
+
+    // Forward heartbeat to controller to extend its dead-man switch watchdog
+    this.cncController.sendCommand('', {
+      commandId: `heartbeat-${jogId}`,
+      meta: { jogHeartbeat: true }
+    }).catch(() => {
+      // Ignore errors - heartbeat is best-effort
+    });
   }
 
   async stopSession(ws, data, defaultReason = 'client-stop') {

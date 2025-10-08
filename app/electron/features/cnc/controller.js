@@ -29,6 +29,11 @@ export class CNCController extends EventEmitter {
     this.commandQueue = new PQueue({ concurrency: 1 });
     this.activeCommand = null;
     this.pendingCommands = new Map();
+
+    // Dead-man switch for continuous jogging
+    this.jogWatchdog = null; // Timer for continuous jog dead-man switch
+    this.activeJogCommand = null; // Track active continuous jog
+    this.jogTimeoutMs = 750; // Dead-man timeout (matches heartbeat expectations)
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -657,6 +662,63 @@ export class CNCController extends EventEmitter {
     this.emitConnectionStatus('disconnected', false);
   }
 
+  startJogWatchdog(commandId, command) {
+    // Clear any existing watchdog
+    this.clearJogWatchdog();
+
+    this.activeJogCommand = { id: commandId, command };
+
+    this.jogWatchdog = setTimeout(() => {
+      log('Jog watchdog timeout - sending emergency cancel');
+      this.sendEmergencyJogCancel('watchdog-timeout');
+    }, this.jogTimeoutMs);
+  }
+
+  extendJogWatchdog() {
+    if (!this.jogWatchdog) return;
+
+    // Reset the timer
+    clearTimeout(this.jogWatchdog);
+    this.jogWatchdog = setTimeout(() => {
+      log('Jog watchdog timeout - sending emergency cancel');
+      this.sendEmergencyJogCancel('watchdog-timeout');
+    }, this.jogTimeoutMs);
+  }
+
+  clearJogWatchdog() {
+    if (this.jogWatchdog) {
+      clearTimeout(this.jogWatchdog);
+      this.jogWatchdog = null;
+    }
+    this.activeJogCommand = null;
+  }
+
+  async sendEmergencyJogCancel(reason) {
+    const jogCancel = String.fromCharCode(0x85);
+
+    try {
+      await this.writeToConnection(jogCancel, {
+        rawCommand: jogCancel,
+        isRealTime: true
+      });
+
+      log('Emergency jog cancel sent:', reason);
+
+      this.emit('command-ack', {
+        id: `emergency-cancel-${Date.now()}`,
+        command: jogCancel,
+        displayCommand: `\\x85 (Emergency Jog Cancel - ${reason})`,
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        meta: { emergencyStop: true, reason }
+      });
+    } catch (error) {
+      log('Failed to send emergency jog cancel:', error);
+    }
+
+    this.clearJogWatchdog();
+  }
+
   writeToConnection(commandToSend, { rawCommand, isRealTime } = {}) {
     if (!this.connection || !this.isConnected) {
       return Promise.reject(new Error('Connection is not available'));
@@ -710,6 +772,14 @@ export class CNCController extends EventEmitter {
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+    // Handle jog heartbeat - extend watchdog timer
+    const isJogHeartbeat = normalizedMeta?.jogHeartbeat === true;
+    if (isJogHeartbeat && this.jogWatchdog) {
+      this.extendJogWatchdog();
+      // Don't actually queue heartbeat - it's just to keep watchdog alive
+      return { status: 'heartbeat-ack', id: resolvedCommandId };
+    }
+
     // Intercept user ? command - return cached status instead of sending to controller
     // But allow polling (sourceId: 'no-broadcast') to go through
     if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'no-broadcast') {
@@ -744,6 +814,12 @@ export class CNCController extends EventEmitter {
     const isRealTimeCommand = cleanCommand.length === 1 &&
       (realTimeCommands.includes(cleanCommand) || cleanCommand.charCodeAt(0) >= 0x80);
 
+    // Check if this is a jog cancel command (0x85)
+    const isJogCancel = cleanCommand.length === 1 && cleanCommand.charCodeAt(0) === 0x85;
+    if (isJogCancel) {
+      this.clearJogWatchdog();
+    }
+
     let commandToSend;
     if (isRealTimeCommand) {
       // Real-time commands are sent as-is without newline or uppercase conversion
@@ -753,6 +829,12 @@ export class CNCController extends EventEmitter {
       // Preserve case for GRBL variable syntax (% assignments and [] expressions)
       const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
       commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
+    }
+
+    // Detect continuous jog command ($J= with continuous flag in metadata)
+    const isContinuousJog = /^\$J=/i.test(cleanCommand) && normalizedMeta?.continuous === true;
+    if (isContinuousJog) {
+      this.startJogWatchdog(resolvedCommandId, cleanCommand);
     }
 
     if (isRealTimeCommand) {
