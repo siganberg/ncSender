@@ -28,7 +28,7 @@ export const getZProbeRoutine = () => {
     '; Probe Z',
     'G21 G91',
     'G38.2 Z-25 F200',
-    'G91 G0 Z4',
+    'G0 Z4',
     'G38.2 Z-5 F75',
     'G4 P0.3',
     'G10 L20 P0 Z0',
@@ -120,7 +120,7 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
  * Bottom (toward operator) = -Y, Top (away) = +Y
  * Left = -X, Right = +X
  */
-export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6 }) => {
+export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMove = false }) => {
   const toolRadius = toolDiameter / 2;
 
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
@@ -140,17 +140,21 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6 }) => {
 
   const code = [
     `; Probe XY - ${selectedCorner}`,
-    'G21',
-    'G10 L20 P0 X0 Y0',
     'G91 G21',
   ];
 
-  // Move away first
-  code.push(`G0 X${xRetract} Y${yRetract}`);
+  // Prepare for X probe
+  if (!skipPrepMove) {
+    code.push(
+      `G0 X${xRetract} Y${yRetract}`,
+      `G0 Y${yMove}`
+    );
+  }
+
 
   // Probe X first
   code.push(
-    `G0 Y${yMove}`,
+
     `G38.2 X${xProbe} F150`,
     `G0 X${xRetract}`,
     `G38.2 X${xSlow} F75`,
@@ -192,81 +196,24 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6 }) => {
  * Bottom (toward operator) = -Y, Top (away) = +Y
  * Left = -X, Right = +X
  */
-export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6 }) => {
-  const toolRadius = toolDiameter / 2;
+export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge = 3 }) => {
 
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
-  const isBottom = selectedCorner === 'BottomLeft' || selectedCorner === 'BottomRight';
+  const xMove = isLeft ? -(toolDiameter + 16) : (toolDiameter + 16);
+  const code = [];
 
-  const xProbe = isLeft ? 30 : -30;
-  const yProbe = isBottom ? 30 : -30;
-  const xRetract = isLeft ? -4 : 4;
-  const yRetract = isBottom ? -4 : 4;
-  const xSlow = isLeft ? 5 : -5;
-  const ySlow = isBottom ? 5 : -5;
-  const xOffset = isLeft ? -toolRadius : toolRadius;
-  const yOffset = isBottom ? -toolRadius : toolRadius;
+  // Probe Z first
+  code.push(...getZProbeRoutine());
 
-  const xMove = isLeft ? (toolDiameter + 16) : -(toolDiameter + 16);
-  const yMove = isBottom ? (toolDiameter + 16) : -(toolDiameter + 16);
-
-  const code = [
-    `; Probe XYZ - ${selectedCorner}`,
-    'G21',
-    'G10 L20 P0 X0 Y0',
-    'G91 G21',
-  ];
-
-  // Probe Z
+  // Prepare for XY probe - move away from corner and position for X probe
   code.push(
-    'G38.2 Z-25 F200',
-    'G0 Z4',
-    'G38.2 Z-5 F75',
-    'G4 P0.3',
-    'G10 L20 P0 Z0',
-    'G0 Z4',
+    'G91',
+    `G0 X${xMove}`,
+    `G0 Z-${zPlunge+4}`
   );
 
-  // Position for X probe - move to clear position from corner
-  const yPosition = isBottom ? yMove : -yMove;
-  code.push(
-    `G0 X${xRetract} Y${yRetract}`,
-    `G0 Y${yPosition}`,
-  );
-
-  // Probe X
-  code.push(
-    `G38.2 X${xProbe} F150`,
-    `G91 G0 X${xRetract}`,
-    `G38.2 X${xSlow} F75`,
-    'G4 P0.3',
-    `G10 L20 P0 X${xOffset}`,
-    `G0 X${xRetract}`,
-  );
-
-  // Position for Y probe
-  code.push(
-    `G0 X${xRetract * 2}`,
-    `G0 Y${yMove}`,
-    `G0 X${-xMove}`,
-  );
-
-  // Probe Y
-  code.push(
-    `G38.2 Y${yProbe} F150`,
-    `G91 G0 Y${yRetract}`,
-    `G38.2 Y${ySlow} F75`,
-    'G4 P0.3',
-    `G10 L20 P0 Y${yOffset}`,
-    `G0 Y${yRetract}`,
-  );
-
-  // Return to origin
-  code.push(
-    'G0 Z19',
-    'G90 G0 X0 Y0',
-    'G21',
-  );
+  // Then probe XY (skip the prep move since we already did it)
+  code.push(...getXYProbeRoutine({ selectedCorner, toolDiameter, skipPrepMove: true }));
 
   return code;
 };

@@ -51,7 +51,7 @@ export class GCodePreAnalyzer {
 
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i];
-      const clean = raw.split(';')[0].trim();
+      const clean = raw.trim();
       if (!clean) continue;
 
       const words = parseWords(clean);

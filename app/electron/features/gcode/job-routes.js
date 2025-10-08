@@ -184,10 +184,20 @@ export class GCodeJobProcessor {
     // The loop-based processor will automatically continue when isPaused becomes false
   }
 
-  stop() {
+  async stop() {
     this.isStopped = true;
     this.isRunning = false;
     this.isPaused = false;
+
+    // Send soft reset to controller
+    try {
+      await this.cncController.sendCommand('\x18', {
+        meta: { jobControl: true }
+      });
+      log('Soft reset sent to controller');
+    } catch (error) {
+      log('Error sending soft reset:', error?.message || error);
+    }
 
     // Trigger completion callbacks when manually stopped
     this.triggerCompletion('stopped');
@@ -245,8 +255,7 @@ export class GCodeJobProcessor {
 
         this.currentLineNumber++;
 
-        // Remove comments (semicolon and everything after)
-        const cleanLine = originalLine.split(';')[0].trim();
+        const cleanLine = originalLine.trim();
 
         // Skip empty lines
         if (cleanLine === '') {

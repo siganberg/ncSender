@@ -68,9 +68,11 @@ export function createProbeRoutes(cncController, broadcast) {
   router.post('/stop', async (req, res) => {
     try {
       if (!jobManager.hasActiveJob()) {
-        return res.status(400).json({
-          success: false,
-          error: 'No active probe operation to stop'
+        // No active job - this is fine, probe may have already completed
+        log('No active probe operation to stop (already completed)');
+        return res.json({
+          success: true,
+          message: 'No active probe operation'
         });
       }
 
