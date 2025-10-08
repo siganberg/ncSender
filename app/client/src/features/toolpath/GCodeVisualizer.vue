@@ -1879,6 +1879,36 @@ watch(() => zOffset.value, async (value) => {
   }
 });
 
+watch(() => xDimension.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeXDimension: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => yDimension.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeYDimension: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => rapidMovement.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeRapidMovement: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
   // Don't save during initial load
@@ -2154,6 +2184,15 @@ onMounted(async () => {
     }
     if (typeof settings.probeZOffset === 'number') {
       zOffset.value = settings.probeZOffset;
+    }
+    if (typeof settings.probeXDimension === 'number') {
+      xDimension.value = settings.probeXDimension;
+    }
+    if (typeof settings.probeYDimension === 'number') {
+      yDimension.value = settings.probeYDimension;
+    }
+    if (typeof settings.probeRapidMovement === 'number') {
+      rapidMovement.value = settings.probeRapidMovement;
     }
   }
 
