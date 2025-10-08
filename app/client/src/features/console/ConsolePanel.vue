@@ -258,13 +258,24 @@ watch(completedUpTo, (val) => {
 
 watch(isProgramRunning, async (running) => {
   if (running) {
-    // Auto-switch to G-Code Preview when job starts
-    if (activeTab.value !== 'gcode-preview') {
-      activeTab.value = 'gcode-preview';
-      await nextTick();
-      measureLineHeight();
+    const sourceId = store.jobLoaded.value?.sourceId;
+
+    // Auto-switch tabs based on job source
+    // - probing jobs switch to Terminal tab
+    // - gcode-runner jobs switch to G-Code Preview tab
+    if (sourceId === 'probing') {
+      if (activeTab.value !== 'terminal') {
+        activeTab.value = 'terminal';
+      }
+    } else if (sourceId === 'gcode-runner' || !sourceId) {
+      if (activeTab.value !== 'gcode-preview') {
+        activeTab.value = 'gcode-preview';
+        await nextTick();
+        measureLineHeight();
+      }
     }
-    if (autoScrollGcode.value) {
+
+    if (autoScrollGcode.value && activeTab.value === 'gcode-preview') {
       scrollToLineCentered(completedUpTo.value);
     }
   }

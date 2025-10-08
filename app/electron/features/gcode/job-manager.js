@@ -113,7 +113,8 @@ class JobProcessorManager {
       filename: this.currentJob.filename,
       currentLine: this.currentJob.currentLineNumber,
       totalLines: this.currentJob.totalLines || 0,
-      status: status
+      status: status,
+      sourceId: this.currentJob.sourceId || 'gcode-runner'
     };
 
     // Merge estimator output if present
