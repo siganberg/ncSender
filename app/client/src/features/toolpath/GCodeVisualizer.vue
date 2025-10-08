@@ -1154,9 +1154,34 @@ const toggleSpindle = () => {
 };
 
 // Probe functions
-const openProbeDialog = () => {
+const openProbeDialog = async () => {
   // Reset probe activation state when opening dialog
   probeEverActivated.value = false;
+
+  // Reload settings from server to get latest values
+  try {
+    const settings = await api.getSettings();
+    if (settings) {
+      if (settings.probingAxis) {
+        probingAxis.value = settings.probingAxis;
+      }
+      if (typeof settings.probeXDimension === 'number') {
+        xDimension.value = settings.probeXDimension;
+      }
+      if (typeof settings.probeYDimension === 'number') {
+        yDimension.value = settings.probeYDimension;
+      }
+      if (typeof settings.probeRapidMovement === 'number') {
+        rapidMovement.value = settings.probeRapidMovement;
+      }
+      if (typeof settings.probeZFirst === 'boolean') {
+        probeZFirst.value = settings.probeZFirst;
+      }
+    }
+  } catch (error) {
+    console.error('[GCodeVisualizer] Failed to reload settings', JSON.stringify({ error: error.message }));
+  }
+
   showProbeDialog.value = true;
 };
 
@@ -1909,6 +1934,16 @@ watch(() => rapidMovement.value, async (value) => {
   }
 });
 
+watch(() => probeZFirst.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZFirst: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probeZFirst setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
   // Don't save during initial load
@@ -2193,6 +2228,9 @@ onMounted(async () => {
     }
     if (typeof settings.probeRapidMovement === 'number') {
       rapidMovement.value = settings.probeRapidMovement;
+    }
+    if (typeof settings.probeZFirst === 'boolean') {
+      probeZFirst.value = settings.probeZFirst;
     }
   }
 

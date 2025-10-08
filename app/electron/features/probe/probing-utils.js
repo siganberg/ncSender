@@ -6,6 +6,7 @@ export const BL = 0; // Bottom Left
 export const TL = 1; // Top Left
 export const TR = 2; // Top Right
 export const BR = 3; // Bottom Right
+export const zParkHeight = 4; // Height to park Z axis when moving between probes
 
 /**
  * Returns probe directions for X and Y based on corner
@@ -32,7 +33,7 @@ export const getZProbeRoutine = () => {
     'G38.2 Z-5 F75',
     'G4 P0.3',
     'G10 L20 Z0',
-    'G0 Z4',
+    `G0 Z${zParkHeight}`,
     'G90',
   ];
 };
@@ -209,7 +210,7 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
   code.push(
     'G91',
     `G0 X${xMove}`,
-    `G0 Z-${zPlunge+4}`
+    `G0 Z-${zPlunge+zParkHeight}`
   );
 
   // Then probe XY (skip the prep move since we already did it)
@@ -221,7 +222,7 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
 /**
  * Generate G-code for Center - Inner probing
  */
-export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6, rapidMovement = 2000 }) => {
+export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000 }) => {
 
   const ballPointDiameter = toolDiameter;
   const halfX = xDimension / 2;
@@ -304,109 +305,102 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 6
 /**
  * Generate G-code for Center - Outer probing
  */
-export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 6, probeZFirst }) => {
-  const ballPointDiameter = toolDiameter;
-  const ballRadius = ballPointDiameter / 2;
-  const clearance = 10 + ballRadius;
-  const maxSearchLimit = 30;
+export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000, probeZFirst = false, zPlunge = 3 }) => {
+  const halfX = xDimension / 2;
+  const halfY = yDimension / 2;
   const searchFeed = 150;
-  const latchFeed = 75;
+  const slowFeed = 75;
   const bounce = 2;
-  const zDown = -7;
-  const safeZHeight = probeZFirst ? '5' : '[START_Z + 5]';
+  const maxSearchLimit = 30;
+  const safeDistance = 5;
+  const zHop = zPlunge + zParkHeight; // TODO: replace 3 with actually zPlunge
 
-  const searchFeedRate = 2000;
+  const safeRapidX = halfX + toolDiameter + safeDistance;
+  const safeRapidY = halfY + toolDiameter + safeDistance;
 
-  const code = [
-    '; Probe Center - Outer',
-    '%START_X=posx',
-    '%START_Y=posy',
-    '%START_Z=posz',
-    `%BALL_RADIUS=${ballRadius}`,
-    `%SEARCH_FEED=${searchFeed}`,
-    `%LATCH_FEED=${latchFeed}`,
-    `%MAX_SEARCH_LIMIT=${maxSearchLimit}`,
-    'G90',
-  ];
+  const code = [];
 
-  // Probe Z if requested
+  // Probe Z first if requested
   if (probeZFirst) {
-    code.push(
-      'G91 G21',
-      'G38.2 Z-25 F200',
-      'G0 Z4',
-      'G38.2 Z-5 F75',
-      'G4 P0.3',
-      'G10 L20 Z0',
-      'G0 Z5',
-      'G90',
-    );
+    code.push(...getZProbeRoutine());
   }
 
-  // Move to safe Z first
-  code.push(`G90 G38.3 Z${safeZHeight} F1000`);
-
-  // Probe X left
   code.push(
-    `G91 G38.3 X-${xDimension / 2 + clearance} F${searchFeedRate}`,
-    `G91 G38.3 Z${zDown} F500`,
-    `G91 G38.2 X[MAX_SEARCH_LIMIT] F[SEARCH_FEED]`,
-    `G91 G0 X-${bounce}`,
-    `G91 G38.2 X3 F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%X_LEFT=[posx - BALL_RADIUS]',
-    `G91 G0 X-${bounce}`,
-    `G90 G0 Z${safeZHeight}`,
+    '; Probing Center - Outer',
+    `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
+    `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
+    `#<RAPID_SEARCH> = ${rapidMovement}`,
+    'G21 (mm mode)',
+    'G91 (incremental)',
   );
 
-  // Probe X right
+  // X dimension - probe left (negative direction)
+  if (safeRapidX > 0) {
+    code.push(`G38.3 X-${safeRapidX} F#<RAPID_SEARCH>`);
+  }
+
   code.push(
-    `G91 G38.3 X${xDimension + clearance + bounce} F${searchFeedRate}`,
-    `G91 G38.3 Z${zDown} F500`,
-    `G91 G38.2 X-[MAX_SEARCH_LIMIT] F[SEARCH_FEED]`,
-    `G91 G0 X${bounce}`,
-    `G91 G38.2 X-3 F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%X_RIGHT=[posx + BALL_RADIUS]',
-    `G91 G0 X${bounce}`,
-    `G90 G0 Z${safeZHeight}`,
+    `G0 Z-${zHop}`,
+    `G38.2 X${maxSearchLimit} F${searchFeed}`,
+    `G0 X-${bounce}`,
+    `G38.2 X${bounce+1} F${slowFeed}`,
+    `#<X1> = #5061`,
+    `G0 X-${bounce}`,
+    `G0 Z${zHop}`,
+    `G0 X${bounce}`,
+    `G0 X${halfX}`
   );
 
-  // Move back to start position for Y probing
-  code.push(`G90 G0 X[START_X] Y[START_Y]`);
+  // X dimension - probe right (positive direction)
+  if (safeRapidX > 0) {
+    code.push(`G38.3 X${safeRapidX} F#<RAPID_SEARCH>`);
+  }
 
-  // Probe Y back
   code.push(
-    `G91 G38.3 Y-${yDimension / 2 + clearance} F${searchFeedRate}`,
-    `G91 G38.3 Z${zDown} F500`,
-    `G91 G38.2 Y[MAX_SEARCH_LIMIT] F[SEARCH_FEED]`,
-    `G91 G0 Y-${bounce}`,
-    `G91 G38.2 Y3 F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%Y_BACK=[posy - BALL_RADIUS]',
-    `G91 G0 Y-${bounce}`,
-    `G90 G0 Z${safeZHeight}`,
+    `G0 Z-${zHop}`,
+    `G38.2 X-${maxSearchLimit} F${searchFeed}`,
+    `G0 X${bounce}`,
+    `G38.2 X-${bounce+1} F${slowFeed}`,
+    `#<X2> = #5061`,
+    `G0 X${bounce}`,
+    `G0 Z${zHop}`,
+    `G0 X-${bounce}`,
+    'G0 X-[[#<X2>-#<X1>]/2]'
   );
 
-  // Probe Y front
+  // Y dimension - probe bottom (negative direction)
+  if (safeRapidY > 0) {
+    code.push(`G38.3 Y-${safeRapidY} F#<RAPID_SEARCH>`);
+  }
+
   code.push(
-    `G91 G38.3 Y${yDimension + clearance + bounce} F${searchFeedRate}`,
-    `G91 G38.3 Z${zDown} F500`,
-    `G91 G38.2 Y-[MAX_SEARCH_LIMIT] F[SEARCH_FEED]`,
-    `G91 G0 Y${bounce}`,
-    `G91 G38.2 Y-3 F[LATCH_FEED]`,
-    'G4 P0.3',
-    '%Y_FRONT=[posy + BALL_RADIUS]',
-    `G91 G0 Y${bounce}`,
-    `G90 G0 Z${safeZHeight}`,
+    `G0 Z-${zHop}`,
+    `G38.2 Y${maxSearchLimit} F${searchFeed}`,
+    `G0 Y-${bounce}`,
+    `G38.2 Y+${bounce+1} F${slowFeed}`,
+    `#<Y1> = #5062`,
+    `G0 Y-${bounce}`,
+    `G0 Z${zHop}`,
+    `G0 Y${bounce}`,
+    `G0 Y${halfY}`
   );
 
-  // Calculate and move to center
+  // Y dimension - probe top (positive direction)
+  if (safeRapidY > 0) {
+    code.push(`G38.3 Y${safeRapidY} F#<RAPID_SEARCH>`);
+  }
+
   code.push(
-    '%CENTER_X=[(X_LEFT + X_RIGHT) / 2]',
-    '%CENTER_Y=[(Y_BACK + Y_FRONT) / 2]',
-    'G0 X[CENTER_X] Y[CENTER_Y]',
+    `G0 Z-${zHop}`,
+    `G38.2 Y-${maxSearchLimit} F${searchFeed}`,
+    `G0 Y${bounce}`,
+    `G38.2 Y-${bounce+1} F${slowFeed}`,
+    `#<Y2> = #5062`,
+    `G0 Y${bounce}`,
+    `G0 Z${zHop}`,
+    `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
+    'G90'
   );
 
   return code;
