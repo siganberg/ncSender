@@ -5,7 +5,7 @@ import net from 'net';
 import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
-import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-watchdog.js';
+import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);

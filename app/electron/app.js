@@ -8,7 +8,7 @@ import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import { CNCController } from './features/cnc/controller.js';
-import { JogSessionManager } from './features/cnc/jog-session-manager.js';
+import { JogSessionManager } from './features/cnc/jog-manager.js';
 import { jobManager } from './features/gcode/job-manager.js';
 import { createCNCRoutes } from './features/cnc/routes.js';
 import { createCommandHistoryRoutes } from './features/command-history/routes.js';

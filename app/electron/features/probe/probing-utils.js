@@ -24,7 +24,7 @@ export const getProbeDirections = (corner) => {
 /**
  * Generate G-code for Z-axis probing
  */
-export const getZProbeRoutine = () => {
+export const getZProbeRoutine = (zOffset = 0) => {
   return [
     '; Probe Z',
     'G21 G91',
@@ -32,7 +32,7 @@ export const getZProbeRoutine = () => {
     'G0 Z4',
     'G38.2 Z-5 F75',
     'G4 P0.3',
-    'G10 L20 Z0',
+    `G10 L20 Z${zOffset}`,
     `G0 Z${zParkHeight}`,
     'G90',
   ];
@@ -197,14 +197,14 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
  * Bottom (toward operator) = -Y, Top (away) = +Y
  * Left = -X, Right = +X
  */
-export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge = 3 }) => {
+export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge = 3, zOffset = 0 }) => {
 
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
   const xMove = isLeft ? -(toolDiameter + 16) : (toolDiameter + 16);
   const code = [];
 
   // Probe Z first
-  code.push(...getZProbeRoutine());
+  code.push(...getZProbeRoutine(zOffset));
 
   // Prepare for XY probe - move away from corner and position for X probe
   code.push(
@@ -305,7 +305,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
 /**
  * Generate G-code for Center - Outer probing
  */
-export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000, probeZFirst = false, zPlunge = 3 }) => {
+export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000, probeZFirst = false, zPlunge = 3, zOffset = 0 }) => {
   const halfX = xDimension / 2;
   const halfY = yDimension / 2;
   const searchFeed = 150;
@@ -322,7 +322,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
 
   // Probe Z first if requested
   if (probeZFirst) {
-    code.push(...getZProbeRoutine());
+    code.push(...getZProbeRoutine(zOffset));
   }
 
   code.push(
@@ -340,7 +340,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
   }
 
   code.push(
-    `G0 Z-${zHop}`,
+    `G38.3 Z-${zHop} F200`,
     `G38.2 X${maxSearchLimit} F${searchFeed}`,
     `G0 X-${bounce}`,
     `G38.2 X${bounce+1} F${slowFeed}`,
@@ -357,7 +357,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
   }
 
   code.push(
-    `G0 Z-${zHop}`,
+    `G38.3 Z-${zHop} F200`,
     `G38.2 X-${maxSearchLimit} F${searchFeed}`,
     `G0 X${bounce}`,
     `G38.2 X-${bounce+1} F${slowFeed}`,
@@ -374,7 +374,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
   }
 
   code.push(
-    `G0 Z-${zHop}`,
+    `G38.3 Z-${zHop} F200`,
     `G38.2 Y${maxSearchLimit} F${searchFeed}`,
     `G0 Y-${bounce}`,
     `G38.2 Y+${bounce+1} F${slowFeed}`,
@@ -391,7 +391,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
   }
 
   code.push(
-    `G0 Z-${zHop}`,
+    `G38.3 Z-${zHop} F200`,
     `G38.2 Y-${maxSearchLimit} F${searchFeed}`,
     `G0 Y${bounce}`,
     `G38.2 Y-${bounce+1} F${slowFeed}`,

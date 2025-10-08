@@ -1165,6 +1165,9 @@ const openProbeDialog = async () => {
       if (settings.probingAxis) {
         probingAxis.value = settings.probingAxis;
       }
+      if (typeof settings.probeZOffset === 'number') {
+        zOffset.value = settings.probeZOffset;
+      }
       if (typeof settings.probeXDimension === 'number') {
         xDimension.value = settings.probeXDimension;
       }
@@ -1198,7 +1201,8 @@ const startProbe = async () => {
       yDimension: yDimension.value,
       rapidMovement: rapidMovement.value,
       probeZFirst: probeZFirst.value,
-      toolDiameter: ballPointDiameter.value || 6
+      toolDiameter: ballPointDiameter.value || 6,
+      zOffset: zOffset.value
     };
 
     console.log('[Probe] Starting probe operation:', options);

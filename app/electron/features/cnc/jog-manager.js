@@ -1,19 +1,67 @@
-const REALTIME_JOG_CANCEL = String.fromCharCode(0x85);
-const DEFAULT_HEARTBEAT_TIMEOUT_MS = 750;
-const DEFAULT_MAX_JOG_DURATION_MS = 15000;
+export const REALTIME_JOG_CANCEL = String.fromCharCode(0x85);
 const WS_READY_STATE_OPEN = 1;
 
+const log = (...args) => {
+  console.log(`[${new Date().toISOString()}]`, ...args);
+};
+
+// Dead-man switch for continuous jogging
+// Automatically sends jog cancel if heartbeat is not received within timeout
+export class JogWatchdog {
+  constructor({ timeoutMs = 750, onTimeout = null } = {}) {
+    this.timeoutMs = timeoutMs;
+    this.onTimeout = onTimeout;
+    this.timer = null;
+    this.activeJogCommand = null;
+  }
+
+  start(commandId, command) {
+    this.clear();
+    this.activeJogCommand = { id: commandId, command };
+    this.timer = setTimeout(() => {
+      log('Jog watchdog timeout - triggering emergency cancel');
+      if (this.onTimeout) {
+        this.onTimeout('watchdog-timeout');
+      }
+    }, this.timeoutMs);
+  }
+
+  extend() {
+    if (!this.timer) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      log('Jog watchdog timeout - triggering emergency cancel');
+      if (this.onTimeout) {
+        this.onTimeout('watchdog-timeout');
+      }
+    }, this.timeoutMs);
+  }
+
+  clear() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.activeJogCommand = null;
+  }
+
+  isActive() {
+    return this.timer !== null;
+  }
+
+  getActiveCommand() {
+    return this.activeJogCommand;
+  }
+}
+
 export class JogSessionManager {
-  constructor({ cncController, log = console.log, heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS, maxDurationMs = DEFAULT_MAX_JOG_DURATION_MS } = {}) {
+  constructor({ cncController, log: logger = console.log } = {}) {
     if (!cncController || typeof cncController.sendCommand !== 'function') {
       throw new Error('JogSessionManager requires a CNC controller with sendCommand method');
     }
 
     this.cncController = cncController;
-    this.log = log;
-    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
-    this.maxDurationMs = maxDurationMs;
-
+    this.log = logger;
     this.sessionsById = new Map();
     this.sessionsBySocket = new Map();
   }
@@ -58,10 +106,7 @@ export class JogSessionManager {
     const {
       jogId,
       command,
-      displayCommand,
-      axis = null,
-      direction = null,
-      feedRate = null
+      displayCommand
     } = data || {};
 
     if (!jogId || typeof jogId !== 'string') {
@@ -94,8 +139,7 @@ export class JogSessionManager {
         commandId: jogId,
         displayCommand: displayCommand || command,
         meta: {
-          continuous: true, // Enable dead-man switch in controller
-          // internal jog details no longer forwarded in meta
+          continuous: true
         }
       });
     } catch (error) {
@@ -108,62 +152,23 @@ export class JogSessionManager {
       return;
     }
 
-    const now = Date.now();
-
     const session = {
       jogId,
       ws,
       command,
       displayCommand: displayCommand || command,
-      axis,
-      direction,
-      feedRate,
-      // clientId removed; no longer tracked
-      startedAt: now,
-      lastHeartbeatAt: now,
-      heartbeatTimer: null,
-      maxDurationTimer: null,
       stopping: false
     };
 
     this.sessionsById.set(jogId, session);
     sessionSet.add(jogId);
 
-    this.log('Jog started', `jogId=${jogId}`, axis ? `axis=${axis}` : '', direction != null ? `direction=${direction}` : '', feedRate ? `feed=${feedRate}` : '');
-
-    this.scheduleHeartbeatTimeout(session);
-    this.scheduleMaxDurationTimeout(session);
+    this.log('Jog started', `jogId=${jogId}`);
 
     this.sendSafe(ws, {
       type: 'jog:started',
-      data: { jogId, startedAt: now }
+      data: { jogId, startedAt: Date.now() }
     });
-  }
-
-  scheduleHeartbeatTimeout(session) {
-    if (session.heartbeatTimer) {
-      clearTimeout(session.heartbeatTimer);
-    }
-
-    session.heartbeatTimer = setTimeout(() => {
-      this.log('Jog heartbeat timeout', `jogId=${session.jogId}`);
-      this.finalizeSession(session, 'heartbeat-timeout').catch((error) => {
-        this.log('Error during heartbeat timeout stop', error?.message || error);
-      });
-    }, this.heartbeatTimeoutMs);
-  }
-
-  scheduleMaxDurationTimeout(session) {
-    if (session.maxDurationTimer) {
-      clearTimeout(session.maxDurationTimer);
-    }
-
-    session.maxDurationTimer = setTimeout(() => {
-      this.log('Jog max duration reached', `jogId=${session.jogId}`);
-      this.finalizeSession(session, 'max-duration').catch((error) => {
-        this.log('Error during max duration stop', error?.message || error);
-      });
-    }, this.maxDurationMs);
   }
 
   recordHeartbeat(ws, data) {
@@ -176,9 +181,6 @@ export class JogSessionManager {
     if (!session || session.ws !== ws) {
       return;
     }
-
-    session.lastHeartbeatAt = Date.now();
-    this.scheduleHeartbeatTimeout(session);
 
     // Forward heartbeat to controller to extend its dead-man switch watchdog
     this.cncController.sendCommand('', {
@@ -215,16 +217,6 @@ export class JogSessionManager {
 
     session.stopping = true;
 
-    if (session.heartbeatTimer) {
-      clearTimeout(session.heartbeatTimer);
-      session.heartbeatTimer = null;
-    }
-
-    if (session.maxDurationTimer) {
-      clearTimeout(session.maxDurationTimer);
-      session.maxDurationTimer = null;
-    }
-
     this.sessionsById.delete(session.jogId);
 
     const sessionSet = this.sessionsBySocket.get(session.ws);
@@ -235,14 +227,12 @@ export class JogSessionManager {
       }
     }
 
-    const cancelMeta = {
-      completesCommandId: session.jogId,
-      stopReason: reason
-    };
-
     try {
       await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
-        meta: cancelMeta
+        meta: {
+          completesCommandId: session.jogId,
+          stopReason: reason
+        }
       });
     } catch (error) {
       this.log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
@@ -278,11 +268,7 @@ export class JogSessionManager {
     const {
       command,
       displayCommand,
-      commandId,
-      axis = null,
-      direction = null,
-      feedRate = null,
-      distance = null
+      commandId
     } = data || {};
 
     if (typeof command !== 'string' || command.trim() === '') {
@@ -298,12 +284,9 @@ export class JogSessionManager {
     try {
       await this.cncController.sendCommand(command, {
         commandId: resolvedCommandId,
-        displayCommand: displayCommand || command,
-        // Do not include jog details or originId in meta
+        displayCommand: displayCommand || command
       });
-      // No per-step acknowledgements sent; clients will observe cnc-command/cnc-command-result
     } catch (error) {
-      // Log only; client will timeout if no result is observed
       this.log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
     }
   }
