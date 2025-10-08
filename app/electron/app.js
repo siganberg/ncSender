@@ -84,7 +84,8 @@ export async function createApp(options = {}) {
   const serverState = {
     machineState: {
       connected: false,
-      isToolChanging: false
+      isToolChanging: false,
+      isProbing: false
     },
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
@@ -1025,7 +1026,7 @@ export async function createApp(options = {}) {
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
-  app.use('/api/probe', createProbeRoutes(cncController, broadcast));
+  app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

@@ -100,6 +100,7 @@ let prevShowProgress: boolean | undefined = undefined;
 const isConnected = computed(() => status.connected && websocketConnected.value);
 const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
+const isProbing = computed(() => serverState.machineState?.isProbing === true);
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -570,6 +571,7 @@ export function useAppStore() {
     isConnected,
     currentJobFilename,
     isHomed,
+    isProbing,
 
     // Actions
     clearConsole: () => {

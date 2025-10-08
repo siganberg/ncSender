@@ -140,7 +140,7 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value }">
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value || store.isProbing.value }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -192,7 +192,7 @@
             <div class="probe-control-row">
               <div class="probe-control-group">
                 <label class="probe-label">Probe Type</label>
-                <select v-model="probeType" class="probe-select">
+                <select v-model="probeType" class="probe-select" :disabled="store.isProbing.value">
                   <option value="3d-touch">3D-Touch Probe</option>
                   <option value="standard-block">Standard Block</option>
                 </select>
@@ -200,7 +200,7 @@
 
               <div class="probe-control-group">
                 <label class="probe-label">Probing Axis</label>
-                <select v-model="probingAxis" class="probe-select">
+                <select v-model="probingAxis" class="probe-select" :disabled="store.isProbing.value">
                   <option value="Z">Z</option>
                   <option value="XYZ">XYZ</option>
                   <option value="XY">XY</option>
@@ -223,6 +223,7 @@
                       step="0.1"
                       min="0.1"
                       class="probe-input"
+                      :disabled="store.isProbing.value"
                       @input="validateBallPointDiameter"
                     />
                     <span class="probe-unit">mm</span>
@@ -239,6 +240,7 @@
                       step="0.1"
                       min="0.1"
                       class="probe-input"
+                      :disabled="store.isProbing.value"
                       @input="validateZPlunge"
                     />
                     <span class="probe-unit">mm</span>
@@ -255,6 +257,7 @@
                     type="number"
                     step="0.01"
                     class="probe-input"
+                    :disabled="store.isProbing.value"
                     @input="validateZOffset"
                   />
                   <span class="probe-unit">mm</span>
@@ -275,6 +278,7 @@
                       step="0.1"
                       min="0.1"
                       class="probe-input"
+                      :disabled="store.isProbing.value"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -289,6 +293,7 @@
                       step="0.1"
                       min="0.1"
                       class="probe-input"
+                      :disabled="store.isProbing.value"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -306,6 +311,7 @@
                       min="1000"
                       max="5000"
                       class="probe-input"
+                      :disabled="store.isProbing.value"
                     />
                     <span class="probe-unit">mm/min</span>
                   </div>
@@ -315,7 +321,7 @@
                 <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--align-right">
                   <label class="probe-label">Probe Z First</label>
                   <label class="switch">
-                    <input type="checkbox" v-model="probeZFirst">
+                    <input type="checkbox" v-model="probeZFirst" :disabled="store.isProbing.value">
                     <span class="slider"></span>
                   </label>
                 </div>
@@ -351,6 +357,7 @@
             <JogControls
               :current-step="probeJogStep"
               :step-options="[0.1, 1, 10]"
+              :disabled="store.isProbing.value"
               @update:step="probeJogStep = $event"
               @center-click="closeProbeDialog"
             />
@@ -359,7 +366,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="dismissProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Close</button>
-        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary">Start Probe</button>
+        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="store.isProbing.value">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -546,8 +553,7 @@ const selectedCorner = ref<string | null>(null);
 const selectedSide = ref<string | null>(null); // For X mode (not persisted)
 const probeActive = ref(false); // Probe pin active state from CNC
 const probeEverActivated = ref(false); // Track if probe was ever activated (doesn't reset to false)
-const probingInProgress = ref(false); // Track if probing is currently running
-let abortProbing = false; // Flag to abort probing sequence
+// Probing state is now tracked in serverState.machineState.isProbing
 
 // Computed property to check if probe button should be enabled
 const isProbeReady = computed(() => {
@@ -1202,8 +1208,6 @@ const openProbeDialog = async () => {
 
 const startProbe = async () => {
   try {
-    probingInProgress.value = true;
-    abortProbing = false;
 
     const options = {
       probingAxis: probingAxis.value,
@@ -1237,13 +1241,12 @@ const startProbe = async () => {
     console.log('[Probe] Probe operation started:', result);
   } catch (error) {
     console.error('[Probe] Error starting probe:', error);
-    probingInProgress.value = false;
   }
 };
 
 
 const closeProbeDialog = async () => {
-  if (probingInProgress.value) {
+  if (store.isProbing.value) {
     try {
       console.log('[Probe] Closing dialog - stopping probe job');
 
@@ -1264,7 +1267,6 @@ const closeProbeDialog = async () => {
     }
   }
   showProbeDialog.value = false;
-  probingInProgress.value = false;
 };
 
 const dismissProbeDialog = () => {
@@ -2735,6 +2737,12 @@ input:checked + .slider {
 
 input:checked + .slider:before {
   transform: translateX(18px);
+}
+
+/* Disabled state for switch */
+.switch input:disabled + .slider {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .viewport__canvas {

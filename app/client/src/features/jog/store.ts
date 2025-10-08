@@ -10,6 +10,7 @@ export function useJogStore() {
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
+    isProbing: app.isProbing,
     machineState
   };
 }

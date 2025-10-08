@@ -442,8 +442,26 @@ onBeforeUnmount(() => {
 }
 
 .jog-disabled {
-  opacity: 0.5;
   pointer-events: none;
+}
+
+/* Disable all elements except center button */
+.jog-disabled .jog-step-selector {
+  opacity: 0.5;
+}
+
+.jog-disabled .jog-btn {
+  opacity: 0.5;
+}
+
+.jog-disabled .jog-z {
+  opacity: 0.5;
+}
+
+/* Allow center button to be clickable and fully visible when disabled */
+.jog-disabled .jog-center {
+  pointer-events: auto;
+  opacity: 1;
 }
 
 .jog-step-selector {
