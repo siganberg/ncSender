@@ -29,12 +29,11 @@ export function createProbeRoutes(cncController, broadcast) {
       });
     }
 
-    log(`Generated ${gcodeCommands.length} G-code commands`);
-
     // Join commands into multi-line string
     const gcodeContent = gcodeCommands.join('\n');
 
-    log('G-code to be sent:\n', gcodeContent);
+    // Log G-code for debugging
+    log(gcodeContent);
 
     // Start job with G-code content
     await jobManager.startJob(
@@ -47,8 +46,6 @@ export function createProbeRoutes(cncController, broadcast) {
         sourceId: 'probing' // Tag as probing to broadcast to terminal
       }
     );
-
-    log('Probe job started');
 
     res.json({
       success: true,

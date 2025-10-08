@@ -349,7 +349,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="closeProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Cancel</button>
-        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="!isProbeReady">Start Probe</button>
+        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary">Start Probe</button>
       </div>
     </div>
   </Dialog>
