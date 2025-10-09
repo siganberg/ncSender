@@ -413,14 +413,22 @@ const loadProbeModel = async () => {
     plateModel = null;
   }
 
-  const modelName = '3dprobe'; // Always use the new 3dprobe model
+  // Determine which probe model to load based on probe type
+  let modelName = '3dprobe';
+  let modelPath = '/assets/probe/3d-probe/';
+
+  if (props.probeType === 'standard-block') {
+    modelName = 'cnc-pointer';
+    modelPath = '/assets/probe/standard-block/';
+  }
+
   const cacheBust = `?t=${Date.now()}`;
 
   try {
     const object = await loadOBJWithGroups(
       `${modelName}.txt${cacheBust}`,
       `${modelName}.mtl${cacheBust}`,
-      '/assets/probe/3d-probe/'
+      modelPath
     );
 
     probeModel = object;

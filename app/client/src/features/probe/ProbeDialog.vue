@@ -669,7 +669,7 @@ const handleStartProbe = async () => {
 }
 
 .probe-dialog__header {
-  padding: 30px 20px 30px 20px;
+  padding: 30px 20px 15px 20px;
 }
 
 .probe-dialog__instructions {
@@ -849,7 +849,7 @@ const handleStartProbe = async () => {
   display: flex;
   justify-content: center;
   gap: 12px;
-  padding: 10px 10px 20px 10px;
+  padding: 20px 10px 20px 10px;
 }
 
 .probe-dialog__btn {
