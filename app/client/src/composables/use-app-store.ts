@@ -40,13 +40,12 @@ const serverState = reactive({
     filename: string;
     currentLine: number;
     totalLines: number;
-    status: 'running' | 'paused' | 'stopped' | 'completed';
+    status: 'running' | 'paused' | 'stopped' | 'completed' | null;
     sourceId?: string;
     jobStartTime?: string | null;
     jobEndTime?: string | null;
     jobPauseAt?: string | null;
     jobPausedTotalSec?: number;
-    showProgress?: boolean;
     remainingSec?: number | null;
     progressPercent?: number | null;
     runtimeSec?: number | null;
@@ -412,13 +411,13 @@ export function initializeStore() {
     if (currentStatus === 'running' && lastJobStatus !== 'running') {
       gcodeCompletedUpTo.value = 0;
     }
-    // If user closed the job progress panel, reset G-code completion markers
+    // If user closed the job progress panel (status changed to null), reset G-code completion markers
     try {
-      const sp = (serverState.jobLoaded as any)?.showProgress;
-      if (prevShowProgress === true && sp === false) {
+      const status = serverState.jobLoaded?.status;
+      if (prevShowProgress === true && status === null) {
         gcodeCompletedUpTo.value = 0;
       }
-      prevShowProgress = sp as boolean | undefined;
+      prevShowProgress = (status === 'running' || status === 'paused' || status === 'stopped' || status === 'completed');
     } catch {}
     lastJobStatus = currentStatus;
     if (currentFilename) lastJobFilename = currentFilename;

@@ -27,17 +27,16 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Read file content for validation
       const content = await fs.readFile(finalPath, 'utf8');
 
-      // Update server state - set jobLoaded with stopped status
+      // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
         filename: originalName,
         currentLine: 0,
         totalLines: content.split('\n').length,
-        status: 'stopped',
+        status: null,
         jobStartTime: null,
         jobEndTime: null,
         jobPauseAt: null,
         jobPausedTotalSec: 0,
-        showProgress: false,
         remainingSec: null,
         progressPercent: null,
         runtimeSec: null
@@ -122,17 +121,16 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       const filePath = path.join(filesDir, filename);
       const content = await fs.readFile(filePath, 'utf8');
 
-      // Update server state - set jobLoaded with stopped status
+      // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
         filename: filename,
         currentLine: 0,
         totalLines: content.split('\n').length,
-        status: 'stopped',
+        status: null,
         jobStartTime: null,
         jobEndTime: null,
         jobPauseAt: null,
         jobPausedTotalSec: 0,
-        showProgress: false,
         remainingSec: null,
         progressPercent: null,
         runtimeSec: null

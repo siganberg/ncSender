@@ -46,13 +46,13 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Compute ETA server-side (best-effort) before starting
-      // Initialize timing/visibility for progress at job start
+      // Initialize timing for progress at job start
       if (serverState.jobLoaded) {
         serverState.jobLoaded.jobStartTime = new Date().toISOString();
         serverState.jobLoaded.jobEndTime = null;
         serverState.jobLoaded.jobPauseAt = null;
         serverState.jobLoaded.jobPausedTotalSec = 0;
-        serverState.jobLoaded.showProgress = true;
+        serverState.jobLoaded.status = 'running';
         broadcast('server-state-updated', serverState);
       }
 

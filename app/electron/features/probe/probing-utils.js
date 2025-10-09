@@ -414,7 +414,7 @@ export const generateProbeCode = (options) => {
 
   switch (probingAxis) {
     case 'Z':
-      return getZProbeRoutine(options);
+      return getZProbeRoutine(options.zOffset);
     case 'XYZ':
       return getXYZProbeRoutine(options);
     case 'XY':

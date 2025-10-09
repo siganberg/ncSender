@@ -365,7 +365,7 @@
         </div>
       </div>
       <div class="probe-dialog__footer">
-        <button @click="dismissProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary">Close</button>
+        <button @click="dismissProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="store.isProbing.value">Close</button>
         <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="store.isProbing.value">Start Probe</button>
       </div>
     </div>
@@ -2329,9 +2329,9 @@ onMounted(async () => {
       markedLines.clear();
     }
 
-    // If the user closed the job progress panel, also reset completed segments
-    const sp = (state.jobLoaded as any)?.showProgress;
-    if (sp === false) {
+    // If the user closed the job progress panel (status changed to null), also reset completed segments
+    const statusValue = state.jobLoaded?.status;
+    if (statusValue === null) {
       lastExecutedLine.value = 0;
       if (gcodeVisualizer) {
         gcodeVisualizer.resetCompletedLines();
@@ -3492,6 +3492,12 @@ body.theme-light .dot--rapid {
 .probe-dialog__btn--secondary:hover {
   background: var(--color-surface);
   border-color: var(--color-accent);
+}
+
+.probe-dialog__btn--secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .probe-dialog__btn--primary {

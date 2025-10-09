@@ -366,9 +366,9 @@ function onGcodeScroll() {
   });
 }
 
-// Reset cross-out and scroll to top when user closes Job Progress panel
-watch(() => store.jobLoaded.value?.showProgress, async (val, oldVal) => {
-  if (oldVal === true && val === false) {
+// Reset cross-out and scroll to top when user closes Job Progress panel (status changes to null)
+watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
+  if (oldVal && (oldVal === 'running' || oldVal === 'paused' || oldVal === 'stopped' || oldVal === 'completed') && val === null) {
     await nextTick();
     if (gcodeScrollerRef.value?.scrollToPosition) {
       gcodeScrollerRef.value.scrollToPosition(0);
