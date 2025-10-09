@@ -77,17 +77,17 @@
           :class="{
             'active': currentTool === t,
             'used': toolsUsed.includes(t),
-            'disabled': isToolChanging,
+            'disabled': isToolChanging || isJobRunning,
             'long-press-triggered': toolPress[t]?.triggered,
             'blink-border': toolPress[t]?.blinking
           }"
           :title="currentTool === t ? `Tool T${t} (Current)` : `Tool T${t} (Hold to change)`"
-          @mousedown="startToolPress(t, $event)"
-          @mouseup="endToolPress(t)"
-          @mouseleave="cancelToolPress(t)"
-          @touchstart="startToolPress(t, $event)"
-          @touchend="endToolPress(t)"
-          @touchcancel="cancelToolPress(t)"
+          @mousedown="(isJobRunning || isToolChanging) ? null : startToolPress(t, $event)"
+          @mouseup="(isJobRunning || isToolChanging) ? null : endToolPress(t)"
+          @mouseleave="(isJobRunning || isToolChanging) ? null : cancelToolPress(t)"
+          @touchstart="(isJobRunning || isToolChanging) ? null : startToolPress(t, $event)"
+          @touchend="(isJobRunning || isToolChanging) ? null : endToolPress(t)"
+          @touchcancel="(isJobRunning || isToolChanging) ? null : cancelToolPress(t)"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
           <span class="tools-legend__label">T{{ t }}</span>
@@ -171,7 +171,7 @@
       </div>
 
       <!-- Probe button - bottom right -->
-      <button class="probe-button" @click="openProbeDialog" title="Probe">
+      <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isJobRunning">
         <span class="probe-label">Probe</span>
         <img src="/assets/probe.svg" alt="Probe" class="probe-icon" />
       </button>
@@ -435,6 +435,7 @@ import { api } from './api';
 import { api as mainApi } from '../../lib/api.js';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
+import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
@@ -443,6 +444,8 @@ import JogControls from '../jog/JogControls.vue';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
+const appStore = useAppStore();
+const { isJobRunning } = appStore;
 
 const presets = [
   { id: 'top', label: 'Top' },
@@ -516,10 +519,6 @@ const canStop = computed(() => {
   if (!props.connected || !props.jobLoaded?.filename) return false;
   const state = props.machineState?.toLowerCase();
   return state === 'run' || state === 'hold' || state === 'door';
-});
-
-const isJobRunning = computed(() => {
-  return props.jobLoaded?.status === 'running';
 });
 
 // Template refs

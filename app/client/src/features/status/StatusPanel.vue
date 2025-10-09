@@ -136,12 +136,15 @@
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
 import { api, sendRealtime, REALTIME, zeroAxis, zeroXY } from './api';
 import { useStatusStore } from './store';
+import { useAppStore } from '../../composables/use-app-store';
 
 const store = useStatusStore();
+const appStore = useAppStore();
+const { isJobRunning } = appStore;
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
 const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
-const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value);
+const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value || isJobRunning.value);
 
 const props = defineProps<{
   status: {

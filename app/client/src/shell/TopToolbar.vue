@@ -17,7 +17,7 @@
           class="workspace-select"
           :value="workspace"
           @change="onWorkspaceChange($event)"
-          :disabled="!connected"
+          :disabled="!connected || isJobRunning"
         >
           <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
         </select>
@@ -40,7 +40,7 @@
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
         <svg class="theme-icon" width="32" height="32"><use href="#emoji-sun"></use></svg>
       </button>
-      <button class="theme-toggle" @click="props.onShowSettings" title="Settings">
+      <button class="theme-toggle" @click="props.onShowSettings" title="Settings" :disabled="isJobRunning">
         <svg class="theme-icon" width="32" height="32"><use href="#emoji-gear"></use></svg>
       </button>
     </div>
@@ -52,6 +52,7 @@ import { computed } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
 
 const store = useAppStore();
+const { isJobRunning } = store;
 
 const props = defineProps<{
   workspace: string;
