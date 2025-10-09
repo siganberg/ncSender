@@ -302,7 +302,7 @@ button.danger {
 }
 
 .toolbar.state--tool .machine-state {
-  color: #6f42c1;
+  color: #c912a8;
   text-shadow: none;
 }
 
@@ -385,9 +385,9 @@ button.danger {
 }
 
 .toolbar.state--tool {
-  border-color: #6f42c1;
-  box-shadow: var(--shadow-elevated), 0 0 20px rgba(111, 66, 193, 0.6);
-  animation: pulse-glow-purple 2.5s infinite;
+  border-color: #c912a8;
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(201, 18, 168, 0.6);
+  animation: pulse-glow-magenta 2.5s infinite;
 }
 
 .toolbar.state--unknown {
@@ -427,9 +427,9 @@ button.danger {
   25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(253, 126, 20, 0.9); }
 }
 
-@keyframes pulse-glow-purple {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(111, 66, 193, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(111, 66, 193, 0.9); }
+@keyframes pulse-glow-magenta {
+  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(201, 18, 168, 0.6); }
+  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(201, 18, 168, 0.9); }
 }
 
 @keyframes pulse-glow-yellow {
