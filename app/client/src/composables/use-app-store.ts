@@ -408,9 +408,20 @@ export function initializeStore() {
     // If a run starts (status transitions into running), reset completed tracking
     const currentStatus = serverState.jobLoaded?.status as any;
     const currentFilename = serverState.jobLoaded?.filename as string | undefined;
+    const currentLine = serverState.jobLoaded?.currentLine;
+
     if (currentStatus === 'running' && lastJobStatus !== 'running') {
       gcodeCompletedUpTo.value = 0;
     }
+
+    // If job is stopped/paused/completed, restore completed line tracking
+    // This ensures that late-joining clients or page reloads get the correct state
+    if ((currentStatus === 'stopped' || currentStatus === 'paused' || currentStatus === 'completed') &&
+        typeof currentLine === 'number' && currentLine > 0 &&
+        gcodeCompletedUpTo.value !== currentLine) {
+      gcodeCompletedUpTo.value = currentLine;
+    }
+
     // If user closed the job progress panel (status changed to null), reset G-code completion markers
     try {
       const status = serverState.jobLoaded?.status;
