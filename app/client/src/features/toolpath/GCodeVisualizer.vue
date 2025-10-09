@@ -1104,12 +1104,22 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
 
     // Check if we have a last executed line (from server state on page load)
     // and mark all lines up to that point as completed
-    if (lastExecutedLine.value > 0) {
+    // Check both lastExecutedLine (reactive state) and props.jobLoaded (server state on page-reload)
+    const jobStatus = props.jobLoaded?.status;
+    const propsCurrentLine = props.jobLoaded?.currentLine ?? 0;
+    const lineToRestore = Math.max(lastExecutedLine.value,
+      (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') ? propsCurrentLine : 0
+    );
+
+    if (lineToRestore > 0) {
       const completedLines = [];
-      for (let i = 1; i <= lastExecutedLine.value; i++) {
+      for (let i = 1; i <= lineToRestore; i++) {
         completedLines.push(i);
       }
       gcodeVisualizer.markLinesCompleted(completedLines);
+      // Also update markedLines to keep track
+      completedLines.forEach(ln => markedLines.add(ln));
+      console.log(`[GCodeVisualizer] Restored ${lineToRestore} completed lines in visualizer`);
     }
 
     // Update axis labels based on G-code bounds
@@ -2292,9 +2302,10 @@ onMounted(async () => {
   api.onGCodeUpdated(handleGCodeUpdate);
 
   // Listen for server state updates to track job progress
-  let prevJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
-  api.onServerStateUpdated((state) => {
-    const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | undefined;
+  let prevJobStatus: 'running' | 'paused' | 'stopped' | 'completed' | undefined = undefined;
+  let hasRestoredInitialState = false;
+  api.onServerStateUpdated((state: any) => {
+    const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined;
 
     // Update probe active state
     if (state.machineState?.probeActive !== undefined) {
@@ -2303,6 +2314,23 @@ onMounted(async () => {
       if (state.machineState.probeActive) {
         probeEverActivated.value = true;
       }
+    }
+
+    // Restore lastExecutedLine from server state on initial load (for page reloads)
+    if (!hasRestoredInitialState && state.jobLoaded && gcodeVisualizer) {
+      const currentLine = state.jobLoaded.currentLine;
+      if (status && (status === 'stopped' || status === 'paused' || status === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+        lastExecutedLine.value = currentLine;
+        console.log(`[GCodeVisualizer] Restored lastExecutedLine from server: ${currentLine}`);
+        // Re-apply completed segments up to the restored line
+        for (let i = 1; i <= currentLine; i++) {
+          if (!markedLines.has(i)) {
+            gcodeVisualizer.markLineCompleted(i);
+            markedLines.add(i);
+          }
+        }
+      }
+      hasRestoredInitialState = true;
     }
 
     // If a run is starting, reset completed markers so we start fresh
@@ -2320,8 +2348,8 @@ onMounted(async () => {
       }
     }
 
-    // Reset visualizer segments when job stops/completes or when program is cleared
-    if (!state.jobLoaded || status === 'stopped') {
+    // Reset visualizer segments when file is unloaded
+    if (!state.jobLoaded) {
       lastExecutedLine.value = 0;
       if (gcodeVisualizer) {
         gcodeVisualizer.resetCompletedLines();

@@ -538,6 +538,14 @@ export async function seedInitialState() {
       if (status.connected && websocketConnected.value) {
         await tryLoadMachineDimensionsOnce();
       }
+
+      // Restore completed line tracking from server state if job is stopped/paused/completed
+      const jobStatus = serverState.jobLoaded?.status;
+      const currentLine = serverState.jobLoaded?.currentLine;
+      if (jobStatus && (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+        gcodeCompletedUpTo.value = currentLine;
+        console.log(`[Store] Restored completed line tracking from server: ${currentLine}`);
+      }
     }
   } catch (e) {
     console.warn('Unable to seed initial server state:', e);

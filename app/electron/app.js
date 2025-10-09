@@ -397,7 +397,11 @@ export async function createApp(options = {}) {
     if (jobStatus) {
       const prev = serverState.jobLoaded || {};
       // Merge to preserve extended fields (e.g., runtimeSec, remainingSec, showProgress)
-      serverState.jobLoaded = { ...prev, ...jobStatus };
+      // Preserve totalLines from previous state if new value is 0 or missing
+      const totalLines = (jobStatus.totalLines && jobStatus.totalLines > 0)
+        ? jobStatus.totalLines
+        : prev.totalLines;
+      serverState.jobLoaded = { ...prev, ...jobStatus, totalLines };
     }
   };
 
