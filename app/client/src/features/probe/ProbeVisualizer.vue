@@ -624,7 +624,10 @@ watch(() => props.probeActive, (isActive) => {
 watch(() => props.selectedCorner, (newCorner) => {
   if (plateModel && newCorner && ['XYZ', 'XY'].includes(props.probingAxis)) {
     // Reset all corners to default color
-    setGroupColor(plateModel, 'Corner', 0x555555);
+    setGroupColor(plateModel, 'TopRight', 0x555555);
+    setGroupColor(plateModel, 'TopLeft', 0x555555);
+    setGroupColor(plateModel, 'BottomRight', 0x555555);
+    setGroupColor(plateModel, 'BottomLeft', 0x555555);
 
     // Set the loaded corner to accent color
     selectedCorner = newCorner;

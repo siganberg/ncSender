@@ -432,7 +432,6 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
-import { api as mainApi } from '../../lib/api.js';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
@@ -441,6 +440,7 @@ import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
 import JogControls from '../jog/JogControls.vue';
+import { startProbe as startProbeOperation, stopProbe as stopProbeOperation } from '../probe/api';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
@@ -1232,20 +1232,8 @@ const startProbe = async () => {
 
     console.log('[Probe] Starting probe operation:', options);
 
-    // Call server API to start probing
-    const response = await fetch('/api/probe/start', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(options),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to start probe');
-    }
+    // Call server API to start probing using probe feature API
+    const result = await startProbeOperation(options);
 
     console.log('[Probe] Probe operation started:', result);
   } catch (error) {
@@ -1259,18 +1247,9 @@ const closeProbeDialog = async () => {
     try {
       console.log('[Probe] Closing dialog - stopping probe job');
 
-      // Call server API to stop probing
-      const response = await fetch('/api/probe/stop', {
-        method: 'POST',
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        console.log('[Probe] Probe stopped:', result);
-      } else {
-        console.error('[Probe] Error stopping probe:', result.error);
-      }
+      // Call server API to stop probing using probe feature API
+      const result = await stopProbeOperation();
+      console.log('[Probe] Probe stopped:', result);
     } catch (error) {
       console.error('[Probe] Error stopping probe:', error);
     }

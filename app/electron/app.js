@@ -3,7 +3,6 @@ import { createServer as createHttpServer } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import os from 'node:os';
 import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
@@ -22,6 +21,7 @@ import { createFirmwareRoutes, initializeFirmwareOnConnection } from './features
 import { createProbeRoutes } from './features/probe/routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { MessageStateTracker } from './core/state-diff.js';
+import { getUserDataDir } from './utils/paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,22 +99,6 @@ export async function createApp(options = {}) {
   // Middleware
   app.use(express.json());
   app.use(cors());
-
-  function getUserDataDir() {
-    const platform = os.platform();
-    const appName = 'ncSender';
-
-    switch (platform) {
-      case 'win32':
-        return path.join(os.homedir(), 'AppData', 'Roaming', appName);
-      case 'darwin':
-        return path.join(os.homedir(), 'Library', 'Application Support', appName);
-      case 'linux':
-        return path.join(os.homedir(), '.config', appName);
-      default:
-        return path.join(os.homedir(), `.${appName}`);
-    }
-  }
 
   // File upload configuration
   const userDataDir = getUserDataDir();

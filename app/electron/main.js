@@ -123,9 +123,3 @@ app.on('before-quit', () => {
     server.close();
   }
 });
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
