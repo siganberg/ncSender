@@ -1,13 +1,25 @@
-FROM --platform=$BUILDPLATFORM siganberg/gsender-pi-builder:1.0 AS builder
-ARG BUILDPLATFORM
+FROM node:20-bullseye AS builder
 ARG NODE_OPTIONS="--max-old-space-size=8192"
 ARG USE_SYSTEM_FPM="true"
 ARG GITHUB_REF_NAME
 ARG GITHUB_REF_TYPE
 ARG GIT_COMMIT_LOG
 
+# Install dependencies needed for Electron builds
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libfuse2 \
+    && apt-get install -y --no-install-recommends \
+        libfuse2 \
+        rpm \
+        fakeroot \
+        dpkg \
+        libc6 \
+        libgcc-s1 \
+        libstdc++6 \
+        ruby \
+        ruby-dev \
+        rubygems \
+        build-essential \
+    && gem install --no-document fpm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
