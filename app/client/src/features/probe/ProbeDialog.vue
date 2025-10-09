@@ -479,186 +479,220 @@ const handleStartProbe = async () => {
 .probe-dialog {
   display: flex;
   flex-direction: column;
+  max-width: 700px !important;
   height: 100%;
-  max-height: 80vh;
 }
 
 .probe-dialog__header {
-  padding: 0 0 1rem 0;
-  border-bottom: 1px solid var(--border-color, #3a3a3a);
+  padding: 30px 20px 30px 20px;
 }
 
 .probe-dialog__instructions {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-style: italic;
   line-height: 1.5;
-  color: var(--text-secondary, #999);
+  color: var(--color-text-secondary);
+  text-align: left;
 }
 
 .probe-dialog__content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem 0;
+  padding: 10px 30px 10px 30px;
+  color: var(--color-text-primary);
+  height: 100%;
 }
 
 .probe-dialog__columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  height: 100%;
+  gap: 0;
+  min-height: 400px;
 }
 
 .probe-dialog__column {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
 }
 
 .probe-dialog__column h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1rem;
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--color-text-primary);
 }
 
 .probe-dialog__column--controls {
-  flex-shrink: 0;
+  padding-right: 20px;
 }
 
 .probe-dialog__column--viewer {
+  padding-left: 20px;
+  gap: 20px;
+}
+
+.probe-control-group--toggle {
   display: flex;
-  flex-direction: column;
-  min-height: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.probe-control-group--toggle-left {
+  justify-content: flex-start;
+}
+
+.probe-control-group--toggle .probe-label {
+  margin-bottom: 0;
+}
+
+.probe-contextual-instruction {
+  margin-top: 16px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-style: italic;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.probe-contextual-instruction--warning {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border-color: rgba(255, 152, 0, 0.3);
 }
 
 .probe-control-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
 .probe-control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  margin-bottom: 12px;
 }
 
 .probe-control-group--align-right {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .probe-label {
+  display: block;
+  margin-bottom: 4px;
   font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--text-secondary, #999);
-  margin-bottom: 0.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
-.probe-select,
-.probe-input {
-  padding: 0.5rem;
-  background: var(--input-bg, #2a2a2a);
-  border: 1px solid var(--border-color, #3a3a3a);
-  border-radius: 4px;
-  color: var(--text-primary, #fff);
+.probe-input,
+.probe-select {
+  width: 100%;
+  padding: 6px 10px;
   font-size: 0.9rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.2s ease;
+  text-align: right;
 }
 
-.probe-select:focus,
-.probe-input:focus {
+.probe-input:focus,
+.probe-select:focus {
   outline: none;
-  border-color: var(--accent-color, #1abc9c);
+  border-color: var(--color-accent);
+}
+
+.probe-input[type="number"] {
+  -moz-appearance: textfield;
+  text-align: right;
+}
+
+.probe-input::-webkit-outer-spin-button,
+.probe-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .probe-input-with-unit {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.probe-input {
-  flex: 1;
-  width: 100%;
+  gap: 6px;
 }
 
 .probe-unit {
   font-size: 0.85rem;
-  color: var(--text-secondary, #999);
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .probe-error {
-  font-size: 0.75rem;
-  color: var(--error-color, #e74c3c);
-}
-
-.probe-contextual-instruction {
-  padding: 0.75rem;
-  border-radius: 4px;
+  display: block;
+  margin-top: 4px;
   font-size: 0.85rem;
-  line-height: 1.4;
-  margin-top: 0.5rem;
-}
-
-.probe-contextual-instruction--warning {
-  background: rgba(241, 196, 15, 0.1);
-  border: 1px solid rgba(241, 196, 15, 0.3);
-  color: #f1c40f;
+  color: #ff6b6b;
 }
 
 .probe-dialog__footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-  padding: 1rem 0 0 0;
-  border-top: 1px solid var(--border-color, #3a3a3a);
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 10px 20px 10px;
 }
 
 .probe-dialog__btn {
-  padding: 0.5rem 1.5rem;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  font-weight: 500;
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  border: none;
+  transition: all 0.2s ease;
+  border: 1px solid var(--color-border);
 }
 
 .probe-dialog__btn--secondary {
-  background: var(--button-secondary-bg, #3a3a3a);
-  color: var(--text-primary, #fff);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
 }
 
 .probe-dialog__btn--secondary:hover {
-  background: var(--button-secondary-hover, #4a4a4a);
+  background: var(--color-surface);
+  border-color: var(--color-accent);
 }
 
 .probe-dialog__btn--secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .probe-dialog__btn--primary {
-  background: var(--accent-color, #1abc9c);
-  color: #fff;
+  background: var(--gradient-accent);
+  color: white;
+  border-color: var(--color-accent);
 }
 
 .probe-dialog__btn--primary:hover {
-  background: var(--accent-hover, #16a085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
 }
 
 .probe-dialog__btn--primary:disabled {
-  opacity: 0.5;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .probe-dialog__btn--primary:disabled:hover {
-  background: var(--accent-color, #1abc9c);
+  transform: none;
+  box-shadow: none;
 }
 
 /* Toggle switch styles */
@@ -682,7 +716,7 @@ const handleStartProbe = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #3a3a3a;
+  background-color: var(--color-surface-muted);
   transition: 0.3s;
   border-radius: 24px;
 }
@@ -700,7 +734,7 @@ const handleStartProbe = async () => {
 }
 
 input:checked + .slider {
-  background-color: var(--accent-color, #1abc9c);
+  background-color: var(--color-accent);
 }
 
 input:checked + .slider:before {
