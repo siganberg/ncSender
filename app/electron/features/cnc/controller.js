@@ -33,7 +33,7 @@ export class CNCController extends EventEmitter {
 
     // Dead-man switch for continuous jogging
     this.jogWatchdog = new JogWatchdog({
-      timeoutMs: 750,
+      timeoutMs: 500,
       onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
     });
   }
@@ -801,10 +801,12 @@ export class CNCController extends EventEmitter {
       commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
     }
 
-    // Detect continuous jog command ($J= with continuous flag in metadata)
-    const isContinuousJog = /^\$J=/i.test(cleanCommand) && normalizedMeta?.continuous === true;
-    if (isContinuousJog) {
+    // Detect ANY jog command ($J=) and enable dead-man switch watchdog
+    // This ensures safety even when commands are sent manually from Send Command
+    const isJogCommand = /^\$J=/i.test(cleanCommand);
+    if (isJogCommand) {
       this.jogWatchdog.start(resolvedCommandId, cleanCommand);
+      log('Dead-man switch watchdog started for jog command:', resolvedCommandId);
     }
 
     if (isRealTimeCommand) {

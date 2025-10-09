@@ -44,6 +44,11 @@ async function createWindow() {
     }
   });
 
+  // Maximize window by default (unless in kiosk mode)
+  if (!isKiosk) {
+    mainWindow.maximize();
+  }
+
   // Load the UI from the embedded server
   const appUrl = `http://localhost:${serverPort}`;
 
