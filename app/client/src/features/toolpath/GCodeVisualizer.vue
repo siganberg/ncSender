@@ -1205,8 +1205,8 @@ const openProbeDialog = async () => {
   try {
     const settings = await api.getSettings();
     if (settings) {
-      if (settings.probingAxis) {
-        probingAxis.value = settings.probingAxis;
+      if (settings.probe?.probingAxis) {
+        probingAxis.value = settings.probe.probingAxis;
       }
       if (typeof settings.probeBallPointDiameter === 'number') {
         ballPointDiameter.value = settings.probeBallPointDiameter;
@@ -1879,7 +1879,7 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
 watch(() => probeType.value, async (value) => {
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probeType: value });
+      await updateSettings({ probe: { type: value } });
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save probe type setting', JSON.stringify({ error: error.message }));
     }
@@ -1892,7 +1892,7 @@ watch(() => probingAxis.value, async (value) => {
 
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probingAxis: value }, { broadcast: false });
+      await updateSettings({ probe: { probingAxis: value } }, { broadcast: false });
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save probing axis setting', JSON.stringify({ error: error.message }));
     }
@@ -2245,11 +2245,11 @@ onMounted(async () => {
       spindleViewMode.value = settings.spindleView;
     }
     // Load probe settings
-    if (settings.probeType) {
-      probeType.value = settings.probeType;
+    if (settings.probe?.type) {
+      probeType.value = settings.probe.type;
     }
-    if (settings.probingAxis) {
-      probingAxis.value = settings.probingAxis;
+    if (settings.probe?.probingAxis) {
+      probingAxis.value = settings.probe.probingAxis;
     }
     if (settings.probeSelectedCorner) {
       // Migrate old corner names to new terminology

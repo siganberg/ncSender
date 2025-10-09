@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   enableStateDeltaBroadcast: true,
   probe: {
     type: '3dprobe',
+    probingAxis: 'Z',
     '3dprobe': {
       ballPointDiameter: 6,
       zPlunge: 3,
