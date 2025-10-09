@@ -30,7 +30,8 @@ const DEFAULT_SETTINGS = {
       zOffset: 0,
       rapidMovement: 2000,
       xDimension: 100,
-      yDimension: 100
+      yDimension: 100,
+      probeZFirst: false
     },
     standardblock: {
       length: 50,

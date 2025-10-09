@@ -1228,12 +1228,12 @@ const openProbeDialog = async () => {
         yDimension.value = settings.probe['3dprobe'].yDimension;
         originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
       }
-      if (typeof settings.probeRapidMovement === 'number') {
-        rapidMovement.value = settings.probeRapidMovement;
-        originalValues.value.rapidMovement = settings.probeRapidMovement;
+      if (typeof settings.probe?.['3dprobe']?.rapidMovement === 'number') {
+        rapidMovement.value = settings.probe['3dprobe'].rapidMovement;
+        originalValues.value.rapidMovement = settings.probe['3dprobe'].rapidMovement;
       }
-      if (typeof settings.probeZFirst === 'boolean') {
-        probeZFirst.value = settings.probeZFirst;
+      if (typeof settings.probe?.['3dprobe']?.probeZFirst === 'boolean') {
+        probeZFirst.value = settings.probe['3dprobe'].probeZFirst;
       }
     }
   } catch (error) {
@@ -1917,7 +1917,7 @@ watch(() => selectedCorner.value, async (value) => {
 watch(() => probeZFirst.value, async (value) => {
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probeZFirst: value });
+      await updateSettings({ probe: { '3dprobe': { probeZFirst: value } } });
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save probeZFirst setting', JSON.stringify({ error: error.message }));
     }
@@ -2138,7 +2138,7 @@ const handleYDimensionBlur = async () => {
 const handleRapidMovementBlur = async () => {
   if (rapidMovement.value !== originalValues.value.rapidMovement && rapidMovement.value >= 1000 && rapidMovement.value <= 5000) {
     try {
-      await updateSettings({ probeRapidMovement: rapidMovement.value });
+      await updateSettings({ probe: { '3dprobe': { rapidMovement: rapidMovement.value } } });
       originalValues.value.rapidMovement = rapidMovement.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
@@ -2281,12 +2281,12 @@ onMounted(async () => {
       yDimension.value = settings.probe['3dprobe'].yDimension;
       originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
     }
-    if (typeof settings.probeRapidMovement === 'number') {
-      rapidMovement.value = settings.probeRapidMovement;
-      originalValues.value.rapidMovement = settings.probeRapidMovement;
+    if (typeof settings.probe?.['3dprobe']?.rapidMovement === 'number') {
+      rapidMovement.value = settings.probe['3dprobe'].rapidMovement;
+      originalValues.value.rapidMovement = settings.probe['3dprobe'].rapidMovement;
     }
-    if (typeof settings.probeZFirst === 'boolean') {
-      probeZFirst.value = settings.probeZFirst;
+    if (typeof settings.probe?.['3dprobe']?.probeZFirst === 'boolean') {
+      probeZFirst.value = settings.probe['3dprobe'].probeZFirst;
     }
   }
 
