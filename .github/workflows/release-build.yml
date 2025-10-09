@@ -8,7 +8,7 @@ on:
 jobs:
   macos:
     name: macOS Builds
-    runs-on: macos-latest
+    runs-on: macos-14  # macOS Sonoma (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +46,7 @@ jobs:
 
   linux:
     name: Linux Builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +84,7 @@ jobs:
 
   windows:
     name: Windows Builds
-    runs-on: windows-latest
+    runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -121,44 +121,66 @@ jobs:
           name: windows-${{ matrix.arch }}-artifacts
           path: app/dist-electron/**
 
-  # raspberry-pi:
-  #   name: Raspberry Pi Build
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  raspberry-pi:
+    name: Raspberry Pi Build
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Setup Node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  #     - name: Install Dependencies
-  #       run: |
-  #         npm ci
-  #         cd client && npm ci
-  #       working-directory: app
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfuse2 \
+            rpm \
+            fakeroot \
+            ruby \
+            ruby-dev \
+            rubygems \
+            build-essential
+          sudo gem install --no-document fpm
 
-  #     - name: Build Client
-  #       run: npm run build:client
-  #       working-directory: app
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
 
-  #     - name: Build Electron (Raspberry Pi)
-  #       run: |
-  #         rm -rf dist-electron
-  #         npm run dist -- --linux --armv7l
-  #       working-directory: app
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
 
-  #     - name: Upload Raspberry Pi Artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: raspberry-pi-artifacts
-  #         path: app/dist-electron/**
+      - name: Build Electron (Raspberry Pi ARM64)
+        run: |
+          rm -rf dist-electron
+          npm run dist -- --linux --arm64
+        working-directory: app
+        env:
+          USE_SYSTEM_FPM: "true"
+
+      - name: List built artifacts
+        run: |
+          echo "Built Raspberry Pi artifacts:"
+          ls -lh app/dist-electron/
+
+      - name: Upload Raspberry Pi Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raspberry-pi-artifacts
+          path: |
+            app/dist-electron/*.deb
+            app/dist-electron/*.AppImage
 
   release:
     name: Create Release
-    needs: [macos, linux, windows]
-    runs-on: ubuntu-latest
+    needs: [macos, linux, windows, raspberry-pi]
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
     steps:
@@ -214,6 +236,20 @@ jobs:
             done
           fi
 
+          # Rename and copy Raspberry Pi assets
+          if [ -d "artifacts/raspberry-pi-artifacts" ]; then
+            for file in artifacts/raspberry-pi-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.deb"
+              fi
+            done
+            for file in artifacts/raspberry-pi-artifacts/*.AppImage; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.AppImage"
+              fi
+            done
+          fi
+
           echo "Release assets to upload:"
           ls -lh release-assets/
 
@@ -230,7 +266,7 @@ jobs:
   update-version:
     name: Update package.json version
     needs: [release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
     steps:
@@ -263,5 +299,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add app/package.json
-          git commit -m "chore: bump version to $VERSION [skip ci]"
-          git push origin main
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to package.json version - already up to date"
+          else
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push origin main
+          fi

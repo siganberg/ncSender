@@ -1,8 +1,8 @@
-if docker buildx ls | grep -q buildx-builder -eq 1; then
-   docker buildx create --name  buildx-builder --use
+if ! docker buildx ls | grep -q buildx-builder; then
+   docker buildx create --name buildx-builder --use
 fi
 mkdir -p releases/pi/
-docker buildx build  -f DockerfilePi . \
+docker buildx build  -f .scripts/DockerfilePi . \
    --platform linux/arm64 \
    --target=artifact \
    --output type=local,dest=$(pwd)/releases/pi \
