@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
@@ -44,13 +46,13 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Compute ETA server-side (best-effort) before starting
-      // Initialize timing/visibility for progress at job start
+      // Initialize timing for progress at job start
       if (serverState.jobLoaded) {
         serverState.jobLoaded.jobStartTime = new Date().toISOString();
         serverState.jobLoaded.jobEndTime = null;
         serverState.jobLoaded.jobPauseAt = null;
         serverState.jobLoaded.jobPausedTotalSec = 0;
-        serverState.jobLoaded.showProgress = true;
+        serverState.jobLoaded.status = 'running';
         broadcast('server-state-updated', serverState);
       }
 
@@ -130,34 +132,39 @@ export class GCodeJobProcessor {
     this.filename = filename;
     this.cncController = cncController;
     this.broadcast = broadcast;
-    this.lines = [];
-    this.currentLine = 0;
+    this.currentLineNumber = 0;
+    this.totalLines = 0;
     this.isRunning = false;
     this.isPaused = false;
     this.isStopped = false;
     this.completionCallbacks = [];
     this.progressProvider = options.progressProvider || null;
+    this.gcodeContent = options.gcodeContent || null; // Direct G-code content
+    this.sourceId = options.sourceId || 'gcode-runner'; // Source identifier for broadcast filtering
   }
 
   async start() {
-    // Read and parse the G-code file
-    const content = await fs.readFile(this.filePath, 'utf8');
-    this.lines = this.parseGCodeLines(content);
-
-    // Initialize progress provider with full content pre-analysis
-    try {
-      if (this.progressProvider?.startWithContent) {
+    // For progress provider initialization, we still need to read the full content
+    // But we'll stream for actual processing
+    if (this.progressProvider?.startWithContent) {
+      try {
+        let content;
+        if (this.gcodeContent) {
+          content = this.gcodeContent;
+        } else {
+          content = await fs.readFile(this.filePath, 'utf8');
+        }
         await this.progressProvider.startWithContent(content);
-      }
-    } catch {}
+      } catch {}
+    }
 
     this.isRunning = true;
     this.isPaused = false;
     this.isStopped = false;
-    this.currentLine = 0;
+    this.currentLineNumber = 0;
 
-    // Start processing lines with loop-based approach
-    this.processLines();
+    // Start processing lines with stream-based approach
+    await this.processLinesStream();
   }
 
   pause() {
@@ -177,10 +184,20 @@ export class GCodeJobProcessor {
     // The loop-based processor will automatically continue when isPaused becomes false
   }
 
-  stop() {
+  async stop() {
     this.isStopped = true;
     this.isRunning = false;
     this.isPaused = false;
+
+    // Send soft reset to controller
+    try {
+      await this.cncController.sendCommand('\x18', {
+        meta: { jobControl: true }
+      });
+      log('Soft reset sent to controller');
+    } catch (error) {
+      log('Error sending soft reset:', error?.message || error);
+    }
 
     // Trigger completion callbacks when manually stopped
     this.triggerCompletion('stopped');
@@ -202,119 +219,104 @@ export class GCodeJobProcessor {
     this.completionCallbacks = [];
   }
 
-  parseGCodeLines(content) {
-    const lines = content.split('\n');
-    const parsedLines = [];
+  async processLinesStream() {
+    try {
+      let lineStream;
 
-    for (let i = 0; i < lines.length; i++) {
-      const originalLine = lines[i];
-      const lineNumber = i + 1;
-
-      // Remove comments (semicolon and everything after)
-      let cleanLine = originalLine.split(';')[0].trim();
-
-      // Skip empty lines but track line numbers
-      if (cleanLine === '') {
-        parsedLines.push({
-          lineNumber,
-          originalLine,
-          cleanLine: null,
-          isComment: true
-        });
-      } else {
-        parsedLines.push({
-          lineNumber,
-          originalLine,
-          cleanLine,
-          isComment: false
-        });
-      }
-    }
-
-    return parsedLines;
-  }
-
-  async processLines() {
-    while (this.currentLine < this.lines.length && !this.isStopped) {
-      // Wait while paused
-      while (this.isPaused && !this.isStopped) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      // Check if stopped while waiting for pause
-      if (this.isStopped) {
-        break;
-      }
-
-      // Check if we've reached the end
-      if (this.currentLine >= this.lines.length) {
-        break;
-      }
-
-      const lineData = this.lines[this.currentLine];
-      this.currentLine++;
-
-      // Skip comment/empty lines but track them
-      if (lineData.isComment) {
-        // this.broadcast('cnc-command-result', {
-        //   id: `line-${lineData.lineNumber}`,
-        //   command: lineData.originalLine,
-        //   displayCommand: lineData.originalLine,
-        //   status: 'skipped',
-        //   timestamp: new Date().toISOString(),
-        //   meta: { lineNumber: lineData.lineNumber, skipped: true }
-        // });
-        continue;
-      }
-
-      // Generate unique command ID outside try block
-      const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-      try {
-        await this.cncController.sendCommand(lineData.cleanLine, {
-          commandId,
-          displayCommand: lineData.cleanLine,
-          meta: {
-            lineNumber: lineData.lineNumber,
-            job: { filename: this.filename },
-            sourceId: 'gcode-runner'
+      if (this.gcodeContent) {
+        // If content provided directly, use it (for testing or special cases)
+        const lines = this.gcodeContent.split('\n');
+        lineStream = (async function* () {
+          for (const line of lines) {
+            yield line;
           }
+        })();
+      } else {
+        // Stream from file
+        const fileStream = createReadStream(this.filePath, { encoding: 'utf8' });
+        const rl = createInterface({
+          input: fileStream,
+          crlfDelay: Infinity
         });
-        // Notify progress provider that we've advanced a (1-based) line number
-        try { this.progressProvider?.onAdvanceToLine?.(this.currentLine); } catch {}
-      } catch (error) {
-        this.isStopped = true;
-        this.isRunning = false;
-        break;
+
+        lineStream = rl;
       }
-    }
 
-    // Job completed or stopped
-    this.isRunning = false;
-    try { if (this.isStopped) this.progressProvider?.stop?.(); } catch {}
+      for await (const originalLine of lineStream) {
+        // Wait while paused
+        while (this.isPaused && !this.isStopped) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
 
-    if (!this.isStopped && this.currentLine >= this.lines.length) {
-      // Job completed successfully
-      log('Job processing completed, triggering callbacks');
+        // Check if stopped
+        if (this.isStopped) {
+          break;
+        }
 
-      const completionComment = `; Job completed: ${this.filename} (ncSender)`;
+        this.currentLineNumber++;
 
-      this.broadcast('cnc-command-result', {
-        id: `job-${Date.now()}`,
-        command: completionComment,
-        displayCommand: completionComment,
-        status: 'success',
-        timestamp: new Date().toISOString(),
-        meta: { jobComplete: true },
-        sourceId: 'gcode-runner'
-      });
+        const cleanLine = originalLine.trim();
 
-      // Trigger completion callbacks after a small delay to ensure all state updates propagate
-      setTimeout(() => {
-        log('Triggering job completion callbacks');
-        this.triggerCompletion('completed');
-        try { this.progressProvider?.stop?.(); } catch {}
-      }, 100);
+        // Skip empty lines
+        if (cleanLine === '') {
+          continue;
+        }
+
+        // Generate unique command ID
+        const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        try {
+          await this.cncController.sendCommand(cleanLine, {
+            commandId,
+            displayCommand: cleanLine,
+            meta: {
+              lineNumber: this.currentLineNumber,
+              job: { filename: this.filename },
+              sourceId: this.sourceId
+            }
+          });
+          // Notify progress provider that we've advanced a (1-based) line number
+          try { this.progressProvider?.onAdvanceToLine?.(this.currentLineNumber); } catch {}
+        } catch (error) {
+          this.isStopped = true;
+          this.isRunning = false;
+          break;
+        }
+      }
+
+      // Job completed or stopped
+      this.isRunning = false;
+      try { if (this.isStopped) this.progressProvider?.stop?.(); } catch {}
+
+      if (!this.isStopped) {
+        // Job completed successfully
+        log('Job processing completed, triggering callbacks');
+
+        const completionComment = `; Job completed: ${this.filename} (ncSender)`;
+
+        this.broadcast('cnc-command-result', {
+          id: `job-${Date.now()}`,
+          command: completionComment,
+          displayCommand: completionComment,
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          meta: { jobComplete: true },
+          sourceId: this.sourceId
+        });
+
+        // Trigger completion callbacks after a small delay to ensure all state updates propagate
+        setTimeout(() => {
+          log('Triggering job completion callbacks');
+          this.triggerCompletion('completed');
+          try { this.progressProvider?.stop?.(); } catch {}
+        }, 100);
+      }
+    } catch (error) {
+      log('Error processing G-code file stream:', error);
+      this.isRunning = false;
+      this.isStopped = true;
+      try { this.progressProvider?.stop?.(); } catch {}
+      this.triggerCompletion('error');
     }
   }
 

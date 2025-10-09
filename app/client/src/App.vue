@@ -167,10 +167,30 @@
                 max="65535"
               >
             </div>
+            <div class="setting-item">
+              <label class="setting-label"></label>
+              <button class="save-connection-button" @click="saveConnectionSettings">
+                Save
+              </button>
+            </div>
           </div>
 
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
+            <div class="setting-item">
+              <label class="setting-label">Number of Tools</label>
+              <select class="setting-select" v-model.number="numberOfTools">
+                <option :value="0">0</option>
+                <option :value="1">1</option>
+                <option :value="2">2</option>
+                <option :value="3">3</option>
+                <option :value="4">4</option>
+                <option :value="5">5</option>
+                <option :value="6">6</option>
+                <option :value="7">7</option>
+                <option :value="8">8</option>
+              </select>
+            </div>
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
@@ -180,20 +200,6 @@
             </div>
           </div>
 
-          <div class="settings-section">
-            <h3 class="section-title">Console Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Auto-clear console on new job</label>
-              <label class="toggle-switch">
-                <input type="checkbox" v-model="consoleSettings.autoClearConsole">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Console buffer size</label>
-              <span class="setting-value">50 lines (optimized for performance)</span>
-            </div>
-          </div>
         </div>
 
         <!-- Firmware Tab -->
@@ -421,9 +427,6 @@
 
       <!-- Footer with Close Button -->
       <div class="settings-footer">
-        <button v-if="activeTab === 'general'" class="close-button" @click="saveConnectionSettings">
-          Save
-        </button>
         <button class="close-button" @click="closeSettings">
           Close
         </button>
@@ -596,6 +599,9 @@ const gradientColor = ref(initialSettings?.gradientColor || '#34d399');
 const currentGradient = computed(() => {
   return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
 });
+
+// Number of tools setting
+const numberOfTools = ref(initialSettings?.numberOfTools ?? 4);
 
 // Connection settings (from settings store)
 const connectionSettings = reactive({
@@ -777,23 +783,23 @@ const filteredFirmwareSettings = computed(() => {
     return [];
   }
 
-  const settings = Object.values(firmwareData.value.settings).map((setting: any) => ({
+  const settings = Object.values(firmwareData.value.settings).map((setting) => ({
     ...setting,
     id: setting.id.toString()
   }));
 
   if (!firmwareSearchQuery.value) {
-    return settings.sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+    return settings.sort((a, b) => parseInt(a.id) - parseInt(b.id));
   }
 
   const query = firmwareSearchQuery.value.toLowerCase();
-  return settings.filter((setting: any) => {
+  return settings.filter((setting) => {
     return (
       setting.id.includes(query) ||
-      setting.name?.toLowerCase().includes(query) ||
-      setting.group?.name?.toLowerCase().includes(query)
+      setting.name && setting.name.toLowerCase().includes(query) ||
+      setting.group && setting.group.name && setting.group.name.toLowerCase().includes(query)
     );
-  }).sort((a: any, b: any) => parseInt(a.id) - parseInt(b.id));
+  }).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 });
 
 // Helper function to check if a bit is set
@@ -1056,15 +1062,15 @@ const importFirmwareSettings = () => {
 
 const updateAccentColor = (color: string) => {
   accentColor.value = color;
-  applyColors();
+  applyColors(true);
 };
 
 const updateGradientColor = (color: string) => {
   gradientColor.value = color;
-  applyColors();
+  applyColors(true);
 };
 
-const applyColors = () => {
+const applyColors = async (shouldSave = false) => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
@@ -1072,7 +1078,25 @@ const applyColors = () => {
   try {
     window.dispatchEvent(new CustomEvent('accent-color-change', { detail: { color: accentColor.value } }));
   } catch {}
+
+  // Only save color settings if explicitly requested (i.e., when user changes them)
+  if (shouldSave) {
+    const { saveSettings } = await import('./lib/settings-store.js');
+    await saveSettings({
+      accentColor: accentColor.value,
+      gradientColor: gradientColor.value
+    });
+  }
 };
+
+// Watch numberOfTools and save changes (server will broadcast to all clients)
+watch(numberOfTools, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    numberOfTools: newValue
+  });
+  // Note: No local update here - wait for server broadcast to ensure all clients update together
+});
 
 const validateIP = () => {
   if (connectionSettings.type === 'USB') {
@@ -1290,15 +1314,14 @@ const saveSetupSettings = async () => {
 const clearConsole = store.clearConsole;
 
 onMounted(async () => {
+  // Settings are already loaded in main.ts, just get them from the store
+  const { getSettings } = await import('./lib/settings-store.js');
+  const initialSettings = getSettings();
+
   // Check if settings are valid, show setup dialog if not
   if (!isSettingsValid(initialSettings)) {
     showSetupDialog.value = true;
     await loadSetupUsbPorts();
-  } else {
-    // Load USB ports if USB connection type
-    if (connectionSettings.type === 'USB') {
-      await loadMainUsbPorts();
-    }
   }
 
   // Fetch alarm description on page load if lastAlarmCode exists
@@ -1723,6 +1746,29 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   justify-content: flex-end;
   padding-top: var(--gap-md);
   border-bottom: none;
+}
+
+.save-connection-button {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  padding: 12px 32px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
+  min-width: 120px;
+}
+
+.save-connection-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.save-connection-button:active {
+  transform: translateY(0);
 }
 
 .save-button {

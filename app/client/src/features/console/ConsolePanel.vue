@@ -46,7 +46,7 @@
               :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
               :style="{ height: terminalRowHeight + 'px', lineHeight: terminalRowHeight + 'px' }"
             >
-              <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
+              <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
               <span class="message">{{ item.message }}</span>
             </article>
           </template>
@@ -149,7 +149,7 @@ const tabs = [
   { id: 'macros', label: 'Macros' }
 ];
 
-// Filter console lines to hide job-runner chatter
+// Filter console lines to hide job-runner chatter but show probing commands
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
 
 // G-code viewer state (virtualized via RecycleScroller)
@@ -169,7 +169,10 @@ const totalLines = computed(() => {
 });
 
 const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
-const completedUpTo = computed(() => store.gcodeCompletedUpTo?.value ?? 0);
+const completedUpTo = computed(() => {
+  const val = store.gcodeCompletedUpTo?.value ?? 0;
+  return val;
+});
 const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'running'));
 
 // Minimal line cache for IDB mode
@@ -211,7 +214,8 @@ function classifyGcode(line: string): 'rapid' | 'cutting' | null {
 }
 
 function getGcodeLineClasses(index: number) {
-  const base: Record<string, boolean> = { 'gcode-line--completed': (index + 1 <= completedUpTo.value) };
+  const completed = (index + 1 <= completedUpTo.value);
+  const base: Record<string, boolean> = { 'gcode-line--completed': completed };
   const kind = classifyGcode(getGcodeText(index));
   if (kind === 'rapid') base['gcode-line--rapid'] = true;
   if (kind === 'cutting') base['gcode-line--cutting'] = true;
@@ -258,13 +262,24 @@ watch(completedUpTo, (val) => {
 
 watch(isProgramRunning, async (running) => {
   if (running) {
-    // Auto-switch to G-Code Preview when job starts
-    if (activeTab.value !== 'gcode-preview') {
-      activeTab.value = 'gcode-preview';
-      await nextTick();
-      measureLineHeight();
+    const sourceId = store.jobLoaded.value?.sourceId;
+
+    // Auto-switch tabs based on job source
+    // - probing jobs switch to Terminal tab
+    // - gcode-runner jobs switch to G-Code Preview tab
+    if (sourceId === 'probing') {
+      if (activeTab.value !== 'terminal') {
+        activeTab.value = 'terminal';
+      }
+    } else if (sourceId === 'gcode-runner' || !sourceId) {
+      if (activeTab.value !== 'gcode-preview') {
+        activeTab.value = 'gcode-preview';
+        await nextTick();
+        measureLineHeight();
+      }
     }
-    if (autoScrollGcode.value) {
+
+    if (autoScrollGcode.value && activeTab.value === 'gcode-preview') {
       scrollToLineCentered(completedUpTo.value);
     }
   }
@@ -355,9 +370,9 @@ function onGcodeScroll() {
   });
 }
 
-// Reset cross-out and scroll to top when user closes Job Progress panel
-watch(() => store.jobLoaded.value?.showProgress, async (val, oldVal) => {
-  if (oldVal === true && val === false) {
+// Reset cross-out and scroll to top when user closes Job Progress panel (status changes to null)
+watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
+  if (oldVal && (oldVal === 'running' || oldVal === 'paused' || oldVal === 'stopped' || oldVal === 'completed') && val === null) {
     await nextTick();
     if (gcodeScrollerRef.value?.scrollToPosition) {
       gcodeScrollerRef.value.scrollToPosition(0);
@@ -461,6 +476,8 @@ const getStatusIcon = (line) => {
     return '<svg class="emoji-icon"><use href="#emoji-error"></use></svg>';
   } else if (line.status === 'pending') {
     return '<span class="spinner"></span>';
+  } else if (line.type === 'response') {
+    return '<svg class="emoji-icon"><use href="#emoji-info"></use></svg>';
   }
   return '';
 };
@@ -510,7 +527,10 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
-  stopAutoScrollBindings = store.startAutoScrollBindings(async () => {
+  stopAutoScrollBindings = store.startAutoScrollBindings(async (evt) => {
+    // Skip auto-scroll for gcode-runner events (they're not shown in terminal)
+    if (evt?.sourceId === 'gcode-runner') return;
+
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
@@ -721,7 +741,7 @@ h2 {
 .timestamp {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
-  min-width: 112px;
+  min-width: 115px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -744,6 +764,7 @@ h2 {
   display: inline-block;
   vertical-align: middle;
   flex-shrink: 0;
+  transform: translateY(-2px);
 }
 
 .message {
@@ -784,10 +805,12 @@ h2 {
 .console-input .primary {
   border: none;
   border-radius: var(--radius-small);
-  padding: 12px 18px;
+  padding: 8px 14px;
   cursor: pointer;
   background: var(--gradient-accent);
   color: #fff;
+  font-size: 1rem;
+  font-weight: 500;
 }
 
 /* Tab Content */

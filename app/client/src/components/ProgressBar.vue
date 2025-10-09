@@ -71,8 +71,10 @@ const statusClass = computed(() => {
 });
 
 const shouldShow = computed(() => {
-  const jl = store.serverState?.jobLoaded as any;
-  return !!(jl && jl.showProgress);
+  const status = statusRaw.value;
+  // Show progress bar when status is 'running', 'paused', 'stopped', or 'completed'
+  // Don't show when status is null (file just loaded) or undefined (no file)
+  return status === 'running' || status === 'paused' || status === 'stopped' || status === 'completed';
 });
 
 const effectiveElapsedSec = computed(() => Math.max(0, Number(runtimeSecFromServer.value || 0)));

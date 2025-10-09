@@ -323,10 +323,10 @@ const validateFeedRate = () => {
 };
 
 // Disable the entire panel only when disconnected or explicitly disabled
-const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled);
+const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
-// Disable motion controls when disconnected, explicitly disabled, or not homed
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value);
+// Disable motion controls when disconnected, explicitly disabled, not homed, or probing
+const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value || store.isProbing.value);
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
@@ -1204,7 +1204,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 50px;
+  width: 60px;
 }
 
 .center-indicator {
@@ -1371,7 +1371,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 70px;
+  min-width: 55px;
 }
 
 .axis-zero-btn {

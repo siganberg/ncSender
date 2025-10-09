@@ -31,6 +31,7 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "p-queue": "^9.0.0",
     "serialport": "^12.0.0",
     "ws": "^8.14.2"
   },
@@ -40,7 +41,7 @@
     "electron": "^38.2.0",
     "electron-builder": "^26.0.12"
   },
-    "build": {
+  "build": {
     "appId": "com.ncsender.app",
     "productName": "ncSender",
     "directories": {
@@ -57,7 +58,9 @@
     "mac": {
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ]
     },
     "win": {
       "icon": "assets/icon.ico"

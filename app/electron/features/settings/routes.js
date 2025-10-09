@@ -5,7 +5,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSettingsRoutes(serverState, cncController) {
+export function createSettingsRoutes(serverState, cncController, broadcast) {
   const router = Router();
 
   // Get all settings
@@ -85,11 +85,13 @@ export function createSettingsRoutes(serverState, cncController) {
       const savedSettings = saveSettings(mergedSettings);
       log('Settings updated:', updates);
 
+      broadcast('settings-changed', updates);
+
       res.json({
         success: true,
-        message: 'Settings updated successfully',
-        settings: savedSettings
+        message: 'Settings updated successfully'
       });
+
     } catch (error) {
       log('Error updating settings:', error);
       res.status(500).json({ error: 'Failed to update settings' });

@@ -26,8 +26,8 @@ export function getSettings() {
 }
 
 // Update settings and refresh store
-export async function updateSettings(updates) {
-  const result = await api.updateSettings(updates);
+export async function updateSettings(updates, options) {
+  const result = await api.updateSettings(updates, options);
   if (result.settings) {
     settingsStore.data = result.settings;
   }

@@ -12,7 +12,7 @@ class JobProcessorManager {
     this.progressProviderFactory = null;
   }
 
-  async startJob(filePath, filename, cncController, broadcast) {
+  async startJob(filePath, filename, cncController, broadcast, options = {}) {
     if (this.currentJob) {
       throw new Error('A job is already running. Stop the current job before starting a new one.');
     }
@@ -27,7 +27,7 @@ class JobProcessorManager {
       filename,
       cncController,
       broadcast,
-      { progressProvider }
+      { progressProvider, ...options }
     );
     await this.currentJob.start();
     log('Job started:', filename);
@@ -36,12 +36,16 @@ class JobProcessorManager {
     this.currentJob.onComplete((reason) => {
       log('Job completed, clearing reference');
       const wasRunning = this.currentJob !== null;
+
+      // Capture final job state before clearing (needed for completion callback)
+      const finalJobStatus = wasRunning ? this.getJobStatus() : null;
+
       this.currentJob = null;
 
       // Call external completion callback if set and job was actually running
       if (wasRunning && this.onJobCompleteCallback) {
         log('Calling job complete callback');
-        this.onJobCompleteCallback(reason);
+        this.onJobCompleteCallback(reason, finalJobStatus);
       }
     });
 
@@ -111,9 +115,10 @@ class JobProcessorManager {
 
     const base = {
       filename: this.currentJob.filename,
-      currentLine: this.currentJob.currentLine,
-      totalLines: this.currentJob.lines.length,
-      status: status
+      currentLine: this.currentJob.currentLineNumber,
+      totalLines: this.currentJob.totalLines || 0,
+      status: status,
+      sourceId: this.currentJob.sourceId || 'gcode-runner'
     };
 
     // Merge estimator output if present

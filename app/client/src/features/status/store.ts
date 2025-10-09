@@ -11,6 +11,7 @@ export function useStatusStore() {
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
+    isProbing: app.isProbing,
     machineState
   };
 }

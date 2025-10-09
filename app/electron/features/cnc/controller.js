@@ -2,13 +2,16 @@ import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 import { EventEmitter } from 'events';
 import net from 'net';
+import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
-import { CommandQueue } from './command-queue.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
+import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
+
+const MAX_QUEUE_SIZE = 200;
 
 export class CNCController extends EventEmitter {
   constructor() {
@@ -23,36 +26,15 @@ export class CNCController extends EventEmitter {
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
-    this.lastCommandSourceId = null; // Track sourceId for broadcast filtering
-    this.commandQueue = new CommandQueue({
-      log,
-      sendCommand: async (entry) => {
-        await this.writeToConnection(entry.commandToWrite ?? `${entry.rawCommand}\n`, {
-          rawCommand: entry.rawCommand,
-          isRealTime: false
-        });
-      }
-    });
 
-    this.setupCommandQueueEvents();
-  }
+    this.commandQueue = new PQueue({ concurrency: 1 });
+    this.activeCommand = null;
+    this.pendingCommands = new Map();
 
-  setupCommandQueueEvents() {
-    this.commandQueue.on('send-error', (payload) => {
-      this.emit('command-ack', { ...payload, phase: 'send' });
-    });
-
-    this.commandQueue.on('queued', (payload) => {
-      this.emit('command-queued', payload);
-    });
-
-    this.commandQueue.on('ack', (payload) => {
-      this.emit('command-ack', payload);
-
-      // Emit unlock event when $X command is acknowledged
-      if (payload.command && payload.command.toLowerCase() === '$x') {
-        this.emit('unlock');
-      }
+    // Dead-man switch for continuous jogging
+    this.jogWatchdog = new JogWatchdog({
+      timeoutMs: 750,
+      onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
     });
   }
 
@@ -75,23 +57,87 @@ export class CNCController extends EventEmitter {
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
       this.parseGCodeModes(trimmedData);
-      this.emit('data', trimmedData, this.lastCommandSourceId);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
       const code = parseInt(trimmedData.split(':')[1]);
       const message = grblErrors[code] || 'Unknown error';
-      this.commandQueue.handleError({ code, message });
+      this.handleCommandError({ code, message });
       this.emit('cnc-error', { code, message });
       this.sendRecoveryNewline();
     } else if (trimmedData.toLowerCase().startsWith('alarm')) {
-      this.commandQueue.handleError({ code: 'ALARM', message: trimmedData });
+      this.handleCommandError({ code: 'ALARM', message: trimmedData });
       this.emit('cnc-error', { code: 'ALARM', message: trimmedData });
     } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
       log('CNC controller responded:', trimmedData);
-      this.commandQueue.handleOk();
+      this.handleCommandOk();
     } else {
       log('CNC data:', trimmedData);
-      this.emit('data', trimmedData, this.lastCommandSourceId);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
     }
+  }
+
+  handleCommandOk() {
+    if (!this.activeCommand) {
+      log('Received OK with no active command');
+      return;
+    }
+
+    const cmd = this.activeCommand;
+    this.activeCommand = null;
+
+    if (cmd.timeoutHandle) {
+      clearTimeout(cmd.timeoutHandle);
+    }
+
+    const payload = {
+      id: cmd.id,
+      command: cmd.rawCommand,
+      displayCommand: cmd.displayCommand,
+      meta: cmd.meta,
+      status: 'success',
+      timestamp: new Date().toISOString()
+    };
+
+    cmd.resolve(payload);
+    this.emit('command-ack', payload);
+
+    if (cmd.rawCommand && cmd.rawCommand.toLowerCase() === '$x') {
+      this.emit('unlock');
+    }
+  }
+
+  handleCommandError(errorPayload) {
+    if (!this.activeCommand) {
+      log('Received error with no active command', errorPayload);
+      return;
+    }
+
+    const cmd = this.activeCommand;
+    this.activeCommand = null;
+
+    if (cmd.timeoutHandle) {
+      clearTimeout(cmd.timeoutHandle);
+    }
+
+    const error = errorPayload instanceof Error ? errorPayload : new Error(errorPayload?.message || 'CNC command failed');
+    if (errorPayload && typeof errorPayload === 'object') {
+      Object.assign(error, errorPayload);
+    }
+
+    const payload = {
+      id: cmd.id,
+      command: cmd.rawCommand,
+      displayCommand: cmd.displayCommand,
+      meta: cmd.meta,
+      status: 'error',
+      error,
+      timestamp: new Date().toISOString()
+    };
+
+    cmd.reject(error);
+    this.emit('command-ack', payload);
   }
 
   sendRecoveryNewline() {
@@ -148,6 +194,10 @@ export class CNCController extends EventEmitter {
           newStatus.floodCoolant = false;
           newStatus.mistCoolant = false;
         }
+      } else if (key === 'Pn') {
+        // Pin state: P=Probe, X/Y/Z=Limit switches, etc.
+        newStatus.probeActive = value ? value.includes('P') : false;
+        newStatus.Pn = value;
       } else if (key && value) {
         newStatus[key] = value;
       }
@@ -169,7 +219,7 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -320,8 +370,68 @@ export class CNCController extends EventEmitter {
     log(`CNC controller disconnected (${type})`);
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
-    this.commandQueue.flush(`${type}-close`);
+    this.flushQueue(`${type}-close`);
     this.emitConnectionStatus('disconnected', false);
+  }
+
+  flushQueue(reason = 'flush', details) {
+    if (this.activeCommand) {
+      const cmd = this.activeCommand;
+      this.activeCommand = null;
+
+      if (cmd.timeoutHandle) {
+        clearTimeout(cmd.timeoutHandle);
+      }
+
+      const error = new Error(`Command cancelled due to ${reason || 'queue flush'}`);
+      error.code = 'COMMAND_FLUSHED';
+      error.commandId = cmd.id;
+      error.command = cmd.rawCommand;
+      error.meta = cmd.meta;
+      if (details) {
+        error.details = details;
+      }
+
+      cmd.reject(error);
+      this.emit('command-ack', {
+        id: cmd.id,
+        command: cmd.rawCommand,
+        displayCommand: cmd.displayCommand,
+        meta: cmd.meta,
+        status: 'flushed',
+        reason,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    this.pendingCommands.forEach((cmd) => {
+      if (cmd.timeoutHandle) {
+        clearTimeout(cmd.timeoutHandle);
+      }
+
+      const error = new Error(`Command cancelled due to ${reason || 'queue flush'}`);
+      error.code = 'COMMAND_FLUSHED';
+      error.commandId = cmd.id;
+      error.command = cmd.rawCommand;
+      error.meta = cmd.meta;
+      if (details) {
+        error.details = details;
+      }
+
+      cmd.reject(error);
+      this.emit('command-ack', {
+        id: cmd.id,
+        command: cmd.rawCommand,
+        displayCommand: cmd.displayCommand,
+        meta: cmd.meta,
+        status: 'flushed',
+        reason,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    this.pendingCommands.clear();
+    this.commandQueue.clear();
   }
 
   async connectEthernet(ip, port) {
@@ -513,7 +623,7 @@ export class CNCController extends EventEmitter {
   disconnect() {
     this.cancelConnection();
     this.stopPolling();
-    this.commandQueue.flush('disconnect');
+    this.flushQueue('disconnect');
 
     // Additional cleanup for any remaining connections
     if (this.connection) {
@@ -552,6 +662,30 @@ export class CNCController extends EventEmitter {
     this.connectionAttempt = null;
     this.isConnecting = false;
     this.emitConnectionStatus('disconnected', false);
+  }
+
+  async sendEmergencyJogCancel(reason) {
+    try {
+      await this.writeToConnection(REALTIME_JOG_CANCEL, {
+        rawCommand: REALTIME_JOG_CANCEL,
+        isRealTime: true
+      });
+
+      log('Emergency jog cancel sent:', reason);
+
+      this.emit('command-ack', {
+        id: `emergency-cancel-${Date.now()}`,
+        command: REALTIME_JOG_CANCEL,
+        displayCommand: `\\x85 (Emergency Jog Cancel - ${reason})`,
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        meta: { emergencyStop: true, reason }
+      });
+    } catch (error) {
+      log('Failed to send emergency jog cancel:', error);
+    }
+
+    this.jogWatchdog.clear();
   }
 
   writeToConnection(commandToSend, { rawCommand, isRealTime } = {}) {
@@ -598,23 +732,63 @@ export class CNCController extends EventEmitter {
       throw new Error('CNC controller is not connected');
     }
 
-    // Clean up command - remove semicolon comments
-    const cleanCommand = command.split(';')[0].trim();
-    if (!cleanCommand) {
-      throw new Error('Command is empty');
-    }
-
     const { meta = null, commandId = null, displayCommand = null } = options || {};
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    // Track sourceId for broadcast filtering
-    this.lastCommandSourceId = normalizedMeta?.sourceId || null;
+    // Handle jog heartbeat - extend watchdog timer
+    // Check this BEFORE validating command content, as heartbeats can have empty commands
+    const isJogHeartbeat = normalizedMeta?.jogHeartbeat === true;
+    if (isJogHeartbeat && this.jogWatchdog.isActive()) {
+      this.jogWatchdog.extend();
+      // Don't actually queue heartbeat - it's just to keep watchdog alive
+      return { status: 'heartbeat-ack', id: resolvedCommandId };
+    }
+
+    const cleanCommand = command.trim();
+    if (!cleanCommand) {
+      throw new Error('Command is empty');
+    }
+
+    // Intercept user ? command - return cached status instead of sending to controller
+    // But allow polling (sourceId: 'no-broadcast') to go through
+    if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'no-broadcast') {
+      const display = displayCommand || cleanCommand;
+      const pendingPayload = {
+        id: resolvedCommandId,
+        command: cleanCommand,
+        displayCommand: display,
+        meta: normalizedMeta,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        realTime: true
+      };
+
+      this.emit('command-queued', pendingPayload);
+
+      // Return cached rawData from polling
+      const cachedData = this.rawData || '<Idle>';
+
+      const ackPayload = {
+        ...pendingPayload,
+        status: 'success',
+        data: cachedData,
+        timestamp: new Date().toISOString()
+      };
+      this.emit('command-ack', ackPayload);
+      return ackPayload;
+    }
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
     const isRealTimeCommand = cleanCommand.length === 1 &&
       (realTimeCommands.includes(cleanCommand) || cleanCommand.charCodeAt(0) >= 0x80);
+
+    // Check if this is a jog cancel command (0x85)
+    const isJogCancel = cleanCommand.length === 1 && cleanCommand.charCodeAt(0) === 0x85;
+    if (isJogCancel) {
+      this.jogWatchdog.clear();
+    }
 
     let commandToSend;
     if (isRealTimeCommand) {
@@ -622,7 +796,15 @@ export class CNCController extends EventEmitter {
       commandToSend = cleanCommand;
     } else {
       // Regular G-code commands get uppercase conversion with newline
-      commandToSend = cleanCommand.toUpperCase() + '\n';
+      // Preserve case for GRBL variable syntax (% assignments and [] expressions)
+      const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
+      commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
+    }
+
+    // Detect continuous jog command ($J= with continuous flag in metadata)
+    const isContinuousJog = /^\$J=/i.test(cleanCommand) && normalizedMeta?.continuous === true;
+    if (isContinuousJog) {
+      this.jogWatchdog.start(resolvedCommandId, cleanCommand);
     }
 
     if (isRealTimeCommand) {
@@ -646,7 +828,7 @@ export class CNCController extends EventEmitter {
         });
 
         if (cleanCommand === '\x18') {
-          this.commandQueue.flush('');
+          this.flushQueue('');
           this.emit('stop');
         } else if (cleanCommand === '!') {
           this.emit('pause');
@@ -674,19 +856,100 @@ export class CNCController extends EventEmitter {
       }
     }
 
-    const normalizedCommand = cleanCommand.toUpperCase();
+    // Preserve case for GRBL variable syntax (% assignments and [] expressions)
+    const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
+    const normalizedCommand = hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase();
     const display = displayCommand || normalizedCommand;
 
-    const timeoutMs = normalizedMeta?.jobControl ? 0 : undefined;
+    while (this.commandQueue.size >= MAX_QUEUE_SIZE) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
 
-    return this.commandQueue.enqueue({
+    const commandEntry = {
+      id: resolvedCommandId,
       rawCommand: normalizedCommand,
       commandToWrite: commandToSend,
       meta: normalizedMeta,
       displayCommand: display,
-      commandId: resolvedCommandId,
-      timeoutMs
+      enqueuedAt: Date.now(),
+      timeoutHandle: null,
+      resolve: null,
+      reject: null
+    };
+
+    const promise = new Promise((resolve, reject) => {
+      commandEntry.resolve = resolve;
+      commandEntry.reject = reject;
     });
+
+    this.pendingCommands.set(resolvedCommandId, commandEntry);
+
+    this.emit('command-queued', {
+      id: resolvedCommandId,
+      command: normalizedCommand,
+      displayCommand: display,
+      meta: normalizedMeta,
+      status: 'pending',
+      timestamp: new Date().toISOString()
+    });
+
+    this.commandQueue.add(async () => {
+      if (!this.pendingCommands.has(resolvedCommandId)) {
+        return;
+      }
+
+      this.activeCommand = commandEntry;
+      this.pendingCommands.delete(resolvedCommandId);
+
+      try {
+        await this.writeToConnection(commandToSend, {
+          rawCommand: normalizedCommand,
+          isRealTime: false
+        });
+
+        commandEntry.sentAt = Date.now();
+
+        const timeoutMs = normalizedMeta?.jobControl ? 0 : 0;
+        if (timeoutMs > 0) {
+          commandEntry.timeoutHandle = setTimeout(() => {
+            if (this.activeCommand && this.activeCommand.id === resolvedCommandId) {
+              const error = new Error(`Command timed out after ${timeoutMs}ms`);
+              error.code = 'COMMAND_TIMEOUT';
+              error.commandId = resolvedCommandId;
+              error.command = normalizedCommand;
+              error.meta = normalizedMeta;
+              this.handleCommandError(error);
+            }
+          }, timeoutMs);
+        }
+
+        this.emit('sent', {
+          id: resolvedCommandId,
+          command: normalizedCommand,
+          displayCommand: display,
+          meta: normalizedMeta,
+          status: 'sent',
+          timestamp: new Date().toISOString()
+        });
+
+        await promise;
+      } catch (error) {
+        log('Failed to send CNC command', normalizedCommand, error?.message || error);
+        const normalizedError = error instanceof Error ? error : new Error(String(error));
+        this.emit('send-error', {
+          id: resolvedCommandId,
+          command: normalizedCommand,
+          displayCommand: display,
+          meta: normalizedMeta,
+          status: 'error',
+          error: normalizedError,
+          timestamp: new Date().toISOString()
+        });
+        throw normalizedError;
+      }
+    }).catch(() => {});
+
+    return promise;
   }
 
   getConnectionStatus() {
@@ -709,7 +972,7 @@ export class CNCController extends EventEmitter {
   handleConnectionError(error) {
     this.isConnected = false;
     this.connectionStatus = 'error';
-    this.commandQueue.flush('connection-error', error);
+    this.flushQueue('connection-error', error);
 
     // Special handling for USB port locking issues
     if (error.message && error.message.includes('Resource temporarily unavailable')) {

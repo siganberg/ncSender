@@ -40,14 +40,14 @@
             @change="handleFileLoad"
             style="display: none"
           />
+          <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
+            Clear
+          </button>
           <button @click="fileInput?.click()" class="load-button upload-button" title="Upload G-code" :disabled="isJobRunning">
             <svg width="26" height="26"><use href="#emoji-upload"></use></svg>
           </button>
           <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
             <svg width="24" height="24"><use href="#emoji-folder"></use></svg>
-          </button>
-          <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
-            Clear
           </button>
         </div>
       </div>
@@ -69,26 +69,33 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="toolsUsed.length > 0" class="tools-legend tools-legend--bottom">
+      <div v-if="numberOfToolsToShow > 0" class="tools-legend tools-legend--bottom">
         <div
-          v-for="t in toolsUsed"
+          v-for="t in numberOfToolsToShow"
           :key="t"
           class="tools-legend__item"
-          :class="{ active: currentTool === t }"
-          :title="`Tool T${t}`"
+          :class="{
+            'active': currentTool === t,
+            'used': toolsUsed.includes(t),
+            'disabled': isToolChanging,
+            'long-press-triggered': toolPress[t]?.triggered,
+            'blink-border': toolPress[t]?.blinking
+          }"
+          :title="currentTool === t ? `Tool T${t} (Current)` : `Tool T${t} (Hold to change)`"
+          @mousedown="startToolPress(t, $event)"
+          @mouseup="endToolPress(t)"
+          @mouseleave="cancelToolPress(t)"
+          @touchstart="startToolPress(t, $event)"
+          @touchend="endToolPress(t)"
+          @touchcancel="cancelToolPress(t)"
         >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
           <span class="tools-legend__label">T{{ t }}</span>
           <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
             <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
           </svg>
         </div>
-      </div>
-
-      <!-- Tool indicator - lower right -->
-      <div class="tool-indicator" v-if="currentTool !== undefined">
-        <div class="tool-label">Tool:</div>
-        <div class="tool-value">T{{ currentTool }}</div>
       </div>
 
       <!-- Coolant controls - lower left -->
@@ -133,7 +140,7 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value }">
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value || store.isProbing.value }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -162,8 +169,207 @@
           Stop
         </button>
       </div>
+
+      <!-- Probe button - bottom right -->
+      <button class="probe-button" @click="openProbeDialog" title="Probe">
+        <span class="probe-label">Probe</span>
+        <img src="/assets/probe.svg" alt="Probe" class="probe-icon" />
+      </button>
     </div>
   </section>
+
+  <!-- Probe Dialog -->
+  <Dialog v-if="showProbeDialog" @close="showProbeDialog = false" size="medium-minus">
+    <div class="probe-dialog">
+      <div class="probe-dialog__header">
+        <p class="probe-dialog__instructions">
+          Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (red light should activate). Ensure the probe is positioned correctly for the selected probing axis.
+        </p>
+      </div>
+      <div class="probe-dialog__content">
+        <div class="probe-dialog__columns">
+          <div class="probe-dialog__column probe-dialog__column--controls">
+            <div class="probe-control-row">
+              <div class="probe-control-group">
+                <label class="probe-label">Probe Type</label>
+                <select v-model="probeType" class="probe-select" :disabled="store.isProbing.value">
+                  <option value="3d-touch">3D-Touch Probe</option>
+                  <option value="standard-block">Standard Block</option>
+                </select>
+              </div>
+
+              <div class="probe-control-group">
+                <label class="probe-label">Probing Axis</label>
+                <select v-model="probingAxis" class="probe-select" :disabled="store.isProbing.value">
+                  <option value="Z">Z</option>
+                  <option value="XYZ">XYZ</option>
+                  <option value="XY">XY</option>
+                  <option value="X">X</option>
+                  <option value="Y">Y</option>
+                  <option value="Center - Inner">Center - Inner</option>
+                  <option value="Center - Outer">Center - Outer</option>
+                </select>
+              </div>
+            </div>
+
+            <template v-if="probeType === '3d-touch'">
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">Diameter</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="ballPointDiameter"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      :disabled="store.isProbing.value"
+                      @input="validateBallPointDiameter"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.ballPointDiameter" class="probe-error">{{ errors.ballPointDiameter }}</span>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Z-Plunge</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="zPlunge"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      :disabled="store.isProbing.value"
+                      @input="validateZPlunge"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.zPlunge" class="probe-error">{{ errors.zPlunge }}</span>
+                </div>
+              </div>
+
+              <div class="probe-control-group">
+                <label class="probe-label">Z-Offset</label>
+                <div class="probe-input-with-unit">
+                  <input
+                    v-model.number="zOffset"
+                    type="number"
+                    step="0.01"
+                    class="probe-input"
+                    :disabled="store.isProbing.value"
+                    @input="validateZOffset"
+                  />
+                  <span class="probe-unit">mm</span>
+                </div>
+                <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
+              </div>
+            </template>
+
+            <!-- Center probing fields (Center - Inner and Center - Outer) -->
+            <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">X Dimension</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="xDimension"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      :disabled="store.isProbing.value"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Y Dimension</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="yDimension"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      class="probe-input"
+                      :disabled="store.isProbing.value"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">Rapid Movement</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="rapidMovement"
+                      type="number"
+                      step="100"
+                      min="1000"
+                      max="5000"
+                      class="probe-input"
+                      :disabled="store.isProbing.value"
+                    />
+                    <span class="probe-unit">mm/min</span>
+                  </div>
+                </div>
+
+                <!-- Probe Z First toggle - only for Center - Outer -->
+                <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--align-right">
+                  <label class="probe-label">Probe Z First</label>
+                  <label class="switch">
+                    <input type="checkbox" v-model="probeZFirst" :disabled="store.isProbing.value">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </template>
+
+            <!-- Contextual instruction - shown at bottom of controls -->
+            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on a corner to select where to start probing
+            </div>
+            <div v-else-if="probingAxis === 'X'" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on the left or right side to select where to probe
+            </div>
+            <div v-else-if="probingAxis === 'Y'" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              Click on the front or back side to select where to probe
+            </div>
+            <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
+            </div>
+          </div>
+          <div class="probe-dialog__column probe-dialog__column--viewer">
+            <ProbeVisualizer
+              :probe-type="probeType"
+              :probing-axis="probingAxis"
+              :selected-corner="selectedCorner"
+              :selected-side="selectedSide"
+              :probe-active="probeActive"
+              @corner-selected="selectedCorner = $event"
+              @side-selected="selectedSide = $event"
+            />
+
+            <!-- Jog Controls -->
+            <JogControls
+              :current-step="probeJogStep"
+              :step-options="[0.1, 1, 10]"
+              :disabled="store.isProbing.value"
+              @update:step="probeJogStep = $event"
+              @center-click="closeProbeDialog"
+            />
+          </div>
+        </div>
+      </div>
+      <div class="probe-dialog__footer">
+        <button @click="dismissProbeDialog" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="store.isProbing.value">Close</button>
+        <button @click="startProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="store.isProbing.value">Start Probe</button>
+      </div>
+    </div>
+  </Dialog>
 
   <!-- Delete Confirmation Dialog -->
   <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
@@ -226,11 +432,15 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
+import { api as mainApi } from '../../lib/api.js';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
+import ProbeVisualizer from '../probe/ProbeVisualizer.vue';
+import JogControls from '../jog/JogControls.vue';
+// Probing is now handled server-side
 
 const store = useToolpathStore();
 
@@ -330,6 +540,49 @@ const showFileManager = ref(false);
 const uploadedFiles = ref<Array<{ name: string; size: number; uploadedAt: string }>>([]);
 const showDeleteConfirm = ref(false);
 const fileToDelete = ref<string | null>(null);
+const showProbeDialog = ref(false);
+
+// Probe dialog state
+const probeType = ref<'3d-touch' | 'standard-block'>('3d-touch');
+const ballPointDiameter = ref(2);
+const zPlunge = ref(3);
+const zOffset = ref(-0.1);
+const probingAxis = ref('Z');
+const probeJogStep = ref(1);
+const selectedCorner = ref<string | null>(null);
+const selectedSide = ref<string | null>(null); // For X mode (not persisted)
+const probeActive = ref(false); // Probe pin active state from CNC
+const probeEverActivated = ref(false); // Track if probe was ever activated (doesn't reset to false)
+// Probing state is now tracked in serverState.machineState.isProbing
+
+// Computed property to check if probe button should be enabled
+const isProbeReady = computed(() => {
+  if (!probeEverActivated.value) return false;
+
+  // For X and Y modes, also require a side to be selected
+  if (probingAxis.value === 'X' || probingAxis.value === 'Y') {
+    return selectedSide.value !== null && selectedSide.value !== '';
+  }
+
+  // For XY and XYZ modes, require a corner to be selected
+  if (probingAxis.value === 'XY' || probingAxis.value === 'XYZ') {
+    return selectedCorner.value !== null && selectedCorner.value !== '';
+  }
+
+  // For other modes (Z, Center-Inner, Center-Outer), just need probe active
+  return true;
+});
+
+// Center probing settings
+const xDimension = ref(100);
+const yDimension = ref(100);
+const rapidMovement = ref(2000);
+const probeZFirst = ref(false); // For Center - Outer only
+const errors = ref({
+  ballPointDiameter: '',
+  zPlunge: '',
+  zOffset: ''
+});
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 const outOfBoundsAxes = ref<string[]>([]);
@@ -362,6 +615,12 @@ let isInitialLoad = true; // Flag to prevent watchers from firing during initial
 
 // Tools detected from program (lines containing M6 with Tn)
 const toolsUsed = ref<number[]>([]);
+
+// Number of tools to display (from settings)
+const numberOfToolsToShow = ref<number>(4);
+
+// Tool press state for long-press interaction
+const toolPress = ref<Record<number, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});
 
 // Three.js objects
 let scene: THREE.Scene;
@@ -845,12 +1104,22 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
 
     // Check if we have a last executed line (from server state on page load)
     // and mark all lines up to that point as completed
-    if (lastExecutedLine.value > 0) {
+    // Check both lastExecutedLine (reactive state) and props.jobLoaded (server state on page-reload)
+    const jobStatus = props.jobLoaded?.status;
+    const propsCurrentLine = props.jobLoaded?.currentLine ?? 0;
+    const lineToRestore = Math.max(lastExecutedLine.value,
+      (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') ? propsCurrentLine : 0
+    );
+
+    if (lineToRestore > 0) {
       const completedLines = [];
-      for (let i = 1; i <= lastExecutedLine.value; i++) {
+      for (let i = 1; i <= lineToRestore; i++) {
         completedLines.push(i);
       }
       gcodeVisualizer.markLinesCompleted(completedLines);
+      // Also update markedLines to keep track
+      completedLines.forEach(ln => markedLines.add(ln));
+      console.log(`[GCodeVisualizer] Restored ${lineToRestore} completed lines in visualizer`);
     }
 
     // Update axis labels based on G-code bounds
@@ -910,6 +1179,108 @@ const toggleSpindle = () => {
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
   }
+};
+
+// Probe functions
+const openProbeDialog = async () => {
+  // Reset probe activation state when opening dialog
+  probeEverActivated.value = false;
+
+  // Reload settings from server to get latest values
+  try {
+    const settings = await api.getSettings();
+    if (settings) {
+      if (settings.probingAxis) {
+        probingAxis.value = settings.probingAxis;
+      }
+      if (typeof settings.probeZOffset === 'number') {
+        zOffset.value = settings.probeZOffset;
+      }
+      if (typeof settings.probeXDimension === 'number') {
+        xDimension.value = settings.probeXDimension;
+      }
+      if (typeof settings.probeYDimension === 'number') {
+        yDimension.value = settings.probeYDimension;
+      }
+      if (typeof settings.probeRapidMovement === 'number') {
+        rapidMovement.value = settings.probeRapidMovement;
+      }
+      if (typeof settings.probeZFirst === 'boolean') {
+        probeZFirst.value = settings.probeZFirst;
+      }
+    }
+  } catch (error) {
+    console.error('[GCodeVisualizer] Failed to reload settings', JSON.stringify({ error: error.message }));
+  }
+
+  showProbeDialog.value = true;
+};
+
+const startProbe = async () => {
+  try {
+
+    const options = {
+      probingAxis: probingAxis.value,
+      selectedCorner: selectedCorner.value,
+      selectedSide: selectedSide.value,
+      xDimension: xDimension.value,
+      yDimension: yDimension.value,
+      rapidMovement: rapidMovement.value,
+      probeZFirst: probeZFirst.value,
+      toolDiameter: ballPointDiameter.value || 6,
+      zOffset: zOffset.value
+    };
+
+    console.log('[Probe] Starting probe operation:', options);
+
+    // Call server API to start probing
+    const response = await fetch('/api/probe/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(options),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to start probe');
+    }
+
+    console.log('[Probe] Probe operation started:', result);
+  } catch (error) {
+    console.error('[Probe] Error starting probe:', error);
+  }
+};
+
+
+const closeProbeDialog = async () => {
+  if (store.isProbing.value) {
+    try {
+      console.log('[Probe] Closing dialog - stopping probe job');
+
+      // Call server API to stop probing
+      const response = await fetch('/api/probe/stop', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log('[Probe] Probe stopped:', result);
+      } else {
+        console.error('[Probe] Error stopping probe:', result.error);
+      }
+    } catch (error) {
+      console.error('[Probe] Error stopping probe:', error);
+    }
+  }
+  showProbeDialog.value = false;
+};
+
+const dismissProbeDialog = () => {
+  showProbeDialog.value = false;
 };
 
 // File manager helpers
@@ -1498,6 +1869,114 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
   }
 });
 
+// Watch for probe settings changes
+watch(() => probeType.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeType: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probe type setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => probingAxis.value, async (value) => {
+  // Reset side selection when switching probing axis
+  selectedSide.value = null;
+
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probingAxis: value }, { broadcast: false });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probing axis setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => selectedCorner.value, async (value) => {
+  if (!isInitialLoad) {
+    // Only save corner selection for XYZ/XY modes (not for X/Y modes which use sides)
+    if (value && !['Left', 'Right'].includes(value)) {
+      try {
+        await updateSettings({ probeSelectedCorner: value });
+      } catch (error) {
+        console.error('[GCodeVisualizer] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
+      }
+    }
+    // Don't save or clear when selecting sides (Left/Right)
+  }
+});
+
+watch(() => ballPointDiameter.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeBallPointDiameter: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save ball point diameter setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => zPlunge.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZPlunge: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z plunge setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => zOffset.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZOffset: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z offset setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => xDimension.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeXDimension: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => yDimension.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeYDimension: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => rapidMovement.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeRapidMovement: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+watch(() => probeZFirst.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probeZFirst: value });
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save probeZFirst setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
   // Don't save during initial load
@@ -1625,15 +2104,166 @@ function extractToolsFromGCode(content: string): number[] {
   return order;
 }
 
+// Probe validation functions
+const validateBallPointDiameter = () => {
+  if (ballPointDiameter.value <= 0) {
+    errors.value.ballPointDiameter = 'Must be a positive number';
+  } else {
+    errors.value.ballPointDiameter = '';
+  }
+};
+
+const validateZPlunge = () => {
+  if (zPlunge.value <= 0) {
+    errors.value.zPlunge = 'Must be a positive number';
+  } else {
+    errors.value.zPlunge = '';
+  }
+};
+
+const validateZOffset = () => {
+  if (isNaN(zOffset.value)) {
+    errors.value.zOffset = 'Must be a valid number';
+  } else {
+    errors.value.zOffset = '';
+  }
+};
+
+// Tool press functionality - long press to change tool
+const LONG_PRESS_MS_TOOL = 1500;
+const DELAY_BEFORE_VISUAL_MS = 150;
+
+const startToolPress = (toolNumber: number, _evt?: Event) => {
+  if (_evt) _evt.preventDefault();
+  if (props.isToolChanging || props.currentTool === toolNumber) return;
+
+  if (!toolPress.value[toolNumber]) {
+    toolPress.value[toolNumber] = { start: 0, progress: 0, raf: undefined, active: false, triggered: false, blinking: false };
+  }
+
+  const state = toolPress.value[toolNumber];
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_TOOL - DELAY_BEFORE_VISUAL_MS)) * 100);
+      state.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
+      state.triggered = true;
+      // Send M6 T{toolNumber} command
+      api.sendCommandViaWebSocket({ command: `M6 T${toolNumber}`, displayCommand: `M6 T${toolNumber}` });
+      state.progress = 0;
+      state.active = false;
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endToolPress = (toolNumber: number) => {
+  const state = toolPress.value[toolNumber];
+  if (!state) return;
+
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  // If not triggered (incomplete press), show blink feedback
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => {
+      state.blinking = false;
+    }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  // Reset triggered after delay
+  setTimeout(() => {
+    state.triggered = false;
+  }, 100);
+};
+
+const cancelToolPress = (toolNumber: number) => {
+  const state = toolPress.value[toolNumber];
+  if (!state) return;
+
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+};
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
   if (settings) {
+    if (typeof settings.numberOfTools === 'number') {
+      numberOfToolsToShow.value = settings.numberOfTools;
+    }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
     }
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
+    }
+    // Load probe settings
+    if (settings.probeType) {
+      probeType.value = settings.probeType;
+    }
+    if (settings.probingAxis) {
+      probingAxis.value = settings.probingAxis;
+    }
+    if (settings.probeSelectedCorner) {
+      // Migrate old corner names to new terminology
+      const cornerMigrationMap: Record<string, string> = {
+        'FrontRight': 'BottomRight',
+        'FrontLeft': 'BottomLeft',
+        'BackRight': 'TopRight',
+        'BackLeft': 'TopLeft'
+      };
+      selectedCorner.value = cornerMigrationMap[settings.probeSelectedCorner] || settings.probeSelectedCorner;
+    }
+    if (typeof settings.probeBallPointDiameter === 'number') {
+      ballPointDiameter.value = settings.probeBallPointDiameter;
+    }
+    if (typeof settings.probeZPlunge === 'number') {
+      zPlunge.value = settings.probeZPlunge;
+    }
+    if (typeof settings.probeZOffset === 'number') {
+      zOffset.value = settings.probeZOffset;
+    }
+    if (typeof settings.probeXDimension === 'number') {
+      xDimension.value = settings.probeXDimension;
+    }
+    if (typeof settings.probeYDimension === 'number') {
+      yDimension.value = settings.probeYDimension;
+    }
+    if (typeof settings.probeRapidMovement === 'number') {
+      rapidMovement.value = settings.probeRapidMovement;
+    }
+    if (typeof settings.probeZFirst === 'boolean') {
+      probeZFirst.value = settings.probeZFirst;
     }
   }
 
@@ -1645,6 +2275,18 @@ onMounted(async () => {
 
   initThreeJS();
   window.addEventListener('resize', handleResize);
+
+  // Listen for settings changes (partial/delta updates)
+  window.addEventListener('settings-changed', (event: any) => {
+    const changedSettings = event.detail;
+
+    // Apply only the changed settings
+    if ('numberOfTools' in changedSettings) {
+      numberOfToolsToShow.value = changedSettings.numberOfTools;
+    }
+    // Future settings can be added here
+    // if ('someOtherSetting' in changedSettings) { ... }
+  });
 
   // Watch for container size changes
   if (canvas.value) {
@@ -1660,9 +2302,36 @@ onMounted(async () => {
   api.onGCodeUpdated(handleGCodeUpdate);
 
   // Listen for server state updates to track job progress
-  let prevJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
-  api.onServerStateUpdated((state) => {
-    const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | undefined;
+  let prevJobStatus: 'running' | 'paused' | 'stopped' | 'completed' | undefined = undefined;
+  let hasRestoredInitialState = false;
+  api.onServerStateUpdated((state: any) => {
+    const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined;
+
+    // Update probe active state
+    if (state.machineState?.probeActive !== undefined) {
+      probeActive.value = state.machineState.probeActive;
+      // Once probe is activated, keep button enabled
+      if (state.machineState.probeActive) {
+        probeEverActivated.value = true;
+      }
+    }
+
+    // Restore lastExecutedLine from server state on initial load (for page reloads)
+    if (!hasRestoredInitialState && state.jobLoaded && gcodeVisualizer) {
+      const currentLine = state.jobLoaded.currentLine;
+      if (status && (status === 'stopped' || status === 'paused' || status === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+        lastExecutedLine.value = currentLine;
+        console.log(`[GCodeVisualizer] Restored lastExecutedLine from server: ${currentLine}`);
+        // Re-apply completed segments up to the restored line
+        for (let i = 1; i <= currentLine; i++) {
+          if (!markedLines.has(i)) {
+            gcodeVisualizer.markLineCompleted(i);
+            markedLines.add(i);
+          }
+        }
+      }
+      hasRestoredInitialState = true;
+    }
 
     // If a run is starting, reset completed markers so we start fresh
     if (status === 'running' && prevJobStatus !== 'running') {
@@ -1679,8 +2348,8 @@ onMounted(async () => {
       }
     }
 
-    // Reset visualizer segments when job stops/completes or when program is cleared
-    if (!state.jobLoaded || status === 'stopped') {
+    // Reset visualizer segments when file is unloaded
+    if (!state.jobLoaded) {
       lastExecutedLine.value = 0;
       if (gcodeVisualizer) {
         gcodeVisualizer.resetCompletedLines();
@@ -1688,9 +2357,9 @@ onMounted(async () => {
       markedLines.clear();
     }
 
-    // If the user closed the job progress panel, also reset completed segments
-    const sp = (state.jobLoaded as any)?.showProgress;
-    if (sp === false) {
+    // If the user closed the job progress panel (status changed to null), also reset completed segments
+    const statusValue = state.jobLoaded?.status;
+    if (statusValue === null) {
       lastExecutedLine.value = 0;
       if (gcodeVisualizer) {
         gcodeVisualizer.resetCompletedLines();
@@ -1701,6 +2370,22 @@ onMounted(async () => {
     prevJobStatus = status;
   });
 
+  // Listen to cnc-command-result events to mark completed lines
+  // Set up after visualizer is initialized to ensure gcodeVisualizer exists
+  api.on('cnc-command-result', (result: any) => {
+    if (!result || !gcodeVisualizer) return;
+
+    const lineNumber = result?.meta?.lineNumber;
+
+    if (result?.sourceId === 'gcode-runner' &&
+        lineNumber &&
+        result?.status === 'success' &&
+        !markedLines.has(lineNumber)) {
+      gcodeVisualizer.markLineCompleted(lineNumber);
+      markedLines.add(lineNumber);
+    }
+  });
+
   // Watch for jobLoaded changes to handle clearing
   watch(() => props.jobLoaded?.filename, (newValue, oldValue) => {
     if (oldValue && !newValue) {
@@ -1708,9 +2393,6 @@ onMounted(async () => {
       handleGCodeClear();
     }
   });
-
-  // Fetch uploaded files on mount
-  fetchUploadedFiles();
 
   // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
@@ -1749,27 +2431,6 @@ onUnmounted(() => {
 
 // Track which line numbers have been marked as completed
 const markedLines = new Set<number>();
-
-// Watch console lines from store to mark completed lines
-// This replaces the api.on('cnc-command-result') listener
-watch(() => store.consoleLines.value, (lines) => {
-  if (!lines || lines.length === 0 || !gcodeVisualizer) return;
-
-  // Check all lines for completed commands with line numbers
-  // This handles rapid updates during job execution
-  lines.forEach(line => {
-    const lineNumber = line?.meta?.lineNumber;
-
-    if (line?.sourceId === 'gcode-runner' &&
-        lineNumber &&
-        line?.status === 'success' &&
-        line?.type === 'command' &&
-        !markedLines.has(lineNumber)) {
-      gcodeVisualizer.markLineCompleted(lineNumber);
-      markedLines.add(lineNumber);
-    }
-  });
-}, { deep: true });
 
 // Watch for coolant state changes from machine status
 watch(() => store.status.floodCoolant, (newValue) => {
@@ -1835,49 +2496,120 @@ watch(() => store.status.mistCoolant, (newValue) => {
   margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .tools-legend--bottom {
   position: absolute;
   right: 16px;
-  bottom: 84px; /* slight nudge down from previous to reduce gap */
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none; /* display-only to avoid blocking controls */
 }
 
 .tools-legend__item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: var(--color-surface-muted);
-  padding: 4px 8px;
+  padding: 6px 12px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   box-shadow: inset 0 0 0 1px var(--color-border);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.tools-legend__item.used {
+  background: rgba(26, 188, 156, 0.1);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
 .tools-legend__item.active {
-  background: rgba(26, 188, 156, 0.2); /* accent tint */
-  box-shadow: inset 0 0 0 2px var(--color-accent);
+  opacity: 1;
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+
+/* When tool is both active AND used by program, add inner border to show it's in the program */
+.tools-legend__item.active.used {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+
+.tools-legend__item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tools-legend__item .long-press-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+  transition: width 0.05s linear;
+}
+
+.tools-legend__item:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+}
+
+.tools-legend__item.long-press-triggered {
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
+  transform: none !important;
+  box-shadow: inset 0 0 0 1px var(--color-border) !important;
+}
+
+@keyframes blink-border-tool {
+  0%, 100% { box-shadow: inset 0 0 0 2px #ff6b6b; }
+  50% { box-shadow: inset 0 0 0 1px var(--color-border); }
+}
+
+.tools-legend__item.blink-border {
+  animation: blink-border-tool 0.4s ease-in-out;
 }
 
 .tools-legend__label {
-  min-width: 30px;
+  min-width: 32px;
   text-align: right;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .tools-legend__icon {
   display: block;
+  width: 40px;
+  height: 16px;
 }
 
 .tools-legend__icon .bit-body {
-  fill: rgba(255, 255, 255, 0.25);
+  fill: currentColor;
+  opacity: 0.3;
 }
 
 .tools-legend__icon .bit-shank {
-  fill: rgba(255, 255, 255, 0.5);
+  fill: currentColor;
+  opacity: 0.6;
+}
+
+.tools-legend__item.active .bit-body {
+  opacity: 0.5;
+}
+
+.tools-legend__item.active .bit-shank {
+  opacity: 0.8;
 }
 
 .floating-toolbar.floating-toolbar--bottom {
@@ -1973,15 +2705,15 @@ h2 {
 .spindle-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 8px;
+  padding: 6px 10px;
   background: transparent;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .spindle-toggle:hover {
@@ -1991,8 +2723,9 @@ h2 {
 .switch {
   position: relative;
   display: inline-block;
-  width: 32px;
-  height: 16px;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
 .switch input {
@@ -2010,17 +2743,17 @@ h2 {
   bottom: 0;
   background-color: #ccc;
   transition: 0.3s;
-  border-radius: 20px;
+  border-radius: 22px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 12px;
-  width: 12px;
-  left: 2px;
-  bottom: 2px;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
   background-color: white;
   transition: 0.3s;
   border-radius: 50%;
@@ -2031,7 +2764,13 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-  transform: translateX(16px);
+  transform: translateX(18px);
+}
+
+/* Disabled state for switch */
+.switch input:disabled + .slider {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .viewport__canvas {
@@ -2064,11 +2803,11 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   background: transparent;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-small);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--color-text-primary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2143,8 +2882,8 @@ input:checked + .slider:before {
 }
 
 .dot {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   display: inline-block;
   transition: all 0.15s ease;
@@ -2515,6 +3254,302 @@ body.theme-light .dot--rapid {
   background: var(--color-surface);
   border-color: var(--color-accent);
   transform: translateY(-1px);
+}
+
+/* Probe button - bottom right */
+.probe-button {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: var(--color-surface-muted);
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.probe-button:hover {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.probe-button:active {
+  transform: translateY(0);
+}
+
+.probe-icon {
+  width: 48px;
+  height: 48px;
+  filter: invert(64%) sepia(48%) saturate(527%) hue-rotate(115deg) brightness(93%) contrast(91%);
+}
+
+.probe-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.probe-button:hover .probe-icon {
+  filter: brightness(0) invert(1);
+}
+
+.probe-button:hover .probe-label {
+  color: white;
+}
+
+/* Probe dialog */
+.probe-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: 700px !important;
+  height: 100%;
+}
+
+.probe-dialog__header {
+  padding: 30px 20px 30px 20px;
+}
+
+.probe-dialog__instructions {
+  margin: 0;
+  font-size: 0.95rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.probe-dialog__content {
+  padding: 10px 30px 10px 30px;
+  color: var(--color-text-primary);
+  height: 100%;
+}
+
+.probe-dialog__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-height: 400px;
+}
+
+.probe-dialog__column {
+  display: flex;
+  flex-direction: column;
+}
+
+.probe-dialog__column h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__column--controls {
+  padding-right: 20px;
+}
+
+.probe-dialog__column--viewer {
+  padding-left: 20px;
+  gap: 20px;
+}
+
+.probe-instructions {
+  margin: 0 0 20px 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.probe-warning {
+  margin: 0 0 16px 0;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: 4px;
+}
+
+.probe-control-group--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.probe-control-group--toggle-left {
+  justify-content: flex-start;
+}
+
+.probe-control-group--toggle .probe-label {
+  margin-bottom: 0;
+}
+
+.probe-contextual-instruction {
+  margin-top: 16px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-style: italic;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.probe-contextual-instruction--warning {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border-color: rgba(255, 152, 0, 0.3);
+}
+
+.probe-control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.probe-control-row--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.probe-control-group {
+  margin-bottom: 12px;
+}
+
+.probe-control-group--align-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.probe-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.probe-input,
+.probe-select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.2s ease;
+  text-align: right;
+}
+
+.probe-input:focus,
+.probe-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.probe-input[type="number"] {
+  -moz-appearance: textfield;
+  text-align: right;
+}
+
+.probe-input::-webkit-outer-spin-button,
+.probe-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.probe-input-with-unit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.probe-unit {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.probe-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #ff6b6b;
+}
+
+.probe-dialog__footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 10px 20px 10px;
+}
+
+.probe-dialog__btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--color-border);
+}
+
+.probe-dialog__btn--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.probe-dialog__btn--secondary:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.probe-dialog__btn--secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.probe-dialog__btn--primary {
+  background: var(--gradient-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+.probe-dialog__btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+}
+
+.probe-dialog__btn--primary:disabled {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.probe-dialog__btn--primary:disabled:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 /* Confirmation Dialog */

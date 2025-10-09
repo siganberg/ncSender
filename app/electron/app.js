@@ -8,7 +8,7 @@ import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import { CNCController } from './features/cnc/controller.js';
-import { JogSessionManager } from './features/cnc/jog-session-manager.js';
+import { JogSessionManager } from './features/cnc/jog-manager.js';
 import { jobManager } from './features/gcode/job-manager.js';
 import { createCNCRoutes } from './features/cnc/routes.js';
 import { createCommandHistoryRoutes } from './features/command-history/routes.js';
@@ -19,6 +19,7 @@ import { createSystemRoutes } from './features/system/routes.js';
 import { createSettingsRoutes } from './features/settings/routes.js';
 import { createAlarmRoutes, fetchAndSaveAlarmCodes } from './features/alarms/routes.js';
 import { createFirmwareRoutes, initializeFirmwareOnConnection } from './features/firmware/routes.js';
+import { createProbeRoutes } from './features/probe/routes.js';
 import { getSetting, saveSettings, removeSetting, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { MessageStateTracker } from './core/state-diff.js';
 
@@ -83,7 +84,8 @@ export async function createApp(options = {}) {
   const serverState = {
     machineState: {
       connected: false,
-      isToolChanging: false
+      isToolChanging: false,
+      isProbing: false
     },
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
@@ -138,7 +140,7 @@ export async function createApp(options = {}) {
         filename: lastLoadedFile,
         currentLine: 0,
         totalLines: content.split('\n').length,
-        status: 'stopped'
+        status: null
       };
       log('Restored last loaded file from settings:', lastLoadedFile);
     } catch (error) {
@@ -204,18 +206,18 @@ export async function createApp(options = {}) {
       };
     }
 
-    const trimmed = rawCommand.split(';')[0].trim();
+    const trimmed = rawCommand.trim();
 
     const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(trimmed);
     if (hexMatch) {
       const charCode = parseInt(hexMatch[1], 16);
       return {
         command: String.fromCharCode(charCode),
-        displayCommand: rawCommand.trim()
+        displayCommand: trimmed
       };
     }
 
-    return { command: trimmed, displayCommand: rawCommand.trim() };
+    return { command: trimmed, displayCommand: trimmed };
   };
 
   async function handleWebSocketCommand(ws, payload) {
@@ -340,7 +342,16 @@ export async function createApp(options = {}) {
         case 'job:progress:close': {
           try {
             if (serverState.jobLoaded) {
-              serverState.jobLoaded.showProgress = false;
+              // Reset to a freshly loaded state - preserve file info but clear all job run data
+              serverState.jobLoaded.status = null;
+              serverState.jobLoaded.currentLine = 0;
+              serverState.jobLoaded.jobStartTime = null;
+              serverState.jobLoaded.jobEndTime = null;
+              serverState.jobLoaded.jobPauseAt = null;
+              serverState.jobLoaded.jobPausedTotalSec = 0;
+              serverState.jobLoaded.remainingSec = null;
+              serverState.jobLoaded.progressPercent = null;
+              serverState.jobLoaded.runtimeSec = null;
               broadcast('server-state-updated', serverState);
             }
           } catch (err) {
@@ -386,7 +397,11 @@ export async function createApp(options = {}) {
     if (jobStatus) {
       const prev = serverState.jobLoaded || {};
       // Merge to preserve extended fields (e.g., runtimeSec, remainingSec, showProgress)
-      serverState.jobLoaded = { ...prev, ...jobStatus };
+      // Preserve totalLines from previous state if new value is 0 or missing
+      const totalLines = (jobStatus.totalLines && jobStatus.totalLines > 0)
+        ? jobStatus.totalLines
+        : prev.totalLines;
+      serverState.jobLoaded = { ...prev, ...jobStatus, totalLines };
     }
   };
 
@@ -907,17 +922,19 @@ export async function createApp(options = {}) {
   // Handle stop command to force reset any active job and update jobLoaded status
   cncController.on('stop', () => {
     log('Stop command detected, resetting job manager');
+    const hadActiveJob = jobManager.hasActiveJob();
     jobManager.forceReset();
 
-    // Update jobLoaded status to stopped
-    if (serverState.jobLoaded) {
+    // Only update status to 'stopped' if there was an active job
+    // Otherwise, keep the current status (null if just loaded, etc.)
+    if (serverState.jobLoaded && hadActiveJob) {
       serverState.jobLoaded.status = 'stopped';
       // Preserve currentLine so UI can reflect partial progress
     }
 
-    // Mark end time and finalize pause accounting
-    const nowIso = new Date().toISOString();
-    if (serverState.jobLoaded) {
+    // Mark end time and finalize pause accounting only if there was an active job
+    if (serverState.jobLoaded && hadActiveJob) {
+      const nowIso = new Date().toISOString();
       if (serverState.jobLoaded.jobPauseAt) {
         const pauseMs = Date.parse(nowIso) - Date.parse(serverState.jobLoaded.jobPauseAt);
         if (Number.isFinite(pauseMs) && pauseMs > 0) {
@@ -927,7 +944,6 @@ export async function createApp(options = {}) {
         serverState.jobLoaded.jobPauseAt = null;
       }
       serverState.jobLoaded.jobEndTime = nowIso;
-      serverState.jobLoaded.showProgress = true; // keep visible until explicit close
     }
 
     computeJobProgressFields();
@@ -956,6 +972,12 @@ export async function createApp(options = {}) {
   cncController.on('resume', () => {
     log('Resume command detected');
 
+    // Only update job status if there's an active job running
+    if (!jobManager.hasActiveJob()) {
+      log('Resume command ignored - no active job');
+      return;
+    }
+
     // Update jobLoaded status to running
     if (serverState.jobLoaded) {
       serverState.jobLoaded.status = 'running';
@@ -978,11 +1000,32 @@ export async function createApp(options = {}) {
   });
 
   // Set up job completion callback to reset job status and broadcast state update
-  jobManager.setJobCompleteCallback((reason) => {
+  jobManager.setJobCompleteCallback((reason, finalJobStatus) => {
     log('Job lifecycle ended:', reason);
-    // Update status for natural completion only
-    if (serverState.jobLoaded && reason === 'completed') {
-      serverState.jobLoaded.status = 'completed';
+
+    // Extract final state from the captured job status
+    const finalLine = finalJobStatus?.currentLine;
+
+    // Update status for completion - sets status to 'completed' or 'stopped'
+    if (serverState.jobLoaded) {
+      // Use totalLines from serverState since job processor doesn't track it
+      const totalLines = serverState.jobLoaded.totalLines;
+
+      if (reason === 'completed') {
+        serverState.jobLoaded.status = 'completed';
+        // Ensure currentLine is set to totalLines on completion
+        if (typeof totalLines === 'number' && totalLines > 0) {
+          serverState.jobLoaded.currentLine = totalLines;
+          log(`Job completed: setting currentLine to ${totalLines} (total lines)`);
+        }
+      } else if (reason === 'stopped') {
+        serverState.jobLoaded.status = 'stopped';
+        // Preserve the last executed line number
+        if (typeof finalLine === 'number' && finalLine > 0) {
+          serverState.jobLoaded.currentLine = finalLine;
+          log(`Job stopped: preserving currentLine at ${finalLine}`);
+        }
+      }
     }
     // Mark end time and finalize pause accounting
     const nowIso = new Date().toISOString();
@@ -996,7 +1039,6 @@ export async function createApp(options = {}) {
         serverState.jobLoaded.jobPauseAt = null;
       }
       serverState.jobLoaded.jobEndTime = nowIso;
-      serverState.jobLoaded.showProgress = true; // keep visible until explicit close
     }
     computeJobProgressFields();
     broadcast('server-state-updated', serverState);
@@ -1010,7 +1052,7 @@ export async function createApp(options = {}) {
 
   // Mount feature-based route modules
   app.use('/api', createSystemRoutes(serverState, cncController));
-  app.use('/api', createSettingsRoutes(serverState, cncController));
+  app.use('/api', createSettingsRoutes(serverState, cncController, broadcast));
   app.use('/api', createAlarmRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, MAX_HISTORY_SIZE, broadcast));
@@ -1018,6 +1060,7 @@ export async function createApp(options = {}) {
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
+  app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

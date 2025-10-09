@@ -11,6 +11,7 @@ class NCClient {
     this.discoveredPort = null;
     this.lastServerState = null;
     this.messageStates = new Map(); // Track state for each message type
+    this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
   }
 
   describeCommand(command) {
@@ -136,7 +137,7 @@ class NCClient {
     }
   }
 
-  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId, timeout } = {}) {
+  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
     if (typeof command !== 'string' || command.trim() === '') {
       throw new Error('sendCommandViaWebSocket requires a command');
     }
@@ -153,47 +154,10 @@ class NCClient {
       completesCommandId
     };
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
-
-      const cleanup = () => {
-        settled = true;
-        if (resultTimer) clearTimeout(resultTimer);
-        if (offResult) offResult();
-      };
-
-      const rejectWith = (error) => {
-        if (!settled) {
-          cleanup();
-          reject(error instanceof Error ? error : new Error(error?.message || 'Command failed'));
-        }
-      };
-
-      // Timeout disabled for now - some commands can take a long time
-      // const resultTimeoutMs = timeout !== undefined ? timeout : Math.max(this.jogAckTimeoutMs * 4, 6000);
-      // const resultTimer = resultTimeoutMs > 0 ? setTimeout(() => {
-      //   rejectWith(new Error('Timed out waiting for command result'));
-      // }, resultTimeoutMs) : null;
-      const resultTimer = null;
-
-      const offResult = this.on('cnc-command-result', (result) => {
-        if (!result || result.id !== normalizedCommandId || settled) {
-          return;
-        }
-
-        cleanup();
-        if (result.status === 'success') {
-          resolve(result);
-        } else {
-          const errorMessage = result.error?.message || 'Command failed';
-          reject(new Error(errorMessage));
-        }
-      });
-
-      this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true }).catch((error) => {
-        rejectWith(error instanceof Error ? error : new Error('Failed to send command via WebSocket'));
-      });
-    });
+    // Fire-and-forget: send command via WebSocket
+    // Results are broadcast via cnc-command-result and cnc-error events
+    // Only reject if WebSocket fails to send
+    return this.sendWebSocketMessage('cnc:command', payload, { skipReadyCheck: true });
   }
 
   async startJogSession({ jogId, command, displayCommand, axis, direction, feedRate }) {
@@ -238,6 +202,8 @@ class NCClient {
           return;
         }
         cleanup();
+        // Track active jog session for dead-man switch
+        this.activeJogSessions.add(jogId);
         resolve(data);
       });
 
@@ -288,6 +254,8 @@ class NCClient {
           return;
         }
         cleanup();
+        // Remove from active jog sessions
+        this.activeJogSessions.delete(jogId);
         resolve(data);
       });
 
@@ -524,6 +492,14 @@ class NCClient {
           this.lastServerState = this.mergeState(this.lastServerState, message.data);
           // Emit the full merged state
           this.emit(message.type, this.lastServerState);
+        } else if (message && message.type === 'settings-changed' && message.data) {
+          // Broadcast settings-changed event globally for all listeners (partial/delta update)
+          try {
+            window.dispatchEvent(new CustomEvent('settings-changed', {
+              detail: message.data
+            }));
+          } catch {}
+          this.emit(message.type, message.data);
         } else {
           this.emit(message.type, message.data);
         }
@@ -534,6 +510,26 @@ class NCClient {
 
     this.ws.onclose = (event) => {
       console.log('WebSocket disconnected', 'Code:', event.code, 'Reason:', event.reason);
+
+      // Dead-man switch: Send emergency jog cancel if any jog sessions are active
+      if (this.activeJogSessions.size > 0) {
+        console.warn('WebSocket disconnected with active jog sessions - sending emergency jog cancel');
+        // Send jog cancel via HTTP as fallback (WebSocket is closed)
+        fetch(`${this.baseUrl}/api/cnc/send-command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: REALTIME_JOG_CANCEL,
+            displayCommand: '\\x85 (Emergency Jog Cancel - WebSocket Disconnected)',
+            meta: { emergencyStop: true }
+          })
+        }).catch((error) => {
+          console.error('Failed to send emergency jog cancel:', error);
+        });
+        // Clear all active jog sessions
+        this.activeJogSessions.clear();
+      }
+
       this.emit('disconnected');
       this.attemptReconnect();
     };
@@ -781,8 +777,10 @@ class NCClient {
     return response.json();
   }
 
-  async updateSettings(updates) {
-    const response = await fetch(`${this.baseUrl}/api/settings`, {
+  async updateSettings(updates, options = {}) {
+    const { broadcast = true } = options;
+    const url = `${this.baseUrl}/api/settings${broadcast ? '' : '?broadcast=false'}`;
+    const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)

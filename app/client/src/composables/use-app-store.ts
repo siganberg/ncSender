@@ -40,12 +40,12 @@ const serverState = reactive({
     filename: string;
     currentLine: number;
     totalLines: number;
-    status: 'running' | 'paused' | 'stopped' | 'completed';
+    status: 'running' | 'paused' | 'stopped' | 'completed' | null;
+    sourceId?: string;
     jobStartTime?: string | null;
     jobEndTime?: string | null;
     jobPauseAt?: string | null;
     jobPausedTotalSec?: number;
-    showProgress?: boolean;
     remainingSec?: number | null;
     progressPercent?: number | null;
     runtimeSec?: number | null;
@@ -99,6 +99,7 @@ let prevShowProgress: boolean | undefined = undefined;
 const isConnected = computed(() => status.connected && websocketConnected.value);
 const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
+const isProbing = computed(() => serverState.machineState?.isProbing === true);
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -170,7 +171,13 @@ const addOrUpdateCommandLine = (payload: any) => {
     return null;
   }
 
-  let message = payload.displayCommand || payload.command || 'Command';
+  // Skip gcode-runner commands - they're not displayed in terminal
+  // Visualizer listens to cnc-command-result events directly
+  if (payload.sourceId === 'gcode-runner') {
+    return null;
+  }
+
+  let message = payload.message || payload.displayCommand || payload.command || 'Command';
 
   // Format error messages specially
   if (payload.status === 'error' && payload.error?.message) {
@@ -223,8 +230,8 @@ const addOrUpdateCommandLine = (payload: any) => {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
-  // Keep a modest in-memory buffer for UI watchers; full history in IDB
-  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
+  // Keep a larger buffer since we now exclude gcode-runner (virtual scroller handles this efficiently)
+  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {
@@ -244,11 +251,12 @@ const addOrUpdateCommandLine = (payload: any) => {
 
 // Helper function to add response line to console
 const addResponseLine = (data: string) => {
+  const timestamp = new Date().toLocaleTimeString();
   const responseLine: ConsoleLine = {
     id: `response-${Date.now()}-${responseLineIdCounter++}`,
     level: 'info',
     message: data,
-    timestamp: '',
+    timestamp: timestamp,
     type: 'response'
   };
   const newIndex = consoleLines.value.length;
@@ -260,8 +268,8 @@ const addResponseLine = (data: string) => {
     appendTerminalLineToIDB(responseLine).catch(() => {});
   }
 
-  // Enforce buffer size limit (keep small buffer if IDB available)
-  const maxLines = isTerminalIDBEnabled() ? 200 : 1000;
+  // Enforce buffer size limit (keep larger buffer since we exclude gcode-runner)
+  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
     if (removed) {
@@ -349,6 +357,18 @@ export function initializeStore() {
   api.on('cnc-error', async (errorData) => {
     if (!errorData) return;
 
+    // Add error to terminal with warning icon
+    const errorMessage = errorData.message || 'Unknown error';
+    const errorCode = errorData.code ? `[Error ${errorData.code}] ` : '';
+    addOrUpdateCommandLine({
+      id: `error-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      message: `${errorCode}${errorMessage}`,
+      level: 'error',
+      status: 'error',
+      type: 'response',
+      timestamp: new Date().toISOString()
+    });
+
     // Check if it's an alarm (errorData.message contains "ALARM:X")
     if (errorData.message && errorData.message.toUpperCase().startsWith('ALARM:')) {
       const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
@@ -388,16 +408,27 @@ export function initializeStore() {
     // If a run starts (status transitions into running), reset completed tracking
     const currentStatus = serverState.jobLoaded?.status as any;
     const currentFilename = serverState.jobLoaded?.filename as string | undefined;
+    const currentLine = serverState.jobLoaded?.currentLine;
+
     if (currentStatus === 'running' && lastJobStatus !== 'running') {
       gcodeCompletedUpTo.value = 0;
     }
-    // If user closed the job progress panel, reset G-code completion markers
+
+    // If job is stopped/paused/completed, restore completed line tracking
+    // This ensures that late-joining clients or page reloads get the correct state
+    if ((currentStatus === 'stopped' || currentStatus === 'paused' || currentStatus === 'completed') &&
+        typeof currentLine === 'number' && currentLine > 0 &&
+        gcodeCompletedUpTo.value !== currentLine) {
+      gcodeCompletedUpTo.value = currentLine;
+    }
+
+    // If user closed the job progress panel (status changed to null), reset G-code completion markers
     try {
-      const sp = (serverState.jobLoaded as any)?.showProgress;
-      if (prevShowProgress === true && sp === false) {
+      const status = serverState.jobLoaded?.status;
+      if (prevShowProgress === true && status === null) {
         gcodeCompletedUpTo.value = 0;
       }
-      prevShowProgress = sp as boolean | undefined;
+      prevShowProgress = (status === 'running' || status === 'paused' || status === 'stopped' || status === 'completed');
     } catch {}
     lastJobStatus = currentStatus;
     if (currentFilename) lastJobFilename = currentFilename;
@@ -441,7 +472,20 @@ export function initializeStore() {
   // G-code content updates
   api.onGCodeUpdated((data) => {
     if (data?.content) {
-      gcodeCompletedUpTo.value = 0; // reset on new file
+      // Only reset completed tracking if this is a DIFFERENT file than what's currently loaded
+      // Check both the local filename AND the server's loaded job filename
+      const isNewFile = data.filename !== gcodeFilename.value &&
+                       data.filename !== serverState.jobLoaded?.filename;
+      const hasActiveJob = serverState.jobLoaded?.status === 'running' ||
+                          serverState.jobLoaded?.status === 'paused' ||
+                          serverState.jobLoaded?.status === 'stopped' ||
+                          serverState.jobLoaded?.status === 'completed';
+
+      // Reset only if it's a new file OR no active job state
+      if (isNewFile || !hasActiveJob) {
+        gcodeCompletedUpTo.value = 0;
+      }
+
       if (isIDBEnabled()) {
         saveGCodeToIDB(data.filename || '', data.content)
           .then(({ lineCount }) => {
@@ -518,6 +562,14 @@ export async function seedInitialState() {
       if (status.connected && websocketConnected.value) {
         await tryLoadMachineDimensionsOnce();
       }
+
+      // Restore completed line tracking from server state if job is stopped/paused/completed
+      const jobStatus = serverState.jobLoaded?.status;
+      const currentLine = serverState.jobLoaded?.currentLine;
+      if (jobStatus && (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+        gcodeCompletedUpTo.value = currentLine;
+        console.log(`[Store] Restored completed line tracking from server: ${currentLine}`);
+      }
     }
   } catch (e) {
     console.warn('Unable to seed initial server state:', e);
@@ -550,6 +602,7 @@ export function useAppStore() {
     isConnected,
     currentJobFilename,
     isHomed,
+    isProbing,
 
     // Actions
     clearConsole: () => {
