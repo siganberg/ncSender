@@ -251,26 +251,6 @@
                 </div>
               </div>
 
-              <div class="probe-control-group">
-                <label class="probe-label">Z-Offset</label>
-                <div class="probe-input-with-unit">
-                  <input
-                    v-model.number="zOffset"
-                    type="number"
-                    step="0.01"
-                    class="probe-input"
-                    :disabled="store.isProbing.value"
-                    @input="validateZOffset"
-                    @blur="handleZOffsetBlur"
-                  />
-                  <span class="probe-unit">mm</span>
-                </div>
-                <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
-              </div>
-            </template>
-
-            <!-- Center probing fields (Center - Inner and Center - Outer) -->
-            <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">X Dimension</label>
@@ -305,6 +285,26 @@
                 </div>
               </div>
 
+              <div class="probe-control-group">
+                <label class="probe-label">Z-Offset</label>
+                <div class="probe-input-with-unit">
+                  <input
+                    v-model.number="zOffset"
+                    type="number"
+                    step="0.01"
+                    class="probe-input"
+                    :disabled="store.isProbing.value"
+                    @input="validateZOffset"
+                    @blur="handleZOffsetBlur"
+                  />
+                  <span class="probe-unit">mm</span>
+                </div>
+                <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
+              </div>
+            </template>
+
+            <!-- Center probing fields (Center - Inner and Center - Outer) -->
+            <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Rapid Movement</label>
