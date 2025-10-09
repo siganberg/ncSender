@@ -169,6 +169,15 @@
             </div>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
+            <!-- Connection Test Toggle -->
+            <div class="probe-connection-test">
+              <label class="probe-label">Connection Test</label>
+              <label class="switch">
+                <input type="checkbox" v-model="requireConnectionTest" @change="handleConnectionTestToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+
             <ProbeVisualizer
               :probe-type="probeType"
               :probing-axis="probingAxis"
@@ -192,7 +201,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed)">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -234,6 +243,8 @@ const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
 const probeActive = ref(false);
 const jogStep = ref(1);
+const requireConnectionTest = ref(false);
+const connectionTestPassed = ref(false);
 
 // Validation errors
 const errors = ref({
@@ -435,6 +446,9 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['3d-probe']?.probeZFirst === 'boolean') {
           probeZFirst.value = settings.probe['3d-probe'].probeZFirst;
         }
+        if (typeof settings.probe?.requireConnectionTest === 'boolean') {
+          requireConnectionTest.value = settings.probe.requireConnectionTest;
+        }
       }
     } catch (error) {
       console.error('[ProbeDialog] Failed to reload settings', JSON.stringify({ error: error.message }));
@@ -446,6 +460,33 @@ watch(() => props.show, async (isShown) => {
     }, 100);
   }
 });
+
+// Watch for probe active state to detect connection test
+watch(() => probeActive.value, (isActive) => {
+  if (requireConnectionTest.value && isActive && !connectionTestPassed.value) {
+    connectionTestPassed.value = true;
+  }
+});
+
+// Reset connection test when dialog closes
+watch(() => props.show, (isShown) => {
+  if (!isShown) {
+    connectionTestPassed.value = false;
+  }
+});
+
+// Handler for connection test toggle
+const handleConnectionTestToggle = async () => {
+  connectionTestPassed.value = false;
+
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { requireConnectionTest: requireConnectionTest.value } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save connection test setting', error);
+    }
+  }
+};
 
 // Dialog functions
 const handleClose = () => {
@@ -523,11 +564,12 @@ const handleStartProbe = async () => {
 
 .probe-dialog__column--controls {
   padding-right: 20px;
+  border-right: 1px solid var(--color-border);
 }
 
 .probe-dialog__column--viewer {
   padding-left: 20px;
-  gap: 20px;
+  gap: 10px;
 }
 
 .probe-control-group--toggle {
@@ -543,6 +585,19 @@ const handleStartProbe = async () => {
 }
 
 .probe-control-group--toggle .probe-label {
+  margin-bottom: 0;
+}
+
+.probe-connection-test {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.probe-connection-test .probe-label {
   margin-bottom: 0;
 }
 
