@@ -23,9 +23,9 @@ const DEFAULT_SETTINGS = {
   lastLoadedFile: null,
   enableStateDeltaBroadcast: true,
   probe: {
-    type: '3dprobe',
+    type: '3d-probe',
     probingAxis: 'Z',
-    '3dprobe': {
+    '3d-probe': {
       ballPointDiameter: 6,
       zPlunge: 3,
       zOffset: 0,

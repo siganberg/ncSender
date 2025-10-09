@@ -193,7 +193,7 @@
               <div class="probe-control-group">
                 <label class="probe-label">Probe Type</label>
                 <select v-model="probeType" class="probe-select" :disabled="store.isProbing.value">
-                  <option value="3d-touch">3D-Touch Probe</option>
+                  <option value="3d-probe">3D Probe</option>
                   <option value="standard-block">Standard Block</option>
                 </select>
               </div>
@@ -212,7 +212,7 @@
               </div>
             </div>
 
-            <template v-if="probeType === '3d-touch'">
+            <template v-if="probeType === '3d-probe'">
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Diameter</label>
@@ -548,7 +548,7 @@ const fileToDelete = ref<string | null>(null);
 const showProbeDialog = ref(false);
 
 // Probe dialog state
-const probeType = ref<'3d-touch' | 'standard-block'>('3d-touch');
+const probeType = ref<'3d-probe' | 'standard-block'>('3d-probe');
 const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
@@ -1220,20 +1220,20 @@ const openProbeDialog = async () => {
         zOffset.value = settings.probeZOffset;
         originalValues.value.zOffset = settings.probeZOffset;
       }
-      if (typeof settings.probe?.['3dprobe']?.xDimension === 'number') {
-        xDimension.value = settings.probe['3dprobe'].xDimension;
-        originalValues.value.xDimension = settings.probe['3dprobe'].xDimension;
+      if (typeof settings.probe?.['3d-probe']?.xDimension === 'number') {
+        xDimension.value = settings.probe['3d-probe'].xDimension;
+        originalValues.value.xDimension = settings.probe['3d-probe'].xDimension;
       }
-      if (typeof settings.probe?.['3dprobe']?.yDimension === 'number') {
-        yDimension.value = settings.probe['3dprobe'].yDimension;
-        originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
+      if (typeof settings.probe?.['3d-probe']?.yDimension === 'number') {
+        yDimension.value = settings.probe['3d-probe'].yDimension;
+        originalValues.value.yDimension = settings.probe['3d-probe'].yDimension;
       }
-      if (typeof settings.probe?.['3dprobe']?.rapidMovement === 'number') {
-        rapidMovement.value = settings.probe['3dprobe'].rapidMovement;
-        originalValues.value.rapidMovement = settings.probe['3dprobe'].rapidMovement;
+      if (typeof settings.probe?.['3d-probe']?.rapidMovement === 'number') {
+        rapidMovement.value = settings.probe['3d-probe'].rapidMovement;
+        originalValues.value.rapidMovement = settings.probe['3d-probe'].rapidMovement;
       }
-      if (typeof settings.probe?.['3dprobe']?.probeZFirst === 'boolean') {
-        probeZFirst.value = settings.probe['3dprobe'].probeZFirst;
+      if (typeof settings.probe?.['3d-probe']?.probeZFirst === 'boolean') {
+        probeZFirst.value = settings.probe['3d-probe'].probeZFirst;
       }
     }
   } catch (error) {
@@ -1917,7 +1917,7 @@ watch(() => selectedCorner.value, async (value) => {
 watch(() => probeZFirst.value, async (value) => {
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probe: { '3dprobe': { probeZFirst: value } } });
+      await updateSettings({ probe: { '3d-probe': { probeZFirst: value } } });
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save probeZFirst setting', JSON.stringify({ error: error.message }));
     }
@@ -2116,7 +2116,7 @@ const handleZOffsetBlur = async () => {
 const handleXDimensionBlur = async () => {
   if (xDimension.value !== originalValues.value.xDimension && xDimension.value > 0) {
     try {
-      await updateSettings({ probe: { '3dprobe': { xDimension: xDimension.value } } });
+      await updateSettings({ probe: { '3d-probe': { xDimension: xDimension.value } } });
       originalValues.value.xDimension = xDimension.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
@@ -2127,7 +2127,7 @@ const handleXDimensionBlur = async () => {
 const handleYDimensionBlur = async () => {
   if (yDimension.value !== originalValues.value.yDimension && yDimension.value > 0) {
     try {
-      await updateSettings({ probe: { '3dprobe': { yDimension: yDimension.value } } });
+      await updateSettings({ probe: { '3d-probe': { yDimension: yDimension.value } } });
       originalValues.value.yDimension = yDimension.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
@@ -2138,7 +2138,7 @@ const handleYDimensionBlur = async () => {
 const handleRapidMovementBlur = async () => {
   if (rapidMovement.value !== originalValues.value.rapidMovement && rapidMovement.value >= 1000 && rapidMovement.value <= 5000) {
     try {
-      await updateSettings({ probe: { '3dprobe': { rapidMovement: rapidMovement.value } } });
+      await updateSettings({ probe: { '3d-probe': { rapidMovement: rapidMovement.value } } });
       originalValues.value.rapidMovement = rapidMovement.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
@@ -2273,20 +2273,20 @@ onMounted(async () => {
       zOffset.value = settings.probeZOffset;
       originalValues.value.zOffset = settings.probeZOffset;
     }
-    if (typeof settings.probe?.['3dprobe']?.xDimension === 'number') {
-      xDimension.value = settings.probe['3dprobe'].xDimension;
-      originalValues.value.xDimension = settings.probe['3dprobe'].xDimension;
+    if (typeof settings.probe?.['3d-probe']?.xDimension === 'number') {
+      xDimension.value = settings.probe['3d-probe'].xDimension;
+      originalValues.value.xDimension = settings.probe['3d-probe'].xDimension;
     }
-    if (typeof settings.probe?.['3dprobe']?.yDimension === 'number') {
-      yDimension.value = settings.probe['3dprobe'].yDimension;
-      originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
+    if (typeof settings.probe?.['3d-probe']?.yDimension === 'number') {
+      yDimension.value = settings.probe['3d-probe'].yDimension;
+      originalValues.value.yDimension = settings.probe['3d-probe'].yDimension;
     }
-    if (typeof settings.probe?.['3dprobe']?.rapidMovement === 'number') {
-      rapidMovement.value = settings.probe['3dprobe'].rapidMovement;
-      originalValues.value.rapidMovement = settings.probe['3dprobe'].rapidMovement;
+    if (typeof settings.probe?.['3d-probe']?.rapidMovement === 'number') {
+      rapidMovement.value = settings.probe['3d-probe'].rapidMovement;
+      originalValues.value.rapidMovement = settings.probe['3d-probe'].rapidMovement;
     }
-    if (typeof settings.probe?.['3dprobe']?.probeZFirst === 'boolean') {
-      probeZFirst.value = settings.probe['3dprobe'].probeZFirst;
+    if (typeof settings.probe?.['3d-probe']?.probeZFirst === 'boolean') {
+      probeZFirst.value = settings.probe['3d-probe'].probeZFirst;
     }
   }
 
