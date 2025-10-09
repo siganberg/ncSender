@@ -6,8 +6,39 @@ on:
       - 'v*'
 
 jobs:
+  update-version:
+    name: Update package.json version
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update package.json version
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          echo "Tag: $TAG"
+          echo "Version (without v): $VERSION"
+
+          # Update version in app/package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/package.json
+
+          # Show the change
+          echo "Updated app/package.json:"
+          grep -A 1 -B 1 "\"version\":" app/package.json
+
+      - name: Upload updated package.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/package.json
+
   macos:
     name: macOS Builds
+    needs: [update-version]
     runs-on: macos-14  # macOS Sonoma (stable)
     strategy:
       fail-fast: false
@@ -16,6 +47,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download updated package.json
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -46,6 +83,7 @@ jobs:
 
   linux:
     name: Linux Builds
+    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
@@ -54,6 +92,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download updated package.json
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -84,6 +128,7 @@ jobs:
 
   windows:
     name: Windows Builds
+    needs: [update-version]
     runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
@@ -92,6 +137,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download updated package.json
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -123,10 +174,17 @@ jobs:
 
   raspberry-pi:
     name: Raspberry Pi Build
+    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download updated package.json
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -263,37 +321,28 @@ jobs:
             --generate-notes \
             release-assets/*
 
-  update-version:
-    name: Update package.json version
+  commit-version:
+    name: Commit version update to main
     needs: [release]
-    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: Checkout main branch
         uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Update package.json version
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          echo "Tag: $TAG"
-          echo "Version (without v): $VERSION"
-
-          # Update version in app/package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/package.json
-
-          # Show the change
-          echo "Updated app/package.json:"
-          grep -A 1 -B 1 "\"version\":" app/package.json
+      - name: Download updated package.json
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-package-json
+          path: app/
 
       - name: Commit and push version update
         run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
