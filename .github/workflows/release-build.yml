@@ -121,43 +121,48 @@ jobs:
           name: windows-${{ matrix.arch }}-artifacts
           path: app/dist-electron/**
 
-  # raspberry-pi:
-  #   name: Raspberry Pi Build
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  raspberry-pi:
+    name: Raspberry Pi Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Setup Node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  #     - name: Install Dependencies
-  #       run: |
-  #         npm ci
-  #         cd client && npm ci
-  #       working-directory: app
+      - name: Build Raspberry Pi binaries
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
 
-  #     - name: Build Client
-  #       run: npm run build:client
-  #       working-directory: app
+          # Create output directory
+          mkdir -p releases/pi/
 
-  #     - name: Build Electron (Raspberry Pi)
-  #       run: |
-  #         rm -rf dist-electron
-  #         npm run dist -- --linux --armv7l
-  #       working-directory: app
+          # Build using Docker buildx
+          docker buildx build -f .scripts/DockerfilePi . \
+            --platform linux/arm64 \
+            --target=artifact \
+            --output type=local,dest=$(pwd)/releases/pi \
+            --build-arg GITHUB_REF_NAME="${TAG}" \
+            --build-arg GITHUB_REF_TYPE="tag" \
+            --build-arg GIT_COMMIT_LOG="$(git log -1 --format='%ci %H %s')" \
+            --no-cache
 
-  #     - name: Upload Raspberry Pi Artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: raspberry-pi-artifacts
-  #         path: app/dist-electron/**
+      - name: List built artifacts
+        run: |
+          echo "Built Raspberry Pi artifacts:"
+          ls -lh releases/pi/
+
+      - name: Upload Raspberry Pi Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raspberry-pi-artifacts
+          path: releases/pi/*
 
   release:
     name: Create Release
-    needs: [macos, linux, windows]
+    needs: [macos, linux, windows, raspberry-pi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -214,6 +219,20 @@ jobs:
             done
           fi
 
+          # Rename and copy Raspberry Pi assets
+          if [ -d "artifacts/raspberry-pi-artifacts" ]; then
+            for file in artifacts/raspberry-pi-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.deb"
+              fi
+            done
+            for file in artifacts/raspberry-pi-artifacts/*.AppImage; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.AppImage"
+              fi
+            done
+          fi
+
           echo "Release assets to upload:"
           ls -lh release-assets/
 
@@ -263,5 +282,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add app/package.json
-          git commit -m "chore: bump version to $VERSION [skip ci]"
-          git push origin main
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to package.json version - already up to date"
+          else
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push origin main
+          fi
