@@ -1220,13 +1220,13 @@ const openProbeDialog = async () => {
         zOffset.value = settings.probeZOffset;
         originalValues.value.zOffset = settings.probeZOffset;
       }
-      if (typeof settings.probeXDimension === 'number') {
-        xDimension.value = settings.probeXDimension;
-        originalValues.value.xDimension = settings.probeXDimension;
+      if (typeof settings.probe?.['3dprobe']?.xDimension === 'number') {
+        xDimension.value = settings.probe['3dprobe'].xDimension;
+        originalValues.value.xDimension = settings.probe['3dprobe'].xDimension;
       }
-      if (typeof settings.probeYDimension === 'number') {
-        yDimension.value = settings.probeYDimension;
-        originalValues.value.yDimension = settings.probeYDimension;
+      if (typeof settings.probe?.['3dprobe']?.yDimension === 'number') {
+        yDimension.value = settings.probe['3dprobe'].yDimension;
+        originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
       }
       if (typeof settings.probeRapidMovement === 'number') {
         rapidMovement.value = settings.probeRapidMovement;
@@ -2116,7 +2116,7 @@ const handleZOffsetBlur = async () => {
 const handleXDimensionBlur = async () => {
   if (xDimension.value !== originalValues.value.xDimension && xDimension.value > 0) {
     try {
-      await updateSettings({ probeXDimension: xDimension.value });
+      await updateSettings({ probe: { '3dprobe': { xDimension: xDimension.value } } });
       originalValues.value.xDimension = xDimension.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
@@ -2127,7 +2127,7 @@ const handleXDimensionBlur = async () => {
 const handleYDimensionBlur = async () => {
   if (yDimension.value !== originalValues.value.yDimension && yDimension.value > 0) {
     try {
-      await updateSettings({ probeYDimension: yDimension.value });
+      await updateSettings({ probe: { '3dprobe': { yDimension: yDimension.value } } });
       originalValues.value.yDimension = yDimension.value;
     } catch (error) {
       console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
@@ -2273,13 +2273,13 @@ onMounted(async () => {
       zOffset.value = settings.probeZOffset;
       originalValues.value.zOffset = settings.probeZOffset;
     }
-    if (typeof settings.probeXDimension === 'number') {
-      xDimension.value = settings.probeXDimension;
-      originalValues.value.xDimension = settings.probeXDimension;
+    if (typeof settings.probe?.['3dprobe']?.xDimension === 'number') {
+      xDimension.value = settings.probe['3dprobe'].xDimension;
+      originalValues.value.xDimension = settings.probe['3dprobe'].xDimension;
     }
-    if (typeof settings.probeYDimension === 'number') {
-      yDimension.value = settings.probeYDimension;
-      originalValues.value.yDimension = settings.probeYDimension;
+    if (typeof settings.probe?.['3dprobe']?.yDimension === 'number') {
+      yDimension.value = settings.probe['3dprobe'].yDimension;
+      originalValues.value.yDimension = settings.probe['3dprobe'].yDimension;
     }
     if (typeof settings.probeRapidMovement === 'number') {
       rapidMovement.value = settings.probeRapidMovement;
