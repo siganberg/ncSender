@@ -169,7 +169,10 @@ const totalLines = computed(() => {
 });
 
 const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
-const completedUpTo = computed(() => store.gcodeCompletedUpTo?.value ?? 0);
+const completedUpTo = computed(() => {
+  const val = store.gcodeCompletedUpTo?.value ?? 0;
+  return val;
+});
 const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'running'));
 
 // Minimal line cache for IDB mode
@@ -211,7 +214,8 @@ function classifyGcode(line: string): 'rapid' | 'cutting' | null {
 }
 
 function getGcodeLineClasses(index: number) {
-  const base: Record<string, boolean> = { 'gcode-line--completed': (index + 1 <= completedUpTo.value) };
+  const completed = (index + 1 <= completedUpTo.value);
+  const base: Record<string, boolean> = { 'gcode-line--completed': completed };
   const kind = classifyGcode(getGcodeText(index));
   if (kind === 'rapid') base['gcode-line--rapid'] = true;
   if (kind === 'cutting') base['gcode-line--cutting'] = true;

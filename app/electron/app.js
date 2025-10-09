@@ -1000,14 +1000,31 @@ export async function createApp(options = {}) {
   });
 
   // Set up job completion callback to reset job status and broadcast state update
-  jobManager.setJobCompleteCallback((reason) => {
+  jobManager.setJobCompleteCallback((reason, finalJobStatus) => {
     log('Job lifecycle ended:', reason);
+
+    // Extract final state from the captured job status
+    const finalLine = finalJobStatus?.currentLine;
+
     // Update status for completion - sets status to 'completed' or 'stopped'
     if (serverState.jobLoaded) {
+      // Use totalLines from serverState since job processor doesn't track it
+      const totalLines = serverState.jobLoaded.totalLines;
+
       if (reason === 'completed') {
         serverState.jobLoaded.status = 'completed';
+        // Ensure currentLine is set to totalLines on completion
+        if (typeof totalLines === 'number' && totalLines > 0) {
+          serverState.jobLoaded.currentLine = totalLines;
+          log(`Job completed: setting currentLine to ${totalLines} (total lines)`);
+        }
       } else if (reason === 'stopped') {
         serverState.jobLoaded.status = 'stopped';
+        // Preserve the last executed line number
+        if (typeof finalLine === 'number' && finalLine > 0) {
+          serverState.jobLoaded.currentLine = finalLine;
+          log(`Job stopped: preserving currentLine at ${finalLine}`);
+        }
       }
     }
     // Mark end time and finalize pause accounting

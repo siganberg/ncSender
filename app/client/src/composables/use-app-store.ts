@@ -472,7 +472,20 @@ export function initializeStore() {
   // G-code content updates
   api.onGCodeUpdated((data) => {
     if (data?.content) {
-      gcodeCompletedUpTo.value = 0; // reset on new file
+      // Only reset completed tracking if this is a DIFFERENT file than what's currently loaded
+      // Check both the local filename AND the server's loaded job filename
+      const isNewFile = data.filename !== gcodeFilename.value &&
+                       data.filename !== serverState.jobLoaded?.filename;
+      const hasActiveJob = serverState.jobLoaded?.status === 'running' ||
+                          serverState.jobLoaded?.status === 'paused' ||
+                          serverState.jobLoaded?.status === 'stopped' ||
+                          serverState.jobLoaded?.status === 'completed';
+
+      // Reset only if it's a new file OR no active job state
+      if (isNewFile || !hasActiveJob) {
+        gcodeCompletedUpTo.value = 0;
+      }
+
       if (isIDBEnabled()) {
         saveGCodeToIDB(data.filename || '', data.content)
           .then(({ lineCount }) => {
