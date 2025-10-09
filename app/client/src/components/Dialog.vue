@@ -120,6 +120,5 @@ defineEmits<{
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  max-height: 850px;
 }
 </style>
