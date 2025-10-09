@@ -225,6 +225,7 @@
                       class="probe-input"
                       :disabled="store.isProbing.value"
                       @input="validateBallPointDiameter"
+                      @blur="handleBallPointDiameterBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -242,6 +243,7 @@
                       class="probe-input"
                       :disabled="store.isProbing.value"
                       @input="validateZPlunge"
+                      @blur="handleZPlungeBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -259,6 +261,7 @@
                     class="probe-input"
                     :disabled="store.isProbing.value"
                     @input="validateZOffset"
+                    @blur="handleZOffsetBlur"
                   />
                   <span class="probe-unit">mm</span>
                 </div>
@@ -279,6 +282,7 @@
                       min="0.1"
                       class="probe-input"
                       :disabled="store.isProbing.value"
+                      @blur="handleXDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -294,6 +298,7 @@
                       min="0.1"
                       class="probe-input"
                       :disabled="store.isProbing.value"
+                      @blur="handleYDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
@@ -312,6 +317,7 @@
                       max="5000"
                       class="probe-input"
                       :disabled="store.isProbing.value"
+                      @blur="handleRapidMovementBlur"
                     />
                     <span class="probe-unit">mm/min</span>
                   </div>
@@ -581,6 +587,16 @@ const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',
   zOffset: ''
+});
+
+// Track original values for change detection
+const originalValues = ref({
+  ballPointDiameter: 2,
+  zPlunge: 3,
+  zOffset: -0.1,
+  xDimension: 100,
+  yDimension: 100,
+  rapidMovement: 2000
 });
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
@@ -1192,17 +1208,29 @@ const openProbeDialog = async () => {
       if (settings.probingAxis) {
         probingAxis.value = settings.probingAxis;
       }
+      if (typeof settings.probeBallPointDiameter === 'number') {
+        ballPointDiameter.value = settings.probeBallPointDiameter;
+        originalValues.value.ballPointDiameter = settings.probeBallPointDiameter;
+      }
+      if (typeof settings.probeZPlunge === 'number') {
+        zPlunge.value = settings.probeZPlunge;
+        originalValues.value.zPlunge = settings.probeZPlunge;
+      }
       if (typeof settings.probeZOffset === 'number') {
         zOffset.value = settings.probeZOffset;
+        originalValues.value.zOffset = settings.probeZOffset;
       }
       if (typeof settings.probeXDimension === 'number') {
         xDimension.value = settings.probeXDimension;
+        originalValues.value.xDimension = settings.probeXDimension;
       }
       if (typeof settings.probeYDimension === 'number') {
         yDimension.value = settings.probeYDimension;
+        originalValues.value.yDimension = settings.probeYDimension;
       }
       if (typeof settings.probeRapidMovement === 'number') {
         rapidMovement.value = settings.probeRapidMovement;
+        originalValues.value.rapidMovement = settings.probeRapidMovement;
       }
       if (typeof settings.probeZFirst === 'boolean') {
         probeZFirst.value = settings.probeZFirst;
@@ -1885,65 +1913,6 @@ watch(() => selectedCorner.value, async (value) => {
   }
 });
 
-watch(() => ballPointDiameter.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeBallPointDiameter: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save ball point diameter setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
-
-watch(() => zPlunge.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeZPlunge: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save Z plunge setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
-
-watch(() => zOffset.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeZOffset: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save Z offset setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
-
-watch(() => xDimension.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeXDimension: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
-
-watch(() => yDimension.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeYDimension: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
-
-watch(() => rapidMovement.value, async (value) => {
-  if (!isInitialLoad) {
-    try {
-      await updateSettings({ probeRapidMovement: value });
-    } catch (error) {
-      console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
-    }
-  }
-});
 
 watch(() => probeZFirst.value, async (value) => {
   if (!isInitialLoad) {
@@ -2107,6 +2076,76 @@ const validateZOffset = () => {
   }
 };
 
+// Blur handlers for probe input fields
+const handleBallPointDiameterBlur = async () => {
+  validateBallPointDiameter();
+  if (!errors.value.ballPointDiameter && ballPointDiameter.value !== originalValues.value.ballPointDiameter) {
+    try {
+      await updateSettings({ probeBallPointDiameter: ballPointDiameter.value });
+      originalValues.value.ballPointDiameter = ballPointDiameter.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save ball point diameter setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleZPlungeBlur = async () => {
+  validateZPlunge();
+  if (!errors.value.zPlunge && zPlunge.value !== originalValues.value.zPlunge) {
+    try {
+      await updateSettings({ probeZPlunge: zPlunge.value });
+      originalValues.value.zPlunge = zPlunge.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z plunge setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleZOffsetBlur = async () => {
+  validateZOffset();
+  if (!errors.value.zOffset && zOffset.value !== originalValues.value.zOffset) {
+    try {
+      await updateSettings({ probeZOffset: zOffset.value });
+      originalValues.value.zOffset = zOffset.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Z offset setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleXDimensionBlur = async () => {
+  if (xDimension.value !== originalValues.value.xDimension && xDimension.value > 0) {
+    try {
+      await updateSettings({ probeXDimension: xDimension.value });
+      originalValues.value.xDimension = xDimension.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save X dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleYDimensionBlur = async () => {
+  if (yDimension.value !== originalValues.value.yDimension && yDimension.value > 0) {
+    try {
+      await updateSettings({ probeYDimension: yDimension.value });
+      originalValues.value.yDimension = yDimension.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save Y dimension setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleRapidMovementBlur = async () => {
+  if (rapidMovement.value !== originalValues.value.rapidMovement && rapidMovement.value >= 1000 && rapidMovement.value <= 5000) {
+    try {
+      await updateSettings({ probeRapidMovement: rapidMovement.value });
+      originalValues.value.rapidMovement = rapidMovement.value;
+    } catch (error) {
+      console.error('[GCodeVisualizer] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
 // Tool press functionality - long press to change tool
 const LONG_PRESS_MS_TOOL = 1500;
 const DELAY_BEFORE_VISUAL_MS = 150;
@@ -2224,21 +2263,27 @@ onMounted(async () => {
     }
     if (typeof settings.probeBallPointDiameter === 'number') {
       ballPointDiameter.value = settings.probeBallPointDiameter;
+      originalValues.value.ballPointDiameter = settings.probeBallPointDiameter;
     }
     if (typeof settings.probeZPlunge === 'number') {
       zPlunge.value = settings.probeZPlunge;
+      originalValues.value.zPlunge = settings.probeZPlunge;
     }
     if (typeof settings.probeZOffset === 'number') {
       zOffset.value = settings.probeZOffset;
+      originalValues.value.zOffset = settings.probeZOffset;
     }
     if (typeof settings.probeXDimension === 'number') {
       xDimension.value = settings.probeXDimension;
+      originalValues.value.xDimension = settings.probeXDimension;
     }
     if (typeof settings.probeYDimension === 'number') {
       yDimension.value = settings.probeYDimension;
+      originalValues.value.yDimension = settings.probeYDimension;
     }
     if (typeof settings.probeRapidMovement === 'number') {
       rapidMovement.value = settings.probeRapidMovement;
+      originalValues.value.rapidMovement = settings.probeRapidMovement;
     }
     if (typeof settings.probeZFirst === 'boolean') {
       probeZFirst.value = settings.probeZFirst;
