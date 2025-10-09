@@ -1904,7 +1904,7 @@ watch(() => selectedCorner.value, async (value) => {
     // Only save corner selection for XYZ/XY modes (not for X/Y modes which use sides)
     if (value && !['Left', 'Right'].includes(value)) {
       try {
-        await updateSettings({ probeSelectedCorner: value });
+        await updateSettings({ probe: { selectedCorner: value } });
       } catch (error) {
         console.error('[GCodeVisualizer] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
       }
@@ -2251,7 +2251,7 @@ onMounted(async () => {
     if (settings.probe?.probingAxis) {
       probingAxis.value = settings.probe.probingAxis;
     }
-    if (settings.probeSelectedCorner) {
+    if (settings.probe?.selectedCorner) {
       // Migrate old corner names to new terminology
       const cornerMigrationMap: Record<string, string> = {
         'FrontRight': 'BottomRight',
@@ -2259,7 +2259,7 @@ onMounted(async () => {
         'BackRight': 'TopRight',
         'BackLeft': 'TopLeft'
       };
-      selectedCorner.value = cornerMigrationMap[settings.probeSelectedCorner] || settings.probeSelectedCorner;
+      selectedCorner.value = cornerMigrationMap[settings.probe.selectedCorner] || settings.probe.selectedCorner;
     }
     if (typeof settings.probeBallPointDiameter === 'number') {
       ballPointDiameter.value = settings.probeBallPointDiameter;

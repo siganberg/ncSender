@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   probe: {
     type: '3d-probe',
     probingAxis: 'Z',
+    selectedCorner: null,
     '3d-probe': {
       ballPointDiameter: 6,
       zPlunge: 3,
