@@ -6,7 +6,7 @@ This guide covers the codebase layout, development workflow, build scripts, and 
 - Electron application that embeds a local HTTP + WebSocket server.
 - Vue 3 + Vite frontend served by the embedded server in production, or Vite dev server in development.
 - Feature‑oriented server modules (Express) for CNC control, G‑code jobs, settings, firmware, etc.
-- CNC communication via `serialport` or TCP (Ethernet/telnet‑style) with a command queue and GRBL/GrblHAL parsing.
+- CNC communication via `serialport` or TCP (Ethernet/telnet‑style) with a command queue and GrblHAL parsing.
 
 ## Project Structure
 ```
@@ -46,6 +46,15 @@ Windows
 cd app
 npm run install:all   # installs in app/ and app/client/
 ```
+
+## Run from Source (Quick Start)
+For a production-like run without building installers:
+```
+cd app
+npm run start
+```
+
+This builds the UI and launches the Electron app with the embedded server.
 
 ## Development
 Run the embedded server + Vite client with hot reload:
@@ -122,8 +131,9 @@ Subfolders/files
 ## Key Modules
 - CNC Controller: `app/electron/features/cnc/controller.js`
   - Serial over USB or TCP sockets
-  - GRBL status parsing (`<...>`), `$G` modes, error/alarm handling
+  - GrblHAL status parsing (`<...>`), `$G` modes, error/alarm handling
   - Command queue with real‑time commands and ACK propagation
+  - Dead-man switch watchdog for jog safety (500ms timeout)
 - G‑code Job Runner: `app/electron/features/gcode/job-routes.js`
   - Line‑by‑line streaming, pause/resume/stop with safe timings
   - Progress provider hooks and server‑side ETA calculation
