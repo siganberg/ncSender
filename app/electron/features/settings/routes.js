@@ -62,9 +62,31 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
         return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
       }
 
-      // Read current settings and merge with updates
+      // Read current settings and deep merge with updates
       const currentSettings = readSettings() || {};
-      const mergedSettings = { ...currentSettings, ...updates };
+      const mergedSettings = { ...currentSettings };
+
+      // Deep merge for nested objects (specifically for probe settings)
+      for (const key in updates) {
+        if (updates[key] && typeof updates[key] === 'object' && !Array.isArray(updates[key])) {
+          // Deep merge for nested objects
+          mergedSettings[key] = {
+            ...currentSettings[key],
+            ...updates[key]
+          };
+          // Handle nested levels (e.g., probe.3dprobe)
+          for (const nestedKey in updates[key]) {
+            if (updates[key][nestedKey] && typeof updates[key][nestedKey] === 'object' && !Array.isArray(updates[key][nestedKey])) {
+              mergedSettings[key][nestedKey] = {
+                ...currentSettings[key]?.[nestedKey],
+                ...updates[key][nestedKey]
+              };
+            }
+          }
+        } else {
+          mergedSettings[key] = updates[key];
+        }
+      }
 
       // Validate complete settings if connectionType is being updated
       if (updates.connectionType === 'ethernet') {
