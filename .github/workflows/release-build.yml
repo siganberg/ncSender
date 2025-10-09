@@ -8,7 +8,7 @@ on:
 jobs:
   macos:
     name: macOS Builds
-    runs-on: macos-latest
+    runs-on: macos-14  # macOS Sonoma (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +46,7 @@ jobs:
 
   linux:
     name: Linux Builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +84,7 @@ jobs:
 
   windows:
     name: Windows Builds
-    runs-on: windows-latest
+    runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
       matrix:
@@ -123,7 +123,7 @@ jobs:
 
   raspberry-pi:
     name: Raspberry Pi Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,7 +180,7 @@ jobs:
   release:
     name: Create Release
     needs: [macos, linux, windows, raspberry-pi]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
     steps:
@@ -266,7 +266,7 @@ jobs:
   update-version:
     name: Update package.json version
     needs: [release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
     steps:
