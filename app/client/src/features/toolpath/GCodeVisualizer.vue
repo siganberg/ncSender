@@ -173,7 +173,7 @@
       <!-- Probe button - bottom right -->
       <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isJobRunning">
         <span class="probe-label">Probe</span>
-        <img src="/assets/probe.svg" alt="Probe" class="probe-icon" />
+        <img src="/assets/probe/3d-probe/probe.svg" alt="Probe" class="probe-icon" />
       </button>
     </div>
   </section>

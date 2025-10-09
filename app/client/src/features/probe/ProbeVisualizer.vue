@@ -420,7 +420,7 @@ const loadProbeModel = async () => {
     const object = await loadOBJWithGroups(
       `${modelName}.txt${cacheBust}`,
       `${modelName}.mtl${cacheBust}`,
-      '/assets/'
+      '/assets/probe/3d-probe/'
     );
 
     probeModel = object;
@@ -539,7 +539,7 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
     const object = await loadOBJWithGroups(
       `${plateFile}${cacheBust}`,
       `plate.mtl${cacheBust}`,
-      '/assets/'
+      '/assets/probe/3d-probe/'
     );
 
     plateModel = object;

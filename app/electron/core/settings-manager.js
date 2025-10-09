@@ -36,10 +36,10 @@ const DEFAULT_SETTINGS = {
       yDimension: 100,
       probeZFirst: false
     },
-    standardblock: {
-      length: 50,
-      width: 50,
-      height: 25
+    'standard-block': {
+      zThickness: 25,
+      xyThickness: 50,
+      zProbeDistance: 3
     }
   }
 };

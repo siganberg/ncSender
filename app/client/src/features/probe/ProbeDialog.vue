@@ -26,9 +26,26 @@
                   <option value="XY">XY</option>
                   <option value="X">X</option>
                   <option value="Y">Y</option>
-                  <option value="Center - Inner">Center - Inner</option>
-                  <option value="Center - Outer">Center - Outer</option>
+                  <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
+                  <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
                 </select>
+              </div>
+            </div>
+
+            <div class="probe-control-group">
+              <label class="probe-label">Rapid Movement</label>
+              <div class="probe-input-with-unit">
+                <input
+                  v-model.number="rapidMovement"
+                  type="number"
+                  step="100"
+                  min="1000"
+                  max="5000"
+                  class="probe-input"
+                  :disabled="isProbing"
+                  @blur="handleRapidMovementBlur"
+                />
+                <span class="probe-unit">mm/min</span>
               </div>
             </div>
 
@@ -105,52 +122,92 @@
                 </div>
               </div>
 
-              <div class="probe-control-group">
-                <label class="probe-label">Z-Offset</label>
-                <div class="probe-input-with-unit">
-                  <input
-                    v-model.number="zOffset"
-                    type="number"
-                    step="0.01"
-                    class="probe-input"
-                    :disabled="isProbing"
-                    @input="validateZOffset"
-                    @blur="handleZOffsetBlur"
-                  />
-                  <span class="probe-unit">mm</span>
-                </div>
-                <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
-              </div>
-            </template>
-
-            <!-- Center probing fields (Center - Inner and Center - Outer) -->
-            <template v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)">
               <div class="probe-control-row">
                 <div class="probe-control-group">
-                  <label class="probe-label">Rapid Movement</label>
+                  <label class="probe-label">Z-Offset</label>
                   <div class="probe-input-with-unit">
                     <input
-                      v-model.number="rapidMovement"
+                      v-model.number="zOffset"
                       type="number"
-                      step="100"
-                      min="1000"
-                      max="5000"
+                      step="0.01"
                       class="probe-input"
                       :disabled="isProbing"
-                      @blur="handleRapidMovementBlur"
+                      @input="validateZOffset"
+                      @blur="handleZOffsetBlur"
                     />
-                    <span class="probe-unit">mm/min</span>
+                    <span class="probe-unit">mm</span>
                   </div>
+                  <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
                 </div>
 
-                <!-- Probe Z First toggle - only for Center - Outer -->
-                <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group probe-control-group--align-right">
+                <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group">
                   <label class="probe-label">Probe Z First</label>
                   <label class="switch">
-                    <input type="checkbox" v-model="probeZFirst" :disabled="isProbing">
+                    <input type="checkbox" v-model="probeZFirst" :disabled="isProbing" @change="handleProbeZFirstToggle">
                     <span class="slider"></span>
                   </label>
                 </div>
+              </div>
+            </template>
+
+            <template v-if="probeType === 'standard-block'">
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">Z Thickness</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="zThickness"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="30"
+                      class="probe-input"
+                      :disabled="isProbing"
+                      @input="validateZThickness"
+                      @blur="handleZThicknessBlur"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.zThickness" class="probe-error">{{ errors.zThickness }}</span>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">XY Thickness</label>
+                  <div class="probe-input-with-unit">
+                    <input
+                      v-model.number="xyThickness"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="100"
+                      class="probe-input"
+                      :disabled="isProbing"
+                      @input="validateXYThickness"
+                      @blur="handleXYThicknessBlur"
+                    />
+                    <span class="probe-unit">mm</span>
+                  </div>
+                  <span v-if="errors.xyThickness" class="probe-error">{{ errors.xyThickness }}</span>
+                </div>
+              </div>
+
+              <div class="probe-control-group">
+                <label class="probe-label">Z Probe Distance</label>
+                <div class="probe-input-with-unit">
+                  <input
+                    v-model.number="zProbeDistance"
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="30"
+                    class="probe-input"
+                    :disabled="isProbing"
+                    @input="validateZProbeDistance"
+                    @blur="handleZProbeDistanceBlur"
+                  />
+                  <span class="probe-unit">mm</span>
+                </div>
+                <span v-if="errors.zProbeDistance" class="probe-error">{{ errors.zProbeDistance }}</span>
               </div>
             </template>
 
@@ -245,12 +302,18 @@ const probeActive = ref(false);
 const jogStep = ref(1);
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
+const zThickness = ref(25);
+const xyThickness = ref(50);
+const zProbeDistance = ref(3);
 
 // Validation errors
 const errors = ref({
   ballPointDiameter: '',
   zPlunge: '',
-  zOffset: ''
+  zOffset: '',
+  zThickness: '',
+  xyThickness: '',
+  zProbeDistance: ''
 });
 
 // Track original values for change detection
@@ -288,6 +351,30 @@ const validateZOffset = () => {
     errors.value.zOffset = 'Must be a valid number';
   } else {
     errors.value.zOffset = '';
+  }
+};
+
+const validateZThickness = () => {
+  if (zThickness.value < 1 || zThickness.value > 30) {
+    errors.value.zThickness = 'Must be between 1 and 30mm';
+  } else {
+    errors.value.zThickness = '';
+  }
+};
+
+const validateXYThickness = () => {
+  if (xyThickness.value < 1 || xyThickness.value > 100) {
+    errors.value.xyThickness = 'Must be between 1 and 100mm';
+  } else {
+    errors.value.xyThickness = '';
+  }
+};
+
+const validateZProbeDistance = () => {
+  if (zProbeDistance.value < 1 || zProbeDistance.value > 30) {
+    errors.value.zProbeDistance = 'Must be between 1 and 30mm';
+  } else {
+    errors.value.zProbeDistance = '';
   }
 };
 
@@ -361,8 +448,56 @@ const handleRapidMovementBlur = async () => {
   }
 };
 
+const handleProbeZFirstToggle = async () => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { '3d-probe': { probeZFirst: probeZFirst.value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save probe Z first setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleZThicknessBlur = async () => {
+  validateZThickness();
+  if (!errors.value.zThickness) {
+    try {
+      await updateSettings({ probe: { 'standard-block': { zThickness: zThickness.value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save Z thickness setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleXYThicknessBlur = async () => {
+  validateXYThickness();
+  if (!errors.value.xyThickness) {
+    try {
+      await updateSettings({ probe: { 'standard-block': { xyThickness: xyThickness.value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save XY thickness setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleZProbeDistanceBlur = async () => {
+  validateZProbeDistance();
+  if (!errors.value.zProbeDistance) {
+    try {
+      await updateSettings({ probe: { 'standard-block': { zProbeDistance: zProbeDistance.value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save Z probe distance setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
 // Watchers for probe settings
 watch(() => probeType.value, async (value) => {
+  // Check if current probing axis is available for the new probe type
+  if (value === 'standard-block' && ['Center - Inner', 'Center - Outer'].includes(probingAxis.value)) {
+    probingAxis.value = 'XYZ';
+  }
+
   if (!isInitialLoad) {
     try {
       await updateSettings({ probe: { type: value } });
@@ -449,6 +584,15 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.requireConnectionTest === 'boolean') {
           requireConnectionTest.value = settings.probe.requireConnectionTest;
         }
+        if (typeof settings.probe?.['standard-block']?.zThickness === 'number') {
+          zThickness.value = settings.probe['standard-block'].zThickness;
+        }
+        if (typeof settings.probe?.['standard-block']?.xyThickness === 'number') {
+          xyThickness.value = settings.probe['standard-block'].xyThickness;
+        }
+        if (typeof settings.probe?.['standard-block']?.zProbeDistance === 'number') {
+          zProbeDistance.value = settings.probe['standard-block'].zProbeDistance;
+        }
       }
     } catch (error) {
       console.error('[ProbeDialog] Failed to reload settings', JSON.stringify({ error: error.message }));
@@ -520,7 +664,7 @@ const handleStartProbe = async () => {
 .probe-dialog {
   display: flex;
   flex-direction: column;
-  max-width: 700px !important;
+  max-width: 750px !important;
   height: 100%;
 }
 
@@ -630,10 +774,18 @@ const handleStartProbe = async () => {
   margin-bottom: 12px;
 }
 
+.probe-control-group .switch {
+  margin-top: 4px;
+}
+
 .probe-control-group--align-right {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+.probe-control-group--align-right .switch {
+  margin-top: auto;
 }
 
 .probe-label {
