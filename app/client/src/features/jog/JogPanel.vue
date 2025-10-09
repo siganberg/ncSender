@@ -535,6 +535,11 @@ const stopJog = () => {
 };
 
 const handleHomeClick = async () => {
+  // Ignore click if touch was used (prevents double-firing on touchscreens)
+  if (homePress.touchUsed) {
+    homePress.touchUsed = false;
+    return;
+  }
   // If long-press already handled action, ignore click
   if (homePress.triggered) return;
   await goHome();
@@ -597,11 +602,17 @@ const homeSplit = ref(false);
 const homeGroupRef = ref<HTMLElement | null>(null);
 const LONG_PRESS_MS_HOME = 750;
 const DELAY_BEFORE_VISUAL_MS = 150;
-const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
+const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; touchUsed: boolean }>({ start: 0, progress: 0, active: false, triggered: false, touchUsed: false });
 let homeActive = false;
 
 const startHomePress = (_evt?: Event) => {
-  if (_evt) _evt.preventDefault();
+  if (_evt) {
+    _evt.preventDefault();
+    // Track if touch event was used
+    if (_evt.type === 'touchstart') {
+      homePress.touchUsed = true;
+    }
+  }
   if (homeSplit.value) return;
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.start = performance.now();
@@ -644,10 +655,18 @@ const endHomePress = () => {
   homePress.raf = undefined;
   homePress.active = false;
   homeActive = false;
-  if (!homePress.triggered) {
-    // Not triggered: ensure progress cleared
-    homePress.progress = 0;
+  homePress.progress = 0;
+
+  // If this was a quick tap (not triggered), execute the home command directly
+  // This ensures touchscreen single taps work properly
+  const wasTap = !homePress.triggered;
+
+  // Execute home command for touch taps (since click event will be ignored)
+  if (wasTap && homePress.touchUsed) {
+    goHome();
   }
+
+  homePress.triggered = false;
 };
 
 const cancelHomePress = () => {
@@ -657,6 +676,7 @@ const cancelHomePress = () => {
   homeActive = false;
   homePress.progress = 0;
   homePress.triggered = false;
+  homePress.touchUsed = false;
 };
 
 // Click outside to collapse back to single Home
