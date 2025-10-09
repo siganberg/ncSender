@@ -3290,6 +3290,12 @@ body.theme-light .dot--rapid {
   transform: translateY(0);
 }
 
+.probe-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .probe-icon {
   width: 48px;
   height: 48px;
