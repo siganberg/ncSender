@@ -149,6 +149,10 @@ export async function createApp(options = {}) {
       return 'alarm';
     }
 
+    if (machineStatus === 'hold') {
+      return 'hold';
+    }
+
     if (isToolChanging) {
       return 'tool-changing';
     }
@@ -161,9 +165,7 @@ export async function createApp(options = {}) {
       return 'homing';
     }
 
-    if (machineStatus === 'hold') {
-      return 'hold';
-    }
+
 
     if (machineStatus === 'jog') {
       return 'jogging';
