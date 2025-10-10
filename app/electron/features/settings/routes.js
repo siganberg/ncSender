@@ -1,9 +1,11 @@
 import { Router } from 'express';
-import { readSettings, saveSettings } from '../../core/settings-manager.js';
+import { readSettings, saveSettings, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
+
+const VALID_CONNECTION_TYPES = ['usb', 'ethernet'];
 
 export function createSettingsRoutes(serverState, cncController, broadcast) {
   const router = Router();
@@ -13,7 +15,6 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
     try {
       const settings = readSettings();
       if (settings === null) {
-        // No settings file exists, return 204 No Content
         return res.status(204).end();
       }
       res.json(settings);
@@ -47,34 +48,43 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
   // Update specific settings (partial update)
   router.patch('/settings', (req, res) => {
     try {
-      const updates = req.body;
+      const updates = req.body || {};
+      const connectionUpdates = updates.connection;
+      if (connectionUpdates && typeof connectionUpdates.connectionType === 'string' && !connectionUpdates.type) {
+        connectionUpdates.type = connectionUpdates.connectionType;
+        delete connectionUpdates.connectionType;
+      }
+      const connectionTypeUpdate = connectionUpdates?.type;
 
-      // Validate updated fields only
-      if (updates.connectionType && !['usb', 'ethernet'].includes(updates.connectionType)) {
+      if (connectionTypeUpdate && !VALID_CONNECTION_TYPES.includes(connectionTypeUpdate.toLowerCase())) {
         return res.status(400).json({ error: 'Invalid connection type' });
       }
 
-      if (updates.baudRate && isNaN(parseInt(updates.baudRate))) {
+      if (connectionUpdates?.serverPort !== undefined) {
+        const parsedServerPort = parseInt(connectionUpdates.serverPort, 10);
+        if (isNaN(parsedServerPort) || parsedServerPort < 1024 || parsedServerPort > 65535) {
+          return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
+        }
+      }
+
+      if (connectionUpdates?.port !== undefined && isNaN(parseInt(connectionUpdates.port, 10))) {
+        return res.status(400).json({ error: 'Invalid machine port' });
+      }
+
+      if (connectionUpdates?.baudRate !== undefined && isNaN(parseInt(connectionUpdates.baudRate, 10))) {
         return res.status(400).json({ error: 'Invalid baud rate' });
       }
 
-      if (updates.serverPort && (isNaN(parseInt(updates.serverPort)) || parseInt(updates.serverPort) < 1024 || parseInt(updates.serverPort) > 65535)) {
-        return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
-      }
-
-      // Read current settings and deep merge with updates
       const currentSettings = readSettings() || {};
       const mergedSettings = { ...currentSettings };
 
-      // Deep merge for nested objects (specifically for probe settings)
       for (const key in updates) {
         if (updates[key] && typeof updates[key] === 'object' && !Array.isArray(updates[key])) {
-          // Deep merge for nested objects
           mergedSettings[key] = {
             ...currentSettings[key],
             ...updates[key]
           };
-          // Handle nested levels (e.g., probe.3dprobe)
+
           for (const nestedKey in updates[key]) {
             if (updates[key][nestedKey] && typeof updates[key][nestedKey] === 'object' && !Array.isArray(updates[key][nestedKey])) {
               mergedSettings[key][nestedKey] = {
@@ -83,37 +93,94 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
               };
             }
           }
-        } else {
+        } else if (updates[key] !== undefined) {
           mergedSettings[key] = updates[key];
         }
       }
 
-      // Validate complete settings if connectionType is being updated
-      if (updates.connectionType === 'ethernet') {
-        const ip = updates.ip || currentSettings.ip;
-        const port = updates.port || currentSettings.port;
-        if (!ip || !port || isNaN(parseInt(port))) {
+      if (mergedSettings.connection && typeof mergedSettings.connection === 'object') {
+        const connection = mergedSettings.connection;
+        if (typeof connection.type === 'string') {
+          connection.type = connection.type.toLowerCase();
+        }
+
+        if (connection.port !== undefined) {
+          const parsedPort = parseInt(connection.port, 10);
+          if (!Number.isNaN(parsedPort)) {
+            connection.port = parsedPort;
+          }
+        }
+
+        if (connection.serverPort !== undefined) {
+          const parsedServerPort = parseInt(connection.serverPort, 10);
+          if (!Number.isNaN(parsedServerPort)) {
+            connection.serverPort = parsedServerPort;
+          }
+        }
+
+        if (connection.baudRate !== undefined) {
+          const parsedBaudRate = parseInt(connection.baudRate, 10);
+          if (!Number.isNaN(parsedBaudRate)) {
+            connection.baudRate = parsedBaudRate;
+          }
+        }
+      }
+
+      const effectiveConnection = mergedSettings.connection || {};
+      const effectiveType = typeof effectiveConnection.type === 'string'
+        ? effectiveConnection.type.toLowerCase()
+        : undefined;
+
+      if (effectiveType === 'ethernet') {
+        const ip = effectiveConnection.ip;
+        const portValue = effectiveConnection.port;
+        if (!ip || portValue === undefined || isNaN(parseInt(portValue, 10))) {
           return res.status(400).json({ error: 'IP address and port required for Ethernet connection' });
         }
       }
 
-      if (updates.connectionType === 'usb') {
-        const usbPort = updates.usbPort || currentSettings.usbPort;
-        if (!usbPort) {
+      if (effectiveType === 'usb') {
+        if (!effectiveConnection.usbPort) {
           return res.status(400).json({ error: 'USB port required for USB connection' });
+        }
+        if (typeof effectiveConnection.baudRate !== 'number' || Number.isNaN(effectiveConnection.baudRate)) {
+          return res.status(400).json({ error: 'Baud rate required for USB connection' });
         }
       }
 
-      const savedSettings = saveSettings(mergedSettings);
-      log('Settings updated:', updates);
+      if (effectiveConnection.baudRate !== undefined && (typeof effectiveConnection.baudRate !== 'number' || Number.isNaN(effectiveConnection.baudRate))) {
+        return res.status(400).json({ error: 'Invalid baud rate' });
+      }
 
-      broadcast('settings-changed', updates);
+      if (mergedSettings.connection && mergedSettings.connection.baudRate === undefined) {
+        mergedSettings.connection.baudRate = DEFAULT_SETTINGS.connection.baudRate;
+      }
+
+      const savedSettings = saveSettings(mergedSettings);
+      log('Settings updated:', mergedSettings);
+
+      const broadcastPayload = { ...updates };
+      if (broadcastPayload.connection?.type) {
+        broadcastPayload.connection = {
+          ...broadcastPayload.connection,
+          type: broadcastPayload.connection.type.toLowerCase()
+        };
+      }
+
+      if (broadcastPayload.connection?.baudRate !== undefined) {
+        const parsedBroadcastBaudRate = parseInt(broadcastPayload.connection.baudRate, 10);
+        if (!Number.isNaN(parsedBroadcastBaudRate)) {
+          broadcastPayload.connection.baudRate = parsedBroadcastBaudRate;
+        }
+      }
+
+      broadcast('settings-changed', broadcastPayload);
 
       res.json({
         success: true,
-        message: 'Settings updated successfully'
+        message: 'Settings updated successfully',
+        settings: savedSettings
       });
-
     } catch (error) {
       log('Error updating settings:', error);
       res.status(500).json({ error: 'Failed to update settings' });
@@ -123,39 +190,65 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
   // Save settings (complete replacement)
   router.post('/settings', (req, res) => {
     try {
-      const { connectionType, baudRate, ip, port, serverPort, usbPort } = req.body;
+      const payload = req.body || {};
+      const { connection, ...rest } = payload;
+      if (connection && typeof connection.connectionType === 'string' && !connection.type) {
+        connection.type = connection.connectionType;
+        delete connection.connectionType;
+      }
+      const connectionType = connection?.type;
 
-      // Validate settings
-      if (connectionType && !['usb', 'ethernet'].includes(connectionType)) {
+      if (connectionType && !VALID_CONNECTION_TYPES.includes(connectionType.toLowerCase())) {
         return res.status(400).json({ error: 'Invalid connection type' });
       }
 
-      if (baudRate && isNaN(parseInt(baudRate))) {
-        return res.status(400).json({ error: 'Invalid baud rate' });
-      }
+      const normalizedConnectionType = connectionType?.toLowerCase();
 
-      if (connectionType === 'ethernet') {
-        if (!ip || !port || isNaN(parseInt(port))) {
+      if (normalizedConnectionType === 'ethernet') {
+        const ip = connection?.ip;
+        const port = connection?.port;
+        if (!ip || port === undefined || isNaN(parseInt(port, 10))) {
           return res.status(400).json({ error: 'IP address and port required for Ethernet connection' });
         }
       }
 
-      if (connectionType === 'usb') {
-        if (!usbPort) {
+      if (normalizedConnectionType === 'usb') {
+        if (!connection?.usbPort) {
           return res.status(400).json({ error: 'USB port required for USB connection' });
         }
       }
 
-      if (serverPort && (isNaN(parseInt(serverPort)) || parseInt(serverPort) < 1024 || parseInt(serverPort) > 65535)) {
-        return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
+      if (connection?.serverPort !== undefined) {
+        const parsedServerPort = parseInt(connection.serverPort, 10);
+        if (isNaN(parsedServerPort) || parsedServerPort < 1024 || parsedServerPort > 65535) {
+          return res.status(400).json({ error: 'Invalid server port. Must be between 1024-65535' });
+        }
       }
 
-      // Read settings before save to detect connection-related changes
-      const before = readSettings();
-      const savedSettings = saveSettings(req.body);
-      log('Settings saved:', savedSettings);
+      if (connection?.baudRate === undefined || isNaN(parseInt(connection.baudRate, 10))) {
+        return res.status(400).json({ error: 'Baud rate required and must be numeric' });
+      }
 
-      // Intentionally no auto-reconnect here; a single background loop manages connection
+      const parsedBaudRate = parseInt(connection.baudRate, 10);
+      const parsedPort = connection?.port !== undefined ? parseInt(connection.port, 10) : undefined;
+      const parsedServerPort = connection?.serverPort !== undefined ? parseInt(connection.serverPort, 10) : undefined;
+
+      const settingsPayload = {
+        ...rest
+      };
+
+      if (connection) {
+        settingsPayload.connection = {
+          ...connection,
+          type: normalizedConnectionType ?? connection.type,
+          ...(parsedPort !== undefined ? { port: parsedPort } : {}),
+          ...(parsedServerPort !== undefined ? { serverPort: parsedServerPort } : {}),
+          baudRate: parsedBaudRate
+        };
+      }
+
+      const savedSettings = saveSettings(settingsPayload);
+      log('Settings saved:', savedSettings);
 
       res.json({
         success: true,

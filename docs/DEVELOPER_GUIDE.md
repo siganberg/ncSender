@@ -115,7 +115,7 @@ Optional local checks
 ## Server/Client Ports
 - Production (packaged/Electron): one configurable port (default `8090`) serves UI + API + WS.
 - Dev (hot reload): Vite on `5174`, backend on `8090` with proxy.
-- `serverPort` is persisted in `settings.json` and requires an app restart to apply.
+- `connection.serverPort` is persisted in `settings.json` and requires an app restart to apply.
 
 ## Data Locations
 Created automatically on first run:
@@ -142,4 +142,3 @@ Subfolders/files
 
 ## Contributing
 See `docs/CONTRIBUTING.md` for guidelines. Please run on your target OS and include logs and repro steps when filing bugs.
-

@@ -343,7 +343,10 @@ export class CNCController extends EventEmitter {
   async connectWithSettings(settings) {
     try {
 
-      const { connectionType, ip, port, usbPort, baudRate } = settings;
+      const connection = settings?.connection ?? {};
+      const connectionTypeRaw = connection?.type;
+      const connectionType = typeof connectionTypeRaw === 'string' ? connectionTypeRaw.toLowerCase() : undefined;
+      const baudRate = connection?.baudRate;
 
       // If no connection type, don't attempt connection
       if (!connectionType) {
@@ -354,6 +357,7 @@ export class CNCController extends EventEmitter {
       this.isConnecting = true;
 
       if (connectionType === 'ethernet') {
+        const { ip, port } = connection;
         if (!ip || !port) {
           log('Incomplete Ethernet settings...');
           this.isConnecting = false;
@@ -362,7 +366,8 @@ export class CNCController extends EventEmitter {
 
         this.connectionAttempt = this.connectEthernet(ip, port);
         return await this.connectionAttempt;
-      } else {
+      } else if (connectionType === 'usb') {
+        const { usbPort } = connection;
         if (!usbPort || !baudRate) {
           log('Incomplete USB settings...');
           this.isConnecting = false;
@@ -372,6 +377,10 @@ export class CNCController extends EventEmitter {
         this.connectionAttempt = this.connect(usbPort, baudRate);
         return await this.connectionAttempt;
       }
+
+      this.isConnecting = false;
+      log(`Unsupported connection type: ${connectionType}`);
+      return 'no-settings';
     } catch (error) {
       this.isConnecting = false;
       this.connectionAttempt = null;

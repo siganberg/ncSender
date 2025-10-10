@@ -32,7 +32,9 @@ const log = (...args) => {
 };
 
 export async function createApp(options = {}) {
-  const port = options.port ?? process.env.PORT ?? getSetting('serverPort') ?? DEFAULT_SETTINGS.serverPort;
+  const connectionSettings = getSetting('connection');
+  const configuredServerPort = connectionSettings?.serverPort ?? DEFAULT_SETTINGS.connection.serverPort;
+  const port = options.port ?? process.env.PORT ?? configuredServerPort;
 
   const app = express();
   const server = createHttpServer(app);
@@ -106,19 +108,20 @@ export async function createApp(options = {}) {
   };
 
   const computeSenderStatus = () => {
-    const connectionType = getSetting('connectionType') ?? DEFAULT_SETTINGS.connectionType;
+    const connectionSettings = getSetting('connection') ?? DEFAULT_SETTINGS.connection;
+    const connectionType = connectionSettings?.type;
     const normalizedType = typeof connectionType === 'string' ? connectionType.toLowerCase() : undefined;
 
     const requireSetup = () => {
       if (normalizedType === 'usb') {
-        const usbPort = getSetting('usbPort');
-        const baudRate = getSetting('baudRate') ?? DEFAULT_SETTINGS.baudRate;
+        const usbPort = connectionSettings?.usbPort;
+        const baudRate = connectionSettings?.baudRate ?? DEFAULT_SETTINGS.connection.baudRate;
         return !usbPort || !baudRate;
       }
 
       if (normalizedType === 'ethernet') {
-        const ip = getSetting('ip');
-        const port = getSetting('port');
+        const ip = connectionSettings?.ip;
+        const port = connectionSettings?.port;
         return !ip || !port;
       }
 
@@ -656,23 +659,37 @@ export async function createApp(options = {}) {
     while (autoConnectActive) {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      const connectionType = getSetting('connectionType');
-      if (connectionType === undefined) {
+      const rawConnection = getSetting('connection');
+
+      if (!rawConnection || typeof rawConnection.type !== 'string') {
         continue;
       }
 
+      const normalizedType = rawConnection.type.toLowerCase();
+      if (normalizedType !== 'usb' && normalizedType !== 'ethernet') {
+        previousSettings = null;
+        continue;
+      }
+      const sanitizedConnection = {
+        type: normalizedType,
+        ip: rawConnection.ip,
+        port: rawConnection.port,
+        serverPort: rawConnection.serverPort,
+        usbPort: rawConnection.usbPort,
+        baudRate: rawConnection.baudRate
+      };
+      const parsedBaudRate = parseInt(rawConnection.baudRate, 10);
+      const sanitizedBaudRate = Number.isFinite(parsedBaudRate) ? parsedBaudRate : DEFAULT_SETTINGS.connection.baudRate;
+      sanitizedConnection.baudRate = sanitizedBaudRate;
+
       const currentSettings = {
-        connectionType,
-        ip: getSetting('ip'),
-        port: getSetting('port'),
-        usbPort: getSetting('usbPort'),
-        baudRate: getSetting('baudRate')
+        connection: sanitizedConnection
       };
 
       // Validate settings are complete before attempting connection
-      const isSettingsComplete = connectionType === 'ethernet'
-        ? (currentSettings.ip && currentSettings.port)
-        : (currentSettings.usbPort && currentSettings.baudRate);
+      const isSettingsComplete = sanitizedConnection.type === 'ethernet'
+        ? (sanitizedConnection.ip && sanitizedConnection.port)
+        : (sanitizedConnection.usbPort && sanitizedConnection.baudRate);
 
       if (!isSettingsComplete) {
         // Settings incomplete, skip this iteration

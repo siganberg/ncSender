@@ -3,7 +3,9 @@ import { createApp } from './app.js';
 
 // Bootstrap: load config/env, initialize the app, and start the server
 export async function createServer() {
-  const port = process.env.PORT || getSetting('serverPort') || DEFAULT_SETTINGS.serverPort;
+  const connectionSettings = getSetting('connection');
+  const configuredPort = connectionSettings?.serverPort ?? DEFAULT_SETTINGS.connection.serverPort;
+  const port = process.env.PORT || configuredPort;
   const instance = await createApp({ port });
   await instance.start();
   return {

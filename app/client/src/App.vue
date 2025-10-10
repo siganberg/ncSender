@@ -627,13 +627,15 @@ const numberOfTools = ref(initialSettings?.numberOfTools ?? 4);
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
 // Connection settings (from settings store)
+const initialConnection = initialSettings?.connection;
+const initialBaudRate = initialConnection?.baudRate ?? 115200;
 const connectionSettings = reactive({
-  type: initialSettings?.connectionType === 'usb' ? 'USB' : 'Ethernet',
-  baudRate: initialSettings?.baudRate?.toString() || '115200',
-  ipAddress: initialSettings?.ip || '192.168.5.1',
-  port: initialSettings?.port || 23,
-  serverPort: initialSettings?.serverPort || 8090,
-  usbPort: initialSettings?.usbPort || ''
+  type: initialConnection?.type === 'ethernet' ? 'Ethernet' : 'USB',
+  baudRate: initialBaudRate.toString(),
+  ipAddress: initialConnection?.ip || '192.168.5.1',
+  port: initialConnection?.port ?? 23,
+  serverPort: initialConnection?.serverPort ?? 8090,
+  usbPort: initialConnection?.usbPort || ''
 });
 
 // Setup dialog connection settings (separate from main settings)
@@ -1232,26 +1234,33 @@ const getApiBaseUrl = () => {
 const isSettingsValid = (settings) => {
   if (!settings) return false;
 
+  const connection = settings.connection;
+  const connectionType = typeof connection?.type === 'string'
+    ? connection.type.toLowerCase()
+    : undefined;
+  const baudRateRaw = connection?.baudRate;
+  const parsedBaudRate = parseInt(baudRateRaw, 10);
+
   // Required fields
-  if (!settings.connectionType || !settings.baudRate) {
+  if (!connectionType || Number.isNaN(parsedBaudRate) || parsedBaudRate <= 0) {
     return false;
   }
 
   // USB-specific validation
-  if (settings.connectionType === 'usb') {
-    if (!settings.usbPort) return false;
+  if (connectionType === 'usb') {
+    if (!connection?.usbPort) return false;
   }
 
   // Ethernet-specific validation
-  if (settings.connectionType === 'ethernet') {
-    if (!settings.ip || !settings.port) return false;
+  if (connectionType === 'ethernet') {
+    if (!connection?.ip || connection.port === undefined) return false;
 
     // Validate IP format
     const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (!ipRegex.test(settings.ip)) return false;
+    if (!ipRegex.test(connection.ip)) return false;
 
     // Validate port range
-    const port = parseInt(settings.port);
+    const port = parseInt(connection.port, 10);
     if (isNaN(port) || port < 1 || port > 65535) return false;
   }
 
@@ -1267,12 +1276,14 @@ const saveConnectionSettings = async () => {
   try {
     // Prepare the complete settings object with all settings
     const settingsToSave = {
-      connectionType: connectionSettings.type?.toLowerCase() || 'usb',
-      baudRate: parseInt(connectionSettings.baudRate) || 115200,
-      ip: connectionSettings.ipAddress || '192.168.5.1',
-      port: parseInt(connectionSettings.port) || 23,
-      serverPort: parseInt(connectionSettings.serverPort) || 8090,
-      usbPort: connectionSettings.usbPort || '',
+      connection: {
+        type: connectionSettings.type?.toLowerCase() || 'usb',
+        ip: connectionSettings.ipAddress || '192.168.5.1',
+        port: parseInt(connectionSettings.port, 10) || 23,
+        serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
+        usbPort: connectionSettings.usbPort || '',
+        baudRate: parseInt(connectionSettings.baudRate, 10) || 115200
+      },
       theme: theme.value,
       workspace: workspace.value,
       defaultGcodeView: defaultView.value,
@@ -1310,12 +1321,14 @@ const saveSetupSettings = async () => {
 
     // Prepare the setup settings for saving
     const settingsToSave = {
-      connectionType: setupSettings.type?.toLowerCase() || 'usb',
-      baudRate: parseInt(setupSettings.baudRate) || 115200,
-      ip: setupSettings.ipAddress || '192.168.5.1',
-      port: parseInt(setupSettings.port) || 23,
-      serverPort: 8090, // Default server port
-      usbPort: setupSettings.usbPort || ''
+      connection: {
+        type: setupSettings.type?.toLowerCase() || 'usb',
+        ip: setupSettings.ipAddress || '192.168.5.1',
+        port: parseInt(setupSettings.port, 10) || 23,
+        serverPort: 8090,
+        usbPort: setupSettings.usbPort || '',
+        baudRate: parseInt(setupSettings.baudRate, 10) || 115200
+      }
     };
 
     // Use settings store to save
@@ -1327,6 +1340,7 @@ const saveSetupSettings = async () => {
     connectionSettings.baudRate = setupSettings.baudRate;
     connectionSettings.ipAddress = setupSettings.ipAddress;
     connectionSettings.port = setupSettings.port;
+    connectionSettings.serverPort = settingsToSave.connection.serverPort;
     connectionSettings.usbPort = setupSettings.usbPort;
 
     // Close setup dialog

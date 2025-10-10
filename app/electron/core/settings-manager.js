@@ -9,10 +9,14 @@ const log = (...args) => {
 
 const DEFAULT_SETTINGS = {
   pauseBeforeStop: 500,
-  ip: '192.168.5.1',
-  port: 23,
-  serverPort: 8090,
-  usbPort: '',
+  connection: {
+    type: 'usb',
+    ip: '192.168.5.1',
+    port: 23,
+    serverPort: 8090,
+    usbPort: '',
+    baudRate: 115200
+  },
   theme: 'dark',
   workspace: 'G54',
   defaultGcodeView: 'iso',
@@ -87,7 +91,40 @@ export function readSettings() {
       return { ...DEFAULT_SETTINGS };
     }
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
+    const parsedObject = parsed && typeof parsed === 'object' ? parsed : {};
+    const merged = { ...DEFAULT_SETTINGS, ...parsedObject };
+
+    const parsedConnection = parsedObject.connection;
+    const hasCustomConnection = parsedConnection && typeof parsedConnection === 'object';
+    const normalizedConnection = {
+      ...DEFAULT_SETTINGS.connection,
+      ...(hasCustomConnection ? parsedConnection : {})
+    };
+
+    // Support legacy property name
+    if (
+      hasCustomConnection &&
+      typeof parsedConnection.connectionType === 'string' &&
+      !parsedConnection.type
+    ) {
+      normalizedConnection.type = parsedConnection.connectionType.toLowerCase();
+    }
+
+    // If user provided a connection object but omitted type entirely, treat as unconfigured
+    const typeProvided = hasCustomConnection &&
+      (Object.prototype.hasOwnProperty.call(parsedConnection, 'type') ||
+       Object.prototype.hasOwnProperty.call(parsedConnection, 'connectionType'));
+
+    if (!typeProvided) {
+      delete normalizedConnection.type;
+    } else if (typeof normalizedConnection.type === 'string') {
+      normalizedConnection.type = normalizedConnection.type.toLowerCase();
+    }
+
+    delete normalizedConnection.connectionType;
+
+    merged.connection = normalizedConnection;
+    return merged;
   } catch (error) {
     log('Failed to load settings. Using defaults.', error);
     return { ...DEFAULT_SETTINGS };
@@ -123,6 +160,17 @@ export function saveSettings(newSettings) {
   try {
     const currentSettings = readSettings();
     const updatedSettings = { ...currentSettings, ...newSettings };
+
+    if (updatedSettings.connection && typeof updatedSettings.connection === 'object') {
+      delete updatedSettings.ip;
+      delete updatedSettings.port;
+      delete updatedSettings.serverPort;
+      delete updatedSettings.usbPort;
+      delete updatedSettings.connectionType;
+      delete updatedSettings.connection.connectionType;
+    }
+    delete updatedSettings.baudRate;
+
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2), 'utf8');
     return updatedSettings;
   } catch (error) {
@@ -132,11 +180,19 @@ export function saveSettings(newSettings) {
 }
 
 export function saveConnectionSettings(connectionSettings) {
+  const parsedBaudRate = parseInt(connectionSettings.baudRate, 10);
+  const parsedPort = parseInt(connectionSettings.port, 10);
+  const parsedServerPort = parseInt(connectionSettings.serverPort, 10);
+
   const settingsToSave = {
-    connectionType: connectionSettings.type?.toLowerCase() || 'usb',
-    baudRate: parseInt(connectionSettings.baudRate) || 115200,
-    ip: connectionSettings.ipAddress || '192.168.5.1',
-    port: parseInt(connectionSettings.port) || 23
+    connection: {
+      type: connectionSettings.type?.toLowerCase() || DEFAULT_SETTINGS.connection.type,
+      ip: connectionSettings.ipAddress || DEFAULT_SETTINGS.connection.ip,
+      port: Number.isFinite(parsedPort) ? parsedPort : DEFAULT_SETTINGS.connection.port,
+      serverPort: Number.isFinite(parsedServerPort) ? parsedServerPort : DEFAULT_SETTINGS.connection.serverPort,
+      usbPort: connectionSettings.usbPort || DEFAULT_SETTINGS.connection.usbPort,
+      baudRate: Number.isFinite(parsedBaudRate) ? parsedBaudRate : DEFAULT_SETTINGS.connection.baudRate
+    }
   };
 
   return saveSettings(settingsToSave);
