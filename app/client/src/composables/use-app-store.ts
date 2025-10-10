@@ -44,14 +44,10 @@ const serverState = reactive({
     currentLine: number;
     totalLines: number;
     status: 'running' | 'paused' | 'stopped' | 'completed' | null;
-    sourceId?: string;
-    jobStartTime?: string | null;
-    jobEndTime?: string | null;
-    jobPauseAt?: string | null;
-    jobPausedTotalSec?: number;
     remainingSec?: number | null;
     progressPercent?: number | null;
     runtimeSec?: number | null;
+    sourceId?: string;
   } | null
 });
 

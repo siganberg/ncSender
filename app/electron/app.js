@@ -63,7 +63,17 @@ export async function createApp(options = {}) {
               return undefined;
             }
           }
-          if (key === 'isProbing' || key === 'isToolChanging') {
+          if (key === 'isProbing' ||
+              key === 'isToolChanging' ||
+              key === 'totalEstimatedSec' ||
+              key === 'progressProvider' ||
+              key === 'jobStartTime' ||
+              key === 'jobEndTime' ||
+              key === 'jobPauseAt' ||
+              key === 'jobPausedTotalSec' ||
+              key === 'feedRateCommanded' ||
+              key === 'Bf' ||
+              key === 'Pn') {
             return undefined;
           }
           if (typeof value === 'function') {
@@ -528,9 +538,6 @@ export async function createApp(options = {}) {
             changes.jobLoaded.remainingSec = jl.remainingSec ?? null;
             changes.jobLoaded.progressPercent = jl.progressPercent ?? null;
             changes.jobLoaded.runtimeSec = jl.runtimeSec ?? null;
-            // Include provider-driven fields to keep UI in sync
-            changes.jobLoaded.totalEstimatedSec = jl.totalEstimatedSec ?? null;
-            changes.jobLoaded.progressProvider = jl.progressProvider ?? null;
           }
         } catch {}
 
@@ -551,7 +558,17 @@ export async function createApp(options = {}) {
             return undefined;
           }
           }
-        if (key === 'isProbing' || key === 'isToolChanging') {
+        if (key === 'isProbing' ||
+            key === 'isToolChanging' ||
+            key === 'totalEstimatedSec' ||
+            key === 'progressProvider' ||
+            key === 'jobStartTime' ||
+            key === 'jobEndTime' ||
+            key === 'jobPauseAt' ||
+            key === 'jobPausedTotalSec' ||
+            key === 'feedRateCommanded' ||
+            key === 'Bf' ||
+            key === 'Pn') {
           return undefined;
         }
         if (typeof value === 'function') {
