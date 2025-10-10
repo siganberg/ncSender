@@ -67,9 +67,7 @@
 
     <!-- Macros Tab -->
     <div v-if="activeTab === 'macros'" class="tab-content">
-      <div class="placeholder-content">
-        <p>Macros functionality coming soon</p>
-      </div>
+      <MacroPanel :connected="connected" />
     </div>
 
     <!-- G-Code Preview Tab -->
@@ -117,6 +115,7 @@ import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
 import { RecycleScroller } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
+import MacroPanel from '../macro/MacroPanel.vue';
 
 const store = useConsoleStore();
 
