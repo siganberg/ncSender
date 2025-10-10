@@ -5,13 +5,14 @@ ncSender is deployed as a hub-and-spoke control system: a single server instance
 ## Architectural Diagram
 ```mermaid
 graph LR
+
     Machine["CNC Machine\n(serial / tcp)"]
-    Server["ncSender Server (Electron + Express + WS)"]
+    Server["ncSender Server (Electron + Express + WS) - Can be one of the client too"]
 
     subgraph Clients["Thin Clients"]
-        ClientA["Desktop Computer"]
+        ClientA["Raspberry Pi with TouchScreen"]
         ClientB["Laptop"]
-        ClientN["Tablet"]
+        ClientN["Desktop PC"]
     end
 
     Machine <--> Server
@@ -22,7 +23,7 @@ graph LR
 
 ## Core Components
 - **Server (Hub)** — Runs once per machine. Hosts the REST API and WebSocket gateway, manages CNC communication (serial/TCP), enforces machine safety, and persists settings/jobs on the controller host.
-- **Thin Clients (Spokes)** — Electron windows or browser sessions that render the Vue UI. They hold ephemeral UI state, subscribe to server broadcasts, and send intent (commands, form submissions) back to the server through WebSockets or REST endpoints.
+- **Thin Clients (Spokes)** — Electron windows or browser sessions that render the Vue UI. They hold ephemeral UI state, subscribe to server broadcasts, and send intent (commands, form submissions) back to the server through WebSockets or REST endpoints. In embedded deployments the server also opens a local Electron window, so one thin client runs on the same host as the hub.
 - **Machine Interface** — Serial or TCP link to the CNC controller (e.g., GrblHAL). The server owns this channel exclusively to guarantee deterministic command sequencing and feedback parsing.
 
 ## Data & Control Flow
@@ -52,7 +53,7 @@ sequenceDiagram
 ```
 
 ## Deployment Scenarios
-- **Embedded (Electron):** The server boots inside the Electron main process. A single window ships with built-in credentials and a loopback WebSocket to the hub.
+- **Embedded (Electron):** The server boots inside the Electron main process. The primary window doubles as a thin client on the same host, connecting over a loopback WebSocket.
 - **Headless Server:** The same server bundle runs without Electron, exposing HTTP(S) + WebSockets on a configurable port. Shop-floor terminals attach as thin clients via browser or packaged Electron builds.
 - **Multi-Display Control:** Multiple clients can monitor or control the same machine simultaneously. Conflict resolution happens centrally because the server serializes command queues per machine.
 
