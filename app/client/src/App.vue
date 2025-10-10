@@ -761,6 +761,23 @@ onUnmounted(() => {
 
 const openSettings = async () => {
   showSettings.value = true;
+
+  // Reload connection settings from backend
+  try {
+    const freshSettings = await api.getSettings();
+    if (freshSettings) {
+      // Update connection settings with fresh data
+      connectionSettings.type = freshSettings.connectionType === 'usb' ? 'USB' : 'Ethernet';
+      connectionSettings.baudRate = freshSettings.baudRate?.toString() || '115200';
+      connectionSettings.ipAddress = freshSettings.ip || '192.168.5.1';
+      connectionSettings.port = freshSettings.port || 23;
+      connectionSettings.serverPort = freshSettings.serverPort || 8090;
+      connectionSettings.usbPort = freshSettings.usbPort || '';
+    }
+  } catch (error) {
+    console.error('Failed to reload settings:', error);
+  }
+
   // Load USB ports if connection type is USB
   if (connectionSettings.type === 'USB') {
     await loadMainUsbPorts();
