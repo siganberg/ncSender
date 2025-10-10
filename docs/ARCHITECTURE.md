@@ -48,8 +48,8 @@ sequenceDiagram
     UI->>Hub: Intent (e.g., jog, start job)
     Hub->>CNC: Serialized machine command
     CNC-->>Hub: Acknowledgement / status stream
-    Hub-->>UI: WebSocket state update
-    Hub-->>Others: Broadcast to other clients
+    Hub-->>UI: Broadcast response and updates
+    Hub-->>Other Clients: Broadcast response and updates
 ```
 
 ## Deployment Scenarios
