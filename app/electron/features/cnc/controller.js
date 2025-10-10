@@ -52,7 +52,7 @@ export class CNCController extends EventEmitter {
   }
 
   handleIncomingData(trimmedData) {
-    if (trimmedData.startsWith('<') && trimmedData.endsWith('>')) {
+    if (trimmedData.endsWith('>')) {
       this.rawData = trimmedData;
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
