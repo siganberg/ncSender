@@ -701,13 +701,18 @@ class NCClient {
 
   async controlGCodeJob(action) {
     // Use send-command API with real-time commands
-    const commandMap = {
-      'pause': '!',     // Feed hold
-      'resume': '~'     // Resume
-    };
+    let command;
 
-    const command = commandMap[action];
-    if (!command) {
+    if (action === 'pause') {
+      // Check if "Use Door as Pause" setting is enabled
+      const { getSettings } = await import('./settings-store.js');
+      const settings = getSettings();
+      const useDoorAsPause = settings?.useDoorAsPause ?? false;
+
+      command = useDoorAsPause ? '\x84' : '!';  // Door or Feed hold
+    } else if (action === 'resume') {
+      command = '~';  // Resume
+    } else {
       throw new Error(`Invalid action: ${action}`);
     }
 

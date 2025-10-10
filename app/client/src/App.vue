@@ -187,6 +187,15 @@
                 <option :value="8">8</option>
               </select>
             </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
+                <label class="setting-label">Use Door as Pause</label>
+                <div class="settings-note">
+                  Note: This only works with latest grblHAL version (Build 20250731 or newer)
+                </div>
+              </div>
+              <ToggleSwitch v-model="useDoorAsPause" />
+            </div>
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
@@ -534,6 +543,7 @@ import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
 import RightPanel from './shell/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
+import ToggleSwitch from './components/ToggleSwitch.vue';
 import { api } from './lib/api.js';
 import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
@@ -612,6 +622,9 @@ const currentGradient = computed(() => {
 
 // Number of tools setting
 const numberOfTools = ref(initialSettings?.numberOfTools ?? 4);
+
+// Use Door as Pause setting
+const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
 // Connection settings (from settings store)
 const connectionSettings = reactive({
@@ -1106,6 +1119,14 @@ watch(numberOfTools, async (newValue) => {
     numberOfTools: newValue
   });
   // Note: No local update here - wait for server broadcast to ensure all clients update together
+});
+
+// Watch useDoorAsPause and save changes
+watch(useDoorAsPause, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    useDoorAsPause: newValue
+  });
 });
 
 const validateIP = () => {

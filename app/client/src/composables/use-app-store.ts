@@ -2,6 +2,7 @@ import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
 import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.js';
 import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
+import { getSettings } from '@/lib/settings-store.js';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -100,6 +101,13 @@ const senderStatus = computed(() => {
   const machineStatus = (serverState.machineState?.status || '').toLowerCase();
 
   if (raw === 'tool-changing' && machineStatus === 'hold') {
+    return 'hold';
+  }
+
+  // Map Door to Hold when "Use Door as Pause" is enabled
+  const settings = getSettings();
+  const useDoorAsPause = settings?.useDoorAsPause ?? false;
+  if (useDoorAsPause && raw === 'running' && machineStatus === 'door') {
     return 'hold';
   }
 
