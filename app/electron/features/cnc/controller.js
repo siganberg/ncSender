@@ -26,6 +26,8 @@ export class CNCController extends EventEmitter {
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
+    this.waitingForFirstStatus = false; // Track if we're waiting for initial status report
+    this.firstStatusTimeout = null; // Timeout for first status report
 
     this.commandQueue = new PQueue({ concurrency: 1 });
     this.activeCommand = null;
@@ -163,6 +165,23 @@ export class CNCController extends EventEmitter {
     // Update machine state (always present) - extract state name before colon
     newStatus.status = parts[0].split(':')[0];
 
+    // If we're waiting for the first status report, mark connection as fully established
+    if (this.waitingForFirstStatus) {
+      log('Received first status report, connection confirmed');
+      this.waitingForFirstStatus = false;
+
+      // Clear the timeout
+      if (this.firstStatusTimeout) {
+        clearTimeout(this.firstStatusTimeout);
+        this.firstStatusTimeout = null;
+      }
+
+      // Now mark as truly connected
+      this.isConnected = true;
+      this.connectionStatus = 'connected';
+      this.emitConnectionStatus('connected', true);
+    }
+
     // Check if A: field is present in the status report
     let hasAccessoryField = false;
 
@@ -287,8 +306,8 @@ export class CNCController extends EventEmitter {
   startPolling() {
     if (this.statusPollInterval) return;
     this.statusPollInterval = setInterval(() => {
-      // Only send status requests if connected
-      if (this.isConnected && this.connection) {
+      // Send status requests if connected OR waiting for first status
+      if ((this.isConnected || this.waitingForFirstStatus) && this.connection) {
         try {
           this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } });
         } catch (error) {
@@ -369,20 +388,46 @@ export class CNCController extends EventEmitter {
   }
 
   onConnectionEstablished(type) {
-    log(`CNC controller connected via ${type}`);
-    this.isConnected = true;
-    this.connectionStatus = 'connected';
-    this.emitConnectionStatus('connected', true);
+    log(`CNC controller connection opened via ${type}, waiting for status report...`);
+
+    // Don't mark as fully connected yet - wait for first status report
+    this.waitingForFirstStatus = true;
+    this.emitConnectionStatus('verifying', false);
+
+    // Start polling immediately to request status
     this.startPolling();
 
+    // Set timeout for first status report (3 seconds)
+    this.firstStatusTimeout = setTimeout(() => {
+      if (this.waitingForFirstStatus) {
+        log('Timeout waiting for first status report - device may not be a CNC controller');
+        this.waitingForFirstStatus = false;
+
+        // Close the connection
+        this.disconnect();
+        this.emitConnectionStatus('disconnected', false);
+      }
+    }, 3000);
+
     // Request initial G-code modes to get workspace and tool number
-    this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } });
+    // (will only be sent once isConnected becomes true)
+    this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+      // Ignore errors during connection verification
+    });
   }
 
   onConnectionClosed(type) {
     log(`CNC controller disconnected (${type})`);
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
+    this.waitingForFirstStatus = false;
+
+    // Clear first status timeout if still pending
+    if (this.firstStatusTimeout) {
+      clearTimeout(this.firstStatusTimeout);
+      this.firstStatusTimeout = null;
+    }
+
     this.flushQueue(`${type}-close`);
     this.emitConnectionStatus('disconnected', false);
   }
@@ -702,7 +747,8 @@ export class CNCController extends EventEmitter {
   }
 
   writeToConnection(commandToSend, { rawCommand, isRealTime } = {}) {
-    if (!this.connection || !this.isConnected) {
+    // Allow writes if connected OR waiting for first status (verification phase)
+    if (!this.connection || (!this.isConnected && !this.waitingForFirstStatus)) {
       return Promise.reject(new Error('Connection is not available'));
     }
 
@@ -741,7 +787,8 @@ export class CNCController extends EventEmitter {
   }
 
   async sendCommand(command, options = {}) {
-    if (!this.isConnected || !this.connection) {
+    // Allow commands if connected OR waiting for first status (verification phase)
+    if ((!this.isConnected && !this.waitingForFirstStatus) || !this.connection) {
       throw new Error('CNC controller is not connected');
     }
 
