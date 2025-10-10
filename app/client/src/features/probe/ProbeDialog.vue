@@ -240,7 +240,7 @@
               :probing-axis="probingAxis"
               :selected-corner="selectedCorner"
               :selected-side="selectedSide"
-              :probe-active="probeActive"
+              :probe-active="props.probeActive"
               @corner-selected="selectedCorner = $event"
               @side-selected="selectedSide = $event"
             />
@@ -251,7 +251,7 @@
               :step-options="[0.1, 1, 10]"
               :disabled="isProbing"
               @update:step="jogStep = $event"
-              @center-click="handleClose"
+              @center-click="handleCenterClick"
             />
           </div>
         </div>
@@ -271,12 +271,13 @@ import ProbeVisualizer from './ProbeVisualizer.vue';
 import JogControls from '../jog/JogControls.vue';
 import { api } from '../../lib/api.js';
 import { updateSettings } from '../../lib/settings-store.js';
-import { startProbe as startProbeOperation } from './api';
+import { startProbe as startProbeOperation, stopProbe } from './api';
 
 // Props
 interface Props {
   show: boolean;
   isProbing: boolean;
+  probeActive: boolean;
 }
 
 const props = defineProps<Props>();
@@ -298,7 +299,6 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
-const probeActive = ref(false);
 const jogStep = ref(1);
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
@@ -606,7 +606,7 @@ watch(() => props.show, async (isShown) => {
 });
 
 // Watch for probe active state to detect connection test
-watch(() => probeActive.value, (isActive) => {
+watch(() => props.probeActive, (isActive) => {
   if (requireConnectionTest.value && isActive && !connectionTestPassed.value) {
     connectionTestPassed.value = true;
   }
@@ -635,6 +635,16 @@ const handleConnectionTestToggle = async () => {
 // Dialog functions
 const handleClose = () => {
   emit('close');
+};
+
+const handleCenterClick = async () => {
+  if (props.isProbing) {
+    try {
+      await stopProbe();
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to stop probe:', error);
+    }
+  }
 };
 
 const handleStartProbe = async () => {

@@ -182,6 +182,7 @@
   <ProbeDialog
     :show="showProbeDialog"
     :is-probing="store.isProbing.value"
+    :probe-active="probeActive"
     @close="showProbeDialog = false"
   />
 
@@ -1670,10 +1671,6 @@ onMounted(async () => {
     // Update probe active state
     if (state.machineState?.probeActive !== undefined) {
       probeActive.value = state.machineState.probeActive;
-      // Once probe is activated, keep button enabled
-      if (state.machineState.probeActive) {
-        probeEverActivated.value = true;
-      }
     }
 
     // Restore lastExecutedLine from server state on initial load (for page reloads)

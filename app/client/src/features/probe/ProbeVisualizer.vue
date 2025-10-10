@@ -34,8 +34,6 @@ let selectedCorner: string | null = null;
 let glowInterval: number | null = null;
 let isLoadingPlate = false;
 let currentPlateFile = '';
-let savedProbeCenter: THREE.Vector3 | null = null;
-let savedProbeScale: number = 1;
 
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
@@ -447,34 +445,43 @@ const loadProbeModel = async () => {
     });
 
     // Set initial LED color to green (ready state)
-    setGroupColor(object, 'Led', 0x00ff00);
+    // Try both LED group names (different models use different casing)
+    setGroupColor(object, 'Led', 0x00ff00);  // 3dprobe uses 'Led'
+    setGroupColor(object, 'LED', 0x00ff00);  // cnc-pointer uses 'LED'
 
-    // Don't rotate - keep original orientation to match corner/group names
-    // object.rotation.z = Math.PI / 2; // Rotate 90 degrees around Z axis
-
-    // Center and scale
-    const box = new THREE.Box3().setFromObject(object);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-
-    object.position.sub(center);
-
-    // Scale to fit view - make it bigger
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const scale = 10 / maxDim; // Scale to 10 units
-    object.scale.multiplyScalar(scale);
-
-    // Move object up (appears higher in view)
-    object.position.z += 4;
-
+    probeModel = object;
     scene.add(object);
 
-    // Save probe center and scale for plate reloading
-    savedProbeCenter = center.clone();
-    savedProbeScale = scale;
+    // Load the plate model first to determine scale
+    await loadPlateModel();
 
-    // Load the plate model
-    await loadPlateModel(center, scale);
+    // Now apply scaling to both probe and plate based on plate size
+    if (plateModel && probeModel) {
+      const plateBBox = new THREE.Box3().setFromObject(plateModel);
+      const plateCenter = plateBBox.getCenter(new THREE.Vector3());
+      const plateSize = plateBBox.getSize(new THREE.Vector3());
+
+      // Scale based on plate, not probe
+      const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
+      const scale = 10 / maxDim; // Scale to 10 units
+
+      // Center and scale plate
+      plateModel.position.sub(plateCenter);
+      plateModel.scale.multiplyScalar(scale);
+      plateModel.position.z += 3;
+
+      // Center and scale probe with same scale
+      const probeBBox = new THREE.Box3().setFromObject(probeModel);
+      const probeCenter = probeBBox.getCenter(new THREE.Vector3());
+      probeModel.position.sub(probeCenter);
+      probeModel.scale.multiplyScalar(scale);
+      probeModel.position.z += 4;
+
+      // Rotate plate for X mode after scaling
+      if (props.probingAxis === 'X') {
+        plateModel.rotation.z = Math.PI / 2;
+      }
+    }
 
     // Update camera to view the scaled model
     resetCamera();
@@ -526,7 +533,7 @@ const loadProbeModel = async () => {
   }
 };
 
-const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) => {
+const loadPlateModel = async () => {
   const cacheBust = `?t=${Date.now()}`;
 
   // Determine which plate model to load based on probing axis
@@ -576,18 +583,6 @@ const loadPlateModel = async (probeCenter: THREE.Vector3, probeScale: number) =>
       setGroupColor(object, 'TopLeft', 0x555555);
     }
 
-    // Rotate plate for X mode (90 degrees around Z axis)
-    if (props.probingAxis === 'X') {
-      object.rotation.z = Math.PI / 2;
-    }
-
-    // Apply same centering and scaling as probe
-    object.position.sub(probeCenter);
-    object.scale.multiplyScalar(probeScale);
-
-    // Move plate up same as probe (appears higher in view)
-    object.position.z += 3;
-
     scene.add(object);
 
     // Re-render after plate is loaded
@@ -620,7 +615,10 @@ watch(() => props.probeActive, (isActive) => {
   if (probeModel) {
     // Red when active (triggered), Green when inactive (ready)
     const ledColor = isActive ? 0xff0000 : 0x00ff00;
-    setGroupColor(probeModel, 'Led', ledColor);
+
+    // Try both LED group names (different models use different casing)
+    setGroupColor(probeModel, 'Led', ledColor);  // 3dprobe uses 'Led'
+    setGroupColor(probeModel, 'LED', ledColor);  // cnc-pointer uses 'LED'
 
     if (renderer) {
       renderer.render(scene, camera);
@@ -773,15 +771,32 @@ watch(() => props.probingAxis, async () => {
       plateModel = null;
     }
 
-    // Use saved probe center and scale (not recalculated from current probe bbox)
-    if (!savedProbeCenter || !savedProbeScale) {
-      console.error('[ProbeVisualizer] savedProbeCenter or savedProbeScale not set!');
-      isLoadingPlate = false;
-      return;
-    }
+    // Reload plate model
+    await loadPlateModel();
 
-    // Reload plate with correct model using saved values
-    await loadPlateModel(savedProbeCenter, savedProbeScale);
+    // Reapply scaling based on plate
+    if (plateModel && probeModel) {
+      const plateBBox = new THREE.Box3().setFromObject(plateModel);
+      const plateCenter = plateBBox.getCenter(new THREE.Vector3());
+      const plateSize = plateBBox.getSize(new THREE.Vector3());
+
+      const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
+      const scale = 10 / maxDim;
+
+      plateModel.position.sub(plateCenter);
+      plateModel.scale.multiplyScalar(scale);
+      plateModel.position.z += 3;
+
+      const probeBBox = new THREE.Box3().setFromObject(probeModel);
+      const probeCenter = probeBBox.getCenter(new THREE.Vector3());
+      probeModel.position.sub(probeCenter);
+      probeModel.scale.multiplyScalar(scale);
+      probeModel.position.z += 4;
+
+      if (props.probingAxis === 'X') {
+        plateModel.rotation.z = Math.PI / 2;
+      }
+    }
 
     isLoadingPlate = false;
 
