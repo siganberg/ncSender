@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, ipcMain } from 'electron';
+import { app, BrowserWindow, nativeTheme, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
 import { createServer } from './server.js';
@@ -46,7 +46,9 @@ async function createWindow() {
 
   // Maximize window by default (unless in kiosk mode)
   if (!isKiosk) {
-    mainWindow.maximize();
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+    mainWindow.setBounds({ x: 0, y: 0, width, height });
   }
 
   // Load the UI from the embedded server
