@@ -9,17 +9,11 @@ const log = (...args) => {
 
 const DEFAULT_MACROS = [
   {
-    id: 'probe-center',
-    name: 'Probe Center',
+    id: '44426f3c-e00f-4b8e-945d-6f61d57b424a',
+    name: 'Macro Sample',
     description: 'Finds the hole center using probe',
-    category: 'Probing',
-    commands: `G38.2 X-2 F100
-G10 L20 P1 X0
-G1 X5 F300
-G38.2 X25 F100
-G91 G1 X-12.5 F300
-G90
-; Now at center`,
+    commands: `G91 G1 X100 F1000
+G91 G1 X-100 F1000`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
@@ -82,7 +76,6 @@ export function createMacro(macroData) {
     id: randomUUID(),
     name: macroData.name || 'Untitled Macro',
     description: macroData.description || '',
-    category: macroData.category || 'Custom',
     commands: macroData.commands || '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

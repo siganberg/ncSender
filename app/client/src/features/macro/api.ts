@@ -62,5 +62,16 @@ export const api = {
     if (!response.ok) {
       throw new Error('Failed to delete macro');
     }
+  },
+
+  async executeMacro(id: string): Promise<{ success: boolean; message: string; commandsExecuted: number }> {
+    const response = await fetch(`${API_BASE}/api/macros/${id}/execute`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to execute macro');
+    }
+    return response.json();
   }
 };

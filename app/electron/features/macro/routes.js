@@ -11,7 +11,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createMacroRoutes() {
+export function createMacroRoutes(cncController) {
   const router = Router();
 
   router.get('/macros', (req, res) => {
@@ -39,13 +39,13 @@ export function createMacroRoutes() {
 
   router.post('/macros', (req, res) => {
     try {
-      const { name, description, category, commands } = req.body;
+      const { name, description, commands } = req.body;
 
       if (!name || !commands) {
         return res.status(400).json({ error: 'Name and commands are required' });
       }
 
-      const newMacro = createMacro({ name, description, category, commands });
+      const newMacro = createMacro({ name, description, commands });
       res.status(201).json(newMacro);
     } catch (error) {
       log('Error creating macro:', error);
@@ -55,12 +55,11 @@ export function createMacroRoutes() {
 
   router.put('/macros/:id', (req, res) => {
     try {
-      const { name, description, category, commands } = req.body;
+      const { name, description, commands } = req.body;
       const updates = {};
 
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
-      if (category !== undefined) updates.category = category;
       if (commands !== undefined) updates.commands = commands;
 
       const updatedMacro = updateMacro(req.params.id, updates);
@@ -84,6 +83,55 @@ export function createMacroRoutes() {
       }
       log('Error deleting macro:', error);
       res.status(500).json({ error: 'Failed to delete macro' });
+    }
+  });
+
+  router.post('/macros/:id/execute', async (req, res) => {
+    try {
+      if (!cncController || !cncController.isConnected) {
+        return res.status(503).json({ error: 'CNC controller is not connected' });
+      }
+
+      const macro = getMacro(req.params.id);
+      if (!macro) {
+        return res.status(404).json({ error: 'Macro not found' });
+      }
+
+      const startComment = `; Executing Macro: ${macro.name}`;
+      const endComment = `; End of Macro: ${macro.name} execution`;
+
+      // Split commands by newline and filter empty lines
+      const commands = macro.commands.split('\n')
+        .map(line => line.trim())
+        .filter(line => line !== '');
+
+      log(`Executing macro: ${macro.name} (${commands.length} commands)`);
+
+      // Send start comment
+      await cncController.sendCommand(startComment, {
+        meta: { sourceId: 'macro' }
+      });
+
+      // Send each command
+      for (const command of commands) {
+        await cncController.sendCommand(command, {
+          meta: { sourceId: 'macro' }
+        });
+      }
+
+      // Send end comment
+      await cncController.sendCommand(endComment, {
+        meta: { sourceId: 'macro' }
+      });
+
+      res.json({
+        success: true,
+        message: `Macro "${macro.name}" executed successfully`,
+        commandsExecuted: commands.length
+      });
+    } catch (error) {
+      log('Error executing macro:', error);
+      res.status(500).json({ error: 'Failed to execute macro', message: error.message });
     }
   });
 

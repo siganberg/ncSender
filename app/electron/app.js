@@ -1184,7 +1184,7 @@ export async function createApp(options = {}) {
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
-  app.use('/api', createMacroRoutes());
+  app.use('/api', createMacroRoutes(cncController));
 
   // Fallback route for SPA - handle all non-API routes
   app.use((req, res, next) => {

@@ -120,7 +120,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
 import { useMacroStore } from './store';
-import { api as consoleApi } from '../console/api';
+import { api as macroApi } from './api';
 import type { Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -204,43 +204,20 @@ const saveMacro = async () => {
 const runMacro = async () => {
   if (!selectedMacroId.value || selectedMacroId.value === 'new' || !props.connected) return;
 
-  const commands = formData.value.commands.split('\n').filter(line => line.trim() !== '');
-
-  for (const command of commands) {
-    try {
-      await consoleApi.sendCommandViaWebSocket({
-        command: command.trim(),
-        displayCommand: command.trim(),
-        meta: {
-          recordHistory: false
-        }
-      });
-    } catch (error) {
-      console.error('Failed to send command:', command, error);
-    }
+  try {
+    await macroApi.executeMacro(selectedMacroId.value);
+  } catch (error) {
+    console.error('Failed to execute macro:', error);
   }
 };
 
 const runMacroFromList = async (macroId: string) => {
   if (!props.connected) return;
 
-  const macro = macroStore.macros.value.find(m => m.id === macroId);
-  if (!macro) return;
-
-  const commands = macro.commands.split('\n').filter(line => line.trim() !== '');
-
-  for (const command of commands) {
-    try {
-      await consoleApi.sendCommandViaWebSocket({
-        command: command.trim(),
-        displayCommand: command.trim(),
-        meta: {
-          recordHistory: false
-        }
-      });
-    } catch (error) {
-      console.error('Failed to send command:', command, error);
-    }
+  try {
+    await macroApi.executeMacro(macroId);
+  } catch (error) {
+    console.error('Failed to execute macro:', error);
   }
 };
 
