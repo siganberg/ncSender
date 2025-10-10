@@ -15,6 +15,7 @@
                 <select v-model="probeType" class="probe-select" :disabled="isProbing">
                   <option value="3d-probe">3D Probe</option>
                   <option value="standard-block">Standard Block</option>
+                  <option value="autozero-touch">AutoZero Touch</option>
                 </select>
               </div>
 
@@ -212,7 +213,10 @@
             </template>
 
             <!-- Contextual instruction - shown at bottom of controls -->
-            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+            <div v-if="probeType === 'autozero-touch'" class="probe-contextual-instruction probe-contextual-instruction--warning">
+              AutoZero Touch probe type is not implemented yet.
+            </div>
+            <div v-else-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
               Click on a corner to select where to start probing
             </div>
             <div v-else-if="probingAxis === 'X'" class="probe-contextual-instruction probe-contextual-instruction--warning">
@@ -258,7 +262,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide)">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide) || probeType === 'autozero-touch'">Start Probe</button>
       </div>
     </div>
   </Dialog>

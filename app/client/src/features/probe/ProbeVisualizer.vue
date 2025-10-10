@@ -35,6 +35,12 @@ let glowInterval: number | null = null;
 let isLoadingPlate = false;
 let currentPlateFile = '';
 
+// Probe scale mapping by probe type
+const PROBE_SCALE_MAP: Record<string, number> = {
+  '3d-touch': 1,
+  'standard-block': 200
+};
+
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
   const accentColorStr = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
@@ -44,9 +50,9 @@ const getAccentColor = (): number => {
 // Reset camera to default view
 const resetCamera = () => {
   if (!camera || !controls || !renderer) return;
-  camera.position.set(0, -27.026769063068528, 9.428525574214994);
-  camera.lookAt(0, -0.5914934468668256, -2.038781781675869);
-  controls.target.set(0, -0.5914934468668256, -2.038781781675869);
+  camera.position.set(-0.010274938767900303, -15.991323668275516, 9.326571667593097);
+  camera.lookAt(-0.010274938767900303, 0.43934016042830804, 0.3383532720640545);
+  controls.target.set(-0.010274938767900303, 0.43934016042830804, 0.3383532720640545);
   controls.update();
   renderer.render(scene, camera);
 };
@@ -140,6 +146,7 @@ const initScene = () => {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
   controls.enableZoom = true;
+  controls.zoomSpeed = 0.1;
   controls.enablePan = true;
   controls.enableRotate = true;
   controls.screenSpacePanning = true; // Enable screen space panning for Z-axis
@@ -324,8 +331,14 @@ const initScene = () => {
             // Move probe to corner position
             probeModel.position.x = targetX;
             probeModel.position.y = targetY;
-            // Set Z height based on mode
-            probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+            // Set Z height based on mode and probe type
+            if (props.probeType === 'standard-block') {
+              const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+              const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+              probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+            } else {
+              probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+            }
           }
 
           if (renderer) {
@@ -437,10 +450,6 @@ const loadProbeModel = async () => {
         if (child.material) {
           child.material.side = THREE.DoubleSide;
         }
-        // Lighten the Body group
-        if (child.userData.group?.toLowerCase().includes('body')) {
-          setGroupColor(object, 'Body', 0x666666); // Lighter gray for body
-        }
       }
     });
 
@@ -448,6 +457,14 @@ const loadProbeModel = async () => {
     // Try both LED group names (different models use different casing)
     setGroupColor(object, 'Led', 0x00ff00);  // 3dprobe uses 'Led'
     setGroupColor(object, 'LED', 0x00ff00);  // cnc-pointer uses 'LED'
+
+    // Apply custom colors based on probe type
+    if (props.probeType === 'standard-block') {
+      setGroupColor(object, 'Body', 0xe8e8e8);
+      setGroupColor(object, 'Nut', 0x606060);
+    } else if (props.probeType === '3d-probe') {
+      setGroupColor(object, 'Body', 0x606060);
+    }
 
     probeModel = object;
     scene.add(object);
@@ -464,18 +481,29 @@ const loadProbeModel = async () => {
       // Scale based on plate, not probe
       const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
       const scale = 10 / maxDim; // Scale to 10 units
+      console.log('[ProbeVisualizer] Scale:', scale);
 
       // Center and scale plate
       plateModel.position.sub(plateCenter);
       plateModel.scale.multiplyScalar(scale);
       plateModel.position.z += 3;
 
-      // Center and scale probe with same scale
+      // Center and scale probe
       const probeBBox = new THREE.Box3().setFromObject(probeModel);
       const probeCenter = probeBBox.getCenter(new THREE.Vector3());
       probeModel.position.sub(probeCenter);
-      probeModel.scale.multiplyScalar(scale);
-      probeModel.position.z += 4;
+      const probeScaleMultiplier = PROBE_SCALE_MAP[props.probeType] || 1;
+      const probeScale = probeScaleMultiplier === 1 ? scale : probeScaleMultiplier;
+      probeModel.scale.multiplyScalar(probeScale);
+
+      // Calculate Z offset based on scaled probe height for standard-block
+      if (props.probeType === 'standard-block') {
+        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+        probeModel.position.z += scaledProbeSize.z / 2 ;
+      } else {
+        probeModel.position.z += 4;
+      }
 
       // Rotate plate for X mode after scaling
       if (props.probingAxis === 'X') {
@@ -515,7 +543,13 @@ const loadProbeModel = async () => {
 
       probeModel.position.x = targetX;
       probeModel.position.y = targetY;
-      probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      if (props.probeType === 'standard-block') {
+        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+        probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+      } else {
+        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      }
     }
 
     // Position probe for Center modes
@@ -664,7 +698,13 @@ watch(() => props.selectedCorner, (newCorner) => {
 
       probeModel.position.x = targetX;
       probeModel.position.y = targetY;
-      probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      if (props.probeType === 'standard-block') {
+        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+        probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+      } else {
+        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      }
     }
 
     if (renderer) {
@@ -731,7 +771,13 @@ watch(() => props.probingAxis, async () => {
             }
       probeModel.position.x = targetX;
       probeModel.position.y = targetY;
-      probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      if (props.probeType === 'standard-block') {
+        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+        probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+      } else {
+        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+      }
 
       if (renderer) {
         renderer.render(scene, camera);
@@ -797,8 +843,23 @@ watch(() => props.probingAxis, async () => {
       const probeBBox = new THREE.Box3().setFromObject(probeModel);
       const probeCenter = probeBBox.getCenter(new THREE.Vector3());
       probeModel.position.sub(probeCenter);
-      probeModel.scale.multiplyScalar(scale);
-      probeModel.position.z += 4;
+      const probeScaleMultiplier = PROBE_SCALE_MAP[props.probeType] || 1;
+      const probeScale = probeScaleMultiplier === 1 ? scale : probeScaleMultiplier;
+      probeModel.scale.multiplyScalar(probeScale);
+
+      // Set Z position based on probing axis and probe type
+      if (props.probeType === 'standard-block') {
+        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+        const zOffset = scaledProbeSize.z / 2;
+        probeModel.position.z += zOffset;
+      } else {
+        let zOffset = 4;
+        if (props.probingAxis === 'Center - Inner') {
+          zOffset = 2;
+        }
+        probeModel.position.z += zOffset;
+      }
 
       // Rotate plate for X mode after scaling
       if (props.probingAxis === 'X') {
@@ -812,8 +873,8 @@ watch(() => props.probingAxis, async () => {
     if (plateModel && probeModel) {
       // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
       if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis)) {
-        const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
-        probeModel.position.set(0, 0, zPosition);
+        probeModel.position.x = 0;
+        probeModel.position.y = 0;
       }
 
       // Start glow animation for Center - Inner mode
@@ -852,7 +913,15 @@ watch(() => props.probingAxis, async () => {
 
         probeModel.position.x = targetX;
         probeModel.position.y = targetY;
-        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+
+        // Set Z based on probe type and axis
+        if (props.probeType === 'standard-block') {
+          const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+          const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+          probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+        } else {
+          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        }
       }
     }
 
