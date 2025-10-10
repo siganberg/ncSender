@@ -88,7 +88,7 @@
                 </div>
               </div>
 
-              <div class="probe-control-row">
+              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">X Dimension</label>
                   <div class="probe-input-with-unit">
@@ -258,7 +258,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed)">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide)">Start Probe</button>
       </div>
     </div>
   </Dialog>
@@ -551,8 +551,14 @@ watch(() => props.show, async (isShown) => {
     try {
       const settings = await api.getSettings();
       if (settings) {
+        if (settings.probe?.type) {
+          probeType.value = settings.probe.type;
+        }
         if (settings.probe?.probingAxis) {
           probingAxis.value = settings.probe.probingAxis;
+        }
+        if (settings.probe?.selectedCorner) {
+          selectedCorner.value = settings.probe.selectedCorner;
         }
         if (typeof settings.probe?.['3d-probe']?.ballPointDiameter === 'number') {
           ballPointDiameter.value = settings.probe['3d-probe'].ballPointDiameter;

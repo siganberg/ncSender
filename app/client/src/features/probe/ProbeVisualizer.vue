@@ -776,6 +776,11 @@ watch(() => props.probingAxis, async () => {
 
     // Reapply scaling based on plate
     if (plateModel && probeModel) {
+      // Reset scale and rotation first
+      plateModel.scale.set(1, 1, 1);
+      plateModel.rotation.set(0, 0, 0);
+      probeModel.scale.set(1, 1, 1);
+
       const plateBBox = new THREE.Box3().setFromObject(plateModel);
       const plateCenter = plateBBox.getCenter(new THREE.Vector3());
       const plateSize = plateBBox.getSize(new THREE.Vector3());
@@ -783,16 +788,19 @@ watch(() => props.probingAxis, async () => {
       const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
       const scale = 10 / maxDim;
 
+      // Center and scale plate
       plateModel.position.sub(plateCenter);
       plateModel.scale.multiplyScalar(scale);
       plateModel.position.z += 3;
 
+      // Center and scale probe
       const probeBBox = new THREE.Box3().setFromObject(probeModel);
       const probeCenter = probeBBox.getCenter(new THREE.Vector3());
       probeModel.position.sub(probeCenter);
       probeModel.scale.multiplyScalar(scale);
       probeModel.position.z += 4;
 
+      // Rotate plate for X mode after scaling
       if (props.probingAxis === 'X') {
         plateModel.rotation.z = Math.PI / 2;
       }
