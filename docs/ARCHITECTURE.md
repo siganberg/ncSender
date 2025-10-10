@@ -6,12 +6,12 @@ ncSender is deployed as a hub-and-spoke control system: a single server instance
 ```mermaid
 graph LR
     Machine["CNC Machine\n(serial / tcp)"]
-    Server["ncSender Server\n(Electron + Express + WS)"]
+    Server["ncSender Server (Electron + Express + WS)"]
 
     subgraph Clients["Thin Clients"]
-        ClientA["Operator Console"]
-        ClientB["Supervisor Station"]
-        ClientN["Remote Tablet"]
+        ClientA["Desktop Computer"]
+        ClientB["Laptop"]
+        ClientN["Tablet"]
     end
 
     Machine <--> Server
