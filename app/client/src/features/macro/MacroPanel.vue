@@ -38,12 +38,37 @@
       </div>
     </div>
 
-    <div class="macro-editor-column" v-if="selectedMacroId">
-      <div class="macro-editor">
+    <div class="macro-editor-column">
+      <div v-if="selectedMacroId" class="macro-editor">
         <div class="editor-header">
-          <button class="btn-primary" @click="saveMacro" :disabled="!isFormValid">Save</button>
-          <button class="btn-primary" @click="runMacro" :disabled="!connected || selectedMacroId === 'new'">Run</button>
-          <button class="btn-danger" @click="confirmDelete" :disabled="selectedMacroId === 'new'">Delete</button>
+          <button class="btn-icon btn-close" @click="closeEditor" title="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div class="editor-actions">
+            <button class="btn-icon btn-save" @click="saveMacro" :disabled="!isFormValid" title="Save">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+            </button>
+            <button class="btn-icon btn-run" @click="runMacro" :disabled="!connected || selectedMacroId === 'new'" title="Run">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </button>
+            <button class="btn-icon btn-delete" @click="confirmDelete" :disabled="selectedMacroId === 'new'" title="Delete">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="editor-form">
           <div class="form-group">
@@ -147,6 +172,10 @@ const createNewMacro = () => {
 
 const selectMacro = (id: string) => {
   selectedMacroId.value = id;
+};
+
+const closeEditor = () => {
+  selectedMacroId.value = null;
 };
 
 const saveMacro = async () => {
@@ -271,17 +300,10 @@ onMounted(() => {
 
 <style scoped>
 .macro-panel {
-  display: grid;
-  grid-template-columns: 1fr 0fr;
-  gap: 0;
+  display: flex;
   height: 100%;
   overflow: hidden;
-  transition: grid-template-columns 0.3s ease;
-}
-
-.macro-panel.editor-open {
-  grid-template-columns: 240px 1fr;
-  gap: 15px;
+  position: relative;
 }
 
 .macro-list-column {
@@ -289,13 +311,24 @@ onMounted(() => {
   flex-direction: column;
   gap: var(--gap-sm);
   overflow: hidden;
-  transition: all 0.3s ease;
+  width: 100%;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .macro-panel.editor-open .macro-list-column {
+  width: 240px;
   border-right: 1px solid var(--color-border);
   padding-right: 15px;
+  flex-shrink: 0;
 }
+
+@media (max-width: 1200px) {
+  .macro-panel.editor-open .macro-list-column {
+    width: 35vw !important;
+  }
+}
+
+
 
 .macro-list-header {
   display: flex;
@@ -421,19 +454,17 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 1;
+  margin-left: 15px;
+  min-width: 0;
   opacity: 0;
-  animation: slideIn 0.3s ease forwards;
+  transform: translateX(30px);
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.macro-panel.editor-open .macro-editor-column {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .macro-editor {
@@ -446,43 +477,57 @@ onMounted(() => {
 
 .editor-header {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.editor-actions {
+  display: flex;
   gap: var(--gap-xs);
 }
 
-.btn-primary {
-  padding: 8px 20px;
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: none;
   border-radius: var(--radius-small);
-  background: var(--gradient-accent);
-  color: white;
-  font-size: 0.9rem;
-  font-weight: 600;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
   cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
+.btn-icon:hover:not(:disabled) {
+  background: var(--color-surface);
+  transform: translateY(-1px);
 }
 
-.btn-primary:disabled {
-  opacity: 0.5;
+.btn-icon:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.btn-danger {
-  padding: 8px 20px;
-  border: none;
-  border-radius: var(--radius-small);
-  background: #ff6b6b;
-  color: white;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-left: auto;
+.btn-close:hover:not(:disabled) {
+  background: var(--color-surface);
 }
 
-.btn-danger:hover {
-  background: #ff5252;
+.btn-save:hover:not(:disabled) {
+  background: var(--gradient-accent);
+  color: white;
+}
+
+.btn-run:hover:not(:disabled) {
+  background: var(--gradient-accent);
+  color: white;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #ff6b6b;
+  color: white;
 }
 
 .editor-form {
@@ -547,10 +592,5 @@ onMounted(() => {
   padding: var(--gap-md);
 }
 
-@media (max-width: 1024px) {
-  .macro-panel {
-    grid-template-columns: 1fr;
-    grid-template-rows: 300px 1fr;
-  }
-}
+
 </style>

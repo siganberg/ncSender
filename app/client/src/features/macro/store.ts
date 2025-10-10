@@ -20,7 +20,7 @@ export function useMacroStore() {
     }
   };
 
-  const createMacro = async (data: { name: string; description?: string; category: string; commands: string }) => {
+  const createMacro = async (data: { name: string; description?: string; commands: string }) => {
     try {
       const newMacro = await api.createMacro(data);
       macros.value.push(newMacro);
@@ -31,7 +31,7 @@ export function useMacroStore() {
     }
   };
 
-  const updateMacro = async (id: string, data: Partial<{ name: string; description?: string; category: string; commands: string }>) => {
+  const updateMacro = async (id: string, data: Partial<{ name: string; description?: string; commands: string }>) => {
     try {
       const updatedMacro = await api.updateMacro(id, data);
       const index = macros.value.findIndex(m => m.id === id);
