@@ -810,10 +810,13 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     // Detect tools used based on M6 lines with tool numbers
     toolsUsed.value = extractToolsFromGCode(data.content);
 
-    // Check if G-code has out of bounds movements
-    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
-    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
-    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
+    // Check if G-code has out of bounds movements (only when sender is idle)
+    const currentStatus = props.senderStatus?.toLowerCase();
+    if (currentStatus === 'idle') {
+      showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+      outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+      outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
+    }
 
     // Reset all line type visibility to true when loading new G-code
     showRapids.value = true;
