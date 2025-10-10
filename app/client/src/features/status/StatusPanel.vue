@@ -1,12 +1,12 @@
 <template>
-  <section class="card status-card" :class="{ 'card-disabled': coordZeroingDisabled }">
+  <section class="card status-card" :class="{ 'card-disabled': cardDisabled }">
     <div class="status-hint">Press and hold an axis card to zero it at the current position</div>
     <div class="coords">
       <!-- Group X and Y with a border and a join indicator -->
       <div class="axis-group xy-group">
         <!-- X Card -->
         <div
-          class="axis-display"
+          :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="startLongPress('x', $event)"
           @mouseup="endLongPress('x')"
           @mouseleave="cancelLongPress('x')"
@@ -24,7 +24,7 @@
 
         <!-- XY Join Indicator -->
         <div
-          :class="['axis-link', { active: (pressState['xy']?.progress || 0) > 0 }]"
+          :class="['axis-link', { active: (pressState['xy']?.progress || 0) > 0, 'axis-disabled': axisControlsDisabled }]"
           title="Zero X and Y (G10 L20 X0 Y0)"
           @mousedown="startLongPress('xy', $event)"
           @mouseup="endLongPress('xy')"
@@ -38,7 +38,7 @@
 
         <!-- Y Card -->
         <div
-          class="axis-display"
+          :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="startLongPress('y', $event)"
           @mouseup="endLongPress('y')"
           @mouseleave="cancelLongPress('y')"
@@ -60,7 +60,7 @@
         <div
           v-for="axis in remainingAxes"
           :key="axis"
-          class="axis-display"
+          :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="startLongPress(axis, $event)"
           @mouseup="endLongPress(axis)"
           @mouseleave="cancelLongPress(axis)"
@@ -144,7 +144,8 @@ const { isJobRunning } = appStore;
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value || isJobRunning.value);
+const cardDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value);
+const axisControlsDisabled = computed(() => cardDisabled.value || isJobRunning.value);
 
 const props = defineProps<{
   status: {
@@ -320,7 +321,7 @@ const ensureAxisState = (axis: AxisKey) => {
 let activeAxis: string | null = null;
 
 const startLongPress = (axis: AxisKey, _evt: Event) => {
-  if (!store.isHomed.value) {
+  if (axisControlsDisabled.value || !store.isHomed.value) {
     return;
   }
   const state = ensureAxisState(axis);
@@ -418,6 +419,16 @@ const handleGlobalPointerUp = () => {
   cancelLongPress(activeAxis);
 };
 
+watch(axisControlsDisabled, (disabled) => {
+  if (!disabled) return;
+  ['x', 'y', 'z', 'xy'].forEach((axis) => {
+    const state = pressState[axis];
+    if (state?.active || state?.progress) {
+      cancelLongPress(axis);
+    }
+  });
+});
+
 onMounted(() => {
   window.addEventListener('mouseup', handleGlobalPointerUp);
   window.addEventListener('touchend', handleGlobalPointerUp);
@@ -432,10 +443,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Disable entire status card when not homed or while homing. */
+/* Disable entire status card when machine not ready (e.g., not homed, homing, probing). */
 .card-disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+.axis-disabled {
+  pointer-events: none;
+  opacity: 0.6;
 }
 
 .card {
