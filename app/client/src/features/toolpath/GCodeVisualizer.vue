@@ -285,13 +285,14 @@ const canStartOrResume = computed(() => {
 
 const canPause = computed(() => {
   if (!isMachineConnected.value || !props.jobLoaded?.filename) return false;
-  return normalizedSenderStatus.value === 'running';
+  const state = normalizedSenderStatus.value;
+  return state === 'running' || state === 'tool-changing';
 });
 
 const canStop = computed(() => {
   if (!isMachineConnected.value || !props.jobLoaded?.filename) return false;
   const state = normalizedSenderStatus.value;
-  return state === 'running' || state === 'hold' || state === 'door';
+  return state === 'running' || state === 'hold' || state === 'door' || state === 'tool-changing';
 });
 
 const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);

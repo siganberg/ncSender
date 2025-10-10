@@ -86,7 +86,7 @@ const machineStateText = computed(() => {
     case 'running': return 'Running';
     case 'jogging': return 'Jogging';
     case 'probing': return 'Probing';
-    case 'tool-changing': return 'Tool Change';
+    case 'tool-changing': return 'Tool Changing';
     case 'alarm': return 'Alarm';
     case 'hold': return 'Hold';
     case 'homing': return 'Homing';
