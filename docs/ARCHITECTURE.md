@@ -60,6 +60,7 @@ sequenceDiagram
 ## Reliability Considerations
 - If a client disconnects, the machine keeps running; reconnecting yields the latest state snapshot and resubscribes to live events.
 - If the server restarts, it reinitializes the machine link, reloads persisted settings, and waits for clients to reconnect. The machine interface is reopened only once to avoid bus contention.
+- Continuous jog commands use a server-side dead-man switch: if a client stops sending keepalives (default 500 ms timeout), the controller watchdog simply terminates the jog stream to prevent runaway motion and returns control to neutral.
 - Latency-sensitive operations (jogging, feed hold) stay server-side, minimizing the effect of slow networks or thin clients.
 
 ## Extending the Architecture
