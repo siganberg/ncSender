@@ -1,7 +1,7 @@
 # Machine State Centralization Refactoring Plan
 
 ## Overview
-Consolidate all machine state calculation into a single server-side property (`displayStatus`) that the header and all UI components will consume. This eliminates client-side logic for determining state and ensures consistency.
+Consolidate all machine state calculation into a single server-side property (`senderStatus`) that the header and all UI components will consume. This eliminates client-side logic for determining state and ensures consistency.
 
 ## Current State Analysis
 
@@ -9,7 +9,6 @@ Consolidate all machine state calculation into a single server-side property (`d
 1. `connected` - from controller connection
 2. `machineState` - from GRBL status (idle/run/hold/alarm/etc.)
 3. `isToolChanging` - server calculates this
-4. `isProbing` - server calculates this
 5. `setupRequired` - client-side check for settings validity
 6. `homed` - from GRBL status
 7. `lastAlarmCode` - from settings/error events
@@ -23,10 +22,10 @@ Consolidate all machine state calculation into a single server-side property (`d
 
 ### New Server State Property
 
-Add a single computed property `displayStatus` to serverState:
+Add a single computed property `senderStatus` to serverState:
 
 ```typescript
-displayStatus: 'setup-required' | 'connecting' | 'idle' | 'homing-required' |
+senderStatus: 'setup-required' | 'connecting' | 'idle' | 'homing-required' |
                'running' | 'jogging' | 'probing' | 'tool-changing' |
                'alarm' | 'hold' | 'homing'
 ```
@@ -36,7 +35,6 @@ displayStatus: 'setup-required' | 'connecting' | 'idle' | 'homing-required' |
 2. **Connecting** - !connected (connection in progress)
 3. **Alarm** - machineState === 'alarm' OR lastAlarmCode exists
 4. **Tool Changing** - isToolChanging === true
-5. **Probing** - isProbing === true
 6. **Homing** - machineState === 'home'
 7. **Hold** - machineState === 'hold'
 8. **Jogging** - machineState === 'jog'
@@ -49,9 +47,9 @@ displayStatus: 'setup-required' | 'connecting' | 'idle' | 'homing-required' |
 
 ### Phase 1: Server Changes (app/electron/app.js)
 
-**1.1 Add displayStatus calculation function** (after line 91)
+**1.1 Add senderStatus calculation function** (after line 91)
 ```javascript
-const computeDisplayStatus = () => {
+const computesenderStatus = () => {
   // Check setup requirements
   const connectionType = getSetting('connectionType');
   if (!connectionType) {
@@ -76,15 +74,17 @@ const computeDisplayStatus = () => {
     return 'alarm';
   }
 
+  // Homing required (idle but not homed)
+  if (machineStatus === 'idle' && homed === false) {
+    return 'homing-required';
+  }
+
   // Tool changing
   if (serverState.machineState?.isToolChanging === true) {
     return 'tool-changing';
   }
 
   // Probing
-  if (serverState.machineState?.isProbing === true) {
-    return 'probing';
-  }
 
   // Homing in progress
   if (machineStatus === 'home') {
@@ -106,10 +106,7 @@ const computeDisplayStatus = () => {
     return 'running';
   }
 
-  // Homing required (idle but not homed)
-  if (machineStatus === 'idle' && homed === false) {
-    return 'homing-required';
-  }
+
 
   // Idle (connected and ready)
   if (machineStatus === 'idle') {
@@ -121,7 +118,7 @@ const computeDisplayStatus = () => {
 };
 ```
 
-**1.2 Add displayStatus to serverState** (line 84-91)
+**1.2 Add senderStatus to serverState** (line 84-91)
 ```javascript
 const serverState = {
   machineState: {
@@ -129,16 +126,16 @@ const serverState = {
     isToolChanging: false,
     isProbing: false
   },
-  displayStatus: 'connecting', // NEW
+  senderStatus: 'connecting', // NEW
   jobLoaded: null
 };
 ```
 
-**1.3 Update displayStatus on every state broadcast**
+**1.3 Update senderStatus on every state broadcast**
 
 Add before each `broadcast('server-state-updated', serverState)` call:
 ```javascript
-serverState.displayStatus = computeDisplayStatus();
+serverState.senderStatus = computesenderStatus();
 broadcast('server-state-updated', serverState);
 ```
 
@@ -164,11 +161,11 @@ Probe routes (app/electron/features/probe/routes.js):
 
 ### Phase 2: Client Store Updates (app/client/src/composables/use-app-store.ts)
 
-**2.1 Add displayStatus to serverState type** (line 36-53)
+**2.1 Add senderStatus to serverState type** (line 36-53)
 ```typescript
 const serverState = reactive({
   machineState: null as any,
-  displayStatus: 'connecting' as string, // NEW
+  senderStatus: 'connecting' as string, // NEW
   jobLoaded: null as { /*...*/ } | null
 });
 ```
@@ -183,7 +180,7 @@ const serverState = reactive({
 ```typescript
 const props = defineProps<{
   workspace: string;
-  displayStatus: string; // NEW - single source of truth
+  senderStatus: string; // NEW - single source of truth
   lastAlarmCode?: number | string;
   onShowSettings: () => void;
 }>();
@@ -192,7 +189,7 @@ const props = defineProps<{
 **3.2 Replace complex logic** (lines 78-103)
 ```typescript
 const machineStateText = computed(() => {
-  switch (props.displayStatus) {
+  switch (props.senderStatus) {
     case 'setup-required': return 'Setup Required';
     case 'connecting': return 'Connecting...';
     case 'idle': return 'Idle';
@@ -211,12 +208,12 @@ const machineStateText = computed(() => {
 
 **3.3 Simplify CSS classes** (line 2-10)
 ```vue
-<div class="toolbar" :class="`state--${props.displayStatus}`">
+<div class="toolbar" :class="`state--${props.senderStatus}`">
 ```
 
 **3.4 Update alarm button** (line 73-76)
 ```typescript
-const isAlarmState = computed(() => props.displayStatus === 'alarm');
+const isAlarmState = computed(() => props.senderStatus === 'alarm');
 ```
 
 ### Phase 4: App.vue Simplification (app/client/src/App.vue)
@@ -225,7 +222,7 @@ const isAlarmState = computed(() => props.displayStatus === 'alarm');
 ```vue
 <TopToolbar
   :workspace="workspace"
-  :display-status="serverState.displayStatus"
+  :display-status="serverState.senderStatus"
   :last-alarm-code="lastAlarmCode"
   @toggle-theme="toggleTheme"
   @unlock="handleUnlock"
@@ -241,8 +238,8 @@ const isAlarmState = computed(() => props.displayStatus === 'alarm');
 //   showSetupDialog.value = true;
 // }
 
-// NEW: React to server displayStatus
-watch(() => serverState.displayStatus, (newStatus) => {
+// NEW: React to server senderStatus
+watch(() => serverState.senderStatus, (newStatus) => {
   if (newStatus === 'setup-required') {
     showSetupDialog.value = true;
     await loadSetupUsbPorts();
@@ -262,9 +259,9 @@ watch(() => serverState.displayStatus, (newStatus) => {
 ### Phase 5: Component Cleanup
 
 **5.1 Update components using state checks:**
-- JogPanel.vue - Use store.displayStatus instead of checking individual states
-- StatusPanel.vue - Use store.displayStatus
-- GCodeVisualizer.vue - Use store.displayStatus for disabling controls
+- JogPanel.vue - Use store.senderStatus instead of checking individual states
+- StatusPanel.vue - Use store.senderStatus
+- GCodeVisualizer.vue - Use store.senderStatus for disabling controls
 
 **5.2 Standardize disabled logic:**
 ```typescript
@@ -273,7 +270,7 @@ const isDisabled = !connected || machineState === 'alarm' || isProbing
 
 // NEW: Single check
 const isDisabled = computed(() =>
-  ['setup-required', 'connecting', 'alarm'].includes(store.serverState.displayStatus)
+  ['setup-required', 'connecting', 'alarm'].includes(store.serverState.senderStatus)
 );
 ```
 
@@ -290,9 +287,9 @@ const isDisabled = computed(() =>
 
 1. Test each state transition displays correctly
 2. Test state priority (alarm overrides other states, etc.)
-3. Test setup dialog appears when displayStatus === 'setup-required'
-4. Test UI elements disable/enable based on displayStatus
-5. Test all clients receive same displayStatus via WebSocket
+3. Test setup dialog appears when senderStatus === 'setup-required'
+4. Test UI elements disable/enable based on senderStatus
+5. Test all clients receive same senderStatus via WebSocket
 
 ## Rollback Strategy
 

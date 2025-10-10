@@ -16,6 +16,23 @@ newStatus.status = parts[0].split(':')[0];
 
 Status is extracted from GRBL status reports in format: `<Status|...>` where the status value is the first part before the colon.
 
+## Server Aggregation
+
+**Source**: app/electron/app.js:109
+
+```javascript
+const updateSenderStatus = () => {
+  const nextStatus = computeSenderStatus();
+  if (serverState.senderStatus !== nextStatus) {
+    serverState.senderStatus = nextStatus;
+    return true;
+  }
+  return false;
+};
+```
+
+The server derives a single `senderStatus` value that combines connection readiness, GRBL machine state, probing, and tool change flags. All clients consume this property instead of recomputing priorities locally, ensuring a consistent display across the application.
+
 ## Complete Status List
 
 ### Idle
@@ -107,8 +124,8 @@ Status is extracted from GRBL status reports in format: `<Status|...>` where the
 - **Color**: Magenta (#c912a8)
 - **Border**: Magenta with pulse animation (2.5s cycle)
 - **Animation**: Pulsing glow
-- **Condition**: Tool change in progress (via `isToolChanging` prop)
-- **Source**: TopToolbar.vue:81, :304-307
+- **Condition**: Tool change in progress (`senderStatus === 'tool-changing'`)
+- **Source**: TopToolbar.vue:65-99
 
 ### Offline
 - **Display Text**: "Connecting..."
@@ -145,13 +162,26 @@ Status is extracted from GRBL status reports in format: `<Status|...>` where the
 
 ## TypeScript Type Definition
 
-**Source**: TopToolbar.vue:60
+**Source**: TopToolbar.vue:51
 
 ```typescript
-machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool'
+senderStatus?: 'setup-required' |
+               'connecting' |
+               'idle' |
+               'homing-required' |
+               'running' |
+               'jogging' |
+               'probing' |
+               'tool-changing' |
+               'alarm' |
+               'hold' |
+               'homing' |
+               'door' |
+               'check' |
+               'sleep'
 ```
 
-**Note**: The `jog` state is missing from this type definition but is handled in the display logic.
+**Note**: `senderStatus` is computed server-side and already accounts for tool-change and probing flags, so components do not need to combine multiple booleans when determining the active state.
 
 ## Unlock Button
 
@@ -209,7 +239,7 @@ Each status has a unique visual presentation:
 The display logic follows this priority order (TopToolbar.vue:2-9):
 
 1. **Setup Required** - Overrides all other states
-2. **Tool Change** - Shows if `isToolChanging === true`
+2. **Tool Change** - Shows if `senderStatus === 'tool-changing'`
 3. **Homing Required** - Shows if `idle` AND `!isHomed`
 4. **Machine State** - Shows actual GRBL state if connected
 5. **Connecting** - Shows if `!connected`
@@ -223,11 +253,9 @@ The main display component for machine states.
 ```typescript
 {
   workspace: string;
-  connected?: boolean;
-  machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
-  isToolChanging?: boolean;
-  setupRequired?: boolean;
+  senderStatus: string;
   lastAlarmCode?: number | string;
+  onShowSettings: () => void;
 }
 ```
 
@@ -236,7 +264,7 @@ Uses `isHoming` computed to check for homing state:
 
 **Source**: StatusPanel.vue:146
 ```javascript
-const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
+const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 ```
 
 ### JogPanel Component
@@ -244,14 +272,14 @@ Disables motion controls during homing:
 
 **Source**: JogPanel.vue:332
 ```javascript
-const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
+const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 ```
 
 ## State-Based UI Behavior
 
 Different UI elements are disabled/enabled based on machine state:
 
-- **Jogging**: Disabled when `!isHomed` or `isProbing` or `machineState === 'home'`
+- **Jogging**: Disabled when `!isHomed` or the machine is probing or `machineState === 'home'`
 - **Workspace Selector**: Disabled when `!connected` or `isJobRunning`
 - **Settings Button**: Disabled when `isJobRunning`
 - **Motion Controls**: Disabled when not homed or during probing

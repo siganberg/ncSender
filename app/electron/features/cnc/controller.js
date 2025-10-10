@@ -181,6 +181,17 @@ export class CNCController extends EventEmitter {
         // Homed status - can be '0', '1', or '1,7' (multiple axes homed)
         // Consider machine homed if value contains '1' (any axis homed)
         newStatus.homed = value.includes('1');
+      } else if (key === 'FS') {
+        const [feed, spindle, commanded] = value ? value.split(',').map(Number) : [];
+        if (Number.isFinite(feed)) {
+          newStatus.feedRate = feed;
+        }
+        if (Number.isFinite(spindle)) {
+          newStatus.spindleRpm = spindle;
+        }
+        if (Number.isFinite(commanded)) {
+          newStatus.feedRateCommanded = commanded;
+        }
       } else if (key === 'A') {
         // Accessory state: S=Spindle, F=Flood, M=Mist
         hasAccessoryField = true;
@@ -219,7 +230,9 @@ export class CNCController extends EventEmitter {
 
     // Check if anything actually changed by doing a deep comparison
     let hasChanges = false;
-    const relevantFields = ['status', 'MPos', 'WCO', 'FS', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive'];
+    delete newStatus.FS;
+
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

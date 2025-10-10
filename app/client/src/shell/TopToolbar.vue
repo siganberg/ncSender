@@ -1,13 +1,5 @@
 <template>
-  <div class="toolbar" :class="
-    setupRequired
-      ? 'state--offline'
-      : (isToolChanging
-          ? 'state--tool'
-          : (connected && machineState?.toLowerCase() === 'idle' && !store.isHomed.value
-              ? 'state--homing-required'
-              : (connected ? `state--${machineState?.toLowerCase() || 'unknown'}` : 'state--connecting')))
-  ">
+  <div class="toolbar" :class="statusClass">
     <div class="toolbar__left">
       <span class="logo">ncSender</span>
       <div class="workspace-selector">
@@ -17,7 +9,7 @@
           class="workspace-select"
           :value="workspace"
           @change="onWorkspaceChange($event)"
-          :disabled="!connected || isJobRunning"
+          :disabled="isWorkspaceDisabled"
         >
           <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
         </select>
@@ -52,15 +44,12 @@ import { computed } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
 
 const store = useAppStore();
-const { isJobRunning } = store;
+const { isJobRunning, isConnected, senderStatus: storeSenderStatus } = store;
 
 const props = defineProps<{
   workspace: string;
-  connected?: boolean;
-  machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
-  isToolChanging?: boolean;
+  senderStatus?: string;
   onShowSettings: () => void;
-  setupRequired?: boolean;
   lastAlarmCode?: number | string;
 }>();
 
@@ -70,37 +59,45 @@ const emit = defineEmits<{
   (e: 'change-workspace', value: string): void;
 }>();
 
+const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
+
+const statusClass = computed(() => {
+  const map = {
+    running: 'run',
+    jogging: 'jog',
+    homing: 'home',
+    'tool-changing': 'tool'
+  } as Record<string, string>;
+  const status = resolvedSenderStatus.value;
+  return `state--${map[status] ?? status ?? 'unknown'}`;
+});
+
 const isAlarmState = computed(() => {
   return (props.lastAlarmCode !== undefined && props.lastAlarmCode !== null) ||
-         (props.machineState && props.machineState.toLowerCase() === 'alarm');
+         resolvedSenderStatus.value === 'alarm';
 });
 
 const machineStateText = computed(() => {
-  if (props.setupRequired) return 'Setup Required';
-  if (!props.connected) return 'Connecting...';
-  if (props.isToolChanging) return 'Tool Change';
-  if (!props.machineState || props.machineState === 'offline') return 'Connected';
-
-  const state = props.machineState.toLowerCase();
-
-  // Check if machine is idle AND not homed - show "Homing Required"
-  if (state === 'idle' && !store.isHomed.value) return 'Homing Required';
-
-  switch (state) {
+  switch (resolvedSenderStatus.value) {
+    case 'setup-required': return 'Setup Required';
+    case 'connecting': return 'Connecting...';
     case 'idle': return 'Idle';
-    case 'run': return 'Running';
-    case 'hold': return 'Hold';
-    case 'jog': return 'Jogging';
+    case 'homing-required': return 'Homing Required';
+    case 'running': return 'Running';
+    case 'jogging': return 'Jogging';
+    case 'probing': return 'Probing';
+    case 'tool-changing': return 'Tool Change';
     case 'alarm': return 'Alarm';
+    case 'hold': return 'Hold';
+    case 'homing': return 'Homing';
     case 'door': return 'Door Open';
     case 'check': return 'Check';
-    case 'home': return 'Homing';
     case 'sleep': return 'Sleep';
-    case 'tool': return 'Tool Change';
-    case 'offline': return 'Connecting...';
     default: return 'Connected';
   }
 });
+
+const isWorkspaceDisabled = computed(() => !isConnected.value || isJobRunning.value);
 
 const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
 const onWorkspaceChange = (e: Event) => {
@@ -276,6 +273,11 @@ button.danger {
   text-shadow: none;
 }
 
+.toolbar.state--probing .machine-state {
+  color: #1abc9c;
+  text-shadow: none;
+}
+
 .toolbar.state--alarm .machine-state {
   color: #dc3545;
   text-shadow: none;
@@ -303,6 +305,11 @@ button.danger {
 
 .toolbar.state--tool .machine-state {
   color: #c912a8;
+  text-shadow: none;
+}
+
+.toolbar.state--setup-required .machine-state {
+  color: #6c757d;
   text-shadow: none;
 }
 
@@ -343,6 +350,12 @@ button.danger {
   border-color: #28a745;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(40, 167, 69, 0.6);
   animation: pulse-glow-green 2.5s infinite;
+}
+
+.toolbar.state--probing {
+  border-color: #1abc9c;
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6);
+  animation: pulse-glow-teal 2.5s infinite;
 }
 
 .toolbar.state--alarm {
@@ -388,6 +401,11 @@ button.danger {
   border-color: #c912a8;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(201, 18, 168, 0.6);
   animation: pulse-glow-magenta 2.5s infinite;
+}
+
+.toolbar.state--setup-required {
+  border-color: #6c757d;
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(108, 117, 125, 0.5);
 }
 
 .toolbar.state--unknown {

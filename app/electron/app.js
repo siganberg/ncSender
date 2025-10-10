@@ -63,6 +63,9 @@ export async function createApp(options = {}) {
               return undefined;
             }
           }
+          if (key === 'isProbing' || key === 'isToolChanging') {
+            return undefined;
+          }
           if (typeof value === 'function') {
             return undefined;
           }
@@ -87,8 +90,116 @@ export async function createApp(options = {}) {
       isToolChanging: false,
       isProbing: false
     },
+    senderStatus: 'connecting',
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
+
+  const computeSenderStatus = () => {
+    const connectionType = getSetting('connectionType') ?? DEFAULT_SETTINGS.connectionType;
+    const normalizedType = typeof connectionType === 'string' ? connectionType.toLowerCase() : undefined;
+
+    const requireSetup = () => {
+      if (normalizedType === 'usb') {
+        const usbPort = getSetting('usbPort');
+        const baudRate = getSetting('baudRate') ?? DEFAULT_SETTINGS.baudRate;
+        return !usbPort || !baudRate;
+      }
+
+      if (normalizedType === 'ethernet') {
+        const ip = getSetting('ip');
+        const port = getSetting('port');
+        return !ip || !port;
+      }
+
+      return false;
+    };
+
+    if (!normalizedType || requireSetup()) {
+      return 'setup-required';
+    }
+
+    const connected = serverState.machineState?.connected === true;
+    const machineStatusRaw = serverState.machineState?.status;
+    const machineStatus = typeof machineStatusRaw === 'string' ? machineStatusRaw.toLowerCase() : undefined;
+    const homed = serverState.machineState?.homed;
+    const lastAlarmCode = getSetting('lastAlarmCode');
+    const isToolChanging = serverState.machineState?.isToolChanging === true;
+    const isProbing = serverState.machineState?.isProbing === true;
+    const jobLoadedStatus = serverState.jobLoaded?.status;
+    const jobIsRunning = jobLoadedStatus === 'running';
+
+    if (!connected) {
+      return 'connecting';
+    }
+
+    if (lastAlarmCode !== undefined && lastAlarmCode !== null) {
+      return 'alarm';
+    }
+    if (machineStatus === 'alarm') {
+      return 'alarm';
+    }
+
+    if (isToolChanging) {
+      return 'tool-changing';
+    }
+
+    if (isProbing) {
+      return 'probing';
+    }
+
+    if (machineStatus === 'home') {
+      return 'homing';
+    }
+
+    if (machineStatus === 'hold') {
+      return 'hold';
+    }
+
+    if (machineStatus === 'jog') {
+      return 'jogging';
+    }
+
+    if (machineStatus === 'run' || jobIsRunning) {
+      return 'running';
+    }
+
+    if (machineStatus === 'door') {
+      return 'door';
+    }
+
+    if (machineStatus === 'check') {
+      return 'check';
+    }
+
+    if (machineStatus === 'sleep') {
+      return 'sleep';
+    }
+
+    if (machineStatus === 'tool') {
+      return 'tool-changing';
+    }
+
+    if (machineStatus === 'idle' && homed === false) {
+      return 'homing-required';
+    }
+
+    if (machineStatus === 'idle') {
+      return 'idle';
+    }
+
+    return connected ? 'idle' : 'connecting';
+  };
+
+  const updateSenderStatus = () => {
+    const nextStatus = computeSenderStatus();
+    if (serverState.senderStatus !== nextStatus) {
+      serverState.senderStatus = nextStatus;
+      return true;
+    }
+    return false;
+  };
+
+  updateSenderStatus();
 
   // Track previous state for all message types
   const messageStateTracker = new MessageStateTracker();
@@ -371,6 +482,7 @@ export async function createApp(options = {}) {
 
     // Send server state (includes machine state and connection status)
     computeJobProgressFields();
+    updateSenderStatus();
     sendWsMessage(ws, 'server-state-updated', serverState);
   });
 
@@ -392,6 +504,7 @@ export async function createApp(options = {}) {
   function broadcast(type, data) {
     // Always include current job status in server-state-updated messages
     if (type === 'server-state-updated') {
+      updateSenderStatus();
       updateJobStatus();
       computeJobProgressFields();
 
@@ -437,6 +550,9 @@ export async function createApp(options = {}) {
           )) {
             return undefined;
           }
+          }
+        if (key === 'isProbing' || key === 'isToolChanging') {
+          return undefined;
         }
         if (typeof value === 'function') {
           return undefined;
@@ -909,25 +1025,28 @@ export async function createApp(options = {}) {
     const hadActiveJob = jobManager.hasActiveJob();
     jobManager.forceReset();
 
-    // Only update status to 'stopped' if there was an active job
-    // Otherwise, keep the current status (null if just loaded, etc.)
-    if (serverState.jobLoaded && hadActiveJob) {
-      serverState.jobLoaded.status = 'stopped';
-      // Preserve currentLine so UI can reflect partial progress
-    }
+    const jobWasMarkedRunning = serverState.jobLoaded?.status === 'running' || serverState.jobLoaded?.status === 'paused';
 
-    // Mark end time and finalize pause accounting only if there was an active job
-    if (serverState.jobLoaded && hadActiveJob) {
+    if (serverState.jobLoaded && (hadActiveJob || jobWasMarkedRunning)) {
       const nowIso = new Date().toISOString();
+
       if (serverState.jobLoaded.jobPauseAt) {
         const pauseMs = Date.parse(nowIso) - Date.parse(serverState.jobLoaded.jobPauseAt);
         if (Number.isFinite(pauseMs) && pauseMs > 0) {
           const add = Math.round(pauseMs / 1000);
           serverState.jobLoaded.jobPausedTotalSec = (serverState.jobLoaded.jobPausedTotalSec || 0) + add;
         }
-        serverState.jobLoaded.jobPauseAt = null;
       }
-      serverState.jobLoaded.jobEndTime = nowIso;
+
+      serverState.jobLoaded = {
+        ...serverState.jobLoaded,
+        status: 'stopped',
+        jobEndTime: nowIso,
+        jobPauseAt: null,
+        remainingSec: null,
+        progressPercent: null,
+        runtimeSec: null
+      };
     }
 
     computeJobProgressFields();
@@ -1035,7 +1154,7 @@ export async function createApp(options = {}) {
   });
 
   // Mount feature-based route modules
-  app.use('/api', createSystemRoutes(serverState, cncController));
+  app.use('/api', createSystemRoutes(serverState, cncController, updateSenderStatus));
   app.use('/api', createSettingsRoutes(serverState, cncController, broadcast));
   app.use('/api', createAlarmRoutes(serverState, cncController));
   app.use('/api', createCNCRoutes(cncController, broadcast));

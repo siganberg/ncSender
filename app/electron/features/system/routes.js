@@ -4,7 +4,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createSystemRoutes(serverState, cncController) {
+export function createSystemRoutes(serverState, cncController, ensureSenderStatus = () => {}) {
   const router = Router();
 
   // Health check endpoint
@@ -16,9 +16,12 @@ export function createSystemRoutes(serverState, cncController) {
   router.get('/server-state', (req, res) => {
     try {
       // Create a safe copy of serverState without circular references
+      ensureSenderStatus();
+
       const safeServerState = {
         jobLoaded: serverState.jobLoaded,
-        machineState: serverState.machineState
+        machineState: serverState.machineState,
+        senderStatus: serverState.senderStatus
         // Exclude cncController to avoid circular references
       };
       res.json(safeServerState);

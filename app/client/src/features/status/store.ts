@@ -6,12 +6,11 @@ export function useStatusStore() {
   const app = useAppStore();
 
   // Narrow interface: expose only the bits StatusPanel consumes.
-  const machineState = computed(() => app.status.machineState);
-
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
     isProbing: app.isProbing,
-    machineState
+    machineState: computed(() => app.status.machineState),
+    senderStatus: app.senderStatus
   };
 }

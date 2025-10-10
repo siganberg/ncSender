@@ -2,7 +2,7 @@
   <div class="panel-stack">
     <JogPanel
       :jog-config="jogConfig"
-      :is-disabled="!status.connected || status.machineState?.toLowerCase() === 'home' || (jobLoaded?.status === 'running')"
+      :is-disabled="isJogDisabled"
       :machine-coords="status.machineCoords"
       :grid-size-x="gridSizeX"
       :grid-size-y="gridSizeY"
@@ -14,6 +14,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import JogPanel from '../features/jog/JogPanel.vue';
 import StatusPanel from '../features/status/StatusPanel.vue';
 import ConsolePanel from '../features/console/ConsolePanel.vue';
@@ -23,7 +24,7 @@ const emit = defineEmits<{
   (e: 'clearConsole'): void;
 }>();
 
-defineProps<{
+const props = defineProps<{
   status: {
     connected: boolean;
     machineCoords: Record<string, number>;
@@ -40,7 +41,18 @@ defineProps<{
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   gridSizeX?: number;
   gridSizeY?: number;
+  senderStatus?: string;
 }>();
+
+const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLowerCase());
+
+const isJogDisabled = computed(() => {
+  if (!props.status.connected) return true;
+  if (props.jobLoaded?.status === 'running') return true;
+
+  const status = normalizedSenderStatus.value;
+  return status === 'homing' || status === 'probing' || status === 'tool-changing' || status === 'alarm';
+});
 </script>
 
 <style scoped>

@@ -3,10 +3,7 @@
     <template #top-toolbar>
       <TopToolbar
         :workspace="workspace"
-        :connected="isConnected"
-        :setup-required="showSetupDialog"
-        :machine-state="status.machineState"
-        :is-tool-changing="serverState.machineState?.isToolChanging"
+        :sender-status="currentSenderStatus"
         :last-alarm-code="lastAlarmCode"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
@@ -19,9 +16,7 @@
       <GCodeVisualizer
         :view="viewport"
         :theme="theme"
-        :connected="isConnected"
-        :machine-state="status.machineState"
-        :is-tool-changing="serverState.machineState?.isToolChanging"
+        :sender-status="currentSenderStatus"
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :work-offset="status.wco"
@@ -40,6 +35,7 @@
         :job-loaded="serverState.jobLoaded"
         :grid-size-x="gridSizeX"
         :grid-size-y="gridSizeY"
+        :sender-status="currentSenderStatus"
         @update:jog-step="jogConfig.stepSize = $event"
         @clear-console="clearConsole"
       />
@@ -558,7 +554,9 @@ const showSetupDialog = ref(false);
 let isInitialThemeLoad = true;
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
-const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, isConnected } = store;
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, isConnected, senderStatus: senderStatusRef } = store;
+
+const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.senderStatus ?? 'connecting');
 
 // Jog config (local UI state)
 const jogConfig = reactive({
@@ -591,6 +589,18 @@ const settingsTabs = [
 watch(defaultView, (newView) => {
   viewport.value = newView;
 });
+
+watch(
+  () => senderStatusRef.value,
+  async (newStatus, oldStatus) => {
+    if (newStatus === 'setup-required' && !showSetupDialog.value) {
+      showSetupDialog.value = true;
+      await loadSetupUsbPorts();
+    } else if (oldStatus === 'setup-required' && newStatus !== 'setup-required' && showSetupDialog.value) {
+      showSetupDialog.value = false;
+    }
+  }
+);
 
 // Color customization (from settings store)
 const accentColor = ref(initialSettings?.accentColor || '#1abc9c');

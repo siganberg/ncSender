@@ -22,12 +22,14 @@ interface StatusReport {
   workspace?: string;
   WCO?: string;
   MPos?: string;
-  FS?: string;
   feedrateOverride?: number;
   rapidOverride?: number;
   spindleOverride?: number;
   tool?: number;
   homed?: boolean;
+  feedRate?: number;
+  feedRateCommanded?: number;
+  spindleRpm?: number;
   floodCoolant?: boolean;
   mistCoolant?: boolean;
   spindleActive?: boolean;
@@ -36,6 +38,7 @@ interface StatusReport {
 // SHARED STATE (synchronized across all clients via WebSocket broadcasts)
 const serverState = reactive({
   machineState: null as any,
+  senderStatus: 'connecting' as string,
   jobLoaded: null as {
     filename: string;
     currentLine: number;
@@ -96,11 +99,21 @@ let responseLineIdCounter = 0;
 let prevShowProgress: boolean | undefined = undefined;
 
 // COMPUTED PROPERTIES (created once at module level)
+const senderStatus = computed(() => {
+  const raw = serverState.senderStatus || 'connecting';
+  const machineStatus = (serverState.machineState?.status || '').toLowerCase();
+
+  if (raw === 'tool-changing' && machineStatus === 'hold') {
+    return 'hold';
+  }
+
+  return raw;
+});
 const isConnected = computed(() => status.connected && websocketConnected.value);
 const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
-const isProbing = computed(() => serverState.machineState?.isProbing === true);
-const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running');
+const isProbing = computed(() => senderStatus.value === 'probing');
+const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -127,10 +140,11 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
     status.workCoords.z = status.machineCoords.z - status.wco.z;
   }
 
-  if (report.FS) {
-    const [feed, spindle] = report.FS.split(',').map(Number);
-    status.feedRate = feed;
-    status.spindleRpm = spindle;
+  if (typeof (report as any).feedRate === 'number') {
+    status.feedRate = (report as any).feedRate;
+  }
+  if (typeof (report as any).spindleRpm === 'number') {
+    status.spindleRpm = (report as any).spindleRpm;
   }
 
   if (typeof report.feedrateOverride === 'number') {
@@ -385,20 +399,23 @@ export function initializeStore() {
   api.onServerStateUpdated(async (newServerState) => {
     Object.assign(serverState, newServerState);
 
-    // Only treat as connected when payload reports connected
-    status.connected = !!serverState.machineState?.connected;
+    const derivedSenderStatus = senderStatus.value;
+    const machineConnected = serverState.machineState?.connected === true;
 
-    // Only apply machine state when connected
-    if (serverState.machineState?.connected && serverState.machineState) {
+    // Only treat as connected when controller reports connected and status is not setup-required/connecting
+    status.connected = machineConnected && !['setup-required', 'connecting'].includes(derivedSenderStatus);
+
+    // Apply machine status details when available from controller
+    if (machineConnected && serverState.machineState) {
       applyStatusReport(serverState.machineState);
-
-      // Clear alarm state when machine state is not alarm
-      if (status.machineState && status.machineState.toLowerCase() !== 'alarm') {
-        lastAlarmCode.value = undefined;
-        alarmMessage.value = '';
-      }
-    } else if (!serverState.machineState?.connected) {
+    } else {
       status.machineState = 'offline';
+    }
+
+    // Clear alarm indicators if senderStatus is no longer alarm
+    if (derivedSenderStatus !== 'alarm') {
+      lastAlarmCode.value = undefined;
+      alarmMessage.value = '';
     }
 
     // Try to load machine dimensions when connected
@@ -550,13 +567,20 @@ export async function seedInitialState() {
     if (state && typeof state === 'object') {
       Object.assign(serverState, state);
 
-      // Only treat as connected when payload reports connected
-      status.connected = !!serverState.machineState?.connected;
+      const derivedSenderStatus = serverState.senderStatus || 'connecting';
+      const machineConnected = serverState.machineState?.connected === true;
 
-      if (serverState.machineState?.connected && serverState.machineState) {
+      status.connected = machineConnected && !['setup-required', 'connecting'].includes(derivedSenderStatus);
+
+      if (machineConnected && serverState.machineState) {
         applyStatusReport(serverState.machineState);
-      } else if (!serverState.machineState?.connected) {
+      } else {
         status.machineState = 'offline';
+      }
+
+      if (derivedSenderStatus !== 'alarm') {
+        lastAlarmCode.value = undefined;
+        alarmMessage.value = '';
       }
 
       // Attempt to load machine dimensions if already connected
@@ -600,6 +624,7 @@ export function useAppStore() {
       gcodeCompletedUpTo: readonly(gcodeCompletedUpTo),
 
     // Computed properties
+    senderStatus,
     isConnected,
     currentJobFilename,
     isHomed,

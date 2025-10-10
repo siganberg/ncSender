@@ -33,12 +33,8 @@ export class GrblHalTelemetryProvider extends TelemetryProvider {
       // Map a compact snapshot we care about
       const snap = {};
       if (status) {
-        if (status.FS) {
-          // FS is already parsed into lastStatus in cnc-controller as a string, but
-          // we also expose feed/spindle numeric via split when present.
-          const parts = String(status.FS).split(',');
-          const f = Number(parts[0]);
-          if (Number.isFinite(f)) snap.feed = f; // mm/min (grblHAL default)
+        if (typeof status.feedRate === 'number') {
+          snap.feed = status.feedRate; // mm/min (grblHAL default)
         }
         if (typeof status.feedrateOverride === 'number') snap.feedOv = status.feedrateOverride; // percent
         if (typeof status.rapidOverride === 'number') snap.rapidOv = status.rapidOverride; // percent
@@ -60,4 +56,3 @@ export class GrblHalTelemetryProvider extends TelemetryProvider {
     }
   }
 }
-

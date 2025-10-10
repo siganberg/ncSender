@@ -143,7 +143,7 @@ const appStore = useAppStore();
 const { isJobRunning } = appStore;
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
-const isHoming = computed(() => (store.machineState.value || '').toLowerCase() === 'home');
+const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 const coordZeroingDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value || isJobRunning.value);
 
 const props = defineProps<{

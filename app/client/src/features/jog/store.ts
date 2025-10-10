@@ -5,12 +5,11 @@ import { useAppStore } from '../../composables/use-app-store';
 export function useJogStore() {
   const app = useAppStore();
 
-  const machineState = computed(() => app.status.machineState);
-
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
     isProbing: app.isProbing,
-    machineState
+    machineState: computed(() => app.status.machineState),
+    senderStatus: app.senderStatus
   };
 }

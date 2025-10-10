@@ -77,17 +77,17 @@
           :class="{
             'active': currentTool === t,
             'used': toolsUsed.includes(t),
-            'disabled': isToolChanging || isJobRunning,
+            'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress[t]?.triggered,
             'blink-border': toolPress[t]?.blinking
           }"
           :title="currentTool === t ? `Tool T${t} (Current)` : `Tool T${t} (Hold to change)`"
-          @mousedown="(isJobRunning || isToolChanging) ? null : startToolPress(t, $event)"
-          @mouseup="(isJobRunning || isToolChanging) ? null : endToolPress(t)"
-          @mouseleave="(isJobRunning || isToolChanging) ? null : cancelToolPress(t)"
-          @touchstart="(isJobRunning || isToolChanging) ? null : startToolPress(t, $event)"
-          @touchend="(isJobRunning || isToolChanging) ? null : endToolPress(t)"
-          @touchcancel="(isJobRunning || isToolChanging) ? null : cancelToolPress(t)"
+          @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
+          @touchstart="isToolActionsDisabled ? null : startToolPress(t, $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress(t)"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
           <span class="tools-legend__label">T{{ t }}</span>
@@ -102,14 +102,14 @@
       <div class="coolant-controls">
         <div class="spindle-toggle">
           <label class="switch">
-            <input type="checkbox" :checked="floodEnabled" @change="toggleFlood">
+            <input type="checkbox" :checked="floodEnabled" @change="toggleFlood" :disabled="isCoolantDisabled">
             <span class="slider"></span>
           </label>
           <span>Flood</span>
         </div>
         <div class="spindle-toggle">
           <label class="switch">
-            <input type="checkbox" :checked="mistEnabled" @change="toggleMist">
+            <input type="checkbox" :checked="mistEnabled" @change="toggleMist" :disabled="isCoolantDisabled">
             <span class="slider"></span>
           </label>
           <span>Mist</span>
@@ -171,7 +171,7 @@
       </div>
 
       <!-- Probe button - bottom right -->
-      <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isJobRunning">
+      <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isProbeDisabled">
         <span class="probe-label">Probe</span>
         <img src="/assets/probe/3d-probe/probe.svg" alt="Probe" class="probe-icon" />
       </button>
@@ -211,7 +211,7 @@ import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
 
 const store = useToolpathStore();
 const appStore = useAppStore();
-const { isJobRunning } = appStore;
+const { isJobRunning, isConnected: storeIsConnected } = appStore;
 
 const presets = [
   { id: 'top', label: 'Top' },
@@ -222,8 +222,7 @@ const presets = [
 const props = withDefaults(defineProps<{
   view: 'top' | 'front' | 'iso';
   theme: 'light' | 'dark';
-  connected?: boolean;
-  machineState?: 'idle' | 'run' | 'hold' | 'alarm' | 'offline' | 'door' | 'check' | 'home' | 'sleep' | 'tool';
+  senderStatus?: string;
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed' } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   workOffset?: { x: number; y: number; z: number; a: number };
@@ -233,41 +232,50 @@ const props = withDefaults(defineProps<{
   spindleRpm?: number;
   alarmMessage?: string;
   currentTool?: number;
-  isToolChanging?: boolean;
 }>(), {
   view: 'iso', // Default to 3D view
   theme: 'dark', // Default to dark theme
-  connected: false,
+  senderStatus: 'connecting',
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   workOffset: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   gridSizeX: 1260,
   gridSizeY: 1284,
   zMaxTravel: null,
   spindleRpm: 0,
-  jobLoaded: null,
-  isToolChanging: false
+  jobLoaded: null
 });
 
 const emit = defineEmits<{
   (e: 'change-view', value: 'top' | 'front' | 'iso'): void;
 }>();
 
+const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLowerCase());
+
+const isToolChanging = computed(() => normalizedSenderStatus.value === 'tool-changing');
+const isConnecting = computed(() => normalizedSenderStatus.value === 'connecting');
+const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
+const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
+const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
+
+const isMachineConnected = computed(() => {
+  const status = normalizedSenderStatus.value;
+  return storeIsConnected.value && status !== 'setup-required' && status !== 'connecting';
+});
+
 // Job control computed properties
 const isOnHold = computed(() => {
-  const state = props.machineState?.toLowerCase();
+  const state = normalizedSenderStatus.value;
   return state === 'hold' || state === 'door';
 });
 
 const canStartOrResume = computed(() => {
-  if (!props.connected) return false;
-  const state = props.machineState?.toLowerCase();
+  if (!isMachineConnected.value) return false;
+  const state = normalizedSenderStatus.value;
 
-  // Condition 1: Can start new job if we have a loaded program and machine is idle
   if (props.jobLoaded?.filename && state === 'idle') {
     return true;
   }
 
-  // Condition 2: Can resume job if machine is on hold or door (regardless of jobLoaded)
   if (state === 'hold' || state === 'door') {
     return true;
   }
@@ -276,16 +284,19 @@ const canStartOrResume = computed(() => {
 });
 
 const canPause = computed(() => {
-  if (!props.connected || !props.jobLoaded?.filename) return false;
-  const state = props.machineState?.toLowerCase();
-  return state === 'run';
+  if (!isMachineConnected.value || !props.jobLoaded?.filename) return false;
+  return normalizedSenderStatus.value === 'running';
 });
 
 const canStop = computed(() => {
-  if (!props.connected || !props.jobLoaded?.filename) return false;
-  const state = props.machineState?.toLowerCase();
-  return state === 'run' || state === 'hold' || state === 'door';
+  if (!isMachineConnected.value || !props.jobLoaded?.filename) return false;
+  const state = normalizedSenderStatus.value;
+  return state === 'running' || state === 'hold' || state === 'door';
 });
+
+const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 
 // Template refs
 const canvas = ref<HTMLElement>();
@@ -304,7 +315,6 @@ const mistEnabled = ref(false); // Mist coolant - off by default
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
 const probeActive = ref(false); // Probe pin active state from CNC
-// Probing state is now tracked in serverState.machineState.isProbing
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 const outOfBoundsAxes = ref<string[]>([]);
@@ -1230,7 +1240,7 @@ watch(() => props.workCoords, (newCoords) => {
 // Watch for work offset changes to update the grid
 watch(() => props.workOffset, (newOffset) => {
   // Suppress grid/OOB recomputation during tool change
-  if (props.isToolChanging) {
+  if (isToolChanging.value) {
     // Also ensure any transient warning is hidden during toolchange
     showOutOfBoundsWarning.value = false;
     return;
@@ -1282,7 +1292,7 @@ watch(() => props.workOffset, (newOffset) => {
 }, { deep: true });
 
 // When toolchange ends, recompute bounds and OOB once using the latest work offset
-watch(() => props.isToolChanging, (nowChanging, wasChanging) => {
+watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
     // Re-run the workOffset watcher body with current props.workOffset
     const newOffset = props.workOffset;
@@ -1534,7 +1544,7 @@ const DELAY_BEFORE_VISUAL_MS = 150;
 
 const startToolPress = (toolNumber: number, _evt?: Event) => {
   if (_evt) _evt.preventDefault();
-  if (props.isToolChanging || props.currentTool === toolNumber) return;
+  if (isToolChanging.value || props.currentTool === toolNumber) return;
 
   if (!toolPress.value[toolNumber]) {
     toolPress.value[toolNumber] = { start: 0, progress: 0, raf: undefined, active: false, triggered: false, blinking: false };
