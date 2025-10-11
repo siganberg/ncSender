@@ -1,7 +1,7 @@
 <template>
   <div class="toolbar" :class="statusClass">
     <div class="toolbar__left">
-      <div class="logo-space"></div>
+      <img src="/assets/ncsender.svg" alt="ncSender Logo" class="logo-image" />
       <div class="logo-container">
         <span class="logo">ncSender</span>
         <span class="version">v{{ appVersion }}</span>
@@ -143,17 +143,18 @@ const onWorkspaceChange = (e: Event) => {
 .toolbar__left {
   display: flex;
   align-items: center;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   flex: 1;
 }
 
-.logo-space {
+.logo-image {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  background: var(--color-surface-muted);
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
   border-radius: var(--radius-small);
-  border: 1px dashed var(--color-border);
+  padding: 4px;
 }
 
 .logo-container {
