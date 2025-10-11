@@ -678,13 +678,17 @@ const homeSplitPress = reactive({
 type HomeSplitAxisType = 'X' | 'Y' | 'Z';
 
 const startHomePress = (_evt?: Event) => {
+  const isTouch = _evt?.type === 'touchstart';
+
   if (_evt) {
     _evt.preventDefault();
-    // Track if touch event was used
-    if (_evt.type === 'touchstart') {
-      homePress.touchUsed = true;
-    }
   }
+
+  // Track if touch event was used
+  if (isTouch) {
+    homePress.touchUsed = true;
+  }
+
   if (homeSplit.value) return;
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.start = performance.now();
@@ -726,15 +730,21 @@ const endHomePress = () => {
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.raf = undefined;
 
-  // If not triggered (incomplete press), show blink feedback
+  // If not triggered (incomplete press), handle tap/double-tap for touch
   if (!homePress.triggered && homePress.active) {
     homePress.active = false;
     homeActive = false;
     homePress.progress = 0;
-    homePress.blinking = true;
-    setTimeout(() => {
-      homePress.blinking = false;
-    }, 400);
+
+    // Handle double-tap for touch events
+    if (homePress.touchUsed) {
+      handleHomeDoubleClick();
+    } else {
+      homePress.blinking = true;
+      setTimeout(() => {
+        homePress.blinking = false;
+      }, 400);
+    }
   } else {
     homePress.active = false;
     homeActive = false;
@@ -1040,10 +1050,10 @@ const cancelParkPress = () => {
 // Zero axis buttons with long-press
 const LONG_PRESS_MS_AXIS_ZERO = 1500;
 const axisZeroPress = reactive({
-  X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  XY: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
+  X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false },
+  Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false },
+  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false },
+  XY: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false }
 });
 
 type AxisZeroType = 'X' | 'Y' | 'Z' | 'XY';
@@ -1071,7 +1081,12 @@ const handleXY0DoubleClick = () => {
 };
 
 const startAxisZeroPress = (axis: AxisZeroType, _evt?: Event) => {
-  if (_evt) _evt.preventDefault();
+  const isTouch = _evt?.type === 'touchstart';
+
+  if (_evt) {
+    _evt.preventDefault();
+  }
+
   if (motionControlsDisabled.value) return;
 
   const state = getAxisZeroPressState(axis);
@@ -1081,6 +1096,7 @@ const startAxisZeroPress = (axis: AxisZeroType, _evt?: Event) => {
   state.progress = 0;
   state.active = true;
   state.triggered = false;
+  state.touchUsed = isTouch;
 
   const tick = () => {
     if (!state.active) return;
@@ -1118,14 +1134,20 @@ const endAxisZeroPress = (axis: AxisZeroType) => {
   if (state.raf) cancelAnimationFrame(state.raf);
   state.raf = undefined;
 
-  // If not triggered (incomplete press), show blink feedback
+  // If not triggered (incomplete press), handle tap/double-tap for touch
   if (!state.triggered && state.active) {
     state.active = false;
     state.progress = 0;
-    state.blinking = true;
-    setTimeout(() => {
-      state.blinking = false;
-    }, 400);
+
+    // Handle double-tap for touch events on XY0 button
+    if (state.touchUsed && axis === 'XY') {
+      handleXY0DoubleClick();
+    } else {
+      state.blinking = true;
+      setTimeout(() => {
+        state.blinking = false;
+      }, 400);
+    }
   } else {
     state.active = false;
     state.progress = 0;
@@ -1134,6 +1156,7 @@ const endAxisZeroPress = (axis: AxisZeroType) => {
   // Reset triggered after delay
   setTimeout(() => {
     state.triggered = false;
+    state.touchUsed = false;
   }, 100);
 };
 
@@ -1144,6 +1167,7 @@ const cancelAxisZeroPress = (axis: AxisZeroType) => {
   state.active = false;
   state.progress = 0;
   state.triggered = false;
+  state.touchUsed = false;
 };
 
 const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
