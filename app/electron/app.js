@@ -395,7 +395,8 @@ export async function createApp(options = {}) {
 
       if (commandValue === '?' && metaPayload.sourceId !== 'no-broadcast') {
         const rawData = cncController.getRawData();
-        if (rawData) {
+        // Skip broadcasting empty data to terminal history
+        if (rawData && rawData.trim() !== '') {
           broadcast('cnc-data', rawData);
         }
       }
@@ -995,6 +996,10 @@ export async function createApp(options = {}) {
 
   cncController.on('data', (data, sourceId) => {
     if (sourceId === 'no-broadcast') {
+      return;
+    }
+    // Skip broadcasting empty data to terminal history
+    if (!data || (typeof data === 'string' && data.trim() === '')) {
       return;
     }
     broadcast('cnc-data', data);
