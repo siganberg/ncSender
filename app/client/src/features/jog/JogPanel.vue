@@ -76,9 +76,9 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
             :disabled="isHoming"
-            @click="handleHomeClick"
+            @click="handleHomeDoubleClick"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
@@ -86,7 +86,7 @@
             @touchend="endHomePress()"
             @touchcancel="cancelHomePress()"
           >
-            <div class="long-press-indicator long-press-vertical" :style="{ height: `${homePress.progress || 0}%` }"></div>
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homePress.progress || 0}%` }"></div>
             <div class="home-button-content">
               <svg class="home-icon" viewBox="0 0 460.298 460.297" xmlns="http://www.w3.org/2000/svg">
                 <path fill="currentColor" d="M230.149,120.939L65.986,256.274c0,0.191-0.048,0.472-0.144,0.855c-0.094,0.38-0.144,0.656-0.144,0.852v137.041c0,4.948,1.809,9.236,5.426,12.847c3.616,3.613,7.898,5.431,12.847,5.431h109.63V303.664h73.097v109.64h109.629c4.948,0,9.236-1.814,12.847-5.435c3.617-3.607,5.432-7.898,5.432-12.847V257.981c0-0.76-0.104-1.334-0.288-1.707L230.149,120.939z"/>
@@ -99,9 +99,45 @@
 
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('X')">HX</button>
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('Y')">HY</button>
-            <button :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]" :disabled="isHoming" @click="goHomeAxis('Z')">HZ</button>
+            <button
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.X.triggered, 'blink-border': homeSplitPress.X.blinking }]"
+              :disabled="isHoming"
+              @mousedown="startHomeSplitPress('X', $event)"
+              @mouseup="endHomeSplitPress('X')"
+              @mouseleave="cancelHomeSplitPress('X')"
+              @touchstart="startHomeSplitPress('X', $event)"
+              @touchend="endHomeSplitPress('X')"
+              @touchcancel="cancelHomeSplitPress('X')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.X.progress || 0}%` }"></div>
+              HX
+            </button>
+            <button
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.Y.triggered, 'blink-border': homeSplitPress.Y.blinking }]"
+              :disabled="isHoming"
+              @mousedown="startHomeSplitPress('Y', $event)"
+              @mouseup="endHomeSplitPress('Y')"
+              @mouseleave="cancelHomeSplitPress('Y')"
+              @touchstart="startHomeSplitPress('Y', $event)"
+              @touchend="endHomeSplitPress('Y')"
+              @touchcancel="cancelHomeSplitPress('Y')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.Y.progress || 0}%` }"></div>
+              HY
+            </button>
+            <button
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.Z.triggered, 'blink-border': homeSplitPress.Z.blinking }]"
+              :disabled="isHoming"
+              @mousedown="startHomeSplitPress('Z', $event)"
+              @mouseup="endHomeSplitPress('Z')"
+              @mouseleave="cancelHomeSplitPress('Z')"
+              @touchstart="startHomeSplitPress('Z', $event)"
+              @touchend="endHomeSplitPress('Z')"
+              @touchcancel="cancelHomeSplitPress('Z')"
+            >
+              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.Z.progress || 0}%` }"></div>
+              HZ
+            </button>
           </div>
         </Transition>
       </div>
@@ -109,33 +145,58 @@
       <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
       <div class="position-controls-group" :class="{ 'motion-disabled': motionControlsDisabled }">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
-        <div class="axis-zero-column">
-          <button
-            :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.X.triggered, 'blink-border': axisZeroPress.X.blinking }]"
-            title="Zero X (Hold to move)"
-            @mousedown="startAxisZeroPress('X', $event)"
-            @mouseup="endAxisZeroPress('X')"
-            @mouseleave="cancelAxisZeroPress('X')"
-            @touchstart="startAxisZeroPress('X', $event)"
-            @touchend="endAxisZeroPress('X')"
-            @touchcancel="cancelAxisZeroPress('X')"
-          >
-            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.X.progress || 0}%` }"></div>
-            X0
-          </button>
-          <button
-            :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Y.triggered, 'blink-border': axisZeroPress.Y.blinking }]"
-            title="Zero Y (Hold to move)"
-            @mousedown="startAxisZeroPress('Y', $event)"
-            @mouseup="endAxisZeroPress('Y')"
-            @mouseleave="cancelAxisZeroPress('Y')"
-            @touchstart="startAxisZeroPress('Y', $event)"
-            @touchend="endAxisZeroPress('Y')"
-            @touchcancel="cancelAxisZeroPress('Y')"
-          >
-            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Y.progress || 0}%` }"></div>
-            Y0
-          </button>
+        <div class="axis-zero-column" ref="axisZeroGroupRef">
+          <div class="axis-zero-xy-container">
+            <Transition name="axis-zero-main" mode="out-in">
+              <button
+                v-if="!axisZeroSplit"
+                :class="['control', 'axis-zero-btn', 'axis-zero-xy-combined', { 'long-press-triggered': axisZeroPress.XY.triggered, 'blink-border': axisZeroPress.XY.blinking }]"
+                title="Zero XY (Double-tap to split, Hold to move)"
+                @click="handleXY0DoubleClick"
+                @mousedown="startAxisZeroPress('XY', $event)"
+                @mouseup="endAxisZeroPress('XY')"
+                @mouseleave="cancelAxisZeroPress('XY')"
+                @touchstart="startAxisZeroPress('XY', $event)"
+                @touchend="endAxisZeroPress('XY')"
+                @touchcancel="cancelAxisZeroPress('XY')"
+              >
+                <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.XY.progress || 0}%` }"></div>
+                XY0
+              </button>
+            </Transition>
+
+            <Transition name="axis-zero-split" mode="out-in">
+              <div v-if="axisZeroSplit" class="axis-zero-split-xy">
+                <button
+                  :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.X.triggered, 'blink-border': axisZeroPress.X.blinking }]"
+                  title="Zero X (Hold to move)"
+                  @mousedown="startAxisZeroPress('X', $event)"
+                  @mouseup="endAxisZeroPress('X')"
+                  @mouseleave="cancelAxisZeroPress('X')"
+                  @touchstart="startAxisZeroPress('X', $event)"
+                  @touchend="endAxisZeroPress('X')"
+                  @touchcancel="cancelAxisZeroPress('X')"
+                >
+                  <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.X.progress || 0}%` }"></div>
+                  X0
+                </button>
+                <button
+                  :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Y.triggered, 'blink-border': axisZeroPress.Y.blinking }]"
+                  title="Zero Y (Hold to move)"
+                  @mousedown="startAxisZeroPress('Y', $event)"
+                  @mouseup="endAxisZeroPress('Y')"
+                  @mouseleave="cancelAxisZeroPress('Y')"
+                  @touchstart="startAxisZeroPress('Y', $event)"
+                  @touchend="endAxisZeroPress('Y')"
+                  @touchcancel="cancelAxisZeroPress('Y')"
+                >
+                  <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Y.progress || 0}%` }"></div>
+                  Y0
+                </button>
+              </div>
+            </Transition>
+          </div>
+
           <button
             :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Z.triggered, 'blink-border': axisZeroPress.Z.blinking }]"
             title="Zero Z (Hold to move)"
@@ -534,15 +595,16 @@ const stopJog = () => {
   });
 };
 
-const handleHomeClick = async () => {
-  // Ignore click if touch was used (prevents double-firing on touchscreens)
-  if (homePress.touchUsed) {
-    homePress.touchUsed = false;
-    return;
+const handleHomeDoubleClick = () => {
+  const now = performance.now();
+  if (now - lastHomeClickTime < DOUBLE_CLICK_THRESHOLD_MS) {
+    // Double-click detected - expand to HX, HY, HZ
+    homeSplit.value = true;
+    lastHomeClickTime = 0; // Reset to prevent triple-click issues
+  } else {
+    // First click - record time
+    lastHomeClickTime = now;
   }
-  // If long-press already handled action, ignore click
-  if (homePress.triggered) return;
-  await goHome();
 };
 
 const goHome = async () => {
@@ -597,13 +659,23 @@ onBeforeUnmount(() => {
   stopHeartbeat();
 });
 
-// --- Home split (HX/HY/HZ) via long-press ---
+// --- Home split (HX/HY/HZ) via double-click ---
 const homeSplit = ref(false);
 const homeGroupRef = ref<HTMLElement | null>(null);
-const LONG_PRESS_MS_HOME = 750;
+const LONG_PRESS_MS_HOME = 1500;
 const DELAY_BEFORE_VISUAL_MS = 150;
-const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; touchUsed: boolean }>({ start: 0, progress: 0, active: false, triggered: false, touchUsed: false });
+const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; touchUsed: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, touchUsed: false, blinking: false });
 let homeActive = false;
+let lastHomeClickTime = 0;
+
+// Home split buttons (HX/HY/HZ) with long-press
+const homeSplitPress = reactive({
+  X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
+});
+
+type HomeSplitAxisType = 'X' | 'Y' | 'Z';
 
 const startHomePress = (_evt?: Event) => {
   if (_evt) {
@@ -636,7 +708,7 @@ const startHomePress = (_evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_HOME && !homePress.triggered) {
       homePress.triggered = true;
-      homeSplit.value = true; // reveal HX/HY/HZ
+      goHome(); // Execute home command
       // reset the visual progress immediately
       homePress.progress = 0;
       homePress.active = false;
@@ -653,20 +725,27 @@ const startHomePress = (_evt?: Event) => {
 const endHomePress = () => {
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.raf = undefined;
-  homePress.active = false;
-  homeActive = false;
-  homePress.progress = 0;
 
-  // If this was a quick tap (not triggered), execute the home command directly
-  // This ensures touchscreen single taps work properly
-  const wasTap = !homePress.triggered;
-
-  // Execute home command for touch taps (since click event will be ignored)
-  if (wasTap && homePress.touchUsed) {
-    goHome();
+  // If not triggered (incomplete press), show blink feedback
+  if (!homePress.triggered && homePress.active) {
+    homePress.active = false;
+    homeActive = false;
+    homePress.progress = 0;
+    homePress.blinking = true;
+    setTimeout(() => {
+      homePress.blinking = false;
+    }, 400);
+  } else {
+    homePress.active = false;
+    homeActive = false;
+    homePress.progress = 0;
   }
 
-  homePress.triggered = false;
+  // Reset triggered after delay
+  setTimeout(() => {
+    homePress.triggered = false;
+    homePress.touchUsed = false;
+  }, 100);
 };
 
 const cancelHomePress = () => {
@@ -677,16 +756,27 @@ const cancelHomePress = () => {
   homePress.progress = 0;
   homePress.triggered = false;
   homePress.touchUsed = false;
+  homePress.blinking = false;
 };
 
-// Click outside to collapse back to single Home
+// Click outside to collapse back to single Home or XY0
 const handleGlobalClick = (e: MouseEvent | TouchEvent) => {
-  if (!homeSplit.value) return;
   const target = e.target as Node | null;
-  const container = homeGroupRef.value;
-  if (!container) return;
-  if (!target || !container.contains(target)) {
-    homeSplit.value = false;
+
+  // Handle home split collapse
+  if (homeSplit.value) {
+    const homeContainer = homeGroupRef.value;
+    if (homeContainer && (!target || !homeContainer.contains(target))) {
+      homeSplit.value = false;
+    }
+  }
+
+  // Handle axis-zero split collapse
+  if (axisZeroSplit.value) {
+    const axisZeroContainer = axisZeroGroupRef.value;
+    if (axisZeroContainer && (!target || !axisZeroContainer.contains(target))) {
+      axisZeroSplit.value = false;
+    }
   }
 };
 
@@ -721,6 +811,83 @@ const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
   } catch (error) {
     console.error(`Failed to home ${axis}:`, error);
   }
+};
+
+const getHomeSplitPressState = (axis: HomeSplitAxisType) => {
+  return homeSplitPress[axis];
+};
+
+const startHomeSplitPress = (axis: HomeSplitAxisType, _evt?: Event) => {
+  if (_evt) _evt.preventDefault();
+  if (isHoming.value) return;
+
+  const state = getHomeSplitPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    // Delay the visual indicator
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_HOME - DELAY_BEFORE_VISUAL_MS)) * 100);
+      state.progress = pct;
+    }
+
+    if (elapsed >= LONG_PRESS_MS_HOME && !state.triggered) {
+      state.triggered = true;
+      goHomeAxis(axis);
+      state.progress = 0;
+      state.active = false;
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endHomeSplitPress = (axis: HomeSplitAxisType) => {
+  const state = getHomeSplitPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  // If not triggered (incomplete press), show blink feedback
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => {
+      state.blinking = false;
+    }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  // Reset triggered after delay
+  setTimeout(() => {
+    state.triggered = false;
+  }, 100);
+};
+
+const cancelHomeSplitPress = (axis: HomeSplitAxisType) => {
+  const state = getHomeSplitPressState(axis);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+  state.blinking = false;
 };
 
 // --- Parking location: 1.5s to go to park, 3s to save coordinates ---
@@ -875,13 +1042,32 @@ const LONG_PRESS_MS_AXIS_ZERO = 1500;
 const axisZeroPress = reactive({
   X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
   Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
+  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
+  XY: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
 });
 
-type AxisZeroType = 'X' | 'Y' | 'Z';
+type AxisZeroType = 'X' | 'Y' | 'Z' | 'XY';
+
+// XY0 split mode (similar to homeSplit)
+const axisZeroSplit = ref(false);
+const axisZeroGroupRef = ref<HTMLElement | null>(null);
+let lastXY0ClickTime = 0;
+const DOUBLE_CLICK_THRESHOLD_MS = 400;
 
 const getAxisZeroPressState = (axis: AxisZeroType) => {
   return axisZeroPress[axis];
+};
+
+const handleXY0DoubleClick = () => {
+  const now = performance.now();
+  if (now - lastXY0ClickTime < DOUBLE_CLICK_THRESHOLD_MS) {
+    // Double-click detected - expand to X0 and Y0
+    axisZeroSplit.value = true;
+    lastXY0ClickTime = 0; // Reset to prevent triple-click issues
+  } else {
+    // First click - record time
+    lastXY0ClickTime = now;
+  }
 };
 
 const startAxisZeroPress = (axis: AxisZeroType, _evt?: Event) => {
@@ -911,7 +1097,11 @@ const startAxisZeroPress = (axis: AxisZeroType, _evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_AXIS_ZERO && !state.triggered) {
       state.triggered = true;
-      goToZero(axis);
+      if (axis === 'XY') {
+        goToZeroXY();
+      } else {
+        goToZero(axis);
+      }
       state.progress = 0;
       state.active = false;
       return;
@@ -967,6 +1157,20 @@ const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
     });
   } catch (error) {
     console.error(`Failed to move ${axis} to zero:`, error);
+  }
+};
+
+const goToZeroXY = async () => {
+  if (motionControlsDisabled.value) {
+    return;
+  }
+  try {
+    await api.sendCommandViaWebSocket({
+      command: 'G90 G0 X0 Y0',
+      displayCommand: 'G90 G0 X0 Y0'
+    });
+  } catch (error) {
+    console.error('Failed to move XY to zero:', error);
   }
 };
 
@@ -1392,6 +1596,8 @@ h2 {
   flex-direction: column;
   gap: 4px;
   min-width: 55px;
+  height: 180px;
+  position: relative;
 }
 
 .axis-zero-btn {
@@ -1399,6 +1605,38 @@ h2 {
   font-weight: 800;
   position: relative;
   overflow: hidden;
+}
+
+/* Container for XY buttons that maintains space */
+.axis-zero-xy-container {
+  flex: 2;
+  position: relative;
+  min-height: 0;
+}
+
+/* XY0 combined button occupies the space of 2 buttons */
+.axis-zero-xy-combined {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Split XY container */
+.axis-zero-split-xy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.axis-zero-split-xy .axis-zero-btn {
+  flex: 1;
 }
 
 /* Ensure visibility over accent-pressed background for axis zero */
@@ -1423,6 +1661,13 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Ensure visibility over accent-pressed background for home */
+.home-button.is-holding .long-press-indicator,
+.home-button:active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
 }
 
 .home-button-content {
@@ -1519,6 +1764,8 @@ h2 {
   flex: 1;
   width: 100%;
   font-weight: bold;
+  position: relative;
+  overflow: hidden;
 }
 
 /* Long press indicator - base styles */
@@ -1545,9 +1792,8 @@ h2 {
   height: 100%;
 }
 
-/* Ensure visibility over accent-pressed background */
-.home-button.is-holding .long-press-indicator,
-.home-button:active .long-press-indicator {
+/* Ensure visibility over accent-pressed background for home split buttons */
+.home-split-btn:active .long-press-indicator {
   background: rgba(255, 255, 255, 0.35);
   opacity: 1;
 }
@@ -1602,6 +1848,39 @@ h2 {
 
 .home-split-leave-to,
 .home-main-enter-from {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* Transition animations for expanding/collapsing XY0 -> X0/Y0 */
+.axis-zero-split-enter-active,
+.axis-zero-split-leave-active,
+.axis-zero-main-enter-active,
+.axis-zero-main-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+  will-change: opacity, transform;
+}
+
+.axis-zero-split-enter-from,
+.axis-zero-main-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.axis-zero-split-enter-to,
+.axis-zero-main-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.axis-zero-split-leave-from,
+.axis-zero-main-enter-to {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.axis-zero-split-leave-to,
+.axis-zero-main-enter-from {
   opacity: 0;
   transform: scale(0.96);
 }
