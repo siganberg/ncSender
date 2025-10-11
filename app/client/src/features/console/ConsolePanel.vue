@@ -738,7 +738,7 @@ h2 {
 }
 
 .timestamp {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   color: var(--color-text-secondary);
   min-width: 115px;
   display: flex;
@@ -768,7 +768,7 @@ h2 {
 
 .message {
   flex: 1;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   white-space: pre;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
@@ -863,7 +863,7 @@ h2 {
   flex: 1;
   overflow: hidden; /* RecycleScroller handles scroll */
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   cursor: text;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;

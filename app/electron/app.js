@@ -499,6 +499,13 @@ export async function createApp(options = {}) {
     computeJobProgressFields();
     updateSenderStatus();
     sendWsMessage(ws, 'server-state-updated', serverState);
+
+    // Send greeting message to terminal if we have one (with small delay to ensure client is ready)
+    if (serverState.greetingMessage) {
+      setTimeout(() => {
+        sendWsMessage(ws, 'cnc-data', serverState.greetingMessage);
+      }, 100);
+    }
   });
 
   // Helper function to update job status in serverState
