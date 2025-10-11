@@ -104,6 +104,7 @@ export async function createApp(options = {}) {
       isProbing: false
     },
     senderStatus: 'connecting',
+    greetingMessage: null, // GRBL/grblHAL greeting message
     jobLoaded: null // Will be populated with current job info: { filename, currentLine, totalLines, status }
   };
 
@@ -219,9 +220,6 @@ export async function createApp(options = {}) {
 
   // Track previous state for all message types
   const messageStateTracker = new MessageStateTracker();
-
-  // Track connection history for internal server logic only (not broadcasted to clients)
-  let hasEverConnected = false;
 
   // Middleware
   app.use(express.json());
@@ -719,14 +717,22 @@ export async function createApp(options = {}) {
         continue;
       }
 
-      if (!cncController.isConnected && !cncController.isConnecting) {
+      if (!cncController.isConnected) {
+        // Disconnect any stale connection before attempting reconnect
+        // This handles cases where physical connection exists but greeting was never received
+        if (cncController.connection || cncController.isConnecting) {
+          log('Disconnecting stale connection before retry...');
+          cncController.disconnect();
+        }
+
+        log('Attempting to connect...');
         try {
           await cncController.connectWithSettings(currentSettings);
           if (cncController.isConnected) {
             log('Auto-connect successful');
           }
         } catch (error) {
-          // swallow errors; loop will retry
+          log('Connection attempt failed, will retry in 1 second');
         }
       }
     }
@@ -929,29 +935,40 @@ export async function createApp(options = {}) {
 
   cncController.on('status', (data) => {
     const newOnlineStatus = data.status === 'connected' && data.isConnected;
-    if (serverState.machineState.connected !== newOnlineStatus) {
+    const statusChanged = serverState.machineState.connected !== newOnlineStatus;
+
+    if (statusChanged) {
       serverState.machineState.connected = newOnlineStatus;
       log(`CNC controller connection status changed. Server state 'machineState.connected' is now: ${serverState.machineState.connected}`);
+    }
 
-      if (newOnlineStatus) {
-        hasEverConnected = true;
-
-        // Initialize firmware structure on connection
-        initializeFirmwareOnConnection(cncController).catch((error) => {
-          log('Error initializing firmware on connection:', error?.message || error);
-        });
-
-        // Fetch and save alarm codes if not already cached
-        fetchAndSaveAlarmCodes(cncController).catch((error) => {
-          log('Error fetching alarm codes on connection:', error?.message || error);
-        });
+    // Handle successful connection
+    if (newOnlineStatus && statusChanged) {
+      // Store the greeting message
+      const greetingMessage = cncController.getGreetingMessage();
+      if (greetingMessage) {
+        serverState.greetingMessage = greetingMessage;
+        log('Stored GRBL greeting:', greetingMessage);
       }
 
-      if (!newOnlineStatus && hasEverConnected) {
-        log('Connection lost, starting reconnection attempts...');
-        startAutoConnect();
-      }
+      // Initialize firmware structure on connection
+      initializeFirmwareOnConnection(cncController).catch((error) => {
+        log('Error initializing firmware on connection:', error?.message || error);
+      });
 
+      // Fetch and save alarm codes if not already cached
+      fetchAndSaveAlarmCodes(cncController).catch((error) => {
+        log('Error fetching alarm codes on connection:', error?.message || error);
+      });
+    }
+
+    // Handle disconnection (status became 'disconnected', 'cancelled', etc.)
+    if (data.status === 'disconnected' || data.status === 'cancelled') {
+      log('Connection lost, starting reconnection attempts...');
+      startAutoConnect();
+    }
+
+    if (statusChanged) {
       broadcast('server-state-updated', serverState);
     }
   });
