@@ -43,11 +43,14 @@
                   min="1000"
                   max="5000"
                   class="probe-input"
+                  :class="{ 'probe-input--error': errors.rapidMovement }"
                   :disabled="isProbing"
+                  @input="validateRapidMovement"
                   @blur="handleRapidMovementBlur"
                 />
                 <span class="probe-unit">mm/min</span>
               </div>
+              <span v-if="errors.rapidMovement" class="probe-error">{{ errors.rapidMovement }}</span>
             </div>
 
             <template v-if="probeType === '3d-probe'">
@@ -61,6 +64,7 @@
                       step="0.1"
                       min="0.1"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.ballPointDiameter }"
                       :disabled="isProbing"
                       @input="validateBallPointDiameter"
                       @blur="handleBallPointDiameterBlur"
@@ -77,8 +81,10 @@
                       v-model.number="zPlunge"
                       type="number"
                       step="0.1"
-                      min="0.1"
+                      min="1"
+                      max="5"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.zPlunge }"
                       :disabled="isProbing"
                       @input="validateZPlunge"
                       @blur="handleZPlungeBlur"
@@ -97,13 +103,17 @@
                       v-model.number="xDimension"
                       type="number"
                       step="0.1"
-                      min="0.1"
+                      min="10"
+                      max="1000"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.xDimension }"
                       :disabled="isProbing"
+                      @input="validateXDimension"
                       @blur="handleXDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
+                  <span v-if="errors.xDimension" class="probe-error">{{ errors.xDimension }}</span>
                 </div>
 
                 <div class="probe-control-group">
@@ -113,13 +123,17 @@
                       v-model.number="yDimension"
                       type="number"
                       step="0.1"
-                      min="0.1"
+                      min="10"
+                      max="1000"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.yDimension }"
                       :disabled="isProbing"
+                      @input="validateYDimension"
                       @blur="handleYDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
                   </div>
+                  <span v-if="errors.yDimension" class="probe-error">{{ errors.yDimension }}</span>
                 </div>
               </div>
 
@@ -131,7 +145,10 @@
                       v-model.number="zOffset"
                       type="number"
                       step="0.01"
+                      min="-0.5"
+                      max="0.5"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.zOffset }"
                       :disabled="isProbing"
                       @input="validateZOffset"
                       @blur="handleZOffsetBlur"
@@ -163,6 +180,7 @@
                       min="1"
                       max="30"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.zThickness }"
                       :disabled="isProbing"
                       @input="validateZThickness"
                       @blur="handleZThicknessBlur"
@@ -182,6 +200,7 @@
                       min="1"
                       max="100"
                       class="probe-input"
+                      :class="{ 'probe-input--error': errors.xyThickness }"
                       :disabled="isProbing"
                       @input="validateXYThickness"
                       @blur="handleXYThicknessBlur"
@@ -202,6 +221,7 @@
                     min="1"
                     max="30"
                     class="probe-input"
+                    :class="{ 'probe-input--error': errors.zProbeDistance }"
                     :disabled="isProbing"
                     @input="validateZProbeDistance"
                     @blur="handleZProbeDistanceBlur"
@@ -209,6 +229,89 @@
                   <span class="probe-unit">mm</span>
                 </div>
                 <span v-if="errors.zProbeDistance" class="probe-error">{{ errors.zProbeDistance }}</span>
+              </div>
+            </template>
+
+            <template v-if="probeType === 'autozero-touch'">
+              <div class="probe-control-group">
+                <label class="probe-label">Bit Diameter</label>
+                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': dropdownOpen }">
+                  <div
+                    class="custom-dropdown__trigger"
+                    @click="toggleDropdown"
+                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
+                  >
+                    <span class="custom-dropdown__value">{{ getDisplayValue() }}</span>
+                    <span class="custom-dropdown__arrow">▼</span>
+                  </div>
+
+                  <div v-if="dropdownOpen" class="custom-dropdown__menu">
+                    <!-- Auto and Tip options (cannot be removed) -->
+                    <div
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Auto' }"
+                      @click="selectDiameter('Auto')"
+                    >
+                      <span class="custom-dropdown__item-spacer"></span>
+                      <span class="custom-dropdown__item-text">Auto</span>
+                    </div>
+
+                    <div
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Tip' }"
+                      @click="selectDiameter('Tip')"
+                    >
+                      <span class="custom-dropdown__item-spacer"></span>
+                      <span class="custom-dropdown__item-text">Tip</span>
+                    </div>
+
+                    <!-- Divider -->
+                    <div v-if="customBitDiameters.length > 0" class="custom-dropdown__divider"></div>
+
+                    <!-- Custom diameters (can be removed) -->
+                    <div
+                      v-for="diameter in customBitDiameters"
+                      :key="diameter"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === diameter.toString() }"
+                      @click="selectDiameter(diameter.toString())"
+                    >
+                      <button
+                        class="custom-dropdown__remove"
+                        @click.stop="removeCustomDiameter(diameter)"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                      <span class="custom-dropdown__item-text">{{ diameter }}mm</span>
+                    </div>
+
+                    <!-- Divider before custom input -->
+                    <div class="custom-dropdown__divider"></div>
+
+                    <!-- Custom diameter input -->
+                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
+                      <input
+                        v-model.number="newCustomDiameter"
+                        type="number"
+                        step="0.001"
+                        min="0.1"
+                        max="50"
+                        class="custom-dropdown__input"
+                        placeholder="Custom diameter (mm)"
+                        @click.stop
+                        @keyup.enter="addCustomDiameter"
+                      />
+                      <button
+                        @click.stop="addCustomDiameter"
+                        class="custom-dropdown__add-btn"
+                        :disabled="!newCustomDiameter || newCustomDiameter <= 0"
+                      >
+                        +Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </template>
 
@@ -269,14 +372,14 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide) || probeType === 'autozero-touch'">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || hasValidationErrors || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide) || probeType === 'autozero-touch'">Start Probe</button>
       </div>
     </div>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
 import JogControls from '../jog/JogControls.vue';
@@ -299,7 +402,7 @@ const emit = defineEmits<{
 }>();
 
 // Probe state
-const probeType = ref<'3d-probe' | 'standard-block'>('3d-probe');
+const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch'>('3d-probe');
 const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
@@ -317,6 +420,12 @@ const zThickness = ref(25);
 const xyThickness = ref(50);
 const zProbeDistance = ref(3);
 
+// AutoZero Touch probe state
+const selectedBitDiameter = ref<string>('Auto');
+const customBitDiameters = ref<number[]>([2, 3.175, 6.35, 9.525, 12]);
+const newCustomDiameter = ref<number | null>(null);
+const dropdownOpen = ref(false);
+
 // Validation errors
 const errors = ref({
   ballPointDiameter: '',
@@ -324,7 +433,10 @@ const errors = ref({
   zOffset: '',
   zThickness: '',
   xyThickness: '',
-  zProbeDistance: ''
+  zProbeDistance: '',
+  rapidMovement: '',
+  xDimension: '',
+  yDimension: ''
 });
 
 // Track original values for change detection
@@ -340,6 +452,11 @@ const originalValues = ref({
 // Flag to prevent saving during initial load
 let isInitialLoad = true;
 
+// Computed property to check if there are any validation errors
+const hasValidationErrors = computed(() => {
+  return Object.values(errors.value).some(error => error !== '');
+});
+
 // Validation functions
 const validateBallPointDiameter = () => {
   if (ballPointDiameter.value <= 0) {
@@ -350,8 +467,8 @@ const validateBallPointDiameter = () => {
 };
 
 const validateZPlunge = () => {
-  if (zPlunge.value <= 0) {
-    errors.value.zPlunge = 'Must be a positive number';
+  if (zPlunge.value < 1 || zPlunge.value > 5) {
+    errors.value.zPlunge = 'Must be between 1 and 5mm';
   } else {
     errors.value.zPlunge = '';
   }
@@ -360,6 +477,8 @@ const validateZPlunge = () => {
 const validateZOffset = () => {
   if (isNaN(zOffset.value)) {
     errors.value.zOffset = 'Must be a valid number';
+  } else if (zOffset.value < -0.5 || zOffset.value > 0.5) {
+    errors.value.zOffset = 'Must be between -0.5 and 0.5mm';
   } else {
     errors.value.zOffset = '';
   }
@@ -386,6 +505,30 @@ const validateZProbeDistance = () => {
     errors.value.zProbeDistance = 'Must be between 1 and 30mm';
   } else {
     errors.value.zProbeDistance = '';
+  }
+};
+
+const validateRapidMovement = () => {
+  if (rapidMovement.value < 1000 || rapidMovement.value > 5000) {
+    errors.value.rapidMovement = 'Must be between 1000 and 5000 mm/min';
+  } else {
+    errors.value.rapidMovement = '';
+  }
+};
+
+const validateXDimension = () => {
+  if (xDimension.value < 10 || xDimension.value > 1000) {
+    errors.value.xDimension = 'Must be between 10 and 1000mm';
+  } else {
+    errors.value.xDimension = '';
+  }
+};
+
+const validateYDimension = () => {
+  if (yDimension.value < 10 || yDimension.value > 1000) {
+    errors.value.yDimension = 'Must be between 10 and 1000mm';
+  } else {
+    errors.value.yDimension = '';
   }
 };
 
@@ -427,7 +570,8 @@ const handleZOffsetBlur = async () => {
 };
 
 const handleXDimensionBlur = async () => {
-  if (xDimension.value !== originalValues.value.xDimension && xDimension.value > 0) {
+  validateXDimension();
+  if (!errors.value.xDimension && xDimension.value !== originalValues.value.xDimension) {
     try {
       await updateSettings({ probe: { '3d-probe': { xDimension: xDimension.value } } });
       originalValues.value.xDimension = xDimension.value;
@@ -438,7 +582,8 @@ const handleXDimensionBlur = async () => {
 };
 
 const handleYDimensionBlur = async () => {
-  if (yDimension.value !== originalValues.value.yDimension && yDimension.value > 0) {
+  validateYDimension();
+  if (!errors.value.yDimension && yDimension.value !== originalValues.value.yDimension) {
     try {
       await updateSettings({ probe: { '3d-probe': { yDimension: yDimension.value } } });
       originalValues.value.yDimension = yDimension.value;
@@ -449,7 +594,8 @@ const handleYDimensionBlur = async () => {
 };
 
 const handleRapidMovementBlur = async () => {
-  if (rapidMovement.value !== originalValues.value.rapidMovement && rapidMovement.value >= 1000 && rapidMovement.value <= 5000) {
+  validateRapidMovement();
+  if (!errors.value.rapidMovement && rapidMovement.value !== originalValues.value.rapidMovement) {
     try {
       await updateSettings({ probe: { '3d-probe': { rapidMovement: rapidMovement.value } } });
       originalValues.value.rapidMovement = rapidMovement.value;
@@ -554,6 +700,16 @@ watch(() => probeZFirst.value, async (value) => {
   }
 });
 
+watch(() => selectedBitDiameter.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { selectedBitDiameter: value } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save selected bit diameter setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Load settings when dialog opens
 watch(() => props.show, async (isShown) => {
   if (isShown) {
@@ -610,6 +766,12 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['standard-block']?.zProbeDistance === 'number') {
           zProbeDistance.value = settings.probe['standard-block'].zProbeDistance;
         }
+        if (settings.probe?.selectedBitDiameter) {
+          selectedBitDiameter.value = settings.probe.selectedBitDiameter;
+        }
+        if (Array.isArray(settings.probe?.bitDiameters)) {
+          customBitDiameters.value = settings.probe.bitDiameters;
+        }
       }
     } catch (error) {
       console.error('[ProbeDialog] Failed to reload settings', JSON.stringify({ error: error.message }));
@@ -664,9 +826,86 @@ const handleCenterClick = async () => {
   }
 };
 
+// AutoZero Touch functions
+const toggleDropdown = () => {
+  if (!props.isProbing) {
+    dropdownOpen.value = !dropdownOpen.value;
+  }
+};
+
+const selectDiameter = (value: string) => {
+  selectedBitDiameter.value = value;
+  dropdownOpen.value = false;
+};
+
+const getDisplayValue = () => {
+  if (selectedBitDiameter.value === 'Auto' || selectedBitDiameter.value === 'Tip') {
+    return selectedBitDiameter.value;
+  }
+  return `${selectedBitDiameter.value}mm`;
+};
+
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement;
+  if (!target.closest('.custom-dropdown')) {
+    dropdownOpen.value = false;
+  }
+};
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
+
+const addCustomDiameter = async () => {
+  if (newCustomDiameter.value && newCustomDiameter.value > 0) {
+    if (!customBitDiameters.value.includes(newCustomDiameter.value)) {
+      customBitDiameters.value.push(newCustomDiameter.value);
+      customBitDiameters.value.sort((a, b) => a - b);
+
+      if (!isInitialLoad) {
+        try {
+          await updateSettings({ probe: { bitDiameters: customBitDiameters.value } });
+        } catch (error) {
+          console.error('[ProbeDialog] Failed to save bit diameters', JSON.stringify({ error: error.message }));
+        }
+      }
+    }
+    newCustomDiameter.value = null;
+  }
+};
+
+const removeCustomDiameter = async (diameter: number) => {
+  const index = customBitDiameters.value.indexOf(diameter);
+  if (index > -1) {
+    customBitDiameters.value.splice(index, 1);
+
+    if (selectedBitDiameter.value === diameter.toString()) {
+      selectedBitDiameter.value = 'Auto';
+    }
+
+    if (!isInitialLoad) {
+      try {
+        await updateSettings({
+          probe: {
+            bitDiameters: customBitDiameters.value,
+            selectedBitDiameter: selectedBitDiameter.value
+          }
+        });
+      } catch (error) {
+        console.error('[ProbeDialog] Failed to save bit diameters', JSON.stringify({ error: error.message }));
+      }
+    }
+  }
+};
+
 const handleStartProbe = async () => {
   try {
     const options = {
+      probeType: probeType.value,
       probingAxis: probingAxis.value,
       selectedCorner: selectedCorner.value,
       selectedSide: selectedSide.value,
@@ -675,7 +914,8 @@ const handleStartProbe = async () => {
       rapidMovement: rapidMovement.value,
       probeZFirst: probeZFirst.value,
       toolDiameter: ballPointDiameter.value || 6,
-      zOffset: zOffset.value
+      zOffset: zOffset.value,
+      selectedBitDiameter: selectedBitDiameter.value
     };
 
     console.log('[Probe] Starting probe operation:', options);
@@ -855,6 +1095,14 @@ const handleStartProbe = async () => {
   border-color: var(--color-accent);
 }
 
+.probe-input--error {
+  border-color: #ff6b6b !important;
+}
+
+.probe-input--error:focus {
+  border-color: #ff6b6b !important;
+}
+
 .probe-input[type="number"] {
   -moz-appearance: textfield;
   text-align: right;
@@ -991,5 +1239,192 @@ input:checked + .slider:before {
 input:disabled + .slider {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Custom Dropdown Styles */
+.custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.custom-dropdown__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  text-align: right;
+}
+
+.custom-dropdown__trigger:hover:not(.custom-dropdown__trigger--disabled) {
+  border-color: var(--color-accent);
+}
+
+.custom-dropdown__trigger--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.custom-dropdown--open .custom-dropdown__trigger {
+  border-color: var(--color-accent);
+}
+
+.custom-dropdown__value {
+  flex: 1;
+  text-align: right;
+}
+
+.custom-dropdown__arrow {
+  margin-left: 8px;
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
+}
+
+.custom-dropdown--open .custom-dropdown__arrow {
+  transform: rotate(180deg);
+}
+
+.custom-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.custom-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.custom-dropdown__item:hover:not(.custom-dropdown__item--input) {
+  background: var(--color-surface);
+}
+
+.custom-dropdown__item--selected {
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.custom-dropdown__item--input {
+  cursor: default;
+  padding: 10px 12px;
+  background: var(--color-surface);
+}
+
+.custom-dropdown__item-spacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.custom-dropdown__item-text {
+  flex: 1;
+  text-align: right;
+}
+
+.custom-dropdown__remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 1.2rem;
+  font-weight: bold;
+  line-height: 1;
+  color: var(--color-accent);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.custom-dropdown__remove:hover {
+  background: var(--color-accent);
+  color: white;
+}
+
+.custom-dropdown__divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+.custom-dropdown__input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.2s ease;
+  text-align: left;
+}
+
+.custom-dropdown__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.custom-dropdown__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.custom-dropdown__input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.custom-dropdown__input::-webkit-outer-spin-button,
+.custom-dropdown__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.custom-dropdown__add-btn {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--color-accent);
+  color: white;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.custom-dropdown__add-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(26, 188, 156, 0.3);
+}
+
+.custom-dropdown__add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
 }
 </style>

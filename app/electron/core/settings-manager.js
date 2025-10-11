@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS = {
     probingAxis: 'Z',
     selectedCorner: null,
     requireConnectionTest: false,
+    bitDiameters: [2, 3.175, 6.35, 9.525, 12],
     '3d-probe': {
       ballPointDiameter: 6,
       zPlunge: 3,
