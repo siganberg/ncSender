@@ -97,6 +97,11 @@ let prevShowProgress: boolean | undefined = undefined;
 
 // COMPUTED PROPERTIES (created once at module level)
 const senderStatus = computed(() => {
+  // If WebSocket is not connected, always show 'connecting'
+  if (!websocketConnected.value) {
+    return 'connecting';
+  }
+
   const raw = serverState.senderStatus || 'connecting';
   const machineStatus = (serverState.machineState?.status || '').toLowerCase();
 
