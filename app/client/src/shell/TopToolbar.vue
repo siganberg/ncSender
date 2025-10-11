@@ -1,7 +1,11 @@
 <template>
   <div class="toolbar" :class="statusClass">
     <div class="toolbar__left">
-      <span class="logo">ncSender</span>
+      <div class="logo-space"></div>
+      <div class="logo-container">
+        <span class="logo">ncSender</span>
+        <span class="version">v{{ appVersion }}</span>
+      </div>
       <div class="workspace-selector">
         <label class="workspace-label" for="workspace-select">Workspace:</label>
         <select
@@ -42,9 +46,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
+import packageJson from '../../../package.json';
 
 const store = useAppStore();
 const { isJobRunning, isConnected, senderStatus: storeSenderStatus } = store;
+
+const appVersion = packageJson.version;
 
 const props = defineProps<{
   workspace: string;
@@ -140,9 +147,33 @@ const onWorkspaceChange = (e: Event) => {
   flex: 1;
 }
 
+.logo-space {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  border: 1px dashed var(--color-border);
+}
+
+.logo-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  line-height: 1.1;
+}
+
 .logo {
   font-weight: 700;
   font-size: 1.25rem;
+}
+
+.version {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  opacity: 0.6;
+  text-align: left;
 }
 
 .workspace-selector {
