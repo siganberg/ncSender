@@ -1612,6 +1612,7 @@ h2 {
   flex: 2;
   position: relative;
   min-height: 0;
+  display: flex;
 }
 
 /* XY0 combined button occupies the space of 2 buttons */
@@ -1710,8 +1711,8 @@ h2 {
     width: 72px;
     gap: 4px;
   }
+  /* Don't set fixed height on axis-zero-btn - let flex handle it */
   .axis-zero-btn {
-    height: 40px;
     font-size: 0.9rem;
   }
 }
@@ -1726,7 +1727,8 @@ h2 {
   .home-group { height: var(--jog-col-height); }
   .position-controls-group { align-items: stretch; }
   .position-controls-group > * { height: var(--jog-col-height); }
-  .axis-zero-column { height: var(--jog-col-height); }
+  .axis-zero-column { height: var(--jog-col-height); display: flex; flex-direction: column; }
+  .axis-zero-xy-container { flex: 2; }
   .corner-simple { height: var(--jog-col-height); }
 }
 
@@ -1736,8 +1738,8 @@ h2 {
     width: 80px;
     gap: 4px;
   }
+  /* Don't set fixed height on axis-zero-btn - let flex handle it */
   .axis-zero-btn {
-    height: 42px;
     font-size: 0.95rem;
   }
 }
