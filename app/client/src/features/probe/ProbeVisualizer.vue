@@ -502,7 +502,11 @@ const loadProbeModel = async () => {
     }
 
     probeModel = object;
-    scene.add(object);
+
+    // Only add probe to scene if not AutoZero Touch (we only want to show the plate)
+    if (props.probeType !== 'autozero-touch') {
+      scene.add(object);
+    }
 
     // Load the plate model first to determine scale
     await loadPlateModel();
