@@ -17,7 +17,7 @@ export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
     `G38.2 Z-${BOUNCE + 1} F75`,
     'G4 P0.3',
     `G10 L20 Z${PLATE_THICKNESS}`,
-    'G0 Z10',
+    'G0 Z5',
     'G90',
     'O100 IF [#<wasMetric> EQ 0]',
     '  G20',
@@ -101,7 +101,7 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto' })
   ];
 };
 
-export const getXYProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto', rapidMovement = 2000 }) => {
+export const getXYProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto', rapidMovement = 2000, moveToZero = false, skipZMovement = false }) => {
   let diameter = 0;
 
   if (selectedBitDiameter === 'Auto') {
@@ -127,6 +127,13 @@ export const getXYProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto'
     `#<wasMetric> = #<_metric>`,
     'G91 G21',
   ];
+
+  if (skipZMovement === false) {
+    code.push(
+      'G38.2 Z-15 F150',
+      'G0 Z5'
+    );
+   }
 
   if (toolRadius == 0) {
     // Left side probe
@@ -198,7 +205,8 @@ export const getXYProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto'
   // Set offsets and final retract
   code.push(
     'G90',
-    'G38.3 X0 Y0 F2000',
+    `G38.3 X0 Y0 F${rapidMovement}`,
+    moveToZero ? `G38.3 Z0 F${rapidMovement}` : '' ,
     'O100 IF [#<wasMetric> EQ 0]',
     '  G20',
     'O100 ENDIF'
@@ -207,7 +215,7 @@ export const getXYProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto'
   return code;
 };
 
-export const getXYZProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto' }) => {
+export const getXYZProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto', rapidMovement = 2000 }) => {
   let diameter = 0;
 
   if (selectedBitDiameter === 'Auto') {
@@ -224,9 +232,10 @@ export const getXYZProbeRoutine = ({ selectedCorner, selectedBitDiameter = 'Auto
 
   code.push(...getZProbeRoutine(selectedBitDiameter));
 
-  code.push(...getXYProbeRoutine({ selectedCorner, selectedBitDiameter }));
+  const moveToZero = true;
+  const skipZMovement = true;
 
-  // TODO: Moe the 0 workoffset.
+  code.push(...getXYProbeRoutine({ selectedCorner, selectedBitDiameter, moveToZero, skipZMovement  }));
 
   return code;
 };
