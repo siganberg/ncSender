@@ -343,6 +343,7 @@
             </div>
 
             <ProbeVisualizer
+              v-if="settingsLoaded"
               :probe-type="probeType"
               :probing-axis="probingAxis"
               :selected-corner="selectedCorner"
@@ -444,6 +445,9 @@ const originalValues = ref({
 
 // Flag to prevent saving during initial load
 let isInitialLoad = true;
+
+// Flag to track when settings are loaded (prevents race condition on initial render)
+const settingsLoaded = ref(false);
 
 // Computed property to check if there are any validation errors
 const hasValidationErrors = computed(() => {
@@ -707,6 +711,7 @@ watch(() => selectedBitDiameter.value, async (value) => {
 watch(() => props.show, async (isShown) => {
   if (isShown) {
     isInitialLoad = true;
+    settingsLoaded.value = false;
 
     try {
       const settings = await api.getSettings();
@@ -770,10 +775,16 @@ watch(() => props.show, async (isShown) => {
       console.error('[ProbeDialog] Failed to reload settings', JSON.stringify({ error: error.message }));
     }
 
+    // Settings are now loaded, allow visualizer to render
+    settingsLoaded.value = true;
+
     // Allow watchers to save after initial load
     setTimeout(() => {
       isInitialLoad = false;
     }, 100);
+  } else {
+    // Reset when dialog closes
+    settingsLoaded.value = false;
   }
 });
 

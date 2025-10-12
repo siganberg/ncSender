@@ -37,7 +37,7 @@ let currentPlateFile = '';
 
 // Probe scale mapping by probe type
 const PROBE_SCALE_MAP: Record<string, number> = {
-  '3d-touch': 1,
+  '3d-probe': 1,
   'standard-block': 200,
   'autozero-touch': 1
 };
