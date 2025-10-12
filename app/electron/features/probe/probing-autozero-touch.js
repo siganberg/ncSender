@@ -4,9 +4,7 @@
 // Constants for probe movements
 const BOUNCE = 3;
 const PLATE_THICKNESS = 4; // mm
-const MAX_TRAVEL_SEARCH = 30;
 const AUTO_PLATE_INNER_DIMENSION = 45
-const AUTO_PLATE_SIDE_THICKNESS = 10
 
 export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
   return [
