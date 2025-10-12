@@ -44,14 +44,34 @@ const PROBE_SCALE_MAP: Record<string, number> = {
 
 // AutoZero Touch probe position - adjust these values to move the probe
 // These are in scaled units (after plate scaling to 10 units)
-const AUTOZERO_TOUCH_X_OFFSET = -3;  // Left/right offset from center
-const AUTOZERO_TOUCH_Y_OFFSET = -3;   // Front/back offset from center
-const AUTOZERO_TOUCH_Z_POSITION = -1; // Up/down position above plate
+const AUTOZERO_TOUCH_X_OFFSET = -3.3;  // Left/right offset from center
+const AUTOZERO_TOUCH_Y_OFFSET = -3.3;   // Front/back offset from center
+const AUTOZERO_TOUCH_Z_POSITION = -0.95; // Up/down position above plate
 
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
   const accentColorStr = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
   return parseInt(accentColorStr.replace('#', '0x'), 16);
+};
+
+// Calculate rotation angle for AutoZero Touch based on corner
+// Front-Left (BottomLeft) is the reference position (0°)
+// Rotates clockwise like a clock hand
+const getAutoZeroRotationForCorner = (corner: string): number => {
+  const cornerName = corner.toLowerCase();
+
+  // Map corners to rotation angles (in radians) - clockwise rotation
+  if (cornerName.includes('bottom') && cornerName.includes('left')) {
+    return 0; // 0 degrees - Front-Left (reference position)
+  } else if (cornerName.includes('top') && cornerName.includes('left')) {
+    return -Math.PI / 2; // -90 degrees (270°) - Back-Left (clockwise 90°)
+  } else if (cornerName.includes('top') && cornerName.includes('right')) {
+    return -Math.PI; // -180 degrees (180°) - Back-Right (clockwise 180°)
+  } else if (cornerName.includes('bottom') && cornerName.includes('right')) {
+    return -Math.PI * 3 / 2; // -270 degrees (90°) - Front-Right (clockwise 270°)
+  }
+
+  return 0; // Default no rotation
 };
 
 // Reset camera to default view
@@ -309,10 +329,33 @@ const initScene = () => {
           emit('cornerSelected', selectedCorner);
 
           if (probeModel && plateModel) {
-            // AutoZero Touch stays in fixed position (axis-independent)
+            // AutoZero Touch: rotate like clock hand around plate center
             if (props.probeType === 'autozero-touch') {
-              // Corner highlighting happens but probe doesn't move
-              console.log('[ProbeVisualizer] AutoZero Touch - corner selected but probe stays in place:', selectedCorner);
+              const rotationAngle = getAutoZeroRotationForCorner(selectedCorner);
+
+              // Calculate the radius from center
+              const radius = Math.sqrt(AUTOZERO_TOUCH_X_OFFSET * AUTOZERO_TOUCH_X_OFFSET +
+                                       AUTOZERO_TOUCH_Y_OFFSET * AUTOZERO_TOUCH_Y_OFFSET);
+
+              // Calculate initial angle from the offset position
+              const initialAngle = Math.atan2(AUTOZERO_TOUCH_Y_OFFSET, AUTOZERO_TOUCH_X_OFFSET);
+
+              // Apply rotation by adding rotation angle to initial angle
+              const newAngle = initialAngle + rotationAngle;
+
+              // Set new position based on rotated angle
+              probeModel.position.x = radius * Math.cos(newAngle);
+              probeModel.position.y = radius * Math.sin(newAngle);
+              probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+
+              // Rotate the probe model itself
+              probeModel.rotation.z = rotationAngle;
+
+              console.log('[ProbeVisualizer] AutoZero Touch rotated:', JSON.stringify({
+                corner: selectedCorner,
+                rotationAngle,
+                position: {x: probeModel.position.x, y: probeModel.position.y}
+              }));
             }
             // Other probes: move to corner position
             else {
@@ -554,10 +597,33 @@ const loadProbeModel = async () => {
       selectedCorner = props.selectedCorner;
       setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
-      // AutoZero Touch stays in fixed position (axis-independent)
+      // AutoZero Touch: rotate like clock hand around plate center
       if (props.probeType === 'autozero-touch') {
-        // Corner highlighting happens but probe doesn't move
-        console.log('[ProbeVisualizer] Initial load - AutoZero Touch stays in place:', props.selectedCorner);
+        const rotationAngle = getAutoZeroRotationForCorner(props.selectedCorner);
+
+        // Calculate the radius from center
+        const radius = Math.sqrt(AUTOZERO_TOUCH_X_OFFSET * AUTOZERO_TOUCH_X_OFFSET +
+                                 AUTOZERO_TOUCH_Y_OFFSET * AUTOZERO_TOUCH_Y_OFFSET);
+
+        // Calculate initial angle from the offset position
+        const initialAngle = Math.atan2(AUTOZERO_TOUCH_Y_OFFSET, AUTOZERO_TOUCH_X_OFFSET);
+
+        // Apply rotation by adding rotation angle to initial angle
+        const newAngle = initialAngle + rotationAngle;
+
+        // Set new position based on rotated angle
+        probeModel.position.x = radius * Math.cos(newAngle);
+        probeModel.position.y = radius * Math.sin(newAngle);
+        probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+
+        // Rotate the probe model itself
+        probeModel.rotation.z = rotationAngle;
+
+        console.log('[ProbeVisualizer] Initial load - AutoZero Touch rotated:', JSON.stringify({
+          corner: props.selectedCorner,
+          rotationAngle,
+          position: {x: probeModel.position.x, y: probeModel.position.y}
+        }));
       }
       // Other probes: move to saved corner position
       else {
@@ -717,10 +783,33 @@ watch(() => props.selectedCorner, (newCorner) => {
     setGroupColor(plateModel, newCorner, getAccentColor());
 
     if (probeModel) {
-      // AutoZero Touch stays in fixed position (axis-independent)
+      // AutoZero Touch: rotate like clock hand around plate center
       if (props.probeType === 'autozero-touch') {
-        // Corner highlighting happens but probe doesn't move
-        console.log('[ProbeVisualizer] Corner watcher - AutoZero Touch stays in place:', newCorner);
+        const rotationAngle = getAutoZeroRotationForCorner(newCorner);
+
+        // Calculate the radius from center
+        const radius = Math.sqrt(AUTOZERO_TOUCH_X_OFFSET * AUTOZERO_TOUCH_X_OFFSET +
+                                 AUTOZERO_TOUCH_Y_OFFSET * AUTOZERO_TOUCH_Y_OFFSET);
+
+        // Calculate initial angle from the offset position
+        const initialAngle = Math.atan2(AUTOZERO_TOUCH_Y_OFFSET, AUTOZERO_TOUCH_X_OFFSET);
+
+        // Apply rotation by adding rotation angle to initial angle
+        const newAngle = initialAngle + rotationAngle;
+
+        // Set new position based on rotated angle
+        probeModel.position.x = radius * Math.cos(newAngle);
+        probeModel.position.y = radius * Math.sin(newAngle);
+        probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+
+        // Rotate the probe model itself
+        probeModel.rotation.z = rotationAngle;
+
+        console.log('[ProbeVisualizer] Corner watcher - AutoZero Touch rotated:', JSON.stringify({
+          corner: newCorner,
+          rotationAngle,
+          position: {x: probeModel.position.x, y: probeModel.position.y}
+        }));
       }
       // Other probes: move to corner position
       else {

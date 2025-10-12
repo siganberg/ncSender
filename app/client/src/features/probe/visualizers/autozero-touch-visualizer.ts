@@ -4,7 +4,7 @@ import type { Object3D } from 'three';
 // Position constants for AutoZero Touch probe
 const AUTOZERO_TOUCH_X_OFFSET = 100;  // Left/right offset from center
 const AUTOZERO_TOUCH_Y_OFFSET = 120;   // Front/back offset from center
-const AUTOZERO_TOUCH_Z_POSITION = -1; // Up/down position above plate
+const AUTOZERO_TOUCH_Z_POSITION = -0.8; // Up/down position above plate
 
 export interface AutoZeroTouchVisualizerConfig {
   scene: THREE.Scene;
