@@ -38,7 +38,8 @@ let currentPlateFile = '';
 // Probe scale mapping by probe type
 const PROBE_SCALE_MAP: Record<string, number> = {
   '3d-touch': 1,
-  'standard-block': 200
+  'standard-block': 200,
+  'autozero-touch': 200
 };
 
 // Get accent color from CSS variable
@@ -424,41 +425,6 @@ const loadProbeModel = async () => {
     plateModel = null;
   }
 
-  // For AutoZero Touch, only load the plate, not the probe
-  if (props.probeType === 'autozero-touch') {
-    await loadPlateModel();
-
-    // Apply scaling to plate only
-    if (plateModel) {
-      const plateBBox = new THREE.Box3().setFromObject(plateModel);
-      const plateCenter = plateBBox.getCenter(new THREE.Vector3());
-      const plateSize = plateBBox.getSize(new THREE.Vector3());
-
-      const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
-      const scale = 10 / maxDim;
-
-      // Center and scale plate
-      plateModel.position.sub(plateCenter);
-      plateModel.scale.multiplyScalar(scale);
-      plateModel.position.z += 3;
-
-      // Rotate plate for X mode after scaling
-      if (props.probingAxis === 'X') {
-        plateModel.rotation.z = Math.PI / 2;
-      }
-    }
-
-    // Update camera to view the scaled plate
-    resetCamera();
-
-    // Re-render after plate is loaded
-    if (renderer) {
-      renderer.render(scene, camera);
-    }
-
-    return;
-  }
-
   // Determine which probe model to load based on probe type
   let modelName = '3dprobe';
   let modelPath = '/assets/probe/3d-probe/';
@@ -466,6 +432,9 @@ const loadProbeModel = async () => {
   if (props.probeType === 'standard-block') {
     modelName = 'cnc-pointer';
     modelPath = '/assets/probe/standard-block/';
+  } else if (props.probeType === 'autozero-touch') {
+    modelName = 'cnc-pointer';
+    modelPath = '/assets/probe/auto-touch/';
   }
 
   const cacheBust = `?t=${Date.now()}`;
@@ -502,11 +471,7 @@ const loadProbeModel = async () => {
     }
 
     probeModel = object;
-
-    // Only add probe to scene if not AutoZero Touch (we only want to show the plate)
-    if (props.probeType !== 'autozero-touch') {
-      scene.add(object);
-    }
+    scene.add(object);
 
     // Load the plate model first to determine scale
     await loadPlateModel();
