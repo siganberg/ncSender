@@ -333,46 +333,39 @@
             </div>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">
-            <template v-if="probeType === 'autozero-touch'">
-              <div class="probe-coming-soon">
-                <h2>Coming Soon</h2>
-              </div>
-            </template>
-            <template v-else>
-              <!-- Connection Test Toggle -->
-              <div class="probe-connection-test">
-                <label class="probe-label">Connection Test</label>
-                <label class="switch">
-                  <input type="checkbox" v-model="requireConnectionTest" @change="handleConnectionTestToggle">
-                  <span class="slider"></span>
-                </label>
-              </div>
+            <!-- Connection Test Toggle -->
+            <div class="probe-connection-test">
+              <label class="probe-label">Connection Test</label>
+              <label class="switch">
+                <input type="checkbox" v-model="requireConnectionTest" @change="handleConnectionTestToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
 
-              <ProbeVisualizer
-                :probe-type="probeType"
-                :probing-axis="probingAxis"
-                :selected-corner="selectedCorner"
-                :selected-side="selectedSide"
-                :probe-active="props.probeActive"
-                @corner-selected="selectedCorner = $event"
-                @side-selected="selectedSide = $event"
-              />
+            <ProbeVisualizer
+              :probe-type="probeType"
+              :probing-axis="probingAxis"
+              :selected-corner="selectedCorner"
+              :selected-side="selectedSide"
+              :probe-active="props.probeActive"
+              @corner-selected="selectedCorner = $event"
+              @side-selected="selectedSide = $event"
+            />
 
-              <!-- Jog Controls -->
-              <JogControls
-                :current-step="jogStep"
-                :step-options="[0.1, 1, 10]"
-                :disabled="isProbing"
-                @update:step="jogStep = $event"
-                @center-click="handleCenterClick"
-              />
-            </template>
+            <!-- Jog Controls -->
+            <JogControls
+              :current-step="jogStep"
+              :step-options="[0.1, 1, 10]"
+              :disabled="isProbing"
+              @update:step="jogStep = $event"
+              @center-click="handleCenterClick"
+            />
           </div>
         </div>
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || hasValidationErrors || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide) || probeType === 'autozero-touch'">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || hasValidationErrors || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide)">Start Probe</button>
       </div>
     </div>
   </Dialog>

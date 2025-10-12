@@ -15,7 +15,9 @@ export const getZProbeRoutine = (zOffset = 0) => {
     `G10 L20 Z${zOffset}`,
     `G0 Z${zParkHeight}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   ];
 };
 
@@ -41,7 +43,9 @@ export const getXProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
     `G10 L20 X${offset}`,
     `G0 X${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   ];
 };
 
@@ -67,7 +71,9 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
     `G10 L20 Y${offset}`,
     `G0 Y${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   ];
 };
 
@@ -129,7 +135,9 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
     'G0 Z10',
     'G90 G0 X0 Y0',
     'G21',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   );
 
   return code;
@@ -224,7 +232,9 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   );
 
   return code;
@@ -322,7 +332,9 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0] G20 O100 ENDIF'
+    'O100 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O100 ENDIF'
   );
 
   return code;
