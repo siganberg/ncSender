@@ -10,7 +10,7 @@ import { hideGroup, showGroup, applyToGroup, setGroupColor } from './probe-mesh-
 import { loadOBJWithGroups } from './custom-obj-loader';
 
 const props = defineProps<{
-  probeType: '3d-touch' | 'standard-block';
+  probeType: '3d-probe' | 'standard-block' | 'autozero-touch';
   probingAxis: string;
   selectedCorner: string | null;
   selectedSide: string | null;
@@ -422,6 +422,41 @@ const loadProbeModel = async () => {
   if (plateModel) {
     scene.remove(plateModel);
     plateModel = null;
+  }
+
+  // For AutoZero Touch, only load the plate, not the probe
+  if (props.probeType === 'autozero-touch') {
+    await loadPlateModel();
+
+    // Apply scaling to plate only
+    if (plateModel) {
+      const plateBBox = new THREE.Box3().setFromObject(plateModel);
+      const plateCenter = plateBBox.getCenter(new THREE.Vector3());
+      const plateSize = plateBBox.getSize(new THREE.Vector3());
+
+      const maxDim = Math.max(plateSize.x, plateSize.y, plateSize.z);
+      const scale = 10 / maxDim;
+
+      // Center and scale plate
+      plateModel.position.sub(plateCenter);
+      plateModel.scale.multiplyScalar(scale);
+      plateModel.position.z += 3;
+
+      // Rotate plate for X mode after scaling
+      if (props.probingAxis === 'X') {
+        plateModel.rotation.z = Math.PI / 2;
+      }
+    }
+
+    // Update camera to view the scaled plate
+    resetCamera();
+
+    // Re-render after plate is loaded
+    if (renderer) {
+      renderer.render(scene, camera);
+    }
+
+    return;
   }
 
   // Determine which probe model to load based on probe type
