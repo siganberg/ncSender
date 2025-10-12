@@ -39,8 +39,14 @@ let currentPlateFile = '';
 const PROBE_SCALE_MAP: Record<string, number> = {
   '3d-touch': 1,
   'standard-block': 200,
-  'autozero-touch': 200
+  'autozero-touch': 1
 };
+
+// AutoZero Touch probe position - adjust these values to move the probe
+// These are in scaled units (after plate scaling to 10 units)
+const AUTOZERO_TOUCH_X_OFFSET = -3;  // Left/right offset from center
+const AUTOZERO_TOUCH_Y_OFFSET = -3;   // Front/back offset from center
+const AUTOZERO_TOUCH_Z_POSITION = -1; // Up/down position above plate
 
 // Get accent color from CSS variable
 const getAccentColor = (): number => {
@@ -189,7 +195,8 @@ const initScene = () => {
       const groupName = clickedObject.userData.group?.toLowerCase() || '';
 
       // Handle X axis - clicking on sides
-      if (props.probingAxis === 'X' && plateModel) {
+      // AutoZero Touch is axis-independent and doesn't respond to clicks
+      if (props.probingAxis === 'X' && plateModel && props.probeType !== 'autozero-touch') {
         let sideGroup: string | null = null;
         let visualSide: 'Left' | 'Right' | null = null;
 
@@ -236,7 +243,8 @@ const initScene = () => {
         }
       }
       // Handle Y axis - clicking on sides (front or back group)
-      else if (props.probingAxis === 'Y' && plateModel) {
+      // AutoZero Touch is axis-independent and doesn't respond to clicks
+      else if (props.probingAxis === 'Y' && plateModel && props.probeType !== 'autozero-touch') {
         let sideGroup: string | null = null;
         let visualSide: 'Front' | 'Back' | null = null;
 
@@ -300,45 +308,52 @@ const initScene = () => {
           // Emit corner selection to parent
           emit('cornerSelected', selectedCorner);
 
-          // Move probe to selected corner in XYZ or XY mode
           if (probeModel && plateModel) {
-            // Get the bounding box of the plate to find corner positions
-            const plateBBox = new THREE.Box3().setFromObject(plateModel);
-            const plateMin = plateBBox.min;
-            const plateMax = plateBBox.max;
-
-            // Determine corner position based on corner name
-            const cornerName = selectedCorner.toLowerCase();
-            let targetX = 0, targetY = 0;
-
-            // Inset amount - negative for XY (more outer), positive for XYZ (more inner)
-            const inset = props.probingAxis === 'XY' ? -1 : 2;
-
-            // No rotation applied, so corner names match visual positions directly
-            if (cornerName.includes('bottom') && cornerName.includes('right')) {
-              targetX = plateMax.x - inset;
-              targetY = plateMin.y + inset;
-            } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
-              targetX = plateMin.x + inset;
-              targetY = plateMin.y + inset;
-            } else if (cornerName.includes('top') && cornerName.includes('right')) {
-              targetX = plateMax.x - inset;
-              targetY = plateMax.y - inset;
-            } else if (cornerName.includes('top') && cornerName.includes('left')) {
-              targetX = plateMin.x + inset;
-              targetY = plateMax.y - inset;
+            // AutoZero Touch stays in fixed position (axis-independent)
+            if (props.probeType === 'autozero-touch') {
+              // Corner highlighting happens but probe doesn't move
+              console.log('[ProbeVisualizer] AutoZero Touch - corner selected but probe stays in place:', selectedCorner);
             }
+            // Other probes: move to corner position
+            else {
+              // Get the bounding box of the plate to find corner positions
+              const plateBBox = new THREE.Box3().setFromObject(plateModel);
+              const plateMin = plateBBox.min;
+              const plateMax = plateBBox.max;
 
-            // Move probe to corner position
-            probeModel.position.x = targetX;
-            probeModel.position.y = targetY;
-            // Set Z height based on mode and probe type
-            if (props.probeType === 'standard-block') {
-              const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
-              const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
-              probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
-            } else {
-              probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+              // Determine corner position based on corner name
+              const cornerName = selectedCorner.toLowerCase();
+              let targetX = 0, targetY = 0;
+
+              // Inset amount - negative for XY (more outer), positive for XYZ (more inner)
+              const inset = props.probingAxis === 'XY' ? -1 : 2;
+
+              // No rotation applied, so corner names match visual positions directly
+              if (cornerName.includes('bottom') && cornerName.includes('right')) {
+                targetX = plateMax.x - inset;
+                targetY = plateMin.y + inset;
+              } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
+                targetX = plateMin.x + inset;
+                targetY = plateMin.y + inset;
+              } else if (cornerName.includes('top') && cornerName.includes('right')) {
+                targetX = plateMax.x - inset;
+                targetY = plateMax.y - inset;
+              } else if (cornerName.includes('top') && cornerName.includes('left')) {
+                targetX = plateMin.x + inset;
+                targetY = plateMax.y - inset;
+              }
+
+              // Move probe to corner position
+              probeModel.position.x = targetX;
+              probeModel.position.y = targetY;
+              // Set Z height based on mode and probe type
+              if (props.probeType === 'standard-block') {
+                const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+                const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+                probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+              } else {
+                probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+              }
             }
           }
 
@@ -351,7 +366,14 @@ const initScene = () => {
   });
 
   renderer.domElement.addEventListener('mousemove', (event) => {
+    // AutoZero Touch only responds to corner clicks in XYZ/XY modes, not X/Y side clicks
     if (!['XYZ', 'XY', 'X', 'Y'].includes(props.probingAxis)) {
+      renderer.domElement.style.cursor = 'default';
+      return;
+    }
+
+    // For AutoZero Touch in X/Y modes, no interaction
+    if (props.probeType === 'autozero-touch' && ['X', 'Y'].includes(props.probingAxis)) {
       renderer.domElement.style.cursor = 'default';
       return;
     }
@@ -468,6 +490,8 @@ const loadProbeModel = async () => {
       setGroupColor(object, 'Nut', 0x606060);
     } else if (props.probeType === '3d-probe') {
       setGroupColor(object, 'Body', 0x606060);
+    } else if (props.probeType === 'autozero-touch') {
+      setGroupColor(object, 'AutoPlate', 0xd3d3d3); // Light gray
     }
 
     probeModel = object;
@@ -505,6 +529,13 @@ const loadProbeModel = async () => {
         const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
         const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
         probeModel.position.z += scaledProbeSize.z / 2 ;
+      } else if (props.probeType === 'autozero-touch') {
+        // AutoZero Touch: position lower on the plate
+        console.log('[ProbeVisualizer] Initial load - AutoZero Touch positioning');
+        probeModel.position.x = AUTOZERO_TOUCH_X_OFFSET;
+        probeModel.position.y = AUTOZERO_TOUCH_Y_OFFSET;
+        probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+        console.log('[ProbeVisualizer] After position adjustment:', JSON.stringify({x: probeModel.position.x, y: probeModel.position.y, z: probeModel.position.z}));
       } else {
         probeModel.position.z += 4;
       }
@@ -523,41 +554,49 @@ const loadProbeModel = async () => {
       selectedCorner = props.selectedCorner;
       setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
-      // Move probe to saved corner position
-      const plateBBox = new THREE.Box3().setFromObject(plateModel);
-      const plateMin = plateBBox.min;
-      const plateMax = plateBBox.max;
-      const cornerName = props.selectedCorner.toLowerCase();
-      const inset = props.probingAxis === 'XY' ? -1 : 2;
-      let targetX = 0, targetY = 0;
-
-      if (cornerName.includes('bottom') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('top') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMax.y - inset;
-      } else if (cornerName.includes('top') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMax.y - inset;
+      // AutoZero Touch stays in fixed position (axis-independent)
+      if (props.probeType === 'autozero-touch') {
+        // Corner highlighting happens but probe doesn't move
+        console.log('[ProbeVisualizer] Initial load - AutoZero Touch stays in place:', props.selectedCorner);
       }
+      // Other probes: move to saved corner position
+      else {
+        const plateBBox = new THREE.Box3().setFromObject(plateModel);
+        const plateMin = plateBBox.min;
+        const plateMax = plateBBox.max;
+        const cornerName = props.selectedCorner.toLowerCase();
+        const inset = props.probingAxis === 'XY' ? -1 : 2;
+        let targetX = 0, targetY = 0;
 
-      probeModel.position.x = targetX;
-      probeModel.position.y = targetY;
-      if (props.probeType === 'standard-block') {
-        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
-        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
-        probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
-      } else {
-        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        if (cornerName.includes('bottom') && cornerName.includes('right')) {
+          targetX = plateMax.x - inset;
+          targetY = plateMin.y + inset;
+        } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
+          targetX = plateMin.x + inset;
+          targetY = plateMin.y + inset;
+        } else if (cornerName.includes('top') && cornerName.includes('right')) {
+          targetX = plateMax.x - inset;
+          targetY = plateMax.y - inset;
+        } else if (cornerName.includes('top') && cornerName.includes('left')) {
+          targetX = plateMin.x + inset;
+          targetY = plateMax.y - inset;
+        }
+
+        probeModel.position.x = targetX;
+        probeModel.position.y = targetY;
+        if (props.probeType === 'standard-block') {
+          const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+          const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+          probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+        } else {
+          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        }
       }
     }
 
     // Position probe for Center modes
-    if (['Center - Inner', 'Center - Outer'].includes(props.probingAxis) && probeModel) {
+    // AutoZero Touch doesn't respond to mode changes
+    if (['Center - Inner', 'Center - Outer'].includes(props.probingAxis) && probeModel && props.probeType !== 'autozero-touch') {
       const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
       probeModel.position.set(0, 0, zPosition);
     }
@@ -677,37 +716,44 @@ watch(() => props.selectedCorner, (newCorner) => {
     selectedCorner = newCorner;
     setGroupColor(plateModel, newCorner, getAccentColor());
 
-    // Move probe to the corner position
     if (probeModel) {
-      const plateBBox = new THREE.Box3().setFromObject(plateModel);
-      const plateMin = plateBBox.min;
-      const plateMax = plateBBox.max;
-      const cornerName = newCorner.toLowerCase();
-      const inset = props.probingAxis === 'XY' ? -1 : 2;
-      let targetX = 0, targetY = 0;
-
-      if (cornerName.includes('bottom') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMin.y + inset;
-      } else if (cornerName.includes('top') && cornerName.includes('right')) {
-        targetX = plateMax.x - inset;
-        targetY = plateMax.y - inset;
-      } else if (cornerName.includes('top') && cornerName.includes('left')) {
-        targetX = plateMin.x + inset;
-        targetY = plateMax.y - inset;
+      // AutoZero Touch stays in fixed position (axis-independent)
+      if (props.probeType === 'autozero-touch') {
+        // Corner highlighting happens but probe doesn't move
+        console.log('[ProbeVisualizer] Corner watcher - AutoZero Touch stays in place:', newCorner);
       }
+      // Other probes: move to corner position
+      else {
+        const plateBBox = new THREE.Box3().setFromObject(plateModel);
+        const plateMin = plateBBox.min;
+        const plateMax = plateBBox.max;
+        const cornerName = newCorner.toLowerCase();
+        const inset = props.probingAxis === 'XY' ? -1 : 2;
+        let targetX = 0, targetY = 0;
 
-      probeModel.position.x = targetX;
-      probeModel.position.y = targetY;
-      if (props.probeType === 'standard-block') {
-        const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
-        const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
-        probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
-      } else {
-        probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        if (cornerName.includes('bottom') && cornerName.includes('right')) {
+          targetX = plateMax.x - inset;
+          targetY = plateMin.y + inset;
+        } else if (cornerName.includes('bottom') && cornerName.includes('left')) {
+          targetX = plateMin.x + inset;
+          targetY = plateMin.y + inset;
+        } else if (cornerName.includes('top') && cornerName.includes('right')) {
+          targetX = plateMax.x - inset;
+          targetY = plateMax.y - inset;
+        } else if (cornerName.includes('top') && cornerName.includes('left')) {
+          targetX = plateMin.x + inset;
+          targetY = plateMax.y - inset;
+        }
+
+        probeModel.position.x = targetX;
+        probeModel.position.y = targetY;
+        if (props.probeType === 'standard-block') {
+          const scaledProbeBBox = new THREE.Box3().setFromObject(probeModel);
+          const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
+          probeModel.position.z = props.probingAxis === 'XY' ? scaledProbeSize.z / 2 - 1 : scaledProbeSize.z / 2;
+        } else {
+          probeModel.position.z = props.probingAxis === 'XY' ? 1 : 4;
+        }
       }
     }
 
@@ -735,7 +781,8 @@ watch(() => props.probingAxis, async () => {
   // For X/Y modes, we need to reload because rotation is different
   if (currentPlateFile === requiredPlateFile && plateModel && !['X', 'Y'].includes(props.probingAxis)) {
     // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
-    if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis) && probeModel) {
+    // AutoZero Touch is axis-independent and doesn't respond to mode changes
+    if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis) && probeModel && props.probeType !== 'autozero-touch') {
       const zPosition = props.probingAxis === 'Center - Inner' ? 0 : 4;
       probeModel.position.set(0, 0, zPosition);
       if (renderer) {
@@ -752,7 +799,8 @@ watch(() => props.probingAxis, async () => {
     }
 
           // Update probe position for XYZ/XY modes (same plate, but different inset/Z)
-          if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && probeModel) {
+          // AutoZero Touch is axis-independent and doesn't respond to corner selection
+          if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && probeModel && props.probeType !== 'autozero-touch') {
             const plateBBox = new THREE.Box3().setFromObject(plateModel);
             const plateMin = plateBBox.min;
             const plateMax = plateBBox.max;
@@ -857,6 +905,13 @@ watch(() => props.probingAxis, async () => {
         const scaledProbeSize = scaledProbeBBox.getSize(new THREE.Vector3());
         const zOffset = scaledProbeSize.z / 2;
         probeModel.position.z += zOffset;
+      } else if (props.probeType === 'autozero-touch') {
+        // AutoZero Touch: position lower on the plate
+        console.log('[ProbeVisualizer] Axis watcher - AutoZero Touch positioning');
+        probeModel.position.x = AUTOZERO_TOUCH_X_OFFSET;
+        probeModel.position.y = AUTOZERO_TOUCH_Y_OFFSET;
+        probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+        console.log('[ProbeVisualizer] After position adjustment:', JSON.stringify({x: probeModel.position.x, y: probeModel.position.y, z: probeModel.position.z}));
       } else {
         let zOffset = 4;
         if (props.probingAxis === 'Center - Inner') {
@@ -876,7 +931,8 @@ watch(() => props.probingAxis, async () => {
     // After loading plate, apply mode-specific settings
     if (plateModel && probeModel) {
       // Reset probe to center for Z, Center - Inner, Center - Outer, X, and Y modes
-      if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis)) {
+      // AutoZero Touch is axis-independent and doesn't respond to mode changes
+      if (['Z', 'Center - Inner', 'Center - Outer', 'X', 'Y'].includes(props.probingAxis) && props.probeType !== 'autozero-touch') {
         probeModel.position.x = 0;
         probeModel.position.y = 0;
       }
@@ -890,7 +946,8 @@ watch(() => props.probingAxis, async () => {
       }
 
       // Restore corner highlight for XYZ/XY modes
-      if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner) {
+      // AutoZero Touch is axis-independent and doesn't respond to corner selection
+      if (['XYZ', 'XY'].includes(props.probingAxis) && props.selectedCorner && props.probeType !== 'autozero-touch') {
         setGroupColor(plateModel, props.selectedCorner, getAccentColor());
 
         // Also move probe to saved corner position
