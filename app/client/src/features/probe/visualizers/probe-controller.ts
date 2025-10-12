@@ -47,9 +47,10 @@ export class ProbeController {
     const token = ++this.loadToken;
 
     if (this.strategy && this.strategy.type === type) {
-      await this.ensurePlate(axis, selections, token, this.strategy.supports);
+      await this.ensurePlate(axis, token);
       if (token !== this.loadToken) return;
       await this.strategy.handleAxisChange(axis, selections);
+      this.applyHighlights(axis, selections, this.strategy.supports);
       return;
     }
 
@@ -59,7 +60,7 @@ export class ProbeController {
     }
 
     const strategy = this.createStrategy(type);
-    await this.ensurePlate(axis, selections, token, strategy.supports);
+    await this.ensurePlate(axis, token);
     const context = {
       scene: this.scene,
       render: this.render,
@@ -75,14 +76,16 @@ export class ProbeController {
 
     this.strategy = strategy;
     await this.strategy.handleAxisChange(axis, selections);
+    this.applyHighlights(axis, selections, this.strategy.supports);
   }
 
   async handleAxisChange(axis: ProbingAxis, selections: SelectionState): Promise<void> {
     const token = ++this.loadToken;
-    await this.ensurePlate(axis, selections, token, this.strategy?.supports ?? null);
+    await this.ensurePlate(axis, token);
     if (token !== this.loadToken) return;
     if (this.strategy) {
       await this.strategy.handleAxisChange(axis, selections);
+      this.applyHighlights(axis, selections, this.strategy.supports);
     }
   }
 
@@ -119,35 +122,31 @@ export class ProbeController {
     this.plateManager.dispose();
   }
 
-  private async ensurePlate(
-    axis: ProbingAxis,
-    selections: SelectionState,
-    token: number,
-    supports: ProbeStrategySupports | null
-  ): Promise<void> {
+  private async ensurePlate(axis: ProbingAxis, token: number): Promise<void> {
     await this.plateManager.ensurePlate(axis);
     if (token !== this.loadToken) {
       return;
     }
 
     this.plateManager.reset(axis);
+  }
 
+  private applyHighlights(
+    axis: ProbingAxis,
+    selections: SelectionState,
+    supports: ProbeStrategySupports | null
+  ): void {
     const accent = this.getAccentColor();
+
     this.plateManager.enableInnerGlow(axis === 'Center - Inner', accent);
 
-    const canHighlightCorner = Boolean(supports?.corners) && selections.corner && ['XYZ', 'XY'].includes(axis);
-    if (canHighlightCorner) {
-      this.plateManager.highlightCorner(selections.corner, accent);
-    } else {
-      this.plateManager.highlightCorner(null, accent);
-    }
+    const cornerToHighlight = Boolean(supports?.corners) && selections.corner && ['XYZ', 'XY'].includes(axis)
+      ? selections.corner
+      : null;
+    this.plateManager.highlightCorner(cornerToHighlight, accent);
 
-    const canHighlightSide = Boolean(supports?.sides?.includes(axis)) && selections.side;
-    if (canHighlightSide) {
-      this.plateManager.highlightSide(axis, selections.side, accent);
-    } else {
-      this.plateManager.highlightSide(axis, null, accent);
-    }
+    const sideToHighlight = Boolean(supports?.sides?.includes(axis)) && selections.side ? selections.side : null;
+    this.plateManager.highlightSide(axis, sideToHighlight, accent);
   }
 
   private createStrategy(type: ProbeType): ProbeStrategy {

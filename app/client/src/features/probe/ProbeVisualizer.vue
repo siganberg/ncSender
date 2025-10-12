@@ -313,7 +313,20 @@ onMounted(() => {
     () => [props.probeType, props.probingAxis] as const,
     ([type, axis]) => {
       if (!controller.value) return;
-      void controller.value.setProbeType(type as ProbeType, axis as ProbingAxis, selectionState.value);
+      controller.value
+        .setProbeType(type as ProbeType, axis as ProbingAxis, selectionState.value)
+        .then(() => {
+          if (!controller.value) return;
+          if (selectionState.value.corner) {
+            controller.value.handleCornerChange(axis as ProbingAxis, selectionState.value.corner);
+          }
+          if (selectionState.value.side) {
+            controller.value.handleSideChange(axis as ProbingAxis, selectionState.value.side);
+          }
+        })
+        .catch((error) => {
+          console.error('[ProbeVisualizer] Failed to set probe type', error);
+        });
     },
     { immediate: true }
   );
