@@ -5,24 +5,44 @@ const BOUNCE = 3;
 const PLATE_THICKNESS = 4; // mm
 const AUTO_PLATE_INNER_DIMENSION = 45;
 const AUTO_DIAMETER_FALLBACK = 6.35; // Assume 1/4" when auto-detecting
+const TIP_EFFECTIVE_DIAMETER = 0.5; // Effective diameter for tip probing
 const SAFE_RAPID_MARGIN = 5;
+const WAIT_COMMAND = 'G4 P0.1';
 
 const resolveBitSpecification = (selectedBitDiameter = 'Auto') => {
-  if (selectedBitDiameter === 'Auto' || selectedBitDiameter === 'Tip') {
+  const normalized =
+    typeof selectedBitDiameter === 'string'
+      ? selectedBitDiameter.trim()
+      : selectedBitDiameter;
+
+  if (normalized === 'Tip') {
     return {
-      displayDiameter: selectedBitDiameter,
+      displayDiameter: 'Tip',
       isAuto: true,
+      isTip: true,
+      rawDiameter: 0,
+      effectiveDiameter: TIP_EFFECTIVE_DIAMETER,
+      toolRadius: 0
+    };
+  }
+
+  if (normalized === 'Auto') {
+    return {
+      displayDiameter: 'Auto',
+      isAuto: true,
+      isTip: false,
       rawDiameter: 0,
       effectiveDiameter: AUTO_DIAMETER_FALLBACK,
       toolRadius: 0
     };
   }
 
-  const parsed = Number(selectedBitDiameter);
+  const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return {
       displayDiameter: 'Auto',
       isAuto: true,
+      isTip: false,
       rawDiameter: 0,
       effectiveDiameter: AUTO_DIAMETER_FALLBACK,
       toolRadius: 0
@@ -32,6 +52,7 @@ const resolveBitSpecification = (selectedBitDiameter = 'Auto') => {
   return {
     displayDiameter: parsed.toString(),
     isAuto: false,
+    isTip: false,
     rawDiameter: parsed,
     effectiveDiameter: parsed,
     toolRadius: parsed / 2
@@ -49,7 +70,7 @@ export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
     'G38.2 Z-25 F200',
     `G0 Z${BOUNCE}`,
     `G38.2 Z-${BOUNCE + 1} F75`,
-    'G4 P0.3',
+    WAIT_COMMAND,
     `G10 L20 Z${PLATE_THICKNESS}`,
     'G0 Z5',
     'G90',
@@ -68,29 +89,35 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   const code = [
     `; Probe X - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
     `#<wasMetric> = #<_metric>`,
-    'G91 G21',
-    'G38.2 Z-25 F150',
-    'G0 Z5'
+    'G91 G21'
   ];
 
+  if (spec.isTip) {
+    code.push('G38.2 Z-25 F150', 'G0 Z1');
+  }
+
   if (spec.isAuto) {
+    if (!spec.isTip) {
+      code.push(`G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`);
+    }
     code.push(
-      `G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`,
       `G38.2 X${-halfClearance * isLeft} F150`,
       `G0 X${BOUNCE * isLeft}`,
       `G38.2 X${-(BOUNCE + 1) * isLeft} F75`,
-      'G4 P0.3',
+      WAIT_COMMAND,
       `#<X1> = #5061`,
       `G0 X${halfClearance * isLeft}`
     );
   }
 
+  if (!spec.isTip) {
+    code.push(`G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`);
+  }
   code.push(
-    `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
     `G38.2 X${halfClearance * isLeft} F150`,
     `G0 X${-BOUNCE * isLeft}`,
     `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
-    'G4 P0.3'
+    WAIT_COMMAND
   );
 
   if (spec.isAuto) {
@@ -122,29 +149,35 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   const code = [
     `; Probe Y - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
     `#<wasMetric> = #<_metric>`,
-    'G91 G21',
-    'G38.2 Z-25 F150',
-    'G0 Z5'
+    'G91 G21'
   ];
 
+  if (spec.isTip) {
+    code.push('G38.2 Z-25 F150', 'G0 Z1');
+  }
+
   if (spec.isAuto) {
+    if (!spec.isTip) {
+      code.push(`G38.3 Y${-safeRapidDistance * isFront} F${rapidMovement}`);
+    }
     code.push(
-      `G38.3 Y${-safeRapidDistance * isFront} F${rapidMovement}`,
       `G38.2 Y${-halfClearance * isFront} F150`,
       `G0 Y${BOUNCE * isFront}`,
       `G38.2 Y${-(BOUNCE + 1) * isFront} F75`,
-      'G4 P0.3',
+      WAIT_COMMAND,
       `#<Y1> = #5062`,
       `G0 Y${halfClearance * isFront}`
     );
   }
 
+  if (!spec.isTip) {
+    code.push(`G38.3 Y${safeRapidDistance * isFront} F${rapidMovement}`);
+  }
   code.push(
-    `G38.3 Y${safeRapidDistance * isFront} F${rapidMovement}`,
     `G38.2 Y${halfClearance * isFront} F150`,
     `G0 Y${-BOUNCE * isFront}`,
     `G38.2 Y${(BOUNCE + 1) * isFront} F75`,
-    'G4 P0.3'
+    WAIT_COMMAND
   );
 
   if (spec.isAuto) {
@@ -186,31 +219,35 @@ export const getXYProbeRoutine = ({
     'G91 G21'
   ];
 
-  if (!skipZMovement) {
+  if (!skipZMovement && spec.isTip) {
     code.push(
       'G38.2 Z-15 F150',
-      'G0 Z5'
+      'G0 Z1'
     );
   }
 
   if (spec.isAuto) {
+    if (!spec.isTip) {
+      code.push(`G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`);
+    }
     code.push(
-      `G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`,
       `G38.2 X${-halfClearance * isLeft} F150`,
       `G0 X${BOUNCE * isLeft}`,
       `G38.2 X${-(BOUNCE + 1) * isLeft} F75`,
-      'G4 P0.3',
+      WAIT_COMMAND,
       `#<X1> = #5061`,
       `G0 X${halfClearance * isLeft}`
     );
   }
 
+  if (!spec.isTip) {
+    code.push(`G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`);
+  }
   code.push(
-    `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
     `G38.2 X${halfClearance * isLeft} F150`,
     `G0 X${-BOUNCE * isLeft}`,
     `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
-    'G4 P0.3'
+    WAIT_COMMAND
   );
 
   if (spec.isAuto) {
@@ -227,23 +264,27 @@ export const getXYProbeRoutine = ({
   }
 
   if (spec.isAuto) {
+    if (!spec.isTip) {
+      code.push(`G38.3 Y${-safeRapidDistance * isBottom} F${rapidMovement}`);
+    }
     code.push(
-      `G38.3 Y${-safeRapidDistance * isBottom} F${rapidMovement}`,
       `G38.2 Y${-halfClearance * isBottom} F150`,
       `G0 Y${BOUNCE * isBottom}`,
       `G38.2 Y${-(BOUNCE + 1) * isBottom} F75`,
-      'G4 P0.3',
+      WAIT_COMMAND,
       `#<Y1> = #5062`,
       `G0 Y${halfClearance * isBottom}`
     );
   }
 
+  if (!spec.isTip) {
+    code.push(`G38.3 Y${safeRapidDistance * isBottom} F${rapidMovement}`);
+  }
   code.push(
-    `G38.3 Y${safeRapidDistance * isBottom} F${rapidMovement}`,
     `G38.2 Y${halfClearance * isBottom} F150`,
     `G0 Y${-BOUNCE * isBottom}`,
     `G38.2 Y${(BOUNCE + 1) * isBottom} F75`,
-    'G4 P0.3'
+    WAIT_COMMAND
   );
 
   if (spec.isAuto) {
@@ -261,9 +302,13 @@ export const getXYProbeRoutine = ({
   }
 
   code.push('G90');
-  code.push(`G38.3 X0 Y0 F${rapidMovement}`);
-  if (moveToZWorkspace) {
-    code.push(`G38.3 Z0 F${rapidMovement}`);
+  if (!spec.isTip) {
+    code.push(`G38.3 X0 Y0 F${rapidMovement}`);
+    if (moveToZWorkspace) {
+      code.push(`G38.3 Z0 F${rapidMovement}`);
+    }
+  } else if (moveToZWorkspace) {
+    code.push(`G38.2 Z0 F${rapidMovement}`);
   }
   code.push(
     'O100 IF [#<wasMetric> EQ 0]',
