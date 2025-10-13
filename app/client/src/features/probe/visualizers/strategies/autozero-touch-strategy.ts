@@ -26,7 +26,7 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
   readonly type = 'autozero-touch';
   readonly supports: ProbeStrategySupports = {
     corners: true,
-    sides: []
+    sides: ['X', 'Y']
   };
 
   private context: ProbeStrategyContext | null = null;
@@ -76,6 +76,8 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
 
     if (['XYZ', 'XY'].includes(axis) && selections.corner) {
       this.moveToCorner(selections.corner);
+    } else if ((axis === 'X' || axis === 'Y') && selections.side) {
+      this.moveToSide(axis, selections.side);
     } else {
       this.positionDefault(this.probeModel);
     }
@@ -90,8 +92,14 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
     this.context?.render();
   }
 
-  handleSideChange(_axis: ProbingAxis, _side: ProbeSide): void {
-    // AutoZero Touch ignores side selections
+  handleSideChange(axis: ProbingAxis, side: ProbeSide): void {
+    if (!this.probeModel) return;
+    if (!((axis === 'X' && (side === 'Left' || side === 'Right')) || (axis === 'Y' && (side === 'Front' || side === 'Back')))) {
+      return;
+    }
+
+    this.moveToSide(axis, side);
+    this.context?.render();
   }
 
   handleProbeActiveChange(isActive: boolean): void {
@@ -127,17 +135,56 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
     if (!this.probeModel) return;
 
     const rotation = cornerRotations[corner];
-    const radius = Math.sqrt(
-      AUTOZERO_TOUCH_X_OFFSET * AUTOZERO_TOUCH_X_OFFSET +
-      AUTOZERO_TOUCH_Y_OFFSET * AUTOZERO_TOUCH_Y_OFFSET
-    );
-    const initialAngle = Math.atan2(AUTOZERO_TOUCH_Y_OFFSET, AUTOZERO_TOUCH_X_OFFSET);
+    const { radius, initialAngle } = this.getDefaultPolar();
     const newAngle = initialAngle + rotation;
 
     this.probeModel.position.x = radius * Math.cos(newAngle);
     this.probeModel.position.y = radius * Math.sin(newAngle);
     this.probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
     this.probeModel.rotation.z = rotation;
+  }
+
+  private moveToSide(axis: ProbingAxis, side: ProbeSide): void {
+    if (!this.probeModel) return;
+
+    const rotation = this.getSideRotation(axis, side);
+    if (rotation === null) {
+      this.positionDefault(this.probeModel);
+      return;
+    }
+
+    const { radius, initialAngle } = this.getDefaultPolar();
+    const newAngle = initialAngle + rotation;
+
+    this.probeModel.position.x = radius * Math.cos(newAngle);
+    this.probeModel.position.y = radius * Math.sin(newAngle);
+    this.probeModel.position.z = AUTOZERO_TOUCH_Z_POSITION;
+    this.probeModel.rotation.z = rotation;
+  }
+
+  private getSideRotation(axis: ProbingAxis, side: ProbeSide): number | null {
+    if (axis === 'X') {
+      if (side === 'Left') return 0;
+      if (side === 'Right') return Math.PI / 2;
+      return null;
+    }
+
+    if (axis === 'Y') {
+      if (side === 'Front') return 0;
+      if (side === 'Back') return -Math.PI / 2;
+      return null;
+    }
+
+    return null;
+  }
+
+  private getDefaultPolar(): { radius: number; initialAngle: number } {
+    const radius = Math.sqrt(
+      AUTOZERO_TOUCH_X_OFFSET * AUTOZERO_TOUCH_X_OFFSET +
+      AUTOZERO_TOUCH_Y_OFFSET * AUTOZERO_TOUCH_Y_OFFSET
+    );
+    const initialAngle = Math.atan2(AUTOZERO_TOUCH_Y_OFFSET, AUTOZERO_TOUCH_X_OFFSET);
+    return { radius, initialAngle };
   }
 
   private disposeObject(obj: THREE.Object3D): void {

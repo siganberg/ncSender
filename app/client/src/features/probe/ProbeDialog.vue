@@ -645,6 +645,21 @@ const handleZProbeDistanceBlur = async () => {
   }
 };
 
+const applyAutoZeroSideDefault = (axis: string) => {
+  if (probeType.value === 'autozero-touch') {
+    if (axis === 'X') {
+      selectedSide.value = 'Left';
+      return;
+    }
+    if (axis === 'Y') {
+      selectedSide.value = 'Front';
+      return;
+    }
+  }
+
+  selectedSide.value = null;
+};
+
 // Watchers for probe settings
 watch(() => probeType.value, async (value) => {
   // Check if current probing axis is available for the new probe type
@@ -659,11 +674,13 @@ watch(() => probeType.value, async (value) => {
       console.error('[ProbeDialog] Failed to save probe type setting', JSON.stringify({ error: error.message }));
     }
   }
+
+  applyAutoZeroSideDefault(probingAxis.value);
 });
 
 watch(() => probingAxis.value, async (value) => {
   // Reset side selection when switching probing axis
-  selectedSide.value = null;
+  applyAutoZeroSideDefault(value);
 
   if (!isInitialLoad) {
     try {
