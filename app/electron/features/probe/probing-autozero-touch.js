@@ -93,11 +93,27 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
     'G91 G21'
   ];
 
-  if (spec.isTip) {
-    code.push('G38.2 Z-25 F150', 'G0 Z1');
+  // Inner X side
+  if (!spec.isTip) {
+    code.push(
+      `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
+      `#<probe_hit> = #5070`,
+      'O100 IF [#<probe_hit> EQ 1]',
+      `  G0 X${-RAPID_PROBE_BOUNCE * isLeft}`,
+      'O100 ENDIF'
+    );
   }
+  code.push(
+    `G38.2 X${halfClearance * isLeft} F150`,
+    `G0 X${-BOUNCE * isLeft}`,
+    `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
+    WAIT_COMMAND,
+    '#<X1> = #5061',
+    `G0 X${-(halfClearance - spec.toolRadius) * isLeft}`
+  );
 
   if (spec.isAuto) {
+    // Outer X side
     if (!spec.isTip) {
       code.push(
         `G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`,
@@ -112,34 +128,9 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
       `G0 X${BOUNCE * isLeft}`,
       `G38.2 X${-(BOUNCE + 1) * isLeft} F75`,
       WAIT_COMMAND,
-      `#<X1> = #5061`,
-      `G0 X${halfClearance * isLeft}`
+      '#<X2> = #5061',
+      'G0 X[[#<X1>-#<X2>]/2]'
     );
-  }
-
-  if (!spec.isTip) {
-    code.push(
-      `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
-      `#<probe_hit> = #5070`,
-      'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 X${-RAPID_PROBE_BOUNCE * isLeft}`,
-      'O100 ENDIF'
-    );
-  }
-  code.push(
-    `G38.2 X${halfClearance * isLeft} F150`,
-    `G0 X${-BOUNCE * isLeft}`,
-    `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
-    WAIT_COMMAND
-  );
-
-  if (spec.isAuto) {
-    code.push(
-      `#<X2> = #5061`,
-      'G0 X-[[#<X2>-#<X1>]/2]'
-    );
-  } else {
-    code.push(`G0 X${-((halfClearance - spec.toolRadius / 2) * isLeft)}`);
   }
 
   code.push(
@@ -155,7 +146,7 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
 
 export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', rapidMovement = 2000 }) => {
   const spec = resolveBitSpecification(selectedBitDiameter);
-  const isFront = selectedSide === 'Front' ? 1 : -1;
+  const isBottom = selectedSide === 'Front' ? 1 : -1;
   const halfClearance = AUTO_PLATE_INNER_DIMENSION / 2;
   const safeRapidDistance = computeSafeRapidDistance(spec.effectiveDiameter);
 
@@ -165,57 +156,48 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
     'G91 G21'
   ];
 
-  if (spec.isTip) {
-    code.push('G38.2 Z-25 F150', 'G0 Z1');
-  }
-
-  if (spec.isAuto) {
-    if (!spec.isTip) {
-      code.push(
-        `G38.3 Y${-safeRapidDistance * isFront} F${rapidMovement}`,
-        `#<probe_hit> = #5070`,
-        'O100 IF [#<probe_hit> EQ 1]',
-        `  G0 Y${RAPID_PROBE_BOUNCE * isFront}`,
-        'O100 ENDIF'
-      );
-    }
-    code.push(
-      `G38.2 Y${-halfClearance * isFront} F150`,
-      `G0 Y${BOUNCE * isFront}`,
-      `G38.2 Y${-(BOUNCE + 1) * isFront} F75`,
-      WAIT_COMMAND,
-      `#<Y1> = #5062`,
-      `G0 Y${halfClearance * isFront}`
-    );
-  }
-
+  // Inner Y side
   if (!spec.isTip) {
     code.push(
-      `G38.3 Y${safeRapidDistance * isFront} F${rapidMovement}`,
+      `G38.3 Y${safeRapidDistance * isBottom} F${rapidMovement}`,
       `#<probe_hit> = #5070`,
       'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 Y${-RAPID_PROBE_BOUNCE * isFront}`,
+      `  G0 Y${-RAPID_PROBE_BOUNCE * isBottom}`,
       'O100 ENDIF'
     );
   }
   code.push(
-    `G38.2 Y${halfClearance * isFront} F150`,
-    `G0 Y${-BOUNCE * isFront}`,
-    `G38.2 Y${(BOUNCE + 1) * isFront} F75`,
-    WAIT_COMMAND
+    `G38.2 Y${halfClearance * isBottom} F150`,
+    `G0 Y${-BOUNCE * isBottom}`,
+    `G38.2 Y${(BOUNCE + 1) * isBottom} F75`,
+    WAIT_COMMAND,
+    `#<Y1> = #5062`,
+    `G0 Y${-(halfClearance - spec.toolRadius) * isBottom}`
   );
 
   if (spec.isAuto) {
+    // Outer Y side
+    if (!spec.isTip) {
+      code.push(
+        `G38.3 Y${-safeRapidDistance * isBottom} F${rapidMovement}`,
+        `#<probe_hit> = #5070`,
+        'O100 IF [#<probe_hit> EQ 1]',
+        `  G0 Y${RAPID_PROBE_BOUNCE * isBottom}`,
+        'O100 ENDIF'
+      );
+    }
     code.push(
+      `G38.2 Y${-halfClearance * isBottom} F150`,
+      `G0 Y${BOUNCE * isBottom}`,
+      `G38.2 Y${-(BOUNCE + 1) * isBottom} F75`,
+      WAIT_COMMAND,
       `#<Y2> = #5062`,
-      'G0 Y-[[#<Y2>-#<Y1>]/2]'
+      'G0 Y[[#<Y1>-#<Y2>]/2]'
     );
-  } else {
-    code.push(`G0 Y${-((halfClearance - spec.toolRadius / 2) * isFront)}`);
   }
 
   code.push(
-    `G10 L20 Y${halfClearance * isFront}`,
+    `G10 L20 Y${halfClearance * isBottom}`,
     'G90',
     'O100 IF [#<wasMetric> EQ 0]',
     '  G20',
