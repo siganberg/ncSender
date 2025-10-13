@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateProbeCode } from './probing-utils.js';
+import { generateProbeCode, validateProbeOptions } from './probing-utils.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PROBE]`, ...args);
@@ -8,71 +8,80 @@ const log = (...args) => {
 export function createProbeRoutes(cncController, serverState, broadcast) {
   const router = Router();
 
+  const setProbingStatus = (enabled) => {
+    serverState.machineState.isProbing = enabled;
+    broadcast('server-state-updated', serverState);
+  };
+
   /**
    * Start a probing operation
    * POST /api/probe/start
    */
   router.post('/start', async (req, res) => {
-    try {
-      const options = req.body;
+    if (serverState.machineState.isProbing) {
+      return res.status(409).json({
+        success: false,
+        error: 'Probe operation already in progress'
+      });
+    }
+
+    const { options, errors } = validateProbeOptions(req.body || {});
+
+    if (errors.length) {
+      return res.status(400).json({
+        success: false,
+        error: errors.join('; ')
+      });
+    }
 
     log('Starting probe operation:', options);
 
-    // Set probing state
-    serverState.machineState.isProbing = true;
-    broadcast('server-state-updated', serverState);
-
-    // Generate G-code for probing
     const gcodeCommands = generateProbeCode(options);
 
     if (!gcodeCommands || gcodeCommands.length === 0) {
-      serverState.machineState.isProbing = false;
-      broadcast('server-state-updated', serverState);
       return res.status(400).json({
         success: false,
         error: 'No G-code generated for probing operation'
       });
     }
 
-    // Log G-code for debugging
-    log('Probe G-code:', gcodeCommands.join('\n'));
-
-    // Send probe commands directly to controller (don't use jobManager for probing)
-    for (const command of gcodeCommands) {
-      const cleanCommand = command.trim();
-      if (!cleanCommand) continue;
-
-      const commandId = `probe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-      await cncController.sendCommand(cleanCommand, {
-        commandId,
-        displayCommand: cleanCommand,
-        meta: {
-          sourceId: 'probing',
-          probeOperation: options.probingAxis
-        }
-      });
-    }
-
-    // Reset probing state after all commands sent
-    serverState.machineState.isProbing = false;
-    broadcast('server-state-updated', serverState);
+    setProbingStatus(true);
 
     res.json({
       success: true,
       message: 'Probe operation started',
       commandCount: gcodeCommands.length
     });
-  } catch (error) {
-    log('Error starting probe:', error);
-    serverState.machineState.isProbing = false;
-    broadcast('server-state-updated', serverState);
-    res.status(500).json({
-      success: false,
-      error: error.message
+
+    (async () => {
+      try {
+        log('Probe G-code:', gcodeCommands.join('\n'));
+
+        for (const command of gcodeCommands) {
+          const cleanCommand = command.trim();
+          if (!cleanCommand) continue;
+
+          const commandId = `probe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+          await cncController.sendCommand(cleanCommand, {
+            commandId,
+            displayCommand: cleanCommand,
+            meta: {
+              sourceId: 'probing',
+              probeOperation: options.probingAxis
+            }
+          });
+        }
+      } catch (error) {
+        log('Error executing probe G-code:', error);
+      } finally {
+        setProbingStatus(false);
+      }
+    })().catch((error) => {
+      log('Unhandled probe execution error:', error);
+      setProbingStatus(false);
     });
-  }
-});
+  });
 
   /**
    * Stop/abort probing operation
@@ -88,8 +97,7 @@ export function createProbeRoutes(cncController, serverState, broadcast) {
       });
 
       // Reset probing state
-      serverState.machineState.isProbing = false;
-      broadcast('server-state-updated', serverState);
+      setProbingStatus(false);
 
       log('Probe operation stopped (soft reset sent)');
 
@@ -99,8 +107,7 @@ export function createProbeRoutes(cncController, serverState, broadcast) {
       });
     } catch (error) {
       log('Error stopping probe:', error);
-      serverState.machineState.isProbing = false;
-      broadcast('server-state-updated', serverState);
+      setProbingStatus(false);
       res.status(500).json({
         success: false,
         error: error.message
