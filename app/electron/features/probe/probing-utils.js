@@ -149,7 +149,7 @@ const STRATEGIES = {
           rapidMovement: { defaultValue: 2000, min: 1 }
         },
         booleans: {
-          moveToZero: { defaultValue: false },
+          returnToXYZero: { defaultValue: false },
           skipZMovement: { defaultValue: false }
         },
         run: (options) => probeAutozero.getXYZProbeRoutine(options)
@@ -163,7 +163,7 @@ const STRATEGIES = {
           rapidMovement: { defaultValue: 2000, min: 1 }
         },
         booleans: {
-          moveToZero: { defaultValue: false },
+          returnToXYZero: { defaultValue: false },
           skipZMovement: { defaultValue: false }
         },
         run: (options) => probeAutozero.getXYProbeRoutine(options)
@@ -246,6 +246,14 @@ export const validateProbeOptions = (rawOptions) => {
     } else {
       errors.push(bitResult.error ?? 'Invalid bit diameter');
     }
+  }
+
+  if (
+    axisConfig?.booleans?.returnToXYZero &&
+    safe.returnToXYZero === undefined &&
+    typeof source.moveToZero === 'boolean'
+  ) {
+    safe.returnToXYZero = source.moveToZero;
   }
 
   return {
