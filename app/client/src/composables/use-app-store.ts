@@ -78,8 +78,10 @@ const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: num
 const websocketConnected = ref(false);
 const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
-const gridSizeX = ref(1260);
-const gridSizeY = ref(1284);
+// Grid size defaults - should be loaded from firmware settings $130/$131
+// These defaults are only used if firmware settings cannot be read
+const gridSizeX = ref(0);
+const gridSizeY = ref(0);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
 const zMaxTravel = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
@@ -319,19 +321,44 @@ const addResponseLine = (data: string) => {
 
 // Helper to try loading machine dimensions once
 const tryLoadMachineDimensionsOnce = async () => {
-  if (!status.connected || !websocketConnected.value) return;
-  if (machineDimsLoaded.value) return;
+  if (!status.connected || !websocketConnected.value) {
+    console.log('[Store] Skipping machine dimensions load: not connected');
+    return;
+  }
+  if (machineDimsLoaded.value) {
+    console.log('[Store] Machine dimensions already loaded');
+    return;
+  }
 
+  console.log('[Store] Loading machine dimensions from firmware settings...');
   try {
     // Read from cached firmware data served by the backend (no controller calls)
     // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
     const firmware = await api.getFirmwareSettings(false).catch(() => null as any);
+
+    if (!firmware || !firmware.settings) {
+      console.warn('[Store] Firmware settings not available');
+      return;
+    }
+
     const xVal = parseFloat(String(firmware?.settings?.['130']?.value ?? ''));
     const yVal = parseFloat(String(firmware?.settings?.['131']?.value ?? ''));
     const zVal = parseFloat(String(firmware?.settings?.['132']?.value ?? ''));
-    if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
-    if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
-    if (!Number.isNaN(zVal) && zVal > 0) zMaxTravel.value = zVal;
+
+    console.log(`[Store] Raw firmware values: $130=${xVal}, $131=${yVal}, $132=${zVal}`);
+
+    if (!Number.isNaN(xVal) && xVal > 0) {
+      gridSizeX.value = xVal;
+      console.log(`[Store] Set gridSizeX = ${xVal}`);
+    }
+    if (!Number.isNaN(yVal) && yVal > 0) {
+      gridSizeY.value = yVal;
+      console.log(`[Store] Set gridSizeY = ${yVal}`);
+    }
+    if (!Number.isNaN(zVal) && zVal > 0) {
+      zMaxTravel.value = zVal;
+      console.log(`[Store] Set zMaxTravel = ${zVal}`);
+    }
 
     const dirInvertRaw = parseInt(String(firmware?.settings?.['3']?.value ?? ''), 10);
     const homingInvertRaw = parseInt(String(firmware?.settings?.['23']?.value ?? ''), 10);
