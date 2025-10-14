@@ -320,6 +320,14 @@ const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
 }>();
 
+type AxisHome = 'min' | 'max';
+type MachineOrientation = {
+  xHome: AxisHome;
+  yHome: AxisHome;
+  zHome: AxisHome;
+  homeCorner: 'front-left' | 'front-right' | 'back-left' | 'back-right';
+};
+
 const props = defineProps<{
   jogConfig: {
     stepSize: number;
@@ -329,6 +337,8 @@ const props = defineProps<{
   machineCoords?: { x: number; y: number; z: number };
   gridSizeX?: number;
   gridSizeY?: number;
+  zMaxTravel?: number | null;
+  machineOrientation?: MachineOrientation;
 }>();
 
 // Feed rate management based on step size
@@ -336,6 +346,61 @@ const feedRateDefaults = {
   0.1: 500,
   1: 3000,
   10: 8000
+};
+
+const defaultOrientation: MachineOrientation = {
+  xHome: 'min',
+  yHome: 'max',
+  zHome: 'max',
+  homeCorner: 'back-left'
+};
+
+const orientation = computed(() => props.machineOrientation ?? defaultOrientation);
+
+const computeAxisBounds = (size: number | undefined, home: AxisHome) => {
+  const travel = typeof size === 'number' && size > 0 ? size : 0;
+  if (home === 'max') {
+    return {
+      min: -travel,
+      max: 0
+    };
+  }
+  return {
+    min: 0,
+    max: travel
+  };
+};
+
+const xAxisBounds = computed(() => computeAxisBounds(props.gridSizeX, orientation.value.xHome));
+const yAxisBounds = computed(() => computeAxisBounds(props.gridSizeY, orientation.value.yHome));
+
+const formatMachineCoord = (value: number) => {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Number(value.toFixed(3));
+  const normalized = Math.abs(rounded) < 1e-6 ? 0 : rounded;
+  return normalized.toString();
+};
+
+const safeZValue = computed(() => {
+  const travel = typeof props.zMaxTravel === 'number' && props.zMaxTravel > 0 ? props.zMaxTravel : null;
+  if (orientation.value.zHome === 'max') {
+    const offset = travel != null ? Math.min(5, travel) : 5;
+    return -offset;
+  }
+  if (travel != null) {
+    return travel > 5 ? travel - 5 : travel;
+  }
+  return 5;
+});
+
+const safeZCommand = computed(() => formatMachineCoord(safeZValue.value));
+
+const getCornerPosition = (corner: CornerType) => {
+  const xBounds = xAxisBounds.value;
+  const yBounds = yAxisBounds.value;
+  const x = (corner === 'top-left' || corner === 'bottom-left') ? xBounds.min : xBounds.max;
+  const y = (corner === 'top-left' || corner === 'top-right') ? yBounds.max : yBounds.min;
+  return { x, y };
 };
 
 const feedRateInput = ref(String(feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500));
@@ -920,9 +985,13 @@ const goToPark = async () => {
     const [x, y, z] = response.parkingLocation.split(',').map(v => parseFloat(v));
 
     // Send parking G-code commands in sequence
-    await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 Z-5', displayCommand: 'G53 G90 G0 Z-5' });
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${x} Y${y}`, displayCommand: `G53 G90 G0 X${x} Y${y}` });
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${z}`, displayCommand: `G53 G90 G0 Z${z}` });
+    const safeZ = safeZCommand.value;
+    const xStr = formatMachineCoord(x);
+    const yStr = formatMachineCoord(y);
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${safeZ}`, displayCommand: `G53 G90 G0 Z${safeZ}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G90 G0 X${xStr} Y${yStr}` });
+    const zStr = formatMachineCoord(z);
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${zStr}`, displayCommand: `G53 G90 G0 Z${zStr}` });
   } catch (_err) {
     // Network or other errors: ignore during active press
     return;
@@ -1307,28 +1376,16 @@ const goToCorner = async (corner: CornerType) => {
   if (motionControlsDisabled.value) {
     return;
   }
-  const xLimit = props.gridSizeX || 1260;
-  const yLimit = props.gridSizeY || 1284;
+  const { x, y } = getCornerPosition(corner);
+  const safeZ = safeZCommand.value;
+  const xStr = formatMachineCoord(x);
+  const yStr = formatMachineCoord(y);
 
   try {
     // Always move to safe Z height first
-    await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 Z-5', displayCommand: 'G53 G90 G0 Z-5' });
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${safeZ}`, displayCommand: `G53 G90 G0 Z${safeZ}` });
 
-    // Move to corner based on which button was clicked
-    switch (corner) {
-      case 'top-left':
-        await api.sendCommandViaWebSocket({ command: 'G53 G90 G0 X0 Y0', displayCommand: 'G53 G90 G0 X0 Y0' });
-        break;
-      case 'top-right':
-        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xLimit} Y0`, displayCommand: `G53 G90 G0 X${xLimit} Y0` });
-        break;
-      case 'bottom-left':
-        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X0 Y-${yLimit}`, displayCommand: `G53 G90 G0 X0 Y-${yLimit}` });
-        break;
-      case 'bottom-right':
-        await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xLimit} Y-${yLimit}`, displayCommand: `G53 G90 G0 X${xLimit} Y-${yLimit}` });
-        break;
-    }
+    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G90 G0 X${xStr} Y${yStr}` });
   } catch (error) {
     console.error('Failed to move to corner:', error);
   }

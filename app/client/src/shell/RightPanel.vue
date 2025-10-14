@@ -6,6 +6,8 @@
       :machine-coords="status.machineCoords"
       :grid-size-x="gridSizeX"
       :grid-size-y="gridSizeY"
+      :z-max-travel="zMaxTravel"
+      :machine-orientation="machineOrientation"
       @update:step-size="emit('update:jogStep', $event)"
     />
     <StatusPanel :status="status" />
@@ -24,6 +26,14 @@ const emit = defineEmits<{
   (e: 'clearConsole'): void;
 }>();
 
+type AxisHome = 'min' | 'max';
+type MachineOrientation = {
+  xHome: AxisHome;
+  yHome: AxisHome;
+  zHome: AxisHome;
+  homeCorner: 'front-left' | 'front-right' | 'back-left' | 'back-right';
+};
+
 const props = defineProps<{
   status: {
     connected: boolean;
@@ -41,7 +51,9 @@ const props = defineProps<{
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   gridSizeX?: number;
   gridSizeY?: number;
+  zMaxTravel?: number | null;
   senderStatus?: string;
+  machineOrientation?: MachineOrientation;
 }>();
 
 const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLowerCase());

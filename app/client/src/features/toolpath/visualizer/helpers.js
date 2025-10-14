@@ -237,7 +237,21 @@ export const listPointerMeshes = (group) => {
     // Removed mesh logging - no longer needed
 };
 
-export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 } } = {}) => {
+const axisBounds = (size, offset, home) => {
+    const axisSize = typeof size === 'number' && !Number.isNaN(size) ? size : 0;
+    if (home === 'max') {
+        return {
+            min: -axisSize - offset,
+            max: -offset
+        };
+    }
+    return {
+        min: -offset,
+        max: axisSize - offset
+    };
+};
+
+export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' } } = {}) => {
     const group = new THREE.Group();
 
     // Create grid with 10mm spacing
@@ -245,10 +259,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     const majorStep = 100; // Major grid lines every 100mm
 
     // Calculate dynamic boundaries based on work offset
-    const minX = -workOffset.x;
-    const maxX = gridSizeX - workOffset.x;
-    const minY = -gridSizeY - workOffset.y;
-    const maxY = -workOffset.y;
+    const xBounds = axisBounds(gridSizeX, workOffset.x || 0, orientation.xHome || 'min');
+    const yBounds = axisBounds(gridSizeY, workOffset.y || 0, orientation.yHome || 'max');
+    const { min: minX, max: maxX } = xBounds;
+    const { min: minY, max: maxY } = yBounds;
 
     // Regular grid lines
     const material = new THREE.LineBasicMaterial({

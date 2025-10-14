@@ -213,6 +213,14 @@ const store = useToolpathStore();
 const appStore = useAppStore();
 const { isJobRunning, isConnected: storeIsConnected } = appStore;
 
+type AxisHome = 'min' | 'max';
+type MachineOrientation = {
+  xHome: AxisHome;
+  yHome: AxisHome;
+  zHome: AxisHome;
+  homeCorner: 'front-left' | 'front-right' | 'back-left' | 'back-right';
+};
+
 const presets = [
   { id: 'top', label: 'Top' },
   { id: 'front', label: 'Side' },
@@ -229,6 +237,7 @@ const props = withDefaults(defineProps<{
   gridSizeX?: number;
   gridSizeY?: number;
   zMaxTravel?: number | null;
+  machineOrientation?: MachineOrientation;
   spindleRpm?: number;
   alarmMessage?: string;
   currentTool?: number;
@@ -241,6 +250,7 @@ const props = withDefaults(defineProps<{
   gridSizeX: 1260,
   gridSizeY: 1284,
   zMaxTravel: null,
+  machineOrientation: () => ({ xHome: 'min', yHome: 'max', zHome: 'max', homeCorner: 'back-left' }),
   spindleRpm: 0,
   jobLoaded: null
 });
@@ -369,6 +379,87 @@ let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
 let axesGroup: THREE.Group;
 
+const defaultOrientation: MachineOrientation = {
+  xHome: 'min',
+  yHome: 'max',
+  zHome: 'max',
+  homeCorner: 'back-left'
+};
+
+const resolvedOrientation = computed(() => props.machineOrientation ?? defaultOrientation);
+
+const computeAxisBounds = (size: number | undefined, offset: number, home: AxisHome) => {
+  const axisSize = typeof size === 'number' && !Number.isNaN(size) ? size : 0;
+  if (home === 'max') {
+    return {
+      min: -axisSize - offset,
+      max: -offset
+    };
+  }
+  return {
+    min: -offset,
+    max: axisSize - offset
+  };
+};
+
+const computeGridBoundsFrom = (workOffset = props.workOffset) => {
+  const gridSizeX = props.gridSizeX ?? 1260;
+  const gridSizeY = props.gridSizeY ?? 1284;
+  const workOffsetX = workOffset?.x ?? 0;
+  const workOffsetY = workOffset?.y ?? 0;
+  const workOffsetZ = workOffset?.z ?? 0;
+  const orientation = resolvedOrientation.value;
+
+  const xBounds = computeAxisBounds(gridSizeX, workOffsetX, orientation.xHome);
+  const yBounds = computeAxisBounds(gridSizeY, workOffsetY, orientation.yHome);
+
+  const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
+  const zBounds = zMax != null ? computeAxisBounds(zMax, workOffsetZ, orientation.zHome) : null;
+
+  return {
+    minX: xBounds.min,
+    maxX: xBounds.max,
+    minY: yBounds.min,
+    maxY: yBounds.max,
+    minZ: zBounds ? zBounds.min : undefined,
+    maxZ: zBounds ? zBounds.max : undefined
+  };
+};
+
+const applyBoundsAndWarnings = (bounds: ReturnType<typeof computeGridBoundsFrom>) => {
+  if (!gcodeVisualizer) return;
+  gcodeVisualizer.setGridBounds(bounds);
+  showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+  outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+  outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
+};
+
+const rebuildGrid = (workOffset = props.workOffset) => {
+  if (scene && gridGroup) {
+    scene.remove(gridGroup);
+  }
+
+  gridGroup = createGridLines({
+    gridSizeX: props.gridSizeX,
+    gridSizeY: props.gridSizeY,
+    workOffset,
+    orientation: resolvedOrientation.value
+  });
+
+  if (scene) {
+    scene.add(gridGroup);
+  }
+
+  const bounds = computeGridBoundsFrom(workOffset);
+  applyBoundsAndWarnings(bounds);
+
+  if (!autoFitMode.value) {
+    fitCameraToBounds(getGridBounds());
+  }
+
+  return bounds;
+};
+
 // Mouse/touch controls
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
@@ -428,7 +519,8 @@ const initThreeJS = () => {
   gridGroup = createGridLines({ // 10mm spacing with numbers
     gridSizeX: props.gridSizeX,
     gridSizeY: props.gridSizeY,
-    workOffset: props.workOffset
+    workOffset: props.workOffset,
+    orientation: resolvedOrientation.value
   });
   scene.add(gridGroup);
 
@@ -446,6 +538,9 @@ const initThreeJS = () => {
   if (props.theme === 'light') {
     gcodeVisualizer.setRapidColor(0xE67E22); // orange for light theme
   }
+
+  const initialBounds = computeGridBoundsFrom(props.workOffset);
+  gcodeVisualizer.setGridBounds(initialBounds);
 
   // Add cutting pointer/spindle
   cuttingPointer = generateCuttingPointer();
@@ -789,21 +884,8 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     }
 
     // Set grid bounds for out-of-bounds detection
-    const gridSizeX = props.gridSizeX || 1260;
-    const gridSizeY = props.gridSizeY || 1284;
-    const workOffsetX = props.workOffset?.x || 0;
-    const workOffsetY = props.workOffset?.y || 0;
-    const workOffsetZ = props.workOffset?.z || 0;
-    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
-
-    const minX = -workOffsetX;
-    const maxX = gridSizeX - workOffsetX;
-    const minY = -gridSizeY - workOffsetY;
-    const maxY = -workOffsetY;
-    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
-    const maxZ = zMax != null ? -workOffsetZ : undefined;
-
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
+    const gridBounds = computeGridBoundsFrom(props.workOffset);
+    gcodeVisualizer.setGridBounds(gridBounds);
 
     gcodeVisualizer.render(data.content);
 
@@ -823,12 +905,12 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     showCutting.value = true;
 
     // Fit camera to content with automatic centering and zoom
-    const bounds = gcodeVisualizer.getBounds();
-    if (bounds && bounds.size.length() > 0) {
-      currentGCodeBounds = bounds; // Store bounds for later use
+    const gcodeBounds = gcodeVisualizer.getBounds();
+    if (gcodeBounds && gcodeBounds.size.length() > 0) {
+      currentGCodeBounds = gcodeBounds; // Store bounds for later use
       // Fit to current view (honors user's selection / default)
       if (autoFitMode.value) {
-        fitCameraToBounds(bounds);
+        fitCameraToBounds(gcodeBounds);
       }
     }
 
@@ -956,21 +1038,7 @@ const handleStop = async () => {
 };
 
 const getGridBounds = () => {
-  const gridSizeX = props.gridSizeX || 1260;
-  const gridSizeY = props.gridSizeY || 1284;
-  const workOffsetX = props.workOffset?.x || 0;
-  const workOffsetY = props.workOffset?.y || 0;
-
-  // Grid boundaries (from helpers.js createGridLines)
-  // minX = -workOffset.x
-  // maxX = gridSizeX - workOffset.x
-  // minY = -gridSizeY - workOffset.y
-  // maxY = -workOffset.y
-
-  const minX = -workOffsetX;
-  const maxX = gridSizeX - workOffsetX;
-  const minY = -gridSizeY - workOffsetY;
-  const maxY = -workOffsetY;
+  const { minX, maxX, minY, maxY } = computeGridBoundsFrom(props.workOffset);
 
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
@@ -1243,157 +1311,38 @@ watch(() => props.workCoords, (newCoords) => {
 
 // Watch for work offset changes to update the grid
 watch(() => props.workOffset, (newOffset) => {
-  // Suppress grid/OOB recomputation during tool change
   if (isToolChanging.value) {
-    // Also ensure any transient warning is hidden during toolchange
     showOutOfBoundsWarning.value = false;
     return;
   }
-
-  if (scene && gridGroup) {
-    scene.remove(gridGroup);
-  }
-
-  gridGroup = createGridLines({
-    gridSizeX: props.gridSizeX,
-    gridSizeY: props.gridSizeY,
-    workOffset: newOffset
-  });
-
-  if (scene) {
-    scene.add(gridGroup);
-  }
-
-  // Update grid bounds for out-of-bounds detection (will auto re-render G-code)
-  if (gcodeVisualizer) {
-    const gridSizeX = props.gridSizeX || 1260;
-    const gridSizeY = props.gridSizeY || 1284;
-    const workOffsetX = newOffset?.x || 0;
-    const workOffsetY = newOffset?.y || 0;
-    const workOffsetZ = newOffset?.z || 0;
-    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
-
-    const minX = -workOffsetX;
-    const maxX = gridSizeX - workOffsetX;
-    const minY = -gridSizeY - workOffsetY;
-    const maxY = -workOffsetY;
-
-    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
-    const maxZ = zMax != null ? -workOffsetZ : undefined;
-
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
-
-    // Update out of bounds warning after re-rendering
-    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
-    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
-    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
-  }
-
-  // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
-  if (!autoFitMode.value) {
-    fitCameraToBounds(getGridBounds());
-  }
+  rebuildGrid(newOffset);
 }, { deep: true });
 
 // When toolchange ends, recompute bounds and OOB once using the latest work offset
 watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
-    // Re-run the workOffset watcher body with current props.workOffset
-    const newOffset = props.workOffset;
-
-    if (scene && gridGroup) {
-      scene.remove(gridGroup);
-    }
-
-    gridGroup = createGridLines({
-      gridSizeX: props.gridSizeX,
-      gridSizeY: props.gridSizeY,
-      workOffset: newOffset
-    });
-
-    if (scene) {
-      scene.add(gridGroup);
-    }
-
-    if (gcodeVisualizer) {
-      const gridSizeX = props.gridSizeX || 1260;
-      const gridSizeY = props.gridSizeY || 1284;
-      const workOffsetX = newOffset?.x || 0;
-      const workOffsetY = newOffset?.y || 0;
-      const workOffsetZ = newOffset?.z || 0;
-      const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
-
-      const minX = -workOffsetX;
-      const maxX = gridSizeX - workOffsetX;
-      const minY = -gridSizeY - workOffsetY;
-      const maxY = -workOffsetY;
-
-      const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
-      const maxZ = zMax != null ? -workOffsetZ : undefined;
-
-      gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
-
-      // Update out of bounds warning after re-rendering
-      showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
-      outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
-      outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
-    }
-
-    // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
-    if (!autoFitMode.value) {
-      fitCameraToBounds(getGridBounds());
-    }
+    rebuildGrid(props.workOffset);
   }
 });
 
-  // Watch for grid size changes to update the grid and bounds
-  watch(() => [props.gridSizeX, props.gridSizeY], () => {
-  if (scene && gridGroup) {
-    scene.remove(gridGroup);
-  }
+// Watch for grid size changes to update the grid and bounds
+watch(() => [props.gridSizeX, props.gridSizeY], () => {
+  rebuildGrid(props.workOffset);
+});
 
-  gridGroup = createGridLines({
-    gridSizeX: props.gridSizeX,
-    gridSizeY: props.gridSizeY,
-    workOffset: props.workOffset
-  });
-
-  // (zMaxTravel watcher is defined below as a top-level watcher)
-
-  if (scene) {
-    scene.add(gridGroup);
-  }
-
-  // Update grid bounds for out-of-bounds detection (will auto re-render G-code)
-  if (gcodeVisualizer) {
-    const gridSizeX = props.gridSizeX || 1260;
-    const gridSizeY = props.gridSizeY || 1284;
-    const workOffsetX = props.workOffset?.x || 0;
-    const workOffsetY = props.workOffset?.y || 0;
-    const workOffsetZ = props.workOffset?.z || 0;
-    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
-
-    const minX = -workOffsetX;
-    const maxX = gridSizeX - workOffsetX;
-    const minY = -gridSizeY - workOffsetY;
-    const maxY = -workOffsetY;
-
-    const minZ = zMax != null ? -zMax - workOffsetZ : undefined;
-    const maxZ = zMax != null ? -workOffsetZ : undefined;
-
-    gcodeVisualizer.setGridBounds({ minX, maxX, minY, maxY, minZ, maxZ });
-
-    // Update out of bounds warning after re-rendering
-    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
-    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
-    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
-  }
-
-  // Re-fit camera if Auto-Fit is OFF (to show updated grid bounds)
+// Watch for Z travel changes to update limits
+watch(() => props.zMaxTravel, () => {
+  const bounds = computeGridBoundsFrom(props.workOffset);
+  applyBoundsAndWarnings(bounds);
   if (!autoFitMode.value) {
     fitCameraToBounds(getGridBounds());
   }
 });
+
+// Watch for machine orientation changes to rebuild the grid
+watch(() => props.machineOrientation, () => {
+  rebuildGrid(props.workOffset);
+}, { deep: true });
 
 
 // Watch for auto-fit mode changes

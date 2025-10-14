@@ -83,6 +83,14 @@ const gridSizeY = ref(1284);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
 const zMaxTravel = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
+type AxisHome = 'min' | 'max';
+type HomeCorner = 'front-left' | 'front-right' | 'back-left' | 'back-right';
+const machineOrientation = reactive({
+  xHome: 'min' as AxisHome,
+  yHome: 'max' as AxisHome,
+  zHome: 'max' as AxisHome,
+  homeCorner: 'back-left' as HomeCorner
+});
 const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for compatibility
 const gcodeFilename = ref<string>('');
 const gcodeLineCount = ref<number>(0);
@@ -311,7 +319,6 @@ const addResponseLine = (data: string) => {
 
 // Helper to try loading machine dimensions once
 const tryLoadMachineDimensionsOnce = async () => {
-  if (machineDimsLoaded.value) return;
   if (!status.connected || !websocketConnected.value) return;
 
   try {
@@ -324,6 +331,27 @@ const tryLoadMachineDimensionsOnce = async () => {
     if (!Number.isNaN(xVal) && xVal > 0) gridSizeX.value = xVal;
     if (!Number.isNaN(yVal) && yVal > 0) gridSizeY.value = yVal;
     if (!Number.isNaN(zVal) && zVal > 0) zMaxTravel.value = zVal;
+
+    const dirInvertRaw = parseInt(String(firmware?.settings?.['3']?.value ?? ''), 10);
+    const homingInvertRaw = parseInt(String(firmware?.settings?.['23']?.value ?? ''), 10);
+    if (!Number.isNaN(dirInvertRaw) && !Number.isNaN(homingInvertRaw)) {
+      const mask = dirInvertRaw ^ homingInvertRaw;
+      const xHome: AxisHome = (mask & 0b001) ? 'max' : 'min';
+      const yHome: AxisHome = (mask & 0b010) ? 'max' : 'min';
+      const zHome: AxisHome = (mask & 0b100) ? 'max' : 'min';
+
+      let homeCorner: HomeCorner = 'back-left';
+      if (xHome === 'min' && yHome === 'min') homeCorner = 'front-left';
+      else if (xHome === 'max' && yHome === 'min') homeCorner = 'front-right';
+      else if (xHome === 'min' && yHome === 'max') homeCorner = 'back-left';
+      else if (xHome === 'max' && yHome === 'max') homeCorner = 'back-right';
+
+      machineOrientation.xHome = xHome;
+      machineOrientation.yHome = yHome;
+      machineOrientation.zHome = zHome;
+      machineOrientation.homeCorner = homeCorner;
+    }
+
     machineDimsLoaded.value = true;
     console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
   } catch (e) {
@@ -627,6 +655,7 @@ export function useAppStore() {
       gridSizeX: readonly(gridSizeX),
       gridSizeY: readonly(gridSizeY),
       zMaxTravel: readonly(zMaxTravel),
+      machineOrientation: readonly(machineOrientation),
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
