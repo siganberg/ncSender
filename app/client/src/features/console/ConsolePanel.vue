@@ -32,25 +32,31 @@
         <div v-if="terminalLines.length === 0" class="empty-state">
           All clear – give me a command!
         </div>
-        <RecycleScroller
+        <DynamicScroller
           v-else
           class="terminal-scroller"
           :items="terminalLines"
-          :item-size="terminalRowHeight"
+          :min-item-size="terminalRowHeight"
           key-field="id"
           :buffer="200"
           ref="scrollerRef"
         >
-          <template #default="{ item }">
-            <article
-              :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
-              :style="{ height: terminalRowHeight + 'px', lineHeight: terminalRowHeight + 'px' }"
+          <template #default="{ item, index, active }">
+            <DynamicScrollerItem
+              :item="item"
+              :index="index"
+              :active="active"
+              :size-dependencies="[item.message, item.timestamp, item.status, item.type]"
             >
-              <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
-              <span class="message">{{ item.message }}</span>
-            </article>
+              <article
+                :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
+              >
+                <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
+                <span class="message">{{ item.message }}</span>
+              </article>
+            </DynamicScrollerItem>
           </template>
-        </RecycleScroller>
+        </DynamicScroller>
       </div>
       <form class="console-input" @submit.prevent="sendCommand">
         <input
@@ -113,7 +119,7 @@ import { api } from './api';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
-import { RecycleScroller } from 'vue-virtual-scroller';
+import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 import MacroPanel from '../macro/MacroPanel.vue';
 
@@ -690,7 +696,7 @@ h2 {
   flex: 1;
   min-height: 160px;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   position: relative;
   color: #bdc3c7;
   font-family: 'JetBrains Mono', monospace;
@@ -721,8 +727,9 @@ h2 {
 .console-line {
   display: flex;
   gap: 8px;
-  align-items: center;
-  line-height: 1.2;
+  align-items: flex-start;
+  line-height: 1.35;
+  padding: 2px 0;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
@@ -742,8 +749,9 @@ h2 {
   color: var(--color-text-secondary);
   min-width: 115px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
+  white-space: nowrap;
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
   -ms-user-select: none !important;
@@ -769,7 +777,9 @@ h2 {
 .message {
   flex: 1;
   font-size: 0.85rem;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
