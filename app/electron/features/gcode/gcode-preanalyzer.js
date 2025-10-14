@@ -22,6 +22,7 @@ export class GCodePreAnalyzer {
     let modalAbs = true; // G90 absolute by default; toggled with G90/G91
     let unitsMm = true; // G21 mm default; toggle with G20
     let plane = 'G17'; // XY plane default
+    let modalMotion = null; // last modal motion code (G0/G1/G2/G3)
     let lastPos = { x: 0, y: 0, z: 0 };
     let perLineSec = new Array(lines.length).fill(0);
     let perLineType = new Array(lines.length).fill('other');
@@ -32,21 +33,22 @@ export class GCodePreAnalyzer {
     let totalDist = 0;
 
     const parseWords = (s) => {
+      const tokens = [];
+      const stripped = s.replace(/\((?:[^)]*)\)/g, ''); // strip paren comments
+      const re = /([a-zA-Z])([+-]?(?:\d+(?:\.\d*)?|\.\d+))/g;
+      let match;
+      while ((match = re.exec(stripped)) !== null) {
+        const letter = match[1].toUpperCase();
+        const value = Number(match[2]);
+        if (Number.isFinite(value)) {
+          tokens.push({ letter, value });
+        }
+      }
       const words = {};
-      s.replace(/\((?:[^)]*)\)/g, '') // strip paren comments
-        .split(/\s+/)
-        .forEach(tok => {
-          if (!tok) return;
-          const m = /([a-zA-Z])([+-]?\d+(?:\.\d+)?)/.exec(tok);
-          if (m) {
-            const letter = m[1].toUpperCase();
-            const value = parseFloat(m[2]);
-            words[letter] = value;
-          } else {
-            // tokens like G0, G1 without numeric? ignore
-          }
-        });
-      return words;
+      for (const { letter, value } of tokens) {
+        words[letter] = value;
+      }
+      return { tokens, words };
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -54,26 +56,42 @@ export class GCodePreAnalyzer {
       const clean = raw.trim();
       if (!clean) continue;
 
-      const words = parseWords(clean);
-      // Modal updates
-      if (clean.match(/\bG90\b/i)) modalAbs = true;
-      if (clean.match(/\bG91\b/i)) modalAbs = false;
-      if (clean.match(/\bG20\b/i)) unitsMm = false; // inches
-      if (clean.match(/\bG21\b/i)) unitsMm = true;
-      if (clean.match(/\bG17\b/i)) plane = 'G17';
-      if (clean.match(/\bG18\b/i)) plane = 'G18';
-      if (clean.match(/\bG19\b/i)) plane = 'G19';
+      const { tokens, words } = parseWords(clean);
+      // Modal updates based on tokens in order of appearance
+      let lineMotion = null;
+      for (const { letter, value } of tokens) {
+        if (!Number.isFinite(value)) continue;
+        if (letter === 'G') {
+          const gVal = Math.round(value);
+          if (gVal === 90) modalAbs = true;
+          else if (gVal === 91) modalAbs = false;
+          else if (gVal === 20) unitsMm = false; // inches
+          else if (gVal === 21) unitsMm = true;
+          else if (gVal === 17) plane = 'G17';
+          else if (gVal === 18) plane = 'G18';
+          else if (gVal === 19) plane = 'G19';
+          if (gVal >= 0 && gVal <= 3) {
+            modalMotion = gVal;
+            lineMotion = gVal;
+          }
+        }
+      }
+
       if (Object.prototype.hasOwnProperty.call(words, 'F')) {
         const f = Number(words.F);
         if (Number.isFinite(f) && f > 0) lastFeed = f;
       }
 
-      // Motions: G0, G1
-      const isG0 = /\bG0\b|\bG00\b/i.test(clean);
-      const isG1 = /\bG1\b|\bG01\b/i.test(clean);
-      const isG2 = /\bG2\b|\bG02\b/i.test(clean);
-      const isG3 = /\bG3\b|\bG03\b/i.test(clean);
-      if (!(isG0 || isG1 || isG2 || isG3)) continue;
+      const motionCode = lineMotion !== null ? lineMotion : modalMotion;
+      const isG0 = motionCode === 0;
+      const isG1 = motionCode === 1;
+      const isG2 = motionCode === 2;
+      const isG3 = motionCode === 3;
+
+      const hasLinearComponents = Number.isFinite(words.X) || Number.isFinite(words.Y) || Number.isFinite(words.Z);
+      const hasArcComponents = Number.isFinite(words.I) || Number.isFinite(words.J) || Number.isFinite(words.K) || Number.isFinite(words.R);
+      const isMotionLine = Boolean(motionCode !== null && (lineMotion !== null || hasLinearComponents || hasArcComponents));
+      if (!isMotionLine) continue;
 
       const target = { ...lastPos };
       if (Number.isFinite(words.X)) target.x = modalAbs ? words.X : (target.x + words.X);
