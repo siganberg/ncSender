@@ -16,6 +16,13 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 - Headless mode: run just the server and use it from a browser.
 - UI theme support (light/dark) and configurable accent/gradient colors.
 
+## Current Limitations
+
+- **Metric Only**: ncSender currently only supports metric units (millimeters). Imperial units (inches) are not yet implemented.
+- **Limit Switches Required**: Machines without physical limit switches are not yet supported, as some functionality relies on machine coordinate movement.
+- **GRBL Compatibility**: Although ncSender may work with GRBL, it has not been thoroughly tested. Use with caution.
+- **Hardware Tested**: ncSender has only been tested with the Sienci SLEB-EXT board (included with AltMill CNC) running grblHAL or sienciHAL firmware.
+
 ## Install
 
 Download a release from the [Releases page](https://github.com/siganberg/ncSender/releases) for your OS:
