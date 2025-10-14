@@ -4,7 +4,7 @@
 
 ncSender is a lightweight, cross‑platform CNC controller with a clean UI and built‑in 3D toolpath preview. It connects to GrblHAL controllers over USB serial or Ethernet and can run either as a desktop app (Electron) or as a small local server you access from any browser on your network.
 
-## Why ncSender
+## ✨ Why ncSender
 - Cross‑platform desktop app (macOS, Windows, Linux, Raspberry Pi).
 - USB serial and Ethernet (telnet‑style) connectivity.
 - Live console with command history and real‑time GrblHAL controls (hold, resume, soft reset).
@@ -16,14 +16,14 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 - Headless mode: run just the server and use it from a browser.
 - UI theme support (light/dark) and configurable accent/gradient colors.
 
-## Current Limitations
+## ⚠️ Current Limitations
 
 - **Metric Only**: ncSender currently only supports metric units (millimeters). Imperial units (inches) are not yet implemented.
 - **Limit Switches Required**: Machines without physical limit switches are not yet supported, as some functionality relies on machine coordinate movement.
 - **GRBL Compatibility**: Although ncSender may work with GRBL, it has not been thoroughly tested. Use with caution.
 - **Hardware Tested**: ncSender has only been tested with the Sienci SLEB-EXT board (included with AltMill CNC) running grblHAL or sienciHAL firmware.
 
-## Install
+## 📦 Install
 
 Download a release from the [Releases page](https://github.com/siganberg/ncSender/releases) for your OS:
 
@@ -32,7 +32,7 @@ Download a release from the [Releases page](https://github.com/siganberg/ncSende
 - **Linux**: use the `.AppImage` or `.deb` (depending on your distro). Mark the AppImage as executable.
 - **Raspberry Pi**: use the ARM64 `.deb` or `.AppImage` package.
 
-## Quick Start
+## 🚀 Quick Start
 1) Connect your controller
 - USB: plug your controller via USB. Default baud is 115200.
 - Ethernet: ensure you know the controller's IP and port (default GrblHAL telnet‑style ports are often 23 or device‑specific).
@@ -53,7 +53,7 @@ Theme and colors
 - Toggle light/dark from the toolbar sun icon.
 - Change accent/gradient colors under Settings → Application Settings.
 
-## Using Headless Mode (advanced)
+## 🖥️ Using Headless Mode (advanced)
 Run the embedded server without the Electron window and access ncSender from any browser on your network.
 
 - **macOS**: `/Applications/ncSender.app/Contents/MacOS/ncSender --headless`
@@ -62,7 +62,7 @@ Run the embedded server without the Electron window and access ncSender from any
 
 Then open `http://<this-computer-ip>:8090` in a browser (replace with your machine's LAN IP). The port is configurable in Settings (Remote Control Port) and requires an app restart to take effect.
 
-## Data & Settings
+## 💾 Data & Settings
 ncSender stores its data per‑platform:
 - **macOS**: `~/Library/Application Support/ncSender/`
 - **Windows**: `%APPDATA%/ncSender/`
@@ -70,7 +70,7 @@ ncSender stores its data per‑platform:
 
 These folders are created automatically and contain G‑code files and settings. Files persist across updates and are easy to back up.
 
-## Tips & Troubleshooting
+## 🔧 Tips & Troubleshooting
 - Can't find the USB port
   - Unplug/replug the device and reopen Settings. On Windows you may need the correct USB‑serial driver. On macOS, avoid Bluetooth ports.
 - Connection fails
@@ -84,13 +84,13 @@ These folders are created automatically and contain G‑code files and settings.
 - Machine behaving unexpectedly
   - Try a soft reset by clicking the center button in the jog controls or send `Ctrl+X` from the console. This clears the command buffer and resets the controller state.
 
-## Privacy
+## 🔒 Privacy
 Everything runs locally. ncSender does not send your files or machine data to remote servers.
 
-## Need Help?
+## 💬 Need Help?
 This is a personal, for‑fun project that I’m actively iterating on. I’m not providing support at the moment, and I’m not accepting new issue submissions yet. Once things are more stable, I may start accepting GitHub Issues for bug reports and feature requests.
 
-## For Developers
+## 👨‍💻 For Developers
 Looking to build, contribute, or extend ncSender? See `docs/DEVELOPER_GUIDE.md` for:
 - Project structure and architecture
 - Development workflow (hot reload)
