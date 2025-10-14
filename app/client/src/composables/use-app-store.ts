@@ -78,13 +78,16 @@ const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: num
 const websocketConnected = ref(false);
 const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
+const DEFAULT_GRID_SIZE_MM = 400;
+const DEFAULT_Z_TRAVEL_MM = 100;
 // Grid size defaults - should be loaded from firmware settings $130/$131
-// These defaults are only used if firmware settings cannot be read
-const gridSizeX = ref(0);
-const gridSizeY = ref(0);
+// These defaults keep the visualizer usable until firmware values arrive
+const gridSizeX = ref(DEFAULT_GRID_SIZE_MM);
+const gridSizeY = ref(DEFAULT_GRID_SIZE_MM);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
-const zMaxTravel = ref<number | null>(null);
+const zMaxTravel = ref<number | null>(DEFAULT_Z_TRAVEL_MM);
 const machineDimsLoaded = ref(false);
+let machineDimsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
 type AxisHome = 'min' | 'max';
 type HomeCorner = 'front-left' | 'front-right' | 'back-left' | 'back-right';
 const machineOrientation = reactive({
@@ -323,6 +326,10 @@ const addResponseLine = (data: string) => {
 const tryLoadMachineDimensionsOnce = async () => {
   if (!status.connected || !websocketConnected.value) {
     console.log('[Store] Skipping machine dimensions load: not connected');
+    if (machineDimsRetryTimeout) {
+      clearTimeout(machineDimsRetryTimeout);
+      machineDimsRetryTimeout = null;
+    }
     return;
   }
   if (machineDimsLoaded.value) {
@@ -338,6 +345,12 @@ const tryLoadMachineDimensionsOnce = async () => {
 
     if (!firmware || !firmware.settings) {
       console.warn('[Store] Firmware settings not available');
+      if (!machineDimsRetryTimeout) {
+        machineDimsRetryTimeout = setTimeout(async () => {
+          machineDimsRetryTimeout = null;
+          await tryLoadMachineDimensionsOnce();
+        }, 1500);
+      }
       return;
     }
 
@@ -396,8 +409,18 @@ const tryLoadMachineDimensionsOnce = async () => {
 
     machineDimsLoaded.value = true;
     console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
+    if (machineDimsRetryTimeout) {
+      clearTimeout(machineDimsRetryTimeout);
+      machineDimsRetryTimeout = null;
+    }
   } catch (e) {
     console.warn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
+    if (!machineDimsRetryTimeout) {
+      machineDimsRetryTimeout = setTimeout(async () => {
+        machineDimsRetryTimeout = null;
+        await tryLoadMachineDimensionsOnce();
+      }, 1500);
+    }
   }
 };
 

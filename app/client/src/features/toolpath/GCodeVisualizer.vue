@@ -466,6 +466,7 @@ let previousMousePosition = { x: 0, y: 0 };
 let isRotating = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
+let pendingResizeFrame: number | null = null;
 
 // Spindle position interpolation with exponential smoothing
 let targetSpindlePosition = { x: 0, y: 0, z: 0 };
@@ -480,7 +481,11 @@ const initThreeJS = () => {
   updateSceneBackground();
 
   // Orthographic Camera - Z-up orientation (standard CNC view)
-  const aspect = canvas.value.clientWidth / canvas.value.clientHeight;
+  const measuredWidth = canvas.value.clientWidth;
+  const measuredHeight = canvas.value.clientHeight;
+  const safeWidth = measuredWidth > 0 ? measuredWidth : 1;
+  const safeHeight = measuredHeight > 0 ? measuredHeight : 1;
+  const aspect = safeWidth / safeHeight;
   const frustumSize = 200; // Initial viewport size in world units
   camera = new THREE.OrthographicCamera(
     (-frustumSize * aspect) / 2, // left
@@ -497,7 +502,7 @@ const initThreeJS = () => {
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(canvas.value.clientWidth, canvas.value.clientHeight);
+  renderer.setSize(safeWidth, safeHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   canvas.value.appendChild(renderer.domElement);
@@ -560,6 +565,9 @@ const initThreeJS = () => {
 
   // Start animation loop
   animate();
+
+  // Align renderer with layout as soon as dimensions are available
+  handleResize();
 };
 
 
@@ -1197,7 +1205,21 @@ const handleResize = () => {
   const width = canvas.value.clientWidth;
   const height = canvas.value.clientHeight;
 
-  // Update orthographic camera aspect ratio
+  if (width <= 0 || height <= 0) {
+    if (pendingResizeFrame == null) {
+      pendingResizeFrame = requestAnimationFrame(() => {
+        pendingResizeFrame = null;
+        handleResize();
+      });
+    }
+    return;
+  }
+
+  if (pendingResizeFrame != null) {
+    cancelAnimationFrame(pendingResizeFrame);
+    pendingResizeFrame = null;
+  }
+
   const aspect = width / height;
   const frustumHeight = camera.top - camera.bottom;
   const frustumWidth = frustumHeight * aspect;
@@ -1736,6 +1758,11 @@ onMounted(async () => {
 onUnmounted(() => {
   if (animationId) {
     cancelAnimationFrame(animationId);
+  }
+
+  if (pendingResizeFrame != null) {
+    cancelAnimationFrame(pendingResizeFrame);
+    pendingResizeFrame = null;
   }
 
   if (renderer) {

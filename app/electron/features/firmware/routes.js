@@ -499,18 +499,51 @@ async function querySingleCommand(cncController, command) {
   });
 }
 
+const parseBooleanQuery = (value) => {
+  if (value == null) return false;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes';
+};
+
+async function tryReadFirmwareFile() {
+  const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
+  return JSON.parse(data);
+}
+
 export function createFirmwareRoutes(cncController) {
   const router = express.Router();
 
   // GET /api/firmware - Return cached firmware settings from firmware.json (no controller calls)
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
+    const shouldRefresh = parseBooleanQuery(req.query?.refresh);
+    const canQueryController = Boolean(cncController?.isConnected);
+
+    if (shouldRefresh && canQueryController) {
+      try {
+        await initializeFirmwareOnConnection(cncController);
+      } catch (error) {
+        log('Failed to refresh firmware data via API request:', error?.message || error);
+      }
+    }
+
     try {
-      const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
-      const firmwareData = JSON.parse(data);
+      const firmwareData = await tryReadFirmwareFile();
       res.json(firmwareData);
     } catch (error) {
       if (error.code === 'ENOENT') {
-        res.status(404).json({ error: 'Firmware data not initialized. Connect to the CNC controller to populate values.' });
+        if (!canQueryController) {
+          res.status(404).json({ error: 'Firmware data not initialized. Connect to the CNC controller to populate values.' });
+          return;
+        }
+
+        try {
+          await initializeFirmwareOnConnection(cncController);
+          const firmwareData = await tryReadFirmwareFile();
+          res.json(firmwareData);
+        } catch (initError) {
+          log('Failed to initialize firmware data after ENOENT:', initError?.message || initError);
+          res.status(503).json({ error: 'Firmware data not yet available. Try again shortly.' });
+        }
       } else {
         log('Error reading firmware data:', error);
         res.status(500).json({ error: 'Failed to read firmware data' });
