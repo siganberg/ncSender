@@ -53,42 +53,42 @@ defineEmits<{
   cursor: pointer;
 }
 
+
 .toggle-switch__slider {
   position: relative;
-  width: 44px;
-  height: 24px;
+  width: 40px;
+  height: 22px;
   border-radius: 999px;
   background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  box-shadow: inset 0 0 0 1px var(--color-border);
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .toggle-switch__slider--on {
-  background: rgba(26, 188, 156, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(26, 188, 156, 0.4);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .toggle-switch__thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 1px;
+  left: 2px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--color-surface);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: transform 0.2s ease;
 }
 
 .toggle-switch__thumb--right {
-  transform: translateX(20px);
+  transform: translateX(18px);
 }
 
 .toggle-switch__input:focus-visible + .toggle-switch__slider {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(26, 188, 156, 0.25);
 }
 
 .toggle-switch__label {

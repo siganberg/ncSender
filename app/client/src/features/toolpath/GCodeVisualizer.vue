@@ -242,7 +242,7 @@ const props = withDefaults(defineProps<{
   alarmMessage?: string;
   currentTool?: number;
 }>(), {
-  view: 'iso', // Default to 3D view
+  view: 'top', // Default to top view
   theme: 'dark', // Default to dark theme
   senderStatus: 'connecting',
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
@@ -320,7 +320,7 @@ const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
-const autoFitMode = ref(true); // Auto-fit mode - on by default
+const autoFitMode = ref(false); // Auto-fit mode - off by default
 const floodEnabled = ref(false); // Flood coolant - off by default
 const mistEnabled = ref(false); // Mist coolant - off by default
 const showFileManager = ref(false);
@@ -360,7 +360,7 @@ let isInitialLoad = true; // Flag to prevent watchers from firing during initial
 const toolsUsed = ref<number[]>([]);
 
 // Number of tools to display (from settings)
-const numberOfToolsToShow = ref<number>(4);
+const numberOfToolsToShow = ref<number>(0);
 
 // Tool press state for long-press interaction
 const toolPress = ref<Record<number, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});

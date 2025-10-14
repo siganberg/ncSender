@@ -48,7 +48,8 @@ const DEFAULT_SETTINGS = {
       zProbeDistance: 3
     }
   },
-  numberOfTools : 0
+  numberOfTools : 0,
+  useDoorAsPause : true
 };
 
 function getUserDataDir() {

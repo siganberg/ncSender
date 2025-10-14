@@ -194,7 +194,7 @@
               <div class="setting-item-content">
                 <label class="setting-label">Use Door as Pause</label>
                 <div class="settings-note">
-                  Note: This only works with latest grblHAL version (Build 20250731 or newer)
+                  Note: Ensure that the parking parameters ($41, $42, $56, $57, $58, $59) are properly configured as part of your setup.
                 </div>
               </div>
               <ToggleSwitch v-model="useDoorAsPause" />
@@ -578,8 +578,8 @@ const initialSettings = getSettings();
 // LOCAL UI STATE (not synchronized across clients)
 const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
 const workspace = ref(initialSettings?.workspace || 'G54');
-const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
-const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'iso');
+const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'top');
+const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'top');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
 let isInitialThemeLoad = true;
@@ -642,7 +642,7 @@ const currentGradient = computed(() => {
 });
 
 // Number of tools setting
-const numberOfTools = ref(initialSettings?.numberOfTools ?? 4);
+const numberOfTools = ref(initialSettings?.numberOfTools ?? 0);
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
