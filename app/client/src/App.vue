@@ -286,13 +286,31 @@
                       </div>
                     </td>
                     <td class="col-value">
-                      <!-- DataType 2: Bitfield with toggle sliders -->
-                      <div v-if="setting.dataType === 2 && setting.format" class="bitfield-toggles">
+                      <!-- Named bitfield (toggle sliders) -->
+                      <div v-if="isNamedBitfield(setting)" class="bitfield-toggles">
                         <template
                           v-for="(bitName, index) in setting.format.split(',')"
                           :key="index"
                         >
                           <span class="bitfield-name">{{ bitName.trim() }}</span>
+                          <label class="toggle-switch">
+                            <input
+                              type="checkbox"
+                              :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                              @change="toggleBit(setting, index)"
+                            />
+                            <span class="toggle-slider"></span>
+                          </label>
+                        </template>
+                      </div>
+
+                      <!-- Axis bitfield (uses standard axis order) -->
+                      <div v-else-if="isAxisBitfield(setting)" class="bitfield-toggles">
+                        <template
+                          v-for="(axisLabel, index) in getAxisBitLabels(setting)"
+                          :key="`${setting.id}-${axisLabel}`"
+                        >
+                          <span class="bitfield-name">{{ axisLabel }}</span>
                           <label class="toggle-switch">
                             <input
                               type="checkbox"
@@ -660,6 +678,22 @@ const firmwareSearchQuery = ref('');
 const firmwareChanges = ref({}); // Track pending changes: { settingId: newValue }
 const importSummary = ref(null); // { changed: number, total: number }
 
+const AXIS_BIT_LABELS = ['X', 'Y', 'Z', 'A', 'B', 'C', 'U', 'V', 'W'];
+const axisCount = computed(() => {
+  const settings = firmwareData.value?.settings;
+  if (!settings) return 0;
+
+  let detected = 0;
+  AXIS_BIT_LABELS.forEach((_, index) => {
+    const settingId = (130 + index).toString();
+    if (settings[settingId] !== undefined) {
+      detected = index + 1;
+    }
+  });
+
+  return detected;
+});
+
 // USB ports
 const availableUsbPorts = ref([]);
 const setupUsbPorts = ref([]);
@@ -845,9 +879,68 @@ const filteredFirmwareSettings = computed(() => {
   }).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 });
 
+const getHalDetail = (setting: any, index: number): string | undefined => {
+  if (!setting || !Array.isArray(setting.halDetails)) {
+    return undefined;
+  }
+
+  const value = setting.halDetails[index];
+  return typeof value === 'string' ? value : undefined;
+};
+
+const isNamedBitfield = (setting: any): boolean => {
+  if (!setting || !setting.format) {
+    return false;
+  }
+
+  const halType = getHalDetail(setting, 2)?.toLowerCase();
+  return (halType && halType.includes('bitfield')) || setting.dataType === 2;
+};
+
+const isAxisBitfield = (setting: any): boolean => {
+  if (!setting) {
+    return false;
+  }
+
+  const halType = getHalDetail(setting, 2)?.toLowerCase();
+  const halGroup = getHalDetail(setting, 3)?.toLowerCase();
+  const hasFormat = typeof setting.format === 'string' && setting.format.trim().length > 0;
+
+  return halType === 'bitfield' && !hasFormat && (halGroup === 'axes' || halGroup === 'axis');
+};
+
+const getAxisBitLabels = (setting: any): string[] => {
+  const changeValue = firmwareChanges.value[setting?.id];
+  const valuesToInspect = [changeValue, setting?.value, setting?.max];
+  let maxValue = 0;
+
+  for (const raw of valuesToInspect) {
+    const parsed = typeof raw === 'string' ? parseInt(raw, 10)
+      : typeof raw === 'number' ? raw
+        : NaN;
+
+    if (!Number.isNaN(parsed) && parsed > maxValue) {
+      maxValue = parsed;
+    }
+  }
+
+  let bitLength = 0;
+  while ((maxValue >> bitLength) > 0) {
+    bitLength += 1;
+  }
+
+  const inferredAxisCount = axisCount.value > 0 ? axisCount.value : 4;
+  const finalCount = Math.min(
+    AXIS_BIT_LABELS.length,
+    Math.max(bitLength, inferredAxisCount)
+  );
+
+  return AXIS_BIT_LABELS.slice(0, finalCount);
+};
+
 // Helper function to check if a bit is set
 const isBitSet = (value: string | number, bitIndex: number): boolean => {
-  const numValue = typeof value === 'string' ? parseInt(value) : value;
+  const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
   return ((numValue >> bitIndex) & 1) === 1;
 };
 
@@ -856,7 +949,7 @@ const toggleBit = (setting: any, bitIndex: number) => {
   // Get current value (either from pending changes or original value)
   const currentValue = firmwareChanges.value[setting.id] !== undefined
     ? firmwareChanges.value[setting.id]
-    : (typeof setting.value === 'string' ? parseInt(setting.value) : (setting.value || 0));
+    : (typeof setting.value === 'string' ? parseInt(setting.value, 10) : (setting.value || 0));
 
   const newValue = currentValue ^ (1 << bitIndex); // XOR to toggle the bit
 
