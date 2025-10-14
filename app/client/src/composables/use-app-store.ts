@@ -363,16 +363,30 @@ const tryLoadMachineDimensionsOnce = async () => {
     const dirInvertRaw = parseInt(String(firmware?.settings?.['3']?.value ?? ''), 10);
     const homingInvertRaw = parseInt(String(firmware?.settings?.['23']?.value ?? ''), 10);
     if (!Number.isNaN(dirInvertRaw) && !Number.isNaN(homingInvertRaw)) {
-      const mask = dirInvertRaw ^ homingInvertRaw;
-      const xHome: AxisHome = (mask & 0b001) ? 'max' : 'min';
-      const yHome: AxisHome = (mask & 0b010) ? 'max' : 'min';
-      const zHome: AxisHome = (mask & 0b100) ? 'max' : 'min';
+      const xDirInverted = Boolean(dirInvertRaw & 0b001);
+      const yDirInverted = Boolean(dirInvertRaw & 0b010);
 
-      let homeCorner: HomeCorner = 'back-left';
-      if (xHome === 'min' && yHome === 'min') homeCorner = 'front-left';
-      else if (xHome === 'max' && yHome === 'min') homeCorner = 'front-right';
-      else if (xHome === 'min' && yHome === 'max') homeCorner = 'back-left';
-      else if (xHome === 'max' && yHome === 'max') homeCorner = 'back-right';
+      const xHomeTowardsPositive = (homingInvertRaw & 0b001) === 0;
+      const yHomeTowardsPositive = (homingInvertRaw & 0b010) === 0;
+      const zHomeTowardsPositive = (homingInvertRaw & 0b100) === 0;
+
+      const xHome: AxisHome = xHomeTowardsPositive ? 'max' : 'min';
+      const yHome: AxisHome = yHomeTowardsPositive ? 'max' : 'min';
+      const zHome: AxisHome = zHomeTowardsPositive ? 'max' : 'min';
+
+      const xPositiveDirSign = xDirInverted ? -1 : 1;
+      const yPositiveDirSign = yDirInverted ? -1 : 1;
+
+      // Sign heuristic: +1 keeps the default GRBL orientation (X+ = right, Y+ = front).
+      const xHomePhysical = (xHomeTowardsPositive ? xPositiveDirSign : -xPositiveDirSign) === 1 ? 'right' : 'left';
+      const yHomePhysical = (yHomeTowardsPositive ? yPositiveDirSign : -yPositiveDirSign) === 1 ? 'front' : 'back';
+
+      let homeCorner: HomeCorner;
+      if (yHomePhysical === 'front') {
+        homeCorner = xHomePhysical === 'left' ? 'front-left' : 'front-right';
+      } else {
+        homeCorner = xHomePhysical === 'left' ? 'back-left' : 'back-right';
+      }
 
       machineOrientation.xHome = xHome;
       machineOrientation.yHome = yHome;
