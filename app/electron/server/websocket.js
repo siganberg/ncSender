@@ -104,6 +104,7 @@ const toCommandPayload = (event, options = {}) => {
   }
 
   const filteredMeta = event.meta ? { ...event.meta } : undefined;
+  const resolvedSourceId = sourceId || event.meta?.sourceId;
   if (filteredMeta) {
     delete filteredMeta.sourceId;
     if (Object.keys(filteredMeta).length === 0) {
@@ -119,8 +120,8 @@ const toCommandPayload = (event, options = {}) => {
     payload.status = status;
   }
 
-  if (sourceId) {
-    payload.sourceId = sourceId;
+  if (resolvedSourceId && resolvedSourceId !== 'no-broadcast') {
+    payload.sourceId = resolvedSourceId;
   }
 
   if (includeTimestamp) {
@@ -175,15 +176,18 @@ export function createWebSocketLayer({
   };
 
   const broadcast = (type, data) => {
+    let payload = data;
+
     if (type === 'server-state-updated') {
       updateSenderStatus();
       updateJobStatus(jobManager);
       computeJobProgressFields();
 
+      const sanitizedState = sanitizeForJson(serverState);
       const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
 
       if (enableStateDeltaBroadcast) {
-        let changes = messageStateTracker.getDelta(type, data);
+        let changes = messageStateTracker.getDelta(type, sanitizedState);
         if (!changes) {
           return;
         }
@@ -202,13 +206,18 @@ export function createWebSocketLayer({
           log('Delta broadcast merge failed', error?.message || error);
         }
 
-        data = changes;
+        payload = changes;
+      } else {
+        payload = sanitizedState;
+        // Keep tracker in sync even when not diffing
+        messageStateTracker.getDelta(type, sanitizedState);
       }
+    } else {
+      payload = sanitizeForJson(payload);
     }
 
     try {
-      const safeData = sanitizeForJson(data);
-      const message = JSON.stringify({ type, data: safeData });
+      const message = JSON.stringify({ type, data: payload });
       clients.forEach((client) => {
         if (client.readyState === WS_READY_STATE_OPEN) {
           client.send(message);
