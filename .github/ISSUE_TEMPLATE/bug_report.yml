@@ -1,0 +1,103 @@
+name: "Bug report"
+description: "Report a reproducible problem with ncSender"
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem! Issues that do not include the required sections may be closed automatically.
+  - type: checkboxes
+    id: prereq
+    attributes:
+      label: Pre-flight checklist
+      description: Please confirm before submitting.
+      options:
+        - label: I searched open and closed issues to make sure this problem hasn't been reported yet.
+          required: true
+        - label: I am willing to follow up with additional info or testing if needed.
+          required: true
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Short, descriptive title of the bug.
+      placeholder: Jog panel freezes after homing completes
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Detailed description
+      description: Describe what happened. Include any context that helps us understand the issue.
+      placeholder: |
+        After completing a homing cycle the jog panel becomes disabled even though the machine is idle...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a numbered list of steps that consistently trigger the problem.
+      placeholder: |
+        1. Launch ncSender v0.1.7 on macOS 13.4
+        2. Connect to Shapeoko 3
+        3. Click Home (HZ) and wait until complete
+        4. Try to jog the X axis
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen when following the steps above?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happens?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include operating system, ncSender version/build, controller firmware, and connection type.
+      placeholder: |
+        - OS: Windows 11 22H2
+        - ncSender: v0.1.7 (commit abc123)
+        - Controller: GRBL 1.1h on Shapeoko 3
+        - Connection: USB @ 115200
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or screen recordings
+      description: Drag-and-drop relevant files here (console output, screenshots, etc.).
+      placeholder: Attach console logs or screenshots that show the issue
+    validations:
+      required: false
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: How severely does this issue affect your workflow?
+      options:
+        - Minor inconvenience
+        - Workaround available
+        - Blocks key workflow
+        - Prevents ncSender usage entirely
+    validations:
+      required: true
+  - type: checkboxes
+    id: regress
+    attributes:
+      label: Regression check
+      description: Let us know whether this worked in prior releases.
+      options:
+        - label: Issue is new in this release (worked in a previous version)
+        - label: Issue occurs in multiple releases / unknown
