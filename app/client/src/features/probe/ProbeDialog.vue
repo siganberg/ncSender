@@ -366,7 +366,7 @@
       </div>
       <div class="probe-dialog__footer">
         <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isProbing || hasValidationErrors || (requireConnectionTest && !connectionTestPassed) || (['X', 'Y'].includes(probingAxis) && !selectedSide)">Start Probe</button>
+        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isPrimaryActionDisabled">{{ primaryButtonLabel }}</button>
       </div>
     </div>
   </Dialog>
@@ -380,6 +380,7 @@ import JogControls from '../jog/JogControls.vue';
 import { api } from '../../lib/api.js';
 import { updateSettings } from '../../lib/settings-store.js';
 import { startProbe as startProbeOperation, stopProbe } from './api';
+import { useAppStore } from '../../composables/use-app-store';
 
 // Props
 interface Props {
@@ -449,9 +450,23 @@ let isInitialLoad = true;
 // Flag to track when settings are loaded (prevents race condition on initial render)
 const settingsLoaded = ref(false);
 
+// App store state
+const appStore = useAppStore();
+const normalizedSenderStatus = computed(() => (appStore.senderStatus.value || '').toLowerCase());
+const isAlarmState = computed(() => normalizedSenderStatus.value === 'alarm');
+
 // Computed property to check if there are any validation errors
 const hasValidationErrors = computed(() => {
   return Object.values(errors.value).some(error => error !== '');
+});
+
+const primaryButtonLabel = computed(() => (isAlarmState.value ? 'Unlock' : 'Start Probe'));
+const isPrimaryActionDisabled = computed(() => {
+  if (isAlarmState.value) {
+    return false;
+  }
+
+  return props.isProbing || hasValidationErrors.value || (requireConnectionTest.value && !connectionTestPassed.value) || (['X', 'Y'].includes(probingAxis.value) && !selectedSide.value);
 });
 
 // Validation functions
@@ -924,6 +939,18 @@ const removeCustomDiameter = async (diameter: number) => {
 };
 
 const handleStartProbe = async () => {
+  if (isAlarmState.value) {
+    try {
+      // Soft reset followed by unlock clears the alarm state
+      await api.sendCommand('\x18');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await api.sendCommand('$X');
+    } catch (error) {
+      console.error('[Probe] Failed to unlock machine from probe dialog:', error);
+    }
+    return;
+  }
+
   try {
     const options = {
       probeType: probeType.value,

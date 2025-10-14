@@ -63,6 +63,65 @@ const resolveBitSpecification = (selectedBitDiameter = 'Auto') => {
 const computeSafeRapidDistance = (effectiveDiameter) =>
   AUTO_PLATE_INNER_DIMENSION / 2 - effectiveDiameter - SAFE_RAPID_MARGIN;
 
+const buildAxisProbeSequence = ({
+  axis,
+  directionSign,
+  spec,
+  halfClearance,
+  safeRapidDistance,
+  rapidMovement
+}) => {
+  const axisUpper = axis.toUpperCase();
+  const axisRegister = axisUpper === 'X' ? '#5061' : axisUpper === 'Y' ? '#5062' : null;
+
+  if (!axisRegister) {
+    throw new Error(`Unsupported axis ${axis} for AutoZero probing routine.`);
+  }
+
+  const axisCode = [];
+
+  if (!spec.isTip) {
+    axisCode.push(
+      `G38.3 ${axisUpper}${safeRapidDistance * directionSign} F${rapidMovement}`,
+      `#<probe_hit> = #5070`,
+      'O100 IF [#<probe_hit> EQ 1]',
+      `  G0 ${axisUpper}${-RAPID_PROBE_BOUNCE * directionSign}`,
+      'O100 ENDIF'
+    );
+  }
+
+  axisCode.push(
+    `G38.2 ${axisUpper}${halfClearance * directionSign} F150`,
+    `G0 ${axisUpper}${-BOUNCE * directionSign}`,
+    `G38.2 ${axisUpper}${(BOUNCE + 1) * directionSign} F75`,
+    WAIT_COMMAND,
+    `#<${axisUpper}1> = ${axisRegister}`,
+    `G0 ${axisUpper}${-(halfClearance - spec.toolRadius) * directionSign}`
+  );
+
+  if (spec.isAuto) {
+    if (!spec.isTip) {
+      axisCode.push(
+        `G38.3 ${axisUpper}${-safeRapidDistance * directionSign} F${rapidMovement}`,
+        `#<probe_hit> = #5070`,
+        'O100 IF [#<probe_hit> EQ 1]',
+        `  G0 ${axisUpper}${RAPID_PROBE_BOUNCE * directionSign}`,
+        'O100 ENDIF'
+      );
+    }
+    axisCode.push(
+      `G38.2 ${axisUpper}${-halfClearance * directionSign} F150`,
+      `G0 ${axisUpper}${BOUNCE * directionSign}`,
+      `G38.2 ${axisUpper}${-(BOUNCE + 1) * directionSign} F75`,
+      WAIT_COMMAND,
+      `#<${axisUpper}2> = ${axisRegister}`,
+      `G0 ${axisUpper}[[#<${axisUpper}1>-#<${axisUpper}2>]/2]`
+    );
+  }
+
+  return axisCode;
+};
+
 export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
   return [
     `; Probe Z - AutoZero Touch (${selectedBitDiameter})`,
@@ -93,45 +152,14 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
     'G91 G21'
   ];
 
-  // Inner X side
-  if (!spec.isTip) {
-    code.push(
-      `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
-      `#<probe_hit> = #5070`,
-      'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 X${-RAPID_PROBE_BOUNCE * isLeft}`,
-      'O100 ENDIF'
-    );
-  }
-  code.push(
-    `G38.2 X${halfClearance * isLeft} F150`,
-    `G0 X${-BOUNCE * isLeft}`,
-    `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
-    WAIT_COMMAND,
-    '#<X1> = #5061',
-    `G0 X${-(halfClearance - spec.toolRadius) * isLeft}`
-  );
-
-  if (spec.isAuto) {
-    // Outer X side
-    if (!spec.isTip) {
-      code.push(
-        `G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`,
-        `#<probe_hit> = #5070`,
-        'O100 IF [#<probe_hit> EQ 1]',
-        `  G0 X${RAPID_PROBE_BOUNCE * isLeft}`,
-        'O100 ENDIF'
-      );
-    }
-    code.push(
-      `G38.2 X${-halfClearance * isLeft} F150`,
-      `G0 X${BOUNCE * isLeft}`,
-      `G38.2 X${-(BOUNCE + 1) * isLeft} F75`,
-      WAIT_COMMAND,
-      '#<X2> = #5061',
-      'G0 X[[#<X1>-#<X2>]/2]'
-    );
-  }
+  code.push(...buildAxisProbeSequence({
+    axis: 'X',
+    directionSign: isLeft,
+    spec,
+    halfClearance,
+    safeRapidDistance,
+    rapidMovement
+  }));
 
   code.push(
     `G10 L20 X${halfClearance * isLeft}`,
@@ -156,45 +184,14 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
     'G91 G21'
   ];
 
-  // Inner Y side
-  if (!spec.isTip) {
-    code.push(
-      `G38.3 Y${safeRapidDistance * isBottom} F${rapidMovement}`,
-      `#<probe_hit> = #5070`,
-      'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 Y${-RAPID_PROBE_BOUNCE * isBottom}`,
-      'O100 ENDIF'
-    );
-  }
-  code.push(
-    `G38.2 Y${halfClearance * isBottom} F150`,
-    `G0 Y${-BOUNCE * isBottom}`,
-    `G38.2 Y${(BOUNCE + 1) * isBottom} F75`,
-    WAIT_COMMAND,
-    `#<Y1> = #5062`,
-    `G0 Y${-(halfClearance - spec.toolRadius) * isBottom}`
-  );
-
-  if (spec.isAuto) {
-    // Outer Y side
-    if (!spec.isTip) {
-      code.push(
-        `G38.3 Y${-safeRapidDistance * isBottom} F${rapidMovement}`,
-        `#<probe_hit> = #5070`,
-        'O100 IF [#<probe_hit> EQ 1]',
-        `  G0 Y${RAPID_PROBE_BOUNCE * isBottom}`,
-        'O100 ENDIF'
-      );
-    }
-    code.push(
-      `G38.2 Y${-halfClearance * isBottom} F150`,
-      `G0 Y${BOUNCE * isBottom}`,
-      `G38.2 Y${-(BOUNCE + 1) * isBottom} F75`,
-      WAIT_COMMAND,
-      `#<Y2> = #5062`,
-      'G0 Y[[#<Y1>-#<Y2>]/2]'
-    );
-  }
+  code.push(...buildAxisProbeSequence({
+    axis: 'Y',
+    directionSign: isBottom,
+    spec,
+    halfClearance,
+    safeRapidDistance,
+    rapidMovement
+  }));
 
   code.push(
     `G10 L20 Y${halfClearance * isBottom}`,
@@ -235,88 +232,23 @@ export const getXYProbeRoutine = (options = {}) => {
     );
   }
 
-  // Inner X side
-  if (!spec.isTip) {
-    code.push(
-      `G38.3 X${safeRapidDistance * isLeft} F${rapidMovement}`,
-      `#<probe_hit> = #5070`,
-      'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 X${-RAPID_PROBE_BOUNCE * isLeft}`,
-      'O100 ENDIF'
-    );
-  }
-  code.push(
-    `G38.2 X${halfClearance * isLeft} F150`,
-    `G0 X${-BOUNCE * isLeft}`,
-    `G38.2 X${(BOUNCE + 1) * isLeft} F75`,
-    WAIT_COMMAND,
-    '#<X1> = #5061',
-    `G0 X${-(halfClearance - spec.toolRadius) * isLeft}`
-  );
+  code.push(...buildAxisProbeSequence({
+    axis: 'X',
+    directionSign: isLeft,
+    spec,
+    halfClearance,
+    safeRapidDistance,
+    rapidMovement
+  }));
 
-  if (spec.isAuto) {
-    // Outer X side
-    if (!spec.isTip) {
-      code.push(
-        `G38.3 X${-safeRapidDistance * isLeft} F${rapidMovement}`,
-        `#<probe_hit> = #5070`,
-        'O100 IF [#<probe_hit> EQ 1]',
-        `  G0 X${RAPID_PROBE_BOUNCE * isLeft}`,
-        'O100 ENDIF'
-      );
-    }
-    code.push(
-      `G38.2 X${-halfClearance * isLeft} F150`,
-      `G0 X${BOUNCE * isLeft}`,
-      `G38.2 X${-(BOUNCE + 1) * isLeft} F75`,
-      WAIT_COMMAND,
-      '#<X2> = #5061',
-      'G0 X[[#<X1>-#<X2>]/2]'
-    );
-  }
-
-  // Inner Y side
-  if (!spec.isTip) {
-    code.push(
-      `G38.3 Y${safeRapidDistance * isBottom} F${rapidMovement}`,
-      `#<probe_hit> = #5070`,
-      'O100 IF [#<probe_hit> EQ 1]',
-      `  G0 Y${-RAPID_PROBE_BOUNCE * isBottom}`,
-      'O100 ENDIF'
-    );
-  }
-  code.push(
-    `G38.2 Y${halfClearance * isBottom} F150`,
-    `G0 Y${-BOUNCE * isBottom}`,
-    `G38.2 Y${(BOUNCE + 1) * isBottom} F75`,
-    WAIT_COMMAND,
-    `#<Y1> = #5062`,
-    `G0 Y${-(halfClearance - spec.toolRadius) * isBottom}`
-  );
-
-  if (spec.isAuto) {
-    // Outer Y side
-    if (!spec.isTip) {
-      code.push(
-        `G38.3 Y${-safeRapidDistance * isBottom} F${rapidMovement}`,
-        `#<probe_hit> = #5070`,
-        'O100 IF [#<probe_hit> EQ 1]',
-        `  G0 Y${RAPID_PROBE_BOUNCE * isBottom}`,
-        'O100 ENDIF'
-      );
-    }
-    code.push(
-      `G38.2 Y${-halfClearance * isBottom} F150`,
-      `G0 Y${BOUNCE * isBottom}`,
-      `G38.2 Y${-(BOUNCE + 1) * isBottom} F75`,
-      WAIT_COMMAND,
-      `#<Y2> = #5062`,
-      'G0 Y[[#<Y1>-#<Y2>]/2]'
-    );
-  }
-
-  // Final Y position
-
+  code.push(...buildAxisProbeSequence({
+    axis: 'Y',
+    directionSign: isBottom,
+    spec,
+    halfClearance,
+    safeRapidDistance,
+    rapidMovement
+  }));
 
   code.push(
     `G10 L20 X${halfClearance * isLeft} Y${halfClearance * isBottom}`,
