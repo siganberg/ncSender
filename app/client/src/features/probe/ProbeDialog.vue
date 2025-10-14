@@ -316,10 +316,7 @@
             </template>
 
             <!-- Contextual instruction - shown at bottom of controls -->
-            <div v-if="probeType === 'autozero-touch'" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              AutoZero Touch probe type is not implemented yet.
-            </div>
-            <div v-else-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
+            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
               Click on a corner to select where to start probing
             </div>
             <div v-else-if="probingAxis === 'X'" class="probe-contextual-instruction probe-contextual-instruction--warning">

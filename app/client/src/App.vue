@@ -326,7 +326,13 @@
                       </div>
 
                       <!-- DataType 0-1, 3-5: Integers (int8, uint8, int16, uint16, int32, uint32) -->
-                      <div v-else-if="[0, 1, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
+                      <div v-else-if="setting.dataType === 0" class="toggle-input-container">
+                        <ToggleSwitch
+                          :model-value="getBooleanSettingValue(setting)"
+                          @update:modelValue="updateBooleanSetting(setting, $event)"
+                        />
+                      </div>
+                      <div v-else-if="[1, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
                         <input
                           type="number"
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
@@ -960,7 +966,49 @@ const toggleBit = (setting: any, bitIndex: number) => {
   firmwareChanges.value[setting.id] = newValue;
 };
 
-// Function to track numeric setting changes (dataTypes 0-6: integers and float)
+const getBooleanSettingValue = (setting: any): boolean => {
+  const pendingValue = firmwareChanges.value[setting?.id];
+  const source = pendingValue !== undefined
+    ? pendingValue
+    : setting?.value;
+
+  if (typeof source === 'boolean') {
+    return source;
+  }
+
+  if (typeof source === 'number') {
+    return source !== 0;
+  }
+
+  if (typeof source === 'string') {
+    return source === '1' || source.toLowerCase() === 'true';
+  }
+
+  return false;
+};
+
+const updateBooleanSetting = (setting: any, enabled: boolean) => {
+  const numericValue = enabled ? 1 : 0;
+  const originalNumeric = (() => {
+    if (typeof setting?.value === 'number') {
+      return setting.value;
+    }
+    if (typeof setting?.value === 'string') {
+      const parsed = parseInt(setting.value, 10);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  })();
+
+  if (numericValue === originalNumeric) {
+    delete firmwareChanges.value[setting.id];
+    return;
+  }
+
+  firmwareChanges.value[setting.id] = numericValue;
+};
+
+// Function to track numeric setting changes (dataTypes 1-6: integers and float)
 const updateNumericSetting = (setting: any, newValue: string) => {
   // Skip if value hasn't changed from original
   if (newValue === setting.value) {
@@ -970,7 +1018,7 @@ const updateNumericSetting = (setting: any, newValue: string) => {
   }
 
   // Parse and validate numeric value
-  // DataType 6 = float, others (0-5) are integers
+  // DataType 6 = float, others (1,3,4,5) are integers
   const numValue = setting.dataType === 6 ? parseFloat(newValue) : parseInt(newValue);
 
   if (isNaN(numValue)) {
@@ -2665,10 +2713,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 /* Numeric and String Input */
+.toggle-input-container,
 .numeric-input-container,
 .string-input-container {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .setting-numeric-input,
