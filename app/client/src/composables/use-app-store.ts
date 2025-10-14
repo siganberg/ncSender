@@ -320,6 +320,7 @@ const addResponseLine = (data: string) => {
 // Helper to try loading machine dimensions once
 const tryLoadMachineDimensionsOnce = async () => {
   if (!status.connected || !websocketConnected.value) return;
+  if (machineDimsLoaded.value) return;
 
   try {
     // Read from cached firmware data served by the backend (no controller calls)
@@ -439,8 +440,13 @@ export function initializeStore() {
     const derivedSenderStatus = senderStatus.value;
     const machineConnected = serverState.machineState?.connected === true;
 
+    const previouslyConnected = status.connected;
     // Only treat as connected when controller reports connected and status is not setup-required/connecting
     status.connected = machineConnected && !['setup-required', 'connecting'].includes(derivedSenderStatus);
+
+    if (previouslyConnected && !status.connected) {
+      machineDimsLoaded.value = false;
+    }
 
     // Apply machine status details when available from controller
     if (machineConnected && serverState.machineState) {
