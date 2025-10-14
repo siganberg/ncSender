@@ -395,11 +395,34 @@ const safeZValue = computed(() => {
 
 const safeZCommand = computed(() => formatMachineCoord(safeZValue.value));
 
+const LIMIT_MARGIN_MM = 2;
+
+const applyLimitMargin = (edge: 'min' | 'max', bounds: { min: number; max: number }) => {
+  const span = bounds.max - bounds.min;
+  if (!Number.isFinite(span) || span <= 0) {
+    return bounds.min;
+  }
+
+  if (span <= LIMIT_MARGIN_MM * 2) {
+    return bounds.min + span / 2;
+  }
+
+  if (edge === 'min') {
+    const candidate = bounds.min + LIMIT_MARGIN_MM;
+    return candidate <= bounds.max ? candidate : bounds.max;
+  }
+
+  const candidate = bounds.max - LIMIT_MARGIN_MM;
+  return candidate >= bounds.min ? candidate : bounds.min;
+};
+
 const getCornerPosition = (corner: CornerType) => {
   const xBounds = xAxisBounds.value;
   const yBounds = yAxisBounds.value;
-  const x = (corner === 'top-left' || corner === 'bottom-left') ? xBounds.min : xBounds.max;
-  const y = (corner === 'top-left' || corner === 'top-right') ? yBounds.max : yBounds.min;
+  const xEdge = (corner === 'top-left' || corner === 'bottom-left') ? 'min' : 'max';
+  const yEdge = (corner === 'top-left' || corner === 'top-right') ? 'max' : 'min';
+  const x = applyLimitMargin(xEdge, xBounds);
+  const y = applyLimitMargin(yEdge, yBounds);
   return { x, y };
 };
 
