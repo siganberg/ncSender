@@ -499,23 +499,7 @@ export class CNCController extends EventEmitter {
       this.connection.pipe(this.parser);
 
       return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          try {
-            const conn = this.connection;
-            if (conn && !conn.destroyed) {
-              conn.removeAllListeners?.();
-              conn.destroy();
-            }
-          } catch (e) {
-            log('Error destroying ethernet connection on timeout:', e?.message || e);
-          }
-          this.isConnecting = false;
-          this.connectionAttempt = null;
-          reject(new Error('Connection timeout'));
-        }, 1000); // 1 second timeout
-
         this.connection.connect(port, ip, () => {
-          clearTimeout(timeoutId);
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.onConnectionEstablished('ethernet');
@@ -523,7 +507,6 @@ export class CNCController extends EventEmitter {
         });
 
         this.connection.on('error', (error) => {
-          clearTimeout(timeoutId);
           log('CNC controller ethernet connection error:', error);
           this.isConnecting = false;
           this.connectionAttempt = null;
@@ -563,26 +546,7 @@ export class CNCController extends EventEmitter {
       this.connection.pipe(this.parser);
 
       return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          if (this.connection && !this.connection.destroyed) {
-            this.connection.removeAllListeners();
-            if (this.connection.isOpen) {
-              this.connection.close();
-            } else {
-              try {
-                this.connection.destroy();
-              } catch (err) {
-                log('Error destroying USB connection on timeout:', err.message);
-              }
-            }
-          }
-          this.isConnecting = false;
-          this.connectionAttempt = null;
-          reject(new Error('USB connection timeout'));
-        }, 1000); // 1 second timeout for USB
-
         this.connection.on('open', () => {
-          clearTimeout(timeoutId);
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.onConnectionEstablished('usb');
@@ -590,7 +554,6 @@ export class CNCController extends EventEmitter {
         });
 
         this.connection.on('error', (error) => {
-          clearTimeout(timeoutId);
           log('CNC controller connection error:', error);
           this.isConnecting = false;
           this.connectionAttempt = null;
@@ -605,7 +568,6 @@ export class CNCController extends EventEmitter {
         // Start the connection attempt
         this.connection.open((err) => {
           if (err) {
-            clearTimeout(timeoutId);
             this.isConnecting = false;
             this.connectionAttempt = null;
             reject(err);
