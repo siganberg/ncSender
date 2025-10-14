@@ -661,9 +661,14 @@ export async function createApp(options = {}) {
     log('Starting automatic CNC connection loop...');
 
     let previousSettings = null;
+    let firstIteration = true;
 
     while (autoConnectActive) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (firstIteration) {
+        firstIteration = false;
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
 
       const rawConnection = getSetting('connection');
 

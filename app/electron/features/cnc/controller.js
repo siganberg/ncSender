@@ -26,8 +26,9 @@ export class CNCController extends EventEmitter {
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
-    this.waitingForGreeting = false; // Track if we're waiting for GRBL greeting
-    this.greetingMessage = null; // Store the GRBL greeting message
+    this.isVerifyingConnection = false; // Track if we're waiting for initial status to confirm controller
+    this.hasReceivedFirstStatus = false; // Track if we've parsed the initial status report
+    this.greetingMessage = null; // Store the initial connection info message
 
     this.commandQueue = new PQueue({ concurrency: 1 });
     this.activeCommand = null;
@@ -54,31 +55,25 @@ export class CNCController extends EventEmitter {
   }
 
   handleIncomingData(trimmedData) {
-    // Check for GRBL/grblHAL greeting message during connection verification
-    if (this.waitingForGreeting && (trimmedData.includes('Grbl') || trimmedData.includes('GrblHAL'))) {
-      log('Received GRBL greeting:', trimmedData);
-      this.greetingMessage = trimmedData;
-      this.waitingForGreeting = false;
-
-      // Now mark as truly connected
-      this.isConnected = true;
-      this.connectionStatus = 'connected';
-      this.emitConnectionStatus('connected', true);
-
-      // Start polling now that we're connected
-      this.startPolling();
-
-      // Request initial G-code modes to get workspace and tool number
-      this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
-        // Ignore errors during initial setup
-      });
-
-      // Emit the greeting message as data
-      this.emit('data', trimmedData, null);
-      return;
-    }
-
     if (trimmedData.endsWith('>')) {
+      if (this.isVerifyingConnection && !this.hasReceivedFirstStatus) {
+        log('Received initial status report, marking controller as ready:', trimmedData);
+        this.hasReceivedFirstStatus = true;
+        this.isVerifyingConnection = false;
+        this.isConnected = true;
+        this.connectionStatus = 'connected';
+        this.greetingMessage = trimmedData;
+        this.emitConnectionStatus('connected', true);
+
+        // Request initial G-code modes to get workspace and tool number
+        this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+          // Ignore errors during initial setup
+        });
+
+        // Publish the first status report so clients receive an immediate connection indicator
+        this.emit('data', trimmedData, null);
+      }
+
       this.rawData = trimmedData;
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
@@ -313,8 +308,8 @@ export class CNCController extends EventEmitter {
   startPolling() {
     if (this.statusPollInterval) return;
     this.statusPollInterval = setInterval(() => {
-      // Send status requests if connected (not during greeting wait)
-      if (this.isConnected && this.connection) {
+      // Send status requests while connected or verifying controller readiness
+      if (this.connection && (this.isConnected || this.isVerifyingConnection)) {
         try {
           this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } });
         } catch (error) {
@@ -404,21 +399,28 @@ export class CNCController extends EventEmitter {
   }
 
   onConnectionEstablished(type) {
-    log(`CNC controller connection opened via ${type}, waiting for GRBL greeting...`);
+    log(`CNC controller connection opened via ${type}, verifying controller readiness...`);
 
-    // Don't mark as fully connected yet - wait for GRBL greeting message
-    this.waitingForGreeting = true;
+    // Don't mark as fully connected yet - wait for the first status report to confirm controller
+    this.isVerifyingConnection = true;
+    this.hasReceivedFirstStatus = false;
+    this.greetingMessage = null;
     this.emitConnectionStatus('verifying', false);
 
-    // Note: No timeout here - the auto-connect loop in app.js will handle retry
-    // if greeting is not received within its 1-second cycle
+    // Kick off status polling immediately so we can confirm readiness without relying on greetings
+    this.startPolling();
+    this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+      // Ignore errors during the initial status request
+    });
   }
 
   onConnectionClosed(type) {
     log(`CNC controller disconnected (${type})`);
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
-    this.waitingForGreeting = false;
+    this.isVerifyingConnection = false;
+    this.hasReceivedFirstStatus = false;
+    this.greetingMessage = null;
 
     this.flushQueue(`${type}-close`);
     this.emitConnectionStatus('disconnected', false);
@@ -628,6 +630,9 @@ export class CNCController extends EventEmitter {
       this.connectionAttempt = null;
       this.isConnecting = false;
       this.connectionStatus = 'cancelled';
+      this.isVerifyingConnection = false;
+      this.hasReceivedFirstStatus = false;
+      this.greetingMessage = null;
       this.emitConnectionStatus('cancelled', false);
     }
   }
@@ -673,6 +678,9 @@ export class CNCController extends EventEmitter {
     this.connectionType = null;
     this.connectionAttempt = null;
     this.isConnecting = false;
+    this.isVerifyingConnection = false;
+    this.hasReceivedFirstStatus = false;
+    this.greetingMessage = null;
     this.emitConnectionStatus('disconnected', false);
   }
 
@@ -701,8 +709,8 @@ export class CNCController extends EventEmitter {
   }
 
   writeToConnection(commandToSend, { rawCommand, isRealTime } = {}) {
-    // Allow writes if connected OR waiting for greeting (verification phase)
-    if (!this.connection || (!this.isConnected && !this.waitingForGreeting)) {
+    // Allow writes if connected or still verifying the controller during initial handshake
+    if (!this.connection || (!this.isConnected && !this.isVerifyingConnection)) {
       return Promise.reject(new Error('Connection is not available'));
     }
 
@@ -741,8 +749,8 @@ export class CNCController extends EventEmitter {
   }
 
   async sendCommand(command, options = {}) {
-    // Allow commands if connected OR waiting for greeting (verification phase)
-    if ((!this.isConnected && !this.waitingForGreeting) || !this.connection) {
+    // Allow commands if connected or still verifying during the initial handshake
+    if ((!this.isConnected && !this.isVerifyingConnection) || !this.connection) {
       throw new Error('CNC controller is not connected');
     }
 
@@ -991,6 +999,9 @@ export class CNCController extends EventEmitter {
   handleConnectionError(error) {
     this.isConnected = false;
     this.connectionStatus = 'error';
+    this.isVerifyingConnection = false;
+    this.hasReceivedFirstStatus = false;
+    this.greetingMessage = null;
     this.flushQueue('connection-error', error);
 
     // Special handling for USB port locking issues
