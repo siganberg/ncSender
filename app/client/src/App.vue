@@ -615,6 +615,18 @@ const handleWorkspaceChange = async (newWorkspace: string) => {
   }
 };
 
+watch(
+  () => serverState.machineState?.workspace,
+  (newWorkspace) => {
+    if (!newWorkspace) return;
+    const normalized = String(newWorkspace).toUpperCase();
+    if (workspace.value !== normalized) {
+      workspace.value = normalized;
+    }
+  },
+  { immediate: true }
+);
+
 // Settings tabs configuration
 const activeTab = ref('general');
 const settingsTabs = [
