@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS = {
   },
   theme: 'dark',
   workspace: 'G54',
-  defaultGcodeView: 'iso',
+  defaultGcodeView: 'top',
+  autoFit : false,
   accentColor: '#1abc9c',
   gradientColor: '#34d399',
   autoClearConsole: true,
@@ -46,7 +47,8 @@ const DEFAULT_SETTINGS = {
       xyThickness: 50,
       zProbeDistance: 3
     }
-  }
+  },
+  numberOfTools : 0
 };
 
 function getUserDataDir() {

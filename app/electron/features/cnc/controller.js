@@ -885,6 +885,34 @@ export class CNCController extends EventEmitter {
     const normalizedCommand = hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase();
     const display = displayCommand || normalizedCommand;
 
+    // Skip tool change commands when numberOfTools is 0 or not configured
+    const isToolChange = /M6(?!\d)/i.test(normalizedCommand);
+    if (isToolChange) {
+      const toolCountSetting = getSetting('numberOfTools');
+      const toolCount = Number(toolCountSetting);
+      const hasToolsConfigured = Number.isFinite(toolCount) && toolCount > 0;
+
+      if (!hasToolsConfigured) {
+        log('Discarding tool change command (M6) because numberOfTools is not configured or zero.');
+
+        const metaForAck = normalizedMeta ? { ...normalizedMeta } : {};
+        metaForAck.skippedToolChange = true;
+        metaForAck.skipReason = 'numberOfTools-unconfigured';
+
+        const ackPayload = {
+          id: resolvedCommandId,
+          command: normalizedCommand,
+          displayCommand: display,
+          meta: Object.keys(metaForAck).length > 0 ? metaForAck : null,
+          status: 'success',
+          timestamp: new Date().toISOString()
+        };
+
+        this.emit('command-ack', ackPayload);
+        return ackPayload;
+      }
+    }
+
     while (this.commandQueue.size >= MAX_QUEUE_SIZE) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
