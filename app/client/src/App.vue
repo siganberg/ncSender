@@ -332,6 +332,22 @@
                           @update:modelValue="updateBooleanSetting(setting, $event)"
                         />
                       </div>
+                      <div v-else-if="isRadioSetting(setting)" class="radio-input-container">
+                        <label
+                          v-for="option in getRadioOptions(setting)"
+                          :key="`${setting.id}-${option.value}`"
+                          class="radio-option"
+                        >
+                          <input
+                            type="radio"
+                            :name="`firmware-setting-${setting.id}`"
+                            :value="option.value"
+                            :checked="String(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value ?? '') === option.value"
+                            @change="updateNumericSetting(setting, option.value)"
+                          />
+                          <span>{{ option.label }}</span>
+                        </label>
+                      </div>
                       <div v-else-if="[1, 3, 4, 5].includes(setting.dataType)" class="numeric-input-container">
                         <input
                           type="number"
@@ -918,6 +934,35 @@ const isNamedBitfield = (setting: any): boolean => {
   return (halType && halType.includes('bitfield')) || setting.dataType === 2;
 };
 
+const isRadioSetting = (setting: any): boolean => {
+  if (!setting || setting.dataType !== 3) {
+    return false;
+  }
+
+  if (typeof setting.format !== 'string') {
+    return false;
+  }
+
+  const options = setting.format
+    .split(',')
+    .map(option => option.trim())
+    .filter(Boolean);
+
+  return options.length > 0;
+};
+
+const getRadioOptions = (setting: any): Array<{ label: string; value: string }> => {
+  if (!setting || typeof setting.format !== 'string') {
+    return [];
+  }
+
+  return setting.format
+    .split(',')
+    .map(option => option.trim())
+    .filter(Boolean)
+    .map((label, index) => ({ label, value: index.toString() }));
+};
+
 const isAxisBitfield = (setting: any): boolean => {
   if (!setting) {
     return false;
@@ -1031,7 +1076,7 @@ const updateNumericSetting = (setting: any, newValue: string) => {
 
   // Parse and validate numeric value
   // DataType 6 = float, others (1,3,4,5) are integers
-  const numValue = setting.dataType === 6 ? parseFloat(newValue) : parseInt(newValue);
+  const numValue = setting.dataType === 6 ? parseFloat(newValue) : parseInt(newValue, 10);
 
   if (isNaN(numValue)) {
     console.error('Invalid numeric value');
@@ -2659,6 +2704,25 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   gap: var(--gap-sm) var(--gap-md);
   align-items: center;
   width: 100%;
+}
+
+.radio-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+  align-items: center;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.radio-option input[type="radio"] {
+  accent-color: var(--color-accent);
 }
 
 .bitfield-item {
