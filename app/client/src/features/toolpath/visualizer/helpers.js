@@ -516,41 +516,39 @@ export const createDynamicAxisLabels = (bounds) => {
     const createAxisLabel = (text, position, color) => {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        canvas.width = 64;
-        canvas.height = 64;
+        canvas.width = 128;
+        canvas.height = 128;
 
-        // Set transparent background explicitly
+        // Ensure a transparent background
         context.globalAlpha = 1.0;
-        context.clearRect(0, 0, 64, 64);
+        context.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Create a high contrast outline for better visibility
         const colorStr = `#${color.toString(16).padStart(6, '0')}`;
 
-        // Draw text with outline for better contrast
-        context.font = 'bold 20px Arial';
+        context.font = 'bold 72px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
 
-        // Black outline
+        // Add a thick outline for contrast against toolpath colors
         context.strokeStyle = '#000000';
-        context.lineWidth = 3;
-        context.strokeText(text, 32, 32);
+        context.lineWidth = 12;
+        context.strokeText(text, canvas.width / 2, canvas.height / 2);
 
-        // Main text
+        // Main fill
         context.fillStyle = colorStr;
-        context.fillText(text, 32, 32);
+        context.fillText(text, canvas.width / 2, canvas.height / 2);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
-            opacity: 0.5,
+            opacity: 0.75,
             alphaTest: 0.01
         });
         const sprite = new THREE.Sprite(spriteMaterial);
         sprite.position.copy(position);
-        sprite.scale.set(15, 15, 1);
+        sprite.scale.set(30, 30, 1);
         return sprite;
     };
 

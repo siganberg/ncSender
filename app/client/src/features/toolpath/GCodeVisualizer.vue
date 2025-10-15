@@ -670,12 +670,10 @@ const onMouseUp = () => {
 const updatePointerScale = () => {
   if (!camera || !cuttingPointer) return;
 
-  // Scale pointer based on frustum size so it remains visible at all zoom levels
   const frustumWidth = camera.right - camera.left;
   let scale = frustumWidth * 0.01; // 1% of visible width
 
-  // Cap the maximum scale to prevent spindle from appearing too large when zoomed out
-  const maxScale = 5; // Maximum scale limit
+  const maxScale = 5; // Maximum scale limit for pointer
   scale = Math.min(scale, maxScale);
 
   cuttingPointer.scale.set(scale, scale, scale);
@@ -971,6 +969,7 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     }
     axisLabelsGroup = createDynamicAxisLabels(gcodeBounds);
     scene.add(axisLabelsGroup);
+    updatePointerScale();
   } catch (error) {
     console.error('Error rendering G-code:', error);
   }
@@ -1247,6 +1246,8 @@ const handleResize = () => {
 
   renderer.setSize(width, height);
   renderer.setPixelRatio(window.devicePixelRatio);
+
+  updatePointerScale();
 };
 
 // View presets with Z-up orientation
