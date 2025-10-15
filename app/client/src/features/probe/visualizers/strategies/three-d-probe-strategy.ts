@@ -76,7 +76,7 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
     }
 
     if (axis === 'Center - Inner') {
-      this.probeModel.position.set(0, 0, 0);
+      this.probeModel.position.set(0, 0, 1.5);
     } else {
       this.probeModel.position.set(0, 0, 4);
     }
@@ -111,10 +111,10 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
     const plate = this.context.plateManager.getPlate();
     if (!plate) return;
 
-    const inset = axis === 'XY' ? -1 : 2;
+    const inset = axis === 'XY' ? -1 : 1.7;
     const { x, y } = getCornerPosition(plate, corner, { inset });
 
-    this.probeModel.position.set(x, y, axis === 'XY' ? 1 : 4);
+    this.probeModel.position.set(x, y, axis === 'XY' ? 1 : 3);
     this.context.render();
   }
 

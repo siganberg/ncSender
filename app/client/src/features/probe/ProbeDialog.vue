@@ -657,19 +657,40 @@ const handleZProbeDistanceBlur = async () => {
   }
 };
 
+const isSideValidForAxis = (axis: string, side: string | null) => {
+  if (!side) return false;
+  if (axis === 'X') {
+    return side === 'Left' || side === 'Right';
+  }
+  if (axis === 'Y') {
+    return side === 'Front' || side === 'Back';
+  }
+  return false;
+};
+
 const applyAutoZeroSideDefault = (axis: string) => {
-  if (probeType.value === 'autozero-touch') {
-    if (axis === 'X') {
-      selectedSide.value = 'Left';
-      return;
-    }
-    if (axis === 'Y') {
-      selectedSide.value = 'Front';
-      return;
-    }
+  const supportsSides = axis === 'X' || axis === 'Y';
+  if (!supportsSides) {
+    selectedSide.value = null;
+    return;
   }
 
-  selectedSide.value = null;
+  const shouldDefaultLeftFront = ['autozero-touch', '3d-probe'].includes(probeType.value);
+  if (!shouldDefaultLeftFront) {
+    selectedSide.value = null;
+    return;
+  }
+
+  const defaultSide = axis === 'X' ? 'Left' : 'Front';
+
+  if (!selectedSide.value) {
+    selectedSide.value = defaultSide;
+    return;
+  }
+
+  if (!isSideValidForAxis(axis, selectedSide.value)) {
+    selectedSide.value = defaultSide;
+  }
 };
 
 const applyCornerDefault = (axis: string) => {
