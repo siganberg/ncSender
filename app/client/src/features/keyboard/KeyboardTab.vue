@@ -519,6 +519,8 @@ onBeforeUnmount(() => {
   background: rgba(var(--color-accent-rgb, 64, 169, 151), 0.15) !important;
   border-left: 3px solid var(--color-accent);
   animation: glow-pulse 2s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
 }
 
 .binding-row--capturing td:first-child {
@@ -527,10 +529,12 @@ onBeforeUnmount(() => {
 
 @keyframes glow-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.4);
+    box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.4),
+                inset 0 0 0 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.4);
   }
   50% {
-    box-shadow: 0 0 20px 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.6);
+    box-shadow: 0 0 20px 4px rgba(var(--color-accent-rgb, 64, 169, 151), 0.6),
+                inset 0 0 20px 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.2);
   }
 }
 
