@@ -18,22 +18,34 @@
       <p v-if="captureError" class="error">{{ captureError }}</p>
 
       <div class="bindings-content" :class="{ disabled: !shortcutsEnabled }">
-          <div class="bindings-table-container">
+        <div class="bindings-header">
+          <input
+            type="text"
+            v-model="searchQuery"
+            placeholder="Search Actions..."
+            class="search-input"
+          />
+        </div>
+
+        <div class="bindings-table-container">
           <table class="bindings-table">
             <thead>
               <tr>
+                <th class="col-group"></th>
                 <th>Action</th>
                 <th>Shortcut</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="action in actionList" :key="action.id" class="binding-row" :class="{ 'binding-row--capturing': captureActionId === action.id }">
+              <tr v-for="action in filteredActionList" :key="action.id" class="binding-row" :class="{ 'binding-row--capturing': captureActionId === action.id }">
+                <td class="col-group">
+                  <span v-if="action.group" class="action-group">{{ action.group }}</span>
+                </td>
                 <td>
                   <div class="action-label">
                     <strong>{{ action.label }}</strong>
                     <span v-if="action.description" class="action-description">{{ action.description }}</span>
-                    <span v-if="action.group" class="action-group">{{ action.group }}</span>
                   </div>
                 </td>
                 <td>
@@ -94,6 +106,8 @@ import { comboFromEvent } from './keyboard-utils';
 const shortcutsEnabled = computed(() => keyBindingStore.areShortcutsEnabled.value);
 const featureEnabled = computed(() => keyBindingStore.isFeatureEnabled.value);
 
+const searchQuery = ref('');
+
 const registryState = commandRegistry.getState();
 const actionList = computed(() => {
   return Object.values(registryState.actions)
@@ -105,6 +119,22 @@ const actionList = computed(() => {
       }
       return a.label.localeCompare(b.label);
     });
+});
+
+const filteredActionList = computed(() => {
+  const query = searchQuery.value.toLowerCase().trim();
+  if (!query) {
+    return actionList.value;
+  }
+
+  return actionList.value.filter(action => {
+    const labelMatch = action.label.toLowerCase().includes(query);
+    const descriptionMatch = action.description?.toLowerCase().includes(query);
+    const groupMatch = action.group?.toLowerCase().includes(query);
+    const shortcutMatch = bindingMap[action.id]?.toLowerCase().includes(query);
+
+    return labelMatch || descriptionMatch || groupMatch || shortcutMatch;
+  });
 });
 
 const bindingMap = reactive<Record<string, string>>({});
@@ -276,14 +306,6 @@ onBeforeUnmount(() => {
   opacity: 0.5;
 }
 
-.settings-section header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-sm);
-  padding: 10px;
-}
-
 .bindings-header {
   display: flex;
   gap: var(--gap-sm);
@@ -294,10 +316,32 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.bindings-header h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+.search-input {
+  flex: 1;
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.settings-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-sm);
+  padding: 10px;
 }
 
 .btn {
@@ -371,7 +415,12 @@ onBeforeUnmount(() => {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
-  table-layout: fixed;
+}
+
+.bindings-table .col-group {
+  width: 120px;
+  vertical-align: middle;
+  text-align: center;
 }
 
 .bindings-table thead {
@@ -432,10 +481,20 @@ onBeforeUnmount(() => {
 .binding-row--capturing {
   background: rgba(var(--color-accent-rgb, 64, 169, 151), 0.15) !important;
   border-left: 3px solid var(--color-accent);
+  animation: glow-pulse 2s ease-in-out infinite;
 }
 
 .binding-row--capturing td:first-child {
   padding-left: calc(var(--gap-md) - 3px);
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 0 rgba(var(--color-accent-rgb, 64, 169, 151), 0.6);
+  }
 }
 
 .binding-chip {
@@ -480,7 +539,7 @@ onBeforeUnmount(() => {
 .action-label {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .action-description {
@@ -490,9 +549,15 @@ onBeforeUnmount(() => {
 
 .action-group {
   font-size: 0.75rem;
-  color: var(--color-text-muted, var(--color-text-secondary));
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--color-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .bindings-footer {

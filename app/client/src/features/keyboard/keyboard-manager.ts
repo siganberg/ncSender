@@ -4,16 +4,21 @@ import { keyBindingStore } from './key-binding-store';
 import { comboFromEvent, isEditableElement } from './keyboard-utils';
 import {
   JOG_ACTIONS,
+  DIAGONAL_JOG_ACTIONS,
   performJogStep,
+  performDiagonalJogStep,
   startContinuousJogSession,
+  startContinuousDiagonalJogSession,
   type ContinuousJogSession
 } from './actions';
 
 const LONG_PRESS_DELAY_MS = 300;
 
 interface ActiveJogState {
-  axis: 'X' | 'Y' | 'Z';
-  direction: 1 | -1;
+  axis?: 'X' | 'Y' | 'Z';
+  direction?: 1 | -1;
+  xDir?: 1 | -1;
+  yDir?: 1 | -1;
   combo: string;
   timerId: number | null;
   longPressTriggered: boolean;
@@ -62,9 +67,10 @@ class KeyboardManager {
     }
 
     const jogMeta = JOG_ACTIONS[actionId];
+    const diagonalJogMeta = DIAGONAL_JOG_ACTIONS[actionId];
     const eventCode = event.code || combo;
 
-    if (jogMeta) {
+    if (jogMeta || diagonalJogMeta) {
       if (this.jogStates.has(eventCode)) {
         event.preventDefault();
         event.stopPropagation();
@@ -74,19 +80,33 @@ class KeyboardManager {
       event.preventDefault();
       event.stopPropagation();
 
-      const state: ActiveJogState = {
-        axis: jogMeta.axis,
-        direction: jogMeta.direction,
-        combo,
-        timerId: null,
-        longPressTriggered: false,
-        longPressActive: false,
-        cancelled: false,
-        session: null,
-        promise: null,
-        handledShortStep: false,
-        finished: false
-      };
+      const state: ActiveJogState = jogMeta
+        ? {
+            axis: jogMeta.axis,
+            direction: jogMeta.direction,
+            combo,
+            timerId: null,
+            longPressTriggered: false,
+            longPressActive: false,
+            cancelled: false,
+            session: null,
+            promise: null,
+            handledShortStep: false,
+            finished: false
+          }
+        : {
+            xDir: diagonalJogMeta.xDir,
+            yDir: diagonalJogMeta.yDir,
+            combo,
+            timerId: null,
+            longPressTriggered: false,
+            longPressActive: false,
+            cancelled: false,
+            session: null,
+            promise: null,
+            handledShortStep: false,
+            finished: false
+          };
 
       this.jogStates.set(eventCode, state);
 
@@ -108,7 +128,7 @@ class KeyboardManager {
 
     const state = this.jogStates.get(eventCode);
     if (!state) {
-      if (actionId && JOG_ACTIONS[actionId]) {
+      if (actionId && (JOG_ACTIONS[actionId] || DIAGONAL_JOG_ACTIONS[actionId])) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -117,7 +137,7 @@ class KeyboardManager {
 
     if (state.finished) {
       this.jogStates.delete(eventCode);
-      if (actionId && JOG_ACTIONS[actionId]) {
+      if (actionId && (JOG_ACTIONS[actionId] || DIAGONAL_JOG_ACTIONS[actionId])) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -204,7 +224,9 @@ class KeyboardManager {
     state.timerId = null;
     state.longPressTriggered = true;
 
-    const promise = startContinuousJogSession(state.axis, state.direction);
+    const promise = state.axis !== undefined && state.direction !== undefined
+      ? startContinuousJogSession(state.axis, state.direction)
+      : startContinuousDiagonalJogSession(state.xDir!, state.yDir!);
     state.promise = promise;
 
     promise
@@ -255,7 +277,11 @@ class KeyboardManager {
 
     state.handledShortStep = true;
 
-    performJogStep(state.axis, state.direction)
+    const jogPromise = state.axis !== undefined && state.direction !== undefined
+      ? performJogStep(state.axis, state.direction)
+      : performDiagonalJogStep(state.xDir!, state.yDir!);
+
+    jogPromise
       .catch((error) => {
         console.error('Failed to execute jog step via keyboard shortcut:', error);
       })

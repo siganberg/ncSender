@@ -16,13 +16,24 @@ export const JOG_ACTIONS: Record<string, { axis: 'X' | 'Y' | 'Z'; direction: 1 |
   JogZMinus: { axis: 'Z', direction: -1 }
 };
 
+export const DIAGONAL_JOG_ACTIONS: Record<string, { xDir: 1 | -1; yDir: 1 | -1 }> = {
+  JogXPlusYPlus: { xDir: 1, yDir: 1 },
+  JogXPlusYMinus: { xDir: 1, yDir: -1 },
+  JogXMinusYPlus: { xDir: -1, yDir: 1 },
+  JogXMinusYMinus: { xDir: -1, yDir: -1 }
+};
+
 const jogActionLabels: Record<string, string> = {
   JogXPlus: 'Jog X+',
   JogXMinus: 'Jog X-',
   JogYPlus: 'Jog Y+',
   JogYMinus: 'Jog Y-',
   JogZPlus: 'Jog Z+',
-  JogZMinus: 'Jog Z-'
+  JogZMinus: 'Jog Z-',
+  JogXPlusYPlus: 'Jog X+ Y+ (Top Right)',
+  JogXPlusYMinus: 'Jog X+ Y- (Bottom Right)',
+  JogXMinusYPlus: 'Jog X- Y+ (Top Left)',
+  JogXMinusYMinus: 'Jog X- Y- (Bottom Left)'
 };
 
 const jogActionDescriptions: Record<string, string> = {
@@ -31,7 +42,11 @@ const jogActionDescriptions: Record<string, string> = {
   JogYPlus: 'Step jog along the positive Y axis',
   JogYMinus: 'Step jog along the negative Y axis',
   JogZPlus: 'Step jog along the positive Z axis',
-  JogZMinus: 'Step jog along the negative Z axis'
+  JogZMinus: 'Step jog along the negative Z axis',
+  JogXPlusYPlus: 'Step jog diagonally to the top right corner',
+  JogXPlusYMinus: 'Step jog diagonally to the bottom right corner',
+  JogXMinusYPlus: 'Step jog diagonally to the top left corner',
+  JogXMinusYMinus: 'Step jog diagonally to the bottom left corner'
 };
 
 const jogActionGroup = 'Jogging';
@@ -57,6 +72,23 @@ export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): 
     direction,
     feedRate,
     distance
+  });
+}
+
+export async function performDiagonalJogStep(xDir: 1 | -1, yDir: 1 | -1): Promise<void> {
+  const step = keyBindingStore.getStep();
+  const { xyFeedRate } = keyBindingStore.getFeedRates();
+  const xDistance = Number((step * xDir).toFixed(4));
+  const yDistance = Number((step * yDir).toFixed(4));
+
+  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
+  await jogStep({
+    command,
+    displayCommand: command,
+    axis: 'X', // Use X as primary axis for diagonal
+    direction: xDir,
+    feedRate: xyFeedRate,
+    distance: step
   });
 }
 
@@ -108,6 +140,55 @@ export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction
   };
 }
 
+export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | -1): Promise<ContinuousJogSession | null> {
+  const { xyFeedRate } = keyBindingStore.getFeedRates();
+  const xDistance = CONTINUOUS_DISTANCE_MM * xDir;
+  const yDistance = CONTINUOUS_DISTANCE_MM * yDir;
+  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
+  const jogId = createJogId();
+
+  try {
+    await jogStart({
+      jogId,
+      command,
+      displayCommand: command,
+      axis: 'X', // Use X as primary axis for diagonal
+      direction: xDir,
+      feedRate: xyFeedRate
+    });
+  } catch (error) {
+    console.error('Failed to start continuous diagonal jog session:', error);
+    return null;
+  }
+
+  const sendHeartbeat = () => {
+    jogHeartbeat(jogId).catch((error) => {
+      console.error('Failed to send jog heartbeat:', error);
+    });
+  };
+
+  sendHeartbeat();
+  const heartbeatTimer = window.setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+  let stopped = false;
+
+  return {
+    jogId,
+    stop: async (reason = 'keyboard-stop') => {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      clearInterval(heartbeatTimer);
+      try {
+        await jogStop(jogId, reason);
+      } catch (error) {
+        console.error('Failed to stop continuous diagonal jog session:', error);
+      }
+    }
+  };
+}
+
 let coreActionsRegistered = false;
 
 export function registerCoreKeyboardActions(): void {
@@ -132,6 +213,25 @@ export function registerCoreKeyboardActions(): void {
       group: jogActionGroup,
       description: jogActionDescriptions[id],
       handler: () => performJogStep(meta.axis, meta.direction),
+      isEnabled: canJog
+    });
+  });
+
+  // Register diagonal jog actions
+  const diagonalActions = [
+    { id: 'JogXPlusYPlus', xDir: 1, yDir: 1 },
+    { id: 'JogXPlusYMinus', xDir: 1, yDir: -1 },
+    { id: 'JogXMinusYPlus', xDir: -1, yDir: 1 },
+    { id: 'JogXMinusYMinus', xDir: -1, yDir: -1 }
+  ];
+
+  diagonalActions.forEach(({ id, xDir, yDir }) => {
+    commandRegistry.register({
+      id,
+      label: jogActionLabels[id],
+      group: jogActionGroup,
+      description: jogActionDescriptions[id],
+      handler: () => performDiagonalJogStep(xDir as 1 | -1, yDir as 1 | -1),
       isEnabled: canJog
     });
   });
