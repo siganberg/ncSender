@@ -277,6 +277,16 @@ export class CNCController extends EventEmitter {
 
     // Only emit if there are actual changes
     if (hasChanges) {
+      // Log specific property changes for debugging
+      const debugFields = ['WCS'];
+      for (const field of debugFields) {
+        if (newStatus[field] !== this.lastStatus[field]) {
+          log(`[DEBUG] ${field} changed:`, JSON.stringify({
+            old: this.lastStatus[field],
+            new: newStatus[field]
+          }));
+        }
+      }
 
       this.lastStatus = newStatus;
       this.emit('status-report', newStatus);
