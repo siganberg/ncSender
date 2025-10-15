@@ -840,12 +840,13 @@ export class CNCController extends EventEmitter {
       commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
     }
 
-    // Detect ANY jog command ($J=) and enable dead-man switch watchdog
-    // This ensures safety even when commands are sent manually from Send Command
+    // Detect continuous jog commands ($J=) and enable dead-man switch watchdog
+    // Skip watchdog for step jogs (meta.jogStep = true) since they complete quickly
     const isJogCommand = /^\$J=/i.test(cleanCommand);
-    if (isJogCommand) {
+    const isStepJog = normalizedMeta?.jogStep === true;
+    if (isJogCommand && !isStepJog) {
       this.jogWatchdog.start(resolvedCommandId, cleanCommand);
-      log('Dead-man switch watchdog started for jog command:', resolvedCommandId);
+      log('Dead-man switch watchdog started for continuous jog:', resolvedCommandId);
     }
 
     if (isRealTimeCommand) {

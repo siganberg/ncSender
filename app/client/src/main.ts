@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
 import { loadSettings } from './lib/settings-store.js';
+import { initializeKeyboardShortcuts } from './features/keyboard';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
 
 // Disable context menu globally for touch screen compatibility
@@ -33,6 +34,9 @@ document.addEventListener('selectstart', (e) => {
 
   // Initialize centralized store and WebSocket event listeners
   initializeStore();
+
+  // Initialize keyboard shortcuts after settings and store are ready
+  initializeKeyboardShortcuts();
 
   // Seed initial state from server
   await seedInitialState();

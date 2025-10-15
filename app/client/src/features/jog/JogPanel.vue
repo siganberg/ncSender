@@ -318,6 +318,7 @@ const store = useJogStore();
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
+  (e: 'update:feedRate', value: number): void;
 }>();
 
 type AxisHome = 'min' | 'max';
@@ -332,6 +333,7 @@ const props = defineProps<{
   jogConfig: {
     stepSize: number;
     stepOptions: number[];
+    feedRate?: number;
   };
   isDisabled?: boolean;
   machineCoords?: { x: number; y: number; z: number };
@@ -346,6 +348,15 @@ const feedRateDefaults = {
   0.1: 500,
   1: 3000,
   10: 8000
+};
+
+const resolveFeedRate = (): number => {
+  const provided = Number(props.jogConfig.feedRate);
+  if (Number.isFinite(provided) && provided > 0) {
+    return provided;
+  }
+  const defaultRate = feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults];
+  return defaultRate ?? 500;
 };
 
 const defaultOrientation: MachineOrientation = {
@@ -426,15 +437,33 @@ const getCornerPosition = (corner: CornerType) => {
   return { x, y };
 };
 
-const feedRateInput = ref(String(feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500));
-const feedRate = ref(feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500);
+const initialFeed = resolveFeedRate();
+const feedRateInput = ref(String(initialFeed));
+const feedRate = ref(initialFeed);
+emit('update:feedRate', initialFeed);
 
 // Watch for step size changes and update feed rate
 watch(() => props.jogConfig.stepSize, (newStepSize) => {
   const defaultRate = feedRateDefaults[newStepSize as keyof typeof feedRateDefaults] || 500;
   feedRate.value = defaultRate;
-  feedRateInput.value = String(defaultRate);
+  feedRateInput.value = Number.isInteger(defaultRate) ? String(defaultRate) : defaultRate.toFixed(2);
+  emit('update:feedRate', feedRate.value);
 });
+
+watch(
+  () => props.jogConfig.feedRate,
+  (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+    if (Math.abs(parsed - feedRate.value) < 0.0001) {
+      return;
+    }
+    feedRate.value = parsed;
+    feedRateInput.value = Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(2);
+  }
+);
 
 const handleFeedRateInput = (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -464,11 +493,12 @@ const validateFeedRate = () => {
     // Reset to default for current step size
     const defaultRate = feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500;
     feedRate.value = defaultRate;
-    feedRateInput.value = String(defaultRate);
+    feedRateInput.value = Number.isInteger(defaultRate) ? String(defaultRate) : defaultRate.toFixed(2);
   } else {
     feedRate.value = parsed;
     feedRateInput.value = parsed.toFixed(2);
   }
+  emit('update:feedRate', feedRate.value);
 };
 
 // Disable the entire panel only when disconnected or explicitly disabled

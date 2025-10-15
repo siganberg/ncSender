@@ -24,6 +24,24 @@ const DEFAULT_SETTINGS = {
   accentColor: '#1abc9c',
   gradientColor: '#34d399',
   autoClearConsole: true,
+  keyboardBindings: {
+    ArrowUp: 'JogYPlus',
+    ArrowDown: 'JogYMinus',
+    ArrowLeft: 'JogXMinus',
+    ArrowRight: 'JogXPlus',
+    PageUp: 'JogZPlus',
+    PageDown: 'JogZMinus',
+    Escape: 'JogCancel'
+  },
+  keyboard: {
+    shortcutsEnabled: true,
+    step: 1,
+    xyFeedRate: 3000,
+    zFeedRate: 1500
+  },
+  features: {
+    keyboardShortcuts: true
+  },
   consoleBufferSize: 1000,
   lastLoadedFile: null,
   enableStateDeltaBroadcast: true,
@@ -121,6 +139,24 @@ export function readSettings() {
     }
 
     merged.probe = mergedProbe;
+
+    const parsedKeyboard = parsedObject.keyboard && typeof parsedObject.keyboard === 'object'
+      ? parsedObject.keyboard
+      : {};
+
+    merged.keyboard = {
+      ...DEFAULT_SETTINGS.keyboard,
+      ...parsedKeyboard
+    };
+
+    const parsedFeatures = parsedObject.features && typeof parsedObject.features === 'object'
+      ? parsedObject.features
+      : {};
+
+    merged.features = {
+      ...DEFAULT_SETTINGS.features,
+      ...parsedFeatures
+    };
 
     const parsedConnection = parsedObject.connection;
     const hasCustomConnection = parsedConnection && typeof parsedConnection === 'object';

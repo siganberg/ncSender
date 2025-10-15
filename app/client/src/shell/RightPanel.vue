@@ -9,6 +9,7 @@
       :z-max-travel="zMaxTravel"
       :machine-orientation="machineOrientation"
       @update:step-size="emit('update:jogStep', $event)"
+      @update:feed-rate="emit('update:jogFeedRate', $event)"
     />
     <StatusPanel :status="status" />
     <ConsolePanel :lines="consoleLines" :connected="status.connected" @clear="emit('clearConsole')" />
@@ -24,6 +25,7 @@ import ConsolePanel from '../features/console/ConsolePanel.vue';
 const emit = defineEmits<{
   (e: 'update:jogStep', value: number): void;
   (e: 'clearConsole'): void;
+  (e: 'update:jogFeedRate', value: number): void;
 }>();
 
 type AxisHome = 'min' | 'max';
@@ -47,6 +49,7 @@ const props = defineProps<{
   jogConfig: {
     stepSize: number;
     stepOptions: number[];
+    feedRate?: number;
   };
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' } | null;
   gridSizeX?: number;

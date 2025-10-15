@@ -333,7 +333,6 @@ const tryLoadMachineDimensionsOnce = async () => {
     return;
   }
   if (machineDimsLoaded.value) {
-    console.log('[Store] Machine dimensions already loaded');
     return;
   }
 

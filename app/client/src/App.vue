@@ -40,6 +40,7 @@
         :machine-orientation="machineOrientation"
         :sender-status="currentSenderStatus"
         @update:jog-step="jogConfig.stepSize = $event"
+        @update:jog-feed-rate="jogConfig.feedRate = $event"
         @clear-console="clearConsole"
       />
     </template>
@@ -208,6 +209,11 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- Keyboard Tab -->
+        <div v-if="activeTab === 'keyboard'" class="tab-panel">
+          <KeyboardTab />
         </div>
 
         <!-- Firmware Tab -->
@@ -590,6 +596,8 @@ import ToggleSwitch from './components/ToggleSwitch.vue';
 import { api } from './lib/api.js';
 import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
+import KeyboardTab from './features/keyboard/KeyboardTab.vue';
+import { keyBindingStore } from './features/keyboard';
 
 // Get centralized store
 const store = useAppStore();
@@ -614,7 +622,8 @@ const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.
 // Jog config (local UI state)
 const jogConfig = reactive({
   stepSize: 1,
-  stepOptions: [0.1, 1, 10]
+  stepOptions: [0.1, 1, 10],
+  feedRate: 3000
 });
 
 // Fetch alarm description (delegate to store)
@@ -647,8 +656,27 @@ watch(
 const activeTab = ref('general');
 const settingsTabs = [
   { id: 'general', label: 'General', icon: '⚙️' },
+  { id: 'keyboard', label: 'Keyboard', icon: '⌨️' },
   { id: 'firmware', label: 'Firmware', icon: '🔧' }
 ];
+
+watch(
+  () => [jogConfig.stepSize, jogConfig.feedRate],
+  ([step, feed]) => {
+    if (!Number.isFinite(step) || step <= 0) {
+      return;
+    }
+    const feedRate = Number(feed);
+    const xyFeed = Number.isFinite(feedRate) && feedRate > 0 ? feedRate : 3000;
+    const zFeed = Math.max(1, xyFeed / 2);
+    keyBindingStore.updateRuntimeJogContext({
+      step,
+      xyFeedRate: xyFeed,
+      zFeedRate: zFeed
+    });
+  },
+  { immediate: true }
+);
 
 // Immediately reflect Default G-Code Preview changes in the live viewport
 watch(defaultView, (newView) => {

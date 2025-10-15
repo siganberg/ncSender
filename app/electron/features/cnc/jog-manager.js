@@ -284,7 +284,10 @@ export class JogSessionManager {
     try {
       await this.cncController.sendCommand(command, {
         commandId: resolvedCommandId,
-        displayCommand: displayCommand || command
+        displayCommand: displayCommand || command,
+        meta: {
+          jogStep: true
+        }
       });
     } catch (error) {
       this.log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
