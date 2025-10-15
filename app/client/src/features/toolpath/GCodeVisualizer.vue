@@ -227,6 +227,9 @@ const presets = [
   { id: 'iso', label: '3D' }
 ] as const;
 
+const DEFAULT_GRID_SIZE_MM = 400;
+const DEFAULT_Z_TRAVEL_MM = 100;
+
 const props = withDefaults(defineProps<{
   view: 'top' | 'front' | 'iso';
   theme: 'light' | 'dark';
@@ -247,9 +250,9 @@ const props = withDefaults(defineProps<{
   senderStatus: 'connecting',
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   workOffset: () => ({ x: 0, y: 0, z: 0, a: 0 }),
-  gridSizeX: 1260,
-  gridSizeY: 1284,
-  zMaxTravel: null,
+  gridSizeX: DEFAULT_GRID_SIZE_MM,
+  gridSizeY: DEFAULT_GRID_SIZE_MM,
+  zMaxTravel: DEFAULT_Z_TRAVEL_MM,
   machineOrientation: () => ({ xHome: 'min', yHome: 'max', zHome: 'max', homeCorner: 'back-left' }),
   spindleRpm: 0,
   jobLoaded: null
@@ -337,7 +340,7 @@ const outOfBoundsMessage = computed(() => {
   // Prefer direction list; map Z+/Z- to friendly phrases, keep X/Y as-is
   const dirs = outOfBoundsDirections.value || [];
   if (dirs.length > 0) {
-    const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
+    const zMax = resolveZTravel(props.zMaxTravel);
     const mapped = dirs.map((d) => {
       if (d === 'Z+') return 'Z above 0';
       if (d === 'Z-') return zMax != null ? `Z below machine limit (-${zMax})` : 'Z below machine limit';
@@ -402,9 +405,23 @@ const computeAxisBounds = (size: number | undefined, offset: number, home: AxisH
   };
 };
 
+const resolveGridSize = (value?: number) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_GRID_SIZE_MM;
+};
+
+const resolveZTravel = (value?: number | null) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_Z_TRAVEL_MM;
+};
+
 const computeGridBoundsFrom = (workOffset = props.workOffset) => {
-  const gridSizeX = props.gridSizeX ?? 1260;
-  const gridSizeY = props.gridSizeY ?? 1284;
+  const gridSizeX = resolveGridSize(props.gridSizeX);
+  const gridSizeY = resolveGridSize(props.gridSizeY);
   const workOffsetX = workOffset?.x ?? 0;
   const workOffsetY = workOffset?.y ?? 0;
   const workOffsetZ = workOffset?.z ?? 0;
@@ -413,7 +430,7 @@ const computeGridBoundsFrom = (workOffset = props.workOffset) => {
   const xBounds = computeAxisBounds(gridSizeX, workOffsetX, orientation.xHome);
   const yBounds = computeAxisBounds(gridSizeY, workOffsetY, orientation.yHome);
 
-  const zMax = typeof props.zMaxTravel === 'number' ? props.zMaxTravel : null;
+  const zMax = resolveZTravel(props.zMaxTravel);
   const zBounds = zMax != null ? computeAxisBounds(zMax, workOffsetZ, orientation.zHome) : null;
 
   return {
@@ -440,8 +457,8 @@ const rebuildGrid = (workOffset = props.workOffset) => {
   }
 
   gridGroup = createGridLines({
-    gridSizeX: props.gridSizeX,
-    gridSizeY: props.gridSizeY,
+    gridSizeX: resolveGridSize(props.gridSizeX),
+    gridSizeY: resolveGridSize(props.gridSizeY),
     workOffset,
     orientation: resolvedOrientation.value
   });
@@ -522,8 +539,8 @@ const initThreeJS = () => {
 
   // Grid with numbers and major/minor lines
   gridGroup = createGridLines({ // 10mm spacing with numbers
-    gridSizeX: props.gridSizeX,
-    gridSizeY: props.gridSizeY,
+    gridSizeX: resolveGridSize(props.gridSizeX),
+    gridSizeY: resolveGridSize(props.gridSizeY),
     workOffset: props.workOffset,
     orientation: resolvedOrientation.value
   });
