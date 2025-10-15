@@ -66,7 +66,7 @@
           :class="{ active: activeTab === tab.id }"
           @click="activeTab = tab.id"
         >
-          <span class="tab-icon">{{ tab.icon }}</span>
+          <span class="tab-icon" v-html="tab.icon"></span>
           <span class="tab-label">{{ tab.label }}</span>
         </button>
       </div>
@@ -212,7 +212,7 @@
         </div>
 
         <!-- Keyboard Tab -->
-        <div v-if="activeTab === 'keyboard'" class="tab-panel">
+        <div v-if="activeTab === 'keyboard'" class="tab-panel tab-panel--keyboard">
           <KeyboardTab />
         </div>
 
@@ -655,9 +655,9 @@ watch(
 // Settings tabs configuration
 const activeTab = ref('general');
 const settingsTabs = [
-  { id: 'general', label: 'General', icon: '⚙️' },
-  { id: 'keyboard', label: 'Keyboard', icon: '⌨️' },
-  { id: 'firmware', label: 'Firmware', icon: '🔧' }
+  { id: 'general', label: 'General', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></svg>' },
+  { id: 'keyboard', label: 'Keyboard', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>' },
+  { id: 'firmware', label: 'Firmware', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.496 8a4.5 4.5 0 0 1-1.703 3.526L9.497 8.5l2.959-1.11q.04.3.04.61"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-1 0a7 7 0 1 0-13.202 3.249l1.988-1.657a4.5 4.5 0 0 1 7.537-4.623L7.497 6.5l1 2.5 1.333 3.11c-.56.251-1.18.39-1.833.39a4.5 4.5 0 0 1-1.592-.29L4.747 14.2A7 7 0 0 0 15 8m-8.295.139a.25.25 0 0 0-.288-.376l-1.5.5.159.474.808-.27-.595.894a.25.25 0 0 0 .287.376l.808-.27-.595.894a.25.25 0 0 0 .287.376l1.5-.5-.159-.474-.808.27.596-.894a.25.25 0 0 0-.288-.376l-.808.27z"/></svg>' }
 ];
 
 watch(
@@ -1743,6 +1743,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .tab-icon {
   font-size: 1.1rem;
+  padding-top: 2px;
 }
 
 .tab-label {
@@ -2446,6 +2447,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-style: italic;
 }
 
+.tab-panel--keyboard,
 .tab-panel--firmware {
   padding: 0;
   gap: 0;

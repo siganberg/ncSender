@@ -270,13 +270,15 @@ class NCClient {
 
   sendJogHeartbeat(jogId) {
     if (!jogId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
+      return Promise.resolve();
     }
 
     try {
       this.ws.send(JSON.stringify({ type: 'jog:heartbeat', data: { jogId } }));
+      return Promise.resolve();
     } catch (error) {
       console.error('Failed to send jog heartbeat:', error);
+      return Promise.reject(error);
     }
   }
 

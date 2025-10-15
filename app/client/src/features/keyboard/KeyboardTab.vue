@@ -13,80 +13,73 @@
             @update:modelValue="handleToggleShortcuts"
           />
         </header>
-        <p class="description">When enabled, keyboard shortcuts can jog the machine and trigger registered commands. Jog shortcuts follow the Step and Feed Rate from the main Jog panel.</p>
-
-        <div class="jog-settings" :class="{ disabled: !shortcutsEnabled }">
-          <div class="setting">
-            <label for="keyboard-step">Step Distance (mm)</label>
-            <div class="readonly-field" id="keyboard-step">{{ currentStepDisplay }}</div>
-          </div>
-          <div class="setting">
-            <label for="keyboard-xy-feed">XY Feed Rate (mm/min)</label>
-            <div class="readonly-field" id="keyboard-xy-feed">{{ currentXYFeedDisplay }}</div>
-          </div>
-          <div class="setting">
-            <label for="keyboard-z-feed">Z Feed Rate (mm/min)</label>
-            <div class="readonly-field" id="keyboard-z-feed">{{ currentZFeedDisplay }}</div>
-          </div>
-        </div>
       </section>
 
-      <section class="bindings-section" :class="{ disabled: !shortcutsEnabled }">
-        <header>
-          <h3>Key Bindings</h3>
-          <div class="actions">
-            <button class="btn" :disabled="isResetting" @click="resetToDefaults">
-              Reset to defaults
-            </button>
-          </div>
-        </header>
+      <p v-if="captureError" class="error">{{ captureError }}</p>
 
-        <p v-if="shortcutsEnabled" class="description">Click “Change” and press any key combination. Existing assignments will be replaced automatically.</p>
-        <p v-else class="description">Enable keyboard control to edit bindings.</p>
-
-        <div v-if="captureActionId" class="capture-banner">
-          <span>Press a key combination for <strong>{{ captureActionLabel }}</strong>.</span>
-          <button class="btn-secondary" @click="cancelCapture">Cancel</button>
+      <div class="bindings-content" :class="{ disabled: !shortcutsEnabled }">
+          <div class="bindings-table-container">
+          <table class="bindings-table">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Shortcut</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="action in actionList" :key="action.id" class="binding-row" :class="{ 'binding-row--capturing': captureActionId === action.id }">
+                <td>
+                  <div class="action-label">
+                    <strong>{{ action.label }}</strong>
+                    <span v-if="action.description" class="action-description">{{ action.description }}</span>
+                    <span v-if="action.group" class="action-group">{{ action.group }}</span>
+                  </div>
+                </td>
+                <td>
+                  <template v-if="captureActionId === action.id">
+                    <div class="capture-container">
+                      <span class="capture-message">Press a key combination...</span>
+                      <span v-if="bindingMap[action.id]" class="capture-current">Current: {{ bindingMap[action.id] }}</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <span v-if="bindingMap[action.id]" class="binding-chip">{{ bindingMap[action.id] }}</span>
+                    <span v-else class="binding-empty">Not set</span>
+                  </template>
+                </td>
+                <td class="binding-actions">
+                  <template v-if="captureActionId === action.id">
+                    <button class="btn-secondary" @click="cancelCapture">
+                      Cancel
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="btn" :disabled="!shortcutsEnabled" @click="startCapture(action.id)">
+                      Change
+                    </button>
+                    <button
+                      class="btn-secondary"
+                      :disabled="!shortcutsEnabled || !bindingMap[action.id]"
+                      @click="clearBinding(action.id)"
+                    >
+                      Remove
+                    </button>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <p v-if="captureError" class="error">{{ captureError }}</p>
 
-        <table class="bindings-table">
-          <thead>
-            <tr>
-              <th>Action</th>
-              <th>Shortcut</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="action in actionList" :key="action.id">
-              <td>
-                <div class="action-label">
-                  <strong>{{ action.label }}</strong>
-                  <span v-if="action.description" class="action-description">{{ action.description }}</span>
-                  <span v-if="action.group" class="action-group">{{ action.group }}</span>
-                </div>
-              </td>
-              <td>
-                <span v-if="bindingMap[action.id]" class="binding-chip">{{ bindingMap[action.id] }}</span>
-                <span v-else class="binding-empty">Not set</span>
-              </td>
-              <td class="binding-actions">
-                <button class="btn" :disabled="!shortcutsEnabled" @click="startCapture(action.id)">
-                  Change
-                </button>
-                <button
-                  class="btn-secondary"
-                  :disabled="!shortcutsEnabled || !bindingMap[action.id]"
-                  @click="clearBinding(action.id)"
-                >
-                  Remove
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+        <div class="bindings-footer">
+          <span v-if="shortcutsEnabled" class="footer-description">Click "Change" and press any key combination. Existing assignments will be replaced automatically.</span>
+          <span v-else class="footer-description">Enable keyboard control to edit bindings.</span>
+          <button class="btn" :disabled="isResetting" @click="resetToDefaults">
+            Reset to defaults
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -144,17 +137,6 @@ const captureActionLabel = computed(() => {
   const action = actionList.value.find(item => item.id === id);
   return action?.label || id;
 });
-
-const formatNumber = (value: number, fractionDigits = 2) => {
-  if (!Number.isFinite(value)) {
-    return '—';
-  }
-  return value.toFixed(fractionDigits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-};
-
-const currentStepDisplay = computed(() => formatNumber(keyBindingStore.getStep(), 3));
-const currentXYFeedDisplay = computed(() => formatNumber(keyBindingStore.getFeedRates().xyFeedRate, 2));
-const currentZFeedDisplay = computed(() => formatNumber(keyBindingStore.getFeedRates().zFeedRate, 2));
 
 const handleToggleShortcuts = async (value: boolean) => {
   try {
@@ -243,6 +225,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--gap-md);
   color: var(--color-text-primary);
+  height: 100%;
 }
 
 .feature-disabled {
@@ -262,79 +245,59 @@ onBeforeUnmount(() => {
 .keyboard-content {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
+  height: 100%;
+  overflow: hidden;
+  padding: 0 0 0 0;
 }
 
-.settings-section,
-.bindings-section {
+.settings-section {
   background: var(--color-surface);
   border-radius: var(--radius-medium);
-  padding: var(--gap-md);
+  padding: 0;
   box-shadow: var(--shadow-flat);
   border: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   gap: var(--gap-md);
+  flex-shrink: 0;
+  margin: 0 var(--gap-md);
 }
 
-.settings-section header,
-.bindings-section header {
+.bindings-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.bindings-content.disabled {
+  opacity: 0.5;
+}
+
+.settings-section header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-sm);
+  padding: 10px;
 }
 
-.description {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
-}
-
-.jog-settings {
-  display: grid;
-  gap: var(--gap-md);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.jog-settings.disabled {
-  opacity: 0.6;
-}
-
-.setting {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.setting label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.setting input {
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  padding: 8px;
-  color: inherit;
-}
-
-.readonly-field {
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  padding: 8px;
-  font-weight: 600;
-}
-
-.bindings-section.disabled {
-  opacity: 0.5;
-}
-
-.actions {
+.bindings-header {
   display: flex;
   gap: var(--gap-sm);
+  align-items: center;
+  padding: var(--gap-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.bindings-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .btn {
@@ -362,33 +325,117 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.capture-banner {
-  background: rgba(255, 215, 0, 0.1);
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  border-radius: var(--radius-small);
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--gap-sm);
-}
-
 .error {
   color: var(--color-danger, #f87171);
-  margin: 0;
+  margin: 0 var(--gap-md);
+  padding: var(--gap-sm);
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: var(--radius-small);
+  flex-shrink: 0;
+}
+
+.bindings-table-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  background: var(--color-surface);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.bindings-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 0;
+}
+
+.bindings-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bindings-table-container::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.bindings-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+.bindings-table-container::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .bindings-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  table-layout: fixed;
 }
 
-.bindings-table th,
-.bindings-table td {
+.bindings-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-surface-muted);
+}
+
+.bindings-table thead::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-border);
+}
+
+.bindings-table th {
+  padding: var(--gap-sm) var(--gap-md);
   text-align: left;
-  padding: 10px;
-  border-bottom: 1px solid var(--color-border-subtle);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.bindings-table tbody tr:first-child td {
+  padding-top: var(--gap-lg);
+}
+
+.bindings-table tbody tr:last-child td {
+  padding-bottom: var(--gap-lg);
+}
+
+.bindings-table td {
+  padding: var(--gap-md);
+  vertical-align: top;
+}
+
+.bindings-table td:first-child {
+  padding-left: var(--gap-md);
+}
+
+.bindings-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.binding-row:nth-child(even) {
+  background: var(--color-surface-muted);
+}
+
+.binding-row:hover {
+  background: var(--color-border);
+}
+
+.binding-row--capturing {
+  background: rgba(var(--color-accent-rgb, 64, 169, 151), 0.15) !important;
+  border-left: 3px solid var(--color-accent);
+}
+
+.binding-row--capturing td:first-child {
+  padding-left: calc(var(--gap-md) - 3px);
 }
 
 .binding-chip {
@@ -404,6 +451,24 @@ onBeforeUnmount(() => {
 .binding-empty {
   color: var(--color-text-secondary);
   font-style: italic;
+}
+
+.capture-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.capture-message {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-style: italic;
+  font-size: 1.05rem;
+}
+
+.capture-current {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
 }
 
 .binding-actions {
@@ -428,5 +493,21 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted, var(--color-text-secondary));
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.bindings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--gap-sm) var(--gap-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.footer-description {
+  flex: 1;
 }
 </style>

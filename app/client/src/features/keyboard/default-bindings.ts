@@ -4,8 +4,7 @@ export const DEFAULT_KEY_BINDINGS: Record<string, string> = {
   ArrowLeft: 'JogXMinus',
   ArrowRight: 'JogXPlus',
   PageUp: 'JogZPlus',
-  PageDown: 'JogZMinus',
-  Escape: 'JogCancel'
+  PageDown: 'JogZMinus'
 };
 
 export const FALLBACK_COMBOS = new Set(Object.keys(DEFAULT_KEY_BINDINGS));

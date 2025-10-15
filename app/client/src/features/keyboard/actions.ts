@@ -136,21 +136,5 @@ export function registerCoreKeyboardActions(): void {
     });
   });
 
-  commandRegistry.register({
-    id: 'JogCancel',
-    label: 'Jog Cancel',
-    group: jogActionGroup,
-    description: 'Send jog cancel real-time command',
-    handler: async () => {
-      const command = api.getJogCancelCommand();
-      await api.sendCommandViaWebSocket({
-        command,
-        displayCommand: '\\x85 (Jog Cancel)',
-        meta: { sourceId: 'keyboard-shortcut' }
-      });
-    },
-    isEnabled: () => keyBindingStore.isActive.value
-  });
-
   coreActionsRegistered = true;
 }
