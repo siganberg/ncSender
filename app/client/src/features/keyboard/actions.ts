@@ -58,6 +58,35 @@ export interface ContinuousJogSession {
   stop: (reason?: string) => Promise<void>;
 }
 
+function createContinuousSession(jogId: string, onStop: string): ContinuousJogSession {
+  const sendHeartbeat = () => {
+    jogHeartbeat(jogId).catch((error) => {
+      console.error('Failed to send jog heartbeat:', error);
+    });
+  };
+
+  sendHeartbeat();
+  const heartbeatTimer = window.setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+  let stopped = false;
+
+  return {
+    jogId,
+    stop: async (reason = 'keyboard-stop') => {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      clearInterval(heartbeatTimer);
+      try {
+        await jogStop(jogId, reason);
+      } catch (error) {
+        console.error(`Failed to stop ${onStop}:`, error);
+      }
+    }
+  };
+}
+
 export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): Promise<void> {
   const step = keyBindingStore.getStep();
   const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
@@ -112,32 +141,7 @@ export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction
     return null;
   }
 
-  const sendHeartbeat = () => {
-    jogHeartbeat(jogId).catch((error) => {
-      console.error('Failed to send jog heartbeat:', error);
-    });
-  };
-
-  sendHeartbeat();
-  const heartbeatTimer = window.setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
-
-  let stopped = false;
-
-  return {
-    jogId,
-    stop: async (reason = 'keyboard-stop') => {
-      if (stopped) {
-        return;
-      }
-      stopped = true;
-      clearInterval(heartbeatTimer);
-      try {
-        await jogStop(jogId, reason);
-      } catch (error) {
-        console.error('Failed to stop continuous jog session:', error);
-      }
-    }
-  };
+  return createContinuousSession(jogId, 'continuous jog session');
 }
 
 export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | -1): Promise<ContinuousJogSession | null> {
@@ -161,32 +165,7 @@ export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | 
     return null;
   }
 
-  const sendHeartbeat = () => {
-    jogHeartbeat(jogId).catch((error) => {
-      console.error('Failed to send jog heartbeat:', error);
-    });
-  };
-
-  sendHeartbeat();
-  const heartbeatTimer = window.setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
-
-  let stopped = false;
-
-  return {
-    jogId,
-    stop: async (reason = 'keyboard-stop') => {
-      if (stopped) {
-        return;
-      }
-      stopped = true;
-      clearInterval(heartbeatTimer);
-      try {
-        await jogStop(jogId, reason);
-      } catch (error) {
-        console.error('Failed to stop continuous diagonal jog session:', error);
-      }
-    }
-  };
+  return createContinuousSession(jogId, 'continuous diagonal jog session');
 }
 
 let coreActionsRegistered = false;
@@ -217,21 +196,13 @@ export function registerCoreKeyboardActions(): void {
     });
   });
 
-  // Register diagonal jog actions
-  const diagonalActions = [
-    { id: 'JogXPlusYPlus', xDir: 1, yDir: 1 },
-    { id: 'JogXPlusYMinus', xDir: 1, yDir: -1 },
-    { id: 'JogXMinusYPlus', xDir: -1, yDir: 1 },
-    { id: 'JogXMinusYMinus', xDir: -1, yDir: -1 }
-  ];
-
-  diagonalActions.forEach(({ id, xDir, yDir }) => {
+  Object.entries(DIAGONAL_JOG_ACTIONS).forEach(([id, meta]) => {
     commandRegistry.register({
       id,
       label: jogActionLabels[id],
       group: jogActionGroup,
       description: jogActionDescriptions[id],
-      handler: () => performDiagonalJogStep(xDir as 1 | -1, yDir as 1 | -1),
+      handler: () => performDiagonalJogStep(meta.xDir, meta.yDir),
       isEnabled: canJog
     });
   });

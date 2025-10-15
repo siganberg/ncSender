@@ -93,7 +93,13 @@
         </div>
 
         <div class="bindings-footer">
-          <span v-if="shortcutsEnabled" class="footer-description">Click "Change" and press any key combination. Existing assignments will be replaced automatically.</span>
+          <span v-if="shortcutsEnabled" class="footer-description">
+            Click
+            <svg class="footer-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+            </svg>
+            and press any key combination. Existing assignments will be replaced automatically.
+          </span>
           <span v-else class="footer-description">Enable keyboard control to edit bindings.</span>
           <button class="btn" :disabled="isResetting" @click="resetToDefaults">
             Reset to defaults
@@ -102,11 +108,26 @@
       </div>
     </div>
   </div>
+
+  <!-- Reset Confirmation Dialog -->
+  <Dialog v-if="showResetConfirm" @close="showResetConfirm = false" :show-header="false" size="small">
+    <ConfirmPanel
+      title="Reset to Defaults"
+      message="Are you sure you want to reset all keyboard shortcuts to their default values? This action cannot be undone."
+      cancel-text="Cancel"
+      confirm-text="Reset"
+      variant="danger"
+      @confirm="confirmReset"
+      @cancel="showResetConfirm = false"
+    />
+  </Dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
+import Dialog from '@/components/Dialog.vue';
+import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import { commandRegistry } from '@/lib/command-registry';
 import { keyBindingStore } from './key-binding-store';
 import { comboFromEvent } from './keyboard-utils';
@@ -160,6 +181,7 @@ syncBindingMap();
 const captureActionId = ref<string | null>(null);
 const captureError = ref<string | null>(null);
 const isResetting = ref(false);
+const showResetConfirm = ref(false);
 
 watch(
   () => keyBindingStore.state.bindings,
@@ -168,13 +190,6 @@ watch(
   },
   { deep: true }
 );
-
-const captureActionLabel = computed(() => {
-  const id = captureActionId.value;
-  if (!id) return '';
-  const action = actionList.value.find(item => item.id === id);
-  return action?.label || id;
-});
 
 const handleToggleShortcuts = async (value: boolean) => {
   try {
@@ -231,10 +246,12 @@ const clearBinding = async (actionId: string) => {
   }
 };
 
-const resetToDefaults = async () => {
-  if (!window.confirm('Reset keyboard shortcuts to defaults?')) {
-    return;
-  }
+const resetToDefaults = () => {
+  showResetConfirm.value = true;
+};
+
+const confirmReset = async () => {
+  showResetConfirm.value = false;
   isResetting.value = true;
   captureError.value = null;
   try {
@@ -618,5 +635,13 @@ onBeforeUnmount(() => {
 
 .footer-description {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-icon {
+  vertical-align: middle;
+  opacity: 0.8;
 }
 </style>
