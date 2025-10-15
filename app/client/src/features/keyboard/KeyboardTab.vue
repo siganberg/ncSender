@@ -418,12 +418,13 @@ onBeforeUnmount(() => {
 
 .bindings-table-container {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   min-height: 0;
   background: var(--color-surface);
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+  padding-bottom: 30px;
 }
 
 .bindings-table-container::-webkit-scrollbar {
@@ -463,7 +464,7 @@ onBeforeUnmount(() => {
 .bindings-table thead {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 5;
   background: var(--color-surface-muted);
 }
 
@@ -520,7 +521,7 @@ onBeforeUnmount(() => {
   border-left: 3px solid var(--color-accent);
   animation: glow-pulse 2s ease-in-out infinite;
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 .binding-row--capturing td:first-child {
@@ -611,6 +612,8 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   flex-shrink: 0;
+  position: relative;
+  z-index: 5;
 }
 
 .footer-description {
