@@ -758,6 +758,21 @@ class NCClient {
     return response.json();
   }
 
+  async triggerToolChange(toolNumber) {
+    const response = await fetch(`${this.baseUrl}/api/tool-change`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: toolNumber })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to execute tool change' }));
+      throw new Error(error.error || 'Failed to execute tool change');
+    }
+
+    return response.json();
+  }
+
   // Settings methods
   async getSettings() {
     const response = await fetch(`${this.baseUrl}/api/settings`);

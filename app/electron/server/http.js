@@ -11,6 +11,7 @@ import { createGCodeJobRoutes } from '../features/gcode/job-routes.js';
 import { createFirmwareRoutes } from '../features/firmware/routes.js';
 import { createProbeRoutes } from '../features/probe/routes.js';
 import { createMacroRoutes } from '../features/macro/routes.js';
+import { createToolRoutes } from '../features/tool/routes.js';
 
 export function mountHttp({
   app,
@@ -42,6 +43,7 @@ export function mountHttp({
   app.use('/api/firmware', createFirmwareRoutes(cncController));
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController));
+  app.use('/api', createToolRoutes(cncController, serverState));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

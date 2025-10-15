@@ -1566,8 +1566,7 @@ const startToolPress = (toolNumber: number, _evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
       state.triggered = true;
-      // Send M6 T{toolNumber} command
-      api.sendCommandViaWebSocket({ command: `M6 T${toolNumber}`, displayCommand: `M6 T${toolNumber}` });
+      sendToolChangeMacro(toolNumber);
       state.progress = 0;
       state.active = false;
       return;
@@ -1603,6 +1602,14 @@ const endToolPress = (toolNumber: number) => {
   setTimeout(() => {
     state.triggered = false;
   }, 100);
+};
+
+const sendToolChangeMacro = async (toolNumber: number) => {
+  try {
+    await api.triggerToolChange(toolNumber);
+  } catch (error) {
+    console.error('[GCodeVisualizer] Failed to request tool change macro', error);
+  }
 };
 
 const cancelToolPress = (toolNumber: number) => {

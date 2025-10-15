@@ -1,0 +1,114 @@
+import { Router } from 'express';
+
+const log = (...args) => {
+  console.log(`[${new Date().toISOString()}]`, ...args);
+};
+
+const parseCoordinate = (value) => {
+  if (value == null) return null;
+
+  if (typeof value === 'string') {
+    const parts = value.split(',').map(part => Number.parseFloat(part.trim()));
+    if (parts.length >= 2 && parts.every(Number.isFinite)) {
+      return { x: parts[0], y: parts[1], z: parts[2] ?? 0 };
+    }
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    const [x, y, z] = value;
+    if ([x, y].every(Number.isFinite)) {
+      return { x, y, z: Number.isFinite(z) ? z : 0 };
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const { x, y, z } = value;
+    if ([x, y].every(Number.isFinite)) {
+      return { x, y, z: Number.isFinite(z) ? z : 0 };
+    }
+  }
+
+  return null;
+};
+
+const computeWorkPosition = (machineState) => {
+  if (!machineState) return null;
+
+  const workPos = parseCoordinate(machineState.WPos ?? machineState.WPO ?? machineState.WorkPosition);
+  if (workPos) return workPos;
+
+  const machinePos = parseCoordinate(machineState.MPos ?? machineState.MPOS);
+  const wco = parseCoordinate(machineState.WCO ?? machineState.WorkCoordinateOffset);
+
+  if (machinePos && wco) {
+    return {
+      x: machinePos.x - wco.x,
+      y: machinePos.y - wco.y,
+      z: machinePos.z - wco.z
+    };
+  }
+
+  return null;
+};
+
+export function createToolRoutes(cncController, serverState) {
+  const router = Router();
+
+  router.post('/tool-change', async (req, res) => {
+    try {
+      if (!cncController || !cncController.isConnected) {
+        return res.status(503).json({ error: 'CNC controller is not connected' });
+      }
+
+      const { tool, toolNumber } = req.body || {};
+      const toolSelector = tool ?? toolNumber;
+      const parsedTool = Number.parseInt(toolSelector, 10);
+
+      if (!Number.isFinite(parsedTool) || parsedTool < 0) {
+        return res.status(400).json({ error: 'Invalid tool number' });
+      }
+
+      const machineState = serverState?.machineState;
+      const workPosition = computeWorkPosition(machineState);
+      const hasReturnPosition = workPosition && [workPosition.x, workPosition.y].every(Number.isFinite);
+
+      const xCommand = hasReturnPosition ? workPosition.x.toFixed(3) : null;
+      const yCommand = hasReturnPosition ? workPosition.y.toFixed(3) : null;
+
+      const commands = [
+        `; Tool Change Start (T${parsedTool})`,
+        ...(hasReturnPosition ? [`; Returning to X${xCommand} Y${yCommand}`] : []),
+        `M6 T${parsedTool}`,
+        ...(hasReturnPosition ? [`G90 G0 X${xCommand} Y${yCommand}`] : []),
+        `; Tool Change End (T${parsedTool})`
+      ];
+
+      const meta = {
+        sourceId: 'tool-change',
+        toolNumber: parsedTool,
+        originalWorkPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
+      };
+
+      for (const command of commands) {
+        await cncController.sendCommand(command, { meta });
+      }
+
+      res.json({
+        success: true,
+        toolNumber: parsedTool,
+        commandsExecuted: commands.length,
+        workPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
+      });
+    } catch (error) {
+      log('Error executing tool change macro:', error);
+      res.status(500).json({
+        error: 'Failed to execute tool change macro',
+        message: error.message
+      });
+    }
+  });
+
+  return router;
+}
