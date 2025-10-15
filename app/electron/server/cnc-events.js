@@ -97,8 +97,7 @@ export function registerCncEventHandlers({
 
   const handleStatusReport = (status) => {
     const prevMachineState = { ...serverState.machineState };
-    const { workspace: _ignoreWorkspace, ...statusWithoutWorkspace } = status || {};
-    serverState.machineState = { ...serverState.machineState, ...statusWithoutWorkspace };
+    serverState.machineState = { ...serverState.machineState, ...status };
 
     const hasChanged = JSON.stringify(prevMachineState) !== JSON.stringify(serverState.machineState);
 

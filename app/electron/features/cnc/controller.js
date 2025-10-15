@@ -243,6 +243,10 @@ export class CNCController extends EventEmitter {
         const pins = value || '';
         newStatus.probeActive = pins.includes('P');
         newStatus.Pn = pins;
+      } else if (key === 'WCS') {
+        // Workspace coordinate system (G54, G55, etc.)
+        newStatus.WCS = value;
+        newStatus.workspace = value;
       } else if (key && value) {
         newStatus[key] = value;
       }
@@ -266,7 +270,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -278,7 +282,7 @@ export class CNCController extends EventEmitter {
     // Only emit if there are actual changes
     if (hasChanges) {
       // Log specific property changes for debugging
-      const debugFields = ['WCS'];
+      const debugFields = ['WCS', 'workspace'];
       for (const field of debugFields) {
         if (newStatus[field] !== this.lastStatus[field]) {
           log(`[DEBUG] ${field} changed:`, JSON.stringify({
@@ -299,16 +303,6 @@ export class CNCController extends EventEmitter {
     const modes = content.split(' ');
 
     let hasChanges = false;
-
-    // Find workspace coordinate system (G54-G59.3)
-    const workspaceMode = modes.find(mode => /^G5[4-9]$/.test(mode) || /^G59\.[1-3]$/.test(mode));
-
-    if (workspaceMode && workspaceMode !== this.lastStatus.workspace) {
-      log('Active workspace detected:', workspaceMode);
-      // Update workspace in lastStatus
-      this.lastStatus.workspace = workspaceMode;
-      hasChanges = true;
-    }
 
     // Find tool number (T0, T1, etc.)
     const toolMode = modes.find(mode => /^T\d+$/.test(mode));

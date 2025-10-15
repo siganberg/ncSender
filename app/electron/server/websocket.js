@@ -392,23 +392,6 @@ export function createWebSocketLayer({
     }
   };
 
-  const handleWorkspaceChange = (event) => {
-    if (event.status === 'success' && event.command) {
-      const workspaceMatch = /^(G5[4-9]|G59\.[1-3])$/i.exec(event.command);
-      if (workspaceMatch) {
-        const newWorkspace = workspaceMatch[1].toUpperCase();
-        log('Workspace changed to:', newWorkspace);
-
-        if (!serverState.machineState) {
-          serverState.machineState = {};
-        }
-        serverState.machineState.workspace = newWorkspace;
-        serverState.machineState.WCS = newWorkspace;
-        broadcast('server-state-updated', serverState);
-      }
-    }
-  };
-
   wss.on('connection', (ws) => {
     log('Client connected');
     clients.add(ws);
@@ -506,13 +489,11 @@ export function createWebSocketLayer({
   });
 
   cncController.on('command-queued', broadcastQueuedCommand);
-  cncController.on('command-ack', handleWorkspaceChange);
   cncController.on('command-ack', broadcastCommandResult);
 
   const shutdown = () => {
     wss.close();
     cncController.off?.('command-queued', broadcastQueuedCommand);
-    cncController.off?.('command-ack', handleWorkspaceChange);
     cncController.off?.('command-ack', broadcastCommandResult);
   };
 
