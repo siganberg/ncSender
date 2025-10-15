@@ -969,7 +969,7 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     if (axisLabelsGroup) {
       scene.remove(axisLabelsGroup);
     }
-    axisLabelsGroup = createDynamicAxisLabels(bounds);
+    axisLabelsGroup = createDynamicAxisLabels(gcodeBounds);
     scene.add(axisLabelsGroup);
   } catch (error) {
     console.error('Error rendering G-code:', error);

@@ -28,9 +28,10 @@ const DEFAULT_SETTINGS = {
   lastLoadedFile: null,
   enableStateDeltaBroadcast: true,
   probe: {
-    type: '3d-probe',
+    type: 'autozero-touch',
     probingAxis: 'Z',
-    selectedCorner: null,
+    selectedCorner: 'BottomLeft',
+    typeInitialized: false,
     requireConnectionTest: false,
     bitDiameters: [2, 3.175, 6.35, 9.525, 12],
     '3d-probe': {
@@ -97,6 +98,29 @@ export function readSettings() {
     const parsed = JSON.parse(raw);
     const parsedObject = parsed && typeof parsed === 'object' ? parsed : {};
     const merged = { ...DEFAULT_SETTINGS, ...parsedObject };
+
+    const parsedProbe = parsedObject.probe && typeof parsedObject.probe === 'object'
+      ? parsedObject.probe
+      : {};
+
+    const mergedProbe = {
+      ...DEFAULT_SETTINGS.probe,
+      ...parsedProbe,
+      '3d-probe': {
+        ...DEFAULT_SETTINGS.probe['3d-probe'],
+        ...(parsedProbe['3d-probe'] || {})
+      },
+      'standard-block': {
+        ...DEFAULT_SETTINGS.probe['standard-block'],
+        ...(parsedProbe['standard-block'] || {})
+      }
+    };
+
+    if (mergedProbe.typeInitialized !== true && mergedProbe.type === '3d-probe') {
+      mergedProbe.type = 'autozero-touch';
+    }
+
+    merged.probe = mergedProbe;
 
     const parsedConnection = parsedObject.connection;
     const hasCustomConnection = parsedConnection && typeof parsedConnection === 'object';

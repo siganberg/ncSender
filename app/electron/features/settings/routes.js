@@ -157,7 +157,6 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
       }
 
       const savedSettings = saveSettings(mergedSettings);
-      log('Settings updated:', mergedSettings);
 
       const broadcastPayload = { ...updates };
       if (broadcastPayload.connection?.type) {

@@ -394,7 +394,7 @@ const emit = defineEmits<{
 }>();
 
 // Probe state
-const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch'>('3d-probe');
+const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch'>('autozero-touch');
 const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
@@ -672,6 +672,12 @@ const applyAutoZeroSideDefault = (axis: string) => {
   selectedSide.value = null;
 };
 
+const applyCornerDefault = (axis: string) => {
+  if (['XYZ', 'XY'].includes(axis) && !selectedCorner.value) {
+    selectedCorner.value = 'BottomLeft';
+  }
+};
+
 // Watchers for probe settings
 watch(() => probeType.value, async (value) => {
   // Check if current probing axis is available for the new probe type
@@ -681,18 +687,20 @@ watch(() => probeType.value, async (value) => {
 
   if (!isInitialLoad) {
     try {
-      await updateSettings({ probe: { type: value } });
+      await updateSettings({ probe: { type: value, typeInitialized: true } });
     } catch (error) {
       console.error('[ProbeDialog] Failed to save probe type setting', JSON.stringify({ error: error.message }));
     }
   }
 
   applyAutoZeroSideDefault(probingAxis.value);
+  applyCornerDefault(probingAxis.value);
 });
 
 watch(() => probingAxis.value, async (value) => {
   // Reset side selection when switching probing axis
   applyAutoZeroSideDefault(value);
+  applyCornerDefault(value);
 
   if (!isInitialLoad) {
     try {
@@ -754,6 +762,10 @@ watch(() => props.show, async (isShown) => {
         if (settings.probe?.selectedCorner) {
           selectedCorner.value = settings.probe.selectedCorner;
         }
+        const shouldDefaultProbeType = settings.probe?.typeInitialized !== true && settings.probe?.type === '3d-probe';
+        if (shouldDefaultProbeType) {
+          probeType.value = 'autozero-touch';
+        }
         if (typeof settings.probe?.['3d-probe']?.ballPointDiameter === 'number') {
           ballPointDiameter.value = settings.probe['3d-probe'].ballPointDiameter;
           originalValues.value.ballPointDiameter = settings.probe['3d-probe'].ballPointDiameter;
@@ -806,6 +818,8 @@ watch(() => props.show, async (isShown) => {
 
     // Settings are now loaded, allow visualizer to render
     settingsLoaded.value = true;
+
+    applyCornerDefault(probingAxis.value);
 
     // Allow watchers to save after initial load
     setTimeout(() => {
