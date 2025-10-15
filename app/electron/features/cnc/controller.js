@@ -39,6 +39,8 @@ export class CNCController extends EventEmitter {
       timeoutMs: 500,
       onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
     });
+
+    this.lastStatusLogTs = 0;
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -171,6 +173,12 @@ export class CNCController extends EventEmitter {
   }
 
   parseStatusReport(data) {
+    const now = Date.now();
+    if (now - (this.lastStatusLogTs || 0) >= 1000) {
+      log('[status-report raw]', data);
+      this.lastStatusLogTs = now;
+    }
+
     const parts = data.substring(1, data.length - 1).split('|');
     // Start with previous status to preserve all fields, but ensure it's a clean copy
     let newStatus;
@@ -180,6 +188,10 @@ export class CNCController extends EventEmitter {
       console.warn('Error cloning lastStatus, starting fresh:', error.message);
       newStatus = {};
     }
+
+    // Default probe state resets each report unless explicitly set
+    newStatus.probeActive = false;
+    newStatus.Pn = '';
 
     // Update machine state (always present) - extract state name before colon
     newStatus.status = parts[0].split(':')[0];
@@ -228,8 +240,9 @@ export class CNCController extends EventEmitter {
         }
       } else if (key === 'Pn') {
         // Pin state: P=Probe, X/Y/Z=Limit switches, etc.
-        newStatus.probeActive = value ? value.includes('P') : false;
-        newStatus.Pn = value;
+        const pins = value || '';
+        newStatus.probeActive = pins.includes('P');
+        newStatus.Pn = pins;
       } else if (key && value) {
         newStatus[key] = value;
       }
