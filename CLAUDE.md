@@ -56,6 +56,7 @@ This file contains development preferences and patterns to follow when working o
 ## Git Release Note
 
 - Everytime I ask to create a git release note, start from the last tag to the head.
+- If latest tag is on the same head, use the prior tag.
 - Always make the release note, focus on users not developers.
 - Add emoji on the categories.
 - Output a copy/paste format.

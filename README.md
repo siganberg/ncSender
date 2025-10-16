@@ -10,6 +10,7 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 - Live console with command history and real‑time GrblHAL controls (hold, resume, soft reset).
 - 3D toolpath preview with progress tracking.
 - Workspace selection (G54–G59) and homing prompts.
+- Metric and imperial units support with automatic conversion.
 - Firmware settings browser for GrblHAL (read/submit, import/export).
 - Safe job controls: pause before stop, resume.
 - Dead-man switch safety feature for jogging operations.
@@ -18,7 +19,6 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 
 ## ⚠️ Current Limitations
 
-- **Metric Only**: ncSender currently only supports metric units (millimeters). Imperial units (inches) are not yet implemented.
 - **Limit Switches Required**: Machines without physical limit switches are not yet supported, as some functionality relies on machine coordinate movement.
 - **GRBL Compatibility**: Although ncSender may work with GRBL, it has not been thoroughly tested. Use with caution.
 - **Hardware Tested**: ncSender has only been tested with the Sienci SLEB-EXT board (included with AltMill CNC) running grblHAL or sienciHAL firmware.
