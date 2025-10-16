@@ -52,6 +52,7 @@ export function createServerContext() {
     const isProbing = serverState.machineState?.isProbing === true;
     const jobLoadedStatus = serverState.jobLoaded?.status;
     const jobIsRunning = jobLoadedStatus === 'running';
+    const useDoorAsPause = getSetting('useDoorAsPause') === true;
 
     if (!connected) {
       return 'connecting';
@@ -89,7 +90,7 @@ export function createServerContext() {
     }
 
     if (machineStatus === 'door') {
-      return 'door';
+      return useDoorAsPause ? 'hold' : 'door';
     }
 
     if (machineStatus === 'check') {

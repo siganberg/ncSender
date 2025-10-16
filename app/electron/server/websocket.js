@@ -256,10 +256,11 @@ export function createWebSocketLayer({
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const commandValue = translation.command;
 
+    const resolvedDisplayCommand = displayCommand || translation.displayCommand || commandValue;
     const commandMeta = {
       id: normalizedCommandId,
       command: commandValue,
-      displayCommand: displayCommand || translation.displayCommand || commandValue,
+      displayCommand: formatCommandText(resolvedDisplayCommand),
       timestamp: new Date().toISOString(),
       meta: normalizedMeta,
       completesCommandId: completesCommandId ?? null

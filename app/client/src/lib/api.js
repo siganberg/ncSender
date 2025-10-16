@@ -27,7 +27,10 @@ class NCClient {
       [String.fromCharCode(0x9C)]: '\\x9C; (Spindle Speed Override +1%)',
       [String.fromCharCode(0x9D)]: '\\x9D; (Spindle Speed Override -1%)',
       [String.fromCharCode(0x85)]: '\\x85; (Jog Cancel)',
-      [String.fromCharCode(0x18)]: '\\x18; (Soft Reset)'
+      [String.fromCharCode(0x84)]: '\\x84; (Safety Door)',
+      [String.fromCharCode(0x18)]: '\\x18; (Soft Reset)',
+      '!': '! (Feed Hold)',
+      '~': '~ (Cycle Start/Resume)'
     };
     return realTimeCommands[command] || command;
   }
@@ -720,6 +723,7 @@ class NCClient {
 
     return await this.sendCommandViaWebSocket({
       command,
+      displayCommand: this.describeCommand(command),
       meta: { jobControl: true }
     });
   }

@@ -3,6 +3,7 @@ import { api } from '@/lib/api.js';
 import { useAppStore } from '@/composables/use-app-store';
 import { keyBindingStore } from './key-binding-store';
 import { jogStart, jogStop, jogHeartbeat, jogStep } from '../jog/api';
+import { getSettings } from '@/lib/settings-store.js';
 
 const CONTINUOUS_DISTANCE_MM = 3000;
 const HEARTBEAT_INTERVAL_MS = 250;
@@ -24,12 +25,12 @@ export const DIAGONAL_JOG_ACTIONS: Record<string, { xDir: 1 | -1; yDir: 1 | -1 }
 };
 
 const jogActionLabels: Record<string, string> = {
-  JogXPlus: 'Jog X+',
-  JogXMinus: 'Jog X-',
-  JogYPlus: 'Jog Y+',
-  JogYMinus: 'Jog Y-',
-  JogZPlus: 'Jog Z+',
-  JogZMinus: 'Jog Z-',
+  JogXPlus: 'Jog X+ (Right)',
+  JogXMinus: 'Jog X- (Left)',
+  JogYPlus: 'Jog Y+ (Top)',
+  JogYMinus: 'Jog Y- (Bottom)',
+  JogZPlus: 'Jog Z+ (Up)',
+  JogZMinus: 'Jog Z- (Down)',
   JogXPlusYPlus: 'Jog X+ Y+ (Top Right)',
   JogXPlusYMinus: 'Jog X+ Y- (Bottom Right)',
   JogXMinusYPlus: 'Jog X- Y+ (Top Left)',
@@ -205,6 +206,92 @@ export function registerCoreKeyboardActions(): void {
       handler: () => performDiagonalJogStep(meta.xDir, meta.yDir),
       isEnabled: canJog
     });
+  });
+
+  // Job Control Actions
+  const jobGroup = 'Job';
+
+  const canStartOrResume = () => {
+    if (!keyBindingStore.isActive.value) {
+      return false;
+    }
+    const { isConnected, serverState, senderStatus } = store;
+    const status = senderStatus.value;
+    const hasJob = Boolean(serverState.jobLoaded?.filename);
+    const isOnHold = status === 'hold' || status === 'door';
+
+    return isConnected.value && hasJob && (status === 'idle' || isOnHold);
+  };
+
+  const canPause = () => {
+    if (!keyBindingStore.isActive.value) {
+      return false;
+    }
+    const { isConnected, serverState, senderStatus } = store;
+    const status = senderStatus.value;
+    const hasJob = Boolean(serverState.jobLoaded?.filename);
+
+    return isConnected.value && hasJob && (status === 'running' || status === 'tool-changing');
+  };
+
+  const canStop = () => {
+    if (!keyBindingStore.isActive.value) {
+      return false;
+    }
+    const { isJobRunning } = store;
+    return isJobRunning.value;
+  };
+
+  commandRegistry.register({
+    id: 'JobStart',
+    label: 'Start / Resume Job',
+    group: jobGroup,
+    description: 'Start or resume the current G-code job',
+    handler: async () => {
+      try {
+        const status = store.senderStatus.value;
+        const isOnHold = status === 'hold' || status === 'door';
+
+        if (isOnHold) {
+          await api.controlGCodeJob('resume');
+        } else if (store.serverState.jobLoaded?.filename) {
+          await api.startGCodeJob(store.serverState.jobLoaded.filename);
+        }
+      } catch (error) {
+        console.error('Failed to start/resume job:', error);
+      }
+    },
+    isEnabled: canStartOrResume
+  });
+
+  commandRegistry.register({
+    id: 'JobPause',
+    label: 'Pause Job',
+    group: jobGroup,
+    description: 'Pause the running G-code job',
+    handler: async () => {
+      try {
+        await api.controlGCodeJob('pause');
+      } catch (error) {
+        console.error('Failed to pause job:', error);
+      }
+    },
+    isEnabled: canPause
+  });
+
+  commandRegistry.register({
+    id: 'JobStop',
+    label: 'Stop Job',
+    group: jobGroup,
+    description: 'Stop the running G-code job',
+    handler: async () => {
+      try {
+        await api.stopGCodeJob();
+      } catch (error) {
+        console.error('Failed to stop job:', error);
+      }
+    },
+    isEnabled: canStop
   });
 
   coreActionsRegistered = true;

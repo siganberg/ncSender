@@ -345,12 +345,9 @@ watch(activeTab, async (tab) => {
   } else if (tab === 'terminal') {
     await nextTick();
     measureTerminalRowHeight();
-    await refreshTerminalCount();
-    if (autoScroll.value && consoleOutput.value) {
-      const el = consoleOutput.value;
-      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (autoScroll.value && scrollerRef.value) {
+      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
-    updateTerminalVisibleRange();
   }
 });
 
@@ -490,24 +487,12 @@ const getStatusIcon = (line) => {
 watch(autoScroll, (newValue) => {
   if (newValue) {
     nextTick(() => {
-      if (consoleOutput.value) {
-        const el = consoleOutput.value;
-        el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-        requestAnimationFrame(() => updateTerminalVisibleRange());
+      if (scrollerRef.value) {
+        scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
       }
     });
   }
 });
-
-watch(() => props.lines, async () => {
-  if (autoScroll.value) {
-    await nextTick();
-    if (consoleOutput.value) {
-      const el = consoleOutput.value;
-      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-    }
-  }
-}, { deep: true });
 
 const terminalRowHeight = ref(24);
 function measureTerminalRowHeight() {

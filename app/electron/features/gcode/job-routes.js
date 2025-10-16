@@ -87,6 +87,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       if (isActiveMotion && pauseBeforeStop > 0) {
         try {
           await cncController.sendCommand('!', {
+            displayCommand: '! (Feed Hold)',
             meta: { jobControl: true }
           });
         } catch (error) {
@@ -100,6 +101,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       if (isActiveMotion) {
         try {
           await cncController.sendCommand('\x18', {
+            displayCommand: '\\x18 (Soft Reset)',
             meta: { jobControl: true }
           });
         } catch (error) {
@@ -189,15 +191,8 @@ export class GCodeJobProcessor {
     this.isRunning = false;
     this.isPaused = false;
 
-    // Send soft reset to controller
-    try {
-      await this.cncController.sendCommand('\x18', {
-        meta: { jobControl: true }
-      });
-      log('Soft reset sent to controller');
-    } catch (error) {
-      log('Error sending soft reset:', error?.message || error);
-    }
+    // Note: Soft reset is sent by the caller (job-routes.js /stop endpoint)
+    // Don't send it here to avoid duplicate commands
 
     // Trigger completion callbacks when manually stopped
     this.triggerCompletion('stopped');

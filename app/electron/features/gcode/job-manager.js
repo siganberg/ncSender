@@ -29,10 +29,9 @@ class JobProcessorManager {
       broadcast,
       { progressProvider, ...options }
     );
-    await this.currentJob.start();
-    log('Job started:', filename);
 
     // Listen for job completion to clear the reference
+    // Register this BEFORE starting so it's always set up
     this.currentJob.onComplete((reason) => {
       log('Job completed, clearing reference');
       const wasRunning = this.currentJob !== null;
@@ -48,6 +47,9 @@ class JobProcessorManager {
         this.onJobCompleteCallback(reason, finalJobStatus);
       }
     });
+
+    await this.currentJob.start();
+    log('Job started:', filename);
 
     return this.currentJob;
   }
@@ -74,7 +76,7 @@ class JobProcessorManager {
     }
     this.currentJob.stop();
     log('Job stopped');
-    this.currentJob = null;
+    // Don't set this.currentJob = null here - the onComplete callback handles cleanup
   }
 
   forceReset() {
