@@ -582,6 +582,18 @@
       </div>
     </div>
   </Dialog>
+
+  <!-- Workspace Auto-Switch Dialog -->
+  <Dialog v-if="showWorkspaceMismatchDialog" @close="handleWorkspaceMismatchConfirm" :show-header="false" size="small" :z-index="10001">
+    <ConfirmPanel
+      title="Switch Workspace"
+      :message="`The loaded program uses ${detectedWorkspace}. Switching from ${workspace} to ${detectedWorkspace} to ensure accurate bounds checking and prevent out-of-limit movements.`"
+      :show-cancel="false"
+      confirm-text="Confirm"
+      variant="primary"
+      @confirm="handleWorkspaceMismatchConfirm"
+    />
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -592,6 +604,7 @@ import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
 import RightPanel from './shell/RightPanel.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
+import ConfirmPanel from './components/ConfirmPanel.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import { api } from './lib/api.js';
 import { getSettings } from './lib/settings-store.js';
@@ -612,6 +625,8 @@ const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView 
 const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'top');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
+const showWorkspaceMismatchDialog = ref(false);
+const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
@@ -638,6 +653,15 @@ const handleWorkspaceChange = async (newWorkspace: string) => {
   } catch (error) {
     console.error('Failed to change workspace:', error?.message || error);
   }
+};
+
+// Handle workspace auto-switch confirmation
+const handleWorkspaceMismatchConfirm = async () => {
+  if (detectedWorkspace.value) {
+    await handleWorkspaceChange(detectedWorkspace.value);
+  }
+  showWorkspaceMismatchDialog.value = false;
+  detectedWorkspace.value = '';
 };
 
 watch(
@@ -684,6 +708,14 @@ watch(
     if (Number.isFinite(newStep) && newStep > 0 && jogConfig.stepSize !== newStep) {
       jogConfig.stepSize = newStep;
     }
+  }
+);
+
+// Debug watcher for status.tool
+watch(
+  () => status.tool,
+  (newTool, oldTool) => {
+    console.log('[App.vue] status.tool changed from', oldTool, 'to', newTool);
   }
 );
 
@@ -1640,6 +1672,14 @@ onMounted(async () => {
   // Note: WebSocket event listeners and state management are now
   // centralized in the store (see composables/use-app-store.ts)
   // and initialized in main.ts before the app mounts
+
+  // Listen for gcode-updated events to check workspace mismatch
+  api.onGCodeUpdated((data: { filename: string; content: string; detectedWorkspace?: string; timestamp: string }) => {
+    if (data.detectedWorkspace && data.detectedWorkspace !== workspace.value) {
+      detectedWorkspace.value = data.detectedWorkspace;
+      showWorkspaceMismatchDialog.value = true;
+    }
+  });
 });
 
 // Watch for job changes to reset viewport

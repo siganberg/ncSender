@@ -91,21 +91,41 @@ export function createToolRoutes(cncController, serverState) {
         originalWorkPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
       };
 
+      let commandsExecuted = 0;
       for (const command of commands) {
-        await cncController.sendCommand(command, { meta });
+        try {
+          await cncController.sendCommand(command, { meta });
+          commandsExecuted++;
+        } catch (error) {
+          // If queue was flushed (e.g., user pressed Stop/soft reset), treat as intentional cancellation
+          if (error.code === 'COMMAND_FLUSHED') {
+            log('Tool change cancelled by user (queue flush)');
+            return res.json({
+              success: true,
+              cancelled: true,
+              toolNumber: parsedTool,
+              commandsExecuted,
+              message: 'Tool change cancelled by user'
+            });
+          }
+          throw error;
+        }
       }
 
       res.json({
         success: true,
         toolNumber: parsedTool,
-        commandsExecuted: commands.length,
+        commandsExecuted,
         workPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
       });
     } catch (error) {
       log('Error executing tool change macro:', error);
+      log('Error stack:', error.stack);
+      log('Tool number:', req.body);
       res.status(500).json({
         error: 'Failed to execute tool change macro',
-        message: error.message
+        message: error.message,
+        details: error.stack
       });
     }
   });

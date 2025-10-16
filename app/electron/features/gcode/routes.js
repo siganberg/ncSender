@@ -7,6 +7,25 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
+function detectWorkspace(gcodeContent) {
+  const lines = gcodeContent.split('\n');
+  const workspacePattern = /\b(G5[4-9])\b/i;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('(') || trimmed.startsWith(';')) {
+      continue;
+    }
+
+    const match = trimmed.match(workspacePattern);
+    if (match) {
+      return match[1].toUpperCase();
+    }
+  }
+
+  return null;
+}
+
 export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
   const router = Router();
 
@@ -45,10 +64,14 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Save to settings for persistence
       saveSettings({ lastLoadedFile: originalName });
 
+      // Detect workspace from G-code content
+      const detectedWorkspace = detectWorkspace(content);
+
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
         filename: originalName,
         content: content,
+        detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
       };
       broadcast('gcode-updated', gcodeMessage);
@@ -139,10 +162,14 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Save to settings for persistence
       saveSettings({ lastLoadedFile: filename });
 
+      // Detect workspace from G-code content
+      const detectedWorkspace = detectWorkspace(content);
+
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
         filename: filename,
         content: content,
+        detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
       };
       broadcast('gcode-updated', gcodeMessage);
