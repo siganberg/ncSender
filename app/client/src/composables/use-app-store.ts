@@ -374,19 +374,14 @@ const tryLoadMachineDimensionsOnce = async () => {
     const yVal = parseFloat(String(firmware?.settings?.['131']?.value ?? ''));
     const zVal = parseFloat(String(firmware?.settings?.['132']?.value ?? ''));
 
-    console.log(`[Store] Raw firmware values: $130=${xVal}, $131=${yVal}, $132=${zVal}`);
-
     if (!Number.isNaN(xVal) && xVal > 0) {
       gridSizeX.value = xVal;
-      console.log(`[Store] Set gridSizeX = ${xVal}`);
     }
     if (!Number.isNaN(yVal) && yVal > 0) {
       gridSizeY.value = yVal;
-      console.log(`[Store] Set gridSizeY = ${yVal}`);
     }
     if (!Number.isNaN(zVal) && zVal > 0) {
       zMaxTravel.value = zVal;
-      console.log(`[Store] Set zMaxTravel = ${zVal}`);
     }
 
     const dirInvertRaw = parseInt(String(firmware?.settings?.['3']?.value ?? ''), 10);
