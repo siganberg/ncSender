@@ -67,7 +67,7 @@
       "icon": "assets/icon.ico"
     },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icons",
       "category": "Office",
       "target": [
         "deb",
