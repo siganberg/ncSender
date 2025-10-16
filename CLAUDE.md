@@ -52,3 +52,10 @@ This file contains development preferences and patterns to follow when working o
 - **Avoid**: Adding "🤖 Generated with [Claude Code]" or "Co-Authored-By: Claude" lines
 - **Format**: Use standard git commit format with summary line and bullet points for details
 - **Focus**: Describe what was changed and why, not who made the change
+
+## Git Release Note
+
+- Everytime I ask to create a git release note, start from the last tag to the head.
+- Always make the release note, focus on users not developers.
+- Add emoji on the categories.
+- Output a copy/paste format.
