@@ -620,6 +620,18 @@
       @confirm="handleWorkspaceMismatchConfirm"
     />
   </Dialog>
+
+  <!-- Units Change Confirmation Dialog -->
+  <Dialog v-if="showUnitsConfirmDialog" @close="showUnitsConfirmDialog = false" :show-header="false" size="small" :z-index="10001">
+    <ConfirmPanel
+      title="Change Units"
+      :message="`You are switching to ${pendingUnitsChange === 'imperial' ? 'Imperial (inches)' : 'Metric (mm)'}. Your machine will also be configured to use ${pendingUnitsChange === 'imperial' ? 'inches' : 'millimeters'}.`"
+      :show-cancel="false"
+      confirm-text="OK"
+      variant="primary"
+      @confirm="confirmUnitsChange"
+    />
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -744,6 +756,8 @@ const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
 // Units preference setting
 const unitsPreference = ref(initialSettings?.unitsPreference ?? 'metric');
+const showUnitsConfirmDialog = ref(false);
+const pendingUnitsChange = ref<'metric' | 'imperial' | null>(null);
 
 // Connection settings (from settings store)
 const initialConnection = initialSettings?.connection;
@@ -1460,11 +1474,34 @@ watch(() => consoleSettings.debugLogging, async (newValue) => {
 
 // Set units preference
 const setUnits = async (units) => {
+  pendingUnitsChange.value = units;
+  showUnitsConfirmDialog.value = true;
+};
+
+const confirmUnitsChange = async () => {
+  const units = pendingUnitsChange.value;
+  if (!units) return;
+
   unitsPreference.value = units;
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     unitsPreference: units
   });
+
+  // Send G20 (imperial) or G21 (metric) command to controller
+  const gcode = units === 'imperial' ? 'G20' : 'G21';
+  const displayCommand = units === 'imperial' ? 'G20 (Switching to imperial)' : 'G21 (Switching to metric)';
+  try {
+    await api.sendCommandViaWebSocket({
+      command: gcode,
+      displayCommand: displayCommand
+    });
+  } catch (error) {
+    console.error('Failed to send unit command to controller:', error);
+  }
+
+  showUnitsConfirmDialog.value = false;
+  pendingUnitsChange.value = null;
 };
 
 const validateIP = () => {
