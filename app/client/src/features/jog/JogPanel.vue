@@ -1031,10 +1031,10 @@ const goToPark = async () => {
     const safeZ = safeZCommand.value;
     const xStr = formatMachineCoord(x);
     const yStr = formatMachineCoord(y);
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${safeZ}`, displayCommand: `G53 G90 G0 Z${safeZ}` });
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G90 G0 X${xStr} Y${yStr}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${safeZ}`, displayCommand: `G53 G21 G90 G0 Z${safeZ}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G21 G90 G0 X${xStr} Y${yStr}` });
     const zStr = formatMachineCoord(z);
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${zStr}`, displayCommand: `G53 G90 G0 Z${zStr}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${zStr}`, displayCommand: `G53 G21 G90 G0 Z${zStr}` });
   } catch (_err) {
     // Network or other errors: ignore during active press
     return;
@@ -1426,9 +1426,9 @@ const goToCorner = async (corner: CornerType) => {
 
   try {
     // Always move to safe Z height first
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 Z${safeZ}`, displayCommand: `G53 G90 G0 Z${safeZ}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${safeZ}`, displayCommand: `G53 G21 G90 G0 Z${safeZ}` });
 
-    await api.sendCommandViaWebSocket({ command: `G53 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G90 G0 X${xStr} Y${yStr}` });
+    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G21 G90 G0 X${xStr} Y${yStr}` });
   } catch (error) {
     console.error('Failed to move to corner:', error);
   }
