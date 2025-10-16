@@ -5,16 +5,6 @@
       <p>Enable the <code>keyboardShortcuts</code> feature flag to configure bindings.</p>
     </div>
     <div v-else class="keyboard-content">
-      <section class="settings-section">
-        <header>
-          <h3>Keyboard Control</h3>
-          <ToggleSwitch
-            :model-value="shortcutsEnabled"
-            @update:modelValue="handleToggleShortcuts"
-          />
-        </header>
-      </section>
-
       <p v-if="captureError" class="error">{{ captureError }}</p>
 
       <div class="bindings-content" :class="{ disabled: !shortcutsEnabled }">
@@ -25,6 +15,13 @@
             placeholder="Search Actions..."
             class="search-input"
           />
+          <div class="toggle-container">
+            <label class="toggle-label">Enable Keyboard</label>
+            <ToggleSwitch
+              :model-value="shortcutsEnabled"
+              @update:modelValue="handleToggleShortcuts"
+            />
+          </div>
         </div>
 
         <div class="bindings-table-container">
@@ -101,7 +98,7 @@
             and press any key combination. Existing assignments will be replaced automatically.
           </span>
           <span v-else class="footer-description">Enable keyboard control to edit bindings.</span>
-          <button class="btn" :disabled="isResetting" @click="resetToDefaults">
+          <button class="btn btn-reset" :disabled="isResetting" @click="resetToDefaults">
             Reset to defaults
           </button>
         </div>
@@ -302,20 +299,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 0 0 0 0;
-}
-
-.settings-section {
-  background: var(--color-surface);
-  border-radius: var(--radius-medium);
   padding: 0;
-  box-shadow: var(--shadow-flat);
-  border: 1px solid var(--color-border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-md);
-  flex-shrink: 0;
-  margin: 0 var(--gap-md);
 }
 
 .bindings-content {
@@ -361,12 +345,18 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
-.settings-section header {
+.toggle-container {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--gap-sm);
-  padding: 10px;
+  flex-shrink: 0;
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .btn {
@@ -383,6 +373,11 @@ onBeforeUnmount(() => {
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.btn-reset {
+  padding: 10px 20px;
+  font-size: 1rem;
 }
 
 .btn-secondary {
@@ -425,8 +420,8 @@ onBeforeUnmount(() => {
 
 .error {
   color: var(--color-danger, #f87171);
-  margin: 0 var(--gap-md);
-  padding: var(--gap-sm);
+  margin: 0 var(--gap-md) var(--gap-md) var(--gap-md);
+  padding: var(--gap-sm) var(--gap-md);
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.3);
   border-radius: var(--radius-small);
@@ -478,6 +473,11 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
+.bindings-table td:nth-child(3) {
+  width: 382px;
+  vertical-align: middle;
+}
+
 .bindings-table thead {
   position: sticky;
   top: 0;
@@ -516,6 +516,7 @@ onBeforeUnmount(() => {
   padding: var(--gap-md);
   vertical-align: top;
 }
+
 
 .bindings-table td:first-child {
   padding-left: var(--gap-md);
@@ -560,13 +561,20 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
-  padding: 4px 8px;
+  padding: 8px 16px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .binding-empty {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 8px 16px;
   color: var(--color-text-secondary);
   font-style: italic;
 }
