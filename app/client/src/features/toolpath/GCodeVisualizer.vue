@@ -81,7 +81,7 @@
             'long-press-triggered': toolPress[t]?.triggered,
             'blink-border': toolPress[t]?.blinking
           }"
-          :title="currentTool === t ? `Tool T${t} (Current)` : `Tool T${t} (Hold to change)`"
+          :title="currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`"
           @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
@@ -1055,7 +1055,11 @@ const handlePause = async () => {
 
 const handleStop = async () => {
   try {
-    await api.stopGCodeJob();
+    // Send soft reset to stop/cancel any active operation
+    await api.sendCommandViaWebSocket({
+      command: '\x18',
+      displayCommand: '\\x18 (Soft Reset)'
+    });
   } catch (error) {
     console.error('Error stopping job:', error);
   }
@@ -1537,7 +1541,7 @@ const DELAY_BEFORE_VISUAL_MS = 150;
 
 const startToolPress = (toolNumber: number, _evt?: Event) => {
   if (_evt) _evt.preventDefault();
-  if (isToolChanging.value || props.currentTool === toolNumber) return;
+  if (isToolChanging.value) return;
 
   if (!toolPress.value[toolNumber]) {
     toolPress.value[toolNumber] = { start: 0, progress: 0, raf: undefined, active: false, triggered: false, blinking: false };
@@ -1566,7 +1570,9 @@ const startToolPress = (toolNumber: number, _evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
       state.triggered = true;
-      sendToolChangeMacro(toolNumber);
+      // If this is the current tool, send T98 to unload, otherwise send the tool number
+      const toolToLoad = props.currentTool === toolNumber ? 98 : toolNumber;
+      sendToolChangeMacro(toolToLoad);
       state.progress = 0;
       state.active = false;
       return;

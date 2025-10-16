@@ -711,14 +711,6 @@ watch(
   }
 );
 
-// Debug watcher for status.tool
-watch(
-  () => status.tool,
-  (newTool, oldTool) => {
-    console.log('[App.vue] status.tool changed from', oldTool, 'to', newTool);
-  }
-);
-
 // Immediately reflect Default G-Code Preview changes in the live viewport
 watch(defaultView, (newView) => {
   viewport.value = newView;
