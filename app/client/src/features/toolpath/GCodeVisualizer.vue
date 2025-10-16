@@ -1943,7 +1943,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
   opacity: 1;
 }
 
-.tools-legend__item.long-press-triggered {
+.tools-legend__item.long-press-triggered:not(.active) {
   background: var(--color-surface-muted) !important;
   color: var(--color-text-primary) !important;
   transform: none !important;
