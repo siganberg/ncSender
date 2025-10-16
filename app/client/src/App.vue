@@ -211,9 +211,12 @@
             </div>
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
-              <div class="color-picker-container">
-                <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)" @change="saveColors">
-                <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)" @change="saveColors">
+              <div class="color-controls">
+                <div class="color-picker-container">
+                  <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)" @change="saveColors">
+                  <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)" @change="saveColors">
+                </div>
+                <button class="reset-colors-button" @click="resetColors">Reset</button>
               </div>
             </div>
           </div>
@@ -1397,6 +1400,21 @@ const saveColors = async () => {
   });
 };
 
+const resetColors = async () => {
+  const defaultAccent = '#1abc9c';
+  const defaultGradient = '#34d399';
+
+  accentColor.value = defaultAccent;
+  gradientColor.value = defaultGradient;
+  applyColors();
+
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    accentColor: defaultAccent,
+    gradientColor: defaultGradient
+  });
+};
+
 // Watch numberOfTools and save changes (server will broadcast to all clients)
 watch(numberOfTools, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -1997,6 +2015,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 /* Color Picker */
+.color-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
 .color-picker-container {
   display: flex;
   align-items: center;
@@ -2028,6 +2052,22 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .color-picker:hover::-webkit-color-swatch {
   border-color: var(--color-accent);
   transform: scale(1.05);
+}
+
+.reset-colors-button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reset-colors-button:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-muted);
 }
 
 .color-preview {
