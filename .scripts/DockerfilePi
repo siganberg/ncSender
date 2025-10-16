@@ -28,6 +28,8 @@ COPY . .
 WORKDIR /app/client
 RUN npm ci
 WORKDIR /app
+# Skip PhantomJS download (not needed for runtime, only used by dev dependency)
+ENV PHANTOMJS_SKIP_DOWNLOAD=true
 RUN npm ci
 RUN npm run build:client
 RUN rm -rf dist-electron
