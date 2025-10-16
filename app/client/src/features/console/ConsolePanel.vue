@@ -536,9 +536,11 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.lines, async () => {
-  if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
+  if (activeTab.value === 'terminal' && autoScroll.value) {
     await nextTick();
-    scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
+    if (scrollerRef.value) {
+      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
+    }
   }
 }, { deep: true });
 </script>
