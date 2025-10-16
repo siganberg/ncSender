@@ -3,6 +3,7 @@ import { api } from '@/lib/api.js';
 import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.js';
 import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings } from '@/lib/settings-store.js';
+import { debugLog, debugWarn } from '@/lib/debug-logger';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -342,7 +343,7 @@ const addResponseLine = (data: string) => {
 // Helper to try loading machine dimensions once
 const tryLoadMachineDimensionsOnce = async () => {
   if (!status.connected || !websocketConnected.value) {
-    console.log('[Store] Skipping machine dimensions load: not connected');
+    debugLog('[Store] Skipping machine dimensions load: not connected');
     if (machineDimsRetryTimeout) {
       clearTimeout(machineDimsRetryTimeout);
       machineDimsRetryTimeout = null;
@@ -353,14 +354,14 @@ const tryLoadMachineDimensionsOnce = async () => {
     return;
   }
 
-  console.log('[Store] Loading machine dimensions from firmware settings...');
+  debugLog('[Store] Loading machine dimensions from firmware settings...');
   try {
     // Read from cached firmware data served by the backend (no controller calls)
     // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
     const firmware = await api.getFirmwareSettings(false).catch(() => null as any);
 
     if (!firmware || !firmware.settings) {
-      console.warn('[Store] Firmware settings not available');
+      debugWarn('[Store] Firmware settings not available');
       if (!machineDimsRetryTimeout) {
         machineDimsRetryTimeout = setTimeout(async () => {
           machineDimsRetryTimeout = null;
@@ -419,13 +420,13 @@ const tryLoadMachineDimensionsOnce = async () => {
     }
 
     machineDimsLoaded.value = true;
-    console.log(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
+    debugLog(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
     if (machineDimsRetryTimeout) {
       clearTimeout(machineDimsRetryTimeout);
       machineDimsRetryTimeout = null;
     }
   } catch (e) {
-    console.warn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
+    debugWarn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
     if (!machineDimsRetryTimeout) {
       machineDimsRetryTimeout = setTimeout(async () => {
         machineDimsRetryTimeout = null;
@@ -459,25 +460,25 @@ const fetchAlarmDescription = async (code: number | string | undefined) => {
 // Initialize WebSocket event listeners (called once at app startup)
 export function initializeStore() {
   if (storeInitialized) {
-    console.warn('Store already initialized, skipping...');
+    debugWarn('Store already initialized, skipping...');
     return;
   }
 
-  console.log('Initializing app store and WebSocket event listeners...');
+  debugLog('Initializing app store and WebSocket event listeners...');
 
   // WebSocket connection events
   api.on('connected', () => {
-    console.log('WebSocket connected');
+    debugLog('WebSocket connected');
     websocketConnected.value = true;
   });
 
   api.on('disconnected', () => {
-    console.log('WebSocket disconnected');
+    debugLog('WebSocket disconnected');
     websocketConnected.value = false;
   });
 
   api.on('error', () => {
-    console.log('WebSocket connection error');
+    debugLog('WebSocket connection error');
     websocketConnected.value = false;
   });
 
@@ -654,12 +655,12 @@ export function initializeStore() {
   });
 
   storeInitialized = true;
-  console.log('App store initialized successfully');
+  debugLog('App store initialized successfully');
 }
 
 // Seed initial state from server (for late-joining clients)
 export async function seedInitialState() {
-  console.log('Seeding initial state from server...');
+  debugLog('Seeding initial state from server...');
 
   // Set initial WebSocket state
   if (api.ws) {
@@ -711,14 +712,14 @@ export async function seedInitialState() {
       const currentLine = serverState.jobLoaded?.currentLine;
       if (jobStatus && (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
         gcodeCompletedUpTo.value = currentLine;
-        console.log(`[Store] Restored completed line tracking from server: ${currentLine}`);
+        debugLog(`[Store] Restored completed line tracking from server: ${currentLine}`);
       }
     }
   } catch (e) {
-    console.warn('Unable to seed initial server state:', e);
+    debugWarn('Unable to seed initial server state:', e);
   }
 
-  console.log('Initial state seeded successfully');
+  debugLog('Initial state seeded successfully');
 }
 
 // Composable for components to access the store
