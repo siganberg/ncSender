@@ -495,24 +495,27 @@ const formatStepSize = (mmValue: number): string => {
   return mmValue.toString();
 };
 
+/**
+ * Helper to round feed rate to nearest 10 for imperial, or round for metric
+ */
+const roundFeedRate = (feedRateInTargetUnits: number, units: string): number => {
+  if (units === 'imperial') {
+    // Round to nearest 10 for imperial
+    return Math.round(feedRateInTargetUnits / 10) * 10;
+  }
+  return Math.round(feedRateInTargetUnits);
+};
+
 const formatFeedRateDisplay = (mmPerMin: number): string => {
   const units = appStore.unitsPreference.value;
-  if (units === 'imperial') {
-    const inPerMin = mmPerMin / 25.4;
-    // Round to nearest 10
-    return Math.round(inPerMin / 10) * 10 + '';
-  }
-  return Math.round(mmPerMin).toString();
+  const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
+  return roundFeedRate(converted, units).toString();
 };
 
 const convertFeedRateForCommand = (mmPerMin: number): number => {
   const units = appStore.unitsPreference.value;
-  if (units === 'imperial') {
-    const inPerMin = mmToInches(mmPerMin);
-    // Round to nearest 10 (same logic as dropdown display)
-    return Math.round(inPerMin / 10) * 10;
-  }
-  return Math.round(mmPerMin);
+  const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
+  return roundFeedRate(converted, units);
 };
 
 const handleFeedRateChange = (event: Event) => {

@@ -6,6 +6,26 @@ import { getSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
 import type { UnitsPreference } from '@/lib/units';
 
+/**
+ * Format timestamp with fixed width to prevent console shifting
+ * Format: HH:MM:SS AM/PM (always 11 characters)
+ */
+function formatTimestampFixedWidth(date: Date): string {
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const seconds = date.getSeconds();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 should be 12
+
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+
+  return `${hh}:${mm}:${ss} ${ampm}`;
+}
+
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
 
@@ -267,7 +287,7 @@ const addOrUpdateCommandLine = (payload: any) => {
   }
 
   // New entry - generate timestamp from payload or current time
-  const timestamp = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+  const timestamp = payload.timestamp ? formatTimestampFixedWidth(new Date(payload.timestamp)) : formatTimestampFixedWidth(new Date());
 
   const newLine: ConsoleLine = {
     id: payload.id ?? `${Date.now()}-pending`,
@@ -311,7 +331,7 @@ const addOrUpdateCommandLine = (payload: any) => {
 
 // Helper function to add response line to console
 const addResponseLine = (data: string) => {
-  const timestamp = new Date().toLocaleTimeString();
+  const timestamp = formatTimestampFixedWidth(new Date());
   const responseLine: ConsoleLine = {
     id: `response-${Date.now()}-${responseLineIdCounter++}`,
     level: 'info',

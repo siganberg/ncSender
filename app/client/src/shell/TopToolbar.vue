@@ -17,6 +17,8 @@
         >
           <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
         </select>
+        <label class="unit-label">Unit:</label>
+        <span class="unit-value">{{ unitDisplayText }}</span>
       </div>
     </div>
     <div class="toolbar__center">
@@ -49,7 +51,7 @@ import { useAppStore } from '../composables/use-app-store';
 import packageJson from '../../../package.json';
 
 const store = useAppStore();
-const { isJobRunning, isConnected, senderStatus: storeSenderStatus } = store;
+const { isJobRunning, isConnected, senderStatus: storeSenderStatus, unitsPreference } = store;
 
 const appVersion = packageJson.version;
 
@@ -105,6 +107,10 @@ const machineStateText = computed(() => {
 });
 
 const isWorkspaceDisabled = computed(() => !isConnected.value || isJobRunning.value);
+
+const unitDisplayText = computed(() => {
+  return unitsPreference.value === 'imperial' ? 'in' : 'mm';
+});
 
 const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
 const onWorkspaceChange = (e: Event) => {
@@ -198,6 +204,18 @@ const onWorkspaceChange = (e: Event) => {
   border-radius: var(--radius-small);
   padding: 4px 8px;
   font-size: 0.95rem;
+}
+
+.unit-label {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  margin-left: 12px;
+}
+
+.unit-value {
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .toolbar__actions {

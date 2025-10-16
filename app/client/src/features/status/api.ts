@@ -14,8 +14,25 @@ export const REALTIME = {
   SPINDLE_MINUS_1: String.fromCharCode(0x9D)
 };
 
+// Human-readable labels for realtime commands
+const REALTIME_LABELS: Record<string, string> = {
+  [REALTIME.FEED_RESET]: 'Feed Override: Reset to 100%',
+  [REALTIME.FEED_PLUS_10]: 'Feed Override: +10%',
+  [REALTIME.FEED_MINUS_10]: 'Feed Override: -10%',
+  [REALTIME.FEED_PLUS_1]: 'Feed Override: +1%',
+  [REALTIME.FEED_MINUS_1]: 'Feed Override: -1%',
+  [REALTIME.SPINDLE_RESET]: 'Spindle Override: Reset to 100%',
+  [REALTIME.SPINDLE_PLUS_10]: 'Spindle Override: +10%',
+  [REALTIME.SPINDLE_MINUS_10]: 'Spindle Override: -10%',
+  [REALTIME.SPINDLE_PLUS_1]: 'Spindle Override: +1%',
+  [REALTIME.SPINDLE_MINUS_1]: 'Spindle Override: -1%'
+};
+
 export function sendRealtime(command: string) {
-  return api.sendCommandViaWebSocket({ command });
+  const hex = '0x' + command.charCodeAt(0).toString(16).toUpperCase();
+  const label = REALTIME_LABELS[command] || 'Realtime command';
+  const displayCommand = `${hex} (${label})`;
+  return api.sendCommandViaWebSocket({ command, displayCommand });
 }
 
 export function zeroXY() {
