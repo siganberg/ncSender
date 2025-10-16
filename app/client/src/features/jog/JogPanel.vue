@@ -2,16 +2,16 @@
   <section class="card" :class="{ 'controls-disabled': panelDisabled }">
     <header class="card__header">
       <div class="step-selector">
-        <span class="step-label">Step</span>
+        <span class="step-label">Step ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
         <button
           v-for="value in jogConfig.stepOptions"
           :key="value"
           :class="['chip', { active: value === jogConfig.stepSize }]"
           @click="emit('update:stepSize', value)"
         >
-          {{ value }}
+          {{ formatStepSize(value) }}
         </button>
-        <span class="feed-rate-label">Feed Rate</span>
+        <span class="feed-rate-label">Feed ({{ getFeedRateUnitLabel(appStore.unitsPreference.value) }})</span>
         <select
           class="feed-rate-select"
           :value="feedRate"
@@ -22,7 +22,7 @@
             :key="rate"
             :value="rate"
           >
-            {{ rate }}
+            {{ formatFeedRateDisplay(rate) }}
           </option>
         </select>
       </div>
@@ -319,8 +319,11 @@ import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
+import { useAppStore } from '@/composables/use-app-store';
+import { formatCoordinate, getDistanceUnitLabel, getFeedRateUnitLabel, getUnitGCode, mmToInches } from '@/lib/units';
 
 const store = useJogStore();
+const appStore = useAppStore();
 
 const emit = defineEmits<{
   (e: 'update:stepSize', value: number): void;
@@ -482,6 +485,26 @@ watch(
   }
 );
 
+const formatStepSize = (mmValue: number): string => {
+  const units = appStore.unitsPreference.value;
+  if (units === 'imperial') {
+    const inches = mmToInches(mmValue);
+    // Round to nearest 0.01 (2 decimal places)
+    return (Math.round(inches * 100) / 100).toFixed(2);
+  }
+  return mmValue.toString();
+};
+
+const formatFeedRateDisplay = (mmPerMin: number): string => {
+  const units = appStore.unitsPreference.value;
+  if (units === 'imperial') {
+    const inPerMin = mmPerMin / 25.4;
+    // Round to nearest 10
+    return Math.round(inPerMin / 10) * 10 + '';
+  }
+  return Math.round(mmPerMin).toString();
+};
+
 const handleFeedRateChange = (event: Event) => {
   const select = event.target as HTMLSelectElement;
   const newRate = Number(select.value);
@@ -529,7 +552,8 @@ const pressedButtons = ref(new Set<string>());
 
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const distance = props.jogConfig.stepSize * direction;
-  const command = `$J=G21 G91 ${axis}${distance} F5000`;
+  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
+  const command = `$J=${unitGCode} G91 ${axis}${distance} F5000`;
   try {
     await jogStep({
       command,
@@ -547,7 +571,8 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
   const xDistance = props.jogConfig.stepSize * xDirection;
   const yDistance = props.jogConfig.stepSize * yDirection;
-  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F5000`;
+  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
+  const command = `$J=${unitGCode} G91 X${xDistance} Y${yDistance} F5000`;
   try {
     await jogStep({
       command,
@@ -564,8 +589,8 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
 
 const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const jogFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
-  // Ensure proper spacing between modal codes (G21 G91) for GRBL compatibility
-  const command = `$J=G21 G91 ${axis}${3000 * direction} F${jogFeedRate}`;
+  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
+  const command = `$J=${unitGCode} G91 ${axis}${3000 * direction} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -589,8 +614,8 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  // Ensure proper spacing between modal codes (G21 G91) for GRBL compatibility
-  const command = `$J=G21 G91 X${3000 * xDirection} Y${3000 * yDirection} F${feedRate.value}`;
+  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
+  const command = `$J=${unitGCode} G91 X${3000 * xDirection} Y${3000 * yDirection} F${feedRate.value}`;
   const jogId = createJogId();
   activeJogId = jogId;
 

@@ -204,6 +204,18 @@
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
+                <label class="setting-label">Units</label>
+                <div class="settings-note">
+                  Choose between Metric (mm) and Imperial (inches) for coordinates, distances, and feed rates.
+                </div>
+              </div>
+              <div class="units-toggle">
+                <button :class="['units-button', { active: unitsPreference === 'metric' }]" @click="setUnits('metric')">Metric (mm)</button>
+                <button :class="['units-button', { active: unitsPreference === 'imperial' }]" @click="setUnits('imperial')">Imperial (in)</button>
+              </div>
+            </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
                 <label class="setting-label">Enable Browser Debug Logging</label>
                 <div class="settings-note">
                   Enables console logging for debugging. Useful for troubleshooting issues.
@@ -729,6 +741,9 @@ const numberOfTools = ref(initialSettings?.numberOfTools ?? 0);
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
+
+// Units preference setting
+const unitsPreference = ref(initialSettings?.unitsPreference ?? 'metric');
 
 // Connection settings (from settings store)
 const initialConnection = initialSettings?.connection;
@@ -1443,6 +1458,15 @@ watch(() => consoleSettings.debugLogging, async (newValue) => {
   });
 });
 
+// Set units preference
+const setUnits = async (units) => {
+  unitsPreference.value = units;
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    unitsPreference: units
+  });
+};
+
 const validateIP = () => {
   if (connectionSettings.type === 'USB') {
     isValidIP.value = true;
@@ -2094,6 +2118,38 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   border-radius: var(--radius-small);
   min-width: 70px;
   text-align: center;
+}
+
+/* Units Toggle */
+.units-toggle {
+  display: flex;
+  gap: var(--gap-sm);
+}
+
+.units-button {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.units-button:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}
+
+.units-button.active {
+  background: var(--gradient-accent);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
 }
 
 /* Settings Footer */

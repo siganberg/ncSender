@@ -4,6 +4,7 @@ import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.j
 import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
+import type { UnitsPreference } from '@/lib/units';
 
 // Types
 type ConsoleStatus = 'pending' | 'success' | 'error';
@@ -154,6 +155,10 @@ const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
 const isProbing = computed(() => senderStatus.value === 'probing');
 const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
+const unitsPreference = computed<UnitsPreference>(() => {
+  const settings = getSettings();
+  return (settings?.unitsPreference as UnitsPreference) ?? 'metric';
+});
 
 // Helper function to apply status report updates
 const applyStatusReport = (report: StatusReport | null | undefined) => {
@@ -751,6 +756,7 @@ export function useAppStore() {
     isHomed,
     isProbing,
     isJobRunning,
+    unitsPreference,
 
     // Actions
     clearConsole: () => {

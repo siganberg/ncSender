@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   gradientColor: '#34d399',
   autoClearConsole: true,
   debugLogging: false,
+  unitsPreference: 'metric',
   keyboardBindings: {
     ArrowUp: 'JogYPlus',
     ArrowDown: 'JogYMinus',

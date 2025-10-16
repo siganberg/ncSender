@@ -17,8 +17,8 @@
           <div class="press-progress" :style="{ width: `${pressState['x']?.progress || 0}%` }"></div>
           <span class="axis-label">X</span>
           <div class="coord-values">
-            <div class="work-coord">{{ axisValues.x.toFixed(3) }}</div>
-            <div class="machine-coord">{{ machineValues.x.toFixed(3) }}</div>
+            <div class="work-coord">{{ formatCoordinate(axisValues.x, appStore.unitsPreference.value) }}</div>
+            <div class="machine-coord">{{ formatCoordinate(machineValues.x, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
 
@@ -49,8 +49,8 @@
           <div class="press-progress" :style="{ width: `${pressState['y']?.progress || 0}%` }"></div>
           <span class="axis-label">Y</span>
           <div class="coord-values">
-            <div class="work-coord">{{ axisValues.y.toFixed(3) }}</div>
-            <div class="machine-coord">{{ machineValues.y.toFixed(3) }}</div>
+            <div class="work-coord">{{ formatCoordinate(axisValues.y, appStore.unitsPreference.value) }}</div>
+            <div class="machine-coord">{{ formatCoordinate(machineValues.y, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
       </div>
@@ -71,8 +71,8 @@
           <div class="press-progress" :style="{ width: `${(pressState[axis]?.progress || 0)}%` }"></div>
           <span class="axis-label">{{ axis.toUpperCase() }}</span>
           <div class="coord-values">
-            <div class="work-coord">{{ axisValues[axis].toFixed(3) }}</div>
-            <div class="machine-coord">{{ machineValues[axis].toFixed(3) }}</div>
+            <div class="work-coord">{{ formatCoordinate(axisValues[axis], appStore.unitsPreference.value) }}</div>
+            <div class="machine-coord">{{ formatCoordinate(machineValues[axis], appStore.unitsPreference.value) }}</div>
           </div>
         </div>
       </div>
@@ -83,7 +83,7 @@
           <button @click="resetFeedOverride" class="control-btn control-btn--primary metric-btn" title="Reset to 100%">
             Feed ↻
           </button>
-          <span class="value">{{ status.feedRate }} mm/min</span>
+          <span class="value">{{ formatFeedRate(status.feedRate, appStore.unitsPreference.value) }} {{ getFeedRateUnitLabel(appStore.unitsPreference.value) }}</span>
         </div>
         <div class="override-control">
           <span class="override-label">{{ feedOverride }}%</span>
@@ -137,6 +137,7 @@ import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
 import { api, sendRealtime, REALTIME, zeroAxis, zeroXY } from './api';
 import { useStatusStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
+import { formatCoordinate, formatFeedRate, getFeedRateUnitLabel } from '@/lib/units';
 
 const store = useStatusStore();
 const appStore = useAppStore();

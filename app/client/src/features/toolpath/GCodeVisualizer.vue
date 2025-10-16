@@ -460,7 +460,8 @@ const rebuildGrid = (workOffset = props.workOffset) => {
     gridSizeX: resolveGridSize(props.gridSizeX),
     gridSizeY: resolveGridSize(props.gridSizeY),
     workOffset,
-    orientation: resolvedOrientation.value
+    orientation: resolvedOrientation.value,
+    units: appStore.unitsPreference.value
   });
 
   if (scene) {
@@ -538,11 +539,12 @@ const initThreeJS = () => {
   scene.add(directionalLight);
 
   // Grid with numbers and major/minor lines
-  gridGroup = createGridLines({ // 10mm spacing with numbers
+  gridGroup = createGridLines({
     gridSizeX: resolveGridSize(props.gridSizeX),
     gridSizeY: resolveGridSize(props.gridSizeY),
     workOffset: props.workOffset,
-    orientation: resolvedOrientation.value
+    orientation: resolvedOrientation.value,
+    units: appStore.unitsPreference.value
   });
   scene.add(gridGroup);
 
@@ -1371,6 +1373,11 @@ watch(isToolChanging, (nowChanging, wasChanging) => {
 
 // Watch for grid size changes to update the grid and bounds
 watch(() => [props.gridSizeX, props.gridSizeY], () => {
+  rebuildGrid(props.workOffset);
+});
+
+// Watch for units preference changes to rebuild grid with new spacing/labels
+watch(() => appStore.unitsPreference.value, () => {
   rebuildGrid(props.workOffset);
 });
 

@@ -16,6 +16,7 @@ This document captures the application-wide updates required to add an imperial 
 - Add a toggle in the App settings dialog (`app/client/src/App.vue`) using `ToggleSwitch`, persisting changes through `updateSettings`.
 - Extend the client settings store (`app/client/src/lib/settings-store.js`) and `use-app-store.ts` to expose the active units across the UI.
 - Handle migrations: fall back to `metric` when the field is missing; avoid breaking existing settings files.
+- Jogging should start
 
 ## Shared Unit Utilities
 
@@ -29,9 +30,9 @@ This document captures the application-wide updates required to add an imperial 
 
 - Update Jog controls (`features/jog/JogPanel.vue` and `JogControls.vue`) to:
   - Display step-size chips in the chosen units and adjust defaults accordingly (e.g., 0.1 mm vs 0.004 in).
-  - Convert the user-selected step and feed rate back to mm/mm-min before composing `$J=` commands, since GRBL expects metric jog commands unless the modal state changes.
-  - Convert diagonal and continuous jog distances, safe-Z values, corner moves, and soft reset helpers via the shared utilities.
+  - Use "$J G20 .."" sending jog command to inform the controller that unit is imperial (no conversion needed).
   - Validate feed rate inputs against unit-aware limits and display errors using the correct suffix (mm/min or in/min).
+
 
 ## Status and Console Panels
 
@@ -64,10 +65,6 @@ This document captures the application-wide updates required to add an imperial 
 
 - Probing routines (`app/electron/features/probe/*`) already preserve the previous unit modal; confirm they still restore the user preference after probes end.
 - Update probe dialog copy, validation messages, and numeric inputs to show unit-dependent ranges and suffixes while leaving the transmitted commands metric internally.
-
-## Command Logging and History
-
-- Decide whether to annotate stored jog commands with the originating unit system (e.g., `#meta`) so the Console panel can show user-facing values without changing the actual G-code sent.
 
 ## Testing Checklist
 

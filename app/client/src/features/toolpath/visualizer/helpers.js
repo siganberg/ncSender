@@ -251,12 +251,15 @@ const axisBounds = (size, offset, home) => {
     };
 };
 
-export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' } } = {}) => {
+export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric' } = {}) => {
     const group = new THREE.Group();
 
-    // Create grid with 10mm spacing
-    const step = 10; // 10mm grid spacing
-    const majorStep = 100; // Major grid lines every 100mm
+    // Grid spacing based on units
+    // In metric: 10mm grid, 100mm major lines (every 10th line)
+    // In imperial: 12.7mm (0.5in) grid, 127mm (5in) major lines (every 10th line)
+    const MM_PER_INCH = 25.4;
+    const step = units === 'imperial' ? MM_PER_INCH / 2 : 10; // 0.5in or 10mm
+    const majorStep = units === 'imperial' ? MM_PER_INCH * 5 : 100; // 5in or 100mm
 
     // Calculate dynamic boundaries based on work offset
     const xBounds = axisBounds(gridSizeX, workOffset.x || 0, orientation.xHome || 'min');
@@ -302,6 +305,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     const points = [];
     const majorPoints = [];
 
+    // Helper to check if a value is close to a multiple of majorStep
+    const isMajorLine = (value) => {
+        const remainder = Math.abs(value % majorStep);
+        return remainder < 0.01 || remainder > majorStep - 0.01;
+    };
+
     // Create horizontal lines (parallel to X axis)
     for (let i = Math.round(minY / step) * step; i <= maxY; i += step) {
         const linePoints = [
@@ -309,12 +318,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             new THREE.Vector3(maxX, i, 0)
         ];
 
-        if (i === 0) {
+        if (Math.abs(i) < 0.01) {
             const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
             const xAxisLine = new THREE.Line(axisGeom, xAxisLineMaterial);
             xAxisLine.renderOrder = 1;
             group.add(xAxisLine);
-        } else if (i % majorStep === 0) {
+        } else if (isMajorLine(i)) {
             majorPoints.push(...linePoints);
         } else {
             points.push(...linePoints);
@@ -328,12 +337,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             new THREE.Vector3(i, maxY, 0)
         ];
 
-        if (i === 0) {
+        if (Math.abs(i) < 0.01) {
             const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
             const yAxisLine = new THREE.Line(axisGeom, yAxisLineMaterial);
             yAxisLine.renderOrder = 1;
             group.add(yAxisLine);
-        } else if (i % majorStep === 0) {
+        } else if (isMajorLine(i)) {
             majorPoints.push(...linePoints);
         } else {
             points.push(...linePoints);
@@ -379,9 +388,19 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         opacity: 0.6
     });
 
-    // Add X-axis numbers (every 10mm)
-    for (let i = Math.round(minX / 10) * 10; i <= maxX; i += 10) {
-        if (i === 0) continue; // Skip center
+    // Label spacing: metric = every 20mm, imperial = every 1in (25.4mm)
+    const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
+
+    // Helper to check if a value should have a label
+    const shouldLabel = (value) => {
+        const remainder = Math.abs(value % labelStep);
+        return remainder < 0.01 || remainder > labelStep - 0.01;
+    };
+
+    // Add X-axis numbers (at label intervals)
+    for (let i = Math.round(minX / step) * step; i <= maxX; i += step) {
+        if (Math.abs(i) < 0.01) continue; // Skip center
+        if (!shouldLabel(i)) continue; // Skip non-label positions
 
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -401,7 +420,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         // Anti-aliasing and text rendering improvements
         context.textRenderingOptimization = 'optimizeQuality';
         context.imageSmoothingEnabled = true;
-        context.fillText(i.toString(), 64, 32);
+
+        // Convert to inches if imperial, otherwise keep mm
+        const displayValue = units === 'imperial' ? Math.round(i / MM_PER_INCH).toString() : i.toString();
+        context.fillText(displayValue, 64, 32);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
@@ -417,13 +439,14 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         });
         const sprite = new THREE.Sprite(spriteMaterial);
         sprite.position.set(i, -5, 0); // Move X-axis labels below center line
-        sprite.scale.set(16, 10, 1); // Scale 20
+        sprite.scale.set(32, 20, 1); // Larger scale for better visibility
         group.add(sprite);
     }
 
-    // Add Y-axis numbers (every 10mm)
-    for (let i = Math.round(minY / 10) * 10; i <= maxY; i += 10) {
-        if (i === 0) continue; // Skip center
+    // Add Y-axis numbers (at label intervals)
+    for (let i = Math.round(minY / step) * step; i <= maxY; i += step) {
+        if (Math.abs(i) < 0.01) continue; // Skip center
+        if (!shouldLabel(i)) continue; // Skip non-label positions
 
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -443,7 +466,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         // Anti-aliasing and text rendering improvements
         context.textRenderingOptimization = 'optimizeQuality';
         context.imageSmoothingEnabled = true;
-        context.fillText(i.toString(), 64, 32);
+
+        // Convert to inches if imperial, otherwise keep mm
+        const displayValue = units === 'imperial' ? Math.round(i / MM_PER_INCH).toString() : i.toString();
+        context.fillText(displayValue, 64, 32);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
@@ -459,7 +485,7 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         });
         const sprite = new THREE.Sprite(spriteMaterial);
         sprite.position.set(-5, i, 0); // Move Y-axis labels left of center line
-        sprite.scale.set(16, 10, 1); // Scale 20
+        sprite.scale.set(32, 20, 1); // Larger scale for better visibility
         group.add(sprite);
     }
 
