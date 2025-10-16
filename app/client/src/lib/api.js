@@ -1,3 +1,5 @@
+import { debugLog, debugWarn, debugError } from './debug-logger';
+
 const REALTIME_JOG_CANCEL = String.fromCharCode(0x85);
 
 class NCClient {
@@ -477,12 +479,12 @@ class NCClient {
     }
 
     const wsUrl = this.getWebSocketUrl();
-    console.log('Connecting to WebSocket:', wsUrl);
+    debugLog('Connecting to WebSocket:', wsUrl);
 
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected successfully to:', wsUrl);
+      debugLog('WebSocket connected successfully to:', wsUrl);
       this.reconnectAttempts = 0; // Reset on successful connection
       this.emit('connected');
     };
@@ -490,7 +492,7 @@ class NCClient {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('Parsed message:', JSON.stringify(message, null, 2));
+        debugLog('Parsed message:', JSON.stringify(message, null, 2));
 
         if (message && message.type === 'server-state-updated' && message.data) {
           // Merge partial state updates with existing state
@@ -514,11 +516,11 @@ class NCClient {
     };
 
     this.ws.onclose = (event) => {
-      console.log('WebSocket disconnected', 'Code:', event.code, 'Reason:', event.reason);
+      debugLog('WebSocket disconnected', 'Code:', event.code, 'Reason:', event.reason);
 
       // Dead-man switch: Send emergency jog cancel if any jog sessions are active
       if (this.activeJogSessions.size > 0) {
-        console.warn('WebSocket disconnected with active jog sessions - sending emergency jog cancel');
+        debugWarn('WebSocket disconnected with active jog sessions - sending emergency jog cancel');
         // Send jog cancel via HTTP as fallback (WebSocket is closed)
         fetch(`${this.baseUrl}/api/cnc/send-command`, {
           method: 'POST',
@@ -547,7 +549,7 @@ class NCClient {
 
   attemptReconnect() {
     this.reconnectAttempts++;
-    console.log(`Attempting WebSocket reconnect (attempt ${this.reconnectAttempts}) in 1 second...`);
+    debugLog(`Attempting WebSocket reconnect (attempt ${this.reconnectAttempts}) in 1 second...`);
 
     setTimeout(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {

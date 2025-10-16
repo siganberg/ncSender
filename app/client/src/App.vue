@@ -200,6 +200,15 @@
               </div>
               <ToggleSwitch v-model="useDoorAsPause" />
             </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
+                <label class="setting-label">Enable Browser Debug Logging</label>
+                <div class="settings-note">
+                  Enables console logging for debugging. Useful for troubleshooting issues.
+                </div>
+              </div>
+              <ToggleSwitch v-model="consoleSettings.debugLogging" />
+            </div>
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
@@ -611,12 +620,16 @@ import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
 import KeyboardTab from './features/keyboard/KeyboardTab.vue';
 import { keyBindingStore } from './features/keyboard';
+import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 
 // Get centralized store
 const store = useAppStore();
 
 // Initialize settings from settings store (loaded in main.ts)
 const initialSettings = getSettings();
+
+// Initialize debug logger from settings
+initDebugLogger();
 
 // LOCAL UI STATE (not synchronized across clients)
 const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
@@ -735,7 +748,8 @@ const setupSettings = reactive({
 
 // Console settings
 const consoleSettings = reactive({
-  autoClearConsole: initialSettings?.autoClearConsole ?? true
+  autoClearConsole: initialSettings?.autoClearConsole ?? true,
+  debugLogging: initialSettings?.debugLogging ?? false
 });
 
 // Firmware settings
@@ -864,6 +878,10 @@ onMounted(() => {
       if (typeof detail.jog.feedRate === 'number') {
         jogConfig.feedRate = detail.jog.feedRate;
       }
+    }
+    // Update debug logging state when settings change
+    if (typeof detail?.debugLogging === 'boolean') {
+      setDebugEnabled(detail.debugLogging);
     }
   });
 });
@@ -1394,6 +1412,15 @@ watch(useDoorAsPause, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     useDoorAsPause: newValue
+  });
+});
+
+// Watch debugLogging and save changes
+watch(() => consoleSettings.debugLogging, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  setDebugEnabled(newValue);
+  await updateSettings({
+    debugLogging: newValue
   });
 });
 

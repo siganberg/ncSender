@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   accentColor: '#1abc9c',
   gradientColor: '#34d399',
   autoClearConsole: true,
+  debugLogging: false,
   keyboardBindings: {
     ArrowUp: 'JogYPlus',
     ArrowDown: 'JogYMinus',
