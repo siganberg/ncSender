@@ -489,8 +489,8 @@ const formatStepSize = (mmValue: number): string => {
   const units = appStore.unitsPreference.value;
   if (units === 'imperial') {
     const inches = mmToInches(mmValue);
-    // Round to nearest 0.01 (2 decimal places)
-    return (Math.round(inches * 100) / 100).toFixed(2);
+    // Round to nearest 0.001 (3 decimal places)
+    return (Math.round(inches * 1000) / 1000).toFixed(3);
   }
   return mmValue.toString();
 };
@@ -503,6 +503,16 @@ const formatFeedRateDisplay = (mmPerMin: number): string => {
     return Math.round(inPerMin / 10) * 10 + '';
   }
   return Math.round(mmPerMin).toString();
+};
+
+const convertFeedRateForCommand = (mmPerMin: number): number => {
+  const units = appStore.unitsPreference.value;
+  if (units === 'imperial') {
+    const inPerMin = mmToInches(mmPerMin);
+    // Round to nearest 10 (same logic as dropdown display)
+    return Math.round(inPerMin / 10) * 10;
+  }
+  return Math.round(mmPerMin);
 };
 
 const handleFeedRateChange = (event: Event) => {
@@ -551,16 +561,24 @@ const stopHeartbeat = () => {
 const pressedButtons = ref(new Set<string>());
 
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  const distance = props.jogConfig.stepSize * direction;
-  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
-  const command = `$J=${unitGCode} G91 ${axis}${distance} F5000`;
+  let distance = props.jogConfig.stepSize * direction;
+  const units = appStore.unitsPreference.value;
+
+  // Convert distance to imperial if needed
+  if (units === 'imperial') {
+    distance = mmToInches(distance);
+  }
+
+  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
+  const unitGCode = getUnitGCode(units);
+  const command = `$J=${unitGCode} G91 ${axis}${distance.toFixed(4)} F${jogFeedRate}`;
   try {
     await jogStep({
       command,
       displayCommand: command,
       axis,
       direction,
-      feedRate: axis === 'Z' ? 2500 : 5000,
+      feedRate: jogFeedRate,
       distance
     });
   } catch (error) {
@@ -569,17 +587,26 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const xDistance = props.jogConfig.stepSize * xDirection;
-  const yDistance = props.jogConfig.stepSize * yDirection;
-  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
-  const command = `$J=${unitGCode} G91 X${xDistance} Y${yDistance} F5000`;
+  let xDistance = props.jogConfig.stepSize * xDirection;
+  let yDistance = props.jogConfig.stepSize * yDirection;
+  const units = appStore.unitsPreference.value;
+
+  // Convert distances to imperial if needed
+  if (units === 'imperial') {
+    xDistance = mmToInches(xDistance);
+    yDistance = mmToInches(yDistance);
+  }
+
+  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
+  const unitGCode = getUnitGCode(units);
+  const command = `$J=${unitGCode} G91 X${xDistance.toFixed(4)} Y${yDistance.toFixed(4)} F${jogFeedRate}`;
   try {
     await jogStep({
       command,
       displayCommand: command,
       axis: 'XY',
       direction: null,
-      feedRate: 5000,
+      feedRate: jogFeedRate,
       distance: { x: xDistance, y: yDistance }
     });
   } catch (error) {
@@ -588,9 +615,20 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
 };
 
 const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  const jogFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
-  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
-  const command = `$J=${unitGCode} G91 ${axis}${3000 * direction} F${jogFeedRate}`;
+  const units = appStore.unitsPreference.value;
+  const baseFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
+
+  // Use a large distance for continuous jog
+  let jogDistance = 3000 * direction;
+
+  // Convert distance to imperial if needed
+  if (units === 'imperial') {
+    jogDistance = mmToInches(jogDistance);
+  }
+
+  const jogFeedRate = convertFeedRateForCommand(baseFeedRate);
+  const unitGCode = getUnitGCode(units);
+  const command = `$J=${unitGCode} G91 ${axis}${jogDistance.toFixed(4)} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -614,8 +652,21 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const unitGCode = getUnitGCode(appStore.unitsPreference.value);
-  const command = `$J=${unitGCode} G91 X${3000 * xDirection} Y${3000 * yDirection} F${feedRate.value}`;
+  const units = appStore.unitsPreference.value;
+
+  // Use a large distance for continuous jog
+  let xDistance = 3000 * xDirection;
+  let yDistance = 3000 * yDirection;
+
+  // Convert distances to imperial if needed
+  if (units === 'imperial') {
+    xDistance = mmToInches(xDistance);
+    yDistance = mmToInches(yDistance);
+  }
+
+  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
+  const unitGCode = getUnitGCode(units);
+  const command = `$J=${unitGCode} G91 X${xDistance.toFixed(4)} Y${yDistance.toFixed(4)} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -626,7 +677,7 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
       displayCommand: command,
       axis: 'XY',
       direction: null,
-      feedRate: feedRate.value
+      feedRate: jogFeedRate
     });
     startHeartbeat(jogId);
   } catch (error) {

@@ -431,16 +431,18 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
 
-        const spriteMaterial = new THREE.SpriteMaterial({
+        const planeMaterial = new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true,
             opacity: 0.5,
-            alphaTest: 0.01
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(i, -5, 0); // Move X-axis labels below center line
-        sprite.scale.set(32, 20, 1); // Larger scale for better visibility
-        group.add(sprite);
+        const planeGeometry = new THREE.PlaneGeometry(32, 20);
+        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        mesh.position.set(i, -5, 0.01); // Slightly above grid to avoid z-fighting
+        mesh.renderOrder = 2; // Render after grid lines
+        group.add(mesh);
     }
 
     // Add Y-axis numbers (at label intervals)
@@ -477,16 +479,18 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
 
-        const spriteMaterial = new THREE.SpriteMaterial({
+        const planeMaterial = new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true,
             opacity: 0.5,
-            alphaTest: 0.01
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(-5, i, 0); // Move Y-axis labels left of center line
-        sprite.scale.set(32, 20, 1); // Larger scale for better visibility
-        group.add(sprite);
+        const planeGeometry = new THREE.PlaneGeometry(32, 20);
+        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        mesh.position.set(-5, i, 0.01); // Slightly above grid to avoid z-fighting
+        mesh.renderOrder = 2; // Render after grid lines
+        group.add(mesh);
     }
 
     group.name = 'grid-with-numbers';
