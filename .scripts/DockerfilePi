@@ -28,9 +28,11 @@ COPY . .
 WORKDIR /app/client
 RUN npm ci
 WORKDIR /app
-# Skip PhantomJS download (not needed for runtime, only used by dev dependency)
-ENV PHANTOMJS_SKIP_DOWNLOAD=true
-RUN npm ci
+# Skip install scripts to avoid PhantomJS build failure on ARM64
+# PhantomJS is only needed by electron-icon-builder (dev dependency) and not used at runtime
+RUN npm ci --ignore-scripts
+# Run prepare scripts separately (needed for some packages but won't include phantomjs)
+RUN npm rebuild --no-optional || true
 RUN npm run build:client
 RUN rm -rf dist-electron
 RUN npm run dist -- --linux --arm64
