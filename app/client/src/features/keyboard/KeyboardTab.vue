@@ -168,8 +168,10 @@ const bindingMap = reactive<Record<string, string>>({});
 const syncBindingMap = () => {
   const current = keyBindingStore.getAllBindings();
   Object.keys(bindingMap).forEach((key) => delete bindingMap[key]);
-  Object.entries(current).forEach(([combo, action]) => {
-    bindingMap[action] = combo;
+  Object.entries(current).forEach(([actionId, combo]) => {
+    if (combo !== null) {
+      bindingMap[actionId] = combo;
+    }
   });
 };
 

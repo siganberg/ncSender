@@ -3,6 +3,7 @@ import { api } from './api';
 import type { Macro } from './types';
 import { commandRegistry } from '@/lib/command-registry';
 import { useAppStore } from '@/composables/use-app-store';
+import { keyBindingStore } from '@/features/keyboard/key-binding-store';
 
 const MACRO_ACTION_PREFIX = 'Macro:';
 const registeredMacroActions = new Set<string>();
@@ -85,6 +86,10 @@ export function useMacroStore() {
       await api.deleteMacro(id);
       macros.value = macros.value.filter(m => m.id !== id);
       syncMacroActions(macros.value);
+
+      // Also delete any keyboard shortcut assigned to this macro
+      const actionId = `${MACRO_ACTION_PREFIX}${id}`;
+      await keyBindingStore.deleteBindingForAction(actionId);
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to delete macro';
       throw err;

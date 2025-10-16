@@ -4,55 +4,54 @@ import type { KeyboardSettings, KeyboardState } from './types';
 import { DEFAULT_KEY_BINDINGS } from './default-bindings';
 import { normalizeCombo } from './keyboard-utils';
 
-function cloneBindings(bindings: Record<string, string>): Record<string, string> {
+function cloneBindings(bindings: Record<string, string | null>): Record<string, string | null> {
   return Object.fromEntries(Object.entries(bindings));
 }
 
-function sanitizeBindings(raw: any): Record<string, string> {
+function sanitizeBindings(raw: any): Record<string, string | null> {
+  // Start with defaults
+  const result = cloneBindings(DEFAULT_KEY_BINDINGS);
+
+  // If no saved settings, return defaults
   if (!raw || typeof raw !== 'object') {
-    return cloneBindings(DEFAULT_KEY_BINDINGS);
+    return result;
   }
 
-  const sanitized: Record<string, string> = {};
-  for (const [combo, action] of Object.entries(raw)) {
-    if (typeof combo !== 'string' || typeof action !== 'string') {
+  // Merge saved settings over defaults
+  for (const [actionId, combo] of Object.entries(raw)) {
+    if (typeof actionId !== 'string') {
       continue;
     }
-    const normalized = normalizeCombo(combo);
-    if (!normalized) {
+
+    // null means explicitly unset
+    if (combo === null) {
+      result[actionId] = null;
       continue;
     }
-    sanitized[normalized] = action;
+
+    // Validate and normalize the combo
+    if (typeof combo === 'string') {
+      const normalized = normalizeCombo(combo);
+      if (normalized) {
+        result[actionId] = normalized;
+      }
+    }
   }
 
-  if (Object.keys(sanitized).length === 0) {
-    return cloneBindings(DEFAULT_KEY_BINDINGS);
-  }
-
-  return sanitized;
+  return result;
 }
 
 function sanitizeKeyboardSettings(raw: any): KeyboardSettings {
   const defaults: KeyboardSettings = {
-    shortcutsEnabled: true,
-    step: 1,
-    xyFeedRate: 3000,
-    zFeedRate: 1500
+    shortcutsEnabled: true
   };
 
   if (!raw || typeof raw !== 'object') {
     return { ...defaults };
   }
 
-  const parsedStep = Number(raw.step);
-  const parsedXY = Number(raw.xyFeedRate);
-  const parsedZ = Number(raw.zFeedRate);
-
   return {
-    shortcutsEnabled: raw.shortcutsEnabled !== false,
-    step: Number.isFinite(parsedStep) && parsedStep > 0 ? parsedStep : defaults.step,
-    xyFeedRate: Number.isFinite(parsedXY) && parsedXY > 0 ? parsedXY : defaults.xyFeedRate,
-    zFeedRate: Number.isFinite(parsedZ) && parsedZ > 0 ? parsedZ : defaults.zFeedRate
+    shortcutsEnabled: raw.shortcutsEnabled !== false
   };
 }
 
@@ -64,23 +63,30 @@ const state = reactive<KeyboardState>({
   loaded: false
 });
 
-const runtimeJog = reactive({
-  step: null as number | null,
-  xyFeedRate: null as number | null,
-  zFeedRate: null as number | null
-});
-
 const isFeatureEnabled = computed(() => state.featureEnabled);
 const areShortcutsEnabled = computed(() => state.settings.shortcutsEnabled);
 const isActive = computed(() => state.loaded && state.featureEnabled && state.settings.shortcutsEnabled);
 const bindingsMap = computed(() => readonly(state.bindings));
-const currentStep = computed(() => runtimeJog.step != null ? runtimeJog.step : state.settings.step);
 
-async function persistBindings(next: Record<string, string>): Promise<void> {
+async function persistBindings(next: Record<string, string | null>, changedOnly = false): Promise<void> {
   const previous = state.bindings;
   state.bindings = next;
   try {
-    await updateSettings({ keyboardBindings: cloneBindings(next) });
+    if (changedOnly) {
+      // Only send the changed bindings (for efficiency)
+      const changes: Record<string, string | null> = {};
+      for (const [actionId, combo] of Object.entries(next)) {
+        if (previous[actionId] !== combo) {
+          changes[actionId] = combo;
+        }
+      }
+      if (Object.keys(changes).length > 0) {
+        await updateSettings({ keyboardBindings: changes });
+      }
+    } else {
+      // Send all bindings (for reset to defaults)
+      await updateSettings({ keyboardBindings: cloneBindings(next) });
+    }
   } catch (error) {
     state.bindings = previous;
     throw error;
@@ -115,7 +121,6 @@ export const keyBindingStore = {
   areShortcutsEnabled,
   isActive,
   bindings: bindingsMap,
-  currentStep,
 
   bootstrap(): void {
     if (state.loaded) {
@@ -128,19 +133,27 @@ export const keyBindingStore = {
     state.loaded = true;
   },
 
+  reload(): void {
+    const settings = getSettings();
+    state.featureEnabled = settings?.features?.keyboardShortcuts !== false;
+    state.settings = sanitizeKeyboardSettings(settings?.keyboard);
+    state.bindings = sanitizeBindings(settings?.keyboardBindings);
+  },
+
   getBinding(combo: string | null | undefined): string | undefined {
     const normalized = normalizeCombo(combo ?? '');
     if (!normalized) {
       return undefined;
     }
-    return state.bindings[normalized];
+    // Find action that has this combo assigned
+    return Object.entries(state.bindings).find(([, assignedCombo]) => assignedCombo === normalized)?.[0];
   },
 
-  getBindingForAction(actionId: string): string | undefined {
-    return Object.entries(state.bindings).find(([, action]) => action === actionId)?.[0];
+  getBindingForAction(actionId: string): string | null | undefined {
+    return state.bindings[actionId];
   },
 
-  getAllBindings(): Record<string, string> {
+  getAllBindings(): Record<string, string | null> {
     return cloneBindings(state.bindings);
   },
 
@@ -151,39 +164,56 @@ export const keyBindingStore = {
     }
 
     const next = cloneBindings(state.bindings);
-    for (const [existingCombo, existingAction] of Object.entries(next)) {
-      if (existingCombo === normalized || existingAction === actionId) {
-        delete next[existingCombo];
+
+    // Check if this combo is already assigned to another action
+    for (const [otherActionId, assignedCombo] of Object.entries(next)) {
+      if (assignedCombo === normalized && otherActionId !== actionId) {
+        // Unset the other action
+        next[otherActionId] = null;
       }
     }
-    next[normalized] = actionId;
-    await persistBindings(next);
+
+    // Assign the combo to this action
+    next[actionId] = normalized;
+    await persistBindings(next, true);  // Only send changes
   },
 
   async removeBinding(combo: string): Promise<void> {
     const normalized = normalizeCombo(combo);
-    if (!normalized || !state.bindings[normalized]) {
+    if (!normalized) {
       return;
     }
 
     const next = cloneBindings(state.bindings);
-    delete next[normalized];
-    await persistBindings(next);
+    // Find action with this combo and set to null
+    for (const [actionId, assignedCombo] of Object.entries(next)) {
+      if (assignedCombo === normalized) {
+        next[actionId] = null;
+        await persistBindings(next, true);  // Only send changes
+        return;
+      }
+    }
   },
 
   async clearBindingForAction(actionId: string): Promise<void> {
-    const next = cloneBindings(state.bindings);
-    let dirty = false;
-    for (const [combo, action] of Object.entries(next)) {
-      if (action === actionId) {
-        delete next[combo];
-        dirty = true;
-      }
+    if (!state.bindings[actionId]) {
+      return;
     }
 
-    if (dirty) {
-      await persistBindings(next);
+    const next = cloneBindings(state.bindings);
+    next[actionId] = null;
+    await persistBindings(next, true);  // Only send changes
+  },
+
+  async deleteBindingForAction(actionId: string): Promise<void> {
+    if (!state.bindings[actionId]) {
+      return;
     }
+
+    const next = cloneBindings(state.bindings);
+    delete next[actionId];
+    // Send full bindings to ensure the key is actually removed from the server
+    await persistBindings(next, false);
   },
 
   async resetToDefaults(): Promise<void> {
@@ -204,52 +234,12 @@ export const keyBindingStore = {
     await persistFeatureFlag(value);
   },
 
-  async updateJogSettings(partial: Partial<Omit<KeyboardSettings, 'shortcutsEnabled'>>): Promise<void> {
-    const next: KeyboardSettings = {
-      ...state.settings,
-      ...partial
-    };
-    if (next.step <= 0 || next.xyFeedRate <= 0 || next.zFeedRate <= 0) {
-      throw new Error('Jog settings must be positive numbers');
-    }
-    await persistKeyboardSettings(next);
-  },
-
   setCaptureMode(active: boolean): void {
     state.captureMode = active;
   },
 
   isCaptureMode(): boolean {
     return state.captureMode;
-  },
-
-  getStep(): number {
-    return runtimeJog.step != null ? runtimeJog.step : state.settings.step;
-  },
-
-  getFeedRates(): { xyFeedRate: number; zFeedRate: number } {
-    return {
-      xyFeedRate: runtimeJog.xyFeedRate != null ? runtimeJog.xyFeedRate : state.settings.xyFeedRate,
-      zFeedRate: runtimeJog.zFeedRate != null ? runtimeJog.zFeedRate : state.settings.zFeedRate
-    };
-  },
-
-  updateRuntimeJogContext(context: { step: number; xyFeedRate: number; zFeedRate: number }): void {
-    if (Number.isFinite(context.step) && context.step > 0) {
-      runtimeJog.step = context.step;
-    }
-    if (Number.isFinite(context.xyFeedRate) && context.xyFeedRate > 0) {
-      runtimeJog.xyFeedRate = context.xyFeedRate;
-    }
-    if (Number.isFinite(context.zFeedRate) && context.zFeedRate > 0) {
-      runtimeJog.zFeedRate = context.zFeedRate;
-    }
-  },
-
-  clearRuntimeJogContext(): void {
-    runtimeJog.step = null;
-    runtimeJog.xyFeedRate = null;
-    runtimeJog.zFeedRate = null;
   }
 };
 
@@ -259,7 +249,24 @@ function applySettingsDelta(delta: any) {
   }
 
   if (delta.keyboardBindings) {
-    state.bindings = sanitizeBindings(delta.keyboardBindings);
+    // Merge delta bindings into current state (don't replace entire state)
+    for (const [actionId, combo] of Object.entries(delta.keyboardBindings)) {
+      if (typeof actionId !== 'string') {
+        continue;
+      }
+
+      if (combo === null) {
+        state.bindings[actionId] = null;
+      } else if (combo === undefined) {
+        // undefined means delete the key entirely
+        delete state.bindings[actionId];
+      } else if (typeof combo === 'string') {
+        const normalized = normalizeCombo(combo);
+        if (normalized) {
+          state.bindings[actionId] = normalized;
+        }
+      }
+    }
   }
 
   if (delta.keyboard) {

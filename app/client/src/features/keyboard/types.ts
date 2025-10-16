@@ -2,13 +2,10 @@ export type KeyCombo = string;
 
 export interface KeyboardSettings {
   shortcutsEnabled: boolean;
-  step: number;
-  xyFeedRate: number;
-  zFeedRate: number;
 }
 
 export interface KeyboardState {
-  bindings: Record<KeyCombo, string>;
+  bindings: Record<string, string | null>;  // ActionId -> KeyCombo (null = explicitly unset)
   settings: KeyboardSettings;
   featureEnabled: boolean;
   captureMode: boolean;

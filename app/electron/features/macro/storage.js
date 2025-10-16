@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getUserDataDir } from '../../utils/paths.js';
+import { readSettings, saveSettings } from '../../core/settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -116,5 +117,26 @@ export function deleteMacro(id) {
   }
 
   saveMacros(filteredMacros);
+
+  // Also remove any keyboard shortcut assigned to this macro
+  try {
+    const settings = readSettings();
+    if (settings && settings.keyboardBindings) {
+      const actionId = `Macro:${id}`;
+      if (actionId in settings.keyboardBindings) {
+        const updatedBindings = { ...settings.keyboardBindings };
+        delete updatedBindings[actionId];
+        saveSettings({
+          ...settings,
+          keyboardBindings: updatedBindings
+        });
+        log(`Removed keyboard binding for deleted macro: ${actionId}`);
+      }
+    }
+  } catch (error) {
+    log('Failed to remove keyboard binding for deleted macro:', error);
+    // Don't fail the macro deletion if keyboard binding cleanup fails
+  }
+
   return { success: true, id };
 }

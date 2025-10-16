@@ -3,10 +3,19 @@ import { api } from '@/lib/api.js';
 import { useAppStore } from '@/composables/use-app-store';
 import { keyBindingStore } from './key-binding-store';
 import { jogStart, jogStop, jogHeartbeat, jogStep } from '../jog/api';
-import { getSettings } from '@/lib/settings-store.js';
+import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
 const CONTINUOUS_DISTANCE_MM = 3000;
 const HEARTBEAT_INTERVAL_MS = 250;
+
+function getJogSettings(): { step: number; xyFeedRate: number; zFeedRate: number } {
+  const settings = getSettings();
+  const step = settings?.jog?.stepSize ?? 1;
+  const feedRate = settings?.jog?.feedRate ?? 3000;
+  const xyFeed = Number.isFinite(feedRate) && feedRate > 0 ? feedRate : 3000;
+  const zFeed = Math.max(1, xyFeed / 2);
+  return { step, xyFeedRate: xyFeed, zFeedRate: zFeed };
+}
 
 export const JOG_ACTIONS: Record<string, { axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> = {
   JogXPlus: { axis: 'X', direction: 1 },
@@ -89,8 +98,7 @@ function createContinuousSession(jogId: string, onStop: string): ContinuousJogSe
 }
 
 export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): Promise<void> {
-  const step = keyBindingStore.getStep();
-  const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+  const { step, xyFeedRate, zFeedRate } = getJogSettings();
   const distance = Number((step * direction).toFixed(4));
   const feedRate = axis === 'Z' ? zFeedRate : xyFeedRate;
 
@@ -106,8 +114,7 @@ export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): 
 }
 
 export async function performDiagonalJogStep(xDir: 1 | -1, yDir: 1 | -1): Promise<void> {
-  const step = keyBindingStore.getStep();
-  const { xyFeedRate } = keyBindingStore.getFeedRates();
+  const { step, xyFeedRate } = getJogSettings();
   const xDistance = Number((step * xDir).toFixed(4));
   const yDistance = Number((step * yDir).toFixed(4));
 
@@ -123,7 +130,7 @@ export async function performDiagonalJogStep(xDir: 1 | -1, yDir: 1 | -1): Promis
 }
 
 export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): Promise<ContinuousJogSession | null> {
-  const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+  const { xyFeedRate, zFeedRate } = getJogSettings();
   const feedRate = axis === 'Z' ? zFeedRate : xyFeedRate;
   const command = `$J=G21 G91 ${axis}${CONTINUOUS_DISTANCE_MM * direction} F${feedRate}`;
   const jogId = createJogId();
@@ -146,7 +153,7 @@ export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction
 }
 
 export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | -1): Promise<ContinuousJogSession | null> {
-  const { xyFeedRate } = keyBindingStore.getFeedRates();
+  const { xyFeedRate } = getJogSettings();
   const xDistance = CONTINUOUS_DISTANCE_MM * xDir;
   const yDistance = CONTINUOUS_DISTANCE_MM * yDir;
   const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
@@ -302,18 +309,12 @@ export function registerCoreKeyboardActions(): void {
     label: 'Cycle Jog Steps',
     group: jogActionGroup,
     description: 'Cycle through jog step sizes: 0.1 → 1 → 10',
-    handler: () => {
-      const currentStep = keyBindingStore.getStep();
+    handler: async () => {
+      const { step: currentStep } = getJogSettings();
       const currentIndex = STEP_CYCLE.findIndex(s => Math.abs(s - currentStep) < 0.001);
       const nextIndex = (currentIndex + 1) % STEP_CYCLE.length;
       const nextStep = STEP_CYCLE[nextIndex];
-
-      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
-      keyBindingStore.updateRuntimeJogContext({
-        step: nextStep,
-        xyFeedRate,
-        zFeedRate
-      });
+      await updateSettings({ jog: { stepSize: nextStep } });
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -323,13 +324,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 0.1',
     group: jogActionGroup,
     description: 'Set jog step size to 0.1mm',
-    handler: () => {
-      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
-      keyBindingStore.updateRuntimeJogContext({
-        step: 0.1,
-        xyFeedRate,
-        zFeedRate
-      });
+    handler: async () => {
+      await updateSettings({ jog: { stepSize: 0.1 } });
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -339,13 +335,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 1',
     group: jogActionGroup,
     description: 'Set jog step size to 1mm',
-    handler: () => {
-      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
-      keyBindingStore.updateRuntimeJogContext({
-        step: 1,
-        xyFeedRate,
-        zFeedRate
-      });
+    handler: async () => {
+      await updateSettings({ jog: { stepSize: 1 } });
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -355,13 +346,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 10',
     group: jogActionGroup,
     description: 'Set jog step size to 10mm',
-    handler: () => {
-      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
-      keyBindingStore.updateRuntimeJogContext({
-        step: 10,
-        xyFeedRate,
-        zFeedRate
-      });
+    handler: async () => {
+      await updateSettings({ jog: { stepSize: 10 } });
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
