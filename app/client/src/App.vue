@@ -212,8 +212,8 @@
             <div class="setting-item">
               <label class="setting-label">Accent / Gradient Color</label>
               <div class="color-picker-container">
-                <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)">
-                <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)">
+                <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)" @change="saveColors">
+                <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)" @change="saveColors">
               </div>
             </div>
           </div>
@@ -1371,15 +1371,15 @@ const importFirmwareSettings = () => {
 
 const updateAccentColor = (color: string) => {
   accentColor.value = color;
-  applyColors(true);
+  applyColors();
 };
 
 const updateGradientColor = (color: string) => {
   gradientColor.value = color;
-  applyColors(true);
+  applyColors();
 };
 
-const applyColors = async (shouldSave = false) => {
+const applyColors = () => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
@@ -1387,15 +1387,14 @@ const applyColors = async (shouldSave = false) => {
   try {
     window.dispatchEvent(new CustomEvent('accent-color-change', { detail: { color: accentColor.value } }));
   } catch {}
+};
 
-  // Only save color settings if explicitly requested (i.e., when user changes them)
-  if (shouldSave) {
-    const { saveSettings } = await import('./lib/settings-store.js');
-    await saveSettings({
-      accentColor: accentColor.value,
-      gradientColor: gradientColor.value
-    });
-  }
+const saveColors = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    accentColor: accentColor.value,
+    gradientColor: gradientColor.value
+  });
 };
 
 // Watch numberOfTools and save changes (server will broadcast to all clients)
