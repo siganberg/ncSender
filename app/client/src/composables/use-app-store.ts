@@ -105,7 +105,17 @@ const gcodeCompletedUpTo = ref<number>(0);
 const jogConfig = reactive({
   stepSize: 1,
   stepOptions: [0.1, 1, 10],
-  feedRate: 3000
+  feedRate: 3000,
+  feedRateOptions: {
+    0.1: [300, 400, 500, 700, 1000],
+    1: [1000, 2000, 3000, 4000, 5000],
+    10: [6000, 7000, 8000, 9000, 10000]
+  },
+  feedRateDefaults: {
+    0.1: 500,
+    1: 3000,
+    10: 8000
+  }
 });
 
 // INTERNAL STATE

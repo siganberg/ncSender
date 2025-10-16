@@ -12,14 +12,19 @@
           {{ value }}
         </button>
         <span class="feed-rate-label">Feed Rate</span>
-        <input
-          type="text"
-          class="feed-rate-input"
-          :value="feedRateInput"
-          @input="handleFeedRateInput"
-          @blur="validateFeedRate"
-          placeholder="0.00"
-        />
+        <select
+          class="feed-rate-select"
+          :value="feedRate"
+          @change="handleFeedRateChange"
+        >
+          <option
+            v-for="rate in getCurrentFeedRateOptions()"
+            :key="rate"
+            :value="rate"
+          >
+            {{ rate }}
+          </option>
+        </select>
       </div>
       <h2>Motion Controls</h2>
     </header>
@@ -335,6 +340,8 @@ const props = defineProps<{
     stepSize: number;
     stepOptions: number[];
     feedRate?: number;
+    feedRateOptions?: Record<number, number[]>;
+    feedRateDefaults?: Record<number, number>;
   };
   isDisabled?: boolean;
   machineCoords?: { x: number; y: number; z: number };
@@ -344,11 +351,22 @@ const props = defineProps<{
   machineOrientation?: MachineOrientation;
 }>();
 
-// Feed rate management based on step size
-const feedRateDefaults = {
+// Feed rate options per step size
+const feedRateOptions = computed(() => props.jogConfig.feedRateOptions ?? {
+  0.1: [300, 400, 500, 700, 1000],
+  1: [1000, 2000, 3000, 4000, 5000],
+  10: [6000, 7000, 8000, 9000, 10000]
+});
+
+const feedRateDefaults = computed(() => props.jogConfig.feedRateDefaults ?? {
   0.1: 500,
   1: 3000,
   10: 8000
+});
+
+const getCurrentFeedRateOptions = (): number[] => {
+  const step = props.jogConfig.stepSize;
+  return feedRateOptions.value[step] ?? [500, 1000, 3000, 5000];
 };
 
 const resolveFeedRate = (): number => {
@@ -356,7 +374,7 @@ const resolveFeedRate = (): number => {
   if (Number.isFinite(provided) && provided > 0) {
     return provided;
   }
-  const defaultRate = feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults];
+  const defaultRate = feedRateDefaults.value[props.jogConfig.stepSize];
   return defaultRate ?? 500;
 };
 
@@ -439,18 +457,17 @@ const getCornerPosition = (corner: CornerType) => {
 };
 
 const initialFeed = resolveFeedRate();
-const feedRateInput = ref(String(initialFeed));
 const feedRate = ref(initialFeed);
 emit('update:feedRate', initialFeed);
 
-// Watch for step size changes and update feed rate
+// Watch for step size changes and auto-select default feed rate
 watch(() => props.jogConfig.stepSize, (newStepSize) => {
-  const defaultRate = feedRateDefaults[newStepSize as keyof typeof feedRateDefaults] || 500;
+  const defaultRate = feedRateDefaults.value[newStepSize] ?? 500;
   feedRate.value = defaultRate;
-  feedRateInput.value = Number.isInteger(defaultRate) ? String(defaultRate) : defaultRate.toFixed(2);
   emit('update:feedRate', feedRate.value);
 });
 
+// Watch for external feed rate changes
 watch(
   () => props.jogConfig.feedRate,
   (value) => {
@@ -462,44 +479,16 @@ watch(
       return;
     }
     feedRate.value = parsed;
-    feedRateInput.value = Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(2);
   }
 );
 
-const handleFeedRateInput = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  let value = input.value;
-
-  // Only allow numbers and decimal point
-  value = value.replace(/[^\d.]/g, '');
-
-  // Ensure only one decimal point
-  const parts = value.split('.');
-  if (parts.length > 2) {
-    value = parts[0] + '.' + parts.slice(1).join('');
+const handleFeedRateChange = (event: Event) => {
+  const select = event.target as HTMLSelectElement;
+  const newRate = Number(select.value);
+  if (Number.isFinite(newRate) && newRate > 0) {
+    feedRate.value = newRate;
+    emit('update:feedRate', newRate);
   }
-
-  // Limit to 2 decimal places
-  if (parts.length === 2 && parts[1].length > 2) {
-    value = parts[0] + '.' + parts[1].substring(0, 2);
-  }
-
-  feedRateInput.value = value;
-};
-
-const validateFeedRate = () => {
-  const parsed = parseFloat(feedRateInput.value);
-
-  if (isNaN(parsed) || parsed <= 0) {
-    // Reset to default for current step size
-    const defaultRate = feedRateDefaults[props.jogConfig.stepSize as keyof typeof feedRateDefaults] || 500;
-    feedRate.value = defaultRate;
-    feedRateInput.value = Number.isInteger(defaultRate) ? String(defaultRate) : defaultRate.toFixed(2);
-  } else {
-    feedRate.value = parsed;
-    feedRateInput.value = parsed.toFixed(2);
-  }
-  emit('update:feedRate', feedRate.value);
 };
 
 // Disable the entire panel only when disconnected or explicitly disabled
@@ -1515,8 +1504,8 @@ h2 {
   font-size: 0.85rem;
 }
 
-.feed-rate-input {
-  width: 70px;
+.feed-rate-select {
+  width: 80px;
   padding: 4px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -1524,17 +1513,17 @@ h2 {
   color: var(--color-text-primary);
   font-size: 0.85rem;
   text-align: center;
+  cursor: pointer;
   transition: border-color 0.2s ease;
 }
 
-.feed-rate-input:focus {
+.feed-rate-select:focus {
   outline: none;
   border-color: var(--color-accent);
 }
 
-.feed-rate-input::placeholder {
-  color: var(--color-text-secondary);
-  opacity: 0.6;
+.feed-rate-select:hover {
+  border-color: var(--color-accent);
 }
 
 .jog-layout {
