@@ -101,6 +101,13 @@ const gcodeFilename = ref<string>('');
 const gcodeLineCount = ref<number>(0);
 const gcodeCompletedUpTo = ref<number>(0);
 
+// Jog config (shared UI state for current jog settings)
+const jogConfig = reactive({
+  stepSize: 1,
+  stepOptions: [0.1, 1, 10],
+  feedRate: 3000
+});
+
 // INTERNAL STATE
 let storeInitialized = false;
 let lastJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
@@ -729,6 +736,7 @@ export function useAppStore() {
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
       gcodeCompletedUpTo: readonly(gcodeCompletedUpTo),
+      jogConfig,  // Writable - shared jog settings
 
     // Computed properties
     senderStatus,

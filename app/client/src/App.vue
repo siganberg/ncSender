@@ -634,12 +634,8 @@ const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, al
 
 const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.senderStatus ?? 'connecting');
 
-// Jog config (local UI state)
-const jogConfig = reactive({
-  stepSize: 1,
-  stepOptions: [0.1, 1, 10],
-  feedRate: 3000
-});
+// Jog config (from app store - shared state)
+const { jogConfig } = store;
 
 // Fetch alarm description (delegate to store)
 const fetchAlarmDescription = store.setLastAlarmCode;

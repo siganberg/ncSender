@@ -9,9 +9,9 @@ const CONTINUOUS_DISTANCE_MM = 3000;
 const HEARTBEAT_INTERVAL_MS = 250;
 
 function getJogSettings(): { step: number; xyFeedRate: number; zFeedRate: number } {
-  const settings = getSettings();
-  const step = settings?.jog?.stepSize ?? 1;
-  const feedRate = settings?.jog?.feedRate ?? 3000;
+  const store = useAppStore();
+  const step = store.jogConfig.stepSize;
+  const feedRate = store.jogConfig.feedRate;
   const xyFeed = Number.isFinite(feedRate) && feedRate > 0 ? feedRate : 3000;
   const zFeed = Math.max(1, xyFeed / 2);
   return { step, xyFeedRate: xyFeed, zFeedRate: zFeed };
@@ -309,12 +309,12 @@ export function registerCoreKeyboardActions(): void {
     label: 'Cycle Jog Steps',
     group: jogActionGroup,
     description: 'Cycle through jog step sizes: 0.1 → 1 → 10',
-    handler: async () => {
+    handler: () => {
       const { step: currentStep } = getJogSettings();
       const currentIndex = STEP_CYCLE.findIndex(s => Math.abs(s - currentStep) < 0.001);
       const nextIndex = (currentIndex + 1) % STEP_CYCLE.length;
       const nextStep = STEP_CYCLE[nextIndex];
-      await updateSettings({ jog: { stepSize: nextStep } });
+      store.jogConfig.stepSize = nextStep;
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -324,8 +324,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 0.1',
     group: jogActionGroup,
     description: 'Set jog step size to 0.1mm',
-    handler: async () => {
-      await updateSettings({ jog: { stepSize: 0.1 } });
+    handler: () => {
+      store.jogConfig.stepSize = 0.1;
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -335,8 +335,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 1',
     group: jogActionGroup,
     description: 'Set jog step size to 1mm',
-    handler: async () => {
-      await updateSettings({ jog: { stepSize: 1 } });
+    handler: () => {
+      store.jogConfig.stepSize = 1;
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
@@ -346,8 +346,8 @@ export function registerCoreKeyboardActions(): void {
     label: 'Set Step 10',
     group: jogActionGroup,
     description: 'Set jog step size to 10mm',
-    handler: async () => {
-      await updateSettings({ jog: { stepSize: 10 } });
+    handler: () => {
+      store.jogConfig.stepSize = 10;
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
