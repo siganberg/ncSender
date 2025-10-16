@@ -1,6 +1,6 @@
 {
   "name": "ncsender",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "ncSender - Unified CNC Controller Electron App",
   "homepage": "https://github.com/siganberg/ncSender",
   "author": {
