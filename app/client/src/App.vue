@@ -678,6 +678,15 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => keyBindingStore.currentStep.value,
+  (newStep) => {
+    if (Number.isFinite(newStep) && newStep > 0 && jogConfig.stepSize !== newStep) {
+      jogConfig.stepSize = newStep;
+    }
+  }
+);
+
 // Immediately reflect Default G-Code Preview changes in the live viewport
 watch(defaultView, (newView) => {
   viewport.value = newView;

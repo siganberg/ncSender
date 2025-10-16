@@ -294,5 +294,77 @@ export function registerCoreKeyboardActions(): void {
     isEnabled: canStop
   });
 
+  // Jog Step Controls
+  const STEP_CYCLE = [0.1, 1, 10];
+
+  commandRegistry.register({
+    id: 'CycleSteps',
+    label: 'Cycle Jog Steps',
+    group: jogActionGroup,
+    description: 'Cycle through jog step sizes: 0.1 → 1 → 10',
+    handler: () => {
+      const currentStep = keyBindingStore.getStep();
+      const currentIndex = STEP_CYCLE.findIndex(s => Math.abs(s - currentStep) < 0.001);
+      const nextIndex = (currentIndex + 1) % STEP_CYCLE.length;
+      const nextStep = STEP_CYCLE[nextIndex];
+
+      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+      keyBindingStore.updateRuntimeJogContext({
+        step: nextStep,
+        xyFeedRate,
+        zFeedRate
+      });
+    },
+    isEnabled: () => keyBindingStore.isActive.value
+  });
+
+  commandRegistry.register({
+    id: 'SetStep0.1',
+    label: 'Set Step 0.1',
+    group: jogActionGroup,
+    description: 'Set jog step size to 0.1mm',
+    handler: () => {
+      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+      keyBindingStore.updateRuntimeJogContext({
+        step: 0.1,
+        xyFeedRate,
+        zFeedRate
+      });
+    },
+    isEnabled: () => keyBindingStore.isActive.value
+  });
+
+  commandRegistry.register({
+    id: 'SetStep1',
+    label: 'Set Step 1',
+    group: jogActionGroup,
+    description: 'Set jog step size to 1mm',
+    handler: () => {
+      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+      keyBindingStore.updateRuntimeJogContext({
+        step: 1,
+        xyFeedRate,
+        zFeedRate
+      });
+    },
+    isEnabled: () => keyBindingStore.isActive.value
+  });
+
+  commandRegistry.register({
+    id: 'SetStep10',
+    label: 'Set Step 10',
+    group: jogActionGroup,
+    description: 'Set jog step size to 10mm',
+    handler: () => {
+      const { xyFeedRate, zFeedRate } = keyBindingStore.getFeedRates();
+      keyBindingStore.updateRuntimeJogContext({
+        step: 10,
+        xyFeedRate,
+        zFeedRate
+      });
+    },
+    isEnabled: () => keyBindingStore.isActive.value
+  });
+
   coreActionsRegistered = true;
 }

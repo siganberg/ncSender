@@ -74,6 +74,7 @@ const isFeatureEnabled = computed(() => state.featureEnabled);
 const areShortcutsEnabled = computed(() => state.settings.shortcutsEnabled);
 const isActive = computed(() => state.loaded && state.featureEnabled && state.settings.shortcutsEnabled);
 const bindingsMap = computed(() => readonly(state.bindings));
+const currentStep = computed(() => runtimeJog.step != null ? runtimeJog.step : state.settings.step);
 
 async function persistBindings(next: Record<string, string>): Promise<void> {
   const previous = state.bindings;
@@ -114,6 +115,7 @@ export const keyBindingStore = {
   areShortcutsEnabled,
   isActive,
   bindings: bindingsMap,
+  currentStep,
 
   bootstrap(): void {
     if (state.loaded) {

@@ -313,6 +313,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import { keyBindingStore } from '../keyboard/key-binding-store';
 
 const store = useJogStore();
 
