@@ -81,6 +81,14 @@ body:
       placeholder: Attach console logs or screenshots that show the issue
     validations:
       required: false
+  - type: textarea
+    id: gcode
+    attributes:
+      label: G-code program (optional)
+      description: If this issue is related to a specific G-code program, please attach it here. You can drag-and-drop .nc, .gcode, or .txt files.
+      placeholder: Drag and drop your G-code file here, or paste the problematic G-code commands if the file is small
+    validations:
+      required: false
   - type: dropdown
     id: impact
     attributes:
