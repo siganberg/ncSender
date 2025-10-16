@@ -427,6 +427,19 @@ export function createWebSocketLayer({
         return;
       }
 
+      if (parsed.type.startsWith('plugin:')) {
+        const { pluginManager } = await import('../core/plugin-manager.js');
+        const match = parsed.type.match(/^plugin:([\w.-]+):(.+)$/);
+
+        if (match) {
+          const [, pluginId, eventName] = match;
+          pluginManager.getEventBus().emitAsync(eventName, parsed.data).catch((error) => {
+            log(`Error handling plugin message for ${pluginId}:${eventName}`, error?.message || error);
+          });
+        }
+        return;
+      }
+
       switch (parsed.type) {
         case 'cnc:command':
           handleWebSocketCommand(ws, parsed.data).catch((error) => {

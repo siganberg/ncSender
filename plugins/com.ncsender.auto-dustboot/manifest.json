@@ -1,0 +1,12 @@
+{
+  "id": "com.ncsender.auto-dustboot",
+  "name": "Auto Dustboot",
+  "version": "1.0.0",
+  "author": "ncSender",
+  "description": "Automatically manages dust collection (M8) after tool changes (M6)",
+  "entry": "index.js",
+  "events": [
+    "onBeforeGcodeLine"
+  ],
+  "permissions": ["gcode.modify"]
+}

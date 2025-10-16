@@ -15,6 +15,7 @@ import { createAutoConnector } from './server/auto-connect.js';
 import { createWebSocketLayer } from './server/websocket.js';
 import { registerCncEventHandlers } from './server/cnc-events.js';
 import { mountHttp } from './server/http.js';
+import { pluginManager } from './core/plugin-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,10 +126,17 @@ export async function createApp(options = {}) {
   });
 
   const start = () => new Promise((resolve) => {
-    server.listen(port, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', async () => {
       log(`ncSender Server listening on port ${port}`);
       log(`HTTP API: http://localhost:${port}/api`);
       log(`WebSocket: ws://localhost:${port}`);
+
+      try {
+        await pluginManager.initialize({ cncController, broadcast });
+        log('Plugin manager initialized successfully');
+      } catch (error) {
+        log('Failed to initialize plugin manager:', error);
+      }
 
       autoConnector.start();
       resolve();

@@ -1,0 +1,15 @@
+{
+  "id": "com.example.job-logger",
+  "name": "Job Logger",
+  "version": "1.0.0",
+  "author": "ncSender",
+  "description": "Logs job events to demonstrate plugin functionality",
+  "entry": "index.js",
+  "events": [
+    "onBeforeJobStart",
+    "onBeforeGcodeLine",
+    "onAfterGcodeLine",
+    "onAfterJobEnd"
+  ],
+  "permissions": []
+}

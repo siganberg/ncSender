@@ -1,0 +1,479 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { pluginEventBus } from './plugin-event-bus.js';
+
+const log = (...args) => {
+  console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
+};
+
+function getUserDataDir() {
+  const platform = os.platform();
+  const appName = 'ncSender';
+
+  switch (platform) {
+    case 'win32':
+      return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Application Support', appName);
+    case 'linux':
+      return path.join(os.homedir(), '.config', appName);
+    default:
+      return path.join(os.homedir(), `.${appName}`);
+  }
+}
+
+const PLUGINS_DIR = path.join(getUserDataDir(), 'plugins');
+const REGISTRY_PATH = path.join(getUserDataDir(), 'plugins.json');
+
+class PluginManager {
+  constructor() {
+    this.plugins = new Map();
+    this.pluginContexts = new Map();
+    this.initialized = false;
+    this.eventBus = pluginEventBus;
+    this.cncController = null;
+    this.broadcast = null;
+    this.toolMenuItems = [];
+  }
+
+  async initialize({ cncController, broadcast } = {}) {
+    if (this.initialized) {
+      log('Plugin manager already initialized');
+      return;
+    }
+
+    this.cncController = cncController;
+    this.broadcast = broadcast;
+
+    this.ensurePluginsDirectory();
+
+    const registry = this.loadRegistry();
+
+    for (const pluginEntry of registry) {
+      if (pluginEntry.enabled) {
+        try {
+          await this.loadPlugin(pluginEntry.id);
+        } catch (error) {
+          log(`Failed to load plugin "${pluginEntry.id}":`, error);
+        }
+      }
+    }
+
+    this.initialized = true;
+    log('Plugin manager initialized');
+  }
+
+  ensurePluginsDirectory() {
+    if (!fs.existsSync(PLUGINS_DIR)) {
+      fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+      log('Created plugins directory:', PLUGINS_DIR);
+    }
+  }
+
+  loadRegistry() {
+    if (!fs.existsSync(REGISTRY_PATH)) {
+      this.saveRegistry([]);
+      return [];
+    }
+
+    try {
+      const raw = fs.readFileSync(REGISTRY_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      log('Failed to load plugin registry:', error);
+      return [];
+    }
+  }
+
+  saveRegistry(registry) {
+    try {
+      fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+    } catch (error) {
+      log('Failed to save plugin registry:', error);
+      throw error;
+    }
+  }
+
+  getPluginManifestPath(pluginId) {
+    return path.join(PLUGINS_DIR, pluginId, 'manifest.json');
+  }
+
+  getPluginEntryPath(pluginId, entryFile) {
+    return path.join(PLUGINS_DIR, pluginId, entryFile);
+  }
+
+  loadManifest(pluginId) {
+    const manifestPath = this.getPluginManifestPath(pluginId);
+
+    if (!fs.existsSync(manifestPath)) {
+      throw new Error(`Manifest not found for plugin "${pluginId}"`);
+    }
+
+    try {
+      const raw = fs.readFileSync(manifestPath, 'utf8');
+      const manifest = JSON.parse(raw);
+
+      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
+        throw new Error('Invalid manifest: missing required fields (id, name, version, entry)');
+      }
+
+      return manifest;
+    } catch (error) {
+      log(`Failed to load manifest for plugin "${pluginId}":`, error);
+      throw error;
+    }
+  }
+
+  async loadPlugin(pluginId) {
+    if (this.plugins.has(pluginId)) {
+      log(`Plugin "${pluginId}" is already loaded`);
+      return;
+    }
+
+    const manifest = this.loadManifest(pluginId);
+    const entryPath = this.getPluginEntryPath(pluginId, manifest.entry);
+
+    if (!fs.existsSync(entryPath)) {
+      throw new Error(`Entry file not found: ${entryPath}`);
+    }
+
+    try {
+      const pluginModule = await import(`file://${entryPath}`);
+
+      const context = this.createPluginContext(pluginId, manifest);
+      this.pluginContexts.set(pluginId, context);
+
+      if (typeof pluginModule.onLoad === 'function') {
+        await pluginModule.onLoad(context);
+      }
+
+      this.plugins.set(pluginId, {
+        id: pluginId,
+        manifest,
+        module: pluginModule,
+        context,
+        loadedAt: new Date().toISOString()
+      });
+
+      log(`Loaded plugin "${manifest.name}" (${pluginId}) v${manifest.version}`);
+    } catch (error) {
+      log(`Failed to load plugin module "${pluginId}":`, error);
+      throw error;
+    }
+  }
+
+  async unloadPlugin(pluginId) {
+    const plugin = this.plugins.get(pluginId);
+
+    if (!plugin) {
+      throw new Error(`Plugin "${pluginId}" is not loaded`);
+    }
+
+    try {
+      if (typeof plugin.module.onUnload === 'function') {
+        await plugin.module.onUnload();
+      }
+    } catch (error) {
+      log(`Error during plugin "${pluginId}" unload:`, error);
+    }
+
+    this.eventBus.unregisterPluginHandlers(pluginId);
+    this.pluginContexts.delete(pluginId);
+    this.plugins.delete(pluginId);
+
+    // Remove tool menu items registered by this plugin
+    this.toolMenuItems = this.toolMenuItems.filter(item => item.pluginId !== pluginId);
+    log(`Removed tool menu items for plugin "${pluginId}"`);
+
+    log(`Unloaded plugin "${pluginId}"`);
+  }
+
+  createPluginContext(pluginId, manifest) {
+    const context = {
+      pluginId,
+      manifest,
+
+      log: (...args) => {
+        console.log(`[${new Date().toISOString()}] [PLUGIN:${pluginId}]`, ...args);
+      },
+
+      registerEventHandler: (eventName, handler) => {
+        this.eventBus.registerPluginHandler(pluginId, eventName, handler);
+      },
+
+      sendGcode: async (gcode, options = {}) => {
+        if (!this.cncController) {
+          throw new Error('CNC controller not available');
+        }
+        return await this.cncController.sendCommand(gcode, options);
+      },
+
+      broadcast: (eventName, data) => {
+        if (!this.broadcast) {
+          throw new Error('Broadcast function not available');
+        }
+        this.broadcast(eventName, data);
+      },
+
+      getSettings: () => {
+        return this.getPluginSettings(pluginId);
+      },
+
+      setSettings: (settings) => {
+        this.savePluginSettings(pluginId, settings);
+      },
+
+      showDialog: (title, content, options = {}) => {
+        if (!this.broadcast) {
+          throw new Error('Broadcast function not available');
+        }
+        this.broadcast('plugin:show-dialog', {
+          pluginId,
+          title,
+          content,
+          options
+        });
+      },
+
+      registerToolMenu: (label, callback) => {
+        if (!this.toolMenuItems) {
+          this.toolMenuItems = [];
+        }
+        this.toolMenuItems.push({
+          pluginId,
+          label,
+          callback
+        });
+        log(`Registered tool menu item: "${label}" for plugin ${pluginId}`);
+      },
+
+      emitToClient: (eventName, data) => {
+        if (!this.broadcast) {
+          throw new Error('Broadcast function not available');
+        }
+        this.broadcast(`plugin:${pluginId}:${eventName}`, data);
+      },
+
+      onWebSocketEvent: (eventName, handler) => {
+        // Register to receive WebSocket events that are broadcast
+        // This allows plugins to react to CNC events in real-time
+        this.eventBus.registerPluginHandler(pluginId, `ws:${eventName}`, handler);
+      }
+    };
+
+    return context;
+  }
+
+  getPluginSettings(pluginId) {
+    const settingsPath = path.join(PLUGINS_DIR, pluginId, 'config.json');
+
+    if (!fs.existsSync(settingsPath)) {
+      return {};
+    }
+
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf8');
+      return JSON.parse(raw);
+    } catch (error) {
+      log(`Failed to load settings for plugin "${pluginId}":`, error);
+      return {};
+    }
+  }
+
+  savePluginSettings(pluginId, settings) {
+    const settingsPath = path.join(PLUGINS_DIR, pluginId, 'config.json');
+    const pluginDir = path.dirname(settingsPath);
+
+    if (!fs.existsSync(pluginDir)) {
+      fs.mkdirSync(pluginDir, { recursive: true });
+    }
+
+    try {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+    } catch (error) {
+      log(`Failed to save settings for plugin "${pluginId}":`, error);
+      throw error;
+    }
+  }
+
+  getLoadedPlugins() {
+    return Array.from(this.plugins.values()).map(p => ({
+      id: p.id,
+      name: p.manifest.name,
+      version: p.manifest.version,
+      author: p.manifest.author,
+      loadedAt: p.loadedAt
+    }));
+  }
+
+  getInstalledPlugins() {
+    const registry = this.loadRegistry();
+    return registry.map(entry => {
+      const plugin = this.plugins.get(entry.id);
+      return {
+        ...entry,
+        loaded: !!plugin,
+        loadedAt: plugin?.loadedAt
+      };
+    });
+  }
+
+  async installPlugin(pluginId, manifest) {
+    const registry = this.loadRegistry();
+
+    const existingIndex = registry.findIndex(p => p.id === pluginId);
+
+    if (existingIndex >= 0) {
+      registry[existingIndex] = {
+        id: pluginId,
+        name: manifest.name,
+        version: manifest.version,
+        enabled: true,
+        installedAt: new Date().toISOString()
+      };
+    } else {
+      registry.push({
+        id: pluginId,
+        name: manifest.name,
+        version: manifest.version,
+        enabled: true,
+        installedAt: new Date().toISOString()
+      });
+    }
+
+    this.saveRegistry(registry);
+    log(`Registered plugin "${pluginId}" in registry`);
+  }
+
+  async uninstallPlugin(pluginId) {
+    if (this.plugins.has(pluginId)) {
+      await this.unloadPlugin(pluginId);
+    }
+
+    const registry = this.loadRegistry();
+    const filteredRegistry = registry.filter(p => p.id !== pluginId);
+    this.saveRegistry(filteredRegistry);
+
+    const pluginDir = path.join(PLUGINS_DIR, pluginId);
+    if (fs.existsSync(pluginDir)) {
+      fs.rmSync(pluginDir, { recursive: true, force: true });
+      log(`Removed plugin directory: ${pluginDir}`);
+    }
+
+    log(`Uninstalled plugin "${pluginId}"`);
+  }
+
+  async enablePlugin(pluginId) {
+    const registry = this.loadRegistry();
+    const plugin = registry.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      throw new Error(`Plugin "${pluginId}" not found in registry`);
+    }
+
+    plugin.enabled = true;
+    this.saveRegistry(registry);
+
+    await this.loadPlugin(pluginId);
+    log(`Enabled plugin "${pluginId}"`);
+  }
+
+  async disablePlugin(pluginId) {
+    const registry = this.loadRegistry();
+    const plugin = registry.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      throw new Error(`Plugin "${pluginId}" not found in registry`);
+    }
+
+    plugin.enabled = false;
+    this.saveRegistry(registry);
+
+    if (this.plugins.has(pluginId)) {
+      await this.unloadPlugin(pluginId);
+    }
+
+    log(`Disabled plugin "${pluginId}"`);
+  }
+
+  async reloadPlugin(pluginId) {
+    log(`Reloading plugin "${pluginId}"`);
+
+    if (!this.plugins.has(pluginId)) {
+      throw new Error(`Plugin "${pluginId}" is not loaded`);
+    }
+
+    await this.unloadPlugin(pluginId);
+
+    const manifest = this.loadManifest(pluginId);
+    const entryPath = this.getPluginEntryPath(pluginId, manifest.entry);
+
+    if (!fs.existsSync(entryPath)) {
+      throw new Error(`Entry file not found: ${entryPath}`);
+    }
+
+    try {
+      const timestamp = Date.now();
+      const pluginModule = await import(`file://${entryPath}?t=${timestamp}`);
+
+      const context = this.createPluginContext(pluginId, manifest);
+      this.pluginContexts.set(pluginId, context);
+
+      if (typeof pluginModule.onLoad === 'function') {
+        await pluginModule.onLoad(context);
+      }
+
+      this.plugins.set(pluginId, {
+        id: pluginId,
+        manifest,
+        module: pluginModule,
+        context,
+        loadedAt: new Date().toISOString()
+      });
+
+      log(`Plugin "${manifest.name}" (${pluginId}) v${manifest.version} reloaded successfully`);
+    } catch (error) {
+      log(`Failed to reload plugin module "${pluginId}":`, error);
+      throw error;
+    }
+  }
+
+  getPluginsDirectory() {
+    return PLUGINS_DIR;
+  }
+
+  getEventBus() {
+    return this.eventBus;
+  }
+
+  getToolMenuItems() {
+    return this.toolMenuItems.map(item => ({
+      pluginId: item.pluginId,
+      label: item.label
+    }));
+  }
+
+  async executeToolMenuItem(pluginId, label) {
+    const item = this.toolMenuItems.find(
+      i => i.pluginId === pluginId && i.label === label
+    );
+
+    if (!item) {
+      throw new Error(`Tool menu item not found: ${pluginId} - ${label}`);
+    }
+
+    if (typeof item.callback === 'function') {
+      try {
+        await item.callback();
+        log(`Executed tool menu item: ${pluginId} - ${label}`);
+      } catch (error) {
+        log(`Error executing tool menu item: ${pluginId} - ${label}`, error);
+        throw error;
+      }
+    }
+  }
+}
+
+export const pluginManager = new PluginManager();

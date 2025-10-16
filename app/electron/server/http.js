@@ -12,6 +12,7 @@ import { createFirmwareRoutes } from '../features/firmware/routes.js';
 import { createProbeRoutes } from '../features/probe/routes.js';
 import { createMacroRoutes } from '../features/macro/routes.js';
 import { createToolRoutes } from '../features/tool/routes.js';
+import { createPluginRoutes } from '../features/plugins/routes.js';
 
 export function mountHttp({
   app,
@@ -44,6 +45,7 @@ export function mountHttp({
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController));
   app.use('/api', createToolRoutes(cncController, serverState));
+  app.use('/api/plugins', createPluginRoutes());
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

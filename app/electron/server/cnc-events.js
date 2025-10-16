@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { saveSettings, removeSetting } from '../core/settings-manager.js';
 import { fetchAndSaveAlarmCodes } from '../features/alarms/routes.js';
 import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
+import { pluginManager } from '../core/plugin-manager.js';
 
 export function registerCncEventHandlers({
   cncController,
@@ -93,6 +94,7 @@ export function registerCncEventHandlers({
       return;
     }
     broadcast('cnc-data', data);
+    pluginManager.getEventBus().emitAsync('ws:cnc-data', data);
   };
 
   const handleStatusReport = (status) => {
@@ -113,8 +115,15 @@ export function registerCncEventHandlers({
     }
   };
 
-  const handleSystemMessage = (message) => broadcast('cnc-system-message', message);
-  const handleResponse = (response) => broadcast('cnc-response', response);
+  const handleSystemMessage = (message) => {
+    broadcast('cnc-system-message', message);
+    pluginManager.getEventBus().emitAsync('ws:cnc-system-message', message);
+  };
+
+  const handleResponse = (response) => {
+    broadcast('cnc-response', response);
+    pluginManager.getEventBus().emitAsync('ws:cnc-response', response);
+  };
 
   const handleCncError = (errorData) => {
     try {

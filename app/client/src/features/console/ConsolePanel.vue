@@ -76,6 +76,32 @@
       <MacroPanel :connected="connected" />
     </div>
 
+    <!-- Tools Tab -->
+    <div v-if="activeTab === 'tools'" class="tab-content tools-tab">
+      <div v-if="loadingTools" class="placeholder-content">
+        <p>Loading plugin tools...</p>
+      </div>
+      <div v-else-if="toolMenuItems.length === 0" class="placeholder-content">
+        <p>No plugin tools available. Install plugins to add custom tools.</p>
+      </div>
+      <div v-else class="tools-list">
+        <button
+          v-for="item in toolMenuItems"
+          :key="`${item.pluginId}-${item.label}`"
+          class="tool-button"
+          @click="executeToolMenuItem(item)"
+          :disabled="executingTool === `${item.pluginId}-${item.label}`"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+            <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+          </svg>
+          <span class="tool-label">{{ item.label }}</span>
+          <span v-if="executingTool === `${item.pluginId}-${item.label}`" class="tool-spinner"></span>
+        </button>
+      </div>
+    </div>
+
     <!-- G-Code Preview Tab -->
     <div v-if="activeTab === 'gcode-preview'" class="tab-content">
       <div v-if="!totalLines" class="placeholder-content">
@@ -151,11 +177,17 @@ const activeTab = ref('terminal');
 const tabs = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'gcode-preview', label: 'G-Code Preview' },
-  { id: 'macros', label: 'Macros' }
+  { id: 'macros', label: 'Macros' },
+  { id: 'tools', label: 'Tools' }
 ];
 
 // Filter console lines to hide job-runner chatter but show probing commands
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
+
+// Plugin Tools state
+const toolMenuItems = ref<Array<{ pluginId: string; label: string }>>([]);
+const loadingTools = ref(false);
+const executingTool = ref<string | null>(null);
 
 // G-code viewer state (virtualized via RecycleScroller)
 const lineHeight = ref(18); // height of a .gcode-line (no gap)
@@ -543,6 +575,53 @@ watch(() => props.lines, async () => {
     }
   }
 }, { deep: true });
+
+// Load plugin tool menu items
+const loadToolMenuItems = async () => {
+  loadingTools.value = true;
+  try {
+    const response = await fetch(`${api.baseUrl}/api/plugins/tool-menu-items`);
+    if (response.ok) {
+      toolMenuItems.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to load plugin tool menu items:', error);
+  } finally {
+    loadingTools.value = false;
+  }
+};
+
+// Execute a tool menu item
+const executeToolMenuItem = async (item: { pluginId: string; label: string }) => {
+  const key = `${item.pluginId}-${item.label}`;
+  executingTool.value = key;
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/plugins/tool-menu-items/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pluginId: item.pluginId, label: item.label })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Failed to execute tool menu item:', error);
+      alert(`Error: ${error.error || 'Failed to execute tool'}`);
+    }
+  } catch (error) {
+    console.error('Failed to execute tool menu item:', error);
+    alert('Failed to execute tool');
+  } finally {
+    executingTool.value = null;
+  }
+};
+
+// Watch for Tools tab activation to load menu items
+watch(activeTab, (newTab) => {
+  if (newTab === 'tools' && toolMenuItems.value.length === 0) {
+    loadToolMenuItems();
+  }
+});
 </script>
 
 <style scoped>
@@ -949,6 +1028,74 @@ h2 {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
   user-select: text !important;
+}
+
+/* Tools Tab */
+.tools-tab {
+  min-height: 200px;
+}
+
+.tools-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--gap-sm);
+  padding: var(--gap-sm);
+}
+
+.tool-button {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: var(--gap-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  position: relative;
+}
+
+.tool-button:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-elevated);
+}
+
+.tool-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.tool-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tool-button svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+.tool-label {
+  flex: 1;
+  text-align: left;
+  font-weight: 500;
+}
+
+.tool-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-surface-muted);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
 
