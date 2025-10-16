@@ -173,7 +173,7 @@
       <!-- Probe button - bottom right -->
       <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isProbeDisabled">
         <span class="probe-label">Probe</span>
-        <img src="/assets/probe/3d-probe/probe.svg" alt="Probe" class="probe-icon" />
+        <div class="probe-icon" role="img" aria-label="Probe"></div>
       </button>
     </div>
   </section>
@@ -2503,7 +2503,12 @@ body.theme-light .dot--rapid {
 .probe-icon {
   width: 48px;
   height: 48px;
-  filter: invert(64%) sepia(48%) saturate(527%) hue-rotate(115deg) brightness(93%) contrast(91%);
+  /* Use mask to apply accent color dynamically */
+  -webkit-mask: url(/assets/probe/3d-probe/probe.svg) no-repeat center;
+  mask: url(/assets/probe/3d-probe/probe.svg) no-repeat center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  background-color: var(--color-accent);
 }
 
 .probe-label {
@@ -2513,7 +2518,7 @@ body.theme-light .dot--rapid {
 }
 
 .probe-button:hover .probe-icon {
-  filter: brightness(0) invert(1);
+  background-color: white;
 }
 
 .probe-button:hover .probe-label {
