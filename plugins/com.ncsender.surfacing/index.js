@@ -19,17 +19,24 @@ export async function onLoad(ctx) {
     const distanceUnit = isImperial ? 'in' : 'mm';
     const feedRateUnit = isImperial ? 'in/min' : 'mm/min';
 
-    // Get saved settings from server or use defaults
+    // Conversion factor
+    const MM_TO_INCH = 0.0393701;
+
+    // Get saved settings from server or use defaults (always stored in metric)
     const savedSettings = ctx.getSettings() || {};
     const defaultPatternType = savedSettings.patternType ?? (savedSettings.invertOrientation ? 'zigzagX' : 'zigzagY');
+
+    // Convert from metric to imperial if needed for display
+    const convertToDisplay = (value) => isImperial ? parseFloat((value * MM_TO_INCH).toFixed(4)) : value;
+
     const settings = {
-      xDimension: savedSettings.xDimension ?? 100,
-      yDimension: savedSettings.yDimension ?? 100,
-      depthOfCut: savedSettings.depthOfCut ?? 0.5,
-      targetDepth: savedSettings.targetDepth ?? 0.5,
-      bitDiameter: savedSettings.bitDiameter ?? 25.4,
+      xDimension: convertToDisplay(savedSettings.xDimension ?? 100),
+      yDimension: convertToDisplay(savedSettings.yDimension ?? 100),
+      depthOfCut: convertToDisplay(savedSettings.depthOfCut ?? 0.5),
+      targetDepth: convertToDisplay(savedSettings.targetDepth ?? 0.5),
+      bitDiameter: convertToDisplay(savedSettings.bitDiameter ?? 25.4),
       stepover: savedSettings.stepover ?? 80,
-      feedRate: savedSettings.feedRate ?? 2000,
+      feedRate: convertToDisplay(savedSettings.feedRate ?? 2000),
       spindleRpm: savedSettings.spindleRpm ?? 15000,
       patternType: defaultPatternType,
       mistM7: savedSettings.mistM7 ?? false,
@@ -297,6 +304,10 @@ export async function onLoad(ctx) {
 
       <script>
         (function() {
+          // Units configuration
+          const isImperial = ${isImperial};
+          const INCH_TO_MM = 25.4;
+
           // Validation configuration
           const validationRules = {
             xDimension: { min: 10, max: Infinity, label: 'X Dimension' },
@@ -425,8 +436,14 @@ export async function onLoad(ctx) {
               bitDiameter, stepover,
               feedRate, spindleRpm,
               patternType,
-              mistM7, floodM8
+              mistM7, floodM8,
+              isImperial
             } = params;
+
+            // Static values that need conversion
+            const safeHeight = isImperial ? (5 * 0.0393701).toFixed(3) : '5.000';
+            const unitsCode = isImperial ? 'G20' : 'G21';
+            const unitsLabel = isImperial ? 'inch' : 'mm';
 
             const stepoverDistance = (bitDiameter * stepover) / 100;
             const numDepthPasses = Math.ceil(targetDepth / depthOfCut);
@@ -440,12 +457,12 @@ export async function onLoad(ctx) {
             let gcode = [];
             gcode.push('(Surfacing Operation)');
             gcode.push(\`(Start: X\${startX} Y\${startY})\`);
-            gcode.push(\`(Dimensions: \${xDimension} x \${yDimension})\`);
-            gcode.push(\`(Bit Diameter: \${bitDiameter}mm, Stepover: \${stepover}%)\`);
-            gcode.push(\`(Target Depth: \${targetDepth}mm in \${numDepthPasses} passes)\`);
-            gcode.push(\`(Feed Rate: \${feedRate}mm/min, Spindle: \${spindleRpm}RPM)\`);
+            gcode.push(\`(Dimensions: \${xDimension} x \${yDimension} \${unitsLabel})\`);
+            gcode.push(\`(Bit Diameter: \${bitDiameter}\${unitsLabel}, Stepover: \${stepover}%)\`);
+            gcode.push(\`(Target Depth: \${targetDepth}\${unitsLabel} in \${numDepthPasses} passes)\`);
+            gcode.push(\`(Feed Rate: \${feedRate}\${unitsLabel}/min, Spindle: \${spindleRpm}RPM)\`);
             gcode.push('');
-            gcode.push('G21 ; Metric units');
+            gcode.push(\`\${unitsCode} ; \${isImperial ? 'Imperial' : 'Metric'} units\`);
             gcode.push('G90 ; Absolute positioning');
             gcode.push('G94 ; Feed rate per minute');
             gcode.push('');
@@ -462,7 +479,7 @@ export async function onLoad(ctx) {
             gcode.push('');
 
             gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start position\`);
-            gcode.push('G0 Z5.000 ; Move to safe height');
+            gcode.push(\`G0 Z\${safeHeight} ; Move to safe height\`);
             gcode.push('');
 
             let currentDepth = 0;
@@ -553,7 +570,7 @@ export async function onLoad(ctx) {
               }
 
               // Z-hop retract and return to start
-              gcode.push('G0 Z5.000 ; Retract to safe height');
+              gcode.push(\`G0 Z\${safeHeight} ; Retract to safe height\`);
               gcode.push('');
             }
 
@@ -581,9 +598,8 @@ export async function onLoad(ctx) {
             const patternType = patternTypeSelect ? patternTypeSelect.value : 'zigzagY';
             const invertOrientation = patternType === 'zigzagX';
 
-            const params = {
-              startX: 0,
-              startY: 0,
+            // Get values from form (in display units)
+            const displayValues = {
               xDimension: parseFloat(document.getElementById('xDimension').value),
               yDimension: parseFloat(document.getElementById('yDimension').value),
               depthOfCut: parseFloat(document.getElementById('depthOfCut').value),
@@ -592,19 +608,53 @@ export async function onLoad(ctx) {
               stepover: parseFloat(document.getElementById('stepover').value),
               feedRate: parseFloat(document.getElementById('feedRate').value),
               spindleRpm: parseFloat(document.getElementById('spindleRpm').value),
-              patternType,
-              invertOrientation,
               mistM7: document.getElementById('mistM7').checked,
               floodM8: document.getElementById('floodM8').checked
             };
 
+            // Convert to metric for storage
+            const convertToMetric = (value) => isImperial ? value * INCH_TO_MM : value;
+            const settingsToSave = {
+              xDimension: convertToMetric(displayValues.xDimension),
+              yDimension: convertToMetric(displayValues.yDimension),
+              depthOfCut: convertToMetric(displayValues.depthOfCut),
+              targetDepth: convertToMetric(displayValues.targetDepth),
+              bitDiameter: convertToMetric(displayValues.bitDiameter),
+              stepover: displayValues.stepover,
+              feedRate: convertToMetric(displayValues.feedRate),
+              spindleRpm: displayValues.spindleRpm,
+              patternType,
+              invertOrientation,
+              mistM7: displayValues.mistM7,
+              floodM8: displayValues.floodM8
+            };
+
+            // Params for G-code generation (use display values directly)
+            const params = {
+              startX: 0,
+              startY: 0,
+              xDimension: displayValues.xDimension,
+              yDimension: displayValues.yDimension,
+              depthOfCut: displayValues.depthOfCut,
+              targetDepth: displayValues.targetDepth,
+              bitDiameter: displayValues.bitDiameter,
+              stepover: displayValues.stepover,
+              feedRate: displayValues.feedRate,
+              spindleRpm: displayValues.spindleRpm,
+              patternType,
+              invertOrientation,
+              mistM7: displayValues.mistM7,
+              floodM8: displayValues.floodM8,
+              isImperial
+            };
+
             const gcode = generateSurfacingGcode(params);
 
-            // Save settings to server
+            // Save settings to server (in metric)
             fetch('/api/plugins/com.ncsender.surfacing/settings', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(params)
+              body: JSON.stringify(settingsToSave)
             }).catch(err => console.error('Failed to save settings:', err));
 
             // Upload file
