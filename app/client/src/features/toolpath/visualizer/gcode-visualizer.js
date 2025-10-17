@@ -81,6 +81,7 @@ class GCodeVisualizer {
 
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
+        let unitScale = 1; // Track unit conversion: 1 for mm (G21), 25.4 for inches (G20)
         let hasOutOfBounds = false; // Track if any points are out of bounds
         // Reset axes tracking for fresh parse
         this._outOfBoundsAxes.clear();
@@ -108,15 +109,22 @@ class GCodeVisualizer {
 
             if (gMatch) {
                 const gCode = parseInt(gMatch[1]);
+                // Track unit mode
+                if (gCode === 20) {
+                    unitScale = 25.4; // G20 = inches, convert to mm
+                } else if (gCode === 21) {
+                    unitScale = 1; // G21 = mm
+                }
+                // Track movement type
                 if ([0, 1, 2, 3].includes(gCode)) {
                     lastMoveType = gCode;
                 }
             }
 
             const newPos = { ...currentPos };
-            if (xMatch) newPos.x = parseFloat(xMatch[1]);
-            if (yMatch) newPos.y = parseFloat(yMatch[1]);
-            if (zMatch) newPos.z = parseFloat(zMatch[1]);
+            if (xMatch) newPos.x = parseFloat(xMatch[1]) * unitScale;
+            if (yMatch) newPos.y = parseFloat(yMatch[1]) * unitScale;
+            if (zMatch) newPos.z = parseFloat(zMatch[1]) * unitScale;
 
             const hasMovement = (
                 newPos.x !== currentPos.x ||
@@ -143,8 +151,8 @@ class GCodeVisualizer {
 
                 if (lastMoveType === 2 || lastMoveType === 3) {
                     // Arc move
-                    const i = iMatch ? parseFloat(iMatch[1]) : 0;
-                    const j = jMatch ? parseFloat(jMatch[1]) : 0;
+                    const i = iMatch ? parseFloat(iMatch[1]) * unitScale : 0;
+                    const j = jMatch ? parseFloat(jMatch[1]) * unitScale : 0;
 
                     const centerX = currentPos.x + i;
                     const centerY = currentPos.y + j;

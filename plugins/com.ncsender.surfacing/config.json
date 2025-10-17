@@ -1,14 +1,14 @@
 {
-  "xDimension": 299.9994,
-  "yDimension": 299.9994,
-  "depthOfCut": 1.99898,
-  "targetDepth": 1.0007599999999999,
+  "xDimension": 500,
+  "yDimension": 300,
+  "depthOfCut": 0.1,
+  "targetDepth": 0.2,
   "bitDiameter": 25.4,
   "stepover": 80,
-  "feedRate": 7000.0063199999995,
-  "spindleRpm": 24000,
+  "feedRate": 5000,
+  "spindleRpm": 2000,
   "patternType": "spiral",
   "invertOrientation": false,
-  "mistM7": true,
+  "mistM7": false,
   "floodM8": true
 }

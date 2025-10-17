@@ -354,7 +354,7 @@ onMounted(() => {
   });
 });
 
-watch(totalLines, async () => {
+watch(totalLines, async (newVal, oldVal) => {
   await nextTick();
   const el = gcodeOutput.value;
   if (el) el.scrollTop = 0;
@@ -365,6 +365,11 @@ watch(totalLines, async () => {
     } else {
       fillGcodeCache(0, Math.max(overscan, 200));
     }
+  }
+
+  // Auto-switch to G-Code Preview tab when new file is loaded
+  if (newVal > 0 && newVal !== oldVal) {
+    activeTab.value = 'gcode-preview';
   }
 });
 
