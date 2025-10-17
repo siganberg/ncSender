@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pluginEventBus } from './plugin-event-bus.js';
+import { readSettings } from './settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
@@ -23,8 +24,14 @@ function getUserDataDir() {
   }
 }
 
-const PLUGINS_DIR = path.join(getUserDataDir(), 'plugins');
+// Support development mode - load plugins from project directory
+const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
+const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');
 const REGISTRY_PATH = path.join(getUserDataDir(), 'plugins.json');
+
+if (DEV_PLUGINS_DIR) {
+  log('Development mode enabled - loading plugins from:', DEV_PLUGINS_DIR);
+}
 
 class PluginManager {
   constructor() {
@@ -228,6 +235,10 @@ class PluginManager {
 
       setSettings: (settings) => {
         this.savePluginSettings(pluginId, settings);
+      },
+
+      getAppSettings: () => {
+        return readSettings() || {};
       },
 
       showDialog: (title, content, options = {}) => {

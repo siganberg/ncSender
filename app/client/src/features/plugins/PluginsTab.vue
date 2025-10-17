@@ -96,10 +96,10 @@
 
           <div class="plugin-actions">
               <button
-                v-if="pluginHasConfig[plugin.id]"
                 class="btn-icon"
                 @click="openConfigPanel(plugin)"
                 title="Configure"
+                :disabled="!plugin.enabled || !plugin.loaded || !pluginHasConfig[plugin.id]"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
@@ -107,11 +107,10 @@
                 </svg>
               </button>
               <button
-                v-if="plugin.loaded"
                 class="btn-icon"
                 @click="reloadPlugin(plugin.id)"
                 title="Reload"
-                :disabled="reloading === plugin.id"
+                :disabled="!plugin.enabled || !plugin.loaded || reloading === plugin.id"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
                   <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
@@ -124,12 +123,31 @@
                 :title="plugin.enabled ? 'Disable' : 'Enable'"
                 :disabled="toggling === plugin.id"
               >
-                <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M11 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0M8 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4m.256 7a4.5 4.5 0 0 1-.229-1.004H3c.001-.246.154-.986.832-1.664C4.484 10.68 5.711 10 8 10q.39 0 .74.025c.226-.341.496-.65.804-.918Q8.844 9.002 8 9c-5 0-6 3-6 4s1 1 1 1z"/>
-                  <path d="M16 12.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0m-1.993-1.679a.5.5 0 0 0-.686.172l-1.17 1.95-.547-.547a.5.5 0 0 0-.708.708l.774.773a.75.75 0 0 0 1.174-.144l1.335-2.226a.5.5 0 0 0-.172-.686"/>
+                <!-- Connected plug (enabled) -->
+                <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <!-- Socket -->
+                  <rect x="6" y="2" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                  <!-- Plug pins in socket -->
+                  <line x1="9" y1="6" x2="9" y2="2" stroke="currentColor" stroke-width="2"/>
+                  <line x1="15" y1="6" x2="15" y2="2" stroke="currentColor" stroke-width="2"/>
+                  <!-- Plug body -->
+                  <rect x="7" y="10" width="10" height="6" rx="1" fill="currentColor"/>
+                  <!-- Cable -->
+                  <path d="M10 16 L10 22" stroke="currentColor" stroke-width="2" fill="none"/>
+                  <path d="M14 16 L14 22" stroke="currentColor" stroke-width="2" fill="none"/>
                 </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="m13.498.795.149-.149a1.207 1.207 0 1 1 1.707 1.708l-.149.148a1.5 1.5 0 0 1-.059 2.059L4.854 14.854a.5.5 0 0 1-.233.131l-4 1a.5.5 0 0 1-.606-.606l1-4a.5.5 0 0 1 .131-.232l9.642-9.642a.5.5 0 0 0-.642.056L6.854 4.854a.5.5 0 1 1-.708-.708L9.44.854A1.5 1.5 0 0 1 11.5.796a1.5 1.5 0 0 1 1.998-.001m-.644.766a.5.5 0 0 0-.707 0L1.95 11.756l-.764 3.057 3.057-.764L14.44 3.854a.5.5 0 0 0 0-.708z"/>
+                <!-- Disconnected plug (disabled) -->
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <!-- Socket -->
+                  <rect x="6" y="2" width="12" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                  <!-- Plug body (separated) -->
+                  <rect x="7" y="12" width="10" height="6" rx="1" fill="currentColor"/>
+                  <!-- Plug pins (not connected) -->
+                  <line x1="10" y1="12" x2="10" y2="10" stroke="currentColor" stroke-width="2"/>
+                  <line x1="14" y1="12" x2="14" y2="10" stroke="currentColor" stroke-width="2"/>
+                  <!-- Cable -->
+                  <path d="M10 18 L10 22" stroke="currentColor" stroke-width="2" fill="none"/>
+                  <path d="M14 18 L14 22" stroke="currentColor" stroke-width="2" fill="none"/>
                 </svg>
               </button>
               <button
@@ -270,7 +288,36 @@ const savePluginConfig = () => {
 };
 
 const onConfigIframeLoad = () => {
-  // Iframe loaded, ready for interaction
+  // Inject theme CSS variables into iframe
+  if (configIframe.value && configIframe.value.contentWindow && configIframe.value.contentDocument) {
+    const computedStyle = getComputedStyle(document.documentElement);
+    const iframeRoot = configIframe.value.contentDocument.documentElement;
+
+    // Get all CSS variables from the parent and inject into iframe
+    const cssVars = [
+      '--color-surface',
+      '--color-surface-muted',
+      '--color-border',
+      '--color-text-primary',
+      '--color-text-secondary',
+      '--color-accent',
+      '--color-danger',
+      '--gap-xs',
+      '--gap-sm',
+      '--gap-md',
+      '--gap-lg',
+      '--gap-xl',
+      '--radius-small',
+      '--radius-medium'
+    ];
+
+    cssVars.forEach(varName => {
+      const value = computedStyle.getPropertyValue(varName);
+      if (value) {
+        iframeRoot.style.setProperty(varName, value);
+      }
+    });
+  }
 };
 
 const checkPluginHasConfig = async (pluginId: string) => {

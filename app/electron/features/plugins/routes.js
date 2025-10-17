@@ -291,6 +291,7 @@ export function createPluginRoutes() {
       await fs.cp(path.join(extractDir, files[0]), pluginDir, { recursive: true });
 
       await pluginManager.installPlugin(manifest.id, manifest);
+      await pluginManager.enablePlugin(manifest.id);
 
       await fs.rm(extractDir, { recursive: true, force: true });
       await fs.unlink(tempFile);

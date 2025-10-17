@@ -1,22 +1,18 @@
 <template>
-  <Dialog v-if="show" @close="closeDialog" :show-header="false" size="medium">
-    <div class="plugin-dialog">
-      <div class="plugin-dialog-header">
-        <h3>{{ dialogData.title }}</h3>
-        <button class="close-button" @click="closeDialog">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-          </svg>
-        </button>
+  <div v-if="show" class="plugin-dialog-backdrop" @click.self="closeDialog">
+    <div class="plugin-dialog-container">
+      <div class="plugin-dialog">
+        <div class="plugin-dialog-header">
+          <h3>{{ dialogData.title }}</h3>
+        </div>
+        <div class="plugin-dialog-content" v-html="dialogData.content"></div>
       </div>
-      <div class="plugin-dialog-content" v-html="dialogData.content"></div>
     </div>
-  </Dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
-import Dialog from './Dialog.vue';
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { api } from '@/lib/api';
 
 interface PluginDialogData {
@@ -39,6 +35,33 @@ let unsubscribe: (() => void) | null = null;
 const handlePluginDialog = (data: PluginDialogData) => {
   dialogData.value = data;
   show.value = true;
+
+  // Execute scripts after DOM is updated
+  nextTick(() => {
+    executeScripts();
+  });
+};
+
+const executeScripts = () => {
+  const contentEl = document.querySelector('.plugin-dialog-content');
+  if (!contentEl) return;
+
+  // Find all script tags in the content
+  const scripts = contentEl.querySelectorAll('script');
+  scripts.forEach((oldScript) => {
+    const newScript = document.createElement('script');
+
+    // Copy attributes
+    Array.from(oldScript.attributes).forEach((attr) => {
+      newScript.setAttribute(attr.name, attr.value);
+    });
+
+    // Copy script content
+    newScript.textContent = oldScript.textContent;
+
+    // Replace old script with new one to trigger execution
+    oldScript.parentNode?.replaceChild(newScript, oldScript);
+  });
 };
 
 const closeDialog = () => {
@@ -55,8 +78,9 @@ const handlePostMessage = (event: MessageEvent) => {
   }
 
   // Forward plugin-specific messages to the backend
-  if (dialogData.value.pluginId && event.data.type) {
-    api.emit(`plugin:${dialogData.value.pluginId}:message`, event.data);
+  if (dialogData.value.pluginId && event.data.type === 'plugin-message') {
+    // Extract the inner data object and forward that to the plugin
+    api.emit(`plugin:${dialogData.value.pluginId}:message`, event.data.data);
   }
 };
 
@@ -77,18 +101,46 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.plugin-dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.plugin-dialog-container {
+  background: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  width: auto;
+  min-width: 320px;
+  max-width: min(90vw, 640px);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .plugin-dialog {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
+  height: 100%;
+  overflow: hidden;
 }
 
 .plugin-dialog-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: var(--gap-md);
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .plugin-dialog-header h3 {
@@ -117,7 +169,11 @@ onBeforeUnmount(() => {
 }
 
 .plugin-dialog-content {
-  padding: var(--gap-md);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   color: var(--color-text-primary);
 }
 

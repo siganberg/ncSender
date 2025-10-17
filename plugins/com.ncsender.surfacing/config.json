@@ -1,0 +1,16 @@
+{
+  "startX": 0,
+  "startY": 0,
+  "xDimension": 300,
+  "yDimension": 300,
+  "depthOfCut": 0.5,
+  "targetDepth": 1,
+  "bitDiameter": 25.4,
+  "stepover": 80,
+  "feedRate": 7000,
+  "spindleRpm": 15000,
+  "patternType": "spiral",
+  "invertOrientation": false,
+  "mistM7": true,
+  "floodM8": true
+}
