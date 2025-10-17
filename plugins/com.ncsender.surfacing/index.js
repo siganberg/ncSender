@@ -221,7 +221,7 @@ export async function onLoad(ctx) {
 
       <div class="surfacing-layout">
         <div class="form-column">
-          <form id="surfacingForm">
+          <form id="surfacingForm" novalidate>
             <div class="form-section">
               <div class="form-row orientation-row">
                 <label class="orientation-label" for="patternType">Direction</label>
@@ -308,8 +308,17 @@ export async function onLoad(ctx) {
           const isImperial = ${isImperial};
           const INCH_TO_MM = 25.4;
 
-          // Validation configuration
-          const validationRules = {
+          // Validation configuration (adjusted for imperial when needed)
+          const validationRules = isImperial ? {
+            xDimension: { min: 0.5, max: Infinity, label: 'X Dimension' },
+            yDimension: { min: 0.5, max: Infinity, label: 'Y Dimension' },
+            depthOfCut: { min: 0.003, max: 1, label: 'Depth of Cut' },
+            targetDepth: { min: 0.003, max: 1, label: 'Target Depth' },
+            bitDiameter: { min: 0.03, max: 2, label: 'Bit Diameter' },
+            stepover: { min: 10, max: 100, label: 'Stepover' },
+            feedRate: { min: 40, max: 800, label: 'Feed Rate' },
+            spindleRpm: { min: 2000, max: 24000, label: 'Spindle RPM' }
+          } : {
             xDimension: { min: 10, max: Infinity, label: 'X Dimension' },
             yDimension: { min: 10, max: Infinity, label: 'Y Dimension' },
             depthOfCut: { min: 0.1, max: 20, label: 'Depth of Cut' },
