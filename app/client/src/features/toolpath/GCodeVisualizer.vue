@@ -1098,7 +1098,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   const currentView = viewType || props.view;
 
   // For orthographic camera, adjust frustum to fit the G-code bounds
-  const padding = 1.01; // 1% padding for very tight fit
+  const padding = 1.1; // 10% padding to give the camera breathing room
   const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
 
   const sizeX = bounds.size.x * padding;
@@ -1134,7 +1134,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
       // 3D view: calculate the projected size for isometric view
       // The camera is positioned at (0.7, -0.7, 0.7), so we need to calculate
       // the apparent size from this viewing angle
-      const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY) * 0.9; // XY diagonal scaled
+      const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY); // XY diagonal
       const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7); // Include Z height
 
       if (projectedWidth / aspect > projectedHeight) {
@@ -1166,7 +1166,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   camera.up.set(0, 0, 1);
 
   // Position camera based on view type
-  const distance = Math.max(sizeX, sizeY, sizeZ) * 2; // Safe distance
+  const distance = Math.max(sizeX, sizeY, sizeZ) * 2.2; // Step back a little further for breathing room
 
   switch (currentView) {
     case 'top':
