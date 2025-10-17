@@ -45,7 +45,7 @@ class PluginManager {
     this.configUIs = new Map();
   }
 
-  async initialize({ cncController, broadcast } = {}) {
+  async initialize({ cncController, broadcast, sendWsMessage } = {}) {
     if (this.initialized) {
       log('Plugin manager already initialized');
       return;
@@ -53,6 +53,7 @@ class PluginManager {
 
     this.cncController = cncController;
     this.broadcast = broadcast;
+    this.sendWsMessage = sendWsMessage;
 
     this.ensurePluginsDirectory();
 
@@ -242,27 +243,41 @@ class PluginManager {
       },
 
       showDialog: (title, content, options = {}) => {
-        if (!this.broadcast) {
-          throw new Error('Broadcast function not available');
-        }
-        this.broadcast('plugin:show-dialog', {
+        const payload = {
           pluginId,
           title,
           content,
           options
-        });
+        };
+
+        // Check if this is a client-only tool execution
+        const ctx = this.pluginContexts.get(pluginId);
+        const isClientOnly = ctx?._isClientOnly || false;
+        const executionWs = ctx?._executionContext?.ws || null;
+
+        // If tool is marked as clientOnly and we have a WebSocket client from execution context
+        if (isClientOnly && executionWs && this.sendWsMessage) {
+          this.sendWsMessage(executionWs, 'plugin:show-dialog', payload);
+        } else {
+          // Otherwise broadcast to all clients (default behavior)
+          if (!this.broadcast) {
+            throw new Error('Broadcast function not available');
+          }
+          this.broadcast('plugin:show-dialog', payload);
+        }
       },
 
-      registerToolMenu: (label, callback) => {
+      registerToolMenu: (label, callback, options = {}) => {
         if (!this.toolMenuItems) {
           this.toolMenuItems = [];
         }
         this.toolMenuItems.push({
           pluginId,
           label,
-          callback
+          callback,
+          clientOnly: options.clientOnly || false // Support per-tool configuration
         });
-        log(`Registered tool menu item: "${label}" for plugin ${pluginId}`);
+        log(`Registered tool menu item: "${label}" for plugin ${pluginId}${options.clientOnly ? ' (client-only)' : ''}`);
       },
 
       registerConfigUI: (htmlContent) => {
@@ -484,7 +499,7 @@ class PluginManager {
     }));
   }
 
-  async executeToolMenuItem(pluginId, label) {
+  async executeToolMenuItem(pluginId, label, executionContext = {}) {
     const item = this.toolMenuItems.find(
       i => i.pluginId === pluginId && i.label === label
     );
@@ -495,7 +510,21 @@ class PluginManager {
 
     if (typeof item.callback === 'function') {
       try {
+        // Get the plugin context and temporarily set execution context
+        const ctx = this.pluginContexts.get(pluginId);
+        if (ctx) {
+          ctx._executionContext = executionContext;
+          ctx._isClientOnly = item.clientOnly;
+        }
+
         await item.callback();
+
+        // Clear execution context after callback completes
+        if (ctx) {
+          delete ctx._executionContext;
+          delete ctx._isClientOnly;
+        }
+
         log(`Executed tool menu item: ${pluginId} - ${label}`);
       } catch (error) {
         log(`Error executing tool menu item: ${pluginId} - ${label}`, error);

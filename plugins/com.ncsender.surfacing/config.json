@@ -1,6 +1,6 @@
 {
-  "xDimension": 500,
-  "yDimension": 300,
+  "xDimension": 400,
+  "yDimension": 400,
   "depthOfCut": 0.1,
   "targetDepth": 0.2,
   "bitDiameter": 25.4,

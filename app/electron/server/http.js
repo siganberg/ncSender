@@ -22,6 +22,7 @@ export function mountHttp({
   serverState,
   cncController,
   broadcast,
+  getClientWebSocket,
   updateSenderStatus,
   commandHistory,
   maxHistorySize,
@@ -45,7 +46,7 @@ export function mountHttp({
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController));
   app.use('/api', createToolRoutes(cncController, serverState));
-  app.use('/api/plugins', createPluginRoutes());
+  app.use('/api/plugins', createPluginRoutes({ getClientWebSocket }));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

@@ -602,9 +602,16 @@ const executeToolMenuItem = async (item: { pluginId: string; label: string }) =>
   executingTool.value = key;
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+    // Include client ID if available
+    if (api.clientId) {
+      headers['X-Client-ID'] = api.clientId;
+    }
+
     const response = await fetch(`${api.baseUrl}/api/plugins/tool-menu-items/execute`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ pluginId: item.pluginId, label: item.label })
     });
 

@@ -6,6 +6,7 @@ class NCClient {
   constructor() {
     this.baseUrl = this.getBaseUrl();
     this.ws = null;
+    this.clientId = null; // Unique client ID assigned by server
     this.eventListeners = new Map();
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
@@ -493,6 +494,13 @@ class NCClient {
       try {
         const message = JSON.parse(event.data);
         debugLog('Parsed message:', JSON.stringify(message, null, 2));
+
+        // Handle client ID assignment
+        if (message && message.type === 'client-id' && message.data?.clientId) {
+          this.clientId = message.data.clientId;
+          debugLog('Client ID assigned:', this.clientId);
+          this.emit('client-id-assigned', this.clientId);
+        }
 
         if (message && message.type === 'server-state-updated' && message.data) {
           // Merge partial state updates with existing state

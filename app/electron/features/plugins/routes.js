@@ -14,7 +14,7 @@ const log = (...args) => {
 
 const upload = multer({ dest: '/tmp/ncsender-plugins' });
 
-export function createPluginRoutes() {
+export function createPluginRoutes({ getClientWebSocket } = {}) {
   const router = Router();
 
   router.get('/', async (req, res) => {
@@ -117,7 +117,21 @@ export function createPluginRoutes() {
   router.post('/tool-menu-items/execute', async (req, res) => {
     try {
       const { pluginId, label } = req.body;
-      await pluginManager.executeToolMenuItem(pluginId, label);
+      const clientId = req.headers['x-client-id'];
+
+      // Get the WebSocket client for this client ID
+      let ws = null;
+      if (clientId && getClientWebSocket) {
+        ws = getClientWebSocket(clientId);
+        if (!ws) {
+          log(`Warning: Client ID ${clientId} not found in WebSocket map`);
+        }
+      }
+
+      // Pass execution context with WebSocket client
+      const executionContext = { ws };
+      await pluginManager.executeToolMenuItem(pluginId, label, executionContext);
+
       res.json({ success: true, message: 'Tool menu item executed' });
     } catch (error) {
       log('Error executing tool menu item:', error);

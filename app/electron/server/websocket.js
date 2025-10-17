@@ -163,6 +163,7 @@ export function createWebSocketLayer({
 
   const wss = new WebSocketServer({ server: httpServer });
   const clients = new Set();
+  const clientIdToWsMap = new Map(); // Map client IDs to WebSocket connections
   const longRunningCommands = new Map();
 
   const sendWsMessage = (ws, type, data) => {
@@ -395,8 +396,16 @@ export function createWebSocketLayer({
   };
 
   wss.on('connection', (ws) => {
-    log('Client connected');
+    // Generate unique client ID
+    const clientId = `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    ws.clientId = clientId;
+    clientIdToWsMap.set(clientId, ws);
+
+    log('Client connected with ID:', clientId);
     clients.add(ws);
+
+    // Send client ID to the client
+    sendWsMessage(ws, 'client-id', { clientId });
 
     ws.on('message', (rawData) => {
       let parsed;
@@ -472,8 +481,11 @@ export function createWebSocketLayer({
     });
 
     ws.on('close', () => {
-      log('Client disconnected');
+      log('Client disconnected:', ws.clientId);
       clients.delete(ws);
+      if (ws.clientId) {
+        clientIdToWsMap.delete(ws.clientId);
+      }
       if (jogManager) {
         jogManager.handleDisconnect(ws).catch((error) => {
           log('Error handling jog disconnect', error?.message || error);
@@ -484,6 +496,9 @@ export function createWebSocketLayer({
     ws.on('error', (error) => {
       log('WebSocket error:', error);
       clients.delete(ws);
+      if (ws.clientId) {
+        clientIdToWsMap.delete(ws.clientId);
+      }
       if (jogManager) {
         jogManager.handleDisconnect(ws).catch((disconnectError) => {
           log('Error handling jog disconnect after error', disconnectError?.message || disconnectError);
@@ -516,6 +531,7 @@ export function createWebSocketLayer({
     broadcast,
     sendWsMessage,
     handleWebSocketCommand,
+    getClientWebSocket: (clientId) => clientIdToWsMap.get(clientId),
     shutdown
   };
 }

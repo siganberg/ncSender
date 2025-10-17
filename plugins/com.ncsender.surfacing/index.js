@@ -6,7 +6,7 @@
 export async function onLoad(ctx) {
   ctx.log('Surfacing plugin loaded');
 
-  // Register the Surfacing tool in the Tools menu
+  // Register the Surfacing tool in the Tools menu (client-only dialogs)
   ctx.registerToolMenu('Surfacing', async () => {
     ctx.log('Surfacing tool clicked');
 
@@ -689,7 +689,7 @@ export async function onLoad(ctx) {
         })();
       </script>
     `);
-  });
+  }, { clientOnly: true }); // Only show to the client who clicked
 
   // Register the Jointer tool in the Tools menu
   ctx.registerToolMenu('Jointer', async () => {
