@@ -1,14 +1,30 @@
 {
-  "xDimension": 400,
-  "yDimension": 400,
-  "depthOfCut": 0.1,
-  "targetDepth": 0.2,
-  "bitDiameter": 25.4,
-  "stepover": 80,
-  "feedRate": 5000,
-  "spindleRpm": 2000,
-  "patternType": "spiral",
-  "invertOrientation": false,
-  "mistM7": false,
-  "floodM8": true
+  "jointer": {
+    "edgeLength": 200,
+    "edge": "front",
+    "depthOfCut": 5,
+    "materialThickness": 5,
+    "trimWidth": 1,
+    "numberOfPasses": 3,
+    "leadInOutDistance": 5,
+    "bitDiameter": 6.35,
+    "feedRate": 7000,
+    "spindleRpm": 10000,
+    "mistM7": false,
+    "floodM8": true
+  },
+  "surfacing": {
+    "xDimension": 100,
+    "yDimension": 100,
+    "depthOfCut": 0.5,
+    "targetDepth": 0.5,
+    "bitDiameter": 25.4,
+    "stepover": 80,
+    "feedRate": 2000,
+    "spindleRpm": 15000,
+    "patternType": "zigzagY",
+    "invertOrientation": false,
+    "mistM7": false,
+    "floodM8": false
+  }
 }

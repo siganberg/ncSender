@@ -327,7 +327,11 @@ class PluginManager {
     }
 
     try {
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      // Load existing settings and merge with new settings
+      const existingSettings = this.getPluginSettings(pluginId);
+      const mergedSettings = { ...existingSettings, ...settings };
+
+      fs.writeFileSync(settingsPath, JSON.stringify(mergedSettings, null, 2), 'utf8');
     } catch (error) {
       log(`Failed to save settings for plugin "${pluginId}":`, error);
       throw error;
