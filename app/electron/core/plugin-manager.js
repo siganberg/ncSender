@@ -35,6 +35,7 @@ class PluginManager {
     this.cncController = null;
     this.broadcast = null;
     this.toolMenuItems = [];
+    this.configUIs = new Map();
   }
 
   async initialize({ cncController, broadcast } = {}) {
@@ -187,6 +188,10 @@ class PluginManager {
     this.toolMenuItems = this.toolMenuItems.filter(item => item.pluginId !== pluginId);
     log(`Removed tool menu items for plugin "${pluginId}"`);
 
+    // Remove config UI registered by this plugin
+    this.configUIs.delete(pluginId);
+    log(`Removed config UI for plugin "${pluginId}"`);
+
     log(`Unloaded plugin "${pluginId}"`);
   }
 
@@ -247,6 +252,11 @@ class PluginManager {
           callback
         });
         log(`Registered tool menu item: "${label}" for plugin ${pluginId}`);
+      },
+
+      registerConfigUI: (htmlContent) => {
+        this.configUIs.set(pluginId, htmlContent);
+        log(`Registered config UI for plugin ${pluginId}`);
       },
 
       emitToClient: (eventName, data) => {
@@ -446,6 +456,14 @@ class PluginManager {
 
   getEventBus() {
     return this.eventBus;
+  }
+
+  getPluginConfigUI(pluginId) {
+    return this.configUIs.get(pluginId) || null;
+  }
+
+  hasConfigUI(pluginId) {
+    return this.configUIs.has(pluginId);
   }
 
   getToolMenuItems() {

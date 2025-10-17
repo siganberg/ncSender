@@ -134,105 +134,27 @@ export async function onLoad(ctx) {
   ctx.registerToolMenu('Surfacing', async () => {
     ctx.log('Surfacing tool clicked');
 
-    // Load saved settings or use defaults
-    const settings = ctx.getSettings();
-    const defaults = {
-      startX: settings.startX ?? 0,
-      startY: settings.startY ?? 0,
-      xDimension: settings.xDimension ?? 100,
-      yDimension: settings.yDimension ?? 100,
-      depthOfCut: settings.depthOfCut ?? 0.5,
-      targetDepth: settings.targetDepth ?? 1.0,
-      bitDiameter: settings.bitDiameter ?? 6.0,
-      stepover: settings.stepover ?? 50,
-      feedRate: settings.feedRate ?? 1000,
-      spindleRpm: settings.spindleRpm ?? 10000,
-      mistM7: settings.mistM7 ?? false,
-      floodM8: settings.floodM8 ?? false
-    };
-
-    // Show surfacing dialog with input controls
+    // Show "Not available yet" message
     ctx.showDialog('Surfacing Operation', `
       <style>
-        .surfacing-form {
+        .placeholder-container {
           display: flex;
           flex-direction: column;
-          gap: 16px;
-          padding: 20px;
-          max-width: 500px;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 40px;
+          text-align: center;
         }
-        .form-section {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-        .form-section h4 {
+        .placeholder-message {
+          font-size: 1.1rem;
+          color: var(--color-text-secondary, #666);
           margin: 0;
-          font-size: 1rem;
-          font-weight: 600;
-          color: var(--color-text-primary, #333);
-          border-bottom: 1px solid var(--color-border, #ddd);
-          padding-bottom: 8px;
-        }
-        .form-group {
-          display: grid;
-          grid-template-columns: 150px 1fr;
-          align-items: center;
-          gap: 12px;
-        }
-        .form-group label {
-          font-size: 0.9rem;
-          color: var(--color-text-primary, #333);
-        }
-        .form-group input[type="number"] {
-          padding: 8px 12px;
-          border: 1px solid var(--color-border, #ddd);
-          border-radius: 4px;
-          font-size: 0.9rem;
-          background: var(--color-surface, #fff);
-          color: var(--color-text-primary, #333);
-        }
-        .form-group input[type="number"]:focus {
-          outline: none;
-          border-color: var(--color-accent, #4a90e2);
-        }
-        .toggle-group {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .toggle-switch {
-          position: relative;
-          width: 44px;
-          height: 24px;
-          background: #ccc;
-          border-radius: 12px;
-          cursor: pointer;
-          transition: background 0.3s;
-        }
-        .toggle-switch.active {
-          background: var(--color-accent, #4a90e2);
-        }
-        .toggle-switch .toggle-handle {
-          position: absolute;
-          top: 2px;
-          left: 2px;
-          width: 20px;
-          height: 20px;
-          background: white;
-          border-radius: 50%;
-          transition: transform 0.3s;
-        }
-        .toggle-switch.active .toggle-handle {
-          transform: translateX(20px);
         }
         .button-group {
           display: flex;
           gap: 12px;
-          justify-content: flex-end;
-          margin-top: 24px;
-          padding-top: 16px;
-          border-top: 1px solid var(--color-border, #ddd);
+          justify-content: center;
+          margin-top: 32px;
         }
         .btn {
           padding: 10px 20px;
@@ -250,123 +172,67 @@ export async function onLoad(ctx) {
           background: var(--color-accent, #4a90e2);
           color: white;
         }
-        .btn-secondary {
-          background: var(--color-surface-muted, #e0e0e0);
-          color: var(--color-text-primary, #333);
+      </style>
+
+      <div class="placeholder-container">
+        <p class="placeholder-message">Not available yet</p>
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="window.parent.postMessage({type: 'close-plugin-dialog'}, '*')">Close</button>
+        </div>
+      </div>
+    `);
+  });
+
+  // Register the Jointer tool in the Tools menu
+  ctx.registerToolMenu('Jointer', async () => {
+    ctx.log('Jointer tool clicked');
+
+    // Show "Not available yet" message
+    ctx.showDialog('Jointer Operation', `
+      <style>
+        .placeholder-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 40px;
+          text-align: center;
+        }
+        .placeholder-message {
+          font-size: 1.1rem;
+          color: var(--color-text-secondary, #666);
+          margin: 0;
+        }
+        .button-group {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+          margin-top: 32px;
+        }
+        .btn {
+          padding: 10px 20px;
+          border: none;
+          border-radius: 4px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .btn:hover {
+          opacity: 0.9;
+        }
+        .btn-primary {
+          background: var(--color-accent, #4a90e2);
+          color: white;
         }
       </style>
 
-      <div class="surfacing-form">
-        <div class="form-section">
-          <h4>Start Position</h4>
-          <div class="form-group">
-            <label>X Start</label>
-            <input type="number" id="startX" value="${defaults.startX}" step="0.1" />
-          </div>
-          <div class="form-group">
-            <label>Y Start</label>
-            <input type="number" id="startY" value="${defaults.startY}" step="0.1" />
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Dimensions</h4>
-          <div class="form-group">
-            <label>X Dimension</label>
-            <input type="number" id="xDimension" value="${defaults.xDimension}" step="0.1" min="0" />
-          </div>
-          <div class="form-group">
-            <label>Y Dimension</label>
-            <input type="number" id="yDimension" value="${defaults.yDimension}" step="0.1" min="0" />
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Cutting Parameters</h4>
-          <div class="form-group">
-            <label>Depth of Cut</label>
-            <input type="number" id="depthOfCut" value="${defaults.depthOfCut}" step="0.1" min="0.01" />
-          </div>
-          <div class="form-group">
-            <label>Target Depth</label>
-            <input type="number" id="targetDepth" value="${defaults.targetDepth}" step="0.1" min="0.01" />
-          </div>
-          <div class="form-group">
-            <label>Bit Diameter</label>
-            <input type="number" id="bitDiameter" value="${defaults.bitDiameter}" step="0.1" min="0.1" />
-          </div>
-          <div class="form-group">
-            <label>Stepover (%)</label>
-            <input type="number" id="stepover" value="${defaults.stepover}" step="1" min="1" max="100" />
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Machine Settings</h4>
-          <div class="form-group">
-            <label>Feed Rate</label>
-            <input type="number" id="feedRate" value="${defaults.feedRate}" step="10" min="1" />
-          </div>
-          <div class="form-group">
-            <label>Spindle RPM</label>
-            <input type="number" id="spindleRpm" value="${defaults.spindleRpm}" step="100" min="0" />
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Coolant Control</h4>
-          <div class="form-group">
-            <label>Mist (M7)</label>
-            <div class="toggle-group">
-              <div class="toggle-switch ${defaults.mistM7 ? 'active' : ''}" id="mistToggle" onclick="this.classList.toggle('active')">
-                <div class="toggle-handle"></div>
-              </div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Flood (M8)</label>
-            <div class="toggle-group">
-              <div class="toggle-switch ${defaults.floodM8 ? 'active' : ''}" id="floodToggle" onclick="this.classList.toggle('active')">
-                <div class="toggle-handle"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
+      <div class="placeholder-container">
+        <p class="placeholder-message">Not available yet</p>
         <div class="button-group">
-          <button class="btn btn-secondary" onclick="window.parent.postMessage({type: 'close-plugin-dialog'}, '*')">Cancel</button>
-          <button class="btn btn-primary" onclick="generateSurfacingGcode()">Generate G-code</button>
+          <button class="btn btn-primary" onclick="window.parent.postMessage({type: 'close-plugin-dialog'}, '*')">Close</button>
         </div>
       </div>
-
-      <script>
-        function generateSurfacingGcode() {
-          // Get all form values
-          const params = {
-            startX: parseFloat(document.getElementById('startX').value),
-            startY: parseFloat(document.getElementById('startY').value),
-            xDimension: parseFloat(document.getElementById('xDimension').value),
-            yDimension: parseFloat(document.getElementById('yDimension').value),
-            depthOfCut: parseFloat(document.getElementById('depthOfCut').value),
-            targetDepth: parseFloat(document.getElementById('targetDepth').value),
-            bitDiameter: parseFloat(document.getElementById('bitDiameter').value),
-            stepover: parseFloat(document.getElementById('stepover').value),
-            feedRate: parseFloat(document.getElementById('feedRate').value),
-            spindleRpm: parseFloat(document.getElementById('spindleRpm').value),
-            mistM7: document.getElementById('mistToggle').classList.contains('active'),
-            floodM8: document.getElementById('floodToggle').classList.contains('active')
-          };
-
-          // Send to parent window (will be handled by plugin)
-          window.parent.postMessage({
-            type: 'surfacing-generate',
-            params: params
-          }, '*');
-
-          // Close dialog
-          window.parent.postMessage({type: 'close-plugin-dialog'}, '*');
-        }
-      </script>
     `);
   });
 }

@@ -67,19 +67,25 @@ if [ ! -f "$REGISTRY_FILE" ]; then
     echo "[]" > "$REGISTRY_FILE"
 fi
 
-# Try to hot-reload plugins via API
+# Try to register and reload plugins via API
 echo ""
-echo "Attempting to hot-reload plugins..."
+echo "Attempting to register and reload plugins..."
 
 for plugin_id in "${SYNCED_PLUGINS[@]}"; do
-    response=$(curl -s -X POST "http://localhost:$PORT/api/plugins/$plugin_id/reload" 2>/dev/null)
+    # First, try to register the plugin (reads manifest from disk and enables it)
+    register_response=$(curl -s -X POST "http://localhost:$PORT/api/plugins/$plugin_id/register" 2>/dev/null)
 
-    if [[ $? -eq 0 && "$response" == *"success"* ]]; then
+    # Then try to reload it if already loaded
+    reload_response=$(curl -s -X POST "http://localhost:$PORT/api/plugins/$plugin_id/reload" 2>/dev/null)
+
+    if [[ $? -eq 0 && "$reload_response" == *"success"* ]]; then
         echo "  ✓ $plugin_id reloaded"
+    elif [[ "$register_response" == *"success"* ]]; then
+        echo "  ✓ $plugin_id registered (restart ncSender to load)"
     else
-        echo "  ⨯ $plugin_id could not be reloaded (server may not be running)"
+        echo "  ⨯ $plugin_id could not be loaded (server may not be running)"
     fi
 done
 
 echo ""
-echo "Note: If hot-reload failed, restart ncSender to load the updated plugins"
+echo "Note: If this is the first time loading plugins, restart ncSender to load them"

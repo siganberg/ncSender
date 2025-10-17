@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
+import { pluginManager } from '../core/plugin-manager.js';
 
 const WS_READY_STATE_OPEN = 1;
 const realtimeJobCommands = new Set(['!', '~', '\\x18']);
@@ -428,7 +429,6 @@ export function createWebSocketLayer({
       }
 
       if (parsed.type.startsWith('plugin:')) {
-        const { pluginManager } = await import('../core/plugin-manager.js');
         const match = parsed.type.match(/^plugin:([\w.-]+):(.+)$/);
 
         if (match) {

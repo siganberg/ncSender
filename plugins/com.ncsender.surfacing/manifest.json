@@ -1,10 +1,11 @@
 {
   "id": "com.ncsender.surfacing",
-  "name": "Surfacing",
+  "name": "Surfacing & Jointer",
   "version": "1.0.0",
   "author": "ncSender",
   "description": "Generates G-code for surfacing operations (fly-cutting)",
   "entry": "index.js",
+  "icon": "icon.svg",
   "events": [],
   "permissions": ["gcode.modify"]
 }

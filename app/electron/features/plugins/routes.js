@@ -125,6 +125,129 @@ export function createPluginRoutes() {
     }
   });
 
+  router.get('/:pluginId/config-ui', async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const configUI = pluginManager.getPluginConfigUI(pluginId);
+
+      if (!configUI) {
+        return res.status(404).json({ error: 'Plugin has no config UI' });
+      }
+
+      res.json({ pluginId, configUI });
+    } catch (error) {
+      log('Error getting plugin config UI:', error);
+      res.status(500).json({ error: 'Failed to get plugin config UI' });
+    }
+  });
+
+  router.get('/:pluginId/has-config', async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const hasConfig = pluginManager.hasConfigUI(pluginId);
+      res.json({ pluginId, hasConfig });
+    } catch (error) {
+      log('Error checking plugin config:', error);
+      res.status(500).json({ error: 'Failed to check plugin config' });
+    }
+  });
+
+  router.get('/:pluginId/icon', async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const pluginsDir = pluginManager.getPluginsDirectory();
+      const manifestPath = path.join(pluginsDir, pluginId, 'manifest.json');
+
+      // Read manifest to get icon path
+      let manifest;
+      try {
+        const manifestContent = await fs.readFile(manifestPath, 'utf8');
+        manifest = JSON.parse(manifestContent);
+      } catch (error) {
+        return res.status(404).json({ error: 'Plugin manifest not found' });
+      }
+
+      if (!manifest.icon) {
+        return res.status(404).json({ error: 'Plugin has no icon' });
+      }
+
+      const iconPath = path.join(pluginsDir, pluginId, manifest.icon);
+
+      // Check if icon file exists
+      try {
+        await fs.access(iconPath);
+      } catch (error) {
+        return res.status(404).json({ error: 'Icon file not found' });
+      }
+
+      // Determine content type based on extension
+      const ext = path.extname(manifest.icon).toLowerCase();
+      const contentTypes = {
+        '.svg': 'image/svg+xml',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      };
+
+      const contentType = contentTypes[ext] || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+
+      const iconData = await fs.readFile(iconPath);
+      res.send(iconData);
+    } catch (error) {
+      log('Error serving plugin icon:', error);
+      res.status(500).json({ error: 'Failed to serve plugin icon' });
+    }
+  });
+
+  router.post('/:pluginId/register', async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const pluginsDir = pluginManager.getPluginsDirectory();
+      const pluginDir = path.join(pluginsDir, pluginId);
+      const manifestPath = path.join(pluginDir, 'manifest.json');
+
+      // Check if plugin directory exists
+      try {
+        await fs.access(pluginDir);
+      } catch (error) {
+        return res.status(404).json({ error: `Plugin directory not found: ${pluginId}` });
+      }
+
+      // Read manifest
+      let manifest;
+      try {
+        const manifestContent = await fs.readFile(manifestPath, 'utf8');
+        manifest = JSON.parse(manifestContent);
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid plugin: manifest.json not found or invalid' });
+      }
+
+      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
+        return res.status(400).json({ error: 'Invalid manifest: missing required fields' });
+      }
+
+      // Register and enable the plugin
+      await pluginManager.installPlugin(manifest.id, manifest);
+      await pluginManager.enablePlugin(manifest.id);
+
+      res.json({
+        success: true,
+        message: `Plugin "${manifest.name}" registered and enabled`,
+        plugin: {
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version
+        }
+      });
+    } catch (error) {
+      log('Error registering plugin:', error);
+      res.status(500).json({ error: error.message || 'Failed to register plugin' });
+    }
+  });
+
   router.post('/install', upload.single('plugin'), async (req, res) => {
     try {
       if (!req.file) {
