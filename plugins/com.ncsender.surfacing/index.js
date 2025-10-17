@@ -460,7 +460,15 @@ export async function onLoad(ctx) {
             const invertOrientation = selectedPattern === 'zigzagX';
             const isSpiral = selectedPattern === 'spiral';
 
-            const stepDimension = invertOrientation ? yDimension : xDimension;
+            // Adjust start positions and dimensions to account for bit radius
+            // This ensures the specified area is fully surfaced edge-to-edge
+            const bitRadius = bitDiameter / 2;
+            const adjustedStartX = startX - bitRadius;
+            const adjustedStartY = startY - bitRadius;
+            const adjustedXDimension = xDimension + bitDiameter;
+            const adjustedYDimension = yDimension + bitDiameter;
+
+            const stepDimension = invertOrientation ? adjustedYDimension : adjustedXDimension;
             const numPasses = Math.ceil(stepDimension / stepoverDistance) + 1;
 
             let gcode = [];
@@ -489,7 +497,7 @@ export async function onLoad(ctx) {
             }
             gcode.push('');
 
-            gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start position\`);
+            gcode.push(\`G0 X\${adjustedStartX.toFixed(3)} Y\${adjustedStartY.toFixed(3)} ; Move to start position\`);
             gcode.push(\`G0 Z\${safeHeight} ; Move to safe height\`);
             gcode.push('');
 
@@ -499,17 +507,17 @@ export async function onLoad(ctx) {
               gcode.push(\`(Depth pass \${depthPass + 1}/\${numDepthPasses} - Z\${(-currentDepth).toFixed(3)})\`);
 
               // Move to start position and plunge
-              gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start position\`);
+              gcode.push(\`G0 X\${adjustedStartX.toFixed(3)} Y\${adjustedStartY.toFixed(3)} ; Move to start position\`);
               gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge to depth\`);
 
               if (isSpiral) {
-                const effectiveStep = Math.max(Math.min(stepoverDistance, Math.min(xDimension, yDimension) / 2), 0.1);
-                let left = startX;
-                let right = startX + xDimension;
-                let top = startY;
-                let bottom = startY + yDimension;
-                let currentX = startX;
-                let currentY = startY;
+                const effectiveStep = Math.max(Math.min(stepoverDistance, Math.min(adjustedXDimension, adjustedYDimension) / 2), 0.1);
+                let left = adjustedStartX;
+                let right = adjustedStartX + adjustedXDimension;
+                let top = adjustedStartY;
+                let bottom = adjustedStartY + adjustedYDimension;
+                let currentX = adjustedStartX;
+                let currentY = adjustedStartY;
 
                 while (right - left > 0 && bottom - top > 0) {
                   gcode.push(\`G1 X\${right.toFixed(3)} Y\${top.toFixed(3)} F\${feedRate}\`);
@@ -541,8 +549,8 @@ export async function onLoad(ctx) {
                   currentX = left;
                 }
 
-                const centerX = startX + (xDimension / 2);
-                const centerY = startY + (yDimension / 2);
+                const centerX = adjustedStartX + (adjustedXDimension / 2);
+                const centerY = adjustedStartY + (adjustedYDimension / 2);
                 if (Math.abs(currentX - centerX) > 0.01 || Math.abs(currentY - centerY) > 0.01) {
                   gcode.push(\`G1 X\${centerX.toFixed(3)} Y\${centerY.toFixed(3)} F\${feedRate}\`);
                 }
@@ -552,28 +560,28 @@ export async function onLoad(ctx) {
                 if (invertOrientation) {
                   // Cut along X-axis, step over Y-axis
                   for (let pass = 0; pass < numPasses; pass++) {
-                    const yPos = startY + (pass * stepoverDistance);
+                    const yPos = adjustedStartY + (pass * stepoverDistance);
                     if (pass > 0) {
                       gcode.push(\`G1 Y\${yPos.toFixed(3)} F\${feedRate} ; Step over\`);
                     }
                     if (direction === 1) {
-                      gcode.push(\`G1 X\${(startX + xDimension).toFixed(3)} F\${feedRate}\`);
+                      gcode.push(\`G1 X\${(adjustedStartX + adjustedXDimension).toFixed(3)} F\${feedRate}\`);
                     } else {
-                      gcode.push(\`G1 X\${startX.toFixed(3)} F\${feedRate}\`);
+                      gcode.push(\`G1 X\${adjustedStartX.toFixed(3)} F\${feedRate}\`);
                     }
                     direction *= -1;
                   }
                 } else {
                   // Cut along Y-axis, step over X-axis (default)
                   for (let pass = 0; pass < numPasses; pass++) {
-                    const xPos = startX + (pass * stepoverDistance);
+                    const xPos = adjustedStartX + (pass * stepoverDistance);
                     if (pass > 0) {
                       gcode.push(\`G1 X\${xPos.toFixed(3)} F\${feedRate} ; Step over\`);
                     }
                     if (direction === 1) {
-                      gcode.push(\`G1 Y\${(startY + yDimension).toFixed(3)} F\${feedRate}\`);
+                      gcode.push(\`G1 Y\${(adjustedStartY + adjustedYDimension).toFixed(3)} F\${feedRate}\`);
                     } else {
-                      gcode.push(\`G1 Y\${startY.toFixed(3)} F\${feedRate}\`);
+                      gcode.push(\`G1 Y\${adjustedStartY.toFixed(3)} F\${feedRate}\`);
                     }
                     direction *= -1;
                   }

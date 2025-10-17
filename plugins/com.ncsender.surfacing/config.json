@@ -14,10 +14,10 @@
     "floodM8": true
   },
   "surfacing": {
-    "xDimension": 200,
-    "yDimension": 200,
+    "xDimension": 400,
+    "yDimension": 400,
     "depthOfCut": 0.5,
-    "targetDepth": 0.5,
+    "targetDepth": 1,
     "bitDiameter": 25.4,
     "stepover": 80,
     "feedRate": 7000,
