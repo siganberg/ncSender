@@ -1197,44 +1197,44 @@ export async function onLoad(ctx) {
                 gcode.push(\`(Depth pass \${depthPass + 1}/\${numDepthPasses} - Z\${(-currentDepth).toFixed(3)})\`);
 
                 if (edge === 'left') {
-                  // Left edge: Cut along Y-axis, offset in positive X
+                  // Left edge: Cut along Y-axis (positive direction), offset in positive X
                   const startX = offset;
                   const startY = -leadInOutDistance;
                   const endY = edgeLength + leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
                   gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
-                  gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along left edge (with lead-out)\`);
+                  gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along left edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else if (edge === 'right') {
-                  // Right edge: Cut along Y-axis, offset in negative X
+                  // Right edge: Cut along Y-axis (negative direction), offset in negative X
                   const startX = -offset;
-                  const startY = -leadInOutDistance;
-                  const endY = edgeLength + leadInOutDistance;
+                  const startY = edgeLength + leadInOutDistance;
+                  const endY = -leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
                   gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
-                  gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along right edge (with lead-out)\`);
+                  gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along right edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else if (edge === 'front') {
-                  // Front edge: Cut along X-axis, offset in positive Y
+                  // Front edge: Cut along X-axis (negative direction), offset in positive Y
                   const startY = offset;
-                  const startX = -leadInOutDistance;
-                  const endX = edgeLength + leadInOutDistance;
+                  const startX = edgeLength + leadInOutDistance;
+                  const endX = -leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
                   gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
-                  gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along front edge (with lead-out)\`);
+                  gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along front edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else {
-                  // Back edge: Cut along X-axis, offset in negative Y
+                  // Back edge: Cut along X-axis (positive direction), offset in negative Y
                   const startY = -offset;
                   const startX = -leadInOutDistance;
                   const endX = edgeLength + leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
                   gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
-                  gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along back edge (with lead-out)\`);
+                  gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along back edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 }
               }

@@ -9,7 +9,7 @@
     "leadInOutDistance": 5,
     "bitDiameter": 6.35,
     "feedRate": 7000,
-    "spindleRpm": 10000,
+    "spindleRpm": 4000,
     "mistM7": false,
     "floodM8": true
   },
