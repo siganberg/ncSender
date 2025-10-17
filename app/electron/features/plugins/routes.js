@@ -14,7 +14,7 @@ const log = (...args) => {
 
 const upload = multer({ dest: '/tmp/ncsender-plugins' });
 
-export function createPluginRoutes({ getClientWebSocket } = {}) {
+export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
   const router = Router();
 
   router.get('/', async (req, res) => {
@@ -41,6 +41,12 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
     try {
       const { pluginId } = req.params;
       await pluginManager.enablePlugin(pluginId);
+
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId, action: 'enabled' });
+      }
+
       res.json({ success: true, message: `Plugin "${pluginId}" enabled` });
     } catch (error) {
       log('Error enabling plugin:', error);
@@ -52,6 +58,12 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
     try {
       const { pluginId } = req.params;
       await pluginManager.disablePlugin(pluginId);
+
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId, action: 'disabled' });
+      }
+
       res.json({ success: true, message: `Plugin "${pluginId}" disabled` });
     } catch (error) {
       log('Error disabling plugin:', error);
@@ -63,6 +75,12 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
     try {
       const { pluginId } = req.params;
       await pluginManager.uninstallPlugin(pluginId);
+
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId, action: 'uninstalled' });
+      }
+
       res.json({ success: true, message: `Plugin "${pluginId}" uninstalled` });
     } catch (error) {
       log('Error uninstalling plugin:', error);
@@ -97,6 +115,12 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
     try {
       const { pluginId } = req.params;
       await pluginManager.reloadPlugin(pluginId);
+
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId, action: 'reloaded' });
+      }
+
       res.json({ success: true, message: `Plugin "${pluginId}" reloaded successfully` });
     } catch (error) {
       log('Error reloading plugin:', error);
@@ -247,6 +271,11 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
       await pluginManager.installPlugin(manifest.id, manifest);
       await pluginManager.enablePlugin(manifest.id);
 
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId: manifest.id, action: 'registered' });
+      }
+
       res.json({
         success: true,
         message: `Plugin "${manifest.name}" registered and enabled`,
@@ -306,6 +335,11 @@ export function createPluginRoutes({ getClientWebSocket } = {}) {
 
       await pluginManager.installPlugin(manifest.id, manifest);
       await pluginManager.enablePlugin(manifest.id);
+
+      // Broadcast to all clients that plugin tools have changed
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId: manifest.id, action: 'installed' });
+      }
 
       await fs.rm(extractDir, { recursive: true, force: true });
       await fs.unlink(tempFile);

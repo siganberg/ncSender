@@ -478,6 +478,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
 };
 
 let unsubscribeHistory;
+let unsubscribePluginsChanged;
 
 const appendCommandToHistory = (command) => {
   if (!command) return;
@@ -499,12 +500,22 @@ onMounted(() => {
       appendCommandToHistory(event.command);
     }
   });
+
+  // Listen for plugin tool changes from WebSocket
+  unsubscribePluginsChanged = api.on('plugins:tools-changed', () => {
+    // Reload tool menu items when any plugin is enabled/disabled/reloaded
+    loadToolMenuItems();
+  });
 });
 
 onBeforeUnmount(() => {
   if (typeof unsubscribeHistory === 'function') {
     unsubscribeHistory();
     unsubscribeHistory = undefined;
+  }
+  if (typeof unsubscribePluginsChanged === 'function') {
+    unsubscribePluginsChanged();
+    unsubscribePluginsChanged = undefined;
   }
 });
 
@@ -695,6 +706,7 @@ h2 {
   font-weight: 500;
   position: relative;
   margin-bottom: -1px;
+  min-width: 80px;
 }
 
 .tab-button:hover {

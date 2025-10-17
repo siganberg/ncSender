@@ -1,7 +1,7 @@
 {
   "jointer": {
-    "edgeLength": 200,
-    "edge": "front",
+    "edgeLength": 300,
+    "edge": "back",
     "depthOfCut": 5,
     "materialThickness": 5,
     "trimWidth": 1,

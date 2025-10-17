@@ -46,7 +46,7 @@ export function mountHttp({
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController));
   app.use('/api', createToolRoutes(cncController, serverState));
-  app.use('/api/plugins', createPluginRoutes({ getClientWebSocket }));
+  app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {
