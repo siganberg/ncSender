@@ -460,13 +460,11 @@ export async function onLoad(ctx) {
             const invertOrientation = selectedPattern === 'zigzagX';
             const isSpiral = selectedPattern === 'spiral';
 
-            // Adjust start positions and dimensions to account for bit radius
-            // This ensures the specified area is fully surfaced edge-to-edge
-            const bitRadius = bitDiameter / 2;
-            const adjustedStartX = startX - bitRadius;
-            const adjustedStartY = startY - bitRadius;
-            const adjustedXDimension = xDimension + bitDiameter;
-            const adjustedYDimension = yDimension + bitDiameter;
+            // Use the cutter center for perimeter moves; no overcut applied
+            const adjustedStartX = startX;
+            const adjustedStartY = startY;
+            const adjustedXDimension = xDimension;
+            const adjustedYDimension = yDimension;
 
             const stepDimension = invertOrientation ? adjustedYDimension : adjustedXDimension;
             const numPasses = Math.ceil(stepDimension / stepoverDistance) + 1;

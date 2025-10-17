@@ -72,12 +72,12 @@
     </div>
 
     <!-- Macros Tab -->
-    <div v-if="activeTab === 'macros'" class="tab-content">
+    <div v-if="activeTab === 'macros'" class="tab-content" :class="{ 'tab-content--locked': !isSenderIdle }">
       <MacroPanel :connected="connected" />
     </div>
 
     <!-- Tools Tab -->
-    <div v-if="activeTab === 'tools'" class="tab-content tools-tab">
+    <div v-if="activeTab === 'tools'" class="tab-content tools-tab" :class="{ 'tab-content--locked': !isSenderIdle }">
       <div v-if="loadingTools" class="placeholder-content">
         <p>Loading plugin tools...</p>
       </div>
@@ -155,8 +155,10 @@ const store = useConsoleStore();
 const props = withDefaults(defineProps<{
   lines?: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response'; sourceId?: string }>;
   connected?: boolean;
+  senderStatus?: string;
 }>(), {
-  lines: () => []
+  lines: () => [],
+  senderStatus: 'idle'
 });
 
 const emit = defineEmits<{
@@ -181,6 +183,9 @@ const tabs = [
   { id: 'macros', label: 'Macros' },
   { id: 'tools', label: 'Tools' }
 ];
+
+const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toLowerCase());
+const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
 
 // Filter console lines to hide job-runner chatter but show probing commands
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
@@ -710,6 +715,13 @@ h2 {
   right: 0;
   height: 2px;
   background: var(--gradient-accent);
+}
+
+.tab-content--locked {
+  pointer-events: none;
+  opacity: 0.45;
+  filter: grayscale(0.2);
+  transition: opacity 0.2s ease;
 }
 
 .filters {

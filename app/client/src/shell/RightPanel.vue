@@ -12,7 +12,12 @@
       @update:feed-rate="emit('update:jogFeedRate', $event)"
     />
     <StatusPanel :status="status" />
-    <ConsolePanel :lines="consoleLines" :connected="status.connected" @clear="emit('clearConsole')" />
+    <ConsolePanel
+      :lines="consoleLines"
+      :connected="status.connected"
+      :sender-status="senderStatus"
+      @clear="emit('clearConsole')"
+    />
   </div>
 </template>
 
