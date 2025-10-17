@@ -142,6 +142,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive } from 'vue';
 import { api } from './api';
+import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../plugins/api';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
@@ -185,7 +186,7 @@ const tabs = [
 const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
 
 // Plugin Tools state
-const toolMenuItems = ref<Array<{ pluginId: string; label: string }>>([]);
+const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);
 const loadingTools = ref(false);
 const executingTool = ref<string | null>(null);
 
@@ -596,10 +597,7 @@ watch(() => props.lines, async () => {
 const loadToolMenuItems = async () => {
   loadingTools.value = true;
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/tool-menu-items`);
-    if (response.ok) {
-      toolMenuItems.value = await response.json();
-    }
+    toolMenuItems.value = await fetchToolMenuItems();
   } catch (error) {
     console.error('Failed to load plugin tool menu items:', error);
   } finally {
@@ -613,27 +611,10 @@ const executeToolMenuItem = async (item: { pluginId: string; label: string }) =>
   executingTool.value = key;
 
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-    // Include client ID if available
-    if (api.clientId) {
-      headers['X-Client-ID'] = api.clientId;
-    }
-
-    const response = await fetch(`${api.baseUrl}/api/plugins/tool-menu-items/execute`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ pluginId: item.pluginId, label: item.label })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Failed to execute tool menu item:', error);
-      alert(`Error: ${error.error || 'Failed to execute tool'}`);
-    }
-  } catch (error) {
+    await runToolMenuItem(item.pluginId, item.label, { clientId: api.clientId });
+  } catch (error: any) {
     console.error('Failed to execute tool menu item:', error);
-    alert('Failed to execute tool');
+    alert(error?.message || 'Failed to execute tool');
   } finally {
     executingTool.value = null;
   }

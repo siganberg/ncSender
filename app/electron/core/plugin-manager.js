@@ -1,28 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { pluginEventBus } from './plugin-event-bus.js';
 import { readSettings } from './settings-manager.js';
+import { getUserDataDir } from '../utils/paths.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
 };
-
-function getUserDataDir() {
-  const platform = os.platform();
-  const appName = 'ncSender';
-
-  switch (platform) {
-    case 'win32':
-      return path.join(os.homedir(), 'AppData', 'Roaming', appName);
-    case 'darwin':
-      return path.join(os.homedir(), 'Library', 'Application Support', appName);
-    case 'linux':
-      return path.join(os.homedir(), '.config', appName);
-    default:
-      return path.join(os.homedir(), `.${appName}`);
-  }
-}
 
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
@@ -43,6 +27,7 @@ class PluginManager {
     this.broadcast = null;
     this.toolMenuItems = [];
     this.configUIs = new Map();
+    this.executionContextStack = new Map();
   }
 
   async initialize({ cncController, broadcast, sendWsMessage } = {}) {
@@ -191,6 +176,7 @@ class PluginManager {
     this.eventBus.unregisterPluginHandlers(pluginId);
     this.pluginContexts.delete(pluginId);
     this.plugins.delete(pluginId);
+    this.executionContextStack.delete(pluginId);
 
     // Remove tool menu items registered by this plugin
     this.toolMenuItems = this.toolMenuItems.filter(item => item.pluginId !== pluginId);
@@ -250,10 +236,10 @@ class PluginManager {
           options
         };
 
-        // Check if this is a client-only tool execution
-        const ctx = this.pluginContexts.get(pluginId);
-        const isClientOnly = ctx?._isClientOnly || false;
-        const executionWs = ctx?._executionContext?.ws || null;
+        const stack = this.executionContextStack.get(pluginId);
+        const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
+        const isClientOnly = activeContext?.clientOnly || false;
+        const executionWs = activeContext?.ws || null;
 
         // If tool is marked as clientOnly and we have a WebSocket client from execution context
         if (isClientOnly && executionWs && this.sendWsMessage) {
@@ -352,10 +338,14 @@ class PluginManager {
     const registry = this.loadRegistry();
     return registry.map(entry => {
       const plugin = this.plugins.get(entry.id);
+      const manifest = plugin?.manifest ?? this.safeLoadManifest(entry.id);
+      const hasIcon = manifest ? this.pluginHasIcon(entry.id, manifest) : false;
       return {
         ...entry,
         loaded: !!plugin,
-        loadedAt: plugin?.loadedAt
+        loadedAt: plugin?.loadedAt,
+        hasConfig: !!plugin && this.configUIs.has(entry.id),
+        hasIcon
       };
     });
   }
@@ -499,7 +489,8 @@ class PluginManager {
   getToolMenuItems() {
     return this.toolMenuItems.map(item => ({
       pluginId: item.pluginId,
-      label: item.label
+      label: item.label,
+      clientOnly: !!item.clientOnly
     }));
   }
 
@@ -514,26 +505,46 @@ class PluginManager {
 
     if (typeof item.callback === 'function') {
       try {
-        // Get the plugin context and temporarily set execution context
-        const ctx = this.pluginContexts.get(pluginId);
-        if (ctx) {
-          ctx._executionContext = executionContext;
-          ctx._isClientOnly = item.clientOnly;
-        }
+        const stack = this.executionContextStack.get(pluginId) || [];
+        stack.push({ ...executionContext, clientOnly: item.clientOnly || false });
+        this.executionContextStack.set(pluginId, stack);
 
         await item.callback();
-
-        // Clear execution context after callback completes
-        if (ctx) {
-          delete ctx._executionContext;
-          delete ctx._isClientOnly;
-        }
 
         log(`Executed tool menu item: ${pluginId} - ${label}`);
       } catch (error) {
         log(`Error executing tool menu item: ${pluginId} - ${label}`, error);
         throw error;
+      } finally {
+        const stack = this.executionContextStack.get(pluginId);
+        if (stack) {
+          stack.pop();
+          if (stack.length === 0) {
+            this.executionContextStack.delete(pluginId);
+          }
+        }
       }
+    }
+  }
+
+  safeLoadManifest(pluginId) {
+    try {
+      return this.loadManifest(pluginId);
+    } catch (error) {
+      log(`Could not load manifest for plugin "${pluginId}" while building registry:`, error?.message || error);
+      return null;
+    }
+  }
+
+  pluginHasIcon(pluginId, manifest) {
+    if (!manifest?.icon) {
+      return false;
+    }
+    const iconPath = path.join(PLUGINS_DIR, pluginId, manifest.icon);
+    try {
+      return fs.existsSync(iconPath);
+    } catch {
+      return false;
     }
   }
 }

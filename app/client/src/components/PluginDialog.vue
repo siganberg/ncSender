@@ -1,11 +1,20 @@
 <template>
-  <div v-if="show" class="plugin-dialog-backdrop">
+  <div v-if="show" class="plugin-dialog-backdrop" @click.self="closeDialog">
     <div class="plugin-dialog-container">
       <div class="plugin-dialog">
         <div class="plugin-dialog-header">
           <h3>{{ dialogData.title }}</h3>
+          <button class="close-button" type="button" @click="closeDialog" aria-label="Close dialog">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+            </svg>
+          </button>
         </div>
-        <div class="plugin-dialog-content" v-html="dialogData.content"></div>
+        <div
+          class="plugin-dialog-content"
+          ref="dialogContent"
+          v-html="dialogData.content"
+        ></div>
       </div>
     </div>
   </div>
@@ -29,6 +38,7 @@ const dialogData = ref<PluginDialogData>({
   content: '',
   options: {}
 });
+const dialogContent = ref<HTMLDivElement | null>(null);
 
 let unsubscribe: (() => void) | null = null;
 
@@ -43,7 +53,7 @@ const handlePluginDialog = (data: PluginDialogData) => {
 };
 
 const executeScripts = () => {
-  const contentEl = document.querySelector('.plugin-dialog-content');
+  const contentEl = dialogContent.value;
   if (!contentEl) return;
 
   // Find all script tags in the content
@@ -84,12 +94,19 @@ const handlePostMessage = (event: MessageEvent) => {
   }
 };
 
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && show.value) {
+    closeDialog();
+  }
+};
+
 onMounted(() => {
   // Listen for plugin:show-dialog events from WebSocket
   unsubscribe = api.on('plugin:show-dialog', handlePluginDialog);
 
   // Listen for postMessage events from dialog iframe
   window.addEventListener('message', handlePostMessage);
+  window.addEventListener('keydown', handleKeydown);
 });
 
 onBeforeUnmount(() => {
@@ -97,6 +114,7 @@ onBeforeUnmount(() => {
     unsubscribe();
   }
   window.removeEventListener('message', handlePostMessage);
+  window.removeEventListener('keydown', handleKeydown);
 });
 </script>
 

@@ -55,11 +55,11 @@
         <div v-for="plugin in plugins" :key="plugin.id" class="plugin-card">
           <div class="plugin-thumbnail">
             <img
-              v-if="pluginHasIcon[plugin.id]"
+              v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
               :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
               :alt="`${plugin.name} icon`"
               class="plugin-icon"
-              @error="pluginHasIcon[plugin.id] = false"
+              @error="brokenIcons[plugin.id] = true"
             />
             <svg v-else xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 128 140">
               <path d="M62.54 4.84L10.38 31.73c-1.14.67-1.47 1.67-1.46 3.12l.1 1.81L64.09 64.9l54.94-27.79s.06-.28.06-1.26c0 0-.05-1.29-.34-1.89c-.32-.68-1-1.29-1.44-1.66c-1.17-.97-2.34-1.83-4.33-2.95C84.45 13.22 65.69 4.91 65.69 4.91c-1.21-.45-2.21-.61-3.15-.07z" fill="#dea66c"/>
@@ -99,7 +99,7 @@
                 class="btn-icon"
                 @click="openConfigPanel(plugin)"
                 title="Configure"
-                :disabled="!plugin.enabled || !plugin.loaded || !pluginHasConfig[plugin.id]"
+                :disabled="!plugin.enabled || !plugin.loaded || !plugin.hasConfig"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
@@ -243,29 +243,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import { api } from '@/lib/api';
+import {
+  fetchPlugins,
+  fetchPluginConfigUI,
+  installPlugin as installPluginRequest,
+  setPluginEnabled,
+  reloadPlugin as reloadPluginRequest,
+  uninstallPlugin as uninstallPluginRequest,
+  PluginListItem
+} from './api';
 
-interface Plugin {
-  id: string;
-  name: string;
-  version: string;
-  author?: string;
-  enabled: boolean;
-  loaded: boolean;
-  loadedAt?: string;
-  installedAt?: string;
-}
-
-const plugins = ref<Plugin[]>([]);
+const plugins = ref<PluginListItem[]>([]);
 const loading = ref(false);
 const loadError = ref<string | null>(null);
 const reloading = ref<string | null>(null);
 const toggling = ref<string | null>(null);
 const uninstalling = ref<string | null>(null);
-const selectedPlugin = ref<Plugin | null>(null);
+const selectedPlugin = ref<PluginListItem | null>(null);
 const showUninstallConfirm = ref(false);
 const showInstallDialog = ref(false);
 const selectedFile = ref<File | null>(null);
@@ -274,12 +272,13 @@ const installing = ref(false);
 const installSuccess = ref(false);
 const installError = ref<string | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const pluginHasConfig = ref<Record<string, boolean>>({});
-const pluginHasIcon = ref<Record<string, boolean>>({});
 const showConfigPanel = ref(false);
-const selectedPluginForConfig = ref<Plugin | null>(null);
+const selectedPluginForConfig = ref<PluginListItem | null>(null);
 const configUIContent = ref('');
 const configIframe = ref<HTMLIFrameElement | null>(null);
+let unsubscribePluginsChanged: (() => void) | null = null;
+let refreshPending = false;
+const brokenIcons = ref<Record<string, boolean>>({});
 
 const savePluginConfig = () => {
   if (configIframe.value && configIframe.value.contentWindow) {
@@ -320,34 +319,14 @@ const onConfigIframeLoad = () => {
   }
 };
 
-const checkPluginHasConfig = async (pluginId: string) => {
-  try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/${pluginId}/has-config`);
-    if (response.ok) {
-      const data = await response.json();
-      pluginHasConfig.value[pluginId] = data.hasConfig;
-    }
-  } catch (error) {
-    console.error(`Error checking config for plugin ${pluginId}:`, error);
+const openConfigPanel = async (plugin: PluginListItem) => {
+  if (!plugin.hasConfig) {
+    loadError.value = 'Plugin does not expose a configuration panel.';
+    return;
   }
-};
 
-const checkPluginHasIcon = async (pluginId: string) => {
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/${pluginId}/icon`, { method: 'HEAD' });
-    pluginHasIcon.value[pluginId] = response.ok;
-  } catch (error) {
-    pluginHasIcon.value[pluginId] = false;
-  }
-};
-
-const openConfigPanel = async (plugin: Plugin) => {
-  try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/${plugin.id}/config-ui`);
-    if (!response.ok) throw new Error('Failed to load plugin config');
-
-    const data = await response.json();
-    configUIContent.value = data.configUI;
+    configUIContent.value = await fetchPluginConfigUI(plugin.id);
     selectedPluginForConfig.value = plugin;
     showConfigPanel.value = true;
   } catch (error: any) {
@@ -363,26 +342,35 @@ const closeConfigPanel = () => {
 };
 
 const loadPlugins = async () => {
+  if (loading.value) {
+    refreshPending = true;
+    return;
+  }
+
   loading.value = true;
   loadError.value = null;
 
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins`);
-    if (!response.ok) throw new Error('Failed to load plugins');
-
-    plugins.value = await response.json();
-
-    await Promise.all(
-      plugins.value.flatMap(plugin => [
-        checkPluginHasConfig(plugin.id),
-        checkPluginHasIcon(plugin.id)
-      ])
+    plugins.value = await fetchPlugins();
+    const filteredEntries = Object.entries(brokenIcons.value).filter(([id]) =>
+      plugins.value.some(plugin => plugin.id === id)
     );
+    const filteredMap = Object.fromEntries(filteredEntries) as Record<string, boolean>;
+    plugins.value.forEach(plugin => {
+      if (plugin.hasIcon && filteredMap[plugin.id]) {
+        delete filteredMap[plugin.id];
+      }
+    });
+    brokenIcons.value = filteredMap;
   } catch (error: any) {
     loadError.value = error.message || 'Failed to load plugins';
     console.error('Error loading plugins:', error);
   } finally {
     loading.value = false;
+    if (refreshPending) {
+      refreshPending = false;
+      loadPlugins();
+    }
   }
 };
 
@@ -390,12 +378,7 @@ const reloadPlugin = async (pluginId: string) => {
   reloading.value = pluginId;
 
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/${pluginId}/reload`, {
-      method: 'POST'
-    });
-
-    if (!response.ok) throw new Error('Failed to reload plugin');
-
+    await reloadPluginRequest(pluginId);
     await loadPlugins();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to reload plugin';
@@ -405,17 +388,11 @@ const reloadPlugin = async (pluginId: string) => {
   }
 };
 
-const togglePlugin = async (plugin: Plugin) => {
+const togglePlugin = async (plugin: PluginListItem) => {
   toggling.value = plugin.id;
 
   try {
-    const endpoint = plugin.enabled ? 'disable' : 'enable';
-    const response = await fetch(`${api.baseUrl}/api/plugins/${plugin.id}/${endpoint}`, {
-      method: 'POST'
-    });
-
-    if (!response.ok) throw new Error(`Failed to ${endpoint} plugin`);
-
+    await setPluginEnabled(plugin.id, !plugin.enabled);
     await loadPlugins();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to toggle plugin';
@@ -425,7 +402,7 @@ const togglePlugin = async (plugin: Plugin) => {
   }
 };
 
-const confirmUninstall = (plugin: Plugin) => {
+const confirmUninstall = (plugin: PluginListItem) => {
   selectedPlugin.value = plugin;
   showUninstallConfirm.value = true;
 };
@@ -438,12 +415,7 @@ const uninstallPlugin = async () => {
   showUninstallConfirm.value = false;
 
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/${pluginId}`, {
-      method: 'DELETE'
-    });
-
-    if (!response.ok) throw new Error('Failed to uninstall plugin');
-
+    await uninstallPluginRequest(pluginId);
     await loadPlugins();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to uninstall plugin';
@@ -475,19 +447,7 @@ const uploadPlugin = async () => {
   installError.value = null;
 
   try {
-    const formData = new FormData();
-    formData.append('plugin', selectedFile.value);
-
-    const response = await fetch(`${api.baseUrl}/api/plugins/install`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to install plugin');
-    }
-
+    await installPluginRequest(selectedFile.value);
     installSuccess.value = true;
     await loadPlugins();
   } catch (error: any) {
@@ -529,6 +489,17 @@ const formatTime = (timestamp: string) => {
 
 onMounted(() => {
   loadPlugins();
+
+  unsubscribePluginsChanged = api.on('plugins:tools-changed', () => {
+    loadPlugins();
+  });
+});
+
+onBeforeUnmount(() => {
+  if (unsubscribePluginsChanged) {
+    unsubscribePluginsChanged();
+    unsubscribePluginsChanged = null;
+  }
 });
 </script>
 
