@@ -475,6 +475,8 @@ export async function onLoad(ctx) {
             gcode.push('G90 ; Absolute positioning');
             gcode.push('G94 ; Feed rate per minute');
             gcode.push('');
+            gcode.push('G53 G0 Z0 ; Move to machine Z0');
+            gcode.push('');
 
             if (spindleRpm > 0) {
               gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
@@ -583,7 +585,7 @@ export async function onLoad(ctx) {
               gcode.push('');
             }
 
-            gcode.push('G0 X0 Y0 ; Return to origin');
+            gcode.push('G53 G0 Z0 ; Move to machine Z0');
             if (mistM7 || floodM8) {
               gcode.push('M9 ; Coolant off');
             }
@@ -680,7 +682,10 @@ export async function onLoad(ctx) {
               });
 
               if (response.ok) {
-                window.postMessage({type: 'close-plugin-dialog'}, '*');
+                // Small delay to ensure WebSocket event propagates before closing dialog
+                setTimeout(() => {
+                  window.postMessage({type: 'close-plugin-dialog'}, '*');
+                }, 100);
               } else {
                 alert('Failed to upload G-code file');
               }
@@ -1170,6 +1175,8 @@ export async function onLoad(ctx) {
             gcode.push('G90 ; Absolute positioning');
             gcode.push('G94 ; Feed rate per minute');
             gcode.push('');
+            gcode.push('G53 G0 Z0 ; Move to machine Z0');
+            gcode.push('');
 
             if (spindleRpm > 0) {
               gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
@@ -1182,12 +1189,9 @@ export async function onLoad(ctx) {
             }
             gcode.push('');
 
-            gcode.push(\`G0 Z\${safeHeight} ; Move to safe height\`);
-            gcode.push('');
-
             // Loop through trim width passes
             for (let pass = 0; pass < numberOfPasses; pass++) {
-              const offset = pass * trimWidth;
+              const offset = (bitDiameter / 2) + trimWidth + (pass * trimWidth);
               gcode.push(\`(Trim pass \${pass + 1}/\${numberOfPasses} - Offset: \${offset.toFixed(3)}\${unitsLabel})\`);
 
               // Loop through depth passes
@@ -1241,7 +1245,7 @@ export async function onLoad(ctx) {
               gcode.push('');
             }
 
-            gcode.push('G0 X0 Y0 ; Return to origin');
+            gcode.push('G53 G0 Z0 ; Move to machine Z0');
             if (mistM7 || floodM8) {
               gcode.push('M9 ; Coolant off');
             }
@@ -1322,7 +1326,10 @@ export async function onLoad(ctx) {
               });
 
               if (response.ok) {
-                window.postMessage({type: 'close-plugin-dialog'}, '*');
+                // Small delay to ensure WebSocket event propagates before closing dialog
+                setTimeout(() => {
+                  window.postMessage({type: 'close-plugin-dialog'}, '*');
+                }, 100);
               } else {
                 alert('Failed to upload G-code file');
               }

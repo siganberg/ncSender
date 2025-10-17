@@ -14,17 +14,17 @@
     "floodM8": true
   },
   "surfacing": {
-    "xDimension": 100,
-    "yDimension": 100,
+    "xDimension": 200,
+    "yDimension": 200,
     "depthOfCut": 0.5,
     "targetDepth": 0.5,
     "bitDiameter": 25.4,
     "stepover": 80,
-    "feedRate": 2000,
-    "spindleRpm": 15000,
-    "patternType": "zigzagY",
-    "invertOrientation": false,
+    "feedRate": 7000,
+    "spindleRpm": 5000,
+    "patternType": "zigzagX",
+    "invertOrientation": true,
     "mistM7": false,
-    "floodM8": false
+    "floodM8": true
   }
 }
