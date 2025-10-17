@@ -1,5 +1,5 @@
 <template>
-  <div v-if="show" class="plugin-dialog-backdrop" @click.self="closeDialog">
+  <div v-if="show" class="plugin-dialog-backdrop">
     <div class="plugin-dialog-container">
       <div class="plugin-dialog">
         <div class="plugin-dialog-header">
@@ -125,6 +125,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: var(--gap-xs);
 }
 
 .plugin-dialog {

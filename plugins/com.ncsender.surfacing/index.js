@@ -227,41 +227,41 @@ export async function onLoad(ctx) {
               <div class="form-row">
                 <div class="form-group">
                   <label for="xDimension">X Dimension (${distanceUnit})</label>
-                  <input type="number" id="xDimension" step="0.1" min="10" value="${settings.xDimension}" required>
+                  <input type="number" id="xDimension" step="0.1" value="${settings.xDimension}">
                 </div>
                 <div class="form-group">
                   <label for="yDimension">Y Dimension (${distanceUnit})</label>
-                  <input type="number" id="yDimension" step="0.1" min="10" value="${settings.yDimension}" required>
+                  <input type="number" id="yDimension" step="0.1" value="${settings.yDimension}">
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
                   <label for="depthOfCut">Depth of Cut (${distanceUnit})</label>
-                  <input type="number" id="depthOfCut" step="0.1" min="0.1" max="20" value="${settings.depthOfCut}" required>
+                  <input type="number" id="depthOfCut" step="0.1" value="${settings.depthOfCut}">
                 </div>
                 <div class="form-group">
                   <label for="targetDepth">Target Depth (${distanceUnit})</label>
-                  <input type="number" id="targetDepth" step="0.1" min="0.1" max="20" value="${settings.targetDepth}" required>
+                  <input type="number" id="targetDepth" step="0.1" value="${settings.targetDepth}">
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
                   <label for="bitDiameter">Bit Diameter (${distanceUnit})</label>
-                  <input type="number" id="bitDiameter" step="0.1" min="1" max="50" value="${settings.bitDiameter}" required>
+                  <input type="number" id="bitDiameter" step="0.1" value="${settings.bitDiameter}">
                 </div>
                 <div class="form-group">
                   <label for="stepover">Stepover (%)</label>
-                  <input type="number" id="stepover" step="1" min="10" max="100" value="${settings.stepover}" required>
+                  <input type="number" id="stepover" step="1" value="${settings.stepover}">
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
                   <label for="feedRate">Feed Rate (${feedRateUnit})</label>
-                  <input type="number" id="feedRate" step="1" min="1000" max="20000" value="${settings.feedRate}" required>
+                  <input type="number" id="feedRate" step="1" value="${settings.feedRate}">
                 </div>
                 <div class="form-group">
                   <label for="spindleRpm">Spindle RPM</label>
-                  <input type="number" id="spindleRpm" step="1" min="2000" max="24000" value="${settings.spindleRpm}" required>
+                  <input type="number" id="spindleRpm" step="1" value="${settings.spindleRpm}">
                 </div>
               </div>
               <div class="form-row coolant-row">
@@ -297,6 +297,126 @@ export async function onLoad(ctx) {
 
       <script>
         (function() {
+          // Validation configuration
+          const validationRules = {
+            xDimension: { min: 10, max: Infinity, label: 'X Dimension' },
+            yDimension: { min: 10, max: Infinity, label: 'Y Dimension' },
+            depthOfCut: { min: 0.1, max: 20, label: 'Depth of Cut' },
+            targetDepth: { min: 0.1, max: 20, label: 'Target Depth' },
+            bitDiameter: { min: 1, max: 50, label: 'Bit Diameter' },
+            stepover: { min: 10, max: 100, label: 'Stepover' },
+            feedRate: { min: 1000, max: 20000, label: 'Feed Rate' },
+            spindleRpm: { min: 2000, max: 24000, label: 'Spindle RPM' }
+          };
+
+          // Create tooltip element
+          const tooltip = document.createElement('div');
+          tooltip.style.cssText = \`
+            position: absolute;
+            background: #d32f2f;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            z-index: 10000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          \`;
+          tooltip.style.setProperty('white-space', 'nowrap');
+          document.body.appendChild(tooltip);
+
+          // Arrow element
+          const arrow = document.createElement('div');
+          arrow.style.cssText = \`
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 6px solid #d32f2f;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+          \`;
+          tooltip.appendChild(arrow);
+
+          function showTooltip(element, message) {
+            const rect = element.getBoundingClientRect();
+            tooltip.textContent = message;
+            tooltip.appendChild(arrow); // Re-append arrow after textContent
+
+            tooltip.style.left = rect.left + (rect.width / 2) + 'px';
+            tooltip.style.top = (rect.top - 10) + 'px';
+            tooltip.style.transform = 'translate(-50%, -100%)';
+            tooltip.style.opacity = '1';
+
+            element.style.borderColor = '#d32f2f';
+            element.focus();
+          }
+
+          function hideTooltip() {
+            tooltip.style.opacity = '0';
+            setTimeout(() => {
+              tooltip.style.left = '-9999px';
+            }, 200);
+          }
+
+          function validateInput(id, value) {
+            const rules = validationRules[id];
+            if (!rules) return null;
+
+            const num = parseFloat(value);
+
+            if (isNaN(num)) {
+              return \`\${rules.label} must be a valid number\`;
+            }
+
+            if (num < rules.min) {
+              return \`\${rules.label} must be at least \${rules.min}\`;
+            }
+
+            if (num > rules.max) {
+              return \`\${rules.label} must not exceed \${rules.max}\`;
+            }
+
+            return null;
+          }
+
+          function validateAllInputs() {
+            for (const id in validationRules) {
+              const element = document.getElementById(id);
+              if (!element) continue;
+
+              const error = validateInput(id, element.value);
+              if (error) {
+                showTooltip(element, error);
+                return false;
+              }
+            }
+            return true;
+          }
+
+          // Add input listeners to clear error state
+          for (const id in validationRules) {
+            const element = document.getElementById(id);
+            if (element) {
+              element.addEventListener('input', function() {
+                this.style.borderColor = '';
+                hideTooltip();
+              });
+
+              element.addEventListener('blur', function() {
+                const error = validateInput(id, this.value);
+                if (error) {
+                  showTooltip(this, error);
+                  setTimeout(hideTooltip, 3000);
+                }
+              });
+            }
+          }
+
           function generateSurfacingGcode(params) {
             const {
               startX, startY,
@@ -451,6 +571,11 @@ export async function onLoad(ctx) {
 
           document.getElementById('surfacingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            // Validate all inputs before proceeding
+            if (!validateAllInputs()) {
+              return;
+            }
 
             const patternTypeSelect = document.getElementById('patternType');
             const patternType = patternTypeSelect ? patternTypeSelect.value : 'zigzagY';
