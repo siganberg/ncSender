@@ -372,10 +372,12 @@ const loadPlugins = async () => {
 
     plugins.value = await response.json();
 
-    for (const plugin of plugins.value) {
-      await checkPluginHasConfig(plugin.id);
-      await checkPluginHasIcon(plugin.id);
-    }
+    await Promise.all(
+      plugins.value.flatMap(plugin => [
+        checkPluginHasConfig(plugin.id),
+        checkPluginHasIcon(plugin.id)
+      ])
+    );
   } catch (error: any) {
     loadError.value = error.message || 'Failed to load plugins';
     console.error('Error loading plugins:', error);

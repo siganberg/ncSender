@@ -14,28 +14,43 @@ const log = (...args) => {
 
 const upload = multer({ dest: '/tmp/ncsender-plugins' });
 
+async function readAndValidateManifest(manifestPath) {
+  const manifestContent = await fs.readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestContent);
+
+  if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
+    throw new Error('Invalid manifest: missing required fields (id, name, version, entry)');
+  }
+
+  return manifest;
+}
+
+function asyncHandler(fn) {
+  return async (req, res, next) => {
+    try {
+      await fn(req, res, next);
+    } catch (error) {
+      log('Route error:', error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Internal server error';
+      res.status(statusCode).json({ error: message });
+    }
+  };
+}
+
 export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
   const router = Router();
+  const pluginsDir = pluginManager.getPluginsDirectory();
 
-  router.get('/', async (req, res) => {
-    try {
-      const plugins = pluginManager.getInstalledPlugins();
-      res.json(plugins);
-    } catch (error) {
-      log('Error getting plugins:', error);
-      res.status(500).json({ error: 'Failed to get plugins' });
-    }
-  });
+  router.get('/', asyncHandler(async (req, res) => {
+    const plugins = pluginManager.getInstalledPlugins();
+    res.json(plugins);
+  }));
 
-  router.get('/loaded', async (req, res) => {
-    try {
-      const plugins = pluginManager.getLoadedPlugins();
-      res.json(plugins);
-    } catch (error) {
-      log('Error getting loaded plugins:', error);
-      res.status(500).json({ error: 'Failed to get loaded plugins' });
-    }
-  });
+  router.get('/loaded', asyncHandler(async (req, res) => {
+    const plugins = pluginManager.getLoadedPlugins();
+    res.json(plugins);
+  }));
 
   router.post('/:pluginId/enable', async (req, res) => {
     try {
@@ -88,28 +103,18 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
-  router.get('/:pluginId/settings', async (req, res) => {
-    try {
-      const { pluginId } = req.params;
-      const settings = pluginManager.getPluginSettings(pluginId);
-      res.json(settings);
-    } catch (error) {
-      log('Error getting plugin settings:', error);
-      res.status(500).json({ error: error.message || 'Failed to get plugin settings' });
-    }
-  });
+  router.get('/:pluginId/settings', asyncHandler(async (req, res) => {
+    const { pluginId } = req.params;
+    const settings = pluginManager.getPluginSettings(pluginId);
+    res.json(settings);
+  }));
 
-  router.put('/:pluginId/settings', async (req, res) => {
-    try {
-      const { pluginId } = req.params;
-      const settings = req.body;
-      pluginManager.savePluginSettings(pluginId, settings);
-      res.json({ success: true, message: 'Plugin settings saved' });
-    } catch (error) {
-      log('Error saving plugin settings:', error);
-      res.status(500).json({ error: error.message || 'Failed to save plugin settings' });
-    }
-  });
+  router.put('/:pluginId/settings', asyncHandler(async (req, res) => {
+    const { pluginId } = req.params;
+    const settings = req.body;
+    pluginManager.savePluginSettings(pluginId, settings);
+    res.json({ success: true, message: 'Plugin settings saved' });
+  }));
 
   router.post('/:pluginId/reload', async (req, res) => {
     try {
@@ -128,15 +133,10 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
-  router.get('/tool-menu-items', async (req, res) => {
-    try {
-      const items = pluginManager.getToolMenuItems();
-      res.json(items);
-    } catch (error) {
-      log('Error getting tool menu items:', error);
-      res.status(500).json({ error: 'Failed to get tool menu items' });
-    }
-  });
+  router.get('/tool-menu-items', asyncHandler(async (req, res) => {
+    const items = pluginManager.getToolMenuItems();
+    res.json(items);
+  }));
 
   router.post('/tool-menu-items/execute', async (req, res) => {
     try {
@@ -179,28 +179,21 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
-  router.get('/:pluginId/has-config', async (req, res) => {
-    try {
-      const { pluginId } = req.params;
-      const hasConfig = pluginManager.hasConfigUI(pluginId);
-      res.json({ pluginId, hasConfig });
-    } catch (error) {
-      log('Error checking plugin config:', error);
-      res.status(500).json({ error: 'Failed to check plugin config' });
-    }
-  });
+  router.get('/:pluginId/has-config', asyncHandler(async (req, res) => {
+    const { pluginId } = req.params;
+    const hasConfig = pluginManager.hasConfigUI(pluginId);
+    res.json({ pluginId, hasConfig });
+  }));
 
   router.get('/:pluginId/icon', async (req, res) => {
     try {
       const { pluginId } = req.params;
-      const pluginsDir = pluginManager.getPluginsDirectory();
       const manifestPath = path.join(pluginsDir, pluginId, 'manifest.json');
 
       // Read manifest to get icon path
       let manifest;
       try {
-        const manifestContent = await fs.readFile(manifestPath, 'utf8');
-        manifest = JSON.parse(manifestContent);
+        manifest = await readAndValidateManifest(manifestPath);
       } catch (error) {
         return res.status(404).json({ error: 'Plugin manifest not found' });
       }
@@ -243,7 +236,6 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
   router.post('/:pluginId/register', async (req, res) => {
     try {
       const { pluginId } = req.params;
-      const pluginsDir = pluginManager.getPluginsDirectory();
       const pluginDir = path.join(pluginsDir, pluginId);
       const manifestPath = path.join(pluginDir, 'manifest.json');
 
@@ -257,14 +249,9 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       // Read manifest
       let manifest;
       try {
-        const manifestContent = await fs.readFile(manifestPath, 'utf8');
-        manifest = JSON.parse(manifestContent);
+        manifest = await readAndValidateManifest(manifestPath);
       } catch (error) {
         return res.status(400).json({ error: 'Invalid plugin: manifest.json not found or invalid' });
-      }
-
-      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
-        return res.status(400).json({ error: 'Invalid manifest: missing required fields' });
       }
 
       // Register and enable the plugin
@@ -298,8 +285,6 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       const tempFile = req.file.path;
-      const pluginsDir = pluginManager.getPluginsDirectory();
-
       await fs.mkdir('/tmp/ncsender-plugin-extract', { recursive: true });
       const extractDir = `/tmp/ncsender-plugin-extract/${Date.now()}`;
 
@@ -316,18 +301,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       const manifestPath = path.join(extractDir, files[0], 'manifest.json');
-      let manifest;
-
-      try {
-        const manifestContent = await fs.readFile(manifestPath, 'utf8');
-        manifest = JSON.parse(manifestContent);
-      } catch (error) {
-        throw new Error('Invalid plugin: manifest.json not found or invalid');
-      }
-
-      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
-        throw new Error('Invalid manifest: missing required fields');
-      }
+      const manifest = await readAndValidateManifest(manifestPath);
 
       const pluginDir = path.join(pluginsDir, manifest.id);
       await fs.rm(pluginDir, { recursive: true, force: true });

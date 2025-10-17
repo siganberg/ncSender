@@ -14,8 +14,8 @@
     "floodM8": true
   },
   "surfacing": {
-    "xDimension": 400,
-    "yDimension": 400,
+    "xDimension": 150,
+    "yDimension": 150,
     "depthOfCut": 0.5,
     "targetDepth": 1,
     "bitDiameter": 25.4,
