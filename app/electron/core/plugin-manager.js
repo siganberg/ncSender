@@ -261,9 +261,10 @@ class PluginManager {
           pluginId,
           label,
           callback,
-          clientOnly: options.clientOnly || false // Support per-tool configuration
+          clientOnly: options.clientOnly || false, // Support per-tool configuration
+          icon: options.icon || null // SVG string for custom icon
         });
-        log(`Registered tool menu item: "${label}" for plugin ${pluginId}${options.clientOnly ? ' (client-only)' : ''}`);
+        log(`Registered tool menu item: "${label}" for plugin ${pluginId}${options.clientOnly ? ' (client-only)' : ''}${options.icon ? ' (with custom icon)' : ''}`);
       },
 
       registerConfigUI: (htmlContent) => {
@@ -490,7 +491,8 @@ class PluginManager {
     return this.toolMenuItems.map(item => ({
       pluginId: item.pluginId,
       label: item.label,
-      clientOnly: !!item.clientOnly
+      clientOnly: !!item.clientOnly,
+      icon: item.icon || null
     }));
   }
 

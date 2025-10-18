@@ -36,6 +36,7 @@ export interface ToolMenuItem {
   pluginId: string;
   label: string;
   clientOnly?: boolean;
+  icon?: string | null;
 }
 
 export async function fetchPlugins(): Promise<PluginListItem[]> {

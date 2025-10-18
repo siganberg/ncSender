@@ -446,7 +446,7 @@ const reloadPlugin = async (pluginId: string) => {
 
   try {
     await reloadPluginRequest(pluginId);
-    await loadPlugins();
+    // loadPlugins() will be triggered by the 'plugins:tools-changed' WebSocket event
   } catch (error: any) {
     loadError.value = error.message || 'Failed to reload plugin';
     console.error('Error reloading plugin:', error);
