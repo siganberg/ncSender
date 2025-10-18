@@ -115,11 +115,6 @@ export function registerCncEventHandlers({
     const currentMachineStatus = status?.status?.toLowerCase();
     const prevMachineStatus = prevMachineState?.status;
 
-    // Log status changes for debugging
-    if (status?.status && prevMachineStatus !== status?.status) {
-      console.log(`[CNC Events] machineState.status changed: '${prevMachineStatus}' -> '${status.status}'`);
-    }
-
     if (currentMachineStatus === 'alarm' && prevMachineStatus !== 'alarm' && jobManager.hasActiveJob()) {
       log('Machine entered alarm state, resetting job manager');
       jobManager.forceReset();

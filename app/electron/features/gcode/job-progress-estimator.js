@@ -73,9 +73,6 @@ export class JobProgressEstimator {
 
       if (shouldCount) {
         this._actualElapsedSec++;
-        console.log(`[JobProgressEstimator] Timer tick: elapsed=${this._actualElapsedSec}s, remaining=${this._originalEstimatedSec - this._actualElapsedSec}s`);
-      } else {
-        console.log(`[JobProgressEstimator] Timer tick skipped (not running)`);
       }
     }, 1000);
   }

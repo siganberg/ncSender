@@ -17,13 +17,10 @@ class JobProcessorManager {
       throw new Error('A job is already running. Stop the current job before starting a new one.');
     }
 
-    // Callback to check if we should count time (only when job status is 'running')
+    // Callback to check if we should count time (only count when senderStatus is 'running')
     const shouldCountCallback = () => {
-      const jobStatus = options.serverState?.jobLoaded?.status;
       const senderStatus = options.serverState?.senderStatus;
-      const shouldCount = jobStatus ? jobStatus.toLowerCase() === 'running' : false;
-      console.log(`[JobManager] shouldCountCallback: jobStatus='${jobStatus}', senderStatus='${senderStatus}', shouldCount=${shouldCount}`);
-      return shouldCount;
+      return senderStatus === 'running';
     };
 
     // Create a swappable telemetry-backed progress provider
