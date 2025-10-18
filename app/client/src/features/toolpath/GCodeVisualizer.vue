@@ -211,7 +211,7 @@ import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
 
 const store = useToolpathStore();
 const appStore = useAppStore();
-const { isJobRunning, isConnected: storeIsConnected } = appStore;
+const { isJobRunning, isConnected: storeIsConnected, gcodeCompletedUpTo } = appStore;
 
 type AxisHome = 'min' | 'max';
 type MachineOrientation = {
@@ -1722,12 +1722,6 @@ onMounted(async () => {
       markedLines.clear();
     }
 
-    if (state.jobLoaded && state.jobLoaded.currentLine && status === 'running') {
-      if (state.jobLoaded.currentLine > lastExecutedLine.value) {
-        lastExecutedLine.value = state.jobLoaded.currentLine;
-      }
-    }
-
     // Reset visualizer segments when file is unloaded
     if (!state.jobLoaded) {
       lastExecutedLine.value = 0;
@@ -1748,22 +1742,6 @@ onMounted(async () => {
     }
 
     prevJobStatus = status;
-  });
-
-  // Listen to cnc-command-result events to mark completed lines
-  // Set up after visualizer is initialized to ensure gcodeVisualizer exists
-  api.on('cnc-command-result', (result: any) => {
-    if (!result || !gcodeVisualizer) return;
-
-    const lineNumber = result?.meta?.lineNumber;
-
-    if (result?.sourceId === 'gcode-runner' &&
-        lineNumber &&
-        result?.status === 'success' &&
-        !markedLines.has(lineNumber)) {
-      gcodeVisualizer.markLineCompleted(lineNumber);
-      markedLines.add(lineNumber);
-    }
   });
 
   // Watch for jobLoaded changes to handle clearing
@@ -1816,6 +1794,59 @@ onUnmounted(() => {
 
 // Track which line numbers have been marked as completed
 const markedLines = new Set<number>();
+
+watch(
+  () => gcodeCompletedUpTo?.value ?? 0,
+  (newVal, oldVal) => {
+    const nextRaw = typeof newVal === 'number' ? newVal : 0;
+    const prevRaw = typeof oldVal === 'number' ? oldVal : 0;
+    const next = Number.isFinite(nextRaw) ? Math.max(0, Math.floor(nextRaw)) : 0;
+    const prev = Number.isFinite(prevRaw) ? Math.max(0, Math.floor(prevRaw)) : 0;
+
+    if (lastExecutedLine.value !== next) {
+      lastExecutedLine.value = next;
+    }
+
+    const visualizerReady = !!(gcodeVisualizer && gcodeVisualizer.lineNumberMap && gcodeVisualizer.lineNumberMap.size > 0);
+    if (!visualizerReady) {
+      if (next === 0) {
+        markedLines.clear();
+      }
+      return;
+    }
+
+    if (next <= 0) {
+      if (prev > 0) {
+        gcodeVisualizer.resetCompletedLines();
+      }
+      markedLines.clear();
+      return;
+    }
+
+    if (next < prev) {
+      gcodeVisualizer.resetCompletedLines();
+      markedLines.clear();
+      for (let i = 1; i <= next; i++) {
+        if (!markedLines.has(i)) {
+          gcodeVisualizer.markLineCompleted(i);
+          markedLines.add(i);
+        }
+      }
+      return;
+    }
+
+    if (next > prev) {
+      const start = Math.max(prev + 1, 1);
+      for (let i = start; i <= next; i++) {
+        if (!markedLines.has(i)) {
+          gcodeVisualizer.markLineCompleted(i);
+          markedLines.add(i);
+        }
+      }
+    }
+  },
+  { immediate: true }
+);
 
 // Watch for coolant state changes from machine status
 watch(() => store.status.floodCoolant, (newValue) => {

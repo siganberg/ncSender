@@ -252,7 +252,7 @@ const addOrUpdateCommandLine = (payload: any) => {
   }
 
   // Skip gcode-runner commands - they're not displayed in terminal
-  // Visualizer listens to cnc-command-result events directly
+  // Visualizer & preview consume gcodeCompletedUpTo to reflect executed lines
   if (payload.sourceId === 'gcode-runner') {
     return null;
   }
@@ -576,12 +576,12 @@ export function initializeStore() {
       gcodeCompletedUpTo.value = 0;
     }
 
-    // If job is stopped/paused/completed, restore completed line tracking
-    // This ensures that late-joining clients or page reloads get the correct state
-    if ((currentStatus === 'stopped' || currentStatus === 'paused' || currentStatus === 'completed') &&
-        typeof currentLine === 'number' && currentLine > 0 &&
-        gcodeCompletedUpTo.value !== currentLine) {
-      gcodeCompletedUpTo.value = currentLine;
+    if ((currentStatus === 'running' || currentStatus === 'paused' || currentStatus === 'stopped' || currentStatus === 'completed') &&
+        typeof currentLine === 'number' && Number.isFinite(currentLine)) {
+      const nextCompleted = Math.max(0, Math.floor(currentLine));
+      if (gcodeCompletedUpTo.value !== nextCompleted) {
+        gcodeCompletedUpTo.value = nextCompleted;
+      }
     }
 
     // If user closed the job progress panel (status changed to null), reset G-code completion markers
