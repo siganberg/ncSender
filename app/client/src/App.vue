@@ -697,7 +697,7 @@ const handleWorkspaceChange = async (newWorkspace: string) => {
   try {
     // Optimistically update UI; server will confirm via status update
     workspace.value = newWorkspace;
-    await api.sendCommandViaWebSocket({ command: newWorkspace, displayCommand: newWorkspace });
+    await api.sendCommandViaWebSocket({ command: newWorkspace, displayCommand: newWorkspace, meta: { sourceId: 'client' } });
   } catch (error) {
     console.error('Failed to change workspace:', error?.message || error);
   }
@@ -1325,7 +1325,7 @@ const submitFirmwareChanges = async () => {
   try {
     // Send each change as a $<id>=<value> command
     for (const [settingId, newValue] of Object.entries(firmwareChanges.value)) {
-      await api.sendCommand(`$${settingId}=${newValue}`);
+      await api.sendCommand(`$${settingId}=${newValue}`, { meta: { sourceId: 'client' } });
 
       // Update the local value in firmwareData
       if (firmwareData.value.settings[settingId]) {
@@ -1505,7 +1505,8 @@ const confirmUnitsChange = async () => {
   try {
     await api.sendCommandViaWebSocket({
       command: gcode,
-      displayCommand: displayCommand
+      displayCommand: displayCommand,
+      meta: { sourceId: 'client' }
     });
   } catch (error) {
     console.error('Failed to send unit command to controller:', error);
@@ -1813,10 +1814,10 @@ const toggleTheme = () => {
 const handleUnlock = async () => {
   try {
     // Send soft reset first, then unlock
-    await api.sendCommand('\x18');
+    await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
     // Wait a bit for reset to complete
     await new Promise(resolve => setTimeout(resolve, 100));
-    await api.sendCommand('$X');
+    await api.sendCommand('$X', { meta: { sourceId: 'client' } });
   } catch (error) {
     console.error('Failed to send unlock command:', error);
   }

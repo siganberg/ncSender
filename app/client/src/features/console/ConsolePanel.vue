@@ -440,7 +440,8 @@ const sendCommand = async () => {
     command: commandToSend.value,
     displayCommand: commandToSend.value,
     meta: {
-      recordHistory: true
+      recordHistory: true,
+      sourceId: 'client'
     }
   }).catch((error) => {
     console.error('Failed to send console command via WebSocket:', error);

@@ -206,7 +206,15 @@ class PluginManager {
         if (!this.cncController) {
           throw new Error('CNC controller not available');
         }
-        return await this.cncController.sendCommand(gcode, options);
+        // Add plugin sourceId if not already provided
+        const enhancedOptions = { ...options };
+        if (!enhancedOptions.meta) {
+          enhancedOptions.meta = {};
+        }
+        if (!enhancedOptions.meta.sourceId) {
+          enhancedOptions.meta.sourceId = `plugin:${pluginId}`;
+        }
+        return await this.cncController.sendCommand(gcode, enhancedOptions);
       },
 
       broadcast: (eventName, data) => {

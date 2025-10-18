@@ -93,7 +93,7 @@ export function createProbeRoutes(cncController, serverState, broadcast) {
 
       // Send soft reset to stop any active motion
       await cncController.sendCommand('\x18', {
-        meta: { probeControl: true }
+        meta: { probeControl: true, sourceId: 'client' }
       });
 
       // Reset probing state

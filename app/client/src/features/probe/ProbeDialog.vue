@@ -1019,9 +1019,9 @@ const handleStartProbe = async () => {
   if (isAlarmState.value) {
     try {
       // Soft reset followed by unlock clears the alarm state
-      await api.sendCommand('\x18');
+      await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
       await new Promise(resolve => setTimeout(resolve, 100));
-      await api.sendCommand('$X');
+      await api.sendCommand('$X', { meta: { sourceId: 'client' } });
     } catch (error) {
       console.error('[Probe] Failed to unlock machine from probe dialog:', error);
     }

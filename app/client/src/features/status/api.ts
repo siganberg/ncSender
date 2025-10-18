@@ -32,16 +32,16 @@ export function sendRealtime(command: string) {
   const hex = '0x' + command.charCodeAt(0).toString(16).toUpperCase();
   const label = REALTIME_LABELS[command] || 'Realtime command';
   const displayCommand = `${hex} (${label})`;
-  return api.sendCommandViaWebSocket({ command, displayCommand });
+  return api.sendCommandViaWebSocket({ command, displayCommand, meta: { sourceId: 'client' } });
 }
 
 export function zeroXY() {
-  return api.sendCommandViaWebSocket({ command: 'G10 L20 X0 Y0', displayCommand: 'G10 L20 X0 Y0' });
+  return api.sendCommandViaWebSocket({ command: 'G10 L20 X0 Y0', displayCommand: 'G10 L20 X0 Y0', meta: { sourceId: 'client' } });
 }
 
 export function zeroAxis(axis: 'X'|'Y'|'Z'|'A') {
   const a = String(axis).toUpperCase();
-  return api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0` });
+  return api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0`, meta: { sourceId: 'client' } });
 }
 
 export { api };

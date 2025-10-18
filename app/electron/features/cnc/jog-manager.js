@@ -139,7 +139,8 @@ export class JogSessionManager {
         commandId: jogId,
         displayCommand: displayCommand || command,
         meta: {
-          continuous: true
+          continuous: true,
+          sourceId: 'client'
         }
       });
     } catch (error) {
@@ -286,7 +287,8 @@ export class JogSessionManager {
         commandId: resolvedCommandId,
         displayCommand: displayCommand || command,
         meta: {
-          jogStep: true
+          jogStep: true,
+          sourceId: 'client'
         }
       });
     } catch (error) {

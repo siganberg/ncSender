@@ -161,7 +161,10 @@ export function createCNCRoutes(cncController, broadcast) {
       if (targetCompletionId) {
         metaPayload.completesCommandId = targetCompletionId;
       }
-      // Do not attach originId
+      // Default to 'client' sourceId if not provided
+      if (!metaPayload.sourceId) {
+        metaPayload.sourceId = 'client';
+      }
 
       await cncController.sendCommand(commandValue, {
         commandId: commandMeta.id,

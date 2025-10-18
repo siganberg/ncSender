@@ -89,7 +89,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         try {
           await cncController.sendCommand('!', {
             displayCommand: '! (Feed Hold)',
-            meta: { jobControl: true }
+            meta: { jobControl: true, sourceId: 'client' }
           });
         } catch (error) {
           log('Failed to send feed hold before stop:', error?.message || error);
@@ -103,7 +103,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         try {
           await cncController.sendCommand('\x18', {
             displayCommand: '\\x18 (Soft Reset)',
-            meta: { jobControl: true }
+            meta: { jobControl: true, sourceId: 'client' }
           });
         } catch (error) {
           log('Failed to send soft reset during stop:', error?.message || error);

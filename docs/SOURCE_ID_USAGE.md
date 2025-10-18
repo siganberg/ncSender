@@ -40,7 +40,15 @@ await cncController.sendCommand('G0 X10', {
 | **Tool Change** | `app/electron/features/tool/routes.js` | `'tool-change'` | 89 | Tool change workflow commands | M6 and related |
 | **Firmware - Settings Query** | `app/electron/features/firmware/routes.js` | `'system'` | 271, 333, 494 | Firmware settings queries ($$, $I, etc.) | `$$`, `$I`, etc. |
 | **Alarms - Query** | `app/electron/features/alarms/routes.js` | `'system'` | 83 | Query alarm codes ($EA) | `$EA` |
-| **CNC Routes - User Commands** | `app/electron/features/cnc/routes.js` | Passed from client | 172 | User-sent commands via API (sourceId from request body) | Any user command |
+| **Client - Jog Controls** | `app/electron/features/cnc/jog-manager.js` | `'client'` | 143, 291 | Motion controls (continuous and step jog) | $J=... (jog) |
+| **Client - UI Controls** | `app/client/src/features/status/api.ts` | `'client'` | 35, 39, 44 | Manual UI controls (overrides, offsets) | G-code, overrides |
+| **Client - Terminal** | `app/client/src/features/console/ConsolePanel.vue` | `'client'` | 444 | Terminal send command input | Any user command |
+| **Client - Workspace/Units** | `app/client/src/App.vue` | `'client'` | 700, 1328, 1509, 1817 | Workspace, firmware settings, units, unlock | G54-G59, $N=V, G20/G21, $X |
+| **Client - Job Control** | `app/electron/features/gcode/job-routes.js` | `'client'` | 92, 106 | Stop job (feed hold, soft reset) | !, \x18 |
+| **Client - Probe Control** | `app/electron/features/probe/routes.js` | `'client'` | 96 | Stop probe operation | \x18 |
+| **Client - Probe Unlock** | `app/client/src/features/probe/ProbeDialog.vue` | `'client'` | 1022, 1024 | Unlock after probe alarm | \x18, $X |
+| **Plugin Commands** | `app/electron/core/plugin-manager.js` | `'plugin:<pluginId>'` | 215 | Auto-tagged plugin commands | Any G-code |
+| **API Default** | `app/electron/server/websocket.js`, `cnc/routes.js` | `'client'` (default) | 278, 165 | WebSocket/HTTP API fallback if not provided | Any command |
 
 ## sourceId Types
 
@@ -114,25 +122,52 @@ meta: {
 }
 ```
 
-### Client-provided (Dynamic)
+### `'client'`
 
-**Purpose**: Custom sourceId values passed from the client/UI.
+**Purpose**: Manual commands from the user interface (UI controls and terminal).
 
 **Used for**:
-- User commands sent via `/api/cnc/send-command`
-- The sourceId is included in the request body and passed through to the controller
+- **Jog controls** (continuous and step) - `jog-manager.js:138-145, 285-293`
+- **Terminal** "Send Command" input - `ConsolePanel.vue:439-445`
+- **Work offset zeroing** (X, Y, XY, Z) - `status/api.ts:38-45`
+- **Feed rate override** controls - `status/api.ts:31-36`
+- **Spindle override** controls - `status/api.ts:31-36`
+- **Workspace change** dropdown (G54, G55, etc.) - `App.vue:700`
+- **Unit change** (G20/G21) - `App.vue:1506-1510`
+- **Unlock** command ($X) - `App.vue:1817-1820`
 
-**Example API call**:
+**Associated metadata**:
 ```javascript
-fetch('/api/cnc/send-command', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    command: 'G0 X10',
-    meta: { sourceId: 'custom-ui-element' }
-  })
-});
+meta: {
+  sourceId: 'client',
+  recordHistory: true,  // For terminal commands
+  continuous: true,     // For continuous jog
+  jogStep: true         // For step jog
+}
 ```
+
+### `'plugin:<pluginId>'`
+
+**Purpose**: Commands sent by plugins are automatically tagged with the plugin's ID.
+
+**Used for**:
+- All plugin-generated commands via `ctx.sendGcode()`
+- Automatically set by plugin-manager to `plugin:<pluginId>` format
+- Plugins can override by providing their own sourceId in options
+
+**Auto-generated format**: `plugin-manager.js:215`
+
+**Example**:
+```javascript
+// In plugin code:
+ctx.sendGcode('G0 X10');
+// Automatically becomes: sourceId: 'plugin:com.example.myplugin'
+
+// Or plugin can provide custom sourceId:
+ctx.sendGcode('G0 X10', { meta: { sourceId: 'custom-name' } });
+```
+
+**Note**: The default sourceId for APIs (WebSocket/HTTP) is `'client'` if not specified - `websocket.js:278`, `cnc/routes.js:165`
 
 ## Implementation Details
 
@@ -198,10 +233,28 @@ Use `'system'` for system/internal commands that should NOT be broadcast to clie
 - Commands that should not appear in the user console
 - High-frequency commands that would spam the UI
 
+### When to Use `'client'`
+
+Use `'client'` for user-initiated commands from the UI:
+- **Jog controls** (motion control card - continuous and step jog)
+- **Terminal** command input
+- **Override controls** (feed rate and spindle speed)
+- **Work offset** zeroing (X, Y, Z, XY buttons)
+- **Workspace** changes (G54-G59 dropdown)
+- **Unit** changes (metric/imperial toggle)
+- **Unlock** button
+- Any other manual user interactions
+
+### When to Use `'job'`
+
+Use `'job'` EXCLUSIVELY for G-code file job execution:
+- Commands sent during file job execution
+- DO NOT use for manual commands or other sources
+
 ### When to Use Feature-Specific IDs
 
 Use feature-specific IDs (`'macro'`, `'probing'`, `'tool-change'`, etc.) for:
-- Grouping related commands
+- Grouping related commands from specific features
 - Filtering in the console/logs
 - Plugin event handling
 - Identifying command origin in error handling
@@ -209,9 +262,9 @@ Use feature-specific IDs (`'macro'`, `'probing'`, `'tool-change'`, etc.) for:
 ### When to Allow Custom IDs
 
 Allow custom sourceIds for:
-- User-initiated commands
 - Plugin-generated commands
-- Custom workflows that need tracking
+- Custom integrations
+- External tool workflows
 
 ## Related Files
 

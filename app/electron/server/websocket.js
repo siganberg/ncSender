@@ -274,6 +274,10 @@ export function createWebSocketLayer({
     if (commandMeta.completesCommandId) {
       metaPayload.completesCommandId = commandMeta.completesCommandId;
     }
+    // Default to 'client' sourceId if not provided
+    if (!metaPayload.sourceId) {
+      metaPayload.sourceId = 'client';
+    }
 
     try {
       if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
