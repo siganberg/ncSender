@@ -331,25 +331,6 @@ const onConfigIframeLoad = () => {
       iframeBody.style.color = textColor;
       iframeBody.style.margin = '0';
       iframeBody.style.padding = '20px';
-
-      // Also inject additional styles after CSS variables are available
-      const additionalStyle = configIframe.value.contentDocument.createElement('style');
-      additionalStyle.textContent = `
-        textarea, input[type="text"], input[type="number"] {
-          background: var(--color-surface) !important;
-          border: 1px solid var(--color-border) !important;
-          border-radius: var(--radius-small) !important;
-          color: var(--color-text-primary) !important;
-          padding: 8px 12px !important;
-          font-family: inherit !important;
-          font-size: 14px !important;
-        }
-        textarea:focus, input:focus {
-          outline: none !important;
-          border-color: var(--color-accent) !important;
-        }
-      `;
-      configIframe.value.contentDocument.head.appendChild(additionalStyle);
     }
   }
 };
@@ -1001,7 +982,10 @@ onBeforeUnmount(() => {
   height: 100%;
   border: none;
   display: block;
-  background: var(--color-bg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  overflow: hidden;
 }
 
 .config-panel-content :deep(h1),
