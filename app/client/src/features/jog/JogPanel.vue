@@ -13,52 +13,13 @@
       <h2>Motion Controls</h2>
     </header>
     <div class="jog-layout">
-      <!-- Axis Movement Group (XY Joystick + Z Controls) -->
-      <div class="axis-movement-group" :class="{ 'motion-disabled': motionControlsDisabled }">
-        <!-- XY Joystick Layout -->
-        <div class="xy-joystick">
-          <!-- Top Row -->
-          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1-1') }]" aria-label="Jog X negative Y positive"
-                  @mousedown="handleJogDiagonalStart(-1, 1, $event)" @mouseup="handleJogDiagonalEnd(-1, 1, $event)"
-                  @touchstart="handleJogDiagonalStart(-1, 1, $event)" @touchend="handleJogDiagonalEnd(-1, 1, $event)">↖</button>
-          <button :class="['control', 'axis', { pressed: isButtonPressed('Y-1') }]" aria-label="Jog Y positive"
-                  @mousedown="handleJogStart('Y', 1, $event)" @mouseup="handleJogEnd('Y', 1, $event)"
-                  @touchstart="handleJogStart('Y', 1, $event)" @touchend="handleJogEnd('Y', 1, $event)">Y+</button>
-          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1-1') }]" aria-label="Jog X positive Y positive"
-                  @mousedown="handleJogDiagonalStart(1, 1, $event)" @mouseup="handleJogDiagonalEnd(1, 1, $event)"
-                  @touchstart="handleJogDiagonalStart(1, 1, $event)" @touchend="handleJogDiagonalEnd(1, 1, $event)">↗</button>
-
-          <!-- Middle Row -->
-          <button :class="['control', 'axis', { pressed: isButtonPressed('X--1') }]" aria-label="Jog X negative"
-                  @mousedown="handleJogStart('X', -1, $event)" @mouseup="handleJogEnd('X', -1, $event)"
-                  @touchstart="handleJogStart('X', -1, $event)" @touchend="handleJogEnd('X', -1, $event)">X-</button>
-          <button class="center-indicator" aria-label="Soft Reset" @click="sendSoftReset"></button>
-          <button :class="['control', 'axis', { pressed: isButtonPressed('X-1') }]" aria-label="Jog X positive"
-                  @mousedown="handleJogStart('X', 1, $event)" @mouseup="handleJogEnd('X', 1, $event)"
-                  @touchstart="handleJogStart('X', 1, $event)" @touchend="handleJogEnd('X', 1, $event)">X+</button>
-
-          <!-- Bottom Row -->
-          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal--1--1') }]" aria-label="Jog X negative Y negative"
-                  @mousedown="handleJogDiagonalStart(-1, -1, $event)" @mouseup="handleJogDiagonalEnd(-1, -1, $event)"
-                  @touchstart="handleJogDiagonalStart(-1, -1, $event)" @touchend="handleJogDiagonalEnd(-1, -1, $event)">↙</button>
-          <button :class="['control', 'axis', { pressed: isButtonPressed('Y--1') }]" aria-label="Jog Y negative"
-                  @mousedown="handleJogStart('Y', -1, $event)" @mouseup="handleJogEnd('Y', -1, $event)"
-                  @touchstart="handleJogStart('Y', -1, $event)" @touchend="handleJogEnd('Y', -1, $event)">Y-</button>
-          <button :class="['control', 'corner', { pressed: isButtonPressed('diagonal-1--1') }]" aria-label="Jog X positive Y negative"
-                  @mousedown="handleJogDiagonalStart(1, -1, $event)" @mouseup="handleJogDiagonalEnd(1, -1, $event)"
-                  @touchstart="handleJogDiagonalStart(1, -1, $event)" @touchend="handleJogDiagonalEnd(1, -1, $event)">↘</button>
-        </div>
-
-        <!-- Z Controls -->
-        <div class="z-controls">
-          <button :class="['control', 'z-button', { pressed: isButtonPressed('Z-1') }]" aria-label="Jog Z positive"
-                  @mousedown="handleJogStart('Z', 1, $event)" @mouseup="handleJogEnd('Z', 1, $event)"
-                  @touchstart="handleJogStart('Z', 1, $event)" @touchend="handleJogEnd('Z', 1, $event)">Z+</button>
-          <button :class="['control', 'z-button', { pressed: isButtonPressed('Z--1') }]" aria-label="Jog Z negative"
-                  @mousedown="handleJogStart('Z', -1, $event)" @mouseup="handleJogEnd('Z', -1, $event)"
-                  @touchstart="handleJogStart('Z', -1, $event)" @touchend="handleJogEnd('Z', -1, $event)">Z-</button>
-        </div>
-      </div>
+      <!-- Jog Controls -->
+      <JogControls
+        :current-step="props.jogConfig.stepSize"
+        :feed-rate="feedRate"
+        :disabled="motionControlsDisabled"
+        @center-click="sendSoftReset"
+      />
 
       <!-- Home button group -->
       <div class="home-group" ref="homeGroupRef">
@@ -297,15 +258,16 @@
 </template>
 
 <script setup lang="ts">
-import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
+import { api } from './api';
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import StepControl from './StepControl.vue';
+import JogControls from './JogControls.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatCoordinate, getDistanceUnitLabel, getFeedRateUnitLabel, getUnitGCode, mmToInches } from '@/lib/units';
+import { formatCoordinate } from '@/lib/units';
 
 const store = useJogStore();
 const appStore = useAppStore();
@@ -465,15 +427,6 @@ watch(
   }
 );
 
-const convertFeedRateForCommand = (mmPerMin: number): number => {
-  const units = appStore.unitsPreference.value;
-  const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
-  const roundFeedRate = units === 'imperial'
-    ? Math.round(converted / 10) * 10
-    : Math.round(converted);
-  return roundFeedRate;
-};
-
 const handleFeedRateUpdate = (newRate: number) => {
   if (Number.isFinite(newRate) && newRate > 0) {
     feedRate.value = newRate;
@@ -489,252 +442,6 @@ const motionControlsDisabled = computed(() => !store.isConnected.value || props.
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-
-let jogTimer: number | null = null;
-let heartbeatTimer: number | null = null;
-let isLongPress = false;
-let activeJogId: string | null = null;
-
-const HEARTBEAT_INTERVAL_MS = 250;
-
-const createJogId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const startHeartbeat = (jogId: string) => {
-  stopHeartbeat();
-  jogHeartbeat(jogId);
-  heartbeatTimer = window.setInterval(() => {
-    jogHeartbeat(jogId);
-  }, HEARTBEAT_INTERVAL_MS);
-};
-
-const stopHeartbeat = () => {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-};
-
-// Track which buttons are pressed for visual feedback
-const pressedButtons = ref(new Set<string>());
-
-const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  let distance = props.jogConfig.stepSize * direction;
-  const units = appStore.unitsPreference.value;
-
-  // Convert distance to imperial if needed
-  if (units === 'imperial') {
-    distance = mmToInches(distance);
-  }
-
-  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
-  const unitGCode = getUnitGCode(units);
-  const command = `$J=${unitGCode} G91 ${axis}${distance.toFixed(4)} F${jogFeedRate}`;
-  try {
-    await jogStep({
-      command,
-      displayCommand: command,
-      axis,
-      direction,
-      feedRate: jogFeedRate,
-      distance
-    });
-  } catch (error) {
-    console.error('Failed to execute jog step:', error);
-  }
-};
-
-const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  let xDistance = props.jogConfig.stepSize * xDirection;
-  let yDistance = props.jogConfig.stepSize * yDirection;
-  const units = appStore.unitsPreference.value;
-
-  // Convert distances to imperial if needed
-  if (units === 'imperial') {
-    xDistance = mmToInches(xDistance);
-    yDistance = mmToInches(yDistance);
-  }
-
-  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
-  const unitGCode = getUnitGCode(units);
-  const command = `$J=${unitGCode} G91 X${xDistance.toFixed(4)} Y${yDistance.toFixed(4)} F${jogFeedRate}`;
-  try {
-    await jogStep({
-      command,
-      displayCommand: command,
-      axis: 'XY',
-      direction: null,
-      feedRate: jogFeedRate,
-      distance: { x: xDistance, y: yDistance }
-    });
-  } catch (error) {
-    console.error('Failed to execute diagonal jog step:', error);
-  }
-};
-
-const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  const units = appStore.unitsPreference.value;
-  const baseFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
-
-  // Use a large distance for continuous jog
-  let jogDistance = 3000 * direction;
-
-  // Convert distance to imperial if needed
-  if (units === 'imperial') {
-    jogDistance = mmToInches(jogDistance);
-  }
-
-  const jogFeedRate = convertFeedRateForCommand(baseFeedRate);
-  const unitGCode = getUnitGCode(units);
-  const command = `$J=${unitGCode} G91 ${axis}${jogDistance.toFixed(4)} F${jogFeedRate}`;
-  const jogId = createJogId();
-  activeJogId = jogId;
-
-  try {
-    await jogStart({
-      jogId,
-      command,
-      displayCommand: command,
-      axis,
-      direction,
-      feedRate: jogFeedRate
-    });
-    startHeartbeat(jogId);
-  } catch (error) {
-    console.error('Failed to start continuous jog:', error);
-    stopHeartbeat();
-    if (activeJogId === jogId) {
-      activeJogId = null;
-    }
-  }
-};
-
-const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const units = appStore.unitsPreference.value;
-
-  // Use a large distance for continuous jog
-  let xDistance = 3000 * xDirection;
-  let yDistance = 3000 * yDirection;
-
-  // Convert distances to imperial if needed
-  if (units === 'imperial') {
-    xDistance = mmToInches(xDistance);
-    yDistance = mmToInches(yDistance);
-  }
-
-  const jogFeedRate = convertFeedRateForCommand(feedRate.value);
-  const unitGCode = getUnitGCode(units);
-  const command = `$J=${unitGCode} G91 X${xDistance.toFixed(4)} Y${yDistance.toFixed(4)} F${jogFeedRate}`;
-  const jogId = createJogId();
-  activeJogId = jogId;
-
-  try {
-    await jogStart({
-      jogId,
-      command,
-      displayCommand: command,
-      axis: 'XY',
-      direction: null,
-      feedRate: jogFeedRate
-    });
-    startHeartbeat(jogId);
-  } catch (error) {
-    console.error('Failed to start diagonal continuous jog:', error);
-    stopHeartbeat();
-    if (activeJogId === jogId) {
-      activeJogId = null;
-    }
-  }
-};
-
-const handleJogStart = (axis: 'X' | 'Y' | 'Z', direction: 1 | -1, event?: Event) => {
-  if (event) {
-    event.preventDefault();
-  }
-
-  // Don't allow jogging if motion controls are disabled
-  if (motionControlsDisabled.value) {
-    return;
-  }
-
-  const buttonId = getButtonId(axis, direction);
-  setButtonPressed(buttonId);
-
-  isLongPress = false;
-  jogTimer = setTimeout(() => {
-    isLongPress = true;
-    continuousJog(axis, direction);
-  }, 300);
-};
-
-const handleJogDiagonalStart = (xDirection: 1 | -1, yDirection: 1 | -1, event?: Event) => {
-  if (event) {
-    event.preventDefault();
-  }
-
-  // Don't allow jogging if motion controls are disabled
-  if (motionControlsDisabled.value) {
-    return;
-  }
-
-  const buttonId = getButtonId('', undefined, xDirection, yDirection);
-  setButtonPressed(buttonId);
-
-  isLongPress = false;
-  jogTimer = setTimeout(() => {
-    isLongPress = true;
-    continuousDiagonalJog(xDirection, yDirection);
-  }, 300);
-};
-
-const handleJogEnd = (axis: 'X' | 'Y' | 'Z', direction: 1 | -1, event?: Event) => {
-  if (event) {
-    event.preventDefault();
-  }
-  const buttonId = getButtonId(axis, direction);
-  setButtonReleased(buttonId);
-
-  if (jogTimer) {
-    clearTimeout(jogTimer);
-    jogTimer = null;
-  }
-  if (isLongPress) {
-    stopJog();
-  } else {
-    void jog(axis, direction);
-  }
-};
-
-const handleJogDiagonalEnd = (xDirection: 1 | -1, yDirection: 1 | -1, event?: Event) => {
-  if (event) {
-    event.preventDefault();
-  }
-  const buttonId = getButtonId('', undefined, xDirection, yDirection);
-  setButtonReleased(buttonId);
-
-  if (jogTimer) {
-    clearTimeout(jogTimer);
-    jogTimer = null;
-  }
-  if (isLongPress) {
-    stopJog();
-  } else {
-    void jogDiagonal(xDirection, yDirection);
-  }
-};
-
-const stopJog = () => {
-  if (!activeJogId) {
-    return;
-  }
-
-  const jogId = activeJogId;
-  activeJogId = null;
-  stopHeartbeat();
-
-  jogStop(jogId).catch((error) => {
-    console.error('Failed to stop jog session:', error);
-  });
-};
 
 const handleHomeDoubleClick = () => {
   const now = performance.now();
@@ -758,47 +465,6 @@ const goHome = async () => {
   }
 };
 
-// Helper functions for button visual feedback
-const getButtonId = (axis: string, direction?: number, xDir?: number, yDir?: number) => {
-  if (xDir !== undefined && yDir !== undefined) {
-    return `diagonal-${xDir}-${yDir}`;
-  }
-  return `${axis}-${direction}`;
-};
-
-const setButtonPressed = (buttonId: string) => {
-  pressedButtons.value.add(buttonId);
-};
-
-const setButtonReleased = (buttonId: string) => {
-  pressedButtons.value.delete(buttonId);
-};
-
-const isButtonPressed = (buttonId: string) => {
-  return pressedButtons.value.has(buttonId);
-};
-
-let unsubscribeJogStopped: (() => void) | null = null;
-
-onMounted(() => {
-  unsubscribeJogStopped = api.on('jog:stopped', (data) => {
-    if (!data || !data.jogId) {
-      return;
-    }
-    if (activeJogId && data.jogId === activeJogId) {
-      activeJogId = null;
-      stopHeartbeat();
-    }
-  });
-});
-
-onBeforeUnmount(() => {
-  if (unsubscribeJogStopped) {
-    unsubscribeJogStopped();
-    unsubscribeJogStopped = null;
-  }
-  stopHeartbeat();
-});
 
 // --- Home split (HX/HY/HZ) via double-click ---
 const homeSplit = ref(false);
@@ -1517,61 +1183,6 @@ h2 {
   width: 100%;
 }
 
-.axis-movement-group {
-  display: flex;
-  gap: 4px;
-  align-items: stretch;
-}
-
-.xy-joystick {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 4px;
-  width: 180px;
-  height: 180px;
-}
-
-.z-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 60px;
-}
-
-.center-indicator {
-  width: 100%;
-  height: 100%;
-  border: 2px solid #ff6b6b;
-  border-radius: 50%;
-  background: var(--color-surface);
-  position: relative;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.center-indicator:hover {
-  background: rgba(255, 107, 107, 0.1);
-  border-color: #ff4444;
-}
-
-.center-indicator:active {
-  background: rgba(255, 107, 107, 0.2);
-  transform: scale(0.95);
-}
-
-.center-indicator::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 8px;
-  height: 8px;
-  background: #ff6b6b;
-  border-radius: 50%;
-}
-
 .home-button {
   width: 60px;
   height: 100%;
@@ -1610,14 +1221,6 @@ h2 {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
-}
-
-.control.corner {
-  font-size: 1.2rem;
-}
-
-.control.axis {
-  font-weight: bold;
 }
 
 .home-group {
