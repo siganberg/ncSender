@@ -58,7 +58,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Start the job processor using singleton manager
-      await jobManager.startJob(filePath, filename, actualCNCController, broadcast);
+      await jobManager.startJob(filePath, filename, actualCNCController, broadcast, { serverState });
 
       log('G-code job started:', filename);
       res.json({ success: true, message: 'G-code job started', filename });
@@ -190,6 +190,7 @@ export class GCodeJobProcessor {
     }
 
     this.isPaused = true;
+    try { this.progressProvider?.pause?.(); } catch {}
   }
 
   resume() {
@@ -198,6 +199,7 @@ export class GCodeJobProcessor {
     }
 
     this.isPaused = false;
+    try { this.progressProvider?.resume?.(); } catch {}
     // The loop-based processor will automatically continue when isPaused becomes false
   }
 

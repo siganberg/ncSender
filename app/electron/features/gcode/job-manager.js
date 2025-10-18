@@ -17,10 +17,22 @@ class JobProcessorManager {
       throw new Error('A job is already running. Stop the current job before starting a new one.');
     }
 
+    // Callback to check if we should count time (only when job status is 'running')
+    const shouldCountCallback = () => {
+      const jobStatus = options.serverState?.jobLoaded?.status;
+      const senderStatus = options.serverState?.senderStatus;
+      const shouldCount = jobStatus ? jobStatus.toLowerCase() === 'running' : false;
+      console.log(`[JobManager] shouldCountCallback: jobStatus='${jobStatus}', senderStatus='${senderStatus}', shouldCount=${shouldCount}`);
+      return shouldCount;
+    };
+
     // Create a swappable telemetry-backed progress provider
     const progressProvider = this.progressProviderFactory
       ? this.progressProviderFactory(cncController, { filePath, filename })
-      : new JobProgressEstimator({ telemetry: new GrblHalTelemetryProvider(cncController) });
+      : new JobProgressEstimator({
+          telemetry: new GrblHalTelemetryProvider(cncController),
+          shouldCountCallback
+        });
 
     this.currentJob = new GCodeJobProcessor(
       filePath,

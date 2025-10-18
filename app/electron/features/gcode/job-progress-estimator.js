@@ -2,7 +2,7 @@ import { GCodePreAnalyzer } from './gcode-preanalyzer.js';
 import { readMachineProfileFromCache } from '../firmware/machine-profile.js';
 
 export class JobProgressEstimator {
-  constructor({ telemetry, preAnalyzer } = {}) {
+  constructor({ telemetry, preAnalyzer, shouldCountCallback } = {}) {
     this.telemetry = telemetry || null;
     this.pre = preAnalyzer || new GCodePreAnalyzer();
     this._perLineSec = [];
@@ -11,6 +11,10 @@ export class JobProgressEstimator {
     this._perLineType = [];
     this._currentLine = 0; // 1-based from job processor perspective
     this._active = false;
+    this._originalEstimatedSec = 0; // Store original estimate
+    this._actualElapsedSec = 0; // Actual elapsed time (counts only when running)
+    this._timerInterval = null; // 1-second timer
+    this._shouldCountCallback = shouldCountCallback || null; // Callback to check if we should count
   }
 
   async startWithContent(gcodeText) {
@@ -39,12 +43,48 @@ export class JobProgressEstimator {
     }
     this._currentLine = 0;
     this._active = true;
+    this._originalEstimatedSec = this._totalSec; // Store original estimate
+    this._actualElapsedSec = 0; // Reset actual elapsed time
+    this._startTimer();
     if (this.telemetry?.start) this.telemetry.start();
   }
 
   stop() {
     this._active = false;
+    this._stopTimer();
     if (this.telemetry?.stop) this.telemetry.stop();
+  }
+
+  pause() {
+    this._stopTimer();
+  }
+
+  resume() {
+    this._startTimer();
+  }
+
+  _startTimer() {
+    if (this._timerInterval) return; // Already running
+    this._timerInterval = setInterval(() => {
+      if (!this._active) return;
+
+      // Only increment if shouldCountCallback returns true (senderStatus is 'running')
+      const shouldCount = this._shouldCountCallback ? this._shouldCountCallback() : true;
+
+      if (shouldCount) {
+        this._actualElapsedSec++;
+        console.log(`[JobProgressEstimator] Timer tick: elapsed=${this._actualElapsedSec}s, remaining=${this._originalEstimatedSec - this._actualElapsedSec}s`);
+      } else {
+        console.log(`[JobProgressEstimator] Timer tick skipped (not running)`);
+      }
+    }, 1000);
+  }
+
+  _stopTimer() {
+    if (this._timerInterval) {
+      clearInterval(this._timerInterval);
+      this._timerInterval = null;
+    }
   }
 
   onAdvanceToLine(lineNumber) {
@@ -55,32 +95,22 @@ export class JobProgressEstimator {
 
   getEstimate() {
     if (!this._active) return null;
+
+    // Calculate remaining time as countdown from original estimate
+    const remainingSec = this._originalEstimatedSec - this._actualElapsedSec;
+
+    // Calculate progress based on lines executed
     const executedSec = this._prefixSec[Math.min(this._currentLine, this._prefixSec.length - 1)] || 0;
-    let remainingSec = Math.max(0, this._totalSec - executedSec);
-
-    const snap = this.telemetry?.getSnapshot?.() || {};
-    // Scale remaining time by overrides if available: separate linear vs rapid
-    if ((Number.isFinite(snap.feedOv) && snap.feedOv > 0) || (Number.isFinite(snap.rapidOv) && snap.rapidOv > 0)) {
-      let remLinear = 0;
-      let remRapid = 0;
-      for (let i = this._currentLine; i < this._perLineSec.length; i++) {
-        const t = Number(this._perLineSec[i]) || 0;
-        const ty = this._perLineType[i];
-        if (ty === 'rapid') remRapid += t; else if (ty === 'linear') remLinear += t; else remLinear += t;
-      }
-      const feedScale = Number.isFinite(snap.feedOv) && snap.feedOv > 0 ? (100 / snap.feedOv) : 1;
-      const rapidScale = Number.isFinite(snap.rapidOv) && snap.rapidOv > 0 ? (100 / snap.rapidOv) : 1;
-      remainingSec = remLinear * feedScale + remRapid * rapidScale;
-    }
-
-    const totalDyn = executedSec + remainingSec;
-    const progressPercent = totalDyn > 0 ? Math.round((executedSec / totalDyn) * 100) : 0;
+    const progressPercent = this._originalEstimatedSec > 0
+      ? Math.round((executedSec / this._originalEstimatedSec) * 100)
+      : 0;
 
     return {
       progressProvider: 'telemetry-estimator',
-      totalEstimatedSec: Math.round(totalDyn),
+      totalEstimatedSec: Math.round(this._originalEstimatedSec),
+      actualElapsedSec: Math.round(this._actualElapsedSec),
       remainingSec: Math.round(remainingSec),
-      progressPercent
+      progressPercent: Math.max(0, Math.min(100, progressPercent))
     };
   }
 }

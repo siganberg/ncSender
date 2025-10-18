@@ -131,35 +131,42 @@ export function createServerContext() {
     const tl = Number(jl.totalLines) || 0;
     const cl = Number(jl.currentLine) || 0;
 
-    const startIso = jl.jobStartTime;
-    if (startIso) {
-      const endOrNowMs = jl.jobEndTime ? Date.parse(jl.jobEndTime) : Date.now();
-      let elapsedMs = endOrNowMs - Date.parse(startIso);
-      if (!Number.isFinite(elapsedMs) || elapsedMs < 0) elapsedMs = 0;
-      let pausedMs = (Number(jl.jobPausedTotalSec) || 0) * 1000;
-      if (!jl.jobEndTime && jl.jobPauseAt) {
-        const pauseAtMs = Date.parse(jl.jobPauseAt);
-        if (Number.isFinite(pauseAtMs) && pauseAtMs < endOrNowMs) {
-          pausedMs += (endOrNowMs - pauseAtMs);
+    // If progressProvider is active (telemetry-estimator), use actualElapsedSec
+    if (jl.progressProvider === 'telemetry-estimator' && typeof jl.actualElapsedSec === 'number') {
+      jl.runtimeSec = jl.actualElapsedSec;
+      // progressPercent and remainingSec already set by estimator
+    } else {
+      // Fallback to timestamp-based calculation for legacy or non-estimator jobs
+      const startIso = jl.jobStartTime;
+      if (startIso) {
+        const endOrNowMs = jl.jobEndTime ? Date.parse(jl.jobEndTime) : Date.now();
+        let elapsedMs = endOrNowMs - Date.parse(startIso);
+        if (!Number.isFinite(elapsedMs) || elapsedMs < 0) elapsedMs = 0;
+        let pausedMs = (Number(jl.jobPausedTotalSec) || 0) * 1000;
+        if (!jl.jobEndTime && jl.jobPauseAt) {
+          const pauseAtMs = Date.parse(jl.jobPauseAt);
+          if (Number.isFinite(pauseAtMs) && pauseAtMs < endOrNowMs) {
+            pausedMs += (endOrNowMs - pauseAtMs);
+          }
         }
-      }
-      const runtimeSec = Math.max(0, Math.floor((elapsedMs - pausedMs) / 1000));
-      jl.runtimeSec = runtimeSec;
+        const runtimeSec = Math.max(0, Math.floor((elapsedMs - pausedMs) / 1000));
+        jl.runtimeSec = runtimeSec;
 
-      if (!jl.progressProvider) {
-        let percent = 0;
-        if (tl > 0) {
-          percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
-        }
-        if (jl.status === 'completed') percent = 100;
-        jl.progressPercent = percent;
+        if (!jl.progressProvider) {
+          let percent = 0;
+          if (tl > 0) {
+            percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
+          }
+          if (jl.status === 'completed') percent = 100;
+          jl.progressPercent = percent;
 
-        if (cl > 0 && tl > 0) {
-          const linesRemaining = Math.max(0, tl - cl);
-          const avg = runtimeSec / cl;
-          jl.remainingSec = Math.round(linesRemaining * avg);
-        } else {
-          jl.remainingSec = null;
+          if (cl > 0 && tl > 0) {
+            const linesRemaining = Math.max(0, tl - cl);
+            const avg = runtimeSec / cl;
+            jl.remainingSec = Math.round(linesRemaining * avg);
+          } else {
+            jl.remainingSec = null;
+          }
         }
       }
     }

@@ -29,7 +29,7 @@
       <template v-else>
         <div class="meta-item">
           <span class="label">Remaining</span>
-          <span class="value">{{ remainingDisplay }}</span>
+          <span class="value" :class="{ 'time-exceeded': isTimeExceeded }">{{ remainingDisplay }}</span>
         </div>
         <div class="meta-item"></div>
         <div class="meta-item">
@@ -85,9 +85,13 @@ const isFinished = computed(() => isCompleted.value || isStopped.value);
 
 const currRemainingSec = computed(() => {
   const v = store.serverState?.jobLoaded?.remainingSec as number | null | undefined;
-  return typeof v === 'number' && v >= 0 ? v : null;
+  return typeof v === 'number' ? v : null;
 });
-// Color handled via stopped class
+
+const isTimeExceeded = computed(() => {
+  const v = currRemainingSec.value;
+  return v !== null && v < 0;
+});
 
 const percent = computed(() => {
   const pv = store.serverState?.jobLoaded?.progressPercent as number | undefined;
@@ -107,7 +111,12 @@ const remainingDisplay = computed(() => {
   const cl = currentLine.value || 0;
   if (tl <= 0 || cl <= 0) return '--:--';
   if (currRemainingSec.value === null) return '--:--';
-  return formatTime(currRemainingSec.value);
+  const time = currRemainingSec.value;
+  // If time is negative, show + prefix with positive value
+  if (time < 0) {
+    return '+' + formatTime(Math.abs(time));
+  }
+  return formatTime(time);
 });
 
 const linesDisplay = computed(() => {
@@ -195,6 +204,7 @@ async function handleClose() {
 .meta-item { display: flex; flex-direction: column; gap: 2px; }
 .label { font-size: 12px; color: var(--color-text-secondary); }
 .value { font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+.value.time-exceeded { color: #ff6b6b; font-weight: 600; }
 
 @media (max-width: 959px) { .progress-card { padding: 10px; } .bar { height: 8px; } }
 </style>

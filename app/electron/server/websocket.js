@@ -204,6 +204,10 @@ export function createWebSocketLayer({
             changes.jobLoaded.progressPercent = jl.progressPercent ?? null;
             changes.jobLoaded.runtimeSec = jl.runtimeSec ?? null;
           }
+          // Always include senderStatus when there's a job, as it affects timer counting
+          if (serverState.jobLoaded) {
+            changes.senderStatus = serverState.senderStatus;
+          }
         } catch (error) {
           log('Delta broadcast merge failed', error?.message || error);
         }
