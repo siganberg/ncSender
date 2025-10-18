@@ -145,6 +145,23 @@ export class GCodeJobProcessor {
     this.gcodeContent = options.gcodeContent || null;
     this.sourceId = options.sourceId || 'gcode-runner';
     this.eventBus = pluginEventBus;
+    this.serverState = options.serverState || null;
+  }
+
+  getExecutingLine() {
+    // Get the actual executing line from grblHAL's Ln field in status reports
+    // Note: It's "Ln" (capital L, lowercase n), not "LN"
+    const Ln = this.serverState?.machineState?.Ln;
+
+    if (typeof Ln === 'string' || typeof Ln === 'number') {
+      const executingLine = parseInt(Ln, 10);
+      if (Number.isFinite(executingLine) && executingLine >= 0) {
+        return executingLine;
+      }
+    }
+
+    // Fallback to currentLineNumber if Ln not available (rely on controller ack)
+    return this.currentLineNumber;
   }
 
   async start() {
@@ -163,6 +180,14 @@ export class GCodeJobProcessor {
         }
       } catch {}
     }
+
+    // Count total lines in file for progress calculation
+    if (!content) {
+      try {
+        content = this.gcodeContent || await fs.readFile(this.filePath, 'utf8');
+      } catch {}
+    }
+    this.totalLines = content ? content.split('\n').length : 0;
 
     this.isRunning = true;
     this.isPaused = false;
@@ -279,12 +304,19 @@ export class GCodeJobProcessor {
 
         cleanLine = await this.eventBus.emitChain('onBeforeGcodeLine', cleanLine, lineContext);
 
+        // Strip any existing N-number from CAM-generated code and replace with our own
+        // This ensures consistent line number tracking
+        const cleanedLine = cleanLine.replace(/^N\d+\s*/i, '');
+
+        // Prefix with our sequential line number for grblHAL tracking (N<line#> <gcode>)
+        const commandToSend = `N${this.currentLineNumber} ${cleanedLine}`;
+
         const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
         try {
-          const response = await this.cncController.sendCommand(cleanLine, {
+          const response = await this.cncController.sendCommand(commandToSend, {
             commandId,
-            displayCommand: cleanLine,
+            displayCommand: cleanLine, // Show original line in UI
             meta: {
               lineNumber: this.currentLineNumber,
               job: { filename: this.filename },
@@ -292,6 +324,7 @@ export class GCodeJobProcessor {
             }
           });
 
+          // Update progress based on lines sent (for accurate progress calculation)
           try { this.progressProvider?.onAdvanceToLine?.(this.currentLineNumber); } catch {}
 
           await this.eventBus.emitAsync('onAfterGcodeLine', cleanLine, response, lineContext);

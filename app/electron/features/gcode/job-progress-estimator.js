@@ -10,6 +10,7 @@ export class JobProgressEstimator {
     this._totalSec = 0;
     this._perLineType = [];
     this._currentLine = 0; // 1-based from job processor perspective
+    this._totalLines = 0; // Total lines in job file
     this._active = false;
     this._originalEstimatedSec = 0; // Store original estimate
     this._actualElapsedSec = 0; // Actual elapsed time (counts only when running)
@@ -36,6 +37,10 @@ export class JobProgressEstimator {
     this._perLineSec = plan.perLineSec || [];
     this._totalSec = Number(plan.totalSec) || 0;
     this._perLineType = plan.perLineType || new Array(this._perLineSec.length).fill('other');
+
+    // Store total lines in file (including comments/blanks)
+    this._totalLines = (gcodeText || '').split('\n').length;
+
     // Build prefix sums for O(1) executed time
     this._prefixSec = new Array(this._perLineSec.length + 1).fill(0);
     for (let i = 0; i < this._perLineSec.length; i++) {
@@ -87,7 +92,7 @@ export class JobProgressEstimator {
   onAdvanceToLine(lineNumber) {
     // lineNumber is 1-based index (matches job processor currentLine)
     if (!Number.isFinite(lineNumber)) return;
-    this._currentLine = Math.max(0, Math.min(lineNumber, this._perLineSec.length));
+    this._currentLine = lineNumber;
   }
 
   getEstimate() {
@@ -96,10 +101,9 @@ export class JobProgressEstimator {
     // Calculate remaining time as countdown from original estimate
     const remainingSec = this._originalEstimatedSec - this._actualElapsedSec;
 
-    // Calculate progress based on lines executed
-    const executedSec = this._prefixSec[Math.min(this._currentLine, this._prefixSec.length - 1)] || 0;
-    const progressPercent = this._originalEstimatedSec > 0
-      ? Math.round((executedSec / this._originalEstimatedSec) * 100)
+    // Simple progress: currentLine / totalLines * 100
+    const progressPercent = this._totalLines > 0
+      ? Math.round((this._currentLine / this._totalLines) * 100)
       : 0;
 
     return {

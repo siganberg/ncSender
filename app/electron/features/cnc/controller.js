@@ -270,7 +270,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

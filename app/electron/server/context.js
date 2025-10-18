@@ -131,10 +131,18 @@ export function createServerContext() {
     const tl = Number(jl.totalLines) || 0;
     const cl = Number(jl.currentLine) || 0;
 
+    // Always calculate progressPercent as currentLine / totalLines
+    let percent = 0;
+    if (tl > 0) {
+      percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
+    }
+    if (jl.status === 'completed') percent = 100;
+    jl.progressPercent = percent;
+
     // If progressProvider is active (telemetry-estimator), use actualElapsedSec
     if (jl.progressProvider === 'telemetry-estimator' && typeof jl.actualElapsedSec === 'number') {
       jl.runtimeSec = jl.actualElapsedSec;
-      // progressPercent and remainingSec already set by estimator
+      // remainingSec already set by estimator
     } else {
       // Fallback to timestamp-based calculation for legacy or non-estimator jobs
       const startIso = jl.jobStartTime;
@@ -153,13 +161,6 @@ export function createServerContext() {
         jl.runtimeSec = runtimeSec;
 
         if (!jl.progressProvider) {
-          let percent = 0;
-          if (tl > 0) {
-            percent = Math.round((Math.max(0, Math.min(cl, tl)) / tl) * 100);
-          }
-          if (jl.status === 'completed') percent = 100;
-          jl.progressPercent = percent;
-
           if (cl > 0 && tl > 0) {
             const linesRemaining = Math.max(0, tl - cl);
             const avg = runtimeSec / cl;

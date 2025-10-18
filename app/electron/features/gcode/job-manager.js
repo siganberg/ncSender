@@ -126,7 +126,7 @@ class JobProcessorManager {
 
     const base = {
       filename: this.currentJob.filename,
-      currentLine: this.currentJob.currentLineNumber,
+      currentLine: this.currentJob.getExecutingLine?.() ?? this.currentJob.currentLineNumber,
       totalLines: this.currentJob.totalLines || 0,
       status: status,
       sourceId: this.currentJob.sourceId || 'gcode-runner'
