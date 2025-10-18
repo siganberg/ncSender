@@ -79,7 +79,7 @@ export function registerCncEventHandlers({
   };
 
   const handleData = (data, sourceId) => {
-    if (sourceId === 'no-broadcast') {
+    if (sourceId === 'system') {
       return;
     }
     if (!data || (typeof data === 'string' && data.trim() === '')) {

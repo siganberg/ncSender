@@ -190,7 +190,7 @@ const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toL
 const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
 
 // Filter console lines to hide job-runner chatter but show probing commands
-const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'gcode-runner'));
+const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'job'));
 
 // Plugin Tools state
 const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);
@@ -311,12 +311,12 @@ watch(isProgramRunning, async (running) => {
 
     // Auto-switch tabs based on job source
     // - probing jobs switch to Terminal tab
-    // - gcode-runner jobs switch to G-Code Preview tab
+    // - job jobs switch to G-Code Preview tab
     if (sourceId === 'probing') {
       if (activeTab.value !== 'terminal') {
         activeTab.value = 'terminal';
       }
-    } else if (sourceId === 'gcode-runner' || !sourceId) {
+    } else if (sourceId === 'job' || !sourceId) {
       if (activeTab.value !== 'gcode-preview') {
         activeTab.value = 'gcode-preview';
         await nextTick();
@@ -574,8 +574,8 @@ onMounted(async () => {
     scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
   }
   stopAutoScrollBindings = store.startAutoScrollBindings(async (evt) => {
-    // Skip auto-scroll for gcode-runner events (they're not shown in terminal)
-    if (evt?.sourceId === 'gcode-runner') return;
+    // Skip auto-scroll for job events (they're not shown in terminal)
+    if (evt?.sourceId === 'job') return;
 
     if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
       await nextTick();

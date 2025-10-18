@@ -268,7 +268,7 @@ async function queryFirmwareStructure(cncController) {
         await cncController.sendCommand(cmd, {
           commandId: `${cmd}-${Date.now()}`,
           displayCommand: cmd,
-          meta: { sourceId: 'no-broadcast' }
+          meta: { sourceId: 'system' }
         });
         // Wait a bit before sending next command
         setTimeout(() => sendNext(index + 1), 100);

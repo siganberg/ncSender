@@ -169,7 +169,7 @@ export function createCNCRoutes(cncController, broadcast) {
         meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
       });
 
-      if (commandValue === '?' && metaPayload.sourceId !== 'no-broadcast') {
+      if (commandValue === '?' && metaPayload.sourceId !== 'system') {
         const rawData = cncController.getRawData();
         if (rawData && typeof broadcast === 'function') {
           broadcast('cnc-data', rawData);

@@ -251,9 +251,9 @@ const addOrUpdateCommandLine = (payload: any) => {
     return null;
   }
 
-  // Skip gcode-runner commands - they're not displayed in terminal
+  // Skip job commands - they're not displayed in terminal
   // Visualizer & preview consume gcodeCompletedUpTo to reflect executed lines
-  if (payload.sourceId === 'gcode-runner') {
+  if (payload.sourceId === 'job') {
     return null;
   }
 
@@ -305,12 +305,12 @@ const addOrUpdateCommandLine = (payload: any) => {
   consoleLines.value.push(newLine);
   commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
 
-  // Persist to IndexedDB if available (exclude gcode-runner chatter)
-  if (isTerminalIDBEnabled() && newLine.sourceId !== 'gcode-runner') {
+  // Persist to IndexedDB if available (exclude job chatter)
+  if (isTerminalIDBEnabled() && newLine.sourceId !== 'job') {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
-  // Keep a larger buffer since we now exclude gcode-runner (virtual scroller handles this efficiently)
+  // Keep a larger buffer since we now exclude job (virtual scroller handles this efficiently)
   const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
@@ -348,7 +348,7 @@ const addResponseLine = (data: string) => {
     appendTerminalLineToIDB(responseLine).catch(() => {});
   }
 
-  // Enforce buffer size limit (keep larger buffer since we exclude gcode-runner)
+  // Enforce buffer size limit (keep larger buffer since we exclude job)
   const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
   if (consoleLines.value.length > maxLines) {
     const removed = consoleLines.value.shift();
@@ -608,7 +608,7 @@ export function initializeStore() {
     if (!result) return;
     if (api.isJogCancelCommand(result.command)) return;
     const updated = addOrUpdateCommandLine(result);
-    if (isTerminalIDBEnabled() && result?.id && result?.sourceId !== 'gcode-runner') {
+    if (isTerminalIDBEnabled() && result?.id && result?.sourceId !== 'job') {
       updateTerminalLineByIdInIDB(result.id, {
         message: updated?.line?.message ?? result.displayCommand ?? result.command,
         status: result.status,
@@ -620,7 +620,7 @@ export function initializeStore() {
 
     // Update completed line tracking for viewers
     const ln = (result as any)?.meta?.lineNumber;
-    if ((result as any)?.sourceId === 'gcode-runner' && typeof ln === 'number' && ln > 0) {
+    if ((result as any)?.sourceId === 'job' && typeof ln === 'number' && ln > 0) {
       if (ln > gcodeCompletedUpTo.value) {
         gcodeCompletedUpTo.value = ln;
       }

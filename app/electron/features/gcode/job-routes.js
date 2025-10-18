@@ -143,7 +143,7 @@ export class GCodeJobProcessor {
     this.completionCallbacks = [];
     this.progressProvider = options.progressProvider || null;
     this.gcodeContent = options.gcodeContent || null;
-    this.sourceId = options.sourceId || 'gcode-runner';
+    this.sourceId = options.sourceId || 'job';
     this.eventBus = pluginEventBus;
     this.serverState = options.serverState || null;
   }

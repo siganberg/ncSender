@@ -80,7 +80,7 @@ async function fetchAlarmCodesFromController(cncController) {
     cncController.on('data', dataListener);
 
     // Send $EA command
-    cncController.sendCommand('$EA', { meta: { sourceId: 'no-broadcast' } }).then(() => {
+    cncController.sendCommand('$EA', { meta: { sourceId: 'system' } }).then(() => {
       // Wait a bit for all responses
       setTimeout(() => {
         clearTimeout(timeout);

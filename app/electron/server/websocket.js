@@ -121,7 +121,7 @@ const toCommandPayload = (event, options = {}) => {
     payload.status = status;
   }
 
-  if (resolvedSourceId && resolvedSourceId !== 'no-broadcast') {
+  if (resolvedSourceId && resolvedSourceId !== 'system') {
     payload.sourceId = resolvedSourceId;
   }
 
@@ -299,7 +299,7 @@ export function createWebSocketLayer({
         meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
       });
 
-      if (commandValue === '?' && metaPayload.sourceId !== 'no-broadcast') {
+      if (commandValue === '?' && metaPayload.sourceId !== 'system') {
         const rawData = cncController.getRawData();
         if (rawData && rawData.trim() !== '') {
           broadcast('cnc-data', rawData);
@@ -315,7 +315,7 @@ export function createWebSocketLayer({
   };
 
   const broadcastQueuedCommand = (event) => {
-    if (event.meta?.sourceId === 'no-broadcast') {
+    if (event.meta?.sourceId === 'system') {
       return;
     }
 
@@ -346,7 +346,7 @@ export function createWebSocketLayer({
   };
 
   const broadcastCommandResult = (event) => {
-    if (event.meta?.sourceId === 'no-broadcast') {
+    if (event.meta?.sourceId === 'system') {
       return;
     }
 

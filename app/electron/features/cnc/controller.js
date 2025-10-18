@@ -67,7 +67,7 @@ export class CNCController extends EventEmitter {
         this.emitConnectionStatus('connected', true);
 
         // Request initial G-code modes to get workspace and tool number
-        this.sendCommand('$G', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+        this.sendCommand('$G', { meta: { sourceId: 'system' } }).catch(() => {
           // Ignore errors during initial setup
         });
 
@@ -333,7 +333,7 @@ export class CNCController extends EventEmitter {
       // Send status requests while connected or verifying controller readiness
       if (this.connection && (this.isConnected || this.isVerifyingConnection)) {
         try {
-          this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } });
+          this.sendCommand('?', { meta: { sourceId: 'system' } });
         } catch (error) {
           console.warn('Status polling failed, stopping polling:', error.message);
           this.stopPolling();
@@ -434,7 +434,7 @@ export class CNCController extends EventEmitter {
 
     //-- auto send soft-reset to clear all previous states of the controller such as Door trigger.
     log('Sending soft-reset to CNC controller upon connection establishment...');
-    this.sendCommand('\x18', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+    this.sendCommand('\x18', { meta: { sourceId: 'system' } }).catch(() => {
       // Ignore errors during the initial status request
     });
 
@@ -800,8 +800,8 @@ export class CNCController extends EventEmitter {
     }
 
     // Intercept user ? command - return cached status instead of sending to controller
-    // But allow polling (sourceId: 'no-broadcast') to go through
-    if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'no-broadcast') {
+    // But allow polling (sourceId: 'system') to go through
+    if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'system') {
       const display = displayCommand || cleanCommand;
       const pendingPayload = {
         id: resolvedCommandId,
