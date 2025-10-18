@@ -64,7 +64,6 @@ export class CNCController extends EventEmitter {
         this.isVerifyingConnection = false;
         this.isConnected = true;
         this.connectionStatus = 'connected';
-        this.greetingMessage = trimmedData;
         this.emitConnectionStatus('connected', true);
 
         // Request initial G-code modes to get workspace and tool number
@@ -96,6 +95,12 @@ export class CNCController extends EventEmitter {
       this.handleCommandOk();
     } else {
       log('CNC data:', trimmedData);
+
+      // Capture greeting message if it starts with "GrblHal" (case-insensitive)
+      if (trimmedData.toLowerCase().startsWith('grblhal')) {
+        this.greetingMessage = trimmedData;
+      }
+
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     }
