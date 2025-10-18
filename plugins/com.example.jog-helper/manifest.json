@@ -1,0 +1,8 @@
+{
+  "id": "com.example.jog-helper",
+  "name": "Jog Helper",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "author": "ncSender Examples",
+  "description": "Example plugin demonstrating ncSender UI Components (JogControls)"
+}
