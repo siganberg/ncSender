@@ -38,6 +38,7 @@ export async function onLoad(ctx) {
       stepover: savedSurfacingSettings.stepover ?? 80,
       feedRate: convertToDisplay(savedSurfacingSettings.feedRate ?? 2000),
       spindleRpm: savedSurfacingSettings.spindleRpm ?? 15000,
+      spindleDelay: savedSurfacingSettings.spindleDelay ?? false,
       patternType: defaultPatternType,
       mistM7: savedSurfacingSettings.mistM7 ?? false,
       floodM8: savedSurfacingSettings.floodM8 ?? false
@@ -79,6 +80,25 @@ export async function onLoad(ctx) {
           align-items: center;
           gap: 0;
         }
+        .form-row.spindle-row {
+          align-items: center;
+        }
+        .spindle-delay-group {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 20px;
+        }
+        .spindle-delay-group .toggle-label {
+          font-size: 0.8rem;
+          color: var(--color-text-secondary);
+          margin: 0;
+        }
+        .spindle-delay-group .toggle-hint {
+          font-size: 0.75rem;
+          color: var(--color-text-secondary);
+        }
         .coolant-label {
           font-size: 0.85rem;
           font-weight: 500;
@@ -94,6 +114,26 @@ export async function onLoad(ctx) {
         .form-group {
           display: flex;
           flex-direction: column;
+        }
+        .spindle-settings-group {
+          gap: 6px;
+        }
+        .form-row.delay-row {
+          grid-template-columns: 1fr;
+          display: flex;
+          align-items: center;
+          gap: 0;
+        }
+        .delay-label {
+          font-size: 0.85rem;
+          font-weight: 500;
+          color: var(--color-text-primary);
+          flex-shrink: 0;
+        }
+        .delay-control {
+          flex: 1;
+          display: flex;
+          justify-content: flex-end;
         }
         label {
           font-size: 0.85rem;
@@ -271,6 +311,15 @@ export async function onLoad(ctx) {
                   <input type="number" id="spindleRpm" step="1" value="${settings.spindleRpm}">
                 </div>
               </div>
+              <div class="form-row delay-row">
+                <div class="delay-label">Delay</div>
+                <div class="delay-control">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="spindleDelay" ${settings.spindleDelay ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
               <div class="form-row coolant-row">
                 <div class="coolant-label">Coolant</div>
                 <div class="coolant-controls">
@@ -437,6 +486,25 @@ export async function onLoad(ctx) {
             }
           }
 
+          function addStartupSequence(gcode, options) {
+            const { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth } = options;
+
+            if (mistM7) {
+              gcode.push('M7 ; Mist coolant on');
+            }
+            if (floodM8) {
+              gcode.push('M8 ; Flood coolant on');
+            }
+            if (spindleRpm > 0) {
+              gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
+            }
+            if (spindleRpm > 0 && spindleDelay) {
+              gcode.push('G4 P5 ; Spindle spin-up delay');
+            }
+            gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+            gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+          }
+
           function generateSurfacingGcode(params) {
             const {
               startX, startY,
@@ -444,7 +512,7 @@ export async function onLoad(ctx) {
               depthOfCut, targetDepth,
               bitDiameter, stepover,
               feedRate, spindleRpm,
-              patternType,
+              patternType, spindleDelay,
               mistM7, floodM8,
               isImperial
             } = params;
@@ -484,29 +552,21 @@ export async function onLoad(ctx) {
             gcode.push('G53 G0 Z0 ; Move to machine Z0');
             gcode.push('');
 
-            if (spindleRpm > 0) {
-              gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
-            }
-            if (mistM7) {
-              gcode.push('M7 ; Mist coolant on');
-            }
-            if (floodM8) {
-              gcode.push('M8 ; Flood coolant on');
-            }
-            gcode.push('');
-
-            gcode.push(\`G0 X\${adjustedStartX.toFixed(3)} Y\${adjustedStartY.toFixed(3)} ; Move to start position\`);
-            gcode.push(\`G0 Z\${safeHeight} ; Move to safe height\`);
-            gcode.push('');
-
             let currentDepth = 0;
             for (let depthPass = 0; depthPass < numDepthPasses; depthPass++) {
               currentDepth = Math.min(currentDepth + depthOfCut, targetDepth);
               gcode.push(\`(Depth pass \${depthPass + 1}/\${numDepthPasses} - Z\${(-currentDepth).toFixed(3)})\`);
 
-              // Move to start position and plunge
+              // Move to start position
               gcode.push(\`G0 X\${adjustedStartX.toFixed(3)} Y\${adjustedStartY.toFixed(3)} ; Move to start position\`);
-              gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge to depth\`);
+
+              // Start coolant, spindle and plunge (only add coolant/spindle on first pass)
+              if (depthPass === 0) {
+                addStartupSequence(gcode, { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth });
+              } else {
+                gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+                gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+              }
 
               if (isSpiral) {
                 const effectiveStep = Math.max(Math.min(stepoverDistance, Math.min(adjustedXDimension, adjustedYDimension) / 2), 0.1);
@@ -626,7 +686,8 @@ export async function onLoad(ctx) {
               feedRate: parseFloat(document.getElementById('feedRate').value),
               spindleRpm: parseFloat(document.getElementById('spindleRpm').value),
               mistM7: document.getElementById('mistM7').checked,
-              floodM8: document.getElementById('floodM8').checked
+              floodM8: document.getElementById('floodM8').checked,
+              spindleDelay: document.getElementById('spindleDelay').checked
             };
 
             // Convert to metric for storage
@@ -641,6 +702,7 @@ export async function onLoad(ctx) {
                 stepover: displayValues.stepover,
                 feedRate: convertToMetric(displayValues.feedRate),
                 spindleRpm: displayValues.spindleRpm,
+                spindleDelay: displayValues.spindleDelay,
                 patternType,
                 invertOrientation,
                 mistM7: displayValues.mistM7,
@@ -660,6 +722,7 @@ export async function onLoad(ctx) {
               stepover: displayValues.stepover,
               feedRate: displayValues.feedRate,
               spindleRpm: displayValues.spindleRpm,
+              spindleDelay: displayValues.spindleDelay,
               patternType,
               invertOrientation,
               mistM7: displayValues.mistM7,
@@ -738,7 +801,8 @@ export async function onLoad(ctx) {
       feedRate: convertToDisplay(savedJointerSettings.feedRate ?? 1000),
       spindleRpm: savedJointerSettings.spindleRpm ?? 10000,
       mistM7: savedJointerSettings.mistM7 ?? false,
-      floodM8: savedJointerSettings.floodM8 ?? false
+      floodM8: savedJointerSettings.floodM8 ?? false,
+      spindleDelay: savedJointerSettings.spindleDelay ?? false
     };
 
     ctx.showDialog('Jointer Operation', `
@@ -979,6 +1043,15 @@ export async function onLoad(ctx) {
                   <input type="number" id="spindleRpm" step="1" value="${settings.spindleRpm}">
                 </div>
               </div>
+              <div class="form-row delay-row">
+                <div class="delay-label">Delay</div>
+                <div class="delay-control">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="spindleDelay" ${settings.spindleDelay ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
               <div class="form-row coolant-row">
                 <div class="coolant-label">Coolant</div>
                 <div class="coolant-controls">
@@ -1023,7 +1096,7 @@ export async function onLoad(ctx) {
             materialThickness: { min: 0.1, max: 4, label: 'Material Thickness' },
             trimWidth: { min: 0.004, max: 0.2, label: 'Trim Width' },
             numberOfPasses: { min: 1, max: 5, label: 'Number of Passes', integer: true },
-            leadInOutDistance: { min: 0.1, max: 1, label: 'Lead-In/Out Distance' },
+            leadInOutDistance: { min: 0.1, max: 2, label: 'Lead-In/Out Distance' },
             bitDiameter: { min: 0.25, max: 2, label: 'Bit Diameter' },
             feedRate: { min: 10, max: 400, label: 'Feed Rate' },
             spindleRpm: { min: 1000, max: 24000, label: 'Spindle RPM' }
@@ -1033,7 +1106,7 @@ export async function onLoad(ctx) {
             materialThickness: { min: 1, max: 100, label: 'Material Thickness' },
             trimWidth: { min: 0.1, max: 5, label: 'Trim Width' },
             numberOfPasses: { min: 1, max: 5, label: 'Number of Passes', integer: true },
-            leadInOutDistance: { min: 1, max: 5, label: 'Lead-In/Out Distance' },
+            leadInOutDistance: { min: 1, max: 50, label: 'Lead-In/Out Distance' },
             bitDiameter: { min: 1, max: 50, label: 'Bit Diameter' },
             feedRate: { min: 100, max: 10000, label: 'Feed Rate' },
             spindleRpm: { min: 1000, max: 24000, label: 'Spindle RPM' }
@@ -1150,6 +1223,25 @@ export async function onLoad(ctx) {
             }
           }
 
+          function addJointerStartupSequence(gcode, options) {
+            const { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth } = options;
+
+            if (mistM7) {
+              gcode.push('M7 ; Mist coolant on');
+            }
+            if (floodM8) {
+              gcode.push('M8 ; Flood coolant on');
+            }
+            if (spindleRpm > 0) {
+              gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
+            }
+            if (spindleRpm > 0 && spindleDelay) {
+              gcode.push('G4 P5 ; Spindle spin-up delay');
+            }
+            gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+            gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+          }
+
           function generateJointerGcode(params) {
             const {
               edgeLength, edge,
@@ -1158,6 +1250,7 @@ export async function onLoad(ctx) {
               leadInOutDistance, bitDiameter,
               feedRate, spindleRpm,
               mistM7, floodM8,
+              spindleDelay,
               isImperial
             } = params;
 
@@ -1184,17 +1277,6 @@ export async function onLoad(ctx) {
             gcode.push('G53 G0 Z0 ; Move to machine Z0');
             gcode.push('');
 
-            if (spindleRpm > 0) {
-              gcode.push(\`M3 S\${spindleRpm} ; Start spindle\`);
-            }
-            if (mistM7) {
-              gcode.push('M7 ; Mist coolant on');
-            }
-            if (floodM8) {
-              gcode.push('M8 ; Flood coolant on');
-            }
-            gcode.push('');
-
             // Loop through trim width passes
             for (let pass = 0; pass < numberOfPasses; pass++) {
               const offset = (bitDiameter / 2) + trimWidth + (pass * trimWidth);
@@ -1213,7 +1295,14 @@ export async function onLoad(ctx) {
                   const endY = edgeLength + leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
-                  gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
+
+                  // Start coolant, spindle and plunge (only add coolant/spindle on first pass)
+                  if (pass === 0 && depthPass === 0) {
+                    addJointerStartupSequence(gcode, { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth });
+                  } else {
+                    gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+                    gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+                  }
                   gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along left edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else if (edge === 'right') {
@@ -1223,7 +1312,14 @@ export async function onLoad(ctx) {
                   const endY = -leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
-                  gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
+
+                  // Start coolant, spindle and plunge (only add coolant/spindle on first pass)
+                  if (pass === 0 && depthPass === 0) {
+                    addJointerStartupSequence(gcode, { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth });
+                  } else {
+                    gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+                    gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+                  }
                   gcode.push(\`G1 Y\${endY.toFixed(3)} F\${feedRate} ; Cut along right edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else if (edge === 'front') {
@@ -1233,7 +1329,14 @@ export async function onLoad(ctx) {
                   const endX = -leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
-                  gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
+
+                  // Start coolant, spindle and plunge (only add coolant/spindle on first pass)
+                  if (pass === 0 && depthPass === 0) {
+                    addJointerStartupSequence(gcode, { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth });
+                  } else {
+                    gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+                    gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+                  }
                   gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along front edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 } else {
@@ -1243,7 +1346,14 @@ export async function onLoad(ctx) {
                   const endX = edgeLength + leadInOutDistance;
 
                   gcode.push(\`G0 X\${startX.toFixed(3)} Y\${startY.toFixed(3)} ; Move to start (with lead-in)\`);
-                  gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${feedRate / 2} ; Plunge\`);
+
+                  // Start coolant, spindle and plunge (only add coolant/spindle on first pass)
+                  if (pass === 0 && depthPass === 0) {
+                    addJointerStartupSequence(gcode, { mistM7, floodM8, spindleRpm, spindleDelay, safeHeight, isImperial, currentDepth });
+                  } else {
+                    gcode.push(\`G0 Z\${safeHeight} ; Rapid to safe height\`);
+                    gcode.push(\`G1 Z\${(-currentDepth).toFixed(3)} F\${isImperial ? '27.56' : '700'} ; Plunge to depth\`);
+                  }
                   gcode.push(\`G1 X\${endX.toFixed(3)} F\${feedRate} ; Cut along back edge (conventional)\`);
                   gcode.push(\`G0 Z\${safeHeight} ; Retract\`);
                 }
@@ -1285,7 +1395,8 @@ export async function onLoad(ctx) {
               feedRate: parseFloat(document.getElementById('feedRate').value),
               spindleRpm: parseFloat(document.getElementById('spindleRpm').value),
               mistM7: document.getElementById('mistM7').checked,
-              floodM8: document.getElementById('floodM8').checked
+              floodM8: document.getElementById('floodM8').checked,
+              spindleDelay: document.getElementById('spindleDelay').checked
             };
 
             const convertToMetric = (value) => isImperial ? value * INCH_TO_MM : value;
@@ -1302,7 +1413,8 @@ export async function onLoad(ctx) {
                 feedRate: convertToMetric(displayValues.feedRate),
                 spindleRpm: displayValues.spindleRpm,
                 mistM7: displayValues.mistM7,
-                floodM8: displayValues.floodM8
+                floodM8: displayValues.floodM8,
+                spindleDelay: displayValues.spindleDelay
               }
             };
 

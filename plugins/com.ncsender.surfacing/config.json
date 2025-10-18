@@ -1,8 +1,8 @@
 {
   "jointer": {
     "edgeLength": 300,
-    "edge": "back",
-    "depthOfCut": 5,
+    "edge": "front",
+    "depthOfCut": 2.5,
     "materialThickness": 5,
     "trimWidth": 1,
     "numberOfPasses": 3,
@@ -11,7 +11,8 @@
     "feedRate": 7000,
     "spindleRpm": 4000,
     "mistM7": false,
-    "floodM8": true
+    "floodM8": true,
+    "spindleDelay": false
   },
   "surfacing": {
     "xDimension": 150,
@@ -22,6 +23,7 @@
     "stepover": 80,
     "feedRate": 7000,
     "spindleRpm": 5000,
+    "spindleDelay": false,
     "patternType": "zigzagX",
     "invertOrientation": true,
     "mistM7": false,
