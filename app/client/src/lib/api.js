@@ -493,6 +493,8 @@ class NCClient {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+
+        // Use debugLog for all messages (including server-state-updated)
         debugLog('Parsed message:', JSON.stringify(message, null, 2));
 
         // Handle client ID assignment

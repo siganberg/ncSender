@@ -20,14 +20,21 @@ export function isDebugEnabled(): boolean {
 
 // Debug log - only logs if debugLogging is enabled
 export function debugLog(...args: any[]) {
-  if (debugEnabled) {
+  // Check settings dynamically to handle timing issues
+  const settings = getSettings();
+  const enabled = settings?.debugLogging === true;
+
+  if (enabled) {
     console.log('[DEBUG]', ...args);
   }
 }
 
 // Debug warn - only logs if debugLogging is enabled
 export function debugWarn(...args: any[]) {
-  if (debugEnabled) {
+  // Check settings dynamically to handle timing issues
+  const settings = getSettings();
+  const enabled = settings?.debugLogging === true;
+  if (enabled) {
     console.warn('[DEBUG]', ...args);
   }
 }

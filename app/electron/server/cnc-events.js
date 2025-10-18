@@ -32,12 +32,21 @@ export function registerCncEventHandlers({
         log('Stored GRBL greeting:', greetingMessage);
       }
 
-      initializeFirmwareOnConnection(cncController).catch((error) => {
-        log('Error initializing firmware on connection:', error?.message || error);
-      });
-
-      fetchAndSaveAlarmCodes(cncController).catch((error) => {
-        log('Error fetching alarm codes on connection:', error?.message || error);
+      // Send soft reset to clear any hanging state (e.g., Door, Hold)
+      log('Sending soft reset to clear controller state...');
+      cncController.sendCommand('\x18', {
+        displayCommand: '\\x18 (Soft Reset on Connect)',
+        meta: { systemCommand: true }
+      }).then(() => {
+        log('Soft reset sent successfully');
+        // Initialize firmware after reset
+        return initializeFirmwareOnConnection(cncController);
+      }).then(() => {
+        log('Firmware initialized successfully');
+        // Fetch alarm codes after initialization
+        return fetchAndSaveAlarmCodes(cncController);
+      }).catch((error) => {
+        log('Error during connection initialization:', error?.message || error);
       });
     }
 
@@ -105,6 +114,12 @@ export function registerCncEventHandlers({
 
     const currentMachineStatus = status?.status?.toLowerCase();
     const prevMachineStatus = prevMachineState?.status;
+
+    // Log status changes for debugging
+    if (status?.status && prevMachineStatus !== status?.status) {
+      console.log(`[CNC Events] machineState.status changed: '${prevMachineStatus}' -> '${status.status}'`);
+    }
+
     if (currentMachineStatus === 'alarm' && prevMachineStatus !== 'alarm' && jobManager.hasActiveJob()) {
       log('Machine entered alarm state, resetting job manager');
       jobManager.forceReset();
