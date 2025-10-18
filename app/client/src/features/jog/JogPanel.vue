@@ -1,31 +1,15 @@
 <template>
   <section class="card" :class="{ 'controls-disabled': panelDisabled }">
     <header class="card__header">
-      <div class="step-selector">
-        <span class="step-label">Step ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
-        <button
-          v-for="value in jogConfig.stepOptions"
-          :key="value"
-          :class="['chip', { active: value === jogConfig.stepSize }]"
-          @click="emit('update:stepSize', value)"
-        >
-          {{ formatStepSize(value) }}
-        </button>
-        <span class="feed-rate-label">Feed ({{ getFeedRateUnitLabel(appStore.unitsPreference.value) }})</span>
-        <select
-          class="feed-rate-select"
-          :value="feedRate"
-          @change="handleFeedRateChange"
-        >
-          <option
-            v-for="rate in getCurrentFeedRateOptions()"
-            :key="rate"
-            :value="rate"
-          >
-            {{ formatFeedRateDisplay(rate) }}
-          </option>
-        </select>
-      </div>
+      <StepControl
+        :current-step="jogConfig.stepSize"
+        :step-options="jogConfig.stepOptions"
+        :current-feed-rate="feedRate"
+        :feed-rate-options="feedRateOptions"
+        :feed-rate-defaults="feedRateDefaults"
+        @update:step="emit('update:stepSize', $event)"
+        @update:feedRate="handleFeedRateUpdate"
+      />
       <h2>Motion Controls</h2>
     </header>
     <div class="jog-layout">
@@ -318,6 +302,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useJogStore } from './store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import StepControl from './StepControl.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatCoordinate, getDistanceUnitLabel, getFeedRateUnitLabel, getUnitGCode, mmToInches } from '@/lib/units';
@@ -366,11 +351,6 @@ const feedRateDefaults = computed(() => props.jogConfig.feedRateDefaults ?? {
   1: 3000,
   10: 8000
 });
-
-const getCurrentFeedRateOptions = (): number[] => {
-  const step = props.jogConfig.stepSize;
-  return feedRateOptions.value[step] ?? [500, 1000, 3000, 5000];
-};
 
 const resolveFeedRate = (): number => {
   const provided = Number(props.jogConfig.feedRate);
@@ -485,42 +465,16 @@ watch(
   }
 );
 
-const formatStepSize = (mmValue: number): string => {
-  const units = appStore.unitsPreference.value;
-  if (units === 'imperial') {
-    const inches = mmToInches(mmValue);
-    // Round to nearest 0.001 (3 decimal places)
-    return (Math.round(inches * 1000) / 1000).toFixed(3);
-  }
-  return mmValue.toString();
-};
-
-/**
- * Helper to round feed rate to nearest 10 for imperial, or round for metric
- */
-const roundFeedRate = (feedRateInTargetUnits: number, units: string): number => {
-  if (units === 'imperial') {
-    // Round to nearest 10 for imperial
-    return Math.round(feedRateInTargetUnits / 10) * 10;
-  }
-  return Math.round(feedRateInTargetUnits);
-};
-
-const formatFeedRateDisplay = (mmPerMin: number): string => {
-  const units = appStore.unitsPreference.value;
-  const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
-  return roundFeedRate(converted, units).toString();
-};
-
 const convertFeedRateForCommand = (mmPerMin: number): number => {
   const units = appStore.unitsPreference.value;
   const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
-  return roundFeedRate(converted, units);
+  const roundFeedRate = units === 'imperial'
+    ? Math.round(converted / 10) * 10
+    : Math.round(converted);
+  return roundFeedRate;
 };
 
-const handleFeedRateChange = (event: Event) => {
-  const select = event.target as HTMLSelectElement;
-  const newRate = Number(select.value);
+const handleFeedRateUpdate = (newRate: number) => {
   if (Number.isFinite(newRate) && newRate > 0) {
     feedRate.value = newRate;
     emit('update:feedRate', newRate);
@@ -1519,7 +1473,6 @@ const goToCorner = async (corner: CornerType) => {
   opacity: 0.6;
 }
 
-.controls-disabled .step-selector,
 .controls-disabled .jog-layout,
 .controls-disabled .home-group {
   pointer-events: none;
@@ -1555,54 +1508,6 @@ const goToCorner = async (corner: CornerType) => {
 h2 {
   margin: 0;
   font-size: 1.1rem;
-}
-
-.step-selector {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-xs);
-}
-
-.chip {
-  border: none;
-  border-radius: 999px;
-  padding: 6px 12px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  min-width: 50px;
-}
-
-.chip.active {
-  background: var(--gradient-accent);
-  color: #fff;
-}
-
-.step-label,
-.feed-rate-label {
-  font-size: 0.85rem;
-}
-
-.feed-rate-select {
-  width: 80px;
-  padding: 4px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 0.85rem;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 0.2s ease;
-}
-
-.feed-rate-select:focus {
-  outline: none;
-  border-color: var(--color-accent);
-}
-
-.feed-rate-select:hover {
-  border-color: var(--color-accent);
 }
 
 .jog-layout {

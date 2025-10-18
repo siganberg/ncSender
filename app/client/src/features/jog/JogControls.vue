@@ -1,27 +1,5 @@
 <template>
   <div class="jog-controls" :class="{ 'jog-disabled': disabled }">
-    <!-- Step selector with feed rate -->
-    <div class="jog-step-selector">
-      <span class="jog-label">Step</span>
-      <button
-        v-for="step in stepOptions"
-        :key="step"
-        :class="['chip', { active: step === currentStep }]"
-        @click="$emit('update:step', step)"
-      >
-        {{ step }}
-      </button>
-      <span class="jog-label feed-rate-label">Feed Rate</span>
-      <input
-        type="text"
-        class="feed-rate-input"
-        :value="feedRateInput"
-        @input="handleFeedRateInput"
-        @blur="validateFeedRate"
-        placeholder="0.00"
-      />
-    </div>
-
     <!-- XY Joystick + Z Controls -->
     <div class="jog-grid">
       <!-- XY Joystick (3x3 grid) -->
@@ -123,73 +101,17 @@
 
 <script setup lang="ts">
 import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 
 const props = defineProps<{
   currentStep: number;
-  stepOptions?: number[];
   disabled?: boolean;
-  feedRate?: number;
+  feedRate: number;
 }>();
 
 defineEmits<{
-  (e: 'update:step', value: number): void;
   (e: 'center-click'): void;
 }>();
-
-const stepOptions = props.stepOptions || [0.1, 1, 10];
-
-// Feed rate management based on step size
-const feedRateDefaults = {
-  0.1: 500,
-  1: 3000,
-  10: 8000
-};
-
-const feedRateInput = ref(String(feedRateDefaults[props.currentStep as keyof typeof feedRateDefaults] || 500));
-const feedRate = ref(feedRateDefaults[props.currentStep as keyof typeof feedRateDefaults] || 500);
-
-// Watch for step size changes and update feed rate
-watch(() => props.currentStep, (newStepSize) => {
-  const defaultRate = feedRateDefaults[newStepSize as keyof typeof feedRateDefaults] || 500;
-  feedRate.value = defaultRate;
-  feedRateInput.value = String(defaultRate);
-});
-
-const handleFeedRateInput = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  let value = input.value;
-
-  // Only allow numbers and decimal point
-  value = value.replace(/[^\d.]/g, '');
-
-  // Ensure only one decimal point
-  const parts = value.split('.');
-  if (parts.length > 2) {
-    value = parts[0] + '.' + parts.slice(1).join('');
-  }
-
-  // Limit to 2 decimal places
-  if (parts.length === 2 && parts[1].length > 2) {
-    value = parts[0] + '.' + parts[1].substring(0, 2);
-  }
-
-  feedRateInput.value = value;
-};
-
-const validateFeedRate = () => {
-  const parsed = parseFloat(feedRateInput.value);
-
-  if (isNaN(parsed) || parsed <= 0) {
-    // Reset to default for current step size
-    const defaultRate = feedRateDefaults[props.currentStep as keyof typeof feedRateDefaults] || 500;
-    feedRate.value = defaultRate;
-    feedRateInput.value = String(defaultRate);
-  } else {
-    feedRate.value = parsed;
-    feedRateInput.value = parsed.toFixed(2);
-  }
-};
 
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;
@@ -220,7 +142,7 @@ const pressedButtons = ref(new Set<string>());
 
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const distance = props.currentStep * direction;
-  const jogFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
+  const jogFeedRate = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const command = `$J=G21 G91 ${axis}${distance} F${jogFeedRate}`;
   try {
     await jogStep({
@@ -239,14 +161,14 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
   const xDistance = props.currentStep * xDirection;
   const yDistance = props.currentStep * yDirection;
-  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${feedRate.value}`;
+  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${props.feedRate}`;
   try {
     await jogStep({
       command,
       displayCommand: command,
       axis: 'XY',
       direction: null,
-      feedRate: feedRate.value,
+      feedRate: props.feedRate,
       distance: { x: xDistance, y: yDistance }
     });
   } catch (error) {
@@ -255,7 +177,7 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
 };
 
 const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
-  const jogFeedRate = axis === 'Z' ? feedRate.value / 2 : feedRate.value;
+  const jogFeedRate = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const command = `$J=G21 G91 ${axis}${3000 * direction} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
@@ -280,7 +202,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const command = `$J=G21 G91 X${3000 * xDirection} Y${3000 * yDirection} F${feedRate.value}`;
+  const command = `$J=G21 G91 X${3000 * xDirection} Y${3000 * yDirection} F${props.feedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -291,7 +213,7 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
       displayCommand: command,
       axis: 'XY',
       direction: null,
-      feedRate: feedRate.value
+      feedRate: props.feedRate
     });
     startHeartbeat(jogId);
   } catch (error) {
@@ -446,10 +368,6 @@ onBeforeUnmount(() => {
 }
 
 /* Disable all elements except center button */
-.jog-disabled .jog-step-selector {
-  opacity: 0.5;
-}
-
 .jog-disabled .jog-btn {
   opacity: 0.5;
 }
@@ -462,60 +380,6 @@ onBeforeUnmount(() => {
 .jog-disabled .jog-center {
   pointer-events: auto;
   opacity: 1;
-}
-
-.jog-step-selector {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-
-.jog-label {
-  font-size: 0.85rem;
-  color: var(--color-text-primary);
-}
-
-.chip {
-  border: none;
-  border-radius: 999px;
-  padding: 6px 12px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  min-width: 50px;
-  transition: all 0.2s ease;
-}
-
-.chip.active {
-  background: var(--gradient-accent);
-  color: #fff;
-}
-
-.feed-rate-label {
-  font-size: 0.85rem;
-}
-
-.feed-rate-input {
-  width: 70px;
-  padding: 4px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 0.85rem;
-  text-align: center;
-  transition: border-color 0.2s ease;
-}
-
-.feed-rate-input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-}
-
-.feed-rate-input::placeholder {
-  color: var(--color-text-secondary);
-  opacity: 0.6;
 }
 
 .jog-grid {

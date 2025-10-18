@@ -350,12 +350,20 @@
               @side-selected="selectedSide = $event"
             />
 
+            <!-- Step Control -->
+            <StepControl
+              :current-step="jogStep"
+              :step-options="stepOptions"
+              :current-feed-rate="jogFeedRate"
+              @update:step="jogStep = $event"
+              @update:feedRate="jogFeedRate = $event"
+            />
+
             <!-- Jog Controls -->
             <JogControls
               :current-step="jogStep"
-              :step-options="[0.1, 1, 10]"
+              :feed-rate="jogFeedRate"
               :disabled="isProbing"
-              @update:step="jogStep = $event"
               @center-click="handleCenterClick"
             />
           </div>
@@ -373,6 +381,7 @@
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
+import StepControl from '../jog/StepControl.vue';
 import JogControls from '../jog/JogControls.vue';
 import { api } from '../../lib/api.js';
 import { updateSettings } from '../../lib/settings-store.js';
@@ -405,7 +414,8 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
-const jogStep = ref(1);
+const jogStep = ref(1); // Will be adjusted by watcher if needed
+const jogFeedRate = ref(3000);
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
 const zThickness = ref(25);
@@ -451,6 +461,11 @@ const settingsLoaded = ref(false);
 const appStore = useAppStore();
 const normalizedSenderStatus = computed(() => (appStore.senderStatus.value || '').toLowerCase());
 const isAlarmState = computed(() => normalizedSenderStatus.value === 'alarm');
+
+// Step options - always in mm (StepControl handles display conversion)
+const stepOptions = computed(() => {
+  return [0.1, 1, 10]; // mm - StepControl will convert to imperial for display
+});
 
 // Computed property to check if there are any validation errors
 const hasValidationErrors = computed(() => {
@@ -863,6 +878,36 @@ watch(() => props.probeActive, (isActive) => {
 watch(() => props.show, (isShown) => {
   if (!isShown) {
     connectionTestPassed.value = false;
+  }
+});
+
+// Initialize jogStep to match current units on mount
+onMounted(() => {
+  const currentStepOptions = stepOptions.value;
+  if (!currentStepOptions.includes(jogStep.value)) {
+    // Default to middle option
+    jogStep.value = currentStepOptions[Math.floor(currentStepOptions.length / 2)];
+  }
+});
+
+// Watch for step changes and update feed rate to default
+watch(() => jogStep.value, (newStep) => {
+  // Map step to index to get default feed rate
+  const stepIndex = stepOptions.value.indexOf(newStep);
+  const feedRateDefaults = [500, 3000, 8000]; // Small, Medium, Large
+
+  if (stepIndex >= 0 && stepIndex < feedRateDefaults.length) {
+    jogFeedRate.value = feedRateDefaults[stepIndex];
+  }
+});
+
+// Watch for units preference changes and adjust jog step
+watch(() => appStore.unitsPreference.value, (newUnits) => {
+  // Adjust jogStep to match the closest value in the new stepOptions
+  const currentStepOptions = stepOptions.value;
+  if (!currentStepOptions.includes(jogStep.value)) {
+    // Default to middle option
+    jogStep.value = currentStepOptions[Math.floor(currentStepOptions.length / 2)];
   }
 });
 
