@@ -1,5 +1,17 @@
 > **IMPORTANT DISCLAIMER:** This is my personal project and has only been tested by me on my AltMill CNC. If you choose to run it, you do so entirely at your own risk.
 
+
+## 💖 Support My Work
+
+If you enjoy **ncSender** and my other CNC / maker projects, consider supporting me on [Patreon](https://www.patreon.com/c/FrancisCreation)!
+Your support helps keep the development going — and also funds my growing addiction to using AI tools for coding. 😆
+Apparently, the more I build features, the more tokens I burn. Send help (or coffee). ☕️
+
+[![Support on Patreon](https://img.shields.io/badge/Support%20on-Patreon-orange.svg)](https://www.patreon.com/c/FrancisCreation)
+
+
+
+
 # ncSender — Simple, Fast G‑Code Sender for GrblHAL
 
 ncSender is a lightweight, cross‑platform CNC controller with a clean UI and built‑in 3D toolpath preview. It connects to GrblHAL controllers over USB serial or Ethernet and can run either as a desktop app (Electron) or as a small local server you access from any browser on your network.
