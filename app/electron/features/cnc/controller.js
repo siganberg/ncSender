@@ -426,9 +426,14 @@ export class CNCController extends EventEmitter {
 
     // Kick off status polling immediately so we can confirm readiness without relying on greetings
     this.startPolling();
-    this.sendCommand('?', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
+
+    //-- auto send soft-reset to clear all previous states of the controller such as Door trigger.
+    log('Sending soft-reset to CNC controller upon connection establishment...');
+    this.sendCommand('\x18', { meta: { sourceId: 'no-broadcast' } }).catch(() => {
       // Ignore errors during the initial status request
     });
+
+
   }
 
   onConnectionClosed(type) {

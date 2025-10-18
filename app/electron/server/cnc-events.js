@@ -31,23 +31,6 @@ export function registerCncEventHandlers({
         serverState.greetingMessage = greetingMessage;
         log('Stored GRBL greeting:', greetingMessage);
       }
-
-      // Send soft reset to clear any hanging state (e.g., Door, Hold)
-      log('Sending soft reset to clear controller state...');
-      cncController.sendCommand('\x18', {
-        displayCommand: '\\x18 (Soft Reset on Connect)',
-        meta: { systemCommand: true }
-      }).then(() => {
-        log('Soft reset sent successfully');
-        // Initialize firmware after reset
-        return initializeFirmwareOnConnection(cncController);
-      }).then(() => {
-        log('Firmware initialized successfully');
-        // Fetch alarm codes after initialization
-        return fetchAndSaveAlarmCodes(cncController);
-      }).catch((error) => {
-        log('Error during connection initialization:', error?.message || error);
-      });
     }
 
     if (data.status === 'disconnected' || data.status === 'cancelled') {
