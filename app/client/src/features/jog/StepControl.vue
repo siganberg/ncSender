@@ -1,6 +1,6 @@
 <template>
   <div class="step-control">
-    <span class="step-label">Step ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
+    <span class="step-label">Step</span>
     <button
       v-for="value in stepOptions"
       :key="value"
@@ -9,7 +9,7 @@
     >
       {{ formatStepSize(value) }}
     </button>
-    <span class="feed-rate-label">Feed ({{ getFeedRateUnitLabel(appStore.unitsPreference.value) }})</span>
+    <span class="feed-rate-label">Feed</span>
     <select
       class="feed-rate-select"
       :value="currentFeedRate"
@@ -29,7 +29,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { getDistanceUnitLabel, getFeedRateUnitLabel, mmToInches } from '@/lib/units';
+import { mmToInches } from '@/lib/units';
 
 const appStore = useAppStore();
 

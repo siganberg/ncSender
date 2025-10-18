@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
+import { getFeedRateUnitLabel } from '../lib/units';
 import packageJson from '../../../package.json';
 
 const store = useAppStore();
@@ -109,7 +110,7 @@ const machineStateText = computed(() => {
 const isWorkspaceDisabled = computed(() => !isConnected.value || isJobRunning.value);
 
 const unitDisplayText = computed(() => {
-  return unitsPreference.value === 'imperial' ? 'in' : 'mm';
+  return getFeedRateUnitLabel(unitsPreference.value);
 });
 
 const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
