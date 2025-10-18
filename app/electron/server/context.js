@@ -69,6 +69,10 @@ export function createServerContext() {
       return 'hold';
     }
 
+    if (machineStatus === 'door') {
+      return useDoorAsPause ? 'hold' : 'door';
+    }
+
     if (isToolChanging) {
       return 'tool-changing';
     }
@@ -87,10 +91,6 @@ export function createServerContext() {
 
     if (machineStatus === 'run' || jobIsRunning) {
       return 'running';
-    }
-
-    if (machineStatus === 'door') {
-      return useDoorAsPause ? 'hold' : 'door';
     }
 
     if (machineStatus === 'check') {
@@ -119,6 +119,7 @@ export function createServerContext() {
   const updateSenderStatus = () => {
     const nextStatus = computeSenderStatus();
     if (serverState.senderStatus !== nextStatus) {
+      console.log(`[Context] senderStatus changed: '${serverState.senderStatus}' -> '${nextStatus}' (machineStatus: '${serverState.machineState?.status}')`);
       serverState.senderStatus = nextStatus;
       return true;
     }
