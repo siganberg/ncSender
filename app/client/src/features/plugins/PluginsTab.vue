@@ -289,11 +289,13 @@ const savePluginConfig = () => {
 const onConfigIframeLoad = () => {
   // Inject theme CSS variables into iframe
   if (configIframe.value && configIframe.value.contentWindow && configIframe.value.contentDocument) {
-    const computedStyle = getComputedStyle(document.documentElement);
+    // Get computed styles from body element since theme classes are applied there
+    const computedStyle = getComputedStyle(document.body);
     const iframeRoot = configIframe.value.contentDocument.documentElement;
 
     // Get all CSS variables from the parent and inject into iframe
     const cssVars = [
+      '--color-bg',
       '--color-surface',
       '--color-surface-muted',
       '--color-border',
@@ -316,6 +318,39 @@ const onConfigIframeLoad = () => {
         iframeRoot.style.setProperty(varName, value);
       }
     });
+
+    // Set body background color directly with the actual color value
+    const iframeBody = configIframe.value.contentDocument.body;
+    if (iframeBody) {
+      const bgColor = computedStyle.getPropertyValue('--color-bg').trim();
+      const textColor = computedStyle.getPropertyValue('--color-text-primary').trim();
+
+      console.log('Setting iframe colors:', { bgColor, textColor });
+
+      iframeBody.style.backgroundColor = bgColor;
+      iframeBody.style.color = textColor;
+      iframeBody.style.margin = '0';
+      iframeBody.style.padding = '20px';
+
+      // Also inject additional styles after CSS variables are available
+      const additionalStyle = configIframe.value.contentDocument.createElement('style');
+      additionalStyle.textContent = `
+        textarea, input[type="text"], input[type="number"] {
+          background: var(--color-surface) !important;
+          border: 1px solid var(--color-border) !important;
+          border-radius: var(--radius-small) !important;
+          color: var(--color-text-primary) !important;
+          padding: 8px 12px !important;
+          font-family: inherit !important;
+          font-size: 14px !important;
+        }
+        textarea:focus, input:focus {
+          outline: none !important;
+          border-color: var(--color-accent) !important;
+        }
+      `;
+      configIframe.value.contentDocument.head.appendChild(additionalStyle);
+    }
   }
 };
 
@@ -326,7 +361,58 @@ const openConfigPanel = async (plugin: PluginListItem) => {
   }
 
   try {
-    configUIContent.value = await fetchPluginConfigUI(plugin.id);
+    const pluginConfigHTML = await fetchPluginConfigUI(plugin.id);
+
+    // Wrap the plugin config HTML with proper HTML structure and styling
+    configUIContent.value = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+            body {
+              margin: 0;
+              padding: 20px;
+              background-color: var(--color-bg);
+              color: var(--color-text-primary);
+              font-family: system-ui, -apple-system, sans-serif;
+            }
+            /* Add card styles to match main app */
+            textarea, input[type="text"], input[type="number"] {
+              background: var(--color-surface) !important;
+              border: 1px solid var(--color-border) !important;
+              border-radius: var(--radius-small) !important;
+              color: var(--color-text-primary) !important;
+              padding: 8px 12px !important;
+              width: 100% !important;
+              font-family: inherit !important;
+              font-size: 14px !important;
+            }
+            textarea:focus, input:focus {
+              outline: none !important;
+              border-color: var(--color-accent) !important;
+            }
+            label {
+              display: block;
+              margin-bottom: 8px;
+              font-weight: 500;
+              color: var(--color-text-primary);
+            }
+            h1, h2, h3, h4 {
+              color: var(--color-text-primary);
+              margin-top: 0;
+            }
+          </style>
+        </head>
+        <body>
+          ${pluginConfigHTML}
+        </body>
+      </html>
+    `;
+
     selectedPluginForConfig.value = plugin;
     showConfigPanel.value = true;
   } catch (error: any) {
@@ -915,6 +1001,7 @@ onBeforeUnmount(() => {
   height: 100%;
   border: none;
   display: block;
+  background: var(--color-bg);
 }
 
 .config-panel-content :deep(h1),
