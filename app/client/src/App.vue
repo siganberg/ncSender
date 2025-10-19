@@ -1,5 +1,15 @@
 <template>
-  <AppShell>
+  <!-- Mobile View -->
+  <MobileView
+    v-if="isMobileView"
+    :status="{ ...status, connected: isConnected }"
+    :jog-config="jogConfig"
+    @update:stepSize="jogConfig.stepSize = $event"
+    @update:feedRate="jogConfig.feedRate = $event"
+  />
+
+  <!-- Desktop View -->
+  <AppShell v-else>
     <template #top-toolbar>
       <TopToolbar
         :workspace="workspace"
@@ -55,8 +65,10 @@
     </template> -->
   </AppShell>
 
-  <!-- Dialog moved outside AppShell to avoid overflow clipping -->
-  <Dialog v-if="showSettings" @close="closeSettings" :show-header="false" size="medium">
+  <!-- Dialogs (hidden in mobile view) -->
+  <template v-if="!isMobileView">
+    <!-- Dialog moved outside AppShell to avoid overflow clipping -->
+    <Dialog v-if="showSettings" @close="closeSettings" :show-header="false" size="medium">
     <div class="settings-container">
       <div class="tabs">
         <button
@@ -638,8 +650,9 @@
     />
   </Dialog>
 
-  <!-- Plugin Dialog -->
-  <PluginDialog />
+    <!-- Plugin Dialog -->
+    <PluginDialog />
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -648,6 +661,7 @@ import AppShell from './shell/AppShell.vue';
 import TopToolbar from './shell/TopToolbar.vue';
 import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
 import RightPanel from './shell/RightPanel.vue';
+import MobileView from './features/mobile/MobileView.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
@@ -663,6 +677,35 @@ import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 
 // Get centralized store
 const store = useAppStore();
+
+// Detect mobile view from URL query parameter OR screen size
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
+const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 768);
+
+const isMobileView = computed(() => {
+  if (typeof window === 'undefined') return false;
+
+  // Check if mobile=true query parameter is set
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('mobile') === 'true') return true;
+
+  // Auto-detect mobile based on screen dimensions
+  // A device is considered mobile if EITHER dimension is <= 600px
+  // This catches phones in both portrait and landscape orientations
+  // Portrait: width 375px, height 667px -> width <= 600 ✓
+  // Landscape: width 667px, height 375px -> height <= 600 ✓
+  const isMobileDevice = windowWidth.value <= 600 || windowHeight.value <= 600;
+
+  return isMobileDevice;
+});
+
+// Update window dimensions on resize
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => {
+    windowWidth.value = window.innerWidth;
+    windowHeight.value = window.innerHeight;
+  });
+}
 
 // Initialize settings from settings store (loaded in main.ts)
 const initialSettings = getSettings();
