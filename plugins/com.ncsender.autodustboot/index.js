@@ -350,10 +350,10 @@ export function onLoad(ctx) {
       return null;
     }
 
-    if (context.sourceId === 'client' && hasExpandRetract && retractOnRapidMove) {
+    if ((context.sourceId === 'client' || context.sourceId === 'macro') && hasExpandRetract && retractOnRapidMove) {
       const hasG0 = /\bG0\b/i.test(normalizedLine);
       if (hasG0) {
-        ctx.log(`G0 from client detected: ${line.trim()}`);
+        ctx.log(`G0 from ${context.sourceId} detected: ${line.trim()}`);
         await sendExpandRetractSequence(line.trim());
         return null;
       }
