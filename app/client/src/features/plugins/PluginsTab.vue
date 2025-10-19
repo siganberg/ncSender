@@ -238,13 +238,22 @@
               placeholder="https://github.com/owner/repo/tree/main/path/to/plugin"
               class="url-input"
               @keyup.enter="installFromGitHub"
+              @contextmenu.stop
             />
           </div>
 
-          <p class="install-hint">
-            <strong>Example:</strong><br>
-            <code>https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot</code>
-          </p>
+          <div class="install-hint">
+            <strong>Example:</strong>
+            <div class="example-url-wrapper">
+              <code class="example-url">https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot</code>
+              <button class="btn-copy" @click="copyExampleUrl" title="Copy to clipboard">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <p class="install-hint install-note">
             Only plugins from the <code>main</code> branch are supported for security reasons.
           </p>
@@ -615,12 +624,38 @@ const installFromGitHub = async () => {
   }
 };
 
+const copyExampleUrl = async () => {
+  const exampleUrl = 'https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot';
+  try {
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(exampleUrl);
+    } else {
+      // Fallback for Electron or older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = exampleUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+    // Also populate the input field
+    githubUrl.value = exampleUrl;
+  } catch (error) {
+    console.error('Failed to copy to clipboard:', JSON.stringify(error));
+    // Still populate the input field as fallback
+    githubUrl.value = exampleUrl;
+  }
+};
+
 const closeInstallDialog = () => {
   showInstallDialog.value = false;
   selectedFile.value = null;
   selectedFileName.value = '';
   githubUrl.value = '';
-  installMethod.value = 'file';
+  installMethod.value = 'github';
   installing.value = false;
   installSuccess.value = false;
   installError.value = null;
@@ -938,6 +973,43 @@ onBeforeUnmount(() => {
   word-break: break-all;
   white-space: normal;
   display: inline-block;
+}
+
+.example-url-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  margin-top: 4px;
+}
+
+.example-url {
+  flex: 1;
+  user-select: all;
+  cursor: text;
+}
+
+.btn-copy {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-copy:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.btn-copy svg {
+  display: block;
 }
 
 .install-dialog .btn {
