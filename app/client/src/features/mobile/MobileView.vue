@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import JogControls from '@/features/jog/JogControls.vue';
 import StepControl from '@/features/jog/StepControl.vue';
 import { api } from '@/features/jog/api';
@@ -139,7 +139,6 @@ const emit = defineEmits<{
 const store = useJogStore();
 const appStore = useAppStore();
 
-const feedRate = ref(props.jogConfig.feedRate);
 const feedRateOptions = computed(() => props.jogConfig.feedRateOptions ?? {
   0.1: [300, 400, 500, 700, 1000],
   1: [1000, 2000, 3000, 4000, 5000],
@@ -151,10 +150,61 @@ const feedRateDefaults = computed(() => props.jogConfig.feedRateDefaults ?? {
   10: 8000
 });
 
+const resolveFeedRate = (): number => {
+  const provided = Number(props.jogConfig.feedRate);
+  if (Number.isFinite(provided) && provided > 0) {
+    return provided;
+  }
+
+  const defaultRate = feedRateDefaults.value[props.jogConfig.stepSize];
+  if (Number.isFinite(defaultRate) && defaultRate > 0) {
+    return defaultRate;
+  }
+
+  const fallbackOption = feedRateOptions.value[props.jogConfig.stepSize]?.[0];
+  if (Number.isFinite(fallbackOption) && fallbackOption > 0) {
+    return fallbackOption;
+  }
+
+  return 500;
+};
+
+const feedRate = ref(resolveFeedRate());
+emit('update:feedRate', feedRate.value);
+
 const handleFeedRateUpdate = (newRate: number) => {
   feedRate.value = newRate;
   emit('update:feedRate', newRate);
 };
+
+watch(() => props.jogConfig.stepSize, (newStepSize) => {
+  const defaultRate = feedRateDefaults.value[newStepSize];
+  const fallbackOption = feedRateOptions.value[newStepSize]?.[0];
+  const resolved = Number.isFinite(defaultRate) && defaultRate > 0
+    ? defaultRate
+    : (Number.isFinite(fallbackOption) && fallbackOption > 0 ? fallbackOption : 500);
+
+  if (Math.abs(resolved - feedRate.value) < 0.0001) {
+    return;
+  }
+
+  feedRate.value = resolved;
+  emit('update:feedRate', resolved);
+});
+
+watch(
+  () => props.jogConfig.feedRate,
+  (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+    if (Math.abs(parsed - feedRate.value) < 0.0001) {
+      return;
+    }
+    feedRate.value = parsed;
+  }
+);
 
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 const isJobRunning = computed(() => appStore.isJobRunning.value);
