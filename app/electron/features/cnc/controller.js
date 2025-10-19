@@ -6,6 +6,7 @@ import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
+import { pluginEventBus } from '../../core/plugin-event-bus.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -106,7 +107,7 @@ export class CNCController extends EventEmitter {
     }
   }
 
-  handleCommandOk() {
+  async handleCommandOk() {
     if (!this.activeCommand) {
       log('Received OK with no active command');
       return;
@@ -128,6 +129,16 @@ export class CNCController extends EventEmitter {
       timestamp: new Date().toISOString()
     };
 
+    const commandContext = {
+      sourceId: cmd.meta?.sourceId || null,
+      commandId: cmd.id,
+      displayCommand: cmd.displayCommand,
+      meta: cmd.meta,
+      response: 'ok'
+    };
+
+    await pluginEventBus.emitAsync('onAfterCommand', cmd.rawCommand, commandContext, payload);
+
     cmd.resolve(payload);
     this.emit('command-ack', payload);
 
@@ -136,7 +147,7 @@ export class CNCController extends EventEmitter {
     }
   }
 
-  handleCommandError(errorPayload) {
+  async handleCommandError(errorPayload) {
     if (!this.activeCommand) {
       log('Received error with no active command', errorPayload);
       return;
@@ -163,6 +174,17 @@ export class CNCController extends EventEmitter {
       error,
       timestamp: new Date().toISOString()
     };
+
+    const commandContext = {
+      sourceId: cmd.meta?.sourceId || null,
+      commandId: cmd.id,
+      displayCommand: cmd.displayCommand,
+      meta: cmd.meta,
+      response: 'error',
+      error
+    };
+
+    await pluginEventBus.emitAsync('onAfterCommand', cmd.rawCommand, commandContext, payload);
 
     cmd.reject(error);
     this.emit('command-ack', payload);
@@ -799,13 +821,28 @@ export class CNCController extends EventEmitter {
       throw new Error('Command is empty');
     }
 
+    const commandContext = {
+      sourceId: normalizedMeta?.sourceId || null,
+      commandId: resolvedCommandId,
+      displayCommand: displayCommand || cleanCommand,
+      meta: normalizedMeta
+    };
+
+    let modifiedCommand = await pluginEventBus.emitChain('onBeforeCommand', cleanCommand, commandContext);
+
+    if (modifiedCommand === null || modifiedCommand === undefined) {
+      return { status: 'skipped', id: resolvedCommandId };
+    }
+
+    const finalCommand = typeof modifiedCommand === 'string' ? modifiedCommand.trim() : cleanCommand;
+
     // Intercept user ? command - return cached status instead of sending to controller
     // But allow polling (sourceId: 'system') to go through
-    if (cleanCommand === '?' && normalizedMeta?.sourceId !== 'system') {
-      const display = displayCommand || cleanCommand;
+    if (finalCommand === '?' && normalizedMeta?.sourceId !== 'system') {
+      const display = displayCommand || finalCommand;
       const pendingPayload = {
         id: resolvedCommandId,
-        command: cleanCommand,
+        command: finalCommand,
         displayCommand: display,
         meta: normalizedMeta,
         status: 'pending',
@@ -830,11 +867,11 @@ export class CNCController extends EventEmitter {
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
-    const isRealTimeCommand = cleanCommand.length === 1 &&
-      (realTimeCommands.includes(cleanCommand) || cleanCommand.charCodeAt(0) >= 0x80);
+    const isRealTimeCommand = finalCommand.length === 1 &&
+      (realTimeCommands.includes(finalCommand) || finalCommand.charCodeAt(0) >= 0x80);
 
     // Check if this is a jog cancel command (0x85)
-    const isJogCancel = cleanCommand.length === 1 && cleanCommand.charCodeAt(0) === 0x85;
+    const isJogCancel = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x85;
     if (isJogCancel) {
       this.jogWatchdog.clear();
     }
@@ -842,28 +879,28 @@ export class CNCController extends EventEmitter {
     let commandToSend;
     if (isRealTimeCommand) {
       // Real-time commands are sent as-is without newline or uppercase conversion
-      commandToSend = cleanCommand;
+      commandToSend = finalCommand;
     } else {
       // Regular G-code commands get uppercase conversion with newline
       // Preserve case for GRBL variable syntax (% assignments and [] expressions)
-      const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
-      commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase()) + '\n';
+      const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
+      commandToSend = (hasVariableSyntax ? finalCommand : finalCommand.toUpperCase()) + '\n';
     }
 
     // Detect continuous jog commands ($J=) and enable dead-man switch watchdog
     // Skip watchdog for step jogs (meta.jogStep = true) since they complete quickly
-    const isJogCommand = /^\$J=/i.test(cleanCommand);
+    const isJogCommand = /^\$J=/i.test(finalCommand);
     const isStepJog = normalizedMeta?.jogStep === true;
     if (isJogCommand && !isStepJog) {
-      this.jogWatchdog.start(resolvedCommandId, cleanCommand);
+      this.jogWatchdog.start(resolvedCommandId, finalCommand);
       log('Dead-man switch watchdog started for continuous jog:', resolvedCommandId);
     }
 
     if (isRealTimeCommand) {
-      const display = displayCommand || cleanCommand;
+      const display = displayCommand || finalCommand;
       const pendingPayload = {
         id: resolvedCommandId,
-        command: cleanCommand,
+        command: finalCommand,
         displayCommand: display,
         meta: normalizedMeta,
         status: 'pending',
@@ -875,16 +912,16 @@ export class CNCController extends EventEmitter {
 
       try {
         await this.writeToConnection(commandToSend, {
-          rawCommand: cleanCommand,
+          rawCommand: finalCommand,
           isRealTime: true
         });
 
-        if (cleanCommand === '\x18') {
+        if (finalCommand === '\x18') {
           this.flushQueue('');
           this.emit('stop');
-        } else if (cleanCommand === '!') {
+        } else if (finalCommand === '!') {
           this.emit('pause');
-        } else if (cleanCommand === '~') {
+        } else if (finalCommand === '~') {
           this.emit('resume');
         }
 
@@ -909,8 +946,8 @@ export class CNCController extends EventEmitter {
     }
 
     // Preserve case for GRBL variable syntax (% assignments and [] expressions)
-    const hasVariableSyntax = cleanCommand.startsWith('%') || /\[.*\]/.test(cleanCommand);
-    const normalizedCommand = hasVariableSyntax ? cleanCommand : cleanCommand.toUpperCase();
+    const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
+    const normalizedCommand = hasVariableSyntax ? finalCommand : finalCommand.toUpperCase();
     const display = displayCommand || normalizedCommand;
 
     // Skip tool change commands when numberOfTools is 0 or not configured

@@ -1,8 +1,7 @@
-let isToolChange = false;
-let shouldInjectAfterNextXY = false;
+let isToolChanging = false;
 
 export function onLoad(ctx) {
-  ctx.log('Auto Dustboot plugin loaded');
+  ctx.log('AutoDustBoot plugin loaded');
 
   ctx.registerConfigUI(`
     <!DOCTYPE html>
@@ -28,6 +27,7 @@ export function onLoad(ctx) {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 20px;
+          margin-bottom: 20px;
         }
         .form-group {
           display: flex;
@@ -38,7 +38,8 @@ export function onLoad(ctx) {
           font-weight: 600;
           color: var(--color-text-primary, #333);
         }
-        .form-group textarea {
+        .form-group input[type="text"],
+        .form-group input[type="number"] {
           width: 100%;
           padding: 10px 12px;
           border: 1px solid var(--color-border, #ddd);
@@ -47,16 +48,49 @@ export function onLoad(ctx) {
           font-size: 0.9rem;
           background: var(--color-surface, #fff);
           color: var(--color-text-primary, #333);
-          min-height: 100px;
-          resize: vertical;
         }
-        .form-group textarea:focus {
+        .form-group input:focus {
           outline: none;
           border-color: var(--color-accent, #4a90e2);
         }
-        .form-group textarea::placeholder {
-          color: var(--color-text-secondary, #999);
-          opacity: 0.5;
+        .toggle-switch {
+          position: relative;
+          width: 50px;
+          height: 28px;
+          margin-top: 8px;
+        }
+        .toggle-switch input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .toggle-slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: #ccc;
+          transition: .4s;
+          border-radius: 28px;
+        }
+        .toggle-slider:before {
+          position: absolute;
+          content: "";
+          height: 20px;
+          width: 20px;
+          left: 4px;
+          bottom: 4px;
+          background-color: white;
+          transition: .4s;
+          border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+          background-color: var(--color-accent, #4a90e2);
+        }
+        input:checked + .toggle-slider:before {
+          transform: translateX(22px);
         }
         .help-text {
           font-size: 0.85rem;
@@ -82,25 +116,43 @@ export function onLoad(ctx) {
       <div class="config-form">
         <div class="form-row">
           <div class="form-group">
-            <label for="beforeToolChange">Commands before the tool change</label>
-            <textarea id="beforeToolChange" placeholder="e.g. M9"></textarea>
-            <p class="help-text">Commands to execute before M6 is sent (one per line). Leave empty if not needed.</p>
+            <label for="retractCommand">Retract Command (Optional)</label>
+            <input type="text" id="retractCommand" placeholder="M9">
+            <p class="help-text">Command to retract the AutoDustBoot</p>
           </div>
 
           <div class="form-group">
-            <label for="afterToolChange">Commands after the tool change</label>
-            <textarea id="afterToolChange">M8
-G4 P1</textarea>
-            <p class="help-text">This will be executed after the first X/Y move for each tool change.</p>
+            <label for="expandCommand">Expand Command</label>
+            <input type="text" id="expandCommand" placeholder="M8">
+            <p class="help-text">Command to expand the AutoDustBoot</p>
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <label for="ignoreCommands">Ignore commands</label>
-            <textarea id="ignoreCommands">M8
-G4</textarea>
-            <p class="help-text">These commands will be skipped if your job already has them to avoid duplicates. The commands after the tool change will be used instead.</p>
+            <label for="delayAfterExpand">Add Delay After Expand (seconds)</label>
+            <input type="number" id="delayAfterExpand" min="0" max="10" value="1">
+            <p class="help-text">Allow the AutoDustBoot to expand before resuming</p>
+          </div>
+
+          <div class="form-group">
+            <label for="retractOnHome">Retract on Home</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="retractOnHome" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <p class="help-text">Automatically retract AutoDustBoot when homing</p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="retractOnRapidMove">Retract on Rapid Move (G0)</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="retractOnRapidMove" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <p class="help-text">Automatically retract the AutoDustBoot during all rapid moves, except when running jobs.</p>
           </div>
         </div>
 
@@ -112,19 +164,20 @@ G4</textarea>
       <script>
         (async function() {
           try {
-            const response = await fetch('/api/plugins/com.ncsender.auto-dustboot/settings');
+            const response = await fetch('/api/plugins/com.ncsender.autodustboot/settings');
             if (response.ok) {
               const settings = await response.json();
-              document.getElementById('beforeToolChange').value = settings.beforeToolChange || '';
-              document.getElementById('afterToolChange').value = settings.afterToolChange || 'M8\\nG4 P1';
-              document.getElementById('ignoreCommands').value = settings.ignoreCommands || 'M8\\nG4';
+              document.getElementById('retractCommand').value = settings.retractCommand || 'M9';
+              document.getElementById('expandCommand').value = settings.expandCommand || 'M8';
+              document.getElementById('delayAfterExpand').value = settings.delayAfterExpand !== undefined ? settings.delayAfterExpand : 1;
+              document.getElementById('retractOnHome').checked = settings.retractOnHome !== undefined ? settings.retractOnHome : true;
+              document.getElementById('retractOnRapidMove').checked = settings.retractOnRapidMove !== undefined ? settings.retractOnRapidMove : true;
             }
           } catch (error) {
             console.error('Failed to load settings:', error);
           }
         })();
 
-        // Listen for save message from parent
         window.addEventListener('message', (event) => {
           if (event.data.type === 'save-config') {
             saveAutoDustBootConfig();
@@ -132,18 +185,22 @@ G4</textarea>
         });
 
         async function saveAutoDustBootConfig() {
-          const beforeToolChange = document.getElementById('beforeToolChange').value;
-          const afterToolChange = document.getElementById('afterToolChange').value;
-          const ignoreCommands = document.getElementById('ignoreCommands').value;
+          const retractCommand = document.getElementById('retractCommand').value.trim();
+          const expandCommand = document.getElementById('expandCommand').value.trim();
+          const delayAfterExpand = parseInt(document.getElementById('delayAfterExpand').value, 10);
+          const retractOnHome = document.getElementById('retractOnHome').checked;
+          const retractOnRapidMove = document.getElementById('retractOnRapidMove').checked;
 
           const settings = {
-            beforeToolChange: beforeToolChange || '',
-            afterToolChange: afterToolChange || 'M8\\nG4 P1',
-            ignoreCommands: ignoreCommands || 'M8\\nG4'
+            retractCommand,
+            expandCommand,
+            delayAfterExpand,
+            retractOnHome,
+            retractOnRapidMove
           };
 
           try {
-            const response = await fetch('/api/plugins/com.ncsender.auto-dustboot/settings', {
+            const response = await fetch('/api/plugins/com.ncsender.autodustboot/settings', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(settings)
@@ -163,109 +220,155 @@ G4</textarea>
             alert('Failed to save configuration');
           }
         }
+
+        document.getElementById('retractCommand').addEventListener('blur', saveAutoDustBootConfig);
+        document.getElementById('expandCommand').addEventListener('blur', saveAutoDustBootConfig);
+        document.getElementById('delayAfterExpand').addEventListener('blur', saveAutoDustBootConfig);
+        document.getElementById('retractOnHome').addEventListener('change', saveAutoDustBootConfig);
+        document.getElementById('retractOnRapidMove').addEventListener('change', saveAutoDustBootConfig);
       </script>
     </body>
     </html>
   `);
 
-  ctx.registerEventHandler('onBeforeGcodeLine', async (line, context) => {
-    const trimmedLine = line.trim().toUpperCase();
+  ctx.registerEventHandler('onBeforeCommand', async (line, context) => {
+    const pluginId = 'com.ncsender.autodustboot';
 
-    // Load settings
-    const settings = ctx.getSettings();
-    const beforeToolChange = settings.beforeToolChange || '';
-    const afterToolChange = settings.afterToolChange || 'M8\nG4 P1';
-    const ignoreCommands = settings.ignoreCommands || 'M8\nG4';
-
-    // Parse multi-line settings into arrays
-    const beforeCommands = beforeToolChange.split('\n').map(c => c.trim()).filter(c => c.length > 0);
-    const afterCommands = afterToolChange.split('\n').map(c => c.trim()).filter(c => c.length > 0);
-    const ignoreList = ignoreCommands.split('\n').map(c => c.trim().toUpperCase()).filter(c => c.length > 0);
-
-    // If we need to inject commands after the previous XY movement, do it now
-    if (shouldInjectAfterNextXY) {
-      ctx.log(`Injecting after-tool-change commands before line ${context.lineNumber}`);
-      shouldInjectAfterNextXY = false;
-
-      // Send all configured after-tool-change commands
-      for (const cmd of afterCommands) {
-        try {
-          await ctx.sendGcode(cmd, {
-            displayCommand: `${cmd} (Auto Dustboot - After Tool Change)`,
-            meta: { autoInjected: true, plugin: 'auto-dustboot' }
-          });
-          ctx.log(`Injected: ${cmd}`);
-        } catch (error) {
-          ctx.log(`Failed to inject command "${cmd}":`, error.message);
-        }
-      }
-    }
-
-    // Check if this is a tool change command (M6)
-    if (trimmedLine.includes('M6')) {
-      ctx.log(`Tool change detected at line ${context.lineNumber}: ${line}`);
-
-      // Send before-tool-change commands first
-      if (beforeCommands.length > 0) {
-        ctx.log('Injecting before-tool-change commands');
-        for (const cmd of beforeCommands) {
-          try {
-            await ctx.sendGcode(cmd, {
-              displayCommand: `${cmd} (Auto Dustboot - Before Tool Change)`,
-              meta: { autoInjected: true, plugin: 'auto-dustboot' }
-            });
-            ctx.log(`Injected: ${cmd}`);
-          } catch (error) {
-            ctx.log(`Failed to inject command "${cmd}":`, error.message);
-          }
-        }
-      }
-
-      // Set flag to track we're in tool change state
-      isToolChange = true;
-
-      // Let the M6 command pass through
+    if (context.meta?.processedByPlugins?.includes(pluginId)) {
       return line;
     }
 
-    // If we're in a tool change state, check for commands to ignore and XY movement
-    if (isToolChange) {
-      // Check if this line should be ignored (starts with any of the ignore commands)
-      for (const ignoreCmd of ignoreList) {
-        if (trimmedLine.startsWith(ignoreCmd)) {
-          ctx.log(`Skipping command at line ${context.lineNumber}: ${line.trim()}`);
-          return `; ${line.trim()} (Auto Dustboot - Skipped)`;
-        }
+    function markAsProcessed(meta = {}) {
+      const processedByPlugins = meta.processedByPlugins || [];
+      if (!processedByPlugins.includes(pluginId)) {
+        processedByPlugins.push(pluginId);
+      }
+      return { ...meta, processedByPlugins };
+    }
+
+    function normalizeGCode(code) {
+      return code.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
+    }
+
+    function stripLineNumber(code) {
+      return code.replace(/^N\d+\s*/i, '');
+    }
+
+    const trimmedLine = line.trim().toUpperCase();
+    const lineWithoutNumber = stripLineNumber(trimmedLine);
+    const normalizedLine = normalizeGCode(lineWithoutNumber);
+    const settings = ctx.getSettings();
+    const retractCommand = settings.retractCommand || 'M9';
+    const expandCommand = settings.expandCommand || 'M8';
+    const normalizedRetractCmd = normalizeGCode(retractCommand);
+    const normalizedExpandCmd = normalizeGCode(expandCommand);
+    const delayAfterExpand = settings.delayAfterExpand !== undefined ? settings.delayAfterExpand : 1;
+    const retractOnHome = settings.retractOnHome !== undefined ? settings.retractOnHome : true;
+    const retractOnRapidMove = settings.retractOnRapidMove !== undefined ? settings.retractOnRapidMove : true;
+
+    const hasExpandRetract = expandCommand && retractCommand;
+
+    async function sendExpandRetractSequence(originalCommand) {
+      await ctx.sendGcode(expandCommand, {
+        displayCommand: `${expandCommand} (AutoDustBoot - Expand)`,
+        meta: markAsProcessed()
+      });
+
+      await ctx.sendGcode('G4 P0.1', {
+        displayCommand: 'G4 P0.1 (AutoDustBoot - Delay)',
+        meta: markAsProcessed()
+      });
+
+      await ctx.sendGcode(retractCommand, {
+        displayCommand: `${retractCommand} (AutoDustBoot - Retract)`,
+        meta: markAsProcessed()
+      });
+
+      await ctx.sendGcode(originalCommand, {
+        displayCommand: originalCommand,
+        meta: markAsProcessed()
+      });
+    }
+
+    if (trimmedLine.includes('M6') && hasExpandRetract) {
+      ctx.log(`M6 detected at line ${context.lineNumber}`);
+
+      if (context.sourceId === 'job') {
+        ctx.log('M6 from job source, sending retract and tracking tool change');
+
+        await ctx.sendGcode(retractCommand, {
+          displayCommand: `${retractCommand} (AutoDustBoot - Retract)`,
+          meta: markAsProcessed()
+        });
+
+        isToolChanging = true;
+        return line;
+      } else {
+        await sendExpandRetractSequence(line.trim());
+        return null;
+      }
+    }
+
+    if (isToolChanging && context.sourceId === 'job') {
+      if (normalizedLine.startsWith(normalizedExpandCmd)) {
+        ctx.log(`Skipping expand command: ${line.trim()}`);
+        return `; ${line.trim()} (Skipped by AutoDustBoot)`;
       }
 
-      // Check if this line has X or Y movement
       const hasXMovement = /[^A-Z]X[-+]?\d+\.?\d*/i.test(line);
       const hasYMovement = /[^A-Z]Y[-+]?\d+\.?\d*/i.test(line);
 
       if (hasXMovement || hasYMovement) {
-        ctx.log(`First XY movement after tool change at line ${context.lineNumber}: ${line}`);
+        ctx.log(`First XY movement after tool change at line ${context.lineNumber}`);
 
-        // Reset tool change state and flag that we should inject commands after this line
-        isToolChange = false;
-        shouldInjectAfterNextXY = true;
+        isToolChanging = false;
 
-        return line;
+        await ctx.sendGcode(line.trim(), {
+          displayCommand: line.trim(),
+          meta: markAsProcessed(context.meta)
+        });
+
+        await ctx.sendGcode(expandCommand, {
+          displayCommand: `${expandCommand} (AutoDustBoot - Expand After XY)`,
+          meta: markAsProcessed()
+        });
+
+        if (delayAfterExpand > 0) {
+          await ctx.sendGcode(`G4 P${delayAfterExpand}`, {
+            displayCommand: `G4 P${delayAfterExpand} (AutoDustBoot - Delay)`,
+            meta: markAsProcessed()
+          });
+        }
+
+        return null;
       }
     }
 
-    // Normal line - pass through unchanged
+    if (trimmedLine.startsWith('$H') && hasExpandRetract && retractOnHome) {
+      ctx.log(`Home command detected: ${line.trim()}`);
+      await sendExpandRetractSequence(line.trim());
+      return null;
+    }
+
+    if (context.sourceId === 'client' && hasExpandRetract && retractOnRapidMove) {
+      const hasG0 = /\bG0\b/i.test(normalizedLine);
+      if (hasG0) {
+        ctx.log(`G0 from client detected: ${line.trim()}`);
+        await sendExpandRetractSequence(line.trim());
+        return null;
+      }
+    }
+
     return line;
   });
 
-  ctx.registerEventHandler('onAfterJobEnd', async (context) => {
+  ctx.registerEventHandler('onAfterJobEnd', async () => {
     ctx.log('Job ended, resetting tool change state');
-    isToolChange = false;
-    shouldInjectAfterNextXY = false;
+    isToolChanging = false;
   });
 }
 
 export function onUnload() {
-  console.log('[PLUGIN:com.ncsender.auto-dustboot] Auto Dustboot plugin unloaded');
-  isToolChange = false;
-  shouldInjectAfterNextXY = false;
+  console.log('[PLUGIN:com.ncsender.autodustboot] AutoDustBoot plugin unloaded');
+  isToolChanging = false;
 }

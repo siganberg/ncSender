@@ -7,7 +7,7 @@
   "entry": "index.js",
   "icon": "icon.png",
   "events": [
-    "onBeforeGcodeLine"
+    "onBeforeCommand"
   ],
   "permissions": ["gcode.modify"]
 }
