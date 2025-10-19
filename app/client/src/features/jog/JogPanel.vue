@@ -18,6 +18,7 @@
         :current-step="props.jogConfig.stepSize"
         :feed-rate="feedRate"
         :disabled="motionControlsDisabled"
+        custom-class="jog-controls-card"
         @center-click="sendSoftReset"
       />
 
@@ -1164,6 +1165,7 @@ const goToCorner = async (corner: CornerType) => {
   gap: var(--gap-sm);
   height: fit-content;
 }
+
 
 .card__header {
   display: flex;

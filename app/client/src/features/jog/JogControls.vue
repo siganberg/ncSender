@@ -1,5 +1,5 @@
 <template>
-  <div class="jog-controls" :class="{ 'jog-disabled': disabled }">
+  <div class="jog-controls" :class="[{ 'jog-disabled': disabled }, customClass]">
     <!-- XY Joystick + Z Controls -->
     <div class="jog-grid">
       <!-- XY Joystick (3x3 grid) -->
@@ -107,6 +107,7 @@ const props = defineProps<{
   currentStep: number;
   disabled?: boolean;
   feedRate: number;
+  customClass?: string;
 }>();
 
 defineEmits<{
@@ -387,6 +388,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   align-items: stretch;
   justify-content: center;
+
 }
 
 .jog-xy {
@@ -396,7 +398,22 @@ onBeforeUnmount(() => {
   gap: 4px;
   width: 180px;
   height: 180px;
+
 }
+
+.jog-controls.jog-controls-card {
+  height: 100% !important;
+}
+
+.jog-controls-card .jog-grid {
+    height: 100%;
+}
+
+.jog-controls-card .jog-xy {
+   height: 100% !important;
+}
+
+
 
 .jog-z {
   display: flex;
