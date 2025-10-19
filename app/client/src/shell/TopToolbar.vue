@@ -17,8 +17,6 @@
         >
           <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
         </select>
-        <label class="unit-label">Unit:</label>
-        <span class="unit-value">{{ unitDisplayText }}</span>
       </div>
     </div>
     <div class="toolbar__center">
@@ -35,6 +33,10 @@
       </button>
     </div>
     <div class="toolbar__actions">
+      <div class="unit-display">
+        <label class="unit-label">Unit:</label>
+        <span class="unit-value">{{ unitDisplayText }}</span>
+      </div>
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
         <svg class="theme-icon" width="32" height="32"><use href="#emoji-sun"></use></svg>
       </button>
@@ -191,6 +193,7 @@ const onWorkspaceChange = (e: Event) => {
   background: var(--color-surface-muted);
   border-radius: var(--radius-small);
   padding: 4px 8px;
+  height: 40px;
 }
 
 .workspace-label {
@@ -207,10 +210,19 @@ const onWorkspaceChange = (e: Event) => {
   font-size: 0.95rem;
 }
 
+.unit-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  height: 40px;
+}
+
 .unit-label {
   color: var(--color-text-secondary);
   font-size: 0.9rem;
-  margin-left: 12px;
 }
 
 .unit-value {
