@@ -474,7 +474,7 @@ onUnmounted(() => {
 }
 
 .home-button-mobile {
-  width: 60px;
+  width: 80px;
   min-width: 60px;
   flex-shrink: 0;
   border: 2px solid var(--color-border);

@@ -18,7 +18,6 @@
         :current-step="props.jogConfig.stepSize"
         :feed-rate="feedRate"
         :disabled="motionControlsDisabled"
-        custom-class="jog-controls-card"
         @center-click="sendSoftReset"
       />
 

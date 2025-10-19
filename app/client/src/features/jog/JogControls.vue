@@ -362,6 +362,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
 }
 
 .jog-disabled {
@@ -388,6 +389,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   align-items: stretch;
   justify-content: center;
+  height: 100%;
 
 }
 
@@ -397,20 +399,29 @@ onBeforeUnmount(() => {
   grid-template-rows: repeat(3, 1fr);
   gap: 4px;
   width: 180px;
-  height: 180px;
+  height: 100%
 
 }
 
-.jog-controls.jog-controls-card {
-  height: 100% !important;
+.jog-controls.jog-controls-probe {
+  height: unset;
 }
 
-.jog-controls-card .jog-grid {
-    height: 100%;
+.jog-controls-probe .jog-grid {
+  height: unset;
 }
 
-.jog-controls-card .jog-xy {
-   height: 100% !important;
+.jog-controls-probe .jog-xy {
+
+  height: 180px !important;;
+}
+
+.jog-controls-mobile .jog-xy {
+  width: 100% !important;
+}
+
+.jog-controls-mobile .jog-z {
+  width: 90px !important;
 }
 
 

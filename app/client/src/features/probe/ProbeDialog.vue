@@ -364,6 +364,7 @@
               :current-step="jogStep"
               :feed-rate="jogFeedRate"
               :disabled="isProbing"
+              custom-class="jog-controls-probe"
               @center-click="handleCenterClick"
             />
           </div>
