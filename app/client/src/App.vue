@@ -630,7 +630,7 @@
   <Dialog v-if="showUnitsConfirmDialog" @close="showUnitsConfirmDialog = false" :show-header="false" size="small" :z-index="10001">
     <ConfirmPanel
       title="Change Units"
-      :message="`You are switching to ${pendingUnitsChange === 'imperial' ? 'Imperial (inches)' : 'Metric (mm)'}. Your machine will also be configured to use ${pendingUnitsChange === 'imperial' ? 'inches' : 'millimeters'}.`"
+      :message="`You are switching to ${pendingUnitsChange === 'imperial' ? 'Imperial (inches)' : 'Metric (mm)'}. We'll also issue a ${pendingUnitsChange === 'imperial' ? 'G20' : 'G21'} command for your convenience.\n\nThis can still be overridden by your program at runtime or by sending a manual unit-switch command.`"
       :show-cancel="false"
       confirm-text="OK"
       variant="primary"
