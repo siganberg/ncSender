@@ -203,40 +203,97 @@
       </div>
 
       <div v-else class="upload-form">
-        <p>Select a plugin ZIP file to install:</p>
-
-        <div class="file-input-wrapper">
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".zip"
-            @change="handleFileSelect"
-            class="file-input"
-          />
-          <button class="btn btn-secondary" @click="triggerFileSelect">
+        <!-- Tab Selector -->
+        <div class="install-tabs">
+          <button
+            :class="['tab-button', { active: installMethod === 'github' }]"
+            @click="installMethod = 'github'"
+          >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
-              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
             </svg>
-            Choose File
+            GitHub URL
           </button>
-          <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
+          <button
+            :class="['tab-button', { active: installMethod === 'file' }]"
+            @click="installMethod = 'file'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
+              <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2"/>
+              <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1z"/>
+            </svg>
+            ZIP File
+          </button>
+        </div>
+
+        <!-- GitHub URL -->
+        <div v-if="installMethod === 'github'" class="install-method-content">
+          <p>Enter the GitHub URL of the plugin:</p>
+
+          <div class="url-input-wrapper">
+            <input
+              v-model="githubUrl"
+              type="text"
+              placeholder="https://github.com/owner/repo/tree/main/path/to/plugin"
+              class="url-input"
+              @keyup.enter="installFromGitHub"
+            />
+          </div>
+
+          <p class="install-hint">
+            <strong>Example:</strong><br>
+            <code>https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot</code>
+          </p>
+          <p class="install-hint install-note">
+            Only plugins from the <code>main</code> branch are supported for security reasons.
+          </p>
+        </div>
+
+        <!-- ZIP File Upload -->
+        <div v-else class="install-method-content">
+          <div class="file-input-wrapper">
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".zip"
+              @change="handleFileSelect"
+              class="file-input"
+            />
+            <button class="btn btn-secondary" @click="triggerFileSelect">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
+              </svg>
+              Choose File
+            </button>
+            <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
+          </div>
+
+          <p class="install-hint">
+            Plugin must be a ZIP archive containing manifest.json and plugin code.
+          </p>
         </div>
 
         <div class="install-actions">
           <button class="btn btn-secondary" @click="closeInstallDialog">Cancel</button>
           <button
+            v-if="installMethod === 'github'"
+            class="btn btn-primary"
+            @click="installFromGitHub"
+            :disabled="!githubUrl || installing"
+          >
+            Install from GitHub
+          </button>
+          <button
+            v-else
             class="btn btn-primary"
             @click="uploadPlugin"
             :disabled="!selectedFile || installing"
           >
-            Install
+            Install from File
           </button>
         </div>
-
-        <p class="install-hint">
-          Plugin must be a ZIP archive containing manifest.json and plugin code.
-        </p>
       </div>
     </div>
   </Dialog>
@@ -276,6 +333,8 @@ const showConfigPanel = ref(false);
 const selectedPluginForConfig = ref<PluginListItem | null>(null);
 const configUIContent = ref('');
 const configIframe = ref<HTMLIFrameElement | null>(null);
+const installMethod = ref<'file' | 'github'>('github');
+const githubUrl = ref<string>('');
 let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
@@ -525,10 +584,43 @@ const uploadPlugin = async () => {
   }
 };
 
+const installFromGitHub = async () => {
+  if (!githubUrl.value) return;
+
+  installing.value = true;
+  installError.value = null;
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-github`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url: githubUrl.value }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to install plugin from GitHub');
+    }
+
+    installSuccess.value = true;
+    await loadPlugins();
+  } catch (error: any) {
+    installError.value = error.message || 'Failed to install plugin from GitHub';
+    console.error('Error installing plugin from GitHub:', error);
+  } finally {
+    installing.value = false;
+  }
+};
+
 const closeInstallDialog = () => {
   showInstallDialog.value = false;
   selectedFile.value = null;
   selectedFileName.value = '';
+  githubUrl.value = '';
+  installMethod.value = 'file';
   installing.value = false;
   installSuccess.value = false;
   installError.value = null;
@@ -842,15 +934,117 @@ onBeforeUnmount(() => {
   margin-bottom: var(--gap-md);
 }
 
+.install-hint code {
+  word-break: break-all;
+  white-space: normal;
+  display: inline-block;
+}
+
 .install-dialog .btn {
-  margin-top: var(--gap-md);
+
+}
+
+.install-tabs {
+  display: flex;
+  gap: var(--gap-sm);
+  margin-bottom: var(--gap-lg);
+  border-bottom: 2px solid var(--color-border);
+}
+
+.tab-button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--gap-sm) var(--gap-md);
+  margin-bottom: -2px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-muted);
+}
+
+.tab-button.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.tab-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.install-method-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+.install-method-content p {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.url-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+.url-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Courier New', monospace;
+  transition: border-color 0.2s ease;
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.url-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.install-note {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-small);
+  padding: var(--gap-sm) var(--gap-md);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.install-note code {
+  background: rgba(59, 130, 246, 0.15);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.install-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #3b82f6;
 }
 
 .file-input-wrapper {
   display: flex;
   align-items: center;
-  gap: var(--gap-sm);
-  margin: var(--gap-md) 0;
+  gap: var(--gap-md);
 }
 
 .file-input {
@@ -870,7 +1064,6 @@ onBeforeUnmount(() => {
 .file-name {
   color: var(--color-text-secondary);
   font-size: 0.9rem;
-  flex: 1;
 }
 
 .install-actions {

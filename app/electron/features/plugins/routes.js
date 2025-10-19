@@ -333,5 +333,116 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
+  // Install plugin from GitHub URL
+  router.post('/install-from-github', asyncHandler(async (req, res) => {
+    const { url } = req.body;
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'GitHub URL is required' });
+    }
+
+    // Parse GitHub URL
+    // Expected format: https://github.com/owner/repo/tree/branch/path/to/plugin
+    const githubRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/;
+    const match = url.match(githubRegex);
+
+    if (!match) {
+      return res.status(400).json({
+        error: 'Invalid GitHub URL format. Expected: https://github.com/owner/repo/tree/branch/path/to/plugin'
+      });
+    }
+
+    const [, owner, repo, branch, pluginPath] = match;
+
+    // Only allow main branch for security
+    if (branch !== 'main') {
+      return res.status(400).json({
+        error: 'Only plugins from the main branch are allowed for security reasons'
+      });
+    }
+
+    log(`Installing plugin from GitHub: ${owner}/${repo}/${pluginPath} (branch: ${branch})`);
+
+    try {
+      const extractDir = `/tmp/ncsender-plugin-extract/${Date.now()}`;
+      await fs.mkdir(extractDir, { recursive: true });
+
+      // Download archive from GitHub
+      const archiveUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`;
+      log(`Downloading: ${archiveUrl}`);
+
+      const downloadPath = path.join(extractDir, 'repo.zip');
+
+      // Download using curl (cross-platform)
+      try {
+        await exec(`curl -L -o "${downloadPath}" "${archiveUrl}"`);
+      } catch (error) {
+        throw new Error('Failed to download repository from GitHub');
+      }
+
+      // Extract ZIP
+      const repoExtractDir = path.join(extractDir, 'repo');
+      await fs.mkdir(repoExtractDir, { recursive: true });
+
+      try {
+        await exec(`unzip -q "${downloadPath}" -d "${repoExtractDir}"`);
+      } catch (error) {
+        throw new Error('Failed to extract repository archive');
+      }
+
+      // Find the plugin directory
+      // After extraction, directory structure is: repo-branch/path/to/plugin
+      const extractedDirs = await fs.readdir(repoExtractDir);
+      if (extractedDirs.length === 0) {
+        throw new Error('Repository archive is empty');
+      }
+
+      const repoRootDir = path.join(repoExtractDir, extractedDirs[0]);
+      const pluginSourceDir = path.join(repoRootDir, pluginPath);
+
+      // Check if plugin directory exists
+      try {
+        await fs.access(pluginSourceDir);
+      } catch (error) {
+        throw new Error(`Plugin path not found in repository: ${pluginPath}`);
+      }
+
+      // Validate manifest
+      const manifestPath = path.join(pluginSourceDir, 'manifest.json');
+      const manifest = await readAndValidateManifest(manifestPath);
+
+      // Copy plugin to plugins directory
+      const pluginDir = path.join(pluginsDir, manifest.id);
+      await fs.rm(pluginDir, { recursive: true, force: true });
+      await fs.cp(pluginSourceDir, pluginDir, { recursive: true });
+
+      // Install and enable plugin
+      await pluginManager.installPlugin(manifest.id, manifest);
+      await pluginManager.enablePlugin(manifest.id);
+
+      // Broadcast to all clients
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId: manifest.id, action: 'installed' });
+      }
+
+      // Cleanup
+      await fs.rm(extractDir, { recursive: true, force: true });
+
+      res.json({
+        success: true,
+        message: `Plugin "${manifest.name}" installed successfully from GitHub`,
+        plugin: {
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          source: 'github'
+        }
+      });
+    } catch (error) {
+      log('Error installing plugin from GitHub:', error);
+      res.status(500).json({ error: error.message || 'Failed to install plugin from GitHub' });
+    }
+  }));
+
   return router;
 }
