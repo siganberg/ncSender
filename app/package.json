@@ -27,6 +27,7 @@
     "install:all": "npm install && cd client && npm install"
   },
   "dependencies": {
+    "adm-zip": "^0.5.12",
     "@serialport/parser-readline": "^12.0.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",

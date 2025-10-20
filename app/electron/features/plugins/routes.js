@@ -2,17 +2,21 @@ import { Router } from 'express';
 import { pluginManager } from '../../core/plugin-manager.js';
 import multer from 'multer';
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs/promises';
-import { promisify } from 'node:util';
-import { exec as execCallback } from 'node:child_process';
-
-const exec = promisify(execCallback);
+import fsSync from 'node:fs';
+import AdmZip from 'adm-zip';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN ROUTES]`, ...args);
 };
 
-const upload = multer({ dest: '/tmp/ncsender-plugins' });
+const uploadTempDir = path.join(os.tmpdir(), 'ncsender-plugins');
+if (!fsSync.existsSync(uploadTempDir)) {
+  fsSync.mkdirSync(uploadTempDir, { recursive: true });
+}
+
+const upload = multer({ dest: uploadTempDir });
 
 async function readAndValidateManifest(manifestPath) {
   const manifestContent = await fs.readFile(manifestPath, 'utf8');
@@ -285,11 +289,12 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       const tempFile = req.file.path;
-      await fs.mkdir('/tmp/ncsender-plugin-extract', { recursive: true });
-      const extractDir = `/tmp/ncsender-plugin-extract/${Date.now()}`;
+      const extractDir = path.join(os.tmpdir(), 'ncsender-plugin-extract', Date.now().toString());
+      await fs.mkdir(extractDir, { recursive: true });
 
       try {
-        await exec(`unzip -q "${tempFile}" -d "${extractDir}"`);
+        const zip = new AdmZip(tempFile);
+        zip.extractAllTo(extractDir, true);
       } catch (error) {
         await fs.unlink(tempFile);
         throw new Error('Invalid plugin file: must be a valid ZIP archive');
@@ -364,19 +369,28 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     log(`Installing plugin from GitHub: ${owner}/${repo}/${pluginPath} (branch: ${branch})`);
 
     try {
-      const extractDir = `/tmp/ncsender-plugin-extract/${Date.now()}`;
+      const extractDir = path.join(os.tmpdir(), 'ncsender-plugin-extract', Date.now().toString());
       await fs.mkdir(extractDir, { recursive: true });
 
       // Download archive from GitHub
       const archiveUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`;
       log(`Downloading: ${archiveUrl}`);
 
-      const downloadPath = path.join(extractDir, 'repo.zip');
-
-      // Download using curl (cross-platform)
+      // Download using fetch (follows redirects)
+      let zipBuffer;
       try {
-        await exec(`curl -L -o "${downloadPath}" "${archiveUrl}"`);
+        const fetchFn = globalThis.fetch;
+        if (typeof fetchFn !== 'function') {
+          throw new Error('Global fetch API is not available');
+        }
+        const response = await fetchFn(archiveUrl, { redirect: 'follow' });
+        if (!response.ok) {
+          throw new Error(`Unexpected response status: ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        zipBuffer = Buffer.from(arrayBuffer);
       } catch (error) {
+        log('Error downloading GitHub archive:', error);
         throw new Error('Failed to download repository from GitHub');
       }
 
@@ -385,8 +399,10 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       await fs.mkdir(repoExtractDir, { recursive: true });
 
       try {
-        await exec(`unzip -q "${downloadPath}" -d "${repoExtractDir}"`);
+        const zip = new AdmZip(zipBuffer);
+        zip.extractAllTo(repoExtractDir, true);
       } catch (error) {
+        log('Error extracting GitHub archive:', error);
         throw new Error('Failed to extract repository archive');
       }
 
