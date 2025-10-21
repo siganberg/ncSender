@@ -151,7 +151,7 @@ export const generateCuttingPointer = () => {
                     obj.traverse((child) => {
                         if (child.isMesh) {
                             meshes.push(child);
-                            
+
                         }
                     });
 
@@ -599,5 +599,118 @@ export const createDynamicAxisLabels = (bounds) => {
     }
 
     group.name = 'axis-labels';
+    return group;
+};
+
+let cachedHomeIconTexture = null;
+
+const getHomeIconTexture = () => {
+    const fillColor = '#3f7cac';
+    if (cachedHomeIconTexture) {
+        return cachedHomeIconTexture;
+    }
+
+    const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460.298 460.297">
+      <path fill="${fillColor}" d="M230.149,120.939L65.986,256.274c0,0.191-0.048,0.472-0.144,0.855c-0.094,0.38-0.144,0.656-0.144,0.852v137.041c0,4.948,1.809,9.236,5.426,12.847c3.616,3.613,7.898,5.431,12.847,5.431h109.63V303.664h73.097v109.64h109.629c4.948,0,9.236-1.814,12.847-5.435c3.617-3.607,5.432-7.898,5.432-12.847V257.981c0-0.76-0.104-1.334-0.288-1.707L230.149,120.939z"/>
+      <path fill="${fillColor}" d="M457.122,225.438L394.6,173.476V56.989c0-2.663-0.856-4.853-2.574-6.567c-1.704-1.712-3.894-2.568-6.563-2.568h-54.816c-2.666,0-4.855,0.856-6.57,2.568c-1.711,1.714-2.566,3.905-2.566,6.567v55.673l-69.662-58.245c-6.084-4.949-13.318-7.423-21.694-7.423c-8.375,0-15.608,2.474-21.698,7.423L3.172,225.438c-1.903,1.52-2.946,3.566-3.14,6.136c-0.193,2.568,0.472,4.811,1.997,6.713l17.701,21.128c1.525,1.712,3.521,2.759,5.996,3.142c2.285,0.192,4.57-0.476,6.855-1.998L230.149,95.817l197.57,164.741c1.526,1.328,3.521,1.991,5.996,1.991h0.858c2.471-0.376,4.463-1.43,5.996-3.138l17.703-21.125c1.522-1.906,2.189-4.145,1.991-6.716C460.068,229.007,459.021,226.961,457.122,225.438z"/>
+    </svg>`;
+
+    const encoded = encodeURIComponent(svgMarkup)
+        .replace(/'/g, '%27')
+        .replace(/"/g, '%22')
+        .replace(/\n/g, '');
+
+    const dataUrl = `data:image/svg+xml;utf8,${encoded}`;
+    const texture = new THREE.TextureLoader().load(dataUrl);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+
+    cachedHomeIconTexture = texture;
+    return texture;
+};
+
+export const createHomeIndicator = () => {
+    const group = new THREE.Group();
+    group.name = 'home-indicator';
+
+    const accentBase = new THREE.Color('#3f7cac');
+    const accentBright = accentBase.clone().lerp(new THREE.Color('#f3f4f6'), 0.4);
+    const accentDim = accentBase.clone().lerp(new THREE.Color('#1f2933'), 0.6);
+
+    // Soft base disc
+    const baseGeometry = new THREE.CircleGeometry(12, 72);
+    const baseMaterial = new THREE.MeshBasicMaterial({
+        color: accentDim,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+        depthTest: false
+    });
+    const base = new THREE.Mesh(baseGeometry, baseMaterial);
+    base.position.set(0, 0, 0.08);
+    base.renderOrder = 1200;
+    group.add(base);
+
+    // Accent ring
+    const ringGeometry = new THREE.RingGeometry(12.5, 14, 72);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+        color: accentBright,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        depthTest: false
+    });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.position.set(0, 0, 0.1);
+    ring.renderOrder = 1201;
+    group.add(ring);
+
+    // Vertical marker pole (aligned to Z)
+    const poleGeometry = new THREE.CylinderGeometry(0.6, 0.6, 40, 32);
+    const poleMaterial = new THREE.MeshBasicMaterial({
+        color: accentBright,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        depthTest: false
+    });
+    const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+    pole.rotation.x = Math.PI / 2;
+    pole.position.set(0, 0, 20);
+    pole.renderOrder = 1202;
+    group.add(pole);
+
+    // Marker cap
+    const capGeometry = new THREE.SphereGeometry(1.1, 32, 32);
+    const capMaterial = new THREE.MeshBasicMaterial({
+        color: accentBright,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        depthTest: false
+    });
+    const cap = new THREE.Mesh(capGeometry, capMaterial);
+    cap.position.set(0, 0, 40);
+    cap.renderOrder = 1203;
+    group.add(cap);
+
+    const spriteMaterial = new THREE.SpriteMaterial({
+        map: getHomeIconTexture(),
+    transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false
+    });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(36, 36, 1);
+    sprite.position.set(0, 0, 40);
+    sprite.renderOrder = 1204;
+    group.add(sprite);
+
     return group;
 };

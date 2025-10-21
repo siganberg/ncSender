@@ -195,7 +195,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getSettings, updateSettings } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
@@ -379,6 +379,7 @@ let resizeObserver: ResizeObserver;
 let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
 let axesGroup: THREE.Group;
+let homeIndicatorGroup: THREE.Group | null = null;
 
 const defaultOrientation: MachineOrientation = {
   xHome: 'min',
@@ -468,6 +469,7 @@ const rebuildGrid = (workOffset = props.workOffset) => {
 
   const bounds = computeGridBoundsFrom(workOffset);
   applyBoundsAndWarnings(bounds);
+  refreshHomeIndicator();
 
   if (!autoFitMode.value) {
     fitCameraToBounds(getGridBounds());
@@ -488,6 +490,64 @@ let pendingResizeFrame: number | null = null;
 let targetSpindlePosition = { x: 0, y: 0, z: 0 };
 let currentSpindlePosition = { x: 0, y: 0, z: 0 };
 const spindleSmoothFactor = 0.2; // Lower = smoother but slower (0.05-0.2 recommended)
+const machineOriginPosition = new THREE.Vector3();
+
+const disposeHomeIndicator = () => {
+  if (!homeIndicatorGroup) return;
+  homeIndicatorGroup.traverse((child: any) => {
+    if (child.material) {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((mat) => {
+        if (mat?.map && typeof mat.map.dispose === 'function') {
+          mat.map.dispose();
+        }
+        if (typeof mat?.dispose === 'function') {
+          mat.dispose();
+        }
+      });
+    }
+    if (child.geometry && typeof child.geometry.dispose === 'function') {
+      child.geometry.dispose();
+    }
+  });
+  homeIndicatorGroup = null;
+};
+
+const computeMachineOriginPosition = () => {
+  const workOffset = props.workOffset || { x: 0, y: 0, z: 0 };
+  const xOffset = typeof workOffset.x === 'number' ? workOffset.x : 0;
+  const yOffset = typeof workOffset.y === 'number' ? workOffset.y : 0;
+  machineOriginPosition.set(-xOffset, -yOffset, 0);
+  return machineOriginPosition;
+};
+
+const refreshHomeIndicator = () => {
+  if (!scene) return;
+
+  if (homeIndicatorGroup) {
+    scene.remove(homeIndicatorGroup);
+    disposeHomeIndicator();
+  }
+
+  homeIndicatorGroup = createHomeIndicator();
+  scene.add(homeIndicatorGroup);
+
+  const basePosition = computeMachineOriginPosition();
+  if (spindleViewMode.value) {
+    const offset = {
+      x: -currentSpindlePosition.x,
+      y: -currentSpindlePosition.y,
+      z: -currentSpindlePosition.z
+    };
+    homeIndicatorGroup.position.set(
+      basePosition.x + offset.x,
+      basePosition.y + offset.y,
+      basePosition.z + offset.z
+    );
+  } else {
+    homeIndicatorGroup.position.copy(basePosition);
+  }
+};
 
 const initThreeJS = () => {
   if (!canvas.value) return;
@@ -568,6 +628,8 @@ const initThreeJS = () => {
   cuttingPointer = generateCuttingPointer();
   cuttingPointer.position.set(0, 0, 0); // Start at origin
   scene.add(cuttingPointer);
+
+  refreshHomeIndicator();
 
   // Set initial pointer scale
   updatePointerScale();
@@ -842,6 +904,14 @@ const animate = () => {
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+      if (homeIndicatorGroup) {
+        const basePosition = computeMachineOriginPosition();
+        homeIndicatorGroup.position.set(
+          basePosition.x + offset.x,
+          basePosition.y + offset.y,
+          basePosition.z + offset.z
+        );
+      }
 
       // Update camera target to origin but maintain camera position relative to it
       if (camera && cameraTarget.x !== 0 || cameraTarget.y !== 0 || cameraTarget.z !== 0) {
@@ -853,6 +923,10 @@ const animate = () => {
     } else {
       // Normal mode: spindle follows position
       cuttingPointer.position.set(currentSpindlePosition.x, currentSpindlePosition.y, currentSpindlePosition.z);
+      if (homeIndicatorGroup) {
+        const basePosition = computeMachineOriginPosition();
+        homeIndicatorGroup.position.copy(basePosition);
+      }
     }
 
     // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
@@ -1335,6 +1409,8 @@ watch(() => props.theme, (newTheme) => {
       gcodeVisualizer.setRapidColor(0x00FF66);
     }
   }
+
+  refreshHomeIndicator();
 });
 
 // Watch for work coordinate changes to update cutting pointer target position
@@ -1438,6 +1514,14 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+      if (homeIndicatorGroup) {
+        const basePosition = computeMachineOriginPosition();
+        homeIndicatorGroup.position.set(
+          basePosition.x + offset.x,
+          basePosition.y + offset.y,
+          basePosition.z + offset.z
+        );
+      }
     }
 
     // Center camera on spindle (0,0,0) while maintaining current zoom level and angle
@@ -1460,6 +1544,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (axesGroup) axesGroup.position.set(0, 0, 0);
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
+    if (homeIndicatorGroup) {
+      const basePosition = computeMachineOriginPosition();
+      homeIndicatorGroup.position.copy(basePosition);
+    }
 
     // Respect Auto-Fit setting when exiting spindle view mode
     // Important: recompute bounds after resetting transforms so we don't use
@@ -1788,6 +1876,11 @@ onUnmounted(() => {
   }
 
   window.removeEventListener('resize', handleResize);
+
+  if (scene && homeIndicatorGroup) {
+    scene.remove(homeIndicatorGroup);
+    disposeHomeIndicator();
+  }
 });
 
 // Track which line numbers have been marked as completed
