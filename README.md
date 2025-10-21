@@ -1,5 +1,4 @@
-> **IMPORTANT DISCLAIMER:** This is my personal project and has only been tested by me on my AltMill CNC. If you choose to run it, you do so entirely at your own risk.
-
+> **IMPORTANT DISCLAIMER:** This is my personal project and has only been tested by me on my AltMill CNC. If you choose to run it, you do so entirely at your own risk. I am not responsible for any damage, malfunction, or personal injury that may result from the use or misuse of ncSender. Use it with caution and at your own discretion.
 
 ## 💖 Support My Work
 
