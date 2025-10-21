@@ -658,7 +658,7 @@ watch(activeTab, (newTab) => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
-  min-height: 300px !important;
+  min-height: 150px !important;
   height: 100%;
 }
 
@@ -780,7 +780,7 @@ h2 {
   flex-direction: column;
   gap: var(--gap-xs);
   flex: 1;
-  min-height: 160px;
+  min-height: 0px;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
