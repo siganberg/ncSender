@@ -31,6 +31,20 @@
               <span>Auto-Fit</span>
             </div>
           </div>
+          <div class="legend-group" role="group" aria-label="Current segment legend">
+            <div class="legend-item" :class="{ 'legend-item--disabled': !showRapids }" @click="toggleRapids">
+              <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
+              <span class="legend-label">Rapid (G0)</span>
+            </div>
+            <div class="legend-item" :class="{ 'legend-item--disabled': !showCutting }" @click="toggleCutting">
+              <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
+              <span class="legend-label">Cutting (G1/G2/G3)</span>
+            </div>
+            <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
+              <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
+              <span class="legend-label">Spindle</span>
+            </div>
+          </div>
         </div>
         <div class="file-controls">
           <input
@@ -49,22 +63,6 @@
           <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
             <svg width="24" height="24"><use href="#emoji-folder"></use></svg>
           </button>
-        </div>
-      </div>
-
-      <!-- Legend - upper right -->
-      <div class="floating-toolbar floating-toolbar--legend">
-        <div class="legend-item" :class="{ 'legend-item--disabled': !showRapids }" @click="toggleRapids">
-          <span>Rapid (G0)</span>
-          <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
-        </div>
-        <div class="legend-item" :class="{ 'legend-item--disabled': !showCutting }" @click="toggleCutting">
-          <span>Cutting (G1/G2/G3)</span>
-          <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
-        </div>
-        <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
-          <span>Spindle</span>
-          <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
         </div>
       </div>
 
@@ -1900,14 +1898,6 @@ watch(() => store.status.mistCoolant, (newValue) => {
   right: 16px;
 }
 
-.floating-toolbar--legend {
-  top: 76px;
-  right: 16px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-}
-
 .tools-legend {
   margin-top: 6px;
   display: flex;
@@ -2103,6 +2093,15 @@ h2 {
   gap: 4px;
 }
 
+.legend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 220px;
+  margin-top: -8px;
+}
+
 .view-button {
   border: none;
   border-radius: var(--radius-small);
@@ -2218,7 +2217,7 @@ input:checked + .slider:before {
 .legend-item {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   background: transparent;
   padding: 6px 10px;
@@ -2228,12 +2227,12 @@ input:checked + .slider:before {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
-  min-width: 180px;
+  width: 100%;
 }
 
-.legend-item span:first-child {
-  flex: 0 1 auto;
-  text-align: right;
+.legend-label {
+  flex: 1 1 auto;
+  text-align: left;
 }
 
 .legend-item .dot {
@@ -2319,7 +2318,7 @@ input:checked + .slider:before {
 }
 
 .dot--spindle {
-  background: #ffffff;
+  background: #9ea3aa;
 }
 
 /* Light theme: use high-contrast rapid color */
