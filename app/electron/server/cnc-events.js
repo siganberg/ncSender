@@ -31,6 +31,16 @@ export function registerCncEventHandlers({
         serverState.greetingMessage = greetingMessage;
         log('Stored GRBL greeting:', greetingMessage);
       }
+
+      (async () => {
+        try {
+          log('Initializing firmware after controller connection...');
+          await initializeFirmwareOnConnection(cncController);
+          log('Firmware initialization complete');
+        } catch (error) {
+          log('Failed to initialize firmware on connection:', error?.message || error);
+        }
+      })();
     }
 
     if (data.status === 'disconnected' || data.status === 'cancelled') {
