@@ -39,7 +39,7 @@
           @touchstart="handleJogStart('X', -1, $event)"
           @touchend="handleJogEnd('X', -1, $event)"
         >X-</button>
-        <button class="jog-center" @click="$emit('center-click')" aria-label="Stop/Cancel"></button>
+        <button class="jog-center" @click="handleCenterClick" aria-label="Soft Reset"></button>
         <button
           :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X-1') }]"
           aria-label="Jog X positive"
@@ -117,12 +117,26 @@ const props = withDefaults(defineProps<{
   disabled: false
 });
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'center-click'): void;
 }>();
 
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;
+
+// Handle center button click - send soft reset
+const handleCenterClick = async () => {
+  try {
+    await api.sendCommandViaWebSocket({
+      command: String.fromCharCode(0x18),
+      displayCommand: '\\x18 (Soft Reset)'
+    });
+    // Also emit event for backwards compatibility
+    emit('center-click');
+  } catch (error) {
+    console.error('Failed to send soft reset:', error);
+  }
+};
 let isLongPress = false;
 let activeJogId: string | null = null;
 
