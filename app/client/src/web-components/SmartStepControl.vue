@@ -49,10 +49,3 @@ onMounted(() => {
   }) as EventListener);
 });
 </script>
-
-<style>
-/* Unscoped styles for nc-step-control custom element */
-nc-step-control .nc-step-control-wrapper {
-  width: 100%;
-}
-</style>

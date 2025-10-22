@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
+import '@/web-components/styles.css';
 import { loadSettings } from './lib/settings-store.js';
 import { initializeKeyboardShortcuts } from './features/keyboard';
 import { initializeStore, seedInitialState } from './composables/use-app-store';

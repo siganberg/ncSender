@@ -446,6 +446,10 @@ onBeforeUnmount(() => {
   width: 90px !important;
 }
 
+.plugin-dialog .jog-xy{
+   width: 180px !important;
+}
+
 
 
 .jog-z {
@@ -456,17 +460,19 @@ onBeforeUnmount(() => {
 }
 
 .jog-btn {
-  border-radius: var(--radius-small);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
+  border-radius: var(--radius-small) !important;
+  border: 1px solid var(--color-border) !important;
+  background: var(--color-surface-muted) !important;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
-  color: var(--color-text-primary);
+  color: var(--color-text-primary) !important;
   -webkit-touch-callout: default;
   touch-action: manipulation;
+  padding: unset !important;
+
 }
 
 .jog-btn:hover {

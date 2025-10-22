@@ -121,13 +121,13 @@ const handleFeedRateChange = (event: Event) => {
 
 .chip {
   border: none;
-  border-radius: 999px;
-  padding: 6px 12px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
+  border-radius: 999px !important;
+  padding: 6px 12px !important;
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-secondary) !important;
   cursor: pointer;
-  min-width: 50px;
-  width: 60px;
+  min-width: 50px !important;
+  width: 60px !important;
   transition: all 0.2s ease;
   text-align: center;
   display: inline-flex;
@@ -136,8 +136,8 @@ const handleFeedRateChange = (event: Event) => {
 }
 
 .chip.active {
-  background: var(--gradient-accent);
-  color: #fff;
+  background: var(--gradient-accent) !important;
+  color: #fff !important;
 }
 
 .step-label,

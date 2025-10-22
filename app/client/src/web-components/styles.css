@@ -1,0 +1,159 @@
+/* Global styles for nc-step-control and nc-jog-control web components */
+
+/* Step Control */
+nc-step-control {
+  display: block;
+  width: 100%;
+}
+
+nc-step-control .step-control {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs, 8px);
+}
+
+nc-step-control .chip {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  min-width: 50px;
+  width: 60px;
+  transition: all 0.2s ease;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+}
+
+nc-step-control .chip.active {
+  background: var(--gradient-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+nc-step-control .chip:hover:not(.active) {
+  background: var(--color-surface);
+}
+
+nc-step-control .step-label,
+nc-step-control .feed-rate-label {
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+nc-step-control .feed-rate-select {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+nc-step-control .feed-rate-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+nc-step-control .feed-rate-select:hover {
+  border-color: var(--color-accent);
+}
+
+/* Jog Control */
+nc-jog-control {
+  display: block;
+  width: 100%;
+  height: 180px;
+}
+
+/* Button styling */
+nc-jog-control button,
+nc-jog-control .jog-btn {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+nc-jog-control button:hover,
+nc-jog-control .jog-btn:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-muted);
+}
+
+nc-jog-control button:active,
+nc-jog-control .jog-btn:active,
+nc-jog-control .jog-btn.pressed {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Center button - transparent with red circle */
+nc-jog-control .jog-center {
+  border: 2px solid #ff6b6b !important;
+  background: var(--color-surface) !important;
+  border-radius: 50% !important;
+}
+
+nc-jog-control .jog-center:hover {
+  background: rgba(255, 107, 107, 0.1) !important;
+  border-color: #ff4444 !important;
+}
+
+nc-jog-control .jog-center:active {
+  background: rgba(255, 107, 107, 0.2) !important;
+}
+
+nc-jog-control .jog-center::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  background: #ff6b6b !important;
+  border-radius: 50%;
+}
+
+/* Z button layout - force vertical */
+nc-jog-control .jog-z {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  width: 60px !important;
+  height: 100% !important;
+}
+
+nc-jog-control .jog-z-btn,
+nc-jog-control .jog-z button {
+  flex: 1 !important;
+  font-weight: bold !important;
+  min-height: 0 !important;
+}
+
+/* Grid layout */
+nc-jog-control .jog-grid {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  height: 180px !important;
+}
+
+nc-jog-control .jog-xy {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  grid-template-rows: repeat(3, 1fr) !important;
+  gap: 4px !important;
+  width: 180px !important;
+  height: 180px !important;
+}
