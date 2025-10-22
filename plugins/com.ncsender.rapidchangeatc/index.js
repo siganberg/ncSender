@@ -13,17 +13,174 @@ export function onLoad(ctx) {
       'Rapid Change ATC',
       `
       <style>
-        .rc-controls {
+        .rc-container {
+          display: grid;
+          grid-template-columns: 240px 1fr;
+          gap: 24px;
+          padding: 16px;
+        }
+
+        .rc-left-panel {
           display: flex;
           flex-direction: column;
           gap: 16px;
-          padding: 16px;
+        }
+
+        .rc-right-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .rc-form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .rc-form-label {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: var(--color-text-primary);
+        }
+
+        .rc-select,
+        .rc-input {
+          padding: 8px 12px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-small);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: 0.9rem;
+        }
+
+        .rc-select:focus,
+        .rc-input:focus {
+          outline: none;
+          border-color: var(--color-accent);
+        }
+
+        .rc-radio-group {
+          display: flex;
+          gap: 16px;
+        }
+
+        .rc-radio-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          font-size: 0.9rem;
+          color: var(--color-text-primary);
+        }
+
+        .rc-coordinate-group {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+
+        .rc-coord-input {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .rc-coord-label {
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: var(--color-text-secondary);
         }
       </style>
 
-      <div class="rc-controls">
-        <nc-step-control></nc-step-control>
-        <nc-jog-control></nc-jog-control>
+      <div class="rc-container">
+        <!-- Left Panel: Form Controls -->
+        <div class="rc-left-panel">
+          <div class="rc-form-group">
+            <label class="rc-form-label">Model</label>
+            <select class="rc-select" id="rc-model">
+              <option value="ER11">ER11</option>
+              <option value="ER16">ER16</option>
+              <option value="ER20" selected>ER20</option>
+              <option value="ER25">ER25</option>
+              <option value="ER32">ER32</option>
+            </select>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Number of Pockets</label>
+            <select class="rc-select" id="rc-pockets">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6" selected>6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Trip</label>
+            <select class="rc-select" id="rc-trip">
+              <option value="Basic">Basic</option>
+              <option value="Pro" selected>Pro</option>
+              <option value="Premium">Premium</option>
+            </select>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Mounting Orientation</label>
+            <div class="rc-radio-group">
+              <label class="rc-radio-label">
+                <input type="radio" name="orientation" value="Y" checked>
+                Y
+              </label>
+              <label class="rc-radio-label">
+                <input type="radio" name="orientation" value="X">
+                X
+              </label>
+            </div>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Direction (Pocket 1 → 2)</label>
+            <div class="rc-radio-group">
+              <label class="rc-radio-label">
+                <input type="radio" name="direction" value="Negative" checked>
+                Negative
+              </label>
+              <label class="rc-radio-label">
+                <input type="radio" name="direction" value="Positive">
+                Positive
+              </label>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Panel: Jog Controls -->
+        <div class="rc-right-panel">
+          <nc-step-control></nc-step-control>
+          <nc-jog-control></nc-jog-control>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Pocket 1 Machine Coordinates</label>
+            <div class="rc-coordinate-group">
+              <div class="rc-coord-input">
+                <label class="rc-coord-label">X</label>
+                <input type="number" class="rc-input" id="rc-pocket1-x" value="0" step="0.001">
+              </div>
+              <div class="rc-coord-input">
+                <label class="rc-coord-label">Y</label>
+                <input type="number" class="rc-input" id="rc-pocket1-y" value="0" step="0.001">
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     `,
       { size: 'large' }
