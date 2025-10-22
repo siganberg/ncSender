@@ -504,9 +504,9 @@ onBeforeUnmount(() => {
 .jog-center {
   width: 100%;
   height: 100%;
-  border: 2px solid #ff6b6b;
-  border-radius: 50%;
-  background: var(--color-surface);
+  border: 2px solid #ff6b6b !important;
+  border-radius: 50% !important;
+  background: var(--color-surface) !important;
   position: relative;
   cursor: pointer;
   transition: all 0.2s ease;
