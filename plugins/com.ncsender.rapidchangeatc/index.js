@@ -17,7 +17,7 @@ export function onLoad(ctx) {
           display: grid;
           grid-template-columns: 240px 1fr;
           gap: 24px;
-          padding: 16px;
+          padding: 30px;
         }
 
         .rc-left-panel {
@@ -76,22 +76,50 @@ export function onLoad(ctx) {
 
         .rc-coordinate-group {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
           gap: 12px;
+          align-items: center;
         }
 
-        .rc-coord-input {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .rc-coord-label {
+        .rc-coord-label-inline {
           font-size: 0.85rem;
           font-weight: 600;
           color: var(--color-text-secondary);
         }
+
+        .rc-button {
+          padding: 6px 16px !important;
+          border-radius: var(--radius-small);
+          border: 1px solid var(--color-accent);
+          background: var(--color-accent);
+          color: var(--color-surface);
+          font-size: 0.9rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: filter 0.15s ease;
+        }
+
+        .rc-button:hover {
+          filter: brightness(0.95);
+        }
+
+        .rc-button:focus-visible {
+          outline: 2px solid var(--color-accent);
+          outline-offset: 2px;
+        }
+
+        .rc-instructions {
+          margin: 0 0 16px;
+          color: var(--color-text-secondary);
+          font-size: 0.9rem;
+          line-height: 1.4;
+          max-width: 900px;
+        }
       </style>
+
+      <p class="rc-instructions">
+        With the collet, nut, and bit installed on the spindle, position the spindle over Pocket 1 of the magazine. Use the Jog controls to lower it and fine-tune the position until the nut is just inside Pocket 1. Manually rotate the spindle to ensure nothing is rubbing. Once everything is centered, click Start Calibration.
+      </p>
 
       <div class="rc-container">
         <!-- Left Panel: Form Controls -->
@@ -170,14 +198,11 @@ export function onLoad(ctx) {
           <div class="rc-form-group">
             <label class="rc-form-label">Pocket 1 Machine Coordinates</label>
             <div class="rc-coordinate-group">
-              <div class="rc-coord-input">
-                <label class="rc-coord-label">X</label>
-                <input type="number" class="rc-input" id="rc-pocket1-x" value="0" step="0.001">
-              </div>
-              <div class="rc-coord-input">
-                <label class="rc-coord-label">Y</label>
-                <input type="number" class="rc-input" id="rc-pocket1-y" value="0" step="0.001">
-              </div>
+              <label class="rc-coord-label-inline" for="rc-pocket1-x">X</label>
+              <input type="number" class="rc-input" id="rc-pocket1-x" value="0" step="0.001">
+              <label class="rc-coord-label-inline" for="rc-pocket1-y">Y</label>
+              <input type="number" class="rc-input" id="rc-pocket1-y" value="0" step="0.001">
+              <button type="button" class="rc-button" id="rc-pocket1-grab">Grab</button>
             </div>
           </div>
         </div>

@@ -24,7 +24,9 @@
     "start:headless": "npm run build && electron . --server-only",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "install:all": "npm install && cd client && npm install"
+    "install:all": "npm install && cd client && npm install",
+    "plugins:watch": "node ../.scripts/watch-plugins.mjs",
+    "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:watch\""
   },
   "dependencies": {
     "adm-zip": "^0.5.12",
