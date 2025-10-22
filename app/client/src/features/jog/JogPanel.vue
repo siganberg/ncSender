@@ -18,6 +18,9 @@
         :current-step="props.jogConfig.stepSize"
         :feed-rate="feedRate"
         :disabled="motionControlsDisabled"
+        :x-travel="xTravelDistance"
+        :y-travel="yTravelDistance"
+        :z-travel="zTravelDistance"
         @center-click="sendSoftReset"
       />
 
@@ -331,6 +334,32 @@ const defaultOrientation: MachineOrientation = {
 };
 
 const orientation = computed(() => props.machineOrientation ?? defaultOrientation);
+
+const DEFAULT_CONTINUOUS_DISTANCE = 400;
+
+const xTravelDistance = computed(() => {
+  const value = Number(props.gridSizeX);
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_CONTINUOUS_DISTANCE;
+});
+
+const yTravelDistance = computed(() => {
+  const value = Number(props.gridSizeY);
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_CONTINUOUS_DISTANCE;
+});
+
+const zTravelDistance = computed(() => {
+  const value = Number(props.zMaxTravel);
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_CONTINUOUS_DISTANCE;
+});
 
 const computeAxisBounds = (size: number | undefined, home: AxisHome) => {
   const travel = typeof size === 'number' && size > 0 ? size : 0;

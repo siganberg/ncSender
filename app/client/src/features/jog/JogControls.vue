@@ -108,6 +108,9 @@ const props = defineProps<{
   disabled?: boolean;
   feedRate: number;
   customClass?: string;
+  xTravel?: number;
+  yTravel?: number;
+  zTravel?: number;
 }>();
 
 defineEmits<{
@@ -140,6 +143,18 @@ const stopHeartbeat = () => {
 
 // Track which buttons are pressed for visual feedback
 const pressedButtons = ref(new Set<string>());
+
+const DEFAULT_CONTINUOUS_DISTANCE = 400;
+
+const getAxisTravel = (axis: 'X' | 'Y' | 'Z'): number => {
+  const raw = axis === 'X' ? props.xTravel : axis === 'Y' ? props.yTravel : props.zTravel;
+  const fallback = DEFAULT_CONTINUOUS_DISTANCE;
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return fallback;
+};
 
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const distance = props.currentStep * direction;
@@ -179,7 +194,8 @@ const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
 
 const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const jogFeedRate = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
-  const command = `$J=G21 G91 ${axis}${3000 * direction} F${jogFeedRate}`;
+  const travel = getAxisTravel(axis);
+  const command = `$J=G21 G91 ${axis}${travel * direction} F${jogFeedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
@@ -203,7 +219,9 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 };
 
 const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
-  const command = `$J=G21 G91 X${3000 * xDirection} Y${3000 * yDirection} F${props.feedRate}`;
+  const xTravel = getAxisTravel('X');
+  const yTravel = getAxisTravel('Y');
+  const command = `$J=G21 G91 X${xTravel * xDirection} Y${yTravel * yDirection} F${props.feedRate}`;
   const jogId = createJogId();
   activeJogId = jogId;
 
