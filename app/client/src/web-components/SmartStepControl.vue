@@ -17,15 +17,30 @@ import StepControl from '../features/jog/StepControl.vue';
 // Auto-configure with sensible defaults
 const currentStep = ref(1);
 const stepOptions = ref([0.1, 1, 10]);
-const currentFeedRate = ref(2000);
+const currentFeedRate = ref(3000);
+
+// Feed rate defaults per step (middle value of each range)
+const feedRateDefaults: Record<number, number> = {
+  0.1: 500,   // Small step -> 500 mm/min (middle of [300, 400, 500, 700, 1000])
+  1: 3000,    // Medium step -> 3000 mm/min (middle of [1000, 2000, 3000, 4000, 5000])
+  10: 8000    // Large step -> 8000 mm/min (middle of [6000, 7000, 8000, 9000, 10000])
+};
 
 // Emit custom events for auto-syncing
 const handleStepUpdate = (value: number) => {
   currentStep.value = value;
 
-  // Dispatch custom event that other components can listen to
+  // Auto-select default feed rate for this step
+  const defaultFeedRate = feedRateDefaults[value] || 2000;
+  currentFeedRate.value = defaultFeedRate;
+
+  // Dispatch events that other components can listen to
   window.dispatchEvent(new CustomEvent('nc:step-changed', {
     detail: { step: value }
+  }));
+
+  window.dispatchEvent(new CustomEvent('nc:feed-rate-changed', {
+    detail: { feedRate: defaultFeedRate }
   }));
 };
 
