@@ -1,0 +1,8 @@
+{
+  "id": "com.ncsender.rapidchangeatc",
+  "name": "Rapid Change ATC",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "author": "ncSender",
+  "description": "Rapid tool change workflow helper for automatic tool changers."
+}

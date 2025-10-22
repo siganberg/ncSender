@@ -33,13 +33,17 @@ import { mmToInches } from '@/lib/units';
 
 const appStore = useAppStore();
 
-const props = defineProps<{
-  currentStep: number;
-  stepOptions: number[];
-  currentFeedRate: number;
+const props = withDefaults(defineProps<{
+  currentStep?: number;
+  stepOptions?: number[];
+  currentFeedRate?: number;
   feedRateOptions?: Record<number, number[]>;
   feedRateDefaults?: Record<number, number>;
-}>();
+}>(), {
+  currentStep: 1,
+  stepOptions: () => [0.1, 1, 10],
+  currentFeedRate: 2000
+});
 
 const emit = defineEmits<{
   (e: 'update:step', value: number): void;
@@ -66,9 +70,11 @@ const getCurrentFeedRateOptions = (): number[] => {
   }
 
   // Fall back to using step index (for Probe with imperial units)
-  const stepIndex = props.stepOptions.indexOf(props.currentStep);
-  if (stepIndex >= 0 && stepIndex < defaultFeedRateOptionsByIndex.length) {
-    return defaultFeedRateOptionsByIndex[stepIndex];
+  if (props.stepOptions && Array.isArray(props.stepOptions)) {
+    const stepIndex = props.stepOptions.indexOf(props.currentStep);
+    if (stepIndex >= 0 && stepIndex < defaultFeedRateOptionsByIndex.length) {
+      return defaultFeedRateOptionsByIndex[stepIndex];
+    }
   }
 
   // Ultimate fallback

@@ -103,15 +103,19 @@
 import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 
-const props = defineProps<{
-  currentStep: number;
+const props = withDefaults(defineProps<{
+  currentStep?: number;
   disabled?: boolean;
-  feedRate: number;
+  feedRate?: number;
   customClass?: string;
   xTravel?: number;
   yTravel?: number;
   zTravel?: number;
-}>();
+}>(), {
+  currentStep: 1,
+  feedRate: 2000,
+  disabled: false
+});
 
 defineEmits<{
   (e: 'center-click'): void;

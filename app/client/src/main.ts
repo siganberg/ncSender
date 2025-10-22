@@ -4,6 +4,7 @@ import '@/assets/styles/base.css';
 import { loadSettings } from './lib/settings-store.js';
 import { initializeKeyboardShortcuts } from './features/keyboard';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
+import { registerWebComponents } from './web-components';
 
 // Disable context menu globally for touch screen compatibility
 document.addEventListener('contextmenu', (e) => {
@@ -40,6 +41,9 @@ document.addEventListener('selectstart', (e) => {
 
   // Seed initial state from server
   await seedInitialState();
+
+  // Register web components for plugins
+  registerWebComponents();
 
   const app = createApp(App);
 
