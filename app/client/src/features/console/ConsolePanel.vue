@@ -59,15 +59,18 @@
         </DynamicScroller>
       </div>
       <form class="console-input" @submit.prevent="sendCommand">
-        <input
-          type="text"
-          :placeholder="connected ? 'Send command' : 'Connect to CNC to send commands'"
+        <textarea
+          class="console-input__textarea"
+          :placeholder="connected ? 'Send command(s)' : 'Connect to CNC to send commands'"
           v-model="commandToSend"
           @keydown="handleKeyDown"
           :disabled="!connected"
-        />
-        <button type="submit" class="primary" :disabled="!connected">Send</button>
-        <button type="button" class="primary" @click="$emit('clear')">Clear</button>
+          rows="1"
+        ></textarea>
+        <div class="console-input__actions">
+          <button type="submit" class="primary" :disabled="!connected">Send</button>
+          <button type="button" class="primary" @click="$emit('clear')">Clear</button>
+        </div>
       </form>
     </div>
 
@@ -431,21 +434,39 @@ watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
 });
 
 const sendCommand = async () => {
-  if (!commandToSend.value) return;
+  if (!commandToSend.value || !commandToSend.value.trim()) return;
 
-  // Add to history and save to server
-  await store.addToHistory(commandToSend.value);
+  const commands = commandToSend.value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
-  api.sendCommandViaWebSocket({
-    command: commandToSend.value,
-    displayCommand: commandToSend.value,
-    meta: {
-      recordHistory: true,
-      sourceId: 'client'
+  if (commands.length === 0) {
+    commandToSend.value = '';
+    return;
+  }
+
+  for (const command of commands) {
+    try {
+      await store.addToHistory(command);
+    } catch (error) {
+      console.error('Failed to append command to history:', error);
     }
-  }).catch((error) => {
-    console.error('Failed to send console command via WebSocket:', error);
-  });
+
+    try {
+      await api.sendCommandViaWebSocket({
+        command,
+        displayCommand: command,
+        meta: {
+          recordHistory: true,
+          sourceId: 'client'
+        }
+      });
+    } catch (error) {
+      console.error('Failed to send console command via WebSocket:', error);
+    }
+  }
+
   commandToSend.value = '';
   historyIndex.value = -1;
   currentInput.value = '';
@@ -460,7 +481,31 @@ const loadCommandHistory = async () => {
 };
 
 const handleKeyDown = (event: KeyboardEvent) => {
+  const target = event.target as HTMLTextAreaElement | HTMLInputElement | null;
+  if (!target) return;
+
+  if (event.key === 'Enter' && !(event.shiftKey || event.altKey) && !(event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    sendCommand();
+    return;
+  }
+
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    sendCommand();
+    return;
+  }
+  if (event.key === 'Enter' && event.shiftKey) {
+    // Allow manual newline insertion
+    return;
+  }
+
   if (event.key === 'ArrowUp') {
+    const caretAtStart = target.selectionStart === 0 && target.selectionEnd === 0;
+    if (!caretAtStart || target.value.includes('\n')) {
+      return;
+    }
+
     event.preventDefault();
     if (commandHistory.value.length === 0) return;
 
@@ -472,7 +517,15 @@ const handleKeyDown = (event: KeyboardEvent) => {
     }
 
     commandToSend.value = commandHistory.value[historyIndex.value];
+    nextTick(() => {
+      target.selectionStart = target.selectionEnd = target.value.length;
+    });
   } else if (event.key === 'ArrowDown') {
+    const caretAtEnd = target.selectionStart === target.value.length && target.selectionEnd === target.value.length;
+    if (!caretAtEnd || target.value.includes('\n')) {
+      return;
+    }
+
     event.preventDefault();
     if (historyIndex.value === -1) return;
 
@@ -483,6 +536,10 @@ const handleKeyDown = (event: KeyboardEvent) => {
       historyIndex.value = -1;
       commandToSend.value = currentInput.value;
     }
+
+    nextTick(() => {
+      target.selectionStart = target.selectionEnd = target.value.length;
+    });
   }
 };
 
@@ -885,9 +942,10 @@ h2 {
 .console-input {
   display: flex;
   gap: var(--gap-xs);
+  align-items: stretch;
 }
 
-.console-input input {
+.console-input__textarea {
   flex: 1;
   border-radius: var(--radius-small);
   border: 1px solid var(--color-border);
@@ -895,6 +953,25 @@ h2 {
   font-size: 0.9rem;
   background: var(--color-surface);
   color: var(--color-text-primary);
+  resize: none;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  font-family: inherit;
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.console-input__textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.console-input__actions {
+  display: flex;
+  flex-direction: row;
+  gap: var(--gap-xs);
+  align-items: stretch;
 }
 
 .console-input .primary {
@@ -906,6 +983,11 @@ h2 {
   color: #fff;
   font-size: 1rem;
   font-weight: 500;
+  min-width: 96px;
+}
+
+.console-input__actions .primary {
+  width: auto;
 }
 
 /* Tab Content */

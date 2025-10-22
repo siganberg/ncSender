@@ -330,7 +330,7 @@ async function queryCurrentValues(cncController) {
     cncController.sendCommand('$$', {
       commandId: `$$-${Date.now()}`,
       displayCommand: '$$',
-      meta: { sourceId: 'no-broadcast' }
+      meta: { sourceId: 'system' }
     }).catch((error) => {
       cleanup();
       reject(new Error(`Failed to send $$ command: ${error.message}`));
@@ -491,7 +491,7 @@ async function querySingleCommand(cncController, command) {
     cncController.sendCommand(command, {
       commandId: `${command}-${Date.now()}`,
       displayCommand: command,
-      meta: { sourceId: 'no-broadcast' }
+      meta: { sourceId: 'system' }
     }).catch((error) => {
       cleanup();
       reject(new Error(`Failed to send ${command}: ${error.message}`));
