@@ -22,7 +22,7 @@
     "bitDiameter": 25.4,
     "stepover": 80,
     "feedRate": 7000,
-    "spindleRpm": 5000,
+    "spindleRpm": 24000,
     "spindleDelay": false,
     "patternType": "zigzagX",
     "invertOrientation": true,
