@@ -338,6 +338,9 @@ async function queryCurrentValues(cncController) {
   });
 }
 
+// Guard to prevent concurrent firmware initializations
+let isInitializing = false;
+
 /**
  * Check and initialize firmware structure on connection
  * Called when CNC controller connects
@@ -347,6 +350,13 @@ export async function initializeFirmwareOnConnection(cncController) {
     log('Cannot initialize firmware: controller not connected');
     return;
   }
+
+  if (isInitializing) {
+    log('Firmware initialization already in progress, skipping duplicate request');
+    return;
+  }
+
+  isInitializing = true;
 
   try {
     // Query $I to get firmware version
@@ -446,6 +456,8 @@ export async function initializeFirmwareOnConnection(cncController) {
     }
   } catch (error) {
     log('Error initializing firmware on connection:', error);
+  } finally {
+    isInitializing = false;
   }
 }
 
