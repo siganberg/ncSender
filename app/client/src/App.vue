@@ -339,7 +339,12 @@
                       <div class="setting-group" v-if="setting.group">{{ setting.group.name }}</div>
                     </td>
                     <td class="col-description">
-                      <div class="setting-name">{{ setting.name }}</div>
+                      <div class="setting-name">
+                        {{ setting.name }}
+                        <span v-if="setting.halDetails && setting.halDetails[7] === '1'" class="requires-restart-badge" title="Changing this setting requires controller restart">
+                          Requires Restart
+                        </span>
+                      </div>
                       <div
                         class="setting-hal-description"
                         v-if="setting.halDetails && setting.halDetails[4]"
@@ -419,7 +424,7 @@
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
                           @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="([481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) || setting.dataType === 5) ? 0 : (setting.min || undefined)"
+                          :min="(setting.halDetails && setting.halDetails[8] === '1') ? undefined : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="1"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -434,7 +439,7 @@
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
                           @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="[481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) ? 0 : (setting.min || undefined)"
+                          :min="(setting.halDetails && setting.halDetails[8] === '1') ? undefined : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="any"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -1287,15 +1292,14 @@ const updateNumericSetting = (setting: any, newValue: string) => {
   }
 
   // Validate min/max
-  // Special case: for certain settings, 0 is always valid even if min is set higher
-  const zeroIsValidSettings = [481, 397, 392, 393, 394, 673, 539]; // Settings where 0 has special meaning
-  const allowZero = setting.dataType === 5 || zeroIsValidSettings.includes(setting.id);
+  // Check halDetails[8] flag: if '1', allow empty/zero even with min value set
+  const allowZero = setting.halDetails && setting.halDetails[8] === '1';
 
   const min = setting.min ? parseFloat(setting.min) : -Infinity;
   const max = setting.max ? parseFloat(setting.max) : Infinity;
 
   if (allowZero && numValue === 0) {
-    // 0 is always valid for these settings (typically means disabled/unlimited)
+    // 0 is valid when halDetails[8] = '1' (typically means disabled/unlimited)
   } else if (numValue < min || numValue > max) {
     console.error(`Value must be between ${min} and ${max}${allowZero ? ' (or 0)' : ''}`);
     return;
@@ -2977,6 +2981,22 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.requires-restart-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #ff9800;
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .setting-hal-description {
