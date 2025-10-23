@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   autoClearConsole: true,
   debugLogging: false,
   unitsPreference: 'metric',
+  homeLocation: 'back-left',
   keyboardBindings: {
     ArrowUp: 'JogYPlus',
     ArrowDown: 'JogYMinus',

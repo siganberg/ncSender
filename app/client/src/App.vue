@@ -228,6 +228,20 @@
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
+                <label class="setting-label">Machine Home Location</label>
+                <div class="settings-note">
+                  Specify where your machine's physical home position (0,0) is located on the machine table.
+                </div>
+              </div>
+              <select class="setting-select" v-model="homeLocation" @change="saveHomeLocation">
+                <option value="back-left">Back-Left (Default)</option>
+                <option value="back-right">Back-Right</option>
+                <option value="front-left">Front-Left</option>
+                <option value="front-right">Front-Right</option>
+              </select>
+            </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
                 <label class="setting-label">Enable Browser Debug Logging</label>
                 <div class="settings-note">
                   Enables console logging for debugging. Useful for troubleshooting issues.
@@ -616,6 +630,15 @@
             @blur="validateSetupForm"
           >
         </div>
+        <div class="setting-item">
+          <label class="setting-label">Machine Home Location</label>
+          <select class="setting-select setting-input--right" v-model="setupSettings.homeLocation">
+            <option value="back-left">Back-Left (Default)</option>
+            <option value="back-right">Back-Right</option>
+            <option value="front-left">Front-Left</option>
+            <option value="front-right">Front-Right</option>
+          </select>
+        </div>
       </div>
 
       <div class="setup-footer">
@@ -808,6 +831,9 @@ const numberOfTools = ref(initialSettings?.numberOfTools ?? 0);
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
+// Home Location setting
+const homeLocation = ref(initialSettings?.homeLocation ?? 'back-left');
+
 // Units preference setting
 const unitsPreference = ref(initialSettings?.unitsPreference ?? 'metric');
 const showUnitsConfirmDialog = ref(false);
@@ -831,7 +857,8 @@ const setupSettings = reactive({
   baudRate: '115200',
   ipAddress: '192.168.5.1',
   port: 23,
-  usbPort: ''
+  usbPort: '',
+  homeLocation: 'back-left'
 });
 
 // Console settings
@@ -1517,6 +1544,14 @@ watch(useDoorAsPause, async (newValue) => {
   });
 });
 
+// Save home location changes
+const saveHomeLocation = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    homeLocation: homeLocation.value
+  });
+};
+
 // Watch debugLogging and save changes
 watch(() => consoleSettings.debugLogging, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -1756,7 +1791,8 @@ const saveSetupSettings = async () => {
         serverPort: 8090,
         usbPort: setupSettings.usbPort || '',
         baudRate: parseInt(setupSettings.baudRate, 10) || 115200
-      }
+      },
+      homeLocation: setupSettings.homeLocation || 'back-left'
     };
 
     // Use settings store to save
