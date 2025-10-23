@@ -358,15 +358,17 @@
                           v-for="(bitName, index) in setting.format.split(',')"
                           :key="index"
                         >
-                          <span class="bitfield-name">{{ bitName.trim() }}</span>
-                          <label class="toggle-switch">
-                            <input
-                              type="checkbox"
-                              :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
-                              @change="toggleBit(setting, index)"
-                            />
-                            <span class="toggle-slider"></span>
-                          </label>
+                          <template v-if="bitName.trim() !== 'N/A' && bitName.trim() !== ''">
+                            <span class="bitfield-name">{{ bitName.trim() }}</span>
+                            <label class="toggle-switch">
+                              <input
+                                type="checkbox"
+                                :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                                @change="toggleBit(setting, index)"
+                              />
+                              <span class="toggle-slider"></span>
+                            </label>
+                          </template>
                         </template>
                       </div>
 
@@ -472,15 +474,17 @@
                             v-for="(bitName, index) in setting.format.split(',')"
                             :key="index"
                           >
-                            <span class="bitfield-name">{{ bitName.trim() }}</span>
-                            <label class="toggle-switch">
-                              <input
-                                type="checkbox"
-                                :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
-                                @change="toggleBit(setting, index)"
-                              />
-                              <span class="toggle-slider"></span>
-                            </label>
+                            <template v-if="bitName.trim() !== 'N/A' && bitName.trim() !== ''">
+                              <span class="bitfield-name">{{ bitName.trim() }}</span>
+                              <label class="toggle-switch">
+                                <input
+                                  type="checkbox"
+                                  :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                                  @change="toggleBit(setting, index)"
+                                />
+                                <span class="toggle-slider"></span>
+                              </label>
+                            </template>
                           </template>
                         </div>
                       </div>
@@ -1077,10 +1081,29 @@ const filteredFirmwareSettings = computed(() => {
     return [];
   }
 
-  const settings = Object.values(firmwareData.value.settings).map((setting) => ({
-    ...setting,
-    id: setting.id.toString()
-  }));
+  const settings = Object.values(firmwareData.value.settings)
+    .map((setting) => ({
+      ...setting,
+      id: setting.id.toString()
+    }))
+    .filter((setting) => {
+      // Skip settings with dataType 7 (bitfield) that don't have a format
+      // These show as raw bitwise values which are not useful
+      if (setting.dataType === 7 && !setting.format) {
+        return false;
+      }
+
+      // Skip bitfield settings where all bits are N/A
+      if (setting.format && typeof setting.format === 'string') {
+        const bits = setting.format.split(',').map(b => b.trim());
+        const allNA = bits.every(bit => bit === 'N/A' || bit === '');
+        if (allNA) {
+          return false;
+        }
+      }
+
+      return true;
+    });
 
   if (!firmwareSearchQuery.value) {
     return settings.sort((a, b) => parseInt(a.id) - parseInt(b.id));
