@@ -119,7 +119,7 @@ export function onLoad(ctx) {
 
     ctx.showDialog(
       'Rapid Change ATC',
-      `
+      /* html */ `
       <style>
         .rc-dialog-wrapper {
           display: grid;
@@ -247,6 +247,12 @@ export function onLoad(ctx) {
           padding: 6px 16px !important;
         }
 
+        .rc-button-auto-calibrate {
+          width: 200px;
+          padding: 10px 16px;
+          margin: 0 auto;
+        }
+
         .rc-button:hover {
           filter: brightness(0.95);
         }
@@ -295,7 +301,7 @@ export function onLoad(ctx) {
       <div class="rc-dialog-wrapper">
         <div class="rc-header">
           <p class="rc-instructions">
-            With the collet, nut, and bit installed on the spindle, position the spindle over Pocket 1 of the magazine. Use the Jog controls to lower it and fine-tune the position until the nut is just inside Pocket 1. Manually rotate the spindle to ensure nothing is rubbing. Once everything is centered, click Start Calibration.
+            With the collet, nut, and bit installed on the spindle, position the spindle over Pocket 1 of the magazine. Use the Jog controls to lower it and fine-tune the position until the nut is just inside Pocket 1. Manually rotate the spindle to ensure nothing is rubbing. Once everything is centered, click Auto Calibrate.
           </p>
         </div>
 
@@ -410,6 +416,7 @@ export function onLoad(ctx) {
             <div class="rc-right-panel">
               <nc-step-control></nc-step-control>
               <nc-jog-control></nc-jog-control>
+              <button type="button" class="rc-button rc-button-auto-calibrate" id="rc-auto-calibrate-btn">Auto Calibrate</button>
             </div>
           </div>
         </div>
@@ -677,11 +684,10 @@ export function onLoad(ctx) {
                 data: { action: 'save', payload: payload }
               }, '*');
 
-              window.postMessage({ type: 'close-plugin-dialog' }, '*');
-
               setTimeout(function() {
                 saveButton.disabled = false;
                 saveButton.classList.remove('rc-button-busy');
+                window.postMessage({ type: 'close-plugin-dialog' }, '*');
               }, 150);
             });
           }
