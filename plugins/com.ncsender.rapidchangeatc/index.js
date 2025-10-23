@@ -3,21 +3,145 @@
  * Provides quick access tooling workflow controls.
  */
 
+const ALLOWED_COLLET_SIZES = ['ER11', 'ER16', 'ER20', 'ER25', 'ER32'];
+const ALLOWED_MODELS = ['Basic', 'Pro', 'Premium'];
+const ORIENTATIONS = ['X', 'Y'];
+const DIRECTIONS = ['Positive', 'Negative'];
+
+const clampPockets = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 6;
+  return Math.min(Math.max(parsed, 1), 10);
+};
+
+const toFiniteNumber = (value, fallback = 0) => {
+  const num = Number.parseFloat(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const sanitizeColletSize = (value) => (ALLOWED_COLLET_SIZES.includes(value) ? value : 'ER20');
+const sanitizeModel = (value) => (ALLOWED_MODELS.includes(value) ? value : 'Pro');
+const sanitizeOrientation = (value) => (ORIENTATIONS.includes(value) ? value : 'Y');
+const sanitizeDirection = (value) => (DIRECTIONS.includes(value) ? value : 'Negative');
+const sanitizeCoords = (coords = {}) => ({
+  x: toFiniteNumber(coords.x),
+  y: toFiniteNumber(coords.y)
+});
+
+const buildInitialConfig = (raw = {}) => ({
+  colletSize: sanitizeColletSize(raw.colletSize ?? raw.model),
+  pockets: clampPockets(raw.pockets),
+  model: sanitizeModel(raw.model ?? raw.trip ?? raw.modelName ?? raw.machineModel),
+  orientation: sanitizeOrientation(raw.orientation),
+  direction: sanitizeDirection(raw.direction),
+  pocket1: sanitizeCoords(raw.pocket1),
+  toolSetter: sanitizeCoords(raw.toolSetter),
+  manualTool: sanitizeCoords(raw.manualTool)
+});
+
+const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
+  const appPort = Number.parseInt(appSettings?.senderPort, 10);
+  if (Number.isFinite(appPort)) {
+    return appPort;
+  }
+
+  const pluginPort = Number.parseInt(pluginSettings?.port, 10);
+  if (Number.isFinite(pluginPort)) {
+    return pluginPort;
+  }
+
+  return 8090;
+};
+
 export function onLoad(ctx) {
   ctx.log('Rapid Change ATC plugin loaded');
 
+  ctx.registerEventHandler('onBeforeCommand', async (line, context) => {
+    const pluginId = 'com.ncsender.rapidchangeatc';
+
+    if (context.meta?.processedByPlugins?.includes(pluginId)) {
+      return line;
+    }
+
+    function markAsProcessed(meta = {}) {
+      const processedByPlugins = meta.processedByPlugins || [];
+      if (!processedByPlugins.includes(pluginId)) {
+        processedByPlugins.push(pluginId);
+      }
+      return { ...meta, processedByPlugins };
+    }
+
+    const trimmedLine = line.trim().toUpperCase();
+
+    const m6Pattern = /(?:^|[^A-Z])M0*6(?:\s+T0*(\d+)|(?=[^0-9])|$)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/;
+    const match = trimmedLine.match(m6Pattern);
+
+    if (match) {
+      const toolNumber = match[1] || match[2];
+      ctx.log(`M6 detected with tool T${toolNumber} at line ${context.lineNumber}`);
+
+      return line;
+    }
+
+    return line;
+  });
+
+  ctx.registerEventHandler('message', async (data) => {
+    if (!data || data.action !== 'save') {
+      return;
+    }
+
+    const payload = data.payload || {};
+    const sanitized = buildInitialConfig(payload);
+    const existing = ctx.getSettings() || {};
+    const appSettings = ctx.getAppSettings() || {};
+    const resolvedPort = resolveServerPort(existing, appSettings);
+
+    ctx.setSettings({
+      ...existing,
+      ...sanitized,
+      port: resolvedPort
+    });
+
+    ctx.log('Rapid Change ATC settings saved');
+  });
+
   ctx.registerToolMenu('RapidChangeATC', async () => {
     ctx.log('RapidChangeATC tool opened');
+
+    const storedSettings = ctx.getSettings() || {};
+    const appSettings = ctx.getAppSettings() || {};
+    const serverPort = resolveServerPort(storedSettings, appSettings);
+    const initialConfig = buildInitialConfig(storedSettings);
+    const initialConfigJson = JSON.stringify(initialConfig)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e');
 
     ctx.showDialog(
       'Rapid Change ATC',
       `
       <style>
+        .rc-dialog-wrapper {
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+          overflow: hidden;
+          width: 800px;
+        }
+
+        .rc-header {
+          padding: 20px 30px;
+        }
+
+        .rc-content {
+          overflow-y: auto;
+          padding: 30px;
+          padding-top: 0;
+        }
+
         .rc-container {
           display: grid;
-          grid-template-columns: 240px 1fr;
+          grid-template-columns: 350px 1fr;
           gap: 24px;
-          padding: 30px;
         }
 
         .rc-left-panel {
@@ -30,6 +154,18 @@ export function onLoad(ctx) {
           display: flex;
           flex-direction: column;
           gap: 16px;
+        }
+
+        .rc-form-row {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+        }
+
+        .rc-form-row-wide {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 48px;
         }
 
         .rc-form-group {
@@ -52,6 +188,7 @@ export function onLoad(ctx) {
           background: var(--color-surface);
           color: var(--color-text-primary);
           font-size: 0.9rem;
+          text-align: right;
         }
 
         .rc-select:focus,
@@ -60,9 +197,17 @@ export function onLoad(ctx) {
           border-color: var(--color-accent);
         }
 
+        .rc-select {
+          text-align-last: right;
+        }
+
         .rc-radio-group {
           display: flex;
           gap: 16px;
+        }
+
+        .rc-right-panel > nc-step-control {
+          align-self: center;
         }
 
         .rc-radio-label {
@@ -88,7 +233,6 @@ export function onLoad(ctx) {
         }
 
         .rc-button {
-          padding: 6px 16px !important;
           border-radius: var(--radius-small);
           border: 1px solid var(--color-accent);
           background: var(--color-accent);
@@ -97,6 +241,10 @@ export function onLoad(ctx) {
           font-weight: 600;
           cursor: pointer;
           transition: filter 0.15s ease;
+        }
+
+        .rc-button-grab {
+          padding: 6px 16px !important;
         }
 
         .rc-button:hover {
@@ -108,105 +256,442 @@ export function onLoad(ctx) {
           outline-offset: 2px;
         }
 
+        .rc-button.rc-button-busy,
+        .rc-button:disabled {
+          filter: none;
+          opacity: 0.7;
+          cursor: progress;
+        }
+
         .rc-instructions {
-          margin: 0 0 16px;
+          margin: 0;
           color: var(--color-text-secondary);
           font-size: 0.9rem;
           line-height: 1.4;
-          max-width: 900px;
+        }
+
+        .rc-footer {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 30px;
+          border-top: 1px solid var(--color-border);
+          background: var(--color-surface);
+        }
+
+        .rc-button-secondary {
+          background: var(--color-surface-muted);
+          color: var(--color-text-primary);
+          border: 1px solid var(--color-border);
+        }
+
+        .rc-button-secondary:hover {
+          background: var(--color-surface);
+          filter: none;
         }
       </style>
 
-      <p class="rc-instructions">
-        With the collet, nut, and bit installed on the spindle, position the spindle over Pocket 1 of the magazine. Use the Jog controls to lower it and fine-tune the position until the nut is just inside Pocket 1. Manually rotate the spindle to ensure nothing is rubbing. Once everything is centered, click Start Calibration.
-      </p>
-
-      <div class="rc-container">
-        <!-- Left Panel: Form Controls -->
-        <div class="rc-left-panel">
-          <div class="rc-form-group">
-            <label class="rc-form-label">Model</label>
-            <select class="rc-select" id="rc-model">
-              <option value="ER11">ER11</option>
-              <option value="ER16">ER16</option>
-              <option value="ER20" selected>ER20</option>
-              <option value="ER25">ER25</option>
-              <option value="ER32">ER32</option>
-            </select>
-          </div>
-
-          <div class="rc-form-group">
-            <label class="rc-form-label">Number of Pockets</label>
-            <select class="rc-select" id="rc-pockets">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="6" selected>6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-            </select>
-          </div>
-
-          <div class="rc-form-group">
-            <label class="rc-form-label">Trip</label>
-            <select class="rc-select" id="rc-trip">
-              <option value="Basic">Basic</option>
-              <option value="Pro" selected>Pro</option>
-              <option value="Premium">Premium</option>
-            </select>
-          </div>
-
-          <div class="rc-form-group">
-            <label class="rc-form-label">Mounting Orientation</label>
-            <div class="rc-radio-group">
-              <label class="rc-radio-label">
-                <input type="radio" name="orientation" value="Y" checked>
-                Y
-              </label>
-              <label class="rc-radio-label">
-                <input type="radio" name="orientation" value="X">
-                X
-              </label>
-            </div>
-          </div>
-
-          <div class="rc-form-group">
-            <label class="rc-form-label">Direction (Pocket 1 → 2)</label>
-            <div class="rc-radio-group">
-              <label class="rc-radio-label">
-                <input type="radio" name="direction" value="Negative" checked>
-                Negative
-              </label>
-              <label class="rc-radio-label">
-                <input type="radio" name="direction" value="Positive">
-                Positive
-              </label>
-            </div>
-          </div>
-
+      <div class="rc-dialog-wrapper">
+        <div class="rc-header">
+          <p class="rc-instructions">
+            With the collet, nut, and bit installed on the spindle, position the spindle over Pocket 1 of the magazine. Use the Jog controls to lower it and fine-tune the position until the nut is just inside Pocket 1. Manually rotate the spindle to ensure nothing is rubbing. Once everything is centered, click Start Calibration.
+          </p>
         </div>
 
-        <!-- Right Panel: Jog Controls -->
-        <div class="rc-right-panel">
-          <nc-step-control></nc-step-control>
-          <nc-jog-control></nc-jog-control>
+        <div class="rc-content">
+          <div class="rc-container">
+            <!-- Left Panel: Form Controls -->
+        <div class="rc-left-panel">
+          <div class="rc-form-row">
+            <div class="rc-form-group">
+              <label class="rc-form-label">Collet Size</label>
+              <select class="rc-select" id="rc-collet-size">
+                <option value="ER11">ER11</option>
+                <option value="ER16">ER16</option>
+                <option value="ER20" selected>ER20</option>
+                <option value="ER25">ER25</option>
+                <option value="ER32">ER32</option>
+              </select>
+            </div>
+
+            <div class="rc-form-group">
+              <label class="rc-form-label">Pocket Size</label>
+              <select class="rc-select" id="rc-pockets">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6" selected>6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+              </select>
+            </div>
+
+            <div class="rc-form-group">
+              <label class="rc-form-label">Model</label>
+              <select class="rc-select" id="rc-model-select">
+                <option value="Basic">Basic</option>
+                <option value="Pro" selected>Pro</option>
+                <option value="Premium">Premium</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="rc-form-row-wide">
+            <div class="rc-form-group">
+              <label class="rc-form-label">Orientation</label>
+              <div class="rc-radio-group">
+                <label class="rc-radio-label">
+                  <input type="radio" name="orientation" value="Y" checked>
+                  Y
+                </label>
+                <label class="rc-radio-label">
+                  <input type="radio" name="orientation" value="X">
+                  X
+                </label>
+              </div>
+            </div>
+
+            <div class="rc-form-group">
+              <label class="rc-form-label">Direction (Pocket 1 → 2)</label>
+              <div class="rc-radio-group">
+                <label class="rc-radio-label">
+                  <input type="radio" name="direction" value="Negative" checked>
+                  Negative
+                </label>
+                <label class="rc-radio-label">
+                  <input type="radio" name="direction" value="Positive">
+                  Positive
+                </label>
+              </div>
+            </div>
+          </div>
 
           <div class="rc-form-group">
-            <label class="rc-form-label">Pocket 1 Machine Coordinates</label>
+            <label class="rc-form-label">Pocket 1 Coordinates</label>
             <div class="rc-coordinate-group">
               <label class="rc-coord-label-inline" for="rc-pocket1-x">X</label>
               <input type="number" class="rc-input" id="rc-pocket1-x" value="0" step="0.001">
               <label class="rc-coord-label-inline" for="rc-pocket1-y">Y</label>
               <input type="number" class="rc-input" id="rc-pocket1-y" value="0" step="0.001">
-              <button type="button" class="rc-button" id="rc-pocket1-grab">Grab</button>
+              <button type="button" class="rc-button rc-button-grab" id="rc-pocket1-grab">Grab</button>
+            </div>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Tool Setter Coordinates</label>
+            <div class="rc-coordinate-group">
+              <label class="rc-coord-label-inline" for="rc-toolsetter-x">X</label>
+              <input type="number" class="rc-input" id="rc-toolsetter-x" value="0" step="0.001">
+              <label class="rc-coord-label-inline" for="rc-toolsetter-y">Y</label>
+              <input type="number" class="rc-input" id="rc-toolsetter-y" value="0" step="0.001">
+              <button type="button" class="rc-button rc-button-grab" id="rc-toolsetter-grab">Grab</button>
+            </div>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Manual Tool Coordinates</label>
+            <div class="rc-coordinate-group">
+              <label class="rc-coord-label-inline" for="rc-manualtool-x">X</label>
+              <input type="number" class="rc-input" id="rc-manualtool-x" value="0" step="0.001">
+              <label class="rc-coord-label-inline" for="rc-manualtool-y">Y</label>
+              <input type="number" class="rc-input" id="rc-manualtool-y" value="0" step="0.001">
+              <button type="button" class="rc-button rc-button-grab" id="rc-manualtool-grab">Grab</button>
+            </div>
+          </div>
+
+        </div>
+
+            <!-- Right Panel: Jog Controls -->
+            <div class="rc-right-panel">
+              <nc-step-control></nc-step-control>
+              <nc-jog-control></nc-jog-control>
             </div>
           </div>
         </div>
+
+        <div class="rc-footer">
+          <button type="button" class="rc-button rc-button-secondary" id="rc-close-btn">Close</button>
+          <button type="button" class="rc-button" id="rc-save-btn">Save</button>
+        </div>
       </div>
+      <script>
+        (function() {
+          const POCKET_PREFIX = 'pocket1';
+          const TOOL_SETTER_PREFIX = 'toolsetter';
+          const MANUAL_TOOL_PREFIX = 'manualtool';
+          const STATUS_ENDPOINTS = ['/api/server-state'];
+          const FALLBACK_PORT = ${serverPort};
+          const initialConfig = ${initialConfigJson};
+
+          const resolveApiBaseUrl = () => {
+            if (window.ncSender && typeof window.ncSender.getApiBaseUrl === 'function') {
+              return window.ncSender.getApiBaseUrl(FALLBACK_PORT);
+            }
+            return 'http://localhost:' + FALLBACK_PORT;
+          };
+
+          const BASE_URL = resolveApiBaseUrl();
+
+          const getInput = (id) => document.getElementById(id);
+
+          const formatCoordinate = (value) => (
+            Number.isFinite(value) ? value.toFixed(3) : ''
+          );
+
+          const parseCoordinateString = (raw) => {
+            if (typeof raw === 'string' && raw.length > 0) {
+              const parts = raw.split(',').map((part) => Number.parseFloat(part.trim()));
+              if (parts.length >= 2 && parts.every(Number.isFinite)) {
+                return { x: parts[0], y: parts[1] };
+              }
+            }
+            if (Array.isArray(raw) && raw.length >= 2) {
+              const [x, y] = raw;
+              if ([x, y].every(Number.isFinite)) {
+                return { x, y };
+              }
+            }
+            if (raw && typeof raw === 'object') {
+              const { x, y } = raw;
+              if ([x, y].every(Number.isFinite)) {
+                return { x, y };
+              }
+            }
+            return null;
+          };
+
+          const extractCoordinatesFromPayload = (payload) => {
+            if (!payload || typeof payload !== 'object') {
+              return null;
+            }
+
+            const nestedKeys = ['machineState', 'lastStatus', 'statusReport'];
+            for (let i = 0; i < nestedKeys.length; i += 1) {
+              const key = nestedKeys[i];
+              if (payload[key] && typeof payload[key] === 'object') {
+                const nestedCoords = extractCoordinatesFromPayload(payload[key]);
+                if (nestedCoords) {
+                  return nestedCoords;
+                }
+              }
+            }
+
+            const candidates = [
+              payload.machineCoords,
+              payload.MPos,
+              payload.MPOS,
+              payload.mpos,
+              payload.machinePosition
+            ];
+
+            for (let i = 0; i < candidates.length; i += 1) {
+              const coords = parseCoordinateString(candidates[i]);
+              if (coords) {
+                return coords;
+              }
+            }
+
+            return null;
+          };
+
+          const fetchMachineCoordinates = async () => {
+            for (let i = 0; i < STATUS_ENDPOINTS.length; i += 1) {
+              const endpoint = STATUS_ENDPOINTS[i];
+              const url = BASE_URL + endpoint;
+              try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                  console.warn('[RapidChangeATC] Endpoint ' + url + ' responded with status ' + response.status);
+                  continue;
+                }
+
+                const payload = await response.json();
+                const coords = extractCoordinatesFromPayload(payload);
+                if (coords) {
+                  return coords;
+                }
+              } catch (error) {
+                console.warn('[RapidChangeATC] Failed to read endpoint ' + url + ':', error);
+              }
+            }
+
+            return null;
+          };
+
+          const setCoordinateInputs = (prefix, coords) => {
+            if (!coords) return;
+            const xInput = getInput('rc-' + prefix + '-x');
+            const yInput = getInput('rc-' + prefix + '-y');
+
+            if (xInput) {
+              xInput.value = formatCoordinate(coords.x ?? Number.NaN);
+            }
+            if (yInput) {
+              yInput.value = formatCoordinate(coords.y ?? Number.NaN);
+            }
+          };
+
+          const setRadioValue = (name, value) => {
+            const radios = document.querySelectorAll('input[name="' + name + '"]');
+            radios.forEach(function(radio) {
+              radio.checked = radio.value === value;
+            });
+          };
+
+          const getRadioValue = (name) => {
+            const selected = document.querySelector('input[name="' + name + '"]:checked');
+            return selected ? selected.value : null;
+          };
+
+          const applyInitialSettings = () => {
+            const colletSelect = getInput('rc-collet-size');
+            if (colletSelect && initialConfig.colletSize) {
+              colletSelect.value = initialConfig.colletSize;
+            }
+
+            const pocketsSelect = getInput('rc-pockets');
+            if (pocketsSelect && initialConfig.pockets) {
+              pocketsSelect.value = String(initialConfig.pockets);
+            }
+
+            const modelSelect = getInput('rc-model-select');
+            if (modelSelect && initialConfig.model) {
+              modelSelect.value = initialConfig.model;
+            }
+
+            setRadioValue('orientation', initialConfig.orientation);
+            setRadioValue('direction', initialConfig.direction);
+            setCoordinateInputs(POCKET_PREFIX, initialConfig.pocket1);
+            setCoordinateInputs(TOOL_SETTER_PREFIX, initialConfig.toolSetter);
+            setCoordinateInputs(MANUAL_TOOL_PREFIX, initialConfig.manualTool);
+          };
+
+          const notifyError = (message) => {
+            console.warn('[RapidChangeATC] ' + message);
+            window.alert(message);
+          };
+
+          const grabCoordinates = async (prefix) => {
+            try {
+              const coords = await fetchMachineCoordinates();
+
+              if (!coords) {
+                notifyError('Unable to determine machine coordinates. Ensure the machine is connected and reporting status.');
+                return;
+              }
+
+              setCoordinateInputs(prefix, coords);
+            } catch (error) {
+              console.error('[RapidChangeATC] Failed to grab machine coordinates:', error);
+              notifyError('Failed to read machine coordinates. Please try again.');
+            }
+          };
+
+          const registerButton = (prefix, buttonId) => {
+            const button = getInput(buttonId);
+            if (!button) return;
+
+            button.addEventListener('click', () => {
+              if (button.disabled) {
+                return;
+              }
+
+              button.disabled = true;
+              button.classList.add('rc-button-busy');
+
+              grabCoordinates(prefix).finally(() => {
+                button.disabled = false;
+                button.classList.remove('rc-button-busy');
+              });
+            });
+          };
+
+          const getParseFloat = (value) => {
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+
+          const getParseInt = (value) => {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+
+          const gatherFormData = () => {
+            const colletSelect = getInput('rc-collet-size');
+            const pocketsSelect = getInput('rc-pockets');
+            const modelSelect = getInput('rc-model-select');
+            const pocket1X = getInput('rc-pocket1-x');
+            const pocket1Y = getInput('rc-pocket1-y');
+            const toolSetterX = getInput('rc-toolsetter-x');
+            const toolSetterY = getInput('rc-toolsetter-y');
+            const manualToolX = getInput('rc-manualtool-x');
+            const manualToolY = getInput('rc-manualtool-y');
+
+            return {
+              colletSize: colletSelect ? colletSelect.value : null,
+              pockets: pocketsSelect ? getParseInt(pocketsSelect.value) : null,
+              model: modelSelect ? modelSelect.value : null,
+              orientation: getRadioValue('orientation'),
+              direction: getRadioValue('direction'),
+              pocket1: {
+                x: pocket1X ? getParseFloat(pocket1X.value) : null,
+                y: pocket1Y ? getParseFloat(pocket1Y.value) : null
+              },
+              toolSetter: {
+                x: toolSetterX ? getParseFloat(toolSetterX.value) : null,
+                y: toolSetterY ? getParseFloat(toolSetterY.value) : null
+              },
+              manualTool: {
+                x: manualToolX ? getParseFloat(manualToolX.value) : null,
+                y: manualToolY ? getParseFloat(manualToolY.value) : null
+              }
+            };
+          };
+
+          const closeButton = getInput('rc-close-btn');
+          if (closeButton) {
+            closeButton.addEventListener('click', function() {
+              window.postMessage({ type: 'close-plugin-dialog' }, '*');
+            });
+          }
+
+          const saveButton = getInput('rc-save-btn');
+          if (saveButton) {
+            saveButton.addEventListener('click', function() {
+              if (saveButton.disabled) {
+                return;
+              }
+
+              saveButton.disabled = true;
+              saveButton.classList.add('rc-button-busy');
+
+              const payload = gatherFormData();
+
+              window.postMessage({
+                type: 'plugin-message',
+                data: { action: 'save', payload: payload }
+              }, '*');
+
+              window.postMessage({ type: 'close-plugin-dialog' }, '*');
+
+              setTimeout(function() {
+                saveButton.disabled = false;
+                saveButton.classList.remove('rc-button-busy');
+              }, 150);
+            });
+          }
+
+          applyInitialSettings();
+          registerButton(POCKET_PREFIX, 'rc-pocket1-grab');
+          registerButton(TOOL_SETTER_PREFIX, 'rc-toolsetter-grab');
+          registerButton(MANUAL_TOOL_PREFIX, 'rc-manualtool-grab');
+        })();
+      </script>
     `,
       { size: 'large' }
     );

@@ -1,18 +1,7 @@
 import type { Macro, MacroFormData } from './types';
+import { getApiBaseUrl } from '@/lib/api-base';
 
-function getBaseUrl() {
-  if (typeof window !== 'undefined' && window.location) {
-    if (window.location.protocol === 'file:') {
-      return 'http://localhost:8090';
-    } else if (window.location.port === '5174') {
-      const hostname = window.location.hostname;
-      return `http://${hostname}:8090`;
-    }
-  }
-  return '';
-}
-
-const API_BASE = getBaseUrl();
+const API_BASE = getApiBaseUrl();
 
 export const api = {
   async getMacros(): Promise<Macro[]> {

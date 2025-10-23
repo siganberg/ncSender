@@ -668,6 +668,7 @@ import ConfirmPanel from './components/ConfirmPanel.vue';
 import PluginDialog from './components/PluginDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import { api } from './lib/api.js';
+import { getApiBaseUrl } from './lib/api-base';
 import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
 import KeyboardTab from './features/keyboard/KeyboardTab.vue';
@@ -1648,15 +1649,6 @@ const validateMainForm = () => {
   }
 
   return isValid;
-};
-
-const getApiBaseUrl = () => {
-  // In development, use the same hostname but port 8090
-  if (import.meta.env.DEV) {
-    return `http://${window.location.hostname}:8090`;
-  }
-  // In production, use relative URLs (same origin)
-  return '';
 };
 
 const isSettingsValid = (settings) => {

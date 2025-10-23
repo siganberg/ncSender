@@ -2,6 +2,7 @@ interface NcSenderAPI {
   theme: {
     shouldUseDark: () => boolean;
   };
+  getApiBaseUrl?: (portOverride?: number) => string;
 }
 
 declare global {
