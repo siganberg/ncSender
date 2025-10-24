@@ -353,32 +353,17 @@ export function onLoad(ctx) {
     if ((context.sourceId === 'client' || context.sourceId === 'macro') && hasExpandRetract && retractOnRapidMove) {
       const hasG0 = /\bG0\b/i.test(normalizedLine);
       if (hasG0) {
-        // Check if this is a multi-line command
-        const isMultiLine = line.includes('\n');
+        ctx.log(`G0 command from ${context.sourceId} detected: ${line.trim()}`);
 
-        if (isMultiLine) {
-          // Multi-line command - send expand/retract as bundle, then original commands
-          ctx.log(`G0 multi-line command from ${context.sourceId} detected`);
+        // Combine expand/delay/retract with the original command into one program
+        const combinedProgram = [
+          expandCommand,           // Expand
+          'G4 P0.1',              // Delay
+          retractCommand,         // Retract
+          line.trim()             // Original command (single or multi-line)
+        ].join('\n');
 
-          // Send expand/delay/retract as a bundled group (will show as expandable)
-          const expandRetractProgram = [
-            expandCommand,           // Expand
-            'G4 P0.1',              // Delay
-            retractCommand          // Retract
-          ].join('\n');
-
-          await ctx.sendGcode(expandRetractProgram, {
-            meta: markAsProcessed()
-          });
-
-          // Return the original multi-line command to execute
-          return line;
-        } else {
-          // Single-line command - use the full sequence
-          ctx.log(`G0 from ${context.sourceId} detected (single line): ${line.trim()}`);
-          await sendExpandRetractSequence(line.trim());
-          return null;
-        }
+        return combinedProgram;
       }
     }
 
