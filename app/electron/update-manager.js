@@ -18,7 +18,11 @@ const UPDATE_CHANNELS = {
   DEV: 'dev'
 };
 
-const isDevEnv = process.env.NODE_ENV === 'development';
+const DEFAULT_DISABLE_INSTALL = process.env.NCSENDER_UPDATE_DISABLE_INSTALL === 'true'
+  ? true
+  : (process.env.NCSENDER_UPDATE_DISABLE_INSTALL === 'false'
+      ? false
+      : process.platform === 'darwin');
 
 const formatReleaseNotes = (releaseNotes) => {
   if (!releaseNotes) {
@@ -100,6 +104,7 @@ const toRendererPayload = (info, overrides = {}) => ({
 class UpdateManager {
   constructor({ mainWindow }) {
     this.mainWindow = mainWindow;
+    this.disableInstall = DEFAULT_DISABLE_INSTALL;
     this.mode = process.env.NCSENDER_UPDATE_MODE
       ? String(process.env.NCSENDER_UPDATE_MODE).toLowerCase()
       : (app.isPackaged ? UPDATE_CHANNELS.STABLE : UPDATE_CHANNELS.DEV);
@@ -195,10 +200,10 @@ class UpdateManager {
       this.sendToRenderer('updates:downloaded', toRendererPayload(info, {
         channel: UPDATE_CHANNELS.STABLE,
         downloadedAt: new Date().toISOString(),
-        canInstall: true
+        canInstall: !this.disableInstall
       }));
 
-      if (this.installOnComplete) {
+      if (this.installOnComplete && !this.disableInstall) {
         setTimeout(() => {
           autoUpdater.quitAndInstall(false, true);
         }, 500);
@@ -215,8 +220,15 @@ class UpdateManager {
     });
 
     ipcMain.handle('updates/download', async (_event, options = {}) => {
-      const installOnComplete = Boolean(options?.install);
+      const installOnComplete = Boolean(options?.install) && !this.disableInstall;
       this.installOnComplete = installOnComplete;
+
+      if (Boolean(options?.install) && this.disableInstall) {
+        this.sendToRenderer('updates:error', {
+          message: 'Automatic installation is disabled. Downloading update package instead.',
+          channel: this.mode
+        });
+      }
 
       if (this.mode === UPDATE_CHANNELS.STABLE) {
         return this.handleStableDownload();
@@ -225,6 +237,14 @@ class UpdateManager {
     });
 
     ipcMain.handle('updates/install', async () => {
+      if (this.disableInstall) {
+        this.sendToRenderer('updates:error', {
+          message: 'Automatic installation is disabled for this build. Please install manually after download.',
+          channel: this.mode
+        });
+        return { error: 'install-disabled' };
+      }
+
       if (this.mode !== UPDATE_CHANNELS.STABLE) {
         this.sendToRenderer('updates:error', {
           message: 'Install is not available in development mode',
@@ -330,7 +350,7 @@ class UpdateManager {
         this.latestInfo = latestRelease;
         const payload = toRendererPayload(latestRelease, {
           channel: UPDATE_CHANNELS.DEV,
-          canInstall: false,
+          canInstall: !this.disableInstall && false,
           currentVersion
         });
         this.sendToRenderer('updates:available', payload);
@@ -386,9 +406,7 @@ class UpdateManager {
       const downloadDir = process.env.NCSENDER_UPDATE_DOWNLOAD_DIR || app.getPath('downloads');
       await fs.mkdir(downloadDir, { recursive: true });
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `${asset.name.replace(/\.[^.]+$/, '')}-${timestamp}${path.extname(asset.name)}`;
-      const downloadPath = path.join(downloadDir, filename);
+      const downloadPath = path.join(downloadDir, asset.name);
 
       const headers = {
         'User-Agent': USER_AGENT,
@@ -428,21 +446,21 @@ class UpdateManager {
 
       await pipeline(nodeReadable, writable);
 
-      this.sendToRenderer('updates:downloaded', toRendererPayload(this.latestInfo, {
-        channel: UPDATE_CHANNELS.DEV,
-        downloadedAt: new Date().toISOString(),
-        downloadPath,
-        canInstall: false,
-        autoInstallRequested: installOnComplete
-      }));
+    this.sendToRenderer('updates:downloaded', toRendererPayload(this.latestInfo, {
+      channel: UPDATE_CHANNELS.DEV,
+      downloadedAt: new Date().toISOString(),
+      downloadPath,
+      canInstall: !this.disableInstall && false,
+      autoInstallRequested: installOnComplete && !this.disableInstall
+    }));
 
-      if (installOnComplete) {
-        const message = 'Install requested but not supported in development mode. Update package downloaded instead.';
-        this.sendToRenderer('updates:error', {
-          message,
-          channel: UPDATE_CHANNELS.DEV
-        });
-      }
+    if (installOnComplete) {
+      const message = 'Install requested but not supported in download-only mode. Update package downloaded instead.';
+      this.sendToRenderer('updates:error', {
+        message,
+        channel: UPDATE_CHANNELS.DEV
+      });
+    }
 
       return { ok: true, downloadPath };
     } catch (error) {

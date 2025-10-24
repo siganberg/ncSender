@@ -65,9 +65,7 @@
             View on GitHub
           </a>
         </header>
-        <div class="notes-body">
-          <pre>{{ releaseNotesText }}</pre>
-        </div>
+        <div class="notes-body" v-html="releaseNotesHtml"></div>
       </section>
 
       <footer class="update-dialog__actions">
@@ -241,6 +239,32 @@ const releaseNotesText = computed(() => {
     return 'No release notes were provided for this update.';
   }
   return notes;
+});
+
+const releaseNotesHtml = computed(() => {
+  const notes = releaseNotesText.value;
+  if (!notes || notes === 'No release notes were provided for this update.') {
+    return `<p style="color: var(--color-text-secondary);">${notes}</p>`;
+  }
+
+  // Simple markdown to HTML conversion
+  return notes
+    // Headers
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Bold and italic
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Bullet points
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    // Wrap lists
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    // Line breaks
+    .replace(/\n\n/g, '<br><br>')
+    .replace(/\n/g, '<br>');
 });
 
 const showDownloadOnlyButton = computed(() => !props.state.canInstall);
@@ -467,15 +491,60 @@ const showDownloadOnlyButton = computed(() => !props.state.canInstall);
   border: 1px solid var(--color-border);
   max-height: 260px;
   overflow-y: auto;
+  line-height: 1.6;
 }
 
-.notes-body pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.5;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 0.9rem;
+.notes-body :deep(h1),
+.notes-body :deep(h2),
+.notes-body :deep(h3) {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.notes-body :deep(h1) {
+  font-size: 1.5rem;
+}
+
+.notes-body :deep(h2) {
+  font-size: 1.3rem;
+}
+
+.notes-body :deep(h3) {
+  font-size: 1.1rem;
+}
+
+.notes-body :deep(h1:first-child),
+.notes-body :deep(h2:first-child),
+.notes-body :deep(h3:first-child) {
+  margin-top: 0;
+}
+
+.notes-body :deep(ul) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.notes-body :deep(li) {
+  margin: 4px 0;
+  color: var(--color-text-primary);
+}
+
+.notes-body :deep(a) {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.notes-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.notes-body :deep(strong) {
+  font-weight: 600;
+}
+
+.notes-body :deep(em) {
+  font-style: italic;
 }
 
 .update-dialog__actions {
