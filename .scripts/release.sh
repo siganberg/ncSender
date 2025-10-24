@@ -2,8 +2,11 @@
 
 set -e
 
-# Get the latest tag
-LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+# Get the latest tag from all branches
+LATEST_TAG=$(git tag --sort=-version:refname | head -1)
+if [ -z "$LATEST_TAG" ]; then
+    LATEST_TAG="v0.0.0"
+fi
 echo "Latest tag: $LATEST_TAG"
 
 # Extract version number (remove 'v' prefix)
