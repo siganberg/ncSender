@@ -184,6 +184,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -240,14 +241,22 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
 
+          # Debug: Show available tags
+          echo "Available tags:"
+          git tag -l
+
           # Get the tag annotation (release notes)
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG")
+
+          # Debug: Show what we extracted
+          echo "Extracted tag message length: ${#TAG_MESSAGE}"
 
           # Save to file for use in release
           echo "$TAG_MESSAGE" > release-notes.md
 
           echo "Release notes:"
           cat release-notes.md
+          echo "---END RELEASE NOTES---"
 
       - name: Create Release
         env:
