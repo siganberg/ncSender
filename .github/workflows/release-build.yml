@@ -6,49 +6,12 @@ on:
       - 'v*'
 
 jobs:
-  update-version:
-    name: Update package.json version
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Update package.json version
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          echo "Tag: $TAG"
-          echo "Version (without v): $VERSION"
-
-          # Update version in app/package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/package.json
-
-          # Show the change
-          echo "Updated app/package.json:"
-          grep -A 1 -B 1 "\"version\":" app/package.json
-
-      - name: Upload updated package.json
-        uses: actions/upload-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/package.json
-
   macos:
     name: macOS Builds
-    needs: [update-version]
     runs-on: macos-14  # macOS Sonoma (stable)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -79,7 +42,6 @@ jobs:
 
   linux:
     name: Linux Builds
-    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
@@ -88,12 +50,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -124,7 +80,6 @@ jobs:
 
   windows:
     name: Windows Builds
-    needs: [update-version]
     runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
@@ -133,12 +88,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -170,17 +119,10 @@ jobs:
 
   raspberry-pi:
     name: Raspberry Pi Build
-    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -277,6 +219,25 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
+      - name: Checkout (for tag annotation)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag annotation
+        id: tag_annotation
+        run: |
+          TAG="${{ github.ref_name }}"
+
+          # Get the tag annotation (release notes)
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG")
+
+          # Save to file for use in release
+          echo "$TAG_MESSAGE" > release-notes.md
+
+          echo "Release notes:"
+          cat release-notes.md
+
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -284,41 +245,5 @@ jobs:
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} \
             --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
+            --notes-file release-notes.md \
             release-assets/*
-
-  commit-version:
-    name: Commit version update to main
-    needs: [release]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout main branch
-        uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
-
-      - name: Commit and push version update
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add app/package.json
-
-          # Only commit if there are changes
-          if git diff --staged --quiet; then
-            echo "No changes to package.json version - already up to date"
-          else
-            git commit -m "chore: bump version to $VERSION [skip ci]"
-            git push origin main
-          fi
