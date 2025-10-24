@@ -28,74 +28,98 @@ echo ""
 echo "Updated app/package.json:"
 grep "\"version\":" app/package.json
 
-# Generate release notes from commits
-echo ""
-echo "Generating release notes from $LATEST_TAG to HEAD..."
-echo ""
-
-# Get commit messages and categorize them
-RELEASE_NOTES_FILE=$(mktemp)
-
-echo "## What's Changed" > "$RELEASE_NOTES_FILE"
-echo "" >> "$RELEASE_NOTES_FILE"
-
 # Check if there are new commits since last tag
+echo ""
 if git rev-list "$LATEST_TAG..HEAD" --count | grep -q "^0$"; then
     echo "⚠️  No new commits since $LATEST_TAG"
-    rm "$RELEASE_NOTES_FILE"
     git restore app/package.json
     exit 1
 fi
 
-# Categorize commits
-FEATURES=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s" | grep -i "^feat\|^feature\|^add" || true)
-FIXES=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s" | grep -i "^fix\|^bug" || true)
-IMPROVEMENTS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s" | grep -i "^enhance\|^improve\|^update\|^refactor" || true)
-CHORES=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s" | grep -i "^chore" || true)
-OTHER=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s" | grep -iv "^feat\|^feature\|^add\|^fix\|^bug\|^enhance\|^improve\|^update\|^refactor\|^chore" || true)
+# Get commit messages
+COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s")
 
-# Add features
-if [ -n "$FEATURES" ]; then
-    echo "### ✨ New Features" >> "$RELEASE_NOTES_FILE"
-    echo "$FEATURES" | while read -r line; do
-        # Remove prefix and clean up
-        CLEAN_LINE=$(echo "$line" | sed -E 's/^(feat|feature|add|Add|Feature|Feat)://i' | sed 's/^[[:space:]]*//')
-        echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
-    done
+echo "Generating release notes using Claude..."
+echo ""
+
+# Create a prompt for Claude
+PROMPT="Based on the following git commit messages from $LATEST_TAG to HEAD, generate user-focused release notes for version $NEW_VERSION.
+
+Commit messages:
+$COMMITS
+
+Please create release notes that:
+1. Are focused on users, not developers
+2. Group changes into categories with emojis (✨ New Features, 🐛 Bug Fixes, 🔧 Improvements, etc.)
+3. Use clear, non-technical language where possible
+4. Start with \"## What's Changed\"
+5. Format as markdown with bullet points
+6. Exclude internal/chore commits unless they directly impact users
+
+Output only the release notes markdown, nothing else."
+
+# Use Claude CLI to generate release notes
+RELEASE_NOTES=$(claude -p "$PROMPT" 2>/dev/null)
+
+if [ $? -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
+    echo "❌ Failed to generate release notes with Claude"
+    echo "Please make sure 'claude' CLI is installed and configured"
+    echo ""
+    echo "Falling back to basic release notes..."
+
+    # Fallback: basic categorization
+    RELEASE_NOTES_FILE=$(mktemp)
+    echo "## What's Changed" > "$RELEASE_NOTES_FILE"
     echo "" >> "$RELEASE_NOTES_FILE"
+
+    # Simple categorization
+    FEATURES=$(echo "$COMMITS" | grep -i "^feat\|^feature\|^add" || true)
+    FIXES=$(echo "$COMMITS" | grep -i "^fix\|^bug" || true)
+    OTHER=$(echo "$COMMITS" | grep -iv "^feat\|^feature\|^add\|^fix\|^bug\|^chore" || true)
+
+    if [ -n "$FEATURES" ]; then
+        echo "### ✨ New Features" >> "$RELEASE_NOTES_FILE"
+        echo "$FEATURES" | while read -r line; do
+            CLEAN_LINE=$(echo "$line" | sed -E 's/^(feat|feature|add|Add|Feature|Feat)://i' | sed 's/^[[:space:]]*//')
+            echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
+        done
+        echo "" >> "$RELEASE_NOTES_FILE"
+    fi
+
+    if [ -n "$FIXES" ]; then
+        echo "### 🐛 Bug Fixes" >> "$RELEASE_NOTES_FILE"
+        echo "$FIXES" | while read -r line; do
+            CLEAN_LINE=$(echo "$line" | sed -E 's/^(fix|bug|Fix|Bug)://i' | sed 's/^[[:space:]]*//')
+            echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
+        done
+        echo "" >> "$RELEASE_NOTES_FILE"
+    fi
+
+    if [ -n "$OTHER" ]; then
+        echo "### 📦 Other Changes" >> "$RELEASE_NOTES_FILE"
+        echo "$OTHER" | while read -r line; do
+            echo "- $line" >> "$RELEASE_NOTES_FILE"
+        done
+        echo "" >> "$RELEASE_NOTES_FILE"
+    fi
+
+    RELEASE_NOTES=$(cat "$RELEASE_NOTES_FILE")
+    rm "$RELEASE_NOTES_FILE"
+else
+    echo "✅ Release notes generated successfully"
 fi
 
-# Add fixes
-if [ -n "$FIXES" ]; then
-    echo "### 🐛 Bug Fixes" >> "$RELEASE_NOTES_FILE"
-    echo "$FIXES" | while read -r line; do
-        CLEAN_LINE=$(echo "$line" | sed -E 's/^(fix|bug|Fix|Bug)://i' | sed 's/^[[:space:]]*//')
-        echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
-    done
-    echo "" >> "$RELEASE_NOTES_FILE"
-fi
-
-# Add improvements
-if [ -n "$IMPROVEMENTS" ]; then
-    echo "### 🔧 Improvements" >> "$RELEASE_NOTES_FILE"
-    echo "$IMPROVEMENTS" | while read -r line; do
-        CLEAN_LINE=$(echo "$line" | sed -E 's/^(enhance|improve|update|refactor|Enhance|Improve|Update|Refactor)://i' | sed 's/^[[:space:]]*//')
-        echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
-    done
-    echo "" >> "$RELEASE_NOTES_FILE"
-fi
-
-# Add other changes (excluding chores)
-if [ -n "$OTHER" ]; then
-    echo "### 📦 Other Changes" >> "$RELEASE_NOTES_FILE"
-    echo "$OTHER" | while read -r line; do
-        echo "- $line" >> "$RELEASE_NOTES_FILE"
-    done
-    echo "" >> "$RELEASE_NOTES_FILE"
-fi
+# Save to temp file for git tag
+RELEASE_NOTES_FILE=$(mktemp)
+echo "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
 
 # Display release notes
+echo ""
+echo "========================================="
+echo "Release Notes for $NEW_TAG:"
+echo "========================================="
 cat "$RELEASE_NOTES_FILE"
+echo "========================================="
 
 # Ask for confirmation
 echo ""
@@ -108,7 +132,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     git commit -m "chore: bump version to $NEW_VERSION"
 
     # Push the commit
-    git push origin main
+    git push origin $(git branch --show-current)
 
     # Create and push the tag with release notes
     git tag -a "$NEW_TAG" -F "$RELEASE_NOTES_FILE"
