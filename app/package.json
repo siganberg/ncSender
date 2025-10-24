@@ -27,9 +27,10 @@
     "install:all": "npm install && cd client && npm install"
   },
   "dependencies": {
-    "adm-zip": "^0.5.12",
     "@serialport/parser-readline": "^12.0.0",
+    "adm-zip": "^0.5.12",
     "cors": "^2.8.5",
+    "electron-updater": "^6.6.2",
     "express": "^5.1.0",
     "multer": "^2.0.2",
     "p-queue": "^9.0.0",
@@ -46,6 +47,13 @@
   "build": {
     "appId": "com.ncsender.app",
     "productName": "ncSender",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "siganberg",
+        "repo": "ncSender"
+      }
+    ],
     "directories": {
       "output": "dist-electron"
     },

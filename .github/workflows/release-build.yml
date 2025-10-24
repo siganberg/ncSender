@@ -40,10 +40,6 @@ jobs:
     name: macOS Builds
     needs: [update-version]
     runs-on: macos-14  # macOS Sonoma (stable)
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,16 +65,16 @@ jobs:
         run: npm run build:client
         working-directory: app
 
-      - name: Build Electron (${{ matrix.arch }})
+      - name: Build Electron (x64 + arm64)
         run: |
           rm -rf dist-electron
-          npm run dist -- --mac --${{ matrix.arch }}
+          npm run dist -- --mac --x64 --arm64
         working-directory: app
 
-      - name: Upload macOS Artifact (${{ matrix.arch }})
+      - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-artifacts
+          name: macos-artifacts
           path: app/dist-electron/**
 
   linux:
@@ -247,7 +243,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Prepare and rename release assets
+      - name: Prepare release assets (preserve electron-builder filenames)
         run: |
           mkdir -p release-assets
           TAG="${{ github.ref_name }}"
@@ -255,58 +251,28 @@ jobs:
           echo "Downloaded artifacts structure:"
           find artifacts -type f
 
-          # Rename and copy macOS x64 assets
-          if [ -d "artifacts/macos-x64-artifacts" ]; then
-            for file in artifacts/macos-x64-artifacts/*.dmg; do
-              if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_macos_x64.${ext}"
-              fi
+          copy_matching_files() {
+            local source_dir="$1"
+            shift
+            if [ ! -d "$source_dir" ]; then
+              return
+            fi
+            for pattern in "$@"; do
+              find "$source_dir" -maxdepth 1 -type f -name "$pattern" -print -exec cp {} release-assets/ \;
             done
-          fi
+          }
 
-          # Rename and copy macOS arm64 assets
-          if [ -d "artifacts/macos-arm64-artifacts" ]; then
-            for file in artifacts/macos-arm64-artifacts/*.dmg; do
-              if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.${ext}"
-              fi
-            done
-          fi
+          # macOS assets (keep default names for auto-updater compatibility)
+          copy_matching_files "artifacts/macos-artifacts" "*.dmg" "*.pkg" "*.zip" "*.blockmap" "latest-mac.yml"
 
-          # Rename and copy Linux x64 assets
-          if [ -d "artifacts/linux-x64-artifacts" ]; then
-            for file in artifacts/linux-x64-artifacts/*.{deb,AppImage,rpm}; do
-              if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.${ext}"
-              fi
-            done
-          fi
+          # Windows assets
+          copy_matching_files "artifacts/windows-x64-artifacts" "*.exe" "*.msi" "*.zip" "*.blockmap" "latest.yml"
 
-          # Rename and copy Windows x64 assets
-          if [ -d "artifacts/windows-x64-artifacts" ]; then
-            for file in artifacts/windows-x64-artifacts/*.exe; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.exe"
-              fi
-            done
-          fi
+          # Linux assets
+          copy_matching_files "artifacts/linux-x64-artifacts" "*.AppImage" "*.deb" "*.rpm" "*.tar.gz" "latest-linux.yml"
 
-          # Rename and copy Raspberry Pi assets
-          if [ -d "artifacts/raspberry-pi-artifacts" ]; then
-            for file in artifacts/raspberry-pi-artifacts/*.deb; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.deb"
-              fi
-            done
-            for file in artifacts/raspberry-pi-artifacts/*.AppImage; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.AppImage"
-              fi
-            done
-          fi
+          # Raspberry Pi assets
+          copy_matching_files "artifacts/raspberry-pi-artifacts" "*.AppImage" "*.deb"
 
           echo "Release assets to upload:"
           ls -lh release-assets/

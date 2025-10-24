@@ -34,5 +34,46 @@ contextBridge.exposeInMainWorld('ncSender', {
       ipcRenderer.on('cnc-response', (event, response) => callback(response));
       return () => ipcRenderer.removeAllListeners('cnc-response');
     }
+  },
+
+  updates: {
+    checkForUpdates: () => ipcRenderer.invoke('updates/check'),
+    downloadUpdate: (options = {}) => ipcRenderer.invoke('updates/download', options),
+    installUpdate: () => ipcRenderer.invoke('updates/install'),
+    onChecking: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:checking', listener);
+      return () => ipcRenderer.removeListener('updates:checking', listener);
+    },
+    onAvailable: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:available', listener);
+      return () => ipcRenderer.removeListener('updates:available', listener);
+    },
+    onNotAvailable: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:not-available', listener);
+      return () => ipcRenderer.removeListener('updates:not-available', listener);
+    },
+    onError: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:error', listener);
+      return () => ipcRenderer.removeListener('updates:error', listener);
+    },
+    onDownloadStarted: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:download-started', listener);
+      return () => ipcRenderer.removeListener('updates:download-started', listener);
+    },
+    onDownloadProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:download-progress', listener);
+      return () => ipcRenderer.removeListener('updates:download-progress', listener);
+    },
+    onDownloaded: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:downloaded', listener);
+      return () => ipcRenderer.removeListener('updates:downloaded', listener);
+    }
   }
 });

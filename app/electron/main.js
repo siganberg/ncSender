@@ -1,7 +1,8 @@
-import { app, BrowserWindow, nativeTheme, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
 import { createServer } from './server.js';
+import { initializeUpdateManager, scheduleInitialUpdateCheck } from './update-manager.js';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isKiosk = process.argv.includes('--kiosk');
@@ -9,6 +10,7 @@ const isServerOnly = process.argv.includes('--server-only') || process.argv.incl
 
 let mainWindow = null;
 let server = null;
+let initialUpdateCheckScheduled = false;
 
 async function startServer() {
   try {
@@ -71,6 +73,12 @@ async function createWindow() {
     mainWindow = null;
   });
 
+  initializeUpdateManager(mainWindow);
+  if (!initialUpdateCheckScheduled) {
+    initialUpdateCheckScheduled = true;
+    scheduleInitialUpdateCheck();
+  }
+
   // Handle fullscreen toggle
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Press F11 to toggle fullscreen (without kiosk mode)
@@ -101,6 +109,7 @@ app.whenReady().then(() => {
       app.quit();
     });
   } else {
+    initializeUpdateManager(null);
     createWindow();
   }
 });
@@ -116,6 +125,8 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
+  } else {
+    initializeUpdateManager(mainWindow);
   }
 });
 
