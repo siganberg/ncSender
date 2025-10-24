@@ -51,15 +51,23 @@ PROMPT="Based on the following git commit messages from $LATEST_TAG to HEAD, gen
 Commit messages:
 $COMMITS
 
-Please create release notes that:
-1. Are focused on users, not developers
-2. Group changes into categories with emojis (✨ New Features, 🐛 Bug Fixes, 🔧 Improvements, etc.)
-3. Use clear, non-technical language where possible
-4. Start with \"## What's Changed\"
-5. Format as markdown with bullet points
-6. Exclude internal/chore commits unless they directly impact users
+CRITICAL: Output ONLY the exact markdown format shown below. Do NOT add ANY other text.
 
-Output only the release notes markdown, nothing else."
+Required format:
+## What's Changed
+
+### [emoji] [Category Name]
+- [change description]
+- [change description]
+
+Rules:
+1. Start with exactly \"## What's Changed\"
+2. Group by category with emojis (✨ New Features, 🐛 Bug Fixes, 🔧 Improvements)
+3. Use user-focused language
+4. Exclude internal/chore commits unless they impact users
+5. No markdown code blocks, URLs, links, or non-English characters
+
+Output ONLY the markdown. No preamble. No explanation. Just the markdown."
 
 # Use Claude CLI to generate release notes
 RELEASE_NOTES=$(claude -p "$PROMPT" 2>&1)
@@ -113,9 +121,9 @@ else
     echo "✅ Release notes generated successfully"
 fi
 
-# Save to temp file for git tag
-RELEASE_NOTES_FILE=$(mktemp)
-echo "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
+# Save to latest_release.md file
+RELEASE_NOTES_FILE="latest_release.md"
+printf '%s\n' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
 
 # Display release notes
 echo ""
@@ -131,26 +139,22 @@ read -p "Do you want to commit, tag, and push with these release notes? (y/n) " 
 echo ""
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    # Commit the version change
-    git add app/package.json
-    git commit -m "chore: bump version to $NEW_VERSION"
+    # Commit the version change and release notes
+    git add app/package.json "$RELEASE_NOTES_FILE"
+    git commit -m "chore: create new release $NEW_TAG"
 
     # Push the commit
     git push origin $(git branch --show-current)
 
-    # Create and push the tag with release notes
-    git tag -a "$NEW_TAG" -F "$RELEASE_NOTES_FILE"
+    # Create and push the tag (using simple message since CI will use latest_release.md)
+    git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
     git push origin "$NEW_TAG"
 
     echo ""
     echo "✅ Successfully created and pushed $NEW_TAG"
     echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
-
-    # Clean up
-    rm "$RELEASE_NOTES_FILE"
 else
-    # Revert the package.json change
-    git restore app/package.json
-    rm "$RELEASE_NOTES_FILE"
+    # Revert the changes
+    git restore app/package.json "$RELEASE_NOTES_FILE"
     echo "Cancelled. Changes reverted."
 fi
