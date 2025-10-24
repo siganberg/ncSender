@@ -59,9 +59,10 @@ Please create release notes that:
 Output only the release notes markdown, nothing else."
 
 # Use Claude CLI to generate release notes
-RELEASE_NOTES=$(claude -p "$PROMPT" 2>/dev/null)
+RELEASE_NOTES=$(claude -p "$PROMPT" 2>&1)
+CLAUDE_EXIT_CODE=$?
 
-if [ $? -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
+if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
     echo "❌ Failed to generate release notes with Claude"
     echo "Please make sure 'claude' CLI is installed and configured"
     echo ""
