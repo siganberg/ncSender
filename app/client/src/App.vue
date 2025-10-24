@@ -15,9 +15,11 @@
         :workspace="workspace"
         :sender-status="currentSenderStatus"
         :last-alarm-code="lastAlarmCode"
+        :update-state="updateState"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
+        @show-update-dialog="openUpdateDialog"
         :on-show-settings="openSettings"
       />
     </template>
@@ -228,6 +230,20 @@
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
+                <label class="setting-label">Machine Home Location</label>
+                <div class="settings-note">
+                  Specify where your machine's physical home position (0,0) is located on the machine table.
+                </div>
+              </div>
+              <select class="setting-select" v-model="homeLocation" @change="saveHomeLocation">
+                <option value="back-left">Back-Left (Default)</option>
+                <option value="back-right">Back-Right</option>
+                <option value="front-left">Front-Left</option>
+                <option value="front-right">Front-Right</option>
+              </select>
+            </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
                 <label class="setting-label">Enable Browser Debug Logging</label>
                 <div class="settings-note">
                   Enables console logging for debugging. Useful for troubleshooting issues.
@@ -325,7 +341,12 @@
                       <div class="setting-group" v-if="setting.group">{{ setting.group.name }}</div>
                     </td>
                     <td class="col-description">
-                      <div class="setting-name">{{ setting.name }}</div>
+                      <div class="setting-name">
+                        {{ setting.name }}
+                        <span v-if="setting.halDetails && setting.halDetails[7] === '1'" class="requires-restart-badge" title="Changing this setting requires controller restart">
+                          Requires Restart
+                        </span>
+                      </div>
                       <div
                         class="setting-hal-description"
                         v-if="setting.halDetails && setting.halDetails[4]"
@@ -344,15 +365,17 @@
                           v-for="(bitName, index) in setting.format.split(',')"
                           :key="index"
                         >
-                          <span class="bitfield-name">{{ bitName.trim() }}</span>
-                          <label class="toggle-switch">
-                            <input
-                              type="checkbox"
-                              :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
-                              @change="toggleBit(setting, index)"
-                            />
-                            <span class="toggle-slider"></span>
-                          </label>
+                          <template v-if="bitName.trim() !== 'N/A' && bitName.trim() !== ''">
+                            <span class="bitfield-name">{{ bitName.trim() }}</span>
+                            <label class="toggle-switch">
+                              <input
+                                type="checkbox"
+                                :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                                @change="toggleBit(setting, index)"
+                              />
+                              <span class="toggle-slider"></span>
+                            </label>
+                          </template>
                         </template>
                       </div>
 
@@ -403,7 +426,7 @@
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
                           @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="([481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) || setting.dataType === 5) ? 0 : (setting.min || undefined)"
+                          :min="(setting.halDetails && setting.halDetails[8] === '1') ? undefined : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="1"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -418,7 +441,7 @@
                           :value="firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : (setting.value !== undefined ? setting.value : '')"
                           @input="updateNumericSetting(setting, $event.target.value)"
                           @keydown.enter="$event.target.blur()"
-                          :min="[481, 397, 392, 393, 394, 673, 539].includes(parseInt(setting.id)) ? 0 : (setting.min || undefined)"
+                          :min="(setting.halDetails && setting.halDetails[8] === '1') ? undefined : (setting.min || undefined)"
                           :max="setting.max || undefined"
                           step="any"
                           :class="['setting-numeric-input', { 'has-changes': firmwareChanges[setting.id] !== undefined }]"
@@ -458,15 +481,17 @@
                             v-for="(bitName, index) in setting.format.split(',')"
                             :key="index"
                           >
-                            <span class="bitfield-name">{{ bitName.trim() }}</span>
-                            <label class="toggle-switch">
-                              <input
-                                type="checkbox"
-                                :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
-                                @change="toggleBit(setting, index)"
-                              />
-                              <span class="toggle-slider"></span>
-                            </label>
+                            <template v-if="bitName.trim() !== 'N/A' && bitName.trim() !== ''">
+                              <span class="bitfield-name">{{ bitName.trim() }}</span>
+                              <label class="toggle-switch">
+                                <input
+                                  type="checkbox"
+                                  :checked="isBitSet(firmwareChanges[setting.id] !== undefined ? firmwareChanges[setting.id] : setting.value, index)"
+                                  @change="toggleBit(setting, index)"
+                                />
+                                <span class="toggle-slider"></span>
+                              </label>
+                            </template>
                           </template>
                         </div>
                       </div>
@@ -616,6 +641,15 @@
             @blur="validateSetupForm"
           >
         </div>
+        <div class="setting-item">
+          <label class="setting-label">Machine Home Location</label>
+          <select class="setting-select setting-input--right" v-model="setupSettings.homeLocation">
+            <option value="back-left">Back-Left (Default)</option>
+            <option value="back-right">Back-Right</option>
+            <option value="front-left">Front-Left</option>
+            <option value="front-right">Front-Right</option>
+          </select>
+        </div>
       </div>
 
       <div class="setup-footer">
@@ -650,6 +684,16 @@
     />
   </Dialog>
 
+  <!-- Application Update Dialog -->
+  <UpdateDialog
+    v-if="showUpdateDialog && updateState.supported"
+    :state="updateState"
+    @close="closeUpdateDialog"
+    @check="handleManualCheckForUpdates"
+    @download-install="handleDownloadAndInstallUpdate"
+    @download-only="handleDownloadUpdateOnly"
+  />
+
     <!-- Plugin Dialog -->
     <PluginDialog />
   </template>
@@ -667,10 +711,12 @@ import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
 import PluginDialog from './components/PluginDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
+import UpdateDialog from './components/UpdateDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
+import { useUpdateCenter } from './composables/use-update-center';
 import KeyboardTab from './features/keyboard/KeyboardTab.vue';
 import PluginsTab from './features/plugins/PluginsTab.vue';
 import { keyBindingStore } from './features/keyboard';
@@ -678,6 +724,10 @@ import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 
 // Get centralized store
 const store = useAppStore();
+
+const updateCenter = useUpdateCenter();
+const updateState = updateCenter.state;
+updateCenter.ensureListeners();
 
 // Detect mobile view from URL query parameter OR screen size
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -724,6 +774,47 @@ const showSetupDialog = ref(false);
 const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
+const showUpdateDialog = ref(false);
+
+const openUpdateDialog = () => {
+  if (!updateState.supported) {
+    return;
+  }
+  updateCenter.clearError();
+  showUpdateDialog.value = true;
+  if (!updateState.isAvailable && !updateState.isChecking && !updateState.isDownloading) {
+    handleManualCheckForUpdates();
+  }
+};
+
+const closeUpdateDialog = () => {
+  showUpdateDialog.value = false;
+  updateCenter.clearError();
+};
+
+const handleManualCheckForUpdates = async () => {
+  try {
+    await updateCenter.checkForUpdates();
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+  }
+};
+
+const handleDownloadAndInstallUpdate = async () => {
+  try {
+    await updateCenter.downloadAndInstall();
+  } catch (error) {
+    console.error('Failed to download and install update:', error);
+  }
+};
+
+const handleDownloadUpdateOnly = async () => {
+  try {
+    await updateCenter.downloadOnly();
+  } catch (error) {
+    console.error('Failed to download update package:', error);
+  }
+};
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
 const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef } = store;
@@ -809,6 +900,9 @@ const numberOfTools = ref(initialSettings?.numberOfTools ?? 0);
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
+// Home Location setting
+const homeLocation = ref(initialSettings?.homeLocation ?? 'back-left');
+
 // Units preference setting
 const unitsPreference = ref(initialSettings?.unitsPreference ?? 'metric');
 const showUnitsConfirmDialog = ref(false);
@@ -832,7 +926,8 @@ const setupSettings = reactive({
   baudRate: '115200',
   ipAddress: '192.168.5.1',
   port: 23,
-  usbPort: ''
+  usbPort: '',
+  homeLocation: 'back-left'
 });
 
 // Console settings
@@ -1051,10 +1146,29 @@ const filteredFirmwareSettings = computed(() => {
     return [];
   }
 
-  const settings = Object.values(firmwareData.value.settings).map((setting) => ({
-    ...setting,
-    id: setting.id.toString()
-  }));
+  const settings = Object.values(firmwareData.value.settings)
+    .map((setting) => ({
+      ...setting,
+      id: setting.id.toString()
+    }))
+    .filter((setting) => {
+      // Skip settings with dataType 7 (bitfield) that don't have a format
+      // These show as raw bitwise values which are not useful
+      if (setting.dataType === 7 && !setting.format) {
+        return false;
+      }
+
+      // Skip bitfield settings where all bits are N/A
+      if (setting.format && typeof setting.format === 'string') {
+        const bits = setting.format.split(',').map(b => b.trim());
+        const allNA = bits.every(bit => bit === 'N/A' || bit === '');
+        if (allNA) {
+          return false;
+        }
+      }
+
+      return true;
+    });
 
   if (!firmwareSearchQuery.value) {
     return settings.sort((a, b) => parseInt(a.id) - parseInt(b.id));
@@ -1238,15 +1352,14 @@ const updateNumericSetting = (setting: any, newValue: string) => {
   }
 
   // Validate min/max
-  // Special case: for certain settings, 0 is always valid even if min is set higher
-  const zeroIsValidSettings = [481, 397, 392, 393, 394, 673, 539]; // Settings where 0 has special meaning
-  const allowZero = setting.dataType === 5 || zeroIsValidSettings.includes(setting.id);
+  // Check halDetails[8] flag: if '1', allow empty/zero even with min value set
+  const allowZero = setting.halDetails && setting.halDetails[8] === '1';
 
   const min = setting.min ? parseFloat(setting.min) : -Infinity;
   const max = setting.max ? parseFloat(setting.max) : Infinity;
 
   if (allowZero && numValue === 0) {
-    // 0 is always valid for these settings (typically means disabled/unlimited)
+    // 0 is valid when halDetails[8] = '1' (typically means disabled/unlimited)
   } else if (numValue < min || numValue > max) {
     console.error(`Value must be between ${min} and ${max}${allowZero ? ' (or 0)' : ''}`);
     return;
@@ -1518,6 +1631,14 @@ watch(useDoorAsPause, async (newValue) => {
   });
 });
 
+// Save home location changes
+const saveHomeLocation = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    homeLocation: homeLocation.value
+  });
+};
+
 // Watch debugLogging and save changes
 watch(() => consoleSettings.debugLogging, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -1748,7 +1869,8 @@ const saveSetupSettings = async () => {
         serverPort: 8090,
         usbPort: setupSettings.usbPort || '',
         baudRate: parseInt(setupSettings.baudRate, 10) || 115200
-      }
+      },
+      homeLocation: setupSettings.homeLocation || 'back-left'
     };
 
     // Use settings store to save
@@ -1779,6 +1901,7 @@ const saveSetupSettings = async () => {
 const clearConsole = store.clearConsole;
 
 onMounted(async () => {
+  updateCenter.ensureListeners();
   // Settings are already loaded in main.ts, just get them from the store
   const { getSettings } = await import('./lib/settings-store.js');
   const initialSettings = getSettings();
@@ -2910,6 +3033,22 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.requires-restart-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #ff9800;
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .setting-hal-description {

@@ -4,7 +4,14 @@
       <img src="/assets/ncsender.svg" alt="ncSender Logo" class="logo-image" />
       <div class="logo-container">
         <span class="logo">ncSender</span>
-        <span class="version">v{{ appVersion }}</span>
+        <span
+          class="version"
+          :class="{ 'version--action': updateSupported }"
+          @click="onVersionClick"
+          :title="updateSupported ? 'Open update center' : 'Version information'"
+        >
+          v{{ appVersion }}
+        </span>
       </div>
       <div class="workspace-selector">
         <label class="workspace-label" for="workspace-select">Workspace:</label>
@@ -33,6 +40,23 @@
       </button>
     </div>
     <div class="toolbar__actions">
+      <button
+        v-if="shouldShowUpdateIndicator"
+        class="update-indicator"
+        :class="{
+          'update-indicator--available': hasUpdateAvailable,
+          'update-indicator--busy': isCheckingUpdates || isDownloadingUpdate,
+          'update-indicator--error': hasUpdateError
+        }"
+        @click="emit('show-update-dialog')"
+        @contextmenu.prevent="copyUpdateStatus"
+        :title="updateIndicatorTitle"
+      >
+        <span v-if="isCheckingUpdates || isDownloadingUpdate" class="spinner"></span>
+        <span v-else class="update-indicator__dot"></span>
+        <span class="update-indicator__label">{{ updateIndicatorLabel }}</span>
+        <span v-if="updateStatusCopied" class="update-indicator__copy-feedback">Copied!</span>
+      </button>
       <div class="unit-display">
         <label class="unit-label">Unit:</label>
         <span class="unit-value">{{ unitDisplayText }}</span>
@@ -48,10 +72,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
 import { getFeedRateUnitLabel } from '../lib/units';
 import packageJson from '../../../package.json';
+
+type TopToolbarUpdateState = {
+  supported?: boolean;
+  isAvailable?: boolean;
+  isChecking?: boolean;
+  isDownloading?: boolean;
+  latestVersion?: string | null;
+  downloadPercent?: number;
+  statusMessage?: string | null;
+  error?: string | null;
+};
 
 const store = useAppStore();
 const { isJobRunning, isConnected, senderStatus: storeSenderStatus, unitsPreference } = store;
@@ -63,12 +98,14 @@ const props = defineProps<{
   senderStatus?: string;
   onShowSettings: () => void;
   lastAlarmCode?: number | string;
+  updateState?: TopToolbarUpdateState;
 }>();
 
 const emit = defineEmits<{
   (e: 'toggle-theme'): void;
   (e: 'unlock'): void;
   (e: 'change-workspace', value: string): void;
+  (e: 'show-update-dialog'): void;
 }>();
 
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
@@ -116,6 +153,87 @@ const unitDisplayText = computed(() => {
 });
 
 const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
+
+const updateState = computed(() => props.updateState);
+const updateSupported = computed(() => Boolean(updateState.value?.supported));
+const hasUpdateAvailable = computed(() => Boolean(updateState.value?.supported && updateState.value?.isAvailable));
+const isCheckingUpdates = computed(() => Boolean(updateState.value?.supported && updateState.value?.isChecking));
+const isDownloadingUpdate = computed(() => Boolean(updateState.value?.supported && updateState.value?.isDownloading));
+const hasUpdateError = computed(() => Boolean(updateState.value?.supported && updateState.value?.error));
+const shouldShowUpdateIndicator = computed(() => hasUpdateAvailable.value || isCheckingUpdates.value || isDownloadingUpdate.value || hasUpdateError.value);
+const updateVersionLabel = computed(() => updateState.value?.latestVersion || '');
+const downloadPercentText = computed(() => {
+  const percentRaw = updateState.value?.downloadPercent ?? 0;
+  const percent = Math.max(0, Math.min(100, percentRaw));
+  return `${Math.round(percent)}%`;
+});
+const updateIndicatorLabel = computed(() => {
+  if (isDownloadingUpdate.value) {
+    return `Downloading ${downloadPercentText.value}`;
+  }
+  if (hasUpdateAvailable.value) {
+    return updateVersionLabel.value ? `Update v${updateVersionLabel.value}` : 'Update available';
+  }
+  if (isCheckingUpdates.value) {
+    return 'Checking…';
+  }
+  if (hasUpdateError.value) {
+    return 'Update issue';
+  }
+  return updateState.value?.statusMessage || 'Updates';
+});
+const updateIndicatorTitle = computed(() => {
+  if (updateState.value?.error) {
+    return updateState.value.error;
+  }
+  if (updateState.value?.statusMessage) {
+    return updateState.value.statusMessage;
+  }
+  if (hasUpdateAvailable.value && updateVersionLabel.value) {
+    return `New version ${updateVersionLabel.value} available`;
+  }
+  if (isDownloadingUpdate.value) {
+    return `Downloading update (${downloadPercentText.value})`;
+  }
+  return 'Update status';
+});
+
+const updateStatusCopied = ref(false);
+let updateStatusCopyTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copyUpdateStatus = async (event: MouseEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  const text = updateIndicatorTitle.value || updateIndicatorLabel.value;
+  if (!text) {
+    return;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      updateStatusCopied.value = true;
+      if (updateStatusCopyTimer) {
+        clearTimeout(updateStatusCopyTimer);
+      }
+      updateStatusCopyTimer = setTimeout(() => {
+        updateStatusCopied.value = false;
+        updateStatusCopyTimer = null;
+      }, 1600);
+    } else {
+      window.prompt('Copy update status', text);
+    }
+  } catch (error) {
+    console.error('Failed to copy update status:', error);
+    window.prompt('Copy update status', text);
+  }
+};
+
+const onVersionClick = () => {
+  if (updateSupported.value) {
+    emit('show-update-dialog');
+  }
+};
+
 const onWorkspaceChange = (e: Event) => {
   const target = e.target as HTMLSelectElement | null;
   const value = (target?.value || '').toUpperCase();
@@ -186,6 +304,17 @@ const onWorkspaceChange = (e: Event) => {
   text-align: left;
 }
 
+.version--action {
+  cursor: pointer;
+  text-decoration: underline dotted transparent;
+  transition: opacity 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.version--action:hover {
+  opacity: 1;
+  text-decoration-color: currentColor;
+}
+
 .workspace-selector {
   display: flex;
   align-items: center;
@@ -237,6 +366,83 @@ const onWorkspaceChange = (e: Event) => {
   gap: var(--gap-xs);
   flex: 1;
   justify-content: flex-end;
+}
+
+.update-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.update-indicator:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+}
+
+.update-indicator--available {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.update-indicator--busy {
+  opacity: 0.85;
+}
+
+.update-indicator--error {
+  border-color: #ff7a7a;
+  color: #ff7a7a;
+}
+
+.update-indicator .spinner {
+  width: 12px;
+  height: 12px;
+}
+
+.update-indicator__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: updateDotPulse 1.6s ease-in-out infinite;
+}
+
+.update-indicator--error .update-indicator__dot {
+  background: #ff7a7a;
+}
+
+.update-indicator__label {
+  white-space: nowrap;
+  user-select: text;
+}
+
+.update-indicator__copy-feedback {
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: var(--color-accent);
+}
+
+@keyframes updateDotPulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 button {

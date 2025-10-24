@@ -6,53 +6,12 @@ on:
       - 'v*'
 
 jobs:
-  update-version:
-    name: Update package.json version
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Update package.json version
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          echo "Tag: $TAG"
-          echo "Version (without v): $VERSION"
-
-          # Update version in app/package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/package.json
-
-          # Show the change
-          echo "Updated app/package.json:"
-          grep -A 1 -B 1 "\"version\":" app/package.json
-
-      - name: Upload updated package.json
-        uses: actions/upload-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/package.json
-
   macos:
     name: macOS Builds
-    needs: [update-version]
     runs-on: macos-14  # macOS Sonoma (stable)
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -69,21 +28,20 @@ jobs:
         run: npm run build:client
         working-directory: app
 
-      - name: Build Electron (${{ matrix.arch }})
+      - name: Build Electron (x64 + arm64)
         run: |
           rm -rf dist-electron
-          npm run dist -- --mac --${{ matrix.arch }}
+          npm run dist -- --mac --x64 --arm64 --publish never
         working-directory: app
 
-      - name: Upload macOS Artifact (${{ matrix.arch }})
+      - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-artifacts
+          name: macos-artifacts
           path: app/dist-electron/**
 
   linux:
     name: Linux Builds
-    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
@@ -93,12 +51,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -117,7 +69,7 @@ jobs:
       - name: Build Electron (${{ matrix.arch }})
         run: |
           rm -rf dist-electron
-          npm run dist -- --linux --${{ matrix.arch }}
+          npm run dist -- --linux --${{ matrix.arch }} --publish never
         working-directory: app
 
       - name: Upload Linux Artifact (${{ matrix.arch }})
@@ -128,7 +80,6 @@ jobs:
 
   windows:
     name: Windows Builds
-    needs: [update-version]
     runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
@@ -137,12 +88,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -163,7 +108,7 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
-          npm run dist -- --win --${{ matrix.arch }}
+          npm run dist -- --win --${{ matrix.arch }} --publish never
         working-directory: app
 
       - name: Upload Windows Artifact (${{ matrix.arch }})
@@ -174,17 +119,10 @@ jobs:
 
   raspberry-pi:
     name: Raspberry Pi Build
-    needs: [update-version]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -217,7 +155,7 @@ jobs:
       - name: Build Electron (Raspberry Pi ARM64)
         run: |
           rm -rf dist-electron
-          npm run dist -- --linux --arm64
+          npm run dist -- --linux --arm64 --publish never
         working-directory: app
         env:
           USE_SYSTEM_FPM: "true"
@@ -231,9 +169,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: raspberry-pi-artifacts
-          path: |
-            app/dist-electron/*.deb
-            app/dist-electron/*.AppImage
+          path: app/dist-electron/*.deb
 
   release:
     name: Create Release
@@ -242,12 +178,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout (for tag annotation)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Prepare and rename release assets
+      - name: Prepare release assets (preserve electron-builder filenames)
         run: |
           mkdir -p release-assets
           TAG="${{ github.ref_name }}"
@@ -255,46 +197,85 @@ jobs:
           echo "Downloaded artifacts structure:"
           find artifacts -type f
 
-          # Rename and copy macOS x64 assets
-          if [ -d "artifacts/macos-x64-artifacts" ]; then
-            for file in artifacts/macos-x64-artifacts/*.dmg; do
+          copy_matching_files() {
+            local source_dir="$1"
+            shift
+            if [ ! -d "$source_dir" ]; then
+              return
+            fi
+            for pattern in "$@"; do
+              find "$source_dir" -maxdepth 1 -type f -name "$pattern" -print -exec cp {} release-assets/ \;
+            done
+          }
+
+          # macOS assets (only DMG files, skip ZIP due to signing issues)
+          if [ -d "artifacts/macos-artifacts" ]; then
+            for file in artifacts/macos-artifacts/*arm64*.dmg; do
               if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_macos_x64.${ext}"
+                cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.dmg"
+              fi
+            done
+            for file in artifacts/macos-artifacts/*.dmg; do
+              if [ -f "$file" ] && [[ "$file" != *arm64* ]]; then
+                cp "$file" "release-assets/ncSender_${TAG}_macos_x64.dmg"
+              fi
+            done
+            for file in artifacts/macos-artifacts/latest-mac.yml; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/latest-mac.yml"
               fi
             done
           fi
 
-          # Rename and copy macOS arm64 assets
-          if [ -d "artifacts/macos-arm64-artifacts" ]; then
-            for file in artifacts/macos-arm64-artifacts/*.dmg; do
-              if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.${ext}"
-              fi
-            done
-          fi
-
-          # Rename and copy Linux x64 assets
-          if [ -d "artifacts/linux-x64-artifacts" ]; then
-            for file in artifacts/linux-x64-artifacts/*.{deb,AppImage,rpm}; do
-              if [ -f "$file" ]; then
-                ext="${file##*.}"
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.${ext}"
-              fi
-            done
-          fi
-
-          # Rename and copy Windows x64 assets
+          # Windows assets
           if [ -d "artifacts/windows-x64-artifacts" ]; then
             for file in artifacts/windows-x64-artifacts/*.exe; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_windows_x64.exe"
               fi
             done
+            for file in artifacts/windows-x64-artifacts/*.msi; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.msi"
+              fi
+            done
+            for file in artifacts/windows-x64-artifacts/*.zip; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.zip"
+              fi
+            done
+            for file in artifacts/windows-x64-artifacts/latest.yml; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/latest.yml"
+              fi
+            done
           fi
 
-          # Rename and copy Raspberry Pi assets
+          # Linux assets (skip AppImage to reduce release clutter)
+          if [ -d "artifacts/linux-x64-artifacts" ]; then
+            for file in artifacts/linux-x64-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.deb"
+              fi
+            done
+            for file in artifacts/linux-x64-artifacts/*.rpm; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.rpm"
+              fi
+            done
+            for file in artifacts/linux-x64-artifacts/*.tar.gz; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.tar.gz"
+              fi
+            done
+            for file in artifacts/linux-x64-artifacts/latest-linux.yml; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/latest-linux.yml"
+              fi
+            done
+          fi
+
+          # Raspberry Pi assets (rename for clarity)
           if [ -d "artifacts/raspberry-pi-artifacts" ]; then
             for file in artifacts/raspberry-pi-artifacts/*.deb; do
               if [ -f "$file" ]; then
@@ -311,6 +292,19 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
+      - name: Get release notes from latest_release.md
+        id: release_notes
+        run: |
+          if [ -f "latest_release.md" ]; then
+            cp latest_release.md release-notes.md
+            echo "Release notes content:"
+            cat release-notes.md
+            echo "---END RELEASE NOTES---"
+          else
+            echo "⚠️ latest_release.md not found, using default message"
+            echo "Release ${{ github.ref_name }}" > release-notes.md
+          fi
+
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -318,41 +312,5 @@ jobs:
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} \
             --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
+            --notes-file release-notes.md \
             release-assets/*
-
-  commit-version:
-    name: Commit version update to main
-    needs: [release]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout main branch
-        uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Download updated package.json
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-package-json
-          path: app/
-
-      - name: Commit and push version update
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add app/package.json
-
-          # Only commit if there are changes
-          if git diff --staged --quiet; then
-            echo "No changes to package.json version - already up to date"
-          else
-            git commit -m "chore: bump version to $VERSION [skip ci]"
-            git push origin main
-          fi

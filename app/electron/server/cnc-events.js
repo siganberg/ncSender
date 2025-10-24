@@ -73,7 +73,13 @@ export function registerCncEventHandlers({
       if (!firmwareData.settings[id]) {
         firmwareData.settings[id] = { id: parseInt(id, 10) };
       }
-      firmwareData.settings[id].value = String(value);
+
+      // Check if value actually changed
+      const oldValue = firmwareData.settings[id].value;
+      const newValue = String(value);
+      const valueChanged = oldValue !== newValue;
+
+      firmwareData.settings[id].value = newValue;
       firmwareData.timestamp = new Date().toISOString();
 
       try {
@@ -83,6 +89,12 @@ export function registerCncEventHandlers({
       }
       await fs.writeFile(firmwareFilePath, JSON.stringify(firmwareData, null, 2), 'utf8');
       log(`Updated firmware.json setting $${id}=${value}`);
+
+      // Check if setting requires restart and value actually changed
+      if (valueChanged && firmwareData.settings[id]?.halDetails?.[7] === '1') {
+        const restartMessage = `(Setting $${id} changed - Controller restart required for changes to take effect)`;
+        broadcast('cnc-data', restartMessage);
+      }
     } catch (error) {
       log('Failed to update firmware.json from command-ack:', error?.message || error);
     }

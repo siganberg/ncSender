@@ -18,6 +18,13 @@
           <div class="toggle-handle"></div>
         </div>
       </div>
+      <button v-if="activeTab === 'terminal'" @click="copyAllTerminalContent" class="copy-all-button" :disabled="terminalLines.length === 0" title="Copy all terminal content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+          <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+        </svg>
+        Copy All
+      </button>
       <div class="auto-scroll-toggle" @click="autoScrollGcode = !autoScrollGcode" :class="{ active: autoScrollGcode }" v-if="activeTab === 'gcode-preview'">
         <span class="toggle-label">Auto-Scroll</span>
         <div class="toggle-switch">
@@ -433,6 +440,34 @@ watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
   }
 });
 
+const copyAllTerminalContent = async () => {
+  try {
+    const allLines = terminalLines.value
+      .map(line => line.message)
+      .join('\n');
+
+    // Try modern Clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(allLines);
+    } else {
+      // Fallback for older browsers or Electron
+      const textarea = document.createElement('textarea');
+      textarea.value = allLines;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    console.log('Terminal content copied to clipboard');
+  } catch (error) {
+    console.error('Failed to copy terminal content:', error);
+    alert('Failed to copy terminal content');
+  }
+};
+
 const sendCommand = async () => {
   if (!commandToSend.value || !commandToSend.value.trim()) return;
 
@@ -827,6 +862,34 @@ h2 {
 
 .auto-scroll-toggle.active .toggle-handle {
   transform: translateX(18px);
+}
+
+.copy-all-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.copy-all-button:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.copy-all-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.copy-all-button svg {
+  flex-shrink: 0;
 }
 
 .console-output {
