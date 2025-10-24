@@ -44,11 +44,13 @@ if [ -d "$SOURCE_PLUGINS_DIR" ]; then
 
             echo "Syncing plugin: $plugin_name"
 
-            # Remove existing plugin directory and copy fresh
-            rm -rf "$PLUGINS_DIR/$plugin_name"
-            cp -r "$plugin_dir" "$PLUGINS_DIR/$plugin_name"
+            # Create plugin directory if it doesn't exist
+            mkdir -p "$PLUGINS_DIR/$plugin_name"
 
-            echo "  ✓ $plugin_name synced"
+            # Sync plugin files but preserve existing config.json
+            rsync -a --delete --exclude='config.json' "$plugin_dir/" "$PLUGINS_DIR/$plugin_name/"
+
+            echo "  ✓ $plugin_name synced (config.json preserved)"
             SYNCED_PLUGINS+=("$plugin_name")
         fi
     done

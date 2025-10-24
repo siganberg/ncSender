@@ -65,7 +65,8 @@ const formatCommandText = (value) => {
   let needsEscaping = false;
   for (let i = 0; i < value.length; i += 1) {
     const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) {
+    // Check for control characters, but allow newlines (0x0A)
+    if ((code < 0x20 && code !== 0x0A) || code === 0x7f) {
       needsEscaping = true;
       break;
     }
@@ -77,6 +78,10 @@ const formatCommandText = (value) => {
 
   return Array.from(value).map((char) => {
     const code = char.charCodeAt(0);
+    // Preserve newlines, escape other control characters
+    if (code === 0x0A) {
+      return '\n';
+    }
     if (code < 0x20 || code === 0x7f) {
       return `\\x${code.toString(16).toUpperCase().padStart(2, '0')}`;
     }

@@ -90,6 +90,11 @@ export async function onLoad(ctx) {
   ctx.registerEventHandler('onBeforeCommand', async (line, context) => {
     const pluginId = 'com.ncsender.rapidchangeatc';
 
+    // Safety check: if line is null/undefined, return it as-is
+    if (!line) {
+      return line;
+    }
+
     if (context.meta?.processedByPlugins?.includes(pluginId)) {
       return line;
     }
@@ -109,9 +114,35 @@ export async function onLoad(ctx) {
 
     if (match) {
       const toolNumber = match[1] || match[2];
-      ctx.log(`M6 detected with tool T${toolNumber} at line ${context.lineNumber}`);
+      ctx.log(`M6 detected with tool T${toolNumber} at line ${context.lineNumber}, executing tool change program`);
 
-      return line;
+      // Update metadata to mark as processed
+      context.meta = markAsProcessed(context.meta || {});
+
+      // Build tool change G-code program
+      const toolChangeProgram = [
+        `#<wasMetric> = #<_metric>`,
+        `G21`,
+        //`G53 G0 Z0`,
+        `M61 Q0`,           // Unload current tool
+        `G4 P2`,            // Wait 2 seconds
+        `M61 Q${toolNumber}`, // Load new tool
+        'O100 IF [#<wasMetric> EQ 0]',
+          '  G20',
+        'O100 ENDIF'
+      ].join('\n');
+
+      // Send the complete tool change program
+      setImmediate(() => {
+        ctx.sendGcode(toolChangeProgram, {
+          priority: 'high'
+        }).catch(err => {
+          ctx.log('Failed to send tool change program:', err);
+        });
+      });
+
+      // Return null to skip the original M6 command
+      return null;
     }
 
     return line;

@@ -1153,10 +1153,12 @@ const goToCorner = async (corner: CornerType) => {
   const yStr = formatMachineCoord(y);
 
   try {
-    // Always move to safe Z height first
-    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${safeZ}`, displayCommand: `G53 G21 G90 G0 Z${safeZ}` });
+    // Send both moves as a multi-line command
+    const multiLineCommand = `G53 G21 G90 G0 Z${safeZ}\nG53 G21 G90 G0 X${xStr} Y${yStr}`;
 
-    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G21 G90 G0 X${xStr} Y${yStr}` });
+    await api.sendCommandViaWebSocket({
+      command: multiLineCommand
+    });
   } catch (error) {
     console.error('Failed to move to corner:', error);
   }

@@ -106,11 +106,13 @@ class NCClient {
       commandId: providedCommandId,
       displayCommand: providedDisplayCommand,
       meta,
-      completesCommandId
+      completesCommandId,
+      groupId: providedGroupId
     } = options || {};
 
     const commandId = providedCommandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const displayCommand = providedDisplayCommand ?? this.describeCommand(command);
+    const groupId = providedGroupId ?? `grp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     try {
       const response = await fetch(`${this.baseUrl}/api/send-command`, {
@@ -120,7 +122,7 @@ class NCClient {
           command,
           commandId,
           displayCommand,
-          meta,
+          meta: { ...meta, groupId },
           completesCommandId
         })
       });
@@ -143,12 +145,13 @@ class NCClient {
     }
   }
 
-  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
+  async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId, groupId: providedGroupId } = {}) {
     if (typeof command !== 'string' || command.trim() === '') {
       throw new Error('sendCommandViaWebSocket requires a command');
     }
 
     const normalizedCommandId = commandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const groupId = providedGroupId ?? `grp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     await this.ensureWebSocketReady();
 
@@ -156,7 +159,7 @@ class NCClient {
       command,
       commandId: normalizedCommandId,
       displayCommand,
-      meta,
+      meta: { ...meta, groupId },
       completesCommandId
     };
 

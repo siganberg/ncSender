@@ -48,3 +48,6 @@ app/electron/data/command-history.json
 app/dist-electron/**
 releases/**
 app/client/vite.config.ts.timestamp-**
+
+# Plugin configuration files (user data)
+plugins/**/config.json
