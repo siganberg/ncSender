@@ -15,9 +15,11 @@
         :workspace="workspace"
         :sender-status="currentSenderStatus"
         :last-alarm-code="lastAlarmCode"
+        :update-state="updateState"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
+        @show-update-dialog="openUpdateDialog"
         :on-show-settings="openSettings"
       />
     </template>
@@ -682,6 +684,16 @@
     />
   </Dialog>
 
+  <!-- Application Update Dialog -->
+  <UpdateDialog
+    v-if="showUpdateDialog && updateState.supported"
+    :state="updateState"
+    @close="closeUpdateDialog"
+    @check="handleManualCheckForUpdates"
+    @download-install="handleDownloadAndInstallUpdate"
+    @download-only="handleDownloadUpdateOnly"
+  />
+
     <!-- Plugin Dialog -->
     <PluginDialog />
   </template>
@@ -699,9 +711,11 @@ import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
 import PluginDialog from './components/PluginDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
+import UpdateDialog from './components/UpdateDialog.vue';
 import { api } from './lib/api.js';
 import { getSettings } from './lib/settings-store.js';
 import { useAppStore } from './composables/use-app-store';
+import { useUpdateCenter } from './composables/use-update-center';
 import KeyboardTab from './features/keyboard/KeyboardTab.vue';
 import PluginsTab from './features/plugins/PluginsTab.vue';
 import { keyBindingStore } from './features/keyboard';
@@ -709,6 +723,10 @@ import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 
 // Get centralized store
 const store = useAppStore();
+
+const updateCenter = useUpdateCenter();
+const updateState = updateCenter.state;
+updateCenter.ensureListeners();
 
 // Detect mobile view from URL query parameter OR screen size
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -755,6 +773,47 @@ const showSetupDialog = ref(false);
 const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
+const showUpdateDialog = ref(false);
+
+const openUpdateDialog = () => {
+  if (!updateState.supported) {
+    return;
+  }
+  updateCenter.clearError();
+  showUpdateDialog.value = true;
+  if (!updateState.isAvailable && !updateState.isChecking && !updateState.isDownloading) {
+    handleManualCheckForUpdates();
+  }
+};
+
+const closeUpdateDialog = () => {
+  showUpdateDialog.value = false;
+  updateCenter.clearError();
+};
+
+const handleManualCheckForUpdates = async () => {
+  try {
+    await updateCenter.checkForUpdates();
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+  }
+};
+
+const handleDownloadAndInstallUpdate = async () => {
+  try {
+    await updateCenter.downloadAndInstall();
+  } catch (error) {
+    console.error('Failed to download and install update:', error);
+  }
+};
+
+const handleDownloadUpdateOnly = async () => {
+  try {
+    await updateCenter.downloadOnly();
+  } catch (error) {
+    console.error('Failed to download update package:', error);
+  }
+};
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
 const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef } = store;
@@ -1850,6 +1909,7 @@ const saveSetupSettings = async () => {
 const clearConsole = store.clearConsole;
 
 onMounted(async () => {
+  updateCenter.ensureListeners();
   // Settings are already loaded in main.ts, just get them from the store
   const { getSettings } = await import('./lib/settings-store.js');
   const initialSettings = getSettings();
