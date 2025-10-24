@@ -68,7 +68,7 @@ jobs:
       - name: Build Electron (x64 + arm64)
         run: |
           rm -rf dist-electron
-          npm run dist -- --mac --x64 --arm64
+          npm run dist -- --mac --x64 --arm64 --publish never
         working-directory: app
 
       - name: Upload macOS Artifacts
@@ -113,7 +113,7 @@ jobs:
       - name: Build Electron (${{ matrix.arch }})
         run: |
           rm -rf dist-electron
-          npm run dist -- --linux --${{ matrix.arch }}
+          npm run dist -- --linux --${{ matrix.arch }} --publish never
         working-directory: app
 
       - name: Upload Linux Artifact (${{ matrix.arch }})
@@ -159,7 +159,7 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
-          npm run dist -- --win --${{ matrix.arch }}
+          npm run dist -- --win --${{ matrix.arch }} --publish never
         working-directory: app
 
       - name: Upload Windows Artifact (${{ matrix.arch }})
@@ -213,7 +213,7 @@ jobs:
       - name: Build Electron (Raspberry Pi ARM64)
         run: |
           rm -rf dist-electron
-          npm run dist -- --linux --arm64
+          npm run dist -- --linux --arm64 --publish never
         working-directory: app
         env:
           USE_SYSTEM_FPM: "true"
