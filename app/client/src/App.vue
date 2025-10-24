@@ -191,9 +191,14 @@
 
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
-            <div class="setting-item">
-              <label class="setting-label">Number of Tools</label>
-              <select class="setting-select" v-model.number="numberOfTools">
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
+                <label class="setting-label">Number of Tools</label>
+                <div v-if="toolSource" class="settings-note">
+                  Control is disabled because it is currently controlled by {{ toolSource }}
+                </div>
+              </div>
+              <select class="setting-select" v-model.number="toolCount" :disabled="toolCountDisabled">
                 <option :value="0">0</option>
                 <option :value="1">1</option>
                 <option :value="2">2</option>
@@ -894,8 +899,10 @@ const currentGradient = computed(() => {
   return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
 });
 
-// Number of tools setting
-const numberOfTools = ref(initialSettings?.numberOfTools ?? 0);
+// Tool settings
+const toolCount = ref(initialSettings?.tool?.count ?? 0);
+const toolSource = ref(initialSettings?.tool?.source ?? null);
+const toolCountDisabled = computed(() => toolSource.value !== null);
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
@@ -1066,6 +1073,15 @@ onMounted(() => {
     // Update debug logging state when settings change
     if (typeof detail?.debugLogging === 'boolean') {
       setDebugEnabled(detail.debugLogging);
+    }
+    // Update tool settings when changed
+    if (detail?.tool) {
+      if (typeof detail.tool.count === 'number') {
+        toolCount.value = detail.tool.count;
+      }
+      if (detail.tool.source !== undefined) {
+        toolSource.value = detail.tool.source;
+      }
     }
   });
 });
@@ -1614,11 +1630,18 @@ const resetColors = async () => {
   });
 };
 
-// Watch numberOfTools and save changes (server will broadcast to all clients)
-watch(numberOfTools, async (newValue) => {
+// Watch toolCount and save changes (server will broadcast to all clients)
+// Only allow changes if not controlled by a plugin
+watch(toolCount, async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
-    numberOfTools: newValue
+    tool: {
+      count: newValue,
+      source: null
+    }
   });
   // Note: No local update here - wait for server broadcast to ensure all clients update together
 });
@@ -2154,6 +2177,14 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .setting-select:hover,
 .setting-input:hover {
   border-color: var(--color-accent);
+}
+
+.setting-select:disabled,
+.setting-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: var(--color-border);
 }
 
 .setting-value {

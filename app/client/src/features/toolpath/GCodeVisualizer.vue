@@ -1726,8 +1726,8 @@ onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
   if (settings) {
-    if (typeof settings.numberOfTools === 'number') {
-      numberOfToolsToShow.value = settings.numberOfTools;
+    if (typeof settings.tool?.count === 'number') {
+      numberOfToolsToShow.value = settings.tool.count;
     }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
@@ -1751,8 +1751,8 @@ onMounted(async () => {
     const changedSettings = event.detail;
 
     // Apply only the changed settings
-    if ('numberOfTools' in changedSettings) {
-      numberOfToolsToShow.value = changedSettings.numberOfTools;
+    if (changedSettings.tool?.count !== undefined) {
+      numberOfToolsToShow.value = changedSettings.tool.count;
     }
     // Future settings can be added here
     // if ('someOtherSetting' in changedSettings) { ... }

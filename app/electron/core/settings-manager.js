@@ -70,7 +70,10 @@ const DEFAULT_SETTINGS = {
       zProbeDistance: 3
     }
   },
-  numberOfTools : 0,
+  tool: {
+    count: 0,
+    source: null
+  },
   useDoorAsPause : true
 };
 
@@ -160,6 +163,21 @@ export function readSettings() {
       ...DEFAULT_SETTINGS.features,
       ...parsedFeatures
     };
+
+    // Migrate old numberOfTools to new tool.count structure
+    const parsedTool = parsedObject.tool && typeof parsedObject.tool === 'object'
+      ? parsedObject.tool
+      : {};
+
+    merged.tool = {
+      ...DEFAULT_SETTINGS.tool,
+      ...parsedTool
+    };
+
+    // Migration: convert old numberOfTools to tool.count
+    if (parsedObject.numberOfTools !== undefined && parsedObject.tool === undefined) {
+      merged.tool.count = parsedObject.numberOfTools;
+    }
 
     const parsedConnection = parsedObject.connection;
     const hasCustomConnection = parsedConnection && typeof parsedConnection === 'object';

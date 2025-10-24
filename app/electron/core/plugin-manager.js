@@ -167,7 +167,8 @@ class PluginManager {
 
     try {
       if (typeof plugin.module.onUnload === 'function') {
-        await plugin.module.onUnload();
+        const ctx = this.pluginContexts.get(pluginId);
+        await plugin.module.onUnload(ctx);
       }
     } catch (error) {
       log(`Error during plugin "${pluginId}" unload:`, error);

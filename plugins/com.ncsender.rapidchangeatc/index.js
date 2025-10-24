@@ -53,8 +53,39 @@ const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
   return 8090;
 };
 
-export function onLoad(ctx) {
+export async function onLoad(ctx) {
   ctx.log('Rapid Change ATC plugin loaded');
+
+  // Get current plugin settings and app settings
+  const pluginSettings = ctx.getSettings() || {};
+  const appSettings = ctx.getAppSettings() || {};
+
+  // Sync tool count from plugin config to app settings
+  const pocketCount = pluginSettings.pockets || 0;
+  const currentToolSettings = appSettings.tool || {};
+
+  // Set tool.source to indicate this plugin controls the tool count
+  // and sync the count from the plugin's pocket configuration
+  try {
+    const response = await fetch(`http://localhost:${resolveServerPort(pluginSettings, appSettings)}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: {
+          count: pocketCount,
+          source: 'com.ncsender.rapidchangeatc'
+        }
+      })
+    });
+
+    if (response.ok) {
+      ctx.log(`Tool count synchronized: ${pocketCount} (source: com.ncsender.rapidchangeatc)`);
+    } else {
+      ctx.log(`Failed to sync tool count: ${response.status}`);
+    }
+  } catch (error) {
+    ctx.log('Failed to sync tool count on plugin load:', error);
+  }
 
   ctx.registerEventHandler('onBeforeCommand', async (line, context) => {
     const pluginId = 'com.ncsender.rapidchangeatc';
@@ -669,7 +700,7 @@ export function onLoad(ctx) {
 
           const saveButton = getInput('rc-save-btn');
           if (saveButton) {
-            saveButton.addEventListener('click', function() {
+            saveButton.addEventListener('click', async function() {
               if (saveButton.disabled) {
                 return;
               }
@@ -679,16 +710,44 @@ export function onLoad(ctx) {
 
               const payload = gatherFormData();
 
-              window.postMessage({
-                type: 'plugin-message',
-                data: { action: 'save', payload: payload }
-              }, '*');
+              try {
+                const pluginResponse = await fetch(BASE_URL + '/api/plugins/com.ncsender.rapidchangeatc/settings', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                });
 
-              setTimeout(function() {
+                if (!pluginResponse.ok) {
+                  throw new Error('Failed to save plugin settings: ' + pluginResponse.status);
+                }
+
+                const toolCount = payload.pockets || 0;
+                const settingsResponse = await fetch(BASE_URL + '/api/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    tool: {
+                      count: toolCount,
+                      source: 'com.ncsender.rapidchangeatc'
+                    }
+                  })
+                });
+
+                if (!settingsResponse.ok) {
+                  throw new Error('Failed to update tool.count setting: ' + settingsResponse.status);
+                }
+
+                setTimeout(function() {
+                  saveButton.disabled = false;
+                  saveButton.classList.remove('rc-button-busy');
+                  window.postMessage({ type: 'close-plugin-dialog' }, '*');
+                }, 150);
+              } catch (error) {
+                console.error('[RapidChangeATC] Failed to save settings:', error);
+                notifyError('Failed to save settings. Please try again.');
                 saveButton.disabled = false;
                 saveButton.classList.remove('rc-button-busy');
-                window.postMessage({ type: 'close-plugin-dialog' }, '*');
-              }, 150);
+              }
             });
           }
 
@@ -704,6 +763,30 @@ export function onLoad(ctx) {
   });
 }
 
-export function onUnload() {
-  // No resources to clean up in this initial version
+export async function onUnload(ctx) {
+  ctx.log('Rapid Change ATC plugin unloading');
+
+  // Reset tool.source to null to give control back to Settings > General
+  const pluginSettings = ctx.getSettings() || {};
+  const appSettings = ctx.getAppSettings() || {};
+
+  try {
+    const response = await fetch(`http://localhost:${resolveServerPort(pluginSettings, appSettings)}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: {
+          source: null
+        }
+      })
+    });
+
+    if (response.ok) {
+      ctx.log('Tool count control returned to manual settings');
+    } else {
+      ctx.log(`Failed to reset tool source: ${response.status}`);
+    }
+  } catch (error) {
+    ctx.log('Failed to reset tool source on plugin unload:', error);
+  }
 }
