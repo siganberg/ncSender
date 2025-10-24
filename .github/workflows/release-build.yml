@@ -180,6 +180,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout (for tag annotation)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -218,11 +223,6 @@ jobs:
 
           echo "Release assets to upload:"
           ls -lh release-assets/
-
-      - name: Checkout (for tag annotation)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Get tag annotation
         id: tag_annotation
