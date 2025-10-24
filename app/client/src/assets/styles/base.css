@@ -13,7 +13,7 @@
 }
 
 /* Re-enable text selection for specific elements where needed */
-input, textarea, [contenteditable], .console-output, .console-line, .message, .gcode-content, .gcode-line, .line-content {
+input, textarea, [contenteditable], .console-output, .console-line, .message, .gcode-content, .gcode-line, .line-content, .update-indicator__label, .update-dialog__status, .update-dialog__notes pre {
   -webkit-user-select: text;
   -khtml-user-select: text;
   -moz-user-select: text;

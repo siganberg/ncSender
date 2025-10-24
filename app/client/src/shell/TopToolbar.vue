@@ -49,11 +49,13 @@
           'update-indicator--error': hasUpdateError
         }"
         @click="emit('show-update-dialog')"
+        @contextmenu.prevent="copyUpdateStatus"
         :title="updateIndicatorTitle"
       >
         <span v-if="isCheckingUpdates || isDownloadingUpdate" class="spinner"></span>
         <span v-else class="update-indicator__dot"></span>
         <span class="update-indicator__label">{{ updateIndicatorLabel }}</span>
+        <span v-if="updateStatusCopied" class="update-indicator__copy-feedback">Copied!</span>
       </button>
       <div class="unit-display">
         <label class="unit-label">Unit:</label>
@@ -70,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
 import { getFeedRateUnitLabel } from '../lib/units';
 import packageJson from '../../../package.json';
@@ -195,6 +197,36 @@ const updateIndicatorTitle = computed(() => {
   }
   return 'Update status';
 });
+
+const updateStatusCopied = ref(false);
+let updateStatusCopyTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copyUpdateStatus = async (event: MouseEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  const text = updateIndicatorTitle.value || updateIndicatorLabel.value;
+  if (!text) {
+    return;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      updateStatusCopied.value = true;
+      if (updateStatusCopyTimer) {
+        clearTimeout(updateStatusCopyTimer);
+      }
+      updateStatusCopyTimer = setTimeout(() => {
+        updateStatusCopied.value = false;
+        updateStatusCopyTimer = null;
+      }, 1600);
+    } else {
+      window.prompt('Copy update status', text);
+    }
+  } catch (error) {
+    console.error('Failed to copy update status:', error);
+    window.prompt('Copy update status', text);
+  }
+};
 
 const onVersionClick = () => {
   if (updateSupported.value) {
@@ -389,6 +421,13 @@ const onWorkspaceChange = (e: Event) => {
 
 .update-indicator__label {
   white-space: nowrap;
+  user-select: text;
+}
+
+.update-indicator__copy-feedback {
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: var(--color-accent);
 }
 
 @keyframes updateDotPulse {

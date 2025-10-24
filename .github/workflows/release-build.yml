@@ -210,16 +210,27 @@ jobs:
           }
 
           # macOS assets (keep default names for auto-updater compatibility)
-          copy_matching_files "artifacts/macos-artifacts" "*.dmg" "*.pkg" "*.zip" "*.blockmap" "latest-mac.yml"
+          copy_matching_files "artifacts/macos-artifacts" "*.dmg" "*.pkg" "*.zip" "latest-mac.yml"
 
           # Windows assets
-          copy_matching_files "artifacts/windows-x64-artifacts" "*.exe" "*.msi" "*.zip" "*.blockmap" "latest.yml"
+          copy_matching_files "artifacts/windows-x64-artifacts" "*.exe" "*.msi" "*.zip" "latest.yml"
 
           # Linux assets
           copy_matching_files "artifacts/linux-x64-artifacts" "*.AppImage" "*.deb" "*.rpm" "*.tar.gz" "latest-linux.yml"
 
-          # Raspberry Pi assets
-          copy_matching_files "artifacts/raspberry-pi-artifacts" "*.AppImage" "*.deb"
+          # Raspberry Pi assets (rename for clarity)
+          if [ -d "artifacts/raspberry-pi-artifacts" ]; then
+            for file in artifacts/raspberry-pi-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.deb"
+              fi
+            done
+            for file in artifacts/raspberry-pi-artifacts/*.AppImage; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.AppImage"
+              fi
+            done
+          fi
 
           echo "Release assets to upload:"
           ls -lh release-assets/
