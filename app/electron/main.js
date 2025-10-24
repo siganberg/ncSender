@@ -11,6 +11,8 @@ const isServerOnly = process.argv.includes('--server-only') || process.argv.incl
 let mainWindow = null;
 let server = null;
 let initialUpdateCheckScheduled = false;
+const __filename = url.fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function startServer() {
   try {
@@ -42,7 +44,8 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: !isDev
+      webSecurity: !isDev,
+      preload: path.join(__dirname, 'preload.cjs')
     }
   });
 

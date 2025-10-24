@@ -1909,6 +1909,7 @@ const saveSetupSettings = async () => {
 const clearConsole = store.clearConsole;
 
 onMounted(async () => {
+  updateCenter.ensureListeners();
   // Settings are already loaded in main.ts, just get them from the store
   const { getSettings } = await import('./lib/settings-store.js');
   const initialSettings = getSettings();

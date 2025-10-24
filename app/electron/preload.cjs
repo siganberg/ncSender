@@ -1,10 +1,10 @@
-import { contextBridge, nativeTheme, ipcRenderer } from 'electron';
+const { contextBridge, nativeTheme, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ncSender', {
   theme: {
     shouldUseDark: () => nativeTheme.shouldUseDarkColors
   },
-  
+
   cnc: {
     // Connection management
     listPorts: () => ipcRenderer.invoke('cnc-list-ports'),
@@ -12,26 +12,26 @@ contextBridge.exposeInMainWorld('ncSender', {
     disconnect: () => ipcRenderer.invoke('cnc-disconnect'),
     getStatus: () => ipcRenderer.invoke('cnc-get-status'),
     requestStatus: () => ipcRenderer.invoke('cnc-request-status'),
-    
+
     // Command sending
     sendCommand: (command) => ipcRenderer.invoke('cnc-send-command', command),
     sendRealTimeCommand: (command) => ipcRenderer.invoke('cnc-send-realtime-command', command),
-    
+
     // Event listeners
     onData: (callback) => {
-      ipcRenderer.on('cnc-data', (event, data) => callback(data));
+      ipcRenderer.on('cnc-data', (_event, data) => callback(data));
       return () => ipcRenderer.removeAllListeners('cnc-data');
     },
     onStatusReport: (callback) => {
-      ipcRenderer.on('cnc-status-report', (event, status) => callback(status));
+      ipcRenderer.on('cnc-status-report', (_event, status) => callback(status));
       return () => ipcRenderer.removeAllListeners('cnc-status-report');
     },
     onSystemMessage: (callback) => {
-      ipcRenderer.on('cnc-system-message', (event, message) => callback(message));
+      ipcRenderer.on('cnc-system-message', (_event, message) => callback(message));
       return () => ipcRenderer.removeAllListeners('cnc-system-message');
     },
     onResponse: (callback) => {
-      ipcRenderer.on('cnc-response', (event, response) => callback(response));
+      ipcRenderer.on('cnc-response', (_event, response) => callback(response));
       return () => ipcRenderer.removeAllListeners('cnc-response');
     }
   },

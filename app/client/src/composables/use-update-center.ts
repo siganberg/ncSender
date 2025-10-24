@@ -2,7 +2,7 @@ import { reactive, readonly } from 'vue';
 import packageJson from '../../../package.json';
 
 const state = reactive({
-  supported: false,
+  supported: typeof window !== 'undefined' ? Boolean(window.ncSender?.updates) : false,
   currentVersion: packageJson.version,
   channel: 'stable' as string,
   isChecking: false,
@@ -25,6 +25,7 @@ const state = reactive({
 
 let initialized = false;
 let disposers: Array<() => void> = [];
+let retryTimer: ReturnType<typeof setInterval> | null = null;
 
 const resetDownloadState = () => {
   state.isDownloading = false;
@@ -132,6 +133,23 @@ export const useUpdateCenter = () => {
     }
     initialized = true;
     initListeners();
+    if (!state.supported && typeof window !== 'undefined') {
+      retryTimer = setInterval(() => {
+        if (window.ncSender?.updates) {
+          if (retryTimer) {
+            clearInterval(retryTimer);
+            retryTimer = null;
+          }
+          initListeners();
+        }
+      }, 500);
+      disposers.push(() => {
+        if (retryTimer) {
+          clearInterval(retryTimer);
+          retryTimer = null;
+        }
+      });
+    }
   };
 
   const checkForUpdates = () => window.ncSender?.updates?.checkForUpdates();
@@ -153,6 +171,10 @@ export const useUpdateCenter = () => {
       disposers.forEach((dispose) => dispose());
       disposers = [];
       initialized = false;
+      if (retryTimer) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+      }
     }, { once: true });
   }
 

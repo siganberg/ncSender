@@ -40,17 +40,17 @@ const formatReleaseNotes = (releaseNotes) => {
 
 const normalizeVersion = (version) => version?.replace(/^v/i, '') ?? '';
 
-const compareVersions = (current, candidate) => {
+const compareVersions = (a, b) => {
   const toParts = (value) => normalizeVersion(value).split('.').map((part) => Number.parseInt(part, 10) || 0);
-  const currentParts = toParts(current);
-  const candidateParts = toParts(candidate);
-  const length = Math.max(currentParts.length, candidateParts.length);
+  const aParts = toParts(a);
+  const bParts = toParts(b);
+  const length = Math.max(aParts.length, bParts.length);
 
   for (let i = 0; i < length; i += 1) {
-    const currentValue = currentParts[i] ?? 0;
-    const candidateValue = candidateParts[i] ?? 0;
-    if (candidateValue > currentValue) return 1;
-    if (candidateValue < currentValue) return -1;
+    const aValue = aParts[i] ?? 0;
+    const bValue = bParts[i] ?? 0;
+    if (aValue > bValue) return 1;
+    if (aValue < bValue) return -1;
   }
 
   return 0;
@@ -324,9 +324,9 @@ class UpdateManager {
 
       const latestVersion = normalizeVersion(latestRelease.tag_name ?? latestRelease.name);
       const currentVersion = app.getVersion();
-      const compareResult = compareVersions(currentVersion, latestVersion);
+      const compareResult = compareVersions(latestVersion, currentVersion);
 
-      if (compareResult < 0) {
+      if (compareResult > 0) {
         this.latestInfo = latestRelease;
         const payload = toRendererPayload(latestRelease, {
           channel: UPDATE_CHANNELS.DEV,
