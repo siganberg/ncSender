@@ -1,6 +1,6 @@
 {
   "name": "ncsender",
-  "version": "0.3.3",
+  "version": "0.3.9",
   "description": "ncSender - Unified CNC Controller Electron App",
   "homepage": "https://github.com/siganberg/ncSender",
   "author": {
@@ -27,9 +27,10 @@
     "install:all": "npm install && cd client && npm install"
   },
   "dependencies": {
-    "adm-zip": "^0.5.12",
     "@serialport/parser-readline": "^12.0.0",
+    "adm-zip": "^0.5.12",
     "cors": "^2.8.5",
+    "electron-updater": "^6.6.2",
     "express": "^5.1.0",
     "multer": "^2.0.2",
     "p-queue": "^9.0.0",
@@ -57,15 +58,24 @@
     "asarUnpack": [
       "**/*.mtl"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "siganberg",
+      "repo": "ncSender"
+    },
     "mac": {
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ]
     },
     "win": {
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
       "icon": "assets/icons",
