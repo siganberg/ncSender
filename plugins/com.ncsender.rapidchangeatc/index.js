@@ -246,7 +246,6 @@ export async function onLoad(ctx) {
       '(Start of RapidChangeATC Plugin Sequence)',
       `#<wasMetric> = #<_metric>`,
       `G21`, // Set to metric
-      `G65P6`, // disabled delay
       `M5` // Spindle stop
     ];
 

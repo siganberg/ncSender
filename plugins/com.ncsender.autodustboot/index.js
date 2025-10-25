@@ -277,9 +277,13 @@ export function onLoad(ctx) {
         const cmd = commands[i];
         const normalizedLine = cmd.command.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
 
-        if (normalizedLine.startsWith(normalizedExpandCmd)) {
+        // Check if line contains the expand command (handle line numbers like N123 M8)
+        // Match pattern: optional line number, optional whitespace, then the expand command
+        const expandPattern = new RegExp(`^(?:N\\d+\\s*)?${normalizedExpandCmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+        if (expandPattern.test(normalizedLine)) {
           ctx.log(`Skipping expand command: ${cmd.command.trim()}`);
-          cmd.command = `; ${cmd.command.trim()} (Skipped by AutoDustBoot)`;
+          cmd.command = `; ${cmd.command.trim()} (Moved by AutoDustBoot Plugin)`;
+          cmd.displayCommand = null;
           continue;
         }
 
