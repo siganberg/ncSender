@@ -7,6 +7,7 @@ import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
+import { parseM6Command } from '../../utils/gcode-patterns.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -822,35 +823,29 @@ export class CNCController extends EventEmitter {
     }
 
     // Check if M6 command with same tool as current - skip before plugins see it
-    // Pattern matches: M6 T1, M6T1, T1 M6, but NOT M60, M61, M6R2, etc.
-    const m6ToolMatch = cleanCommand.match(/(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|T0*(\d+))?(?!\d)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/i);
-    if (m6ToolMatch) {
-      const toolNumber = m6ToolMatch[1] || m6ToolMatch[2] || m6ToolMatch[3];
+    const m6Parse = parseM6Command(cleanCommand);
+    if (m6Parse?.matched && m6Parse.toolNumber !== null) {
+      const requestedTool = m6Parse.toolNumber;
+      const currentTool = this.lastStatus?.tool ?? 0;
 
-      // Only check if we have a valid tool number
-      if (toolNumber && Number.isFinite(parseInt(toolNumber, 10))) {
-        const requestedTool = parseInt(toolNumber, 10);
-        const currentTool = this.lastStatus?.tool ?? 0;
+      if (requestedTool === currentTool) {
+        log(`Skipping tool change command (M6 T${requestedTool}) - tool is already loaded.`);
 
-        if (requestedTool === currentTool) {
-          log(`Skipping tool change command (M6 T${requestedTool}) - tool is already loaded.`);
+        const metaForAck = normalizedMeta ? { ...normalizedMeta } : {};
+        metaForAck.skippedToolChange = true;
+        metaForAck.skipReason = 'tool-already-loaded';
 
-          const metaForAck = normalizedMeta ? { ...normalizedMeta } : {};
-          metaForAck.skippedToolChange = true;
-          metaForAck.skipReason = 'tool-already-loaded';
+        const ackPayload = {
+          id: resolvedCommandId,
+          command: cleanCommand.toUpperCase(),
+          displayCommand: displayCommand || cleanCommand,
+          meta: Object.keys(metaForAck).length > 0 ? metaForAck : null,
+          status: 'success',
+          timestamp: new Date().toISOString()
+        };
 
-          const ackPayload = {
-            id: resolvedCommandId,
-            command: cleanCommand.toUpperCase(),
-            displayCommand: displayCommand || cleanCommand,
-            meta: Object.keys(metaForAck).length > 0 ? metaForAck : null,
-            status: 'success',
-            timestamp: new Date().toISOString()
-          };
-
-          this.emit('command-ack', ackPayload);
-          return ackPayload;
-        }
+        this.emit('command-ack', ackPayload);
+        return ackPayload;
       }
     }
 

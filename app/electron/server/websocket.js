@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
 import { pluginManager } from '../core/plugin-manager.js';
+import { parseM6Command } from '../utils/gcode-patterns.js';
 
 const WS_READY_STATE_OPEN = 1;
 const realtimeJobCommands = new Set(['!', '~', '\\x18']);
@@ -139,15 +140,14 @@ const toCommandPayload = (event, options = {}) => {
 
 const isToolChangeCommand = (cmd) => {
   if (!cmd || typeof cmd !== 'string') return false;
-  return /M6(?!\d)/i.test(cmd);
+  const parsed = parseM6Command(cmd);
+  return parsed?.matched === true;
 };
 
 const parseToolParam = (cmd) => {
   if (!cmd || typeof cmd !== 'string') return undefined;
-  const m = cmd.match(/(^|\s)T(\d+)/i);
-  if (!m) return undefined;
-  const n = parseInt(m[2], 10);
-  return Number.isFinite(n) ? n : undefined;
+  const parsed = parseM6Command(cmd);
+  return parsed?.toolNumber ?? undefined;
 };
 
 export function createWebSocketLayer({

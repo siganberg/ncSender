@@ -1,3 +1,5 @@
+import { parseM6Command } from '../../app/electron/utils/gcode-patterns.js';
+
 let isToolChanging = false;
 
 export function onLoad(ctx) {
@@ -233,17 +235,18 @@ export function onLoad(ctx) {
     }
 
     // Find original M6 command
-    const m6Pattern = /\bM6(?:\s*T(\d+)|T(\d+))?(?!\d)/i;
-    const m6Index = commands.findIndex(cmd =>
-      cmd.isOriginal && m6Pattern.test(cmd.command.toUpperCase())
-    );
+    const m6Index = commands.findIndex(cmd => {
+      if (!cmd.isOriginal) return false;
+      const parsed = parseM6Command(cmd.command);
+      return parsed?.matched && parsed.toolNumber !== null;
+    });
 
     if (m6Index !== -1) {
-      const m6Match = commands[m6Index].command.match(m6Pattern);
-      const toolNumber = m6Match[1] || m6Match[2];
+      const parsed = parseM6Command(commands[m6Index].command);
+      const toolNumber = parsed?.toolNumber;
 
       // Only process if we have a valid tool number
-      if (toolNumber && Number.isFinite(parseInt(toolNumber, 10))) {
+      if (toolNumber !== null && Number.isFinite(toolNumber)) {
         const location = context.lineNumber !== undefined
           ? `at line ${context.lineNumber}`
           : `from ${context.sourceId}`;

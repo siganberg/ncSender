@@ -3,6 +3,8 @@
  * Provides quick access tooling workflow controls.
  */
 
+import { parseM6Command } from '../../app/electron/utils/gcode-patterns.js';
+
 const ALLOWED_COLLET_SIZES = ['ER11', 'ER16', 'ER20', 'ER25', 'ER32'];
 const ALLOWED_MODELS = ['Basic', 'Pro', 'Premium'];
 const ORIENTATIONS = ['X', 'Y'];
@@ -92,33 +94,25 @@ export async function onLoad(ctx) {
   ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
     const settings = ctx.getSettings() || {};
 
-    // Match M6 with optional tool number: M6 T1, M6T1, T1 M6, etc. (but not M60, M61, etc.)
-    const m6Pattern = /(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|(?=[^0-9T])|$)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/;
-
     // Find original M6 command
-    const m6Index = commands.findIndex(cmd =>
-      cmd.isOriginal && m6Pattern.test(cmd.command.trim().toUpperCase())
-    );
+    const m6Index = commands.findIndex(cmd => {
+      if (!cmd.isOriginal) return false;
+      const parsed = parseM6Command(cmd.command);
+      return parsed?.matched && parsed.toolNumber !== null;
+    });
 
     if (m6Index === -1) {
       return commands; // No M6 found, pass through
     }
 
     const m6Command = commands[m6Index];
-    const trimmedLine = m6Command.command.trim().toUpperCase();
-    const match = trimmedLine.match(m6Pattern);
+    const parsed = parseM6Command(m6Command.command);
 
-    if (!match) {
+    if (!parsed?.matched || parsed.toolNumber === null) {
       return commands; // Shouldn't happen, but safety check
     }
 
-    const toolNumber = match[1] || match[2];
-
-    // Validate that we have a valid tool number
-    if (!toolNumber || !Number.isFinite(parseInt(toolNumber, 10))) {
-      // M6 without valid tool number (e.g., M6R2, M6 alone) - let it pass through
-      return commands;
-    }
+    const toolNumber = parsed.toolNumber;
 
     const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
 
@@ -278,7 +272,8 @@ export async function onLoad(ctx) {
       'O201 IF [#<wasMetric> EQ 0]',
       '  G20',
       'O201 ENDIF',
-      '(End of RapidChangeATC Plugin Sequence)'
+      '(End of RapidChangeATC Plugin Sequence)',
+      `(MSG, TOOL CHANGE COMPLETE: T${toolNumber})`
     );
 
     // Check if user wants to show full macro command (default: false)
