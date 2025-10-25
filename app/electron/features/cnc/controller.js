@@ -821,6 +821,39 @@ export class CNCController extends EventEmitter {
       throw new Error('Command is empty');
     }
 
+    // Check if M6 command with same tool as current - skip before plugins see it
+    // Pattern matches: M6 T1, M6T1, T1 M6, but NOT M60, M61, M6R2, etc.
+    const m6ToolMatch = cleanCommand.match(/(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|T0*(\d+))?(?!\d)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/i);
+    if (m6ToolMatch) {
+      const toolNumber = m6ToolMatch[1] || m6ToolMatch[2] || m6ToolMatch[3];
+
+      // Only check if we have a valid tool number
+      if (toolNumber && Number.isFinite(parseInt(toolNumber, 10))) {
+        const requestedTool = parseInt(toolNumber, 10);
+        const currentTool = this.lastStatus?.tool ?? 0;
+
+        if (requestedTool === currentTool) {
+          log(`Skipping tool change command (M6 T${requestedTool}) - tool is already loaded.`);
+
+          const metaForAck = normalizedMeta ? { ...normalizedMeta } : {};
+          metaForAck.skippedToolChange = true;
+          metaForAck.skipReason = 'tool-already-loaded';
+
+          const ackPayload = {
+            id: resolvedCommandId,
+            command: cleanCommand.toUpperCase(),
+            displayCommand: displayCommand || cleanCommand,
+            meta: Object.keys(metaForAck).length > 0 ? metaForAck : null,
+            status: 'success',
+            timestamp: new Date().toISOString()
+          };
+
+          this.emit('command-ack', ackPayload);
+          return ackPayload;
+        }
+      }
+    }
+
     const commandContext = {
       sourceId: normalizedMeta?.sourceId || null,
       commandId: resolvedCommandId,

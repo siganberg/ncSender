@@ -141,7 +141,8 @@ export async function onLoad(ctx) {
       const pocketDistance = 45; // Distance between pockets in mm
       const toolEngagement = -100;
       const zSpinOff = 23;
-      const zRetreat = 12;
+      const zRetreat = 7;
+      const zSafe = 0;
       const zone1 = toolEngagement + 23;
       const zone2 = toolEngagement + 28;
       const unloadRpm = 1500;
@@ -151,39 +152,78 @@ export async function onLoad(ctx) {
       const seekDistance = 50;
       const seekFeedrate = 800;
 
+      // Helper to add indent method to arrays
+      const withIndent = (arr) => ({
+        indent: (tabs = 0) => {
+          const indentStr = '  '.repeat(tabs);
+          return arr.map(line => `${indentStr}${line}`);
+        },
+        raw: () => arr
+      });
+
       // Function to generate unload sequence commands
-      const toolUnload = (tabs = 0) => {
-        const indent = '  '.repeat(tabs);
-        return [
-          `${indent}G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
-          `${indent}G65P6`, // disabled delay
-          `${indent}M4 S${unloadRpm}`, // Start spindle for unload
-          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-          `${indent}G65P6`, // disabled delay
-          `${indent}M5`, // Spindle stop
-          `${indent}G53 G0 Z${zone1}`, // Move to zone 1
-          `G4 P0.2`
-        ];
-      };
+      const toolUnload = () => withIndent([
+        `G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
+        `G65P6`, // disabled delay
+        `M4 S${unloadRpm}`, // Start spindle for unload
+        `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+        `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+        `G65P6`, // disabled delay
+        `M5`, // Spindle stop
+        `G53 G0 Z${zone1}`, // Move to zone 1
+        `G4 P0.2`
+      ]);
 
       // Function to generate load sequence commands
-      const toolLoad = (tabs = 0) => {
-        const indent = '  '.repeat(tabs);
-        return [
-          `${indent}G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
-          `${indent}G65P6`, // disabled delay
-          `${indent}M3 S${loadRpm}`, // Start spindle for loading
-          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-          `${indent}G65P6`, // disabled delay
-          `${indent}M5` // Spindle stop
-        ];
-      };
+      const toolLoad = (tool) => [
+        `G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
+        `G65P6`, // disabled delay
+        `M3 S${loadRpm}`, // Start spindle for loading
+        `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+        `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+        `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+        `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+        `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+        `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+        `G53 G0 Z${zone1}`,
+        `G4 P0.2`,
+        `o300 IF [#<_probe_state> EQ 0]`,
+        `   G53 G0 Z${zSafe}`,
+        `   G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
+        `   M0`,
+        `o300 ELSE`,
+        `   G53 G0 Z${zone2}`,
+        `   G4 P0.2`,
+        `   o301 IF [#<_probe_state> EQ 1]`,
+        `     G53 G0 Z${zSafe}`,
+        `     G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
+        `     M0`,
+        `   o301 ENDIF`,
+        `o300 ENDIF`,
+        `G65P6`, // disabled delay
+        `M5`, // Spindle stop
+        `M61 Q${tool}` // Load new tool
+      ];
+
+      // Function to generate tool length setting routine
+      const toolLengthSet = () => [
+        `(-- TOOL LENGTH SET ROUTINE --)`,
+        `G53 G0 Z${zSafe}`, // Move to safe Z
+        `G53 G0 X${settings.toolSetter?.x ?? 0} Y${settings.toolSetter?.y ?? 0}`,
+        `G53 G0 Z${zProbeStart}`, // Move to probe start height
+        `G43.1 Z0`,
+        `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
+        `G0 G91 Z5`,
+        `G38.2 G91 Z-5 F250`,
+        `G91 G0 Z5`,
+        `G90`,
+        `#<_ofs_idx> = [#5220 * 20 + 5203]`, // 5203 = base of first Z offset (G54)
+        `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
+        `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
+        `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+        `$TLR`,
+        `G53 G0 Z${zSafe}`
+      ];
 
       // Calculate source pocket position (current tool)
       let sourceX, sourceY;
@@ -220,55 +260,30 @@ export async function onLoad(ctx) {
         `G21`, // Set to metric
         `G65P6`, // disabled delay
         `M5`, // Spindle stop
-        `G53 G0 Z0`, // Move to safe Z
+        `G53 G0 Z${zSafe}`, // Move to safe Z
       ];
 
       // Unloading
       toolChangeProgram.push(
         `G53 G0 X${sourceX} Y${sourceY}`, // Move to source pocket
-        ...toolUnload(0),
+        ...toolUnload().indent(0),
         `o100 IF [#<_probe_state> EQ 1]`,
-        ...toolUnload(1),
+        ...toolUnload().indent(1),
         `  o101 IF [#<_probe_state> EQ 1]`,
-        `     G53 G0 Z0`,
+        `     G53 G0 Z${zSafe}`,
         `     G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
-        `     M61 Q${toolNumber}`,
         `     M0`,
-        `  o101 ELSE`,
-        `     M61 Q0`,
         `  o101 ENDIF`,
-        `o100 ELSE`,
-        `  M61 Q0`,
-        `o100 ENDIF`
+        `o100 ENDIF`,
+        `M61 Q0`
       );
 
       // Loading
       toolChangeProgram.push(
-        `G53 G0 Z0`, // Move to safe Z
+        `G53 G0 Z${zSafe}`, // Move to safe Z
         `G53 G0 X${targetX} Y${targetY}`, // Move to target pocket
-        ...toolLoad(0),
-        `M61 Q${toolNumber}`, // Load new tool
-        `G53 G0 Z0`, // Move to safe Z
-        `(-- TOOL LENGTH SET ROUTINE --)`,
-        `G53 G0 X${settings.toolSetter?.x ?? 0} Y${settings.toolSetter?.y ?? 0}`,
-        `G53 G0 Z${zProbeStart}`, // Move to probe start height
-        `G43.1 Z0`,
-        `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
-        `G0 G91 Z5`,
-        `G38.2 G91 Z-5 F250`,
-        `G91 G0 Z5`,
-        'G90',
-        // Auto-detect active workspace offset using #5220
-        // Each workspace offset block is 20 apart (e.g. 5223, 5243, 5263...
-        // Compute address of current workspace Z offset dynamically:
-        `#<_ofs_idx> = [#5220 * 20 + 5203]`,     // ; 5203 = base of first Z offset (G54)
-        `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
-        `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
-        `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
-        //`#<_rc_trigger_mach_z> = [#5063 + [#5213 + [#5223 + [#5243 + [#5263 + [#5283 + [#5303 + [#5323 + [#5343 + [#5363 + [#5383]]]]]]]]]]]]]`,
-        //`G43.1 Z[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
-        `$TLR`,
-        `G53 G0 Z0`,
+        ...toolLoad(toolNumber),
+        ...toolLengthSet(),
         'O201 IF [#<wasMetric> EQ 0]',
         '  G20',
         'O201 ENDIF',

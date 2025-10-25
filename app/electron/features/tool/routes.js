@@ -78,7 +78,8 @@ export function createToolRoutes(cncController, serverState) {
       const yCommand = hasReturnPosition ? workPosition.y.toFixed(3) : null;
 
       const commands = [
-        `M6 T${parsedTool}`
+        `M6 T${parsedTool}`,
+        ...(hasReturnPosition ? [`G90 G0 X${xCommand} Y${yCommand}`] : [])
       ];
 
       const meta = {
@@ -90,6 +91,7 @@ export function createToolRoutes(cncController, serverState) {
       let commandsExecuted = 0;
       for (const command of commands) {
         try {
+            log(`Executing tool change command: ${command}`);
           await cncController.sendCommand(command, { meta });
           commandsExecuted++;
         } catch (error) {
