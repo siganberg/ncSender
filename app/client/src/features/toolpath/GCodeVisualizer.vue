@@ -69,17 +69,18 @@
       <!-- Tools list - bottom right above current tool -->
       <div v-if="numberOfToolsToShow > 0" class="tools-legend tools-legend--bottom">
         <div
-          v-for="t in numberOfToolsToShow"
+          v-for="t in numberOfToolsToShow + 1"
           :key="t"
           class="tools-legend__item"
           :class="{
-            'active': currentTool === t,
+            'active': t === numberOfToolsToShow + 1 ? currentTool > numberOfToolsToShow : currentTool === t,
             'used': toolsUsed.includes(t),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress[t]?.triggered,
-            'blink-border': toolPress[t]?.blinking
+            'blink-border': toolPress[t]?.blinking,
+            'manual-tool': t === numberOfToolsToShow + 1
           }"
-          :title="currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`"
+          :title="t === numberOfToolsToShow + 1 ? 'Manual Tool (Hold to change)' : (currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`)"
           @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
@@ -88,11 +89,16 @@
           @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">T{{ t }}</span>
-          <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <span class="tools-legend__label">{{ t === numberOfToolsToShow + 1 ? 'Manual' : `T${t}` }}</span>
+          <svg v-if="t !== numberOfToolsToShow + 1" class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
             <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
           </svg>
+          <div v-else class="manual-tool-indicator">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+          </div>
         </div>
       </div>
 
@@ -2109,6 +2115,27 @@ watch(() => store.status.mistCoolant, (newValue) => {
 
 .tools-legend__item.active .bit-shank {
   opacity: 0.8;
+}
+
+.manual-tool-indicator {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 16px;
+}
+
+.manual-tool-indicator .bar {
+  width: 3px;
+  height: 12px;
+  background: currentColor;
+  opacity: 0.4;
+  border-radius: 1px;
+}
+
+.tools-legend__item.active .manual-tool-indicator .bar {
+  opacity: 0.7;
 }
 
 .floating-toolbar.floating-toolbar--bottom {
