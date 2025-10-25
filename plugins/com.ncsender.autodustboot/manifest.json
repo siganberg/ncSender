@@ -6,6 +6,8 @@
   "description": "Automatically finds the best position to expand the AutoDustBoot.",
   "entry": "index.js",
   "icon": "icon.png",
+  "category": "utility",
+  "priority": 100,
   "events": [
     "onBeforeCommand"
   ],

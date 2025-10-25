@@ -1042,8 +1042,7 @@ const goToZeroXY = async () => {
 const sendSoftReset = async () => {
   try {
     await api.sendCommandViaWebSocket({
-      command: String.fromCharCode(0x18),
-      displayCommand: '\\x18; (Soft Reset)'
+      command: String.fromCharCode(0x18)
     });
   } catch (error) {
     console.error('Failed to send soft reset:', error);

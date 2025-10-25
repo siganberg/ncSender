@@ -238,7 +238,7 @@ const machineValues = computed(() => ({
 
 const sendSoftReset = async () => {
   try {
-    await api.sendCommandViaWebSocket({ command: '\x18', displayCommand: 'Soft Reset' });
+    await api.sendCommandViaWebSocket({ command: '\x18' });
   } catch (error) {
     console.error('Failed to send soft reset:', error);
   }

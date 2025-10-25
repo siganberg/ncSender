@@ -1137,8 +1137,7 @@ const handleStop = async () => {
   try {
     // Send soft reset to stop/cancel any active operation
     await api.sendCommandViaWebSocket({
-      command: '\x18',
-      displayCommand: '\\x18 (Soft Reset)'
+      command: '\x18'
     });
   } catch (error) {
     console.error('Error stopping job:', error);

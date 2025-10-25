@@ -117,10 +117,6 @@ const props = withDefaults(defineProps<{
   disabled: false
 });
 
-const emit = defineEmits<{
-  (e: 'center-click'): void;
-}>();
-
 let jogTimer: number | null = null;
 let heartbeatTimer: number | null = null;
 
@@ -128,11 +124,8 @@ let heartbeatTimer: number | null = null;
 const handleCenterClick = async () => {
   try {
     await api.sendCommandViaWebSocket({
-      command: String.fromCharCode(0x18),
-      displayCommand: '\\x18 (Soft Reset)'
+      command: String.fromCharCode(0x18)
     });
-    // Also emit event for backwards compatibility
-    emit('center-click');
   } catch (error) {
     console.error('Failed to send soft reset:', error);
   }

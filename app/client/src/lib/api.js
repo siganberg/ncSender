@@ -17,26 +17,6 @@ class NCClient {
     this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
   }
 
-  describeCommand(command) {
-    const realTimeCommands = {
-      [String.fromCharCode(0x90)]: '\\x90; (Feed Rate Override Reset 100%)',
-      [String.fromCharCode(0x91)]: '\\x91; (Feed Rate Override +10%)',
-      [String.fromCharCode(0x92)]: '\\x92; (Feed Rate Override -10%)',
-      [String.fromCharCode(0x93)]: '\\x93; (Feed Rate Override +1%)',
-      [String.fromCharCode(0x94)]: '\\x94; (Feed Rate Override -1%)',
-      [String.fromCharCode(0x99)]: '\\x99; (Spindle Speed Override Reset 100%)',
-      [String.fromCharCode(0x9A)]: '\\x9A; (Spindle Speed Override +10%)',
-      [String.fromCharCode(0x9B)]: '\\x9B; (Spindle Speed Override -10%)',
-      [String.fromCharCode(0x9C)]: '\\x9C; (Spindle Speed Override +1%)',
-      [String.fromCharCode(0x9D)]: '\\x9D; (Spindle Speed Override -1%)',
-      [String.fromCharCode(0x85)]: '\\x85; (Jog Cancel)',
-      [String.fromCharCode(0x84)]: '\\x84; (Safety Door)',
-      [String.fromCharCode(0x18)]: '\\x18; (Soft Reset)',
-      '!': '! (Feed Hold)',
-      '~': '~ (Cycle Start/Resume)'
-    };
-    return realTimeCommands[command] || command;
-  }
 
   isJogCancelCommand(command) {
     return command === REALTIME_JOG_CANCEL;
@@ -110,7 +90,7 @@ class NCClient {
     } = options || {};
 
     const commandId = providedCommandId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const displayCommand = providedDisplayCommand ?? this.describeCommand(command);
+    const displayCommand = providedDisplayCommand;
 
     try {
       const response = await fetch(`${this.baseUrl}/api/send-command`, {
@@ -735,7 +715,6 @@ class NCClient {
 
     return await this.sendCommandViaWebSocket({
       command,
-      displayCommand: this.describeCommand(command),
       meta: { jobControl: true }
     });
   }

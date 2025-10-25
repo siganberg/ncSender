@@ -6,6 +6,7 @@
   "description": "Generates G-code for surfacing operations (fly-cutting)",
   "entry": "index.js",
   "icon": "icon.svg",
+  "category": "gcode-generator",
   "events": [],
   "permissions": ["gcode.modify"]
 }

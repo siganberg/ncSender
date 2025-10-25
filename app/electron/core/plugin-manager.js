@@ -8,6 +8,9 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
 };
 
+// Categories that only allow one plugin to be enabled at a time
+const EXCLUSIVE_CATEGORIES = new Set(['tool-changer']);
+
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
 const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');
@@ -112,8 +115,8 @@ class PluginManager {
       const raw = fs.readFileSync(manifestPath, 'utf8');
       const manifest = JSON.parse(raw);
 
-      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
-        throw new Error('Invalid manifest: missing required fields (id, name, version, entry)');
+      if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry || !manifest.category) {
+        throw new Error('Invalid manifest: missing required fields (id, name, version, entry, category)');
       }
 
       return manifest;
@@ -361,22 +364,39 @@ class PluginManager {
 
     const existingIndex = registry.findIndex(p => p.id === pluginId);
 
+    // Check for exclusive category conflicts
+    let shouldEnable = true;
+    if (manifest.category && EXCLUSIVE_CATEGORIES.has(manifest.category)) {
+      const conflictingPlugin = registry.find(p =>
+        p.id !== pluginId &&
+        p.category === manifest.category &&
+        p.enabled === true
+      );
+      if (conflictingPlugin) {
+        shouldEnable = false;
+        log(`Plugin "${pluginId}" has exclusive category "${manifest.category}" - ` +
+            `disabling by default because "${conflictingPlugin.id}" is already enabled`);
+      }
+    }
+
+    const pluginEntry = {
+      id: pluginId,
+      name: manifest.name,
+      version: manifest.version,
+      category: manifest.category,
+      enabled: shouldEnable,
+      installedAt: new Date().toISOString()
+    };
+
+    // Only add priority if it exists in manifest
+    if (manifest.priority !== undefined) {
+      pluginEntry.priority = manifest.priority;
+    }
+
     if (existingIndex >= 0) {
-      registry[existingIndex] = {
-        id: pluginId,
-        name: manifest.name,
-        version: manifest.version,
-        enabled: true,
-        installedAt: new Date().toISOString()
-      };
+      registry[existingIndex] = pluginEntry;
     } else {
-      registry.push({
-        id: pluginId,
-        name: manifest.name,
-        version: manifest.version,
-        enabled: true,
-        installedAt: new Date().toISOString()
-      });
+      registry.push(pluginEntry);
     }
 
     this.saveRegistry(registry);
@@ -409,6 +429,25 @@ class PluginManager {
       throw new Error(`Plugin "${pluginId}" not found in registry`);
     }
 
+    // Handle exclusive category
+    if (plugin.category && EXCLUSIVE_CATEGORIES.has(plugin.category)) {
+      const conflictingPlugins = registry.filter(p =>
+        p.id !== pluginId &&
+        p.category === plugin.category &&
+        p.enabled === true
+      );
+
+      for (const conflictingPlugin of conflictingPlugins) {
+        log(`Disabling "${conflictingPlugin.id}" due to exclusive category "${plugin.category}"`);
+        conflictingPlugin.enabled = false;
+
+        // Unload the conflicting plugin
+        if (this.plugins.has(conflictingPlugin.id)) {
+          await this.unloadPlugin(conflictingPlugin.id);
+        }
+      }
+    }
+
     plugin.enabled = true;
     this.saveRegistry(registry);
 
@@ -432,6 +471,20 @@ class PluginManager {
     }
 
     log(`Disabled plugin "${pluginId}"`);
+  }
+
+  async updatePluginPriority(pluginId, newPriority) {
+    const registry = this.loadRegistry();
+    const plugin = registry.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      throw new Error(`Plugin "${pluginId}" not found in registry`);
+    }
+
+    plugin.priority = newPriority;
+    this.saveRegistry(registry);
+
+    log(`Updated priority for plugin "${pluginId}" to ${newPriority}`);
   }
 
   async reloadPlugin(pluginId) {
@@ -494,8 +547,15 @@ class PluginManager {
       commandId: context.commandId || null
     }];
 
-    // Iterate through all registered plugins in order
-    for (const [pluginId] of this.plugins.entries()) {
+    // Sort plugins by priority (descending - higher number executes first)
+    const sortedPlugins = Array.from(this.plugins.entries()).sort((a, b) => {
+      const priorityA = a[1].manifest.priority ?? 0; // No priority = 0 (executes last)
+      const priorityB = b[1].manifest.priority ?? 0;
+      return priorityB - priorityA; // Descending order
+    });
+
+    // Iterate through sorted plugins
+    for (const [pluginId, plugin] of sortedPlugins) {
       const pluginContext = this.pluginContexts.get(pluginId);
 
       // Get handlers registered via ctx.registerEventHandler('onBeforeCommand', ...)

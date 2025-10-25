@@ -58,9 +58,36 @@ const translateCommandInput = (rawCommand) => {
   return { command: trimmed, displayCommand: trimmed };
 };
 
+const describeCommand = (command) => {
+  const realTimeCommands = {
+    [String.fromCharCode(0x90)]: '\\x90 (Feed Rate Override Reset 100%)',
+    [String.fromCharCode(0x91)]: '\\x91 (Feed Rate Override +10%)',
+    [String.fromCharCode(0x92)]: '\\x92 (Feed Rate Override -10%)',
+    [String.fromCharCode(0x93)]: '\\x93 (Feed Rate Override +1%)',
+    [String.fromCharCode(0x94)]: '\\x94 (Feed Rate Override -1%)',
+    [String.fromCharCode(0x99)]: '\\x99 (Spindle Speed Override Reset 100%)',
+    [String.fromCharCode(0x9A)]: '\\x9A (Spindle Speed Override +10%)',
+    [String.fromCharCode(0x9B)]: '\\x9B (Spindle Speed Override -10%)',
+    [String.fromCharCode(0x9C)]: '\\x9C (Spindle Speed Override +1%)',
+    [String.fromCharCode(0x9D)]: '\\x9D (Spindle Speed Override -1%)',
+    [String.fromCharCode(0x85)]: '\\x85 (Jog Cancel)',
+    [String.fromCharCode(0x84)]: '\\x84 (Safety Door)',
+    [String.fromCharCode(0x18)]: '\\x18 (Soft Reset)',
+    '!': '! (Feed Hold)',
+    '~': '~ (Cycle Start/Resume)'
+  };
+  return realTimeCommands[command] || null;
+};
+
 const formatCommandText = (value) => {
   if (typeof value !== 'string') {
     return '';
+  }
+
+  // First check if this is a known realtime command
+  const described = describeCommand(value);
+  if (described) {
+    return described;
   }
 
   let needsEscaping = false;
@@ -101,7 +128,7 @@ const toCommandPayload = (event, options = {}) => {
   const payload = {
     id: event.id,
     command: event.command,
-    displayCommand: event.displayCommand || formatCommandText(event.command),
+    displayCommand: formatCommandText(event.displayCommand || event.command),
     status: event.status,
     machineState: event.machineState
   };
@@ -316,7 +343,7 @@ export function createWebSocketLayer({
 
       // Iterate through command array and send each to controller
       for (const cmd of commands) {
-        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+        const cmdDisplayCommand = cmd.displayCommand ? formatCommandText(cmd.displayCommand) : formatCommandText(cmd.command);
         const cmdMeta = { ...metaPayload, ...(cmd.meta || {}) };
 
         // Generate unique commandId for each command in the array

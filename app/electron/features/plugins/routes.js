@@ -48,7 +48,15 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
   router.get('/', asyncHandler(async (req, res) => {
     const plugins = pluginManager.getInstalledPlugins();
-    res.json(plugins);
+
+    // Sort by priority (descending, nulls last)
+    const sorted = plugins.sort((a, b) => {
+      const priorityA = a.priority ?? -1;
+      const priorityB = b.priority ?? -1;
+      return priorityB - priorityA;
+    });
+
+    res.json(sorted);
   }));
 
   router.get('/loaded', asyncHandler(async (req, res) => {
@@ -89,6 +97,22 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       res.status(500).json({ error: error.message || 'Failed to disable plugin' });
     }
   });
+
+  router.post('/reorder', asyncHandler(async (req, res) => {
+    const { pluginIds } = req.body;
+
+    if (!Array.isArray(pluginIds)) {
+      return res.status(400).json({ error: 'pluginIds must be an array' });
+    }
+
+    // Calculate descending priorities: first=100, second=90, third=80, etc.
+    for (let i = 0; i < pluginIds.length; i++) {
+      const priority = 100 - (i * 10);
+      await pluginManager.updatePluginPriority(pluginIds[i], priority);
+    }
+
+    res.json({ success: true, message: 'Plugin priorities updated' });
+  }));
 
   router.delete('/:pluginId', async (req, res) => {
     try {
