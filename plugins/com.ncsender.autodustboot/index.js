@@ -235,8 +235,8 @@ export function onLoad(ctx) {
 
     const hasExpandRetract = expandCommand && retractCommand;
 
-    // Helper function to create expand/retract sequence with original command
-    function wrapWithExpandRetract(originalCommand, includeExpand = true) {
+    // Helper function to create expand/retract sequence without original command
+    function wrapWithExpandRetract(includeExpand = true) {
       const lines = ['(Start of AutoDustBoot Plugin Sequence)'];
 
       if (includeExpand) {
@@ -246,7 +246,6 @@ export function onLoad(ctx) {
 
       lines.push(retractCommand);
       lines.push('(End of AutoDustBoot Plugin Sequence)');
-      lines.push(originalCommand.trim());
 
       return lines.join('\n');
     }
@@ -270,9 +269,19 @@ export function onLoad(ctx) {
       if (context.sourceId === 'job') {
         ctx.log('M6 from job source, sending retract and tracking tool change');
         isToolChanging = true;
-        return wrapWithExpandRetract(line, false); // Retract only for job source
+        // Send sequence as single multi-line command, then original command separately
+        await ctx.sendGcode(wrapWithExpandRetract(false), {
+          displayCommand: wrapWithExpandRetract(false),
+          meta: markAsProcessed()
+        });
+        return line;
       } else {
-        return wrapWithExpandRetract(line, true); // Full expand/retract for client/macro
+        // Send sequence as single multi-line command, then original command separately
+        await ctx.sendGcode(wrapWithExpandRetract(true), {
+          displayCommand: wrapWithExpandRetract(true),
+          meta: markAsProcessed()
+        });
+        return line;
       }
     }
 
@@ -313,14 +322,24 @@ export function onLoad(ctx) {
 
     if (trimmedLine.startsWith('$H') && hasExpandRetract && retractOnHome) {
       ctx.log(`Home command detected: ${line.trim()}`);
-      return wrapWithExpandRetract(line, true);
+      // Send sequence as single multi-line command, then original command separately
+      await ctx.sendGcode(wrapWithExpandRetract(true), {
+        displayCommand: wrapWithExpandRetract(true),
+        meta: markAsProcessed()
+      });
+      return line;
     }
 
     if ((context.sourceId === 'client' || context.sourceId === 'macro') && hasExpandRetract && retractOnRapidMove) {
       const hasG0 = /\bG0\b/i.test(normalizedLine);
       if (hasG0) {
         ctx.log(`G0 command from ${context.sourceId} detected: ${line.trim()}`);
-        return wrapWithExpandRetract(line, true);
+        // Send sequence as single multi-line command, then original command separately
+        await ctx.sendGcode(wrapWithExpandRetract(true), {
+          displayCommand: wrapWithExpandRetract(true),
+          meta: markAsProcessed()
+        });
+        return line;
       }
     }
 
