@@ -212,12 +212,6 @@ export function onLoad(ctx) {
       return commands; // No configuration, pass through
     }
 
-    // Debug: Log all commands received
-    ctx.log(`Processing ${commands.length} command(s), sourceId: ${context.sourceId}, retractOnRapidMove: ${retractOnRapidMove}`);
-    commands.forEach((cmd, idx) => {
-      ctx.log(`  [${idx}] isOriginal: ${cmd.isOriginal}, command: "${cmd.command}"`);
-    });
-
     // Helper to create expand/retract sequence as a single multi-line command
     function createExpandRetractSequence(includeExpand = true) {
       const sequence = ['(Start of AutoDustBoot Plugin Sequence)'];
@@ -231,7 +225,11 @@ export function onLoad(ctx) {
       sequence.push('(End of AutoDustBoot Plugin Sequence)');
 
       // Return single command object with multi-line command string
-      return { command: sequence.join('\n') };
+      // displayCommand is null to show the first line in terminal
+      return {
+        command: sequence.join('\n'),
+        displayCommand: null
+      };
     }
 
     // Find original M6 command
@@ -297,7 +295,10 @@ export function onLoad(ctx) {
             expandLines.push(`G4 P${delayAfterExpand}`);
           }
 
-          const expandSequence = { command: expandLines.join('\n') };
+          const expandSequence = {
+            command: expandLines.join('\n'),
+            displayCommand: null
+          };
           commands.splice(i + 1, 0, expandSequence);
           return commands;
         }
@@ -318,11 +319,9 @@ export function onLoad(ctx) {
 
     // Handle G0 rapid move (client/macro only)
     if ((context.sourceId === 'client' || context.sourceId === 'macro') && retractOnRapidMove) {
-      ctx.log(`Checking for G0 rapid move...`);
       const g0Index = commands.findIndex(cmd => {
         const normalized = cmd.command.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
         const hasG0 = /\bG0\b/i.test(normalized);
-        ctx.log(`  Command: "${cmd.command}" -> normalized: "${normalized}", isOriginal: ${cmd.isOriginal}, hasG0: ${hasG0}`);
         return cmd.isOriginal && hasG0;
       });
 
@@ -331,11 +330,7 @@ export function onLoad(ctx) {
         const sequence = createExpandRetractSequence(true);
         commands.splice(g0Index, 0, sequence);
         return commands;
-      } else {
-        ctx.log(`No G0 command found in original commands`);
       }
-    } else {
-      ctx.log(`Skipping G0 check - sourceId: ${context.sourceId}, retractOnRapidMove: ${retractOnRapidMove}`);
     }
 
     return commands;

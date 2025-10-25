@@ -36,7 +36,8 @@ const buildInitialConfig = (raw = {}) => ({
   direction: sanitizeDirection(raw.direction),
   pocket1: sanitizeCoords(raw.pocket1),
   toolSetter: sanitizeCoords(raw.toolSetter),
-  manualTool: sanitizeCoords(raw.manualTool)
+  manualTool: sanitizeCoords(raw.manualTool),
+  showMacroCommand: raw.showMacroCommand ?? false
 });
 
 const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
@@ -863,7 +864,7 @@ export async function onLoad(ctx) {
 
             const showMacroCommandCheck = getInput('rc-show-macro-command');
             if (showMacroCommandCheck) {
-              showMacroCommandCheck.checked = initialConfig.showMacroCommand || false;
+              showMacroCommandCheck.checked = !!initialConfig.showMacroCommand;
             }
           };
 

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -91,8 +92,33 @@ export function createToolRoutes(cncController, serverState) {
       let commandsExecuted = 0;
       for (const command of commands) {
         try {
-            log(`Executing tool change command: ${command}`);
-          await cncController.sendCommand(command, { meta });
+          log(`Executing tool change command: ${command}`);
+
+          // Process command through Plugin Manager
+          const pluginContext = {
+            sourceId: 'tool-change',
+            commandId: `tool-change-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            meta,
+            machineState: cncController.lastStatus
+          };
+
+          const processedCommands = await pluginManager.processCommand(command, pluginContext);
+
+          // Iterate through command array and send each to controller
+          for (const cmd of processedCommands) {
+            const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+            const cmdMeta = { ...meta, ...(cmd.meta || {}) };
+
+            // Generate unique commandId for each command in the array
+            const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+            await cncController.sendCommand(cmd.command, {
+              commandId: uniqueCommandId,
+              displayCommand: cmdDisplayCommand,
+              meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+            });
+          }
+
           commandsExecuted++;
         } catch (error) {
           // If queue was flushed (e.g., user pressed Stop/soft reset), treat as intentional cancellation

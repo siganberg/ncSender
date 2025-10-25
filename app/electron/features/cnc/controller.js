@@ -970,7 +970,8 @@ export class CNCController extends EventEmitter {
     // Preserve case for GRBL variable syntax (% assignments and [] expressions)
     const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
     const normalizedCommand = hasVariableSyntax ? finalCommand : finalCommand.toUpperCase();
-    const display = finalCommand; // Use original case for display
+    // Use provided displayCommand if available, otherwise use original case for display
+    const display = displayCommand || finalCommand;
 
     // Skip tool change commands when tool.count is 0 or not configured
     const isToolChange = /M6(?!\d)/i.test(normalizedCommand);

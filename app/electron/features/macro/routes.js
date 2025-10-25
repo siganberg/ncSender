@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { pluginManager } from '../../core/plugin-manager.js';
 import {
   readMacros,
   getMacro,
@@ -106,9 +107,36 @@ export function createMacroRoutes(cncController) {
 
       // Send all commands as a single multi-line command
       const multiLineCommand = commands.join('\n');
-      await cncController.sendCommand(multiLineCommand, {
-        meta: { sourceId: 'macro' }
-      });
+
+      // Process command through Plugin Manager
+      const pluginContext = {
+        sourceId: 'macro',
+        commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        meta: { sourceId: 'macro', macroId: req.params.id, macroName: macro.name },
+        machineState: cncController.lastStatus
+      };
+
+      const processedCommands = await pluginManager.processCommand(multiLineCommand, pluginContext);
+
+      // Iterate through command array and send each to controller
+      for (const cmd of processedCommands) {
+        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+        const cmdMeta = {
+          sourceId: 'macro',
+          macroId: req.params.id,
+          macroName: macro.name,
+          ...(cmd.meta || {})
+        };
+
+        // Generate unique commandId for each command in the array
+        const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        await cncController.sendCommand(cmd.command, {
+          commandId: uniqueCommandId,
+          displayCommand: cmdDisplayCommand,
+          meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+        });
+      }
 
       res.json({
         success: true,

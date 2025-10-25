@@ -11,8 +11,8 @@ const log = (...args) => {
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
 const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');
-// Always save settings to user data directory, even in dev mode
-const PLUGIN_SETTINGS_DIR = path.join(getUserDataDir(), 'plugin-settings');
+// Always save settings to user data directory's plugins folder, even in dev mode
+const PLUGIN_SETTINGS_DIR = path.join(getUserDataDir(), 'plugins');
 const REGISTRY_PATH = path.join(getUserDataDir(), 'plugins.json');
 
 if (DEV_PLUGINS_DIR) {
@@ -485,9 +485,6 @@ class PluginManager {
   }
 
   async processCommand(command, context = {}) {
-    log(`[Plugin Manager] processCommand called with: "${command}", sourceId: ${context.sourceId}`);
-    log(`[Plugin Manager] Number of registered plugins: ${this.plugins.size}`);
-
     // Initialize command array with original command
     let commands = [{
       command: command,
@@ -499,7 +496,6 @@ class PluginManager {
 
     // Iterate through all registered plugins in order
     for (const [pluginId] of this.plugins.entries()) {
-      log(`[Plugin Manager] Checking plugin: ${pluginId}`);
       const pluginContext = this.pluginContexts.get(pluginId);
 
       // Get handlers registered via ctx.registerEventHandler('onBeforeCommand', ...)
@@ -507,29 +503,21 @@ class PluginManager {
       const handlers = pluginEventHandlers?.get('onBeforeCommand') || [];
 
       if (handlers.length > 0) {
-        log(`[Plugin Manager] Found ${handlers.length} onBeforeCommand handler(s) for plugin: ${pluginId}`);
-
         for (const handler of handlers) {
           try {
             const result = await handler(commands, context, pluginContext);
             // Plugin returns modified array or undefined (no changes)
             if (Array.isArray(result)) {
-              log(`[Plugin Manager] Plugin ${pluginId} returned ${result.length} commands`);
               commands = result;
-            } else {
-              log(`[Plugin Manager] Plugin ${pluginId} returned undefined (no changes)`);
             }
           } catch (error) {
             log(`Error in plugin "${pluginId}" onBeforeCommand:`, error);
             // Continue with other plugins even if one fails
           }
         }
-      } else {
-        log(`[Plugin Manager] Plugin ${pluginId} does not have onBeforeCommand handler`);
       }
     }
 
-    log(`[Plugin Manager] Returning ${commands.length} command(s)`);
     return commands;
   }
 
