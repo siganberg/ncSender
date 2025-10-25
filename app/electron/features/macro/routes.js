@@ -104,48 +104,44 @@ export function createMacroRoutes(cncController, commandProcessor) {
 
       log(`Executing macro: ${macro.name} (${commands.length} commands)`);
 
-      // Send all commands as a single multi-line command
-      const multiLineCommand = commands.join('\n');
-
-      // Process command through Command Processor
-      const pluginContext = {
-        sourceId: 'macro',
-        commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        meta: { sourceId: 'macro', macroId: req.params.id, macroName: macro.name },
-        machineState: cncController.lastStatus
-      };
-
-      const result = await commandProcessor.instance.process(multiLineCommand, pluginContext);
-
-      // Check if command was skipped (e.g., same-tool M6)
-      if (!result.shouldContinue) {
-        return res.json({
-          success: true,
-          message: `Macro "${macro.name}" executed (skipped same-tool change)`,
-          commandsExecuted: commands.length
-        });
-      }
-
-      const processedCommands = result.commands;
-
-      // Iterate through command array and send each to controller
-      for (const cmd of processedCommands) {
-        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
-        const cmdMeta = {
+      // Send each command separately
+      for (const command of commands) {
+        // Process command through Command Processor
+        const pluginContext = {
           sourceId: 'macro',
-          macroId: req.params.id,
-          macroName: macro.name,
-          ...(cmd.meta || {})
+          commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          meta: { sourceId: 'macro', macroId: req.params.id, macroName: macro.name },
+          machineState: cncController.lastStatus
         };
 
-        // Generate unique commandId for each command in the array
-        const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const result = await commandProcessor.instance.process(command, pluginContext);
 
-        await cncController.sendCommand(cmd.command, {
-          commandId: uniqueCommandId,
-          displayCommand: cmdDisplayCommand,
-          meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
-        });
+        // Check if command was skipped (e.g., same-tool M6)
+        if (!result.shouldContinue) {
+          continue; // Skip to next command
+        }
+
+        const processedCommands = result.commands;
+
+        // Iterate through command array and send each to controller
+        for (const cmd of processedCommands) {
+          const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+          const cmdMeta = {
+            sourceId: 'macro',
+            macroId: req.params.id,
+            macroName: macro.name,
+            ...(cmd.meta || {})
+          };
+
+          // Generate unique commandId for each command in the array
+          const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+          await cncController.sendCommand(cmd.command, {
+            commandId: uniqueCommandId,
+            displayCommand: cmdDisplayCommand,
+            meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+          });
+        }
       }
 
       res.json({
