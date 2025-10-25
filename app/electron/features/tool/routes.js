@@ -33,26 +33,6 @@ const parseCoordinate = (value) => {
   return null;
 };
 
-const computeWorkPosition = (machineState) => {
-  if (!machineState) return null;
-
-  const workPos = parseCoordinate(machineState.WPos ?? machineState.WPO ?? machineState.WorkPosition);
-  if (workPos) return workPos;
-
-  const machinePos = parseCoordinate(machineState.MPos ?? machineState.MPOS);
-  const wco = parseCoordinate(machineState.WCO ?? machineState.WorkCoordinateOffset);
-
-  if (machinePos && wco) {
-    return {
-      x: machinePos.x - wco.x,
-      y: machinePos.y - wco.y,
-      z: machinePos.z - wco.z
-    };
-  }
-
-  return null;
-};
-
 export function createToolRoutes(cncController, serverState, commandProcessor) {
   const router = Router();
 
@@ -71,21 +51,21 @@ export function createToolRoutes(cncController, serverState, commandProcessor) {
       }
 
       const machineState = serverState?.machineState;
-      const workPosition = computeWorkPosition(machineState);
-      const hasReturnPosition = workPosition && [workPosition.x, workPosition.y].every(Number.isFinite);
+      const machinePosition = parseCoordinate(machineState?.MPos);
+      const hasReturnPosition = machinePosition && [machinePosition.x, machinePosition.y].every(Number.isFinite);
 
-      const xCommand = hasReturnPosition ? workPosition.x.toFixed(3) : null;
-      const yCommand = hasReturnPosition ? workPosition.y.toFixed(3) : null;
+      const xCommand = hasReturnPosition ? machinePosition.x.toFixed(3) : null;
+      const yCommand = hasReturnPosition ? machinePosition.y.toFixed(3) : null;
 
       const commands = [
         `M6 T${parsedTool}`,
-        ...(hasReturnPosition ? [`G90 G0 X${xCommand} Y${yCommand}`] : [])
+        ...(hasReturnPosition ? [`G53 G0 X${xCommand} Y${yCommand}`] : [])
       ];
 
       const meta = {
         sourceId: 'tool-change',
         toolNumber: parsedTool,
-        originalWorkPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
+        originalMachinePosition: hasReturnPosition ? { x: machinePosition.x, y: machinePosition.y } : null
       };
 
       let commandsExecuted = 0;
@@ -147,7 +127,7 @@ export function createToolRoutes(cncController, serverState, commandProcessor) {
         success: true,
         toolNumber: parsedTool,
         commandsExecuted,
-        workPosition: hasReturnPosition ? { x: workPosition.x, y: workPosition.y } : null
+        machinePosition: hasReturnPosition ? { x: machinePosition.x, y: machinePosition.y } : null
       });
     } catch (error) {
       log('Error executing tool change macro:', error);

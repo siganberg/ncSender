@@ -1663,8 +1663,8 @@ const startToolPress = (toolNumber: number, _evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
       state.triggered = true;
-      // If this is the current tool, send T98 to unload, otherwise send the tool number
-      const toolToLoad = props.currentTool === toolNumber ? 98 : toolNumber;
+      // If this is the current tool, send T0 to unload, otherwise send the tool number
+      const toolToLoad = props.currentTool === toolNumber ? 0 : toolNumber;
       sendToolChangeMacro(toolToLoad);
       state.progress = 0;
       state.active = false;

@@ -160,6 +160,8 @@ export async function onLoad(ctx) {
     // Tool setter coordinates
     const toolSetterX = settings.toolSetter?.x ?? 0;
     const toolSetterY = settings.toolSetter?.y ?? 0;
+    const pocketCount = settings.pockets ?? 6;
+
 
     // Helper to add indent method to arrays
     const withIndent = (arr) => ({
@@ -250,28 +252,49 @@ export async function onLoad(ctx) {
 
     // Unloading - only if current tool is loaded (currentTool > 0)
     if (currentTool > 0) {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`, // Move to safe Z
-        `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
-        ...toolUnload().indent(0),
-        `o100 IF [#<_probe_state> EQ 1]`,
-        ...toolUnload().indent(1),
-        `  o101 IF [#<_probe_state> EQ 1]`,
-        ...manualToolFallback().indent(2),
-        `  o101 ENDIF`,
-        `o100 ENDIF`,
-        `M61 Q0`
-      );
+      if (currentTool <= pocketCount) {
+        // Current tool is in ATC pocket range - use automatic unloading
+        toolChangeProgram.push(
+          `G53 G0 Z${zSafe}`, // Move to safe Z
+          `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
+          ...toolUnload().indent(0),
+          `o100 IF [#<_probe_state> EQ 1]`,
+          ...toolUnload().indent(1),
+          `  o101 IF [#<_probe_state> EQ 1]`,
+          ...manualToolFallback().indent(2),
+          `  o101 ENDIF`,
+          `o100 ENDIF`,
+          `M61 Q0`
+        );
+      } else {
+        // Current tool exceeds pocket count - use manual unload
+        toolChangeProgram.push(
+          `G53 G0 Z${zSafe}`, // Move to safe Z
+          ...manualToolFallback().indent(0),
+          `M61 Q0`
+        );
+      }
     }
 
     // Loading - only if target tool is valid (toolNumber > 0)
     if (toolNumber > 0) {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`, // Move to safe Z
-        `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
-        ...toolLoad(toolNumber),
-        ...toolLengthSet()
-      );
+      if (toolNumber <= pocketCount) {
+        // Tool is in ATC pocket range - use automatic loading
+        toolChangeProgram.push(
+          `G53 G0 Z${zSafe}`, // Move to safe Z
+          `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
+          ...toolLoad(toolNumber),
+          ...toolLengthSet()
+        );
+      } else {
+        // Tool number exceeds pocket count - use manual tool change
+        toolChangeProgram.push(
+          `G53 G0 Z${zSafe}`, // Move to safe Z
+          ...manualToolFallback().indent(0),
+          `M61 Q${toolNumber}`, // Set tool number
+          ...toolLengthSet()
+        );
+      }
     }
 
     toolChangeProgram.push(
@@ -293,7 +316,7 @@ export async function onLoad(ctx) {
     const toolChangeCommands = toolChangeProgram.map((line, index) => ({
       command: line,
       displayCommand: index === 0 && displayCmd ? displayCmd : null, // Only first command shows M6
-      meta: index === 0 ? {} : { silent: true }, // Mark all except first as silent
+      meta: (index === 0 || showMacroCommand) ? {} : { silent: true }, // Mark as silent unless first command or showMacroCommand is enabled
       isOriginal: false
     }));
 
