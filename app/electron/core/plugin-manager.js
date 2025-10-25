@@ -11,10 +11,13 @@ const log = (...args) => {
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
 const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');
+// Always save settings to user data directory, even in dev mode
+const PLUGIN_SETTINGS_DIR = path.join(getUserDataDir(), 'plugin-settings');
 const REGISTRY_PATH = path.join(getUserDataDir(), 'plugins.json');
 
 if (DEV_PLUGINS_DIR) {
   log('Development mode enabled - loading plugins from:', DEV_PLUGINS_DIR);
+  log('Plugin settings will be saved to:', PLUGIN_SETTINGS_DIR);
 }
 
 class PluginManager {
@@ -291,7 +294,7 @@ class PluginManager {
   }
 
   getPluginSettings(pluginId) {
-    const settingsPath = path.join(PLUGINS_DIR, pluginId, 'config.json');
+    const settingsPath = path.join(PLUGIN_SETTINGS_DIR, pluginId, 'config.json');
 
     if (!fs.existsSync(settingsPath)) {
       return {};
@@ -307,7 +310,7 @@ class PluginManager {
   }
 
   savePluginSettings(pluginId, settings) {
-    const settingsPath = path.join(PLUGINS_DIR, pluginId, 'config.json');
+    const settingsPath = path.join(PLUGIN_SETTINGS_DIR, pluginId, 'config.json');
     const pluginDir = path.dirname(settingsPath);
 
     if (!fs.existsSync(pluginDir)) {
@@ -320,6 +323,7 @@ class PluginManager {
       const mergedSettings = { ...existingSettings, ...settings };
 
       fs.writeFileSync(settingsPath, JSON.stringify(mergedSettings, null, 2), 'utf8');
+      log(`Saved settings for plugin "${pluginId}" to:`, settingsPath);
     } catch (error) {
       log(`Failed to save settings for plugin "${pluginId}":`, error);
       throw error;

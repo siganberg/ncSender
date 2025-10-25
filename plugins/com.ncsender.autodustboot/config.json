@@ -1,7 +1,0 @@
-{
-  "retractCommand": "M9",
-  "expandCommand": "M8",
-  "delayAfterExpand": 1,
-  "retractOnHome": true,
-  "retractOnRapidMove": true
-}
