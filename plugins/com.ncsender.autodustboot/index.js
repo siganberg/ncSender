@@ -272,14 +272,14 @@ export function onLoad(ctx) {
         // Send sequence as single multi-line command, then original command separately
         await ctx.sendGcode(wrapWithExpandRetract(false), {
           displayCommand: wrapWithExpandRetract(false),
-          meta: markAsProcessed()
+          meta: markAsProcessed(context.meta || {})
         });
         return line;
       } else {
         // Send sequence as single multi-line command, then original command separately
         await ctx.sendGcode(wrapWithExpandRetract(true), {
           displayCommand: wrapWithExpandRetract(true),
-          meta: markAsProcessed()
+          meta: markAsProcessed(context.meta || {})
         });
         return line;
       }
@@ -325,7 +325,7 @@ export function onLoad(ctx) {
       // Send sequence as single multi-line command, then original command separately
       await ctx.sendGcode(wrapWithExpandRetract(true), {
         displayCommand: wrapWithExpandRetract(true),
-        meta: markAsProcessed()
+        meta: markAsProcessed(context.meta || {})
       });
       return line;
     }
@@ -337,7 +337,7 @@ export function onLoad(ctx) {
         // Send sequence as single multi-line command, then original command separately
         await ctx.sendGcode(wrapWithExpandRetract(true), {
           displayCommand: wrapWithExpandRetract(true),
-          meta: markAsProcessed()
+          meta: markAsProcessed(context.meta || {})
         });
         return line;
       }

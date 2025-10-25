@@ -289,26 +289,32 @@ export async function onLoad(ctx) {
 
       const toolChangeProgramStr = toolChangeProgram.join('\n');
 
-      // Check if this is a multi-line command (e.g., from autodustboot)
-      if (line.includes('\n')) {
-        // Split the lines and find the M6 line
-        const lines = line.split('\n');
-        const modifiedLines = lines.map(l => {
-          const upperLine = l.trim().toUpperCase();
-          // Check if this line contains M6
-          if (m6Pattern.test(upperLine)) {
-            // Replace the M6 line with our tool change program
-            return toolChangeProgramStr;
-          }
-          return l;
-        });
+      // Check if user wants to show full macro command (default: false)
+      const showMacroCommand = settings.showMacroCommand ?? false;
 
-        // Join back into multi-line command
-        return modifiedLines.join('\n');
-      } else {
-        // Single-line M6 command, return just the tool change program
-        return toolChangeProgramStr;
+      // Extract just the M6 command for simplified display
+      let m6CommandOnly = line.trim();
+      if (line.includes('\n')) {
+        // Multi-line command (e.g., from autodustboot) - extract only the M6 line
+        const lines = line.split('\n');
+        const m6Line = lines.find(l => m6Pattern.test(l.trim().toUpperCase()));
+        if (m6Line) {
+          m6CommandOnly = m6Line.trim();
+        }
       }
+
+      // Determine the display command
+      const displayCmd = showMacroCommand ? toolChangeProgramStr : m6CommandOnly;
+
+      // Send the command using ctx.sendGcode to control displayCommand
+      // Mark as processed to prevent other plugins (like AutoDustBoot) from processing again
+      await ctx.sendGcode(toolChangeProgramStr, {
+        displayCommand: displayCmd,
+        meta: markAsProcessed(context.meta || {})
+      });
+
+      // Return null to indicate this command has been handled
+      return null;
     }
 
     return line;
@@ -445,6 +451,70 @@ export async function onLoad(ctx) {
           cursor: pointer;
           font-size: 0.9rem;
           color: var(--color-text-primary);
+        }
+
+        .rc-toggle-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 16px;
+        }
+
+        .rc-toggle-label {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: var(--color-text-primary);
+        }
+
+        .toggle-switch {
+          position: relative;
+          width: 50px;
+          height: 28px;
+        }
+
+        .toggle-switch input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+
+        .toggle-slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: #ccc;
+          transition: .4s;
+          border-radius: 28px;
+        }
+
+        .toggle-slider:before {
+          position: absolute;
+          content: "";
+          height: 20px;
+          width: 20px;
+          left: 4px;
+          bottom: 4px;
+          background-color: white;
+          transition: .4s;
+          border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+          background-color: var(--color-accent, #4a90e2);
+        }
+
+        input:checked + .toggle-slider:before {
+          transform: translateX(22px);
+        }
+
+        .help-text {
+          font-size: 0.85rem;
+          color: var(--color-text-secondary);
+          margin-top: 6px;
+          line-height: 1.4;
         }
 
         .rc-coordinate-group {
@@ -645,6 +715,13 @@ export async function onLoad(ctx) {
               <nc-step-control></nc-step-control>
               <nc-jog-control></nc-jog-control>
               <button type="button" class="rc-button rc-button-auto-calibrate" id="rc-auto-calibrate-btn">Auto Calibrate</button>
+              <div class="rc-toggle-row">
+                <label class="rc-toggle-label">Show Macro Command</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="rc-show-macro-command">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -804,6 +881,11 @@ export async function onLoad(ctx) {
             setCoordinateInputs(POCKET_PREFIX, initialConfig.pocket1);
             setCoordinateInputs(TOOL_SETTER_PREFIX, initialConfig.toolSetter);
             setCoordinateInputs(MANUAL_TOOL_PREFIX, initialConfig.manualTool);
+
+            const showMacroCommandCheck = getInput('rc-show-macro-command');
+            if (showMacroCommandCheck) {
+              showMacroCommandCheck.checked = initialConfig.showMacroCommand || false;
+            }
           };
 
           const notifyError = (message) => {
@@ -866,6 +948,7 @@ export async function onLoad(ctx) {
             const toolSetterY = getInput('rc-toolsetter-y');
             const manualToolX = getInput('rc-manualtool-x');
             const manualToolY = getInput('rc-manualtool-y');
+            const showMacroCommandCheck = getInput('rc-show-macro-command');
 
             return {
               colletSize: colletSelect ? colletSelect.value : null,
@@ -873,6 +956,7 @@ export async function onLoad(ctx) {
               model: modelSelect ? modelSelect.value : null,
               orientation: getRadioValue('orientation'),
               direction: getRadioValue('direction'),
+              showMacroCommand: showMacroCommandCheck ? showMacroCommandCheck.checked : false,
               pocket1: {
                 x: pocket1X ? getParseFloat(pocket1X.value) : null,
                 y: pocket1Y ? getParseFloat(pocket1Y.value) : null
