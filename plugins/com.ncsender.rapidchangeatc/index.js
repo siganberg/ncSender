@@ -13,7 +13,13 @@ const DIRECTIONS = ['Positive', 'Negative'];
 const clampPockets = (value) => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return 6;
-  return Math.min(Math.max(parsed, 1), 10);
+  return Math.min(Math.max(parsed, 1), 8);
+};
+
+const clampSpindleDelay = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(Math.max(parsed, 0), 10);
 };
 
 const toFiniteNumber = (value, fallback = 0) => {
@@ -39,7 +45,8 @@ const buildInitialConfig = (raw = {}) => ({
   pocket1: sanitizeCoords(raw.pocket1),
   toolSetter: sanitizeCoords(raw.toolSetter),
   manualTool: sanitizeCoords(raw.manualTool),
-  showMacroCommand: raw.showMacroCommand ?? false
+  showMacroCommand: raw.showMacroCommand ?? false,
+  spindleDelay: clampSpindleDelay(raw.spindleDelay)
 });
 
 const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
@@ -126,6 +133,7 @@ export async function onLoad(ctx) {
     const pocket1Y = settings.pocket1?.y ?? 0;
     const orientation = settings.orientation ?? 'Y'; // 'X' or 'Y'
     const direction = settings.direction === 'Negative' ? -1 : 1;
+    const spindleDelay = settings.spindleDelay ?? 0;
     const pocketDistance = 45; // Distance between pockets in mm
     const toolEngagement = -100;
     const zSpinOff = 23;
@@ -248,6 +256,11 @@ export async function onLoad(ctx) {
       `G21`, // Set to metric
       `M5` // Spindle stop
     ];
+
+    // Add spindle delay if configured
+    if (spindleDelay > 0) {
+      toolChangeProgram.push(`G4 P${spindleDelay}`);
+    }
 
     // Unloading - only if current tool is loaded (currentTool > 0)
     if (currentTool > 0) {
@@ -616,11 +629,11 @@ export async function onLoad(ctx) {
             <div class="rc-form-group">
               <label class="rc-form-label">Collet Size</label>
               <select class="rc-select" id="rc-collet-size">
-                <option value="ER11">ER11</option>
-                <option value="ER16">ER16</option>
+                <option value="ER11" disabled>ER11</option>
+                <option value="ER16" disabled>ER16</option>
                 <option value="ER20" selected>ER20</option>
-                <option value="ER25">ER25</option>
-                <option value="ER32">ER32</option>
+                <option value="ER25" disabled>ER25</option>
+                <option value="ER32" disabled>ER32</option>
               </select>
             </div>
 
@@ -635,17 +648,15 @@ export async function onLoad(ctx) {
                 <option value="6" selected>6</option>
                 <option value="7">7</option>
                 <option value="8">8</option>
-                <option value="9">9</option>
-                <option value="10">10</option>
               </select>
             </div>
 
             <div class="rc-form-group">
               <label class="rc-form-label">Model</label>
               <select class="rc-select" id="rc-model-select">
-                <option value="Basic">Basic</option>
+                <option value="Basic" disabled>Basic</option>
                 <option value="Pro" selected>Pro</option>
-                <option value="Premium">Premium</option>
+                <option value="Premium" disabled>Premium</option>
               </select>
             </div>
           </div>
@@ -711,6 +722,11 @@ export async function onLoad(ctx) {
               <input type="number" class="rc-input" id="rc-manualtool-y" value="0" step="0.001">
               <button type="button" class="rc-button rc-button-grab" id="rc-manualtool-grab">Grab</button>
             </div>
+          </div>
+
+          <div class="rc-form-group">
+            <label class="rc-form-label">Spindle Delay (seconds)</label>
+            <input type="number" class="rc-input" id="rc-spindle-delay" value="0" min="0" max="10" step="1">
           </div>
 
         </div>
@@ -887,6 +903,11 @@ export async function onLoad(ctx) {
             setCoordinateInputs(TOOL_SETTER_PREFIX, initialConfig.toolSetter);
             setCoordinateInputs(MANUAL_TOOL_PREFIX, initialConfig.manualTool);
 
+            const spindleDelayInput = getInput('rc-spindle-delay');
+            if (spindleDelayInput) {
+              spindleDelayInput.value = String(initialConfig.spindleDelay ?? 0);
+            }
+
             const showMacroCommandCheck = getInput('rc-show-macro-command');
             if (showMacroCommandCheck) {
               showMacroCommandCheck.checked = !!initialConfig.showMacroCommand;
@@ -953,6 +974,7 @@ export async function onLoad(ctx) {
             const toolSetterY = getInput('rc-toolsetter-y');
             const manualToolX = getInput('rc-manualtool-x');
             const manualToolY = getInput('rc-manualtool-y');
+            const spindleDelayInput = getInput('rc-spindle-delay');
             const showMacroCommandCheck = getInput('rc-show-macro-command');
 
             return {
@@ -962,6 +984,7 @@ export async function onLoad(ctx) {
               orientation: getRadioValue('orientation'),
               direction: getRadioValue('direction'),
               showMacroCommand: showMacroCommandCheck ? showMacroCommandCheck.checked : false,
+              spindleDelay: spindleDelayInput ? getParseInt(spindleDelayInput.value) : 0,
               pocket1: {
                 x: pocket1X ? getParseFloat(pocket1X.value) : null,
                 y: pocket1Y ? getParseFloat(pocket1Y.value) : null
