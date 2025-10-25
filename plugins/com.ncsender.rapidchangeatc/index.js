@@ -143,7 +143,7 @@ export async function onLoad(ctx) {
       const zSpinOff = 23;
       const zRetreat = 7;
       const zSafe = 0;
-      const zone1 = toolEngagement + 23;
+      const zone1 = toolEngagement + zSpinOff;
       const zone2 = toolEngagement + 28;
       const unloadRpm = 1500;
       const loadRpm = 1200;
@@ -151,6 +151,27 @@ export async function onLoad(ctx) {
       const zProbeStart = -20;
       const seekDistance = 50;
       const seekFeedrate = 800;
+
+      // Helper to calculate pocket position based on tool number
+      const calculatePocketPosition = (toolNum) => {
+        if (toolNum <= 0) {
+          return { x: pocket1X, y: pocket1Y };
+        }
+        const offset = (toolNum - 1) * pocketDistance * direction;
+        if (orientation === 'Y') {
+          return { x: pocket1X, y: pocket1Y + offset };
+        } else {
+          return { x: pocket1X + offset, y: pocket1Y };
+        }
+      };
+
+      // Manual tool location fallback
+      const manualToolX = settings.manualTool?.x ?? 0;
+      const manualToolY = settings.manualTool?.y ?? 0;
+
+      // Tool setter coordinates
+      const toolSetterX = settings.toolSetter?.x ?? 0;
+      const toolSetterY = settings.toolSetter?.y ?? 0;
 
       // Helper to add indent method to arrays
       const withIndent = (arr) => ({
@@ -160,6 +181,13 @@ export async function onLoad(ctx) {
         },
         raw: () => arr
       });
+
+      // Function to generate manual tool fallback sequence
+      const manualToolFallback = () => withIndent([
+        `G53 G0 Z${zSafe}`,
+        `G53 G0 X${manualToolX} Y${manualToolY}`,
+        `M0`
+      ]);
 
       // Function to generate unload sequence commands
       const toolUnload = () => withIndent([
@@ -188,16 +216,12 @@ export async function onLoad(ctx) {
         `G53 G0 Z${zone1}`,
         `G4 P0.2`,
         `o300 IF [#<_probe_state> EQ 0]`,
-        `   G53 G0 Z${zSafe}`,
-        `   G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
-        `   M0`,
+        ...manualToolFallback().indent(1),
         `o300 ELSE`,
         `   G53 G0 Z${zone2}`,
         `   G4 P0.2`,
         `   o301 IF [#<_probe_state> EQ 1]`,
-        `     G53 G0 Z${zSafe}`,
-        `     G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
-        `     M0`,
+        ...manualToolFallback().indent(2),
         `   o301 ENDIF`,
         `o300 ENDIF`,
         `G65P6`, // disabled delay
@@ -207,9 +231,8 @@ export async function onLoad(ctx) {
 
       // Function to generate tool length setting routine
       const toolLengthSet = () => [
-        `(-- TOOL LENGTH SET ROUTINE --)`,
         `G53 G0 Z${zSafe}`, // Move to safe Z
-        `G53 G0 X${settings.toolSetter?.x ?? 0} Y${settings.toolSetter?.y ?? 0}`,
+        `G53 G0 X${toolSetterX} Y${toolSetterY}`,
         `G53 G0 Z${zProbeStart}`, // Move to probe start height
         `G43.1 Z0`,
         `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
@@ -225,33 +248,9 @@ export async function onLoad(ctx) {
         `G53 G0 Z${zSafe}`
       ];
 
-      // Calculate source pocket position (current tool)
-      let sourceX, sourceY;
-      if (currentTool > 0) {
-        if (orientation === 'Y') {
-          sourceX = pocket1X;
-          sourceY = pocket1Y + ((currentTool - 1) * pocketDistance * direction);
-        } else {
-          sourceX = pocket1X + ((currentTool - 1) * pocketDistance * direction);
-          sourceY = pocket1Y;
-        }
-      } else {
-        // No current tool, use pocket 1 as source
-        sourceX = pocket1X;
-        sourceY = pocket1Y;
-      }
-
-      // Calculate target pocket position based on new tool number
-      let targetX, targetY;
-      if (orientation === 'Y') {
-        // Y orientation: X is constant, Y varies
-        targetX = pocket1X;
-        targetY = pocket1Y + ((toolNumber - 1) * pocketDistance * direction);
-      } else {
-        // X orientation: Y is constant, X varies
-        targetX = pocket1X + ((toolNumber - 1) * pocketDistance * direction);
-        targetY = pocket1Y;
-      }
+      // Calculate source and target pocket positions
+      const sourcePos = calculatePocketPosition(currentTool);
+      const targetPos = calculatePocketPosition(toolNumber);
 
       // Build tool change G-code program
       const toolChangeProgram = [
@@ -265,14 +264,12 @@ export async function onLoad(ctx) {
 
       // Unloading
       toolChangeProgram.push(
-        `G53 G0 X${sourceX} Y${sourceY}`, // Move to source pocket
+        `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
         ...toolUnload().indent(0),
         `o100 IF [#<_probe_state> EQ 1]`,
         ...toolUnload().indent(1),
         `  o101 IF [#<_probe_state> EQ 1]`,
-        `     G53 G0 Z${zSafe}`,
-        `     G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
-        `     M0`,
+        ...manualToolFallback().indent(2),
         `  o101 ENDIF`,
         `o100 ENDIF`,
         `M61 Q0`
@@ -281,7 +278,7 @@ export async function onLoad(ctx) {
       // Loading
       toolChangeProgram.push(
         `G53 G0 Z${zSafe}`, // Move to safe Z
-        `G53 G0 X${targetX} Y${targetY}`, // Move to target pocket
+        `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
         ...toolLoad(toolNumber),
         ...toolLengthSet(),
         'O201 IF [#<wasMetric> EQ 0]',
