@@ -341,8 +341,11 @@ export class GCodeJobProcessor {
               ...(cmd.meta || {})
             };
 
+            // Generate unique commandId for each command in the array
+            const uniqueCommandId = cmd.commandId || `${commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
             lastResponse = await this.cncController.sendCommand(cmd.command, {
-              commandId: cmd.commandId || commandId,
+              commandId: uniqueCommandId,
               displayCommand: cmdDisplayCommand,
               meta: cmdMeta
             });

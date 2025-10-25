@@ -218,7 +218,7 @@ export function onLoad(ctx) {
       ctx.log(`  [${idx}] isOriginal: ${cmd.isOriginal}, command: "${cmd.command}"`);
     });
 
-    // Helper to create expand/retract sequence
+    // Helper to create expand/retract sequence as a single multi-line command
     function createExpandRetractSequence(includeExpand = true) {
       const sequence = ['(Start of AutoDustBoot Plugin Sequence)'];
 
@@ -230,7 +230,8 @@ export function onLoad(ctx) {
       sequence.push(retractCommand);
       sequence.push('(End of AutoDustBoot Plugin Sequence)');
 
-      return sequence.map(cmd => ({ command: cmd }));
+      // Return single command object with multi-line command string
+      return { command: sequence.join('\n') };
     }
 
     // Find original M6 command
@@ -255,12 +256,12 @@ export function onLoad(ctx) {
           isToolChanging = true;
           // Insert retract sequence before M6
           const sequence = createExpandRetractSequence(false);
-          commands.splice(m6Index, 0, ...sequence);
+          commands.splice(m6Index, 0, sequence);
           return commands;
         } else {
           // Client/macro source - full expand/retract sequence
           const sequence = createExpandRetractSequence(true);
-          commands.splice(m6Index, 0, ...sequence);
+          commands.splice(m6Index, 0, sequence);
           return commands;
         }
       }
@@ -289,16 +290,15 @@ export function onLoad(ctx) {
           ctx.log(`First XY movement after tool change at line ${context.lineNumber}`);
           isToolChanging = false;
 
-          // Insert expand command and delay after this XY movement
-          const expandSequence = [
-            { command: expandCommand },
-          ];
+          // Insert expand command and delay after this XY movement as a single multi-line command
+          const expandLines = [expandCommand];
 
           if (delayAfterExpand > 0) {
-            expandSequence.push({ command: `G4 P${delayAfterExpand}` });
+            expandLines.push(`G4 P${delayAfterExpand}`);
           }
 
-          commands.splice(i + 1, 0, ...expandSequence);
+          const expandSequence = { command: expandLines.join('\n') };
+          commands.splice(i + 1, 0, expandSequence);
           return commands;
         }
       }
@@ -312,7 +312,7 @@ export function onLoad(ctx) {
     if (homeIndex !== -1 && retractOnHome) {
       ctx.log(`Home command detected: ${commands[homeIndex].command.trim()}`);
       const sequence = createExpandRetractSequence(true);
-      commands.splice(homeIndex, 0, ...sequence);
+      commands.splice(homeIndex, 0, sequence);
       return commands;
     }
 
@@ -329,7 +329,7 @@ export function onLoad(ctx) {
       if (g0Index !== -1) {
         ctx.log(`G0 command from ${context.sourceId} detected: ${commands[g0Index].command.trim()}`);
         const sequence = createExpandRetractSequence(true);
-        commands.splice(g0Index, 0, ...sequence);
+        commands.splice(g0Index, 0, sequence);
         return commands;
       } else {
         ctx.log(`No G0 command found in original commands`);

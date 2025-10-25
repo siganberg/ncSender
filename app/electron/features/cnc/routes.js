@@ -182,8 +182,11 @@ export function createCNCRoutes(cncController, broadcast) {
         const cmdDisplayCommand = cmd.displayCommand || cmd.command;
         const cmdMeta = { ...metaPayload, ...(cmd.meta || {}) };
 
+        // Generate unique commandId for each command in the array
+        const uniqueCommandId = cmd.commandId || `${commandMeta.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
         await cncController.sendCommand(cmd.command, {
-          commandId: cmd.commandId || commandMeta.id,
+          commandId: uniqueCommandId,
           displayCommand: cmdDisplayCommand,
           meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
         });

@@ -286,15 +286,15 @@ export async function onLoad(ctx) {
     // Determine the display command
     const displayCmd = showMacroCommand ? null : m6Command.command.trim();
 
-    // Replace M6 command with tool change sequence
-    const toolChangeProgramCommands = toolChangeProgram.map(cmd => ({
-      command: cmd,
+    // Create single multi-line command from the tool change program
+    const toolChangeProgramCommand = {
+      command: toolChangeProgram.join('\n'),
       displayCommand: displayCmd, // Will show as M6 unless showMacroCommand is true
       isOriginal: false
-    }));
+    };
 
-    // Replace the M6 command with the full sequence
-    commands.splice(m6Index, 1, ...toolChangeProgramCommands);
+    // Replace the M6 command with the single multi-line command
+    commands.splice(m6Index, 1, toolChangeProgramCommand);
 
     return commands;
   });
