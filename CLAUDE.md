@@ -35,6 +35,12 @@ This file contains development preferences and patterns to follow when working o
 - **Preference**: Avoid adding comments unless explicitly requested
 - **Focus**: Write self-documenting code with clear naming and structure
 
+### Defensive Programming
+- **Avoid**: Excessive parameter validation and defensive checks in constructors and internal functions
+- **Rationale**: Only validate input from users or external source, not developer stupidity. JavaScript will naturally throw errors when accessing undefined/null, which is sufficient for debugging
+- **Don't**: Add checks like `if (!dependency) throw new Error('dependency required')`
+- **Do**: Trust that internal dependencies are passed correctly and let natural errors surface during development
+
 ### Console Logging
 - **Browser logs**: Always use JSON.stringify() for objects to enable easy copy/paste
 - **Format**: `console.log('Message:', JSON.stringify(data))`

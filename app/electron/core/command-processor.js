@@ -1,4 +1,4 @@
-import { checkSameToolChange } from '../utils/gcode-patterns.js';
+import { checkSameToolChange, parseM6Command } from '../utils/gcode-patterns.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [CommandProcessor]`, ...args);
@@ -17,20 +17,11 @@ const log = (...args) => {
  * Flow: Entry Point → CommandProcessor → Plugin Manager → Controller → CNC
  */
 export class CommandProcessor {
-  constructor({ cncController, pluginManager, broadcast }) {
-    if (!cncController) {
-      throw new Error('CommandProcessor requires cncController');
-    }
-    if (!pluginManager) {
-      throw new Error('CommandProcessor requires pluginManager');
-    }
-    if (!broadcast) {
-      throw new Error('CommandProcessor requires broadcast function');
-    }
-
+  constructor({ cncController, pluginManager, broadcast, serverState }) {
     this.cncController = cncController;
     this.pluginManager = pluginManager;
     this.broadcast = broadcast;
+    this.serverState = serverState;
   }
 
   /**
@@ -53,6 +44,19 @@ export class CommandProcessor {
       meta = {},
       machineState
     } = context;
+
+    // Check if this is a valid M6 command
+    const m6Parse = parseM6Command(command);
+    const isValidM6 = m6Parse?.matched && m6Parse.toolNumber !== null;
+
+    // Set isToolChanging flag for all valid M6 commands (same-tool or different-tool)
+    if (isValidM6) {
+      if (this.serverState.machineState.isToolChanging !== true) {
+        log(`Setting isToolChanging -> true (M6 T${m6Parse.toolNumber})`);
+        this.serverState.machineState.isToolChanging = true;
+        this.broadcast('server-state-updated', this.serverState);
+      }
+    }
 
     // Check for same-tool M6 command
     const currentTool = machineState?.tool ?? this.cncController.lastStatus?.tool ?? 0;

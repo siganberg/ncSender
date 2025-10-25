@@ -212,6 +212,12 @@ export function registerCncEventHandlers({
       };
     }
 
+    // Reset isToolChanging flag on soft reset
+    if (serverState.machineState.isToolChanging) {
+      log('Resetting isToolChanging -> false (soft reset)');
+      serverState.machineState.isToolChanging = false;
+    }
+
     computeJobProgressFields();
     broadcast('server-state-updated', serverState);
   };

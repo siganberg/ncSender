@@ -62,7 +62,8 @@ export async function createApp(options = {}) {
   commandProcessorWrapper.instance = new CommandProcessor({
     cncController,
     pluginManager,
-    broadcast
+    broadcast,
+    serverState: context.serverState
   });
 
   const userDataDir = getUserDataDir();

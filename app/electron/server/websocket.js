@@ -352,13 +352,6 @@ export function createWebSocketLayer({
     const payload = toCommandPayload(event, { status: 'pending' });
     broadcast('cnc-command', payload);
 
-    // Set isToolChanging flag for M6 commands
-    // Note: Same-tool M6 commands are now filtered by CommandProcessor upstream,
-    // so this will only trigger for different-tool M6 commands
-    if (isToolChangeCommand(payload.command)) {
-      setToolChanging(true);
-    }
-
     if (event.meta?.continuous) {
       longRunningCommands.set(event.id, payload);
     }
