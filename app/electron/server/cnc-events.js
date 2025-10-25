@@ -5,6 +5,18 @@ import { fetchAndSaveAlarmCodes } from '../features/alarms/routes.js';
 import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
 
+const FILTERED_BROADCAST_MESSAGES = [
+  'RGBonToolChanged',
+  'RGBonToolSelected'
+];
+
+function shouldFilterBroadcast(data) {
+  if (typeof data !== 'string') {
+    return false;
+  }
+  return FILTERED_BROADCAST_MESSAGES.some(filterTerm => data.includes(filterTerm));
+}
+
 export function registerCncEventHandlers({
   cncController,
   jobManager,
@@ -105,6 +117,9 @@ export function registerCncEventHandlers({
       return;
     }
     if (!data || (typeof data === 'string' && data.trim() === '')) {
+      return;
+    }
+    if (shouldFilterBroadcast(data)) {
       return;
     }
     broadcast('cnc-data', data);

@@ -98,18 +98,6 @@ export function onLoad(ctx) {
           margin-top: 6px;
           line-height: 1.4;
         }
-        .success-message {
-          padding: 12px 16px;
-          background: rgba(52, 211, 153, 0.2);
-          border: 1px solid rgba(52, 211, 153, 0.3);
-          border-radius: 4px;
-          color: #34d399;
-          margin-top: 16px;
-          display: none;
-        }
-        .success-message.show {
-          display: block;
-        }
       </style>
     </head>
     <body>
@@ -155,10 +143,6 @@ export function onLoad(ctx) {
             <p class="help-text">Automatically retract the AutoDustBoot during all rapid moves, except when running jobs.</p>
           </div>
         </div>
-
-        <div class="success-message" id="successMessage">
-          Configuration saved successfully!
-        </div>
       </div>
 
       <script>
@@ -178,12 +162,6 @@ export function onLoad(ctx) {
           }
         })();
 
-        window.addEventListener('message', (event) => {
-          if (event.data.type === 'save-config') {
-            saveAutoDustBootConfig();
-          }
-        });
-
         async function saveAutoDustBootConfig() {
           const retractCommand = document.getElementById('retractCommand').value.trim();
           const expandCommand = document.getElementById('expandCommand').value.trim();
@@ -200,24 +178,13 @@ export function onLoad(ctx) {
           };
 
           try {
-            const response = await fetch('/api/plugins/com.ncsender.autodustboot/settings', {
+            await fetch('/api/plugins/com.ncsender.autodustboot/settings', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(settings)
             });
-
-            if (response.ok) {
-              const successMsg = document.getElementById('successMessage');
-              successMsg.classList.add('show');
-              setTimeout(() => {
-                successMsg.classList.remove('show');
-              }, 3000);
-            } else {
-              alert('Failed to save configuration');
-            }
           } catch (error) {
             console.error('Failed to save settings:', error);
-            alert('Failed to save configuration');
           }
         }
 
@@ -268,44 +235,44 @@ export function onLoad(ctx) {
 
     const hasExpandRetract = expandCommand && retractCommand;
 
-    async function sendExpandRetractSequence(originalCommand) {
-      await ctx.sendGcode(expandCommand, {
-        displayCommand: `${expandCommand} (AutoDustBoot - Expand)`,
-        meta: markAsProcessed()
-      });
+    // Helper function to create expand/retract sequence with original command
+    function wrapWithExpandRetract(originalCommand, includeExpand = true) {
+      const lines = ['(Start of AutoDustBoot Plugin Sequence)'];
 
-      await ctx.sendGcode('G4 P0.1', {
-        displayCommand: 'G4 P0.1 (AutoDustBoot - Delay)',
-        meta: markAsProcessed()
-      });
+      if (includeExpand) {
+        lines.push(expandCommand);
+        lines.push('G4 P0.1');
+      }
 
-      await ctx.sendGcode(retractCommand, {
-        displayCommand: `${retractCommand} (AutoDustBoot - Retract)`,
-        meta: markAsProcessed()
-      });
+      lines.push(retractCommand);
+      lines.push('(End of AutoDustBoot Plugin Sequence)');
+      lines.push(originalCommand.trim());
 
-      await ctx.sendGcode(originalCommand, {
-        displayCommand: originalCommand,
-        meta: markAsProcessed()
-      });
+      return lines.join('\n');
     }
 
-    if (trimmedLine.includes('M6') && hasExpandRetract) {
-      ctx.log(`M6 detected at line ${context.lineNumber}`);
+    // Detect M6 tool change command (M6 optionally followed by T and tool number, but not M60, M61, etc.)
+    const m6Pattern = /\bM6(?:\s*T(\d+)|T(\d+))?(?!\d)/i;
+    const m6Match = normalizedLine.match(m6Pattern);
+
+    if (m6Match && hasExpandRetract) {
+      const toolNumber = m6Match[1] || m6Match[2];
+
+      // Only process if we have a valid tool number
+      if (!toolNumber || !Number.isFinite(parseInt(toolNumber, 10))) {
+        // M6 without valid tool number - let it pass through
+        return line;
+      }
+
+      const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
+      ctx.log(`M6 tool change detected with T${toolNumber} ${location}`);
 
       if (context.sourceId === 'job') {
         ctx.log('M6 from job source, sending retract and tracking tool change');
-
-        await ctx.sendGcode(retractCommand, {
-          displayCommand: `${retractCommand} (AutoDustBoot - Retract)`,
-          meta: markAsProcessed()
-        });
-
         isToolChanging = true;
-        return line;
+        return wrapWithExpandRetract(line, false); // Retract only for job source
       } else {
-        await sendExpandRetractSequence(line.trim());
-        return null;
+        return wrapWithExpandRetract(line, true); // Full expand/retract for client/macro
       }
     }
 
@@ -346,24 +313,14 @@ export function onLoad(ctx) {
 
     if (trimmedLine.startsWith('$H') && hasExpandRetract && retractOnHome) {
       ctx.log(`Home command detected: ${line.trim()}`);
-      await sendExpandRetractSequence(line.trim());
-      return null;
+      return wrapWithExpandRetract(line, true);
     }
 
     if ((context.sourceId === 'client' || context.sourceId === 'macro') && hasExpandRetract && retractOnRapidMove) {
       const hasG0 = /\bG0\b/i.test(normalizedLine);
       if (hasG0) {
         ctx.log(`G0 command from ${context.sourceId} detected: ${line.trim()}`);
-
-        // Combine expand/delay/retract with the original command into one program
-        const combinedProgram = [
-          expandCommand,           // Expand
-          'G4 P0.1',              // Delay
-          retractCommand,         // Retract
-          line.trim()             // Original command (single or multi-line)
-        ].join('\n');
-
-        return combinedProgram;
+        return wrapWithExpandRetract(line, true);
       }
     }
 

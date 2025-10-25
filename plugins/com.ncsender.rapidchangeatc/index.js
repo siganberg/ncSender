@@ -109,40 +109,194 @@ export async function onLoad(ctx) {
 
     const trimmedLine = line.trim().toUpperCase();
 
-    const m6Pattern = /(?:^|[^A-Z])M0*6(?:\s+T0*(\d+)|(?=[^0-9])|$)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/;
+    // Match M6 with optional tool number: M6 T1, M6T1, T1 M6, etc. (but not M60, M61, etc.)
+    const m6Pattern = /(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|(?=[^0-9T])|$)|(?:^|[^A-Z])T0*(\d+)\s+M0*6(?:[^0-9]|$)/;
     const match = trimmedLine.match(m6Pattern);
 
     if (match) {
       const toolNumber = match[1] || match[2];
-      ctx.log(`M6 detected with tool T${toolNumber} at line ${context.lineNumber}, executing tool change program`);
+
+      // Validate that we have a valid tool number
+      if (!toolNumber || !Number.isFinite(parseInt(toolNumber, 10))) {
+        // M6 without valid tool number (e.g., M6R2, M6 alone) - let it pass through
+        return line;
+      }
+
+      const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
+
+      // Get current tool number from machine state passed in context
+      const currentTool = context.machineState?.tool ?? 0;
+
+      ctx.log(`M6 detected with tool T${toolNumber} ${location}, current tool: T${currentTool}, executing tool change program`);
 
       // Update metadata to mark as processed
       context.meta = markAsProcessed(context.meta || {});
 
+      // Get plugin settings for pocket coordinates
+      const settings = ctx.getSettings() || {};
+      const pocket1X = settings.pocket1?.x ?? 0;
+      const pocket1Y = settings.pocket1?.y ?? 0;
+      const orientation = settings.orientation ?? 'Y'; // 'X' or 'Y'
+      const direction = settings.direction === 'Negative' ? -1 : 1;
+      const pocketDistance = 45; // Distance between pockets in mm
+      const toolEngagement = -100;
+      const zSpinOff = 23;
+      const zRetreat = 12;
+      const zone1 = toolEngagement + 23;
+      const zone2 = toolEngagement + 28;
+      const unloadRpm = 1500;
+      const loadRpm = 1200;
+      const engageFeedrate = 3500;
+      const zProbeStart = -20;
+      const seekDistance = 50;
+      const seekFeedrate = 800;
+
+      // Function to generate unload sequence commands
+      const toolUnload = (tabs = 0) => {
+        const indent = '  '.repeat(tabs);
+        return [
+          `${indent}G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
+          `${indent}G65P6`, // disabled delay
+          `${indent}M4 S${unloadRpm}`, // Start spindle for unload
+          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+          `${indent}G65P6`, // disabled delay
+          `${indent}M5`, // Spindle stop
+          `${indent}G53 G0 Z${zone1}`, // Move to zone 1
+          `G4 P0.2`
+        ];
+      };
+
+      // Function to generate load sequence commands
+      const toolLoad = (tabs = 0) => {
+        const indent = '  '.repeat(tabs);
+        return [
+          `${indent}G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
+          `${indent}G65P6`, // disabled delay
+          `${indent}M3 S${loadRpm}`, // Start spindle for loading
+          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+          `${indent}G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
+          `${indent}G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+          `${indent}G65P6`, // disabled delay
+          `${indent}M5` // Spindle stop
+        ];
+      };
+
+      // Calculate source pocket position (current tool)
+      let sourceX, sourceY;
+      if (currentTool > 0) {
+        if (orientation === 'Y') {
+          sourceX = pocket1X;
+          sourceY = pocket1Y + ((currentTool - 1) * pocketDistance * direction);
+        } else {
+          sourceX = pocket1X + ((currentTool - 1) * pocketDistance * direction);
+          sourceY = pocket1Y;
+        }
+      } else {
+        // No current tool, use pocket 1 as source
+        sourceX = pocket1X;
+        sourceY = pocket1Y;
+      }
+
+      // Calculate target pocket position based on new tool number
+      let targetX, targetY;
+      if (orientation === 'Y') {
+        // Y orientation: X is constant, Y varies
+        targetX = pocket1X;
+        targetY = pocket1Y + ((toolNumber - 1) * pocketDistance * direction);
+      } else {
+        // X orientation: Y is constant, X varies
+        targetX = pocket1X + ((toolNumber - 1) * pocketDistance * direction);
+        targetY = pocket1Y;
+      }
+
       // Build tool change G-code program
       const toolChangeProgram = [
+        '(Start of RapidChangeATC Plugin Sequence)',
         `#<wasMetric> = #<_metric>`,
-        `G21`,
-        //`G53 G0 Z0`,
-        `M61 Q0`,           // Unload current tool
-        `G4 P2`,            // Wait 2 seconds
+        `G21`, // Set to metric
+        `G65P6`, // disabled delay
+        `M5`, // Spindle stop
+        `G53 G0 Z0`, // Move to safe Z
+      ];
+
+      // Unloading
+      toolChangeProgram.push(
+        `G53 G0 X${sourceX} Y${sourceY}`, // Move to source pocket
+        ...toolUnload(0),
+        `o100 IF [#<_probe_state> EQ 1]`,
+        ...toolUnload(1),
+        `  o101 IF [#<_probe_state> EQ 1]`,
+        `     G53 G0 Z0`,
+        `     G53 G0 X${settings.manualTool?.x ?? 0} Y${settings.manualTool?.y ?? 0}`,
+        `     M61 Q${toolNumber}`,
+        `     M0`,
+        `  o101 ELSE`,
+        `     M61 Q0`,
+        `  o101 ENDIF`,
+        `o100 ELSE`,
+        `  M61 Q0`,
+        `o100 ENDIF`
+      );
+
+      // Loading
+      toolChangeProgram.push(
+        `G53 G0 Z0`, // Move to safe Z
+        `G53 G0 X${targetX} Y${targetY}`, // Move to target pocket
+        ...toolLoad(0),
         `M61 Q${toolNumber}`, // Load new tool
-        'O100 IF [#<wasMetric> EQ 0]',
-          '  G20',
-        'O100 ENDIF'
-      ].join('\n');
+        `G53 G0 Z0`, // Move to safe Z
+        `(-- TOOL LENGTH SET ROUTINE --)`,
+        `G53 G0 X${settings.toolSetter?.x ?? 0} Y${settings.toolSetter?.y ?? 0}`,
+        `G53 G0 Z${zProbeStart}`, // Move to probe start height
+        `G43.1 Z0`,
+        `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
+        `G0 G91 Z5`,
+        `G38.2 G91 Z-5 F250`,
+        `G91 G0 Z5`,
+        'G90',
+        // Auto-detect active workspace offset using #5220
+        // Each workspace offset block is 20 apart (e.g. 5223, 5243, 5263...
+        // Compute address of current workspace Z offset dynamically:
+        `#<_ofs_idx> = [#5220 * 20 + 5203]`,     // ; 5203 = base of first Z offset (G54)
+        `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
+        `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
+        `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+        //`#<_rc_trigger_mach_z> = [#5063 + [#5213 + [#5223 + [#5243 + [#5263 + [#5283 + [#5303 + [#5323 + [#5343 + [#5363 + [#5383]]]]]]]]]]]]]`,
+        //`G43.1 Z[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+        `$TLR`,
+        `G53 G0 Z0`,
+        'O201 IF [#<wasMetric> EQ 0]',
+        '  G20',
+        'O201 ENDIF',
+        '(End of RapidChangeATC Plugin Sequence)'
+      );
 
-      // Send the complete tool change program
-      setImmediate(() => {
-        ctx.sendGcode(toolChangeProgram, {
-          priority: 'high'
-        }).catch(err => {
-          ctx.log('Failed to send tool change program:', err);
+      const toolChangeProgramStr = toolChangeProgram.join('\n');
+
+      // Check if this is a multi-line command (e.g., from autodustboot)
+      if (line.includes('\n')) {
+        // Split the lines and find the M6 line
+        const lines = line.split('\n');
+        const modifiedLines = lines.map(l => {
+          const upperLine = l.trim().toUpperCase();
+          // Check if this line contains M6
+          if (m6Pattern.test(upperLine)) {
+            // Replace the M6 line with our tool change program
+            return toolChangeProgramStr;
+          }
+          return l;
         });
-      });
 
-      // Return null to skip the original M6 command
-      return null;
+        // Join back into multi-line command
+        return modifiedLines.join('\n');
+      } else {
+        // Single-line M6 command, return just the tool change program
+        return toolChangeProgramStr;
+      }
     }
 
     return line;

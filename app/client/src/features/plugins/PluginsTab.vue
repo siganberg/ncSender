@@ -14,7 +14,6 @@
             </svg>
             Back to Plugins
           </button>
-          <button class="btn btn-primary" @click="savePluginConfig">Save Configuration</button>
         </div>
         <h3>{{ selectedPluginForConfig.name }} Configuration</h3>
       </div>

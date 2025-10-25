@@ -97,9 +97,6 @@ export function createMacroRoutes(cncController) {
         return res.status(404).json({ error: 'Macro not found' });
       }
 
-      const startComment = `; Executing Macro: ${macro.name}`;
-      const endComment = `; End of Macro: ${macro.name} execution`;
-
       // Split commands by newline and filter empty lines
       const commands = macro.commands.split('\n')
         .map(line => line.trim())
@@ -107,20 +104,9 @@ export function createMacroRoutes(cncController) {
 
       log(`Executing macro: ${macro.name} (${commands.length} commands)`);
 
-      // Send start comment
-      await cncController.sendCommand(startComment, {
-        meta: { sourceId: 'macro' }
-      });
-
-      // Send each command
-      for (const command of commands) {
-        await cncController.sendCommand(command, {
-          meta: { sourceId: 'macro' }
-        });
-      }
-
-      // Send end comment
-      await cncController.sendCommand(endComment, {
+      // Send all commands as a single multi-line command
+      const multiLineCommand = commands.join('\n');
+      await cncController.sendCommand(multiLineCommand, {
         meta: { sourceId: 'macro' }
       });
 

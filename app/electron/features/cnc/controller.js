@@ -825,7 +825,8 @@ export class CNCController extends EventEmitter {
       sourceId: normalizedMeta?.sourceId || null,
       commandId: resolvedCommandId,
       displayCommand: displayCommand || cleanCommand,
-      meta: normalizedMeta
+      meta: normalizedMeta,
+      machineState: this.lastStatus
     };
 
     let modifiedCommand = await pluginEventBus.emitChain('onBeforeCommand', cleanCommand, commandContext);
@@ -948,7 +949,7 @@ export class CNCController extends EventEmitter {
     // Preserve case for GRBL variable syntax (% assignments and [] expressions)
     const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
     const normalizedCommand = hasVariableSyntax ? finalCommand : finalCommand.toUpperCase();
-    const display = normalizedCommand;
+    const display = finalCommand; // Use original case for display
 
     // Skip tool change commands when tool.count is 0 or not configured
     const isToolChange = /M6(?!\d)/i.test(normalizedCommand);

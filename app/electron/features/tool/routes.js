@@ -78,11 +78,7 @@ export function createToolRoutes(cncController, serverState) {
       const yCommand = hasReturnPosition ? workPosition.y.toFixed(3) : null;
 
       const commands = [
-        `; Tool Change Start (T${parsedTool})`,
-        ...(hasReturnPosition ? [`; Returning to X${xCommand} Y${yCommand}`] : []),
-        `M6 T${parsedTool}`,
-        ...(hasReturnPosition ? [`G90 G0 X${xCommand} Y${yCommand}`] : []),
-        `; Tool Change End (T${parsedTool})`
+        `M6 T${parsedTool}`
       ];
 
       const meta = {

@@ -237,6 +237,13 @@ class PluginManager {
         return readSettings() || {};
       },
 
+      getMachineState: () => {
+        if (!this.cncController) {
+          return null;
+        }
+        return this.cncController.getLastStatus() || null;
+      },
+
       showDialog: (title, content, options = {}) => {
         const payload = {
           pluginId,
