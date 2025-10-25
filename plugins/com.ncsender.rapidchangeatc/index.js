@@ -201,6 +201,8 @@ export async function onLoad(ctx) {
       `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
       `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
       `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+      `G65P6`, // disabled delay
+      `M5`, // Spindle stop
       `G53 G0 Z${zone1}`,
       `G4 P0.2`,
       `o300 IF [#<_probe_state> EQ 0]`,
@@ -212,8 +214,6 @@ export async function onLoad(ctx) {
       ...manualToolFallback().indent(2),
       `   o301 ENDIF`,
       `o300 ENDIF`,
-      `G65P6`, // disabled delay
-      `M5`, // Spindle stop
       `M61 Q${tool}` // Load new tool
     ];
 
@@ -232,8 +232,7 @@ export async function onLoad(ctx) {
       `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
       `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
       `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
-      `$TLR`,
-      `G53 G0 Z${zSafe}`
+      `$TLR`
     ];
 
     // Calculate source and target pocket positions
@@ -246,29 +245,37 @@ export async function onLoad(ctx) {
       `#<wasMetric> = #<_metric>`,
       `G21`, // Set to metric
       `G65P6`, // disabled delay
-      `M5`, // Spindle stop
-      `G53 G0 Z${zSafe}`, // Move to safe Z
+      `M5` // Spindle stop
     ];
 
-    // Unloading
-    toolChangeProgram.push(
-      `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
-      ...toolUnload().indent(0),
-      `o100 IF [#<_probe_state> EQ 1]`,
-      ...toolUnload().indent(1),
-      `  o101 IF [#<_probe_state> EQ 1]`,
-      ...manualToolFallback().indent(2),
-      `  o101 ENDIF`,
-      `o100 ENDIF`,
-      `M61 Q0`
-    );
+    // Unloading - only if current tool is loaded (currentTool > 0)
+    if (currentTool > 0) {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`, // Move to safe Z
+        `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
+        ...toolUnload().indent(0),
+        `o100 IF [#<_probe_state> EQ 1]`,
+        ...toolUnload().indent(1),
+        `  o101 IF [#<_probe_state> EQ 1]`,
+        ...manualToolFallback().indent(2),
+        `  o101 ENDIF`,
+        `o100 ENDIF`,
+        `M61 Q0`
+      );
+    }
 
-    // Loading
+    // Loading - only if target tool is valid (toolNumber > 0)
+    if (toolNumber > 0) {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`, // Move to safe Z
+        `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
+        ...toolLoad(toolNumber),
+        ...toolLengthSet()
+      );
+    }
+
     toolChangeProgram.push(
       `G53 G0 Z${zSafe}`, // Move to safe Z
-      `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
-      ...toolLoad(toolNumber),
-      ...toolLengthSet(),
       'O201 IF [#<wasMetric> EQ 0]',
       '  G20',
       'O201 ENDIF',
@@ -282,15 +289,16 @@ export async function onLoad(ctx) {
     // Determine the display command
     const displayCmd = showMacroCommand ? null : m6Command.command.trim();
 
-    // Create single multi-line command from the tool change program
-    const toolChangeProgramCommand = {
-      command: toolChangeProgram.join('\n'),
-      displayCommand: displayCmd, // Will show as M6 unless showMacroCommand is true
+    // Convert tool change program into individual command objects
+    const toolChangeCommands = toolChangeProgram.map((line, index) => ({
+      command: line,
+      displayCommand: index === 0 && displayCmd ? displayCmd : null, // Only first command shows M6
+      meta: index === 0 ? {} : { silent: true }, // Mark all except first as silent
       isOriginal: false
-    };
+    }));
 
-    // Replace the M6 command with the single multi-line command
-    commands.splice(m6Index, 1, toolChangeProgramCommand);
+    // Replace the M6 command with individual commands
+    commands.splice(m6Index, 1, ...toolChangeCommands);
 
     return commands;
   });

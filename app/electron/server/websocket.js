@@ -349,6 +349,11 @@ export function createWebSocketLayer({
       return;
     }
 
+    // Skip broadcasting silent commands (e.g., plugin-generated internal commands)
+    if (event.meta?.silent) {
+      return;
+    }
+
     const payload = toCommandPayload(event, { status: 'pending' });
     broadcast('cnc-command', payload);
 
@@ -359,6 +364,11 @@ export function createWebSocketLayer({
 
   const broadcastCommandResult = (event) => {
     if (event.meta?.sourceId === 'system') {
+      return;
+    }
+
+    // Skip broadcasting silent command results
+    if (event.meta?.silent) {
       return;
     }
 
