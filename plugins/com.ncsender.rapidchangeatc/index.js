@@ -1053,7 +1053,7 @@ export async function onLoad(ctx) {
 export async function onUnload(ctx) {
   ctx.log('Rapid Change ATC plugin unloading');
 
-  // Reset tool.source to null to give control back to Settings > General
+  // Reset tool.source and tool.count to give control back to Settings > General
   const pluginSettings = ctx.getSettings() || {};
   const appSettings = ctx.getAppSettings() || {};
 
@@ -1063,7 +1063,8 @@ export async function onUnload(ctx) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tool: {
-          source: null
+          source: null,
+          count: 0
         }
       })
     });
@@ -1071,9 +1072,9 @@ export async function onUnload(ctx) {
     if (response.ok) {
       ctx.log('Tool count control returned to manual settings');
     } else {
-      ctx.log(`Failed to reset tool source: ${response.status}`);
+      ctx.log(`Failed to reset tool settings: ${response.status}`);
     }
   } catch (error) {
-    ctx.log('Failed to reset tool source on plugin unload:', error);
+    ctx.log('Failed to reset tool settings on plugin unload:', error);
   }
 }

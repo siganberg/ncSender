@@ -1,4 +1,5 @@
 import { checkSameToolChange, parseM6Command } from '../utils/gcode-patterns.js';
+import { getSetting } from './settings-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [CommandProcessor]`, ...args);
@@ -50,8 +51,10 @@ export class CommandProcessor {
     const isValidM6 = m6Parse?.matched && m6Parse.toolNumber !== null;
 
     // Set isToolChanging flag for all valid M6 commands (same-tool or different-tool)
+    // Only set if tool count > 0 (tools are configured/visible in UI)
     if (isValidM6) {
-      if (this.serverState.machineState.isToolChanging !== true) {
+      const toolCount = getSetting('tool')?.count ?? 0;
+      if (toolCount > 0 && this.serverState.machineState.isToolChanging !== true) {
         log(`Setting isToolChanging -> true (M6 T${m6Parse.toolNumber})`);
         this.serverState.machineState.isToolChanging = true;
         this.broadcast('server-state-updated', this.serverState);
