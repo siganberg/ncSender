@@ -261,6 +261,15 @@ export function registerCncEventHandlers({
     broadcast('server-state-updated', serverState);
   };
 
+  const handleToolChangeComplete = (message) => {
+    log('Tool change completion message received:', message);
+    if (serverState.machineState.isToolChanging) {
+      log('Resetting isToolChanging -> false (tool change complete)');
+      serverState.machineState.isToolChanging = false;
+      broadcast('server-state-updated', serverState);
+    }
+  };
+
   const jobCompleteCallback = (reason, finalJobStatus) => {
     log('Job lifecycle ended:', reason);
 
@@ -311,6 +320,7 @@ export function registerCncEventHandlers({
   cncController.on('stop', handleStop);
   cncController.on('pause', handlePause);
   cncController.on('resume', handleResume);
+  cncController.on('tool-change-complete', handleToolChangeComplete);
 
   jobManager.setJobCompleteCallback(jobCompleteCallback);
 
@@ -326,6 +336,7 @@ export function registerCncEventHandlers({
     cncController.off?.('stop', handleStop);
     cncController.off?.('pause', handlePause);
     cncController.off?.('resume', handleResume);
+    cncController.off?.('tool-change-complete', handleToolChangeComplete);
     jobManager.setJobCompleteCallback(null);
   };
 
