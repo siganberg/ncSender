@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { jobManager } from '../gcode/job-manager.js';
+import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -166,11 +167,27 @@ export function createCNCRoutes(cncController, broadcast) {
         metaPayload.sourceId = 'client';
       }
 
-      await cncController.sendCommand(commandValue, {
+      // Process command through Plugin Manager
+      const pluginContext = {
+        sourceId: metaPayload.sourceId || 'client',
         commandId: commandMeta.id,
-        displayCommand: commandMeta.displayCommand,
-        meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
-      });
+        meta: metaPayload,
+        machineState: cncController.lastStatus
+      };
+
+      const commands = await pluginManager.processCommand(commandValue, pluginContext);
+
+      // Iterate through command array and send each to controller
+      for (const cmd of commands) {
+        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+        const cmdMeta = { ...metaPayload, ...(cmd.meta || {}) };
+
+        await cncController.sendCommand(cmd.command, {
+          commandId: cmd.commandId || commandMeta.id,
+          displayCommand: cmdDisplayCommand,
+          meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+        });
+      }
 
       if (commandValue === '?' && metaPayload.sourceId !== 'system') {
         const rawData = cncController.getRawData();

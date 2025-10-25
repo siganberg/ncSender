@@ -493,7 +493,6 @@ const sendCommand = async () => {
         command,
         displayCommand: command,
         meta: {
-          recordHistory: true,
           sourceId: 'client'
         }
       });

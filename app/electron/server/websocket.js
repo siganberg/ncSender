@@ -302,11 +302,27 @@ export function createWebSocketLayer({
         }
       }
 
-      await cncController.sendCommand(commandValue, {
+      // Process command through Plugin Manager
+      const pluginContext = {
+        sourceId: metaPayload.sourceId || 'client',
         commandId: normalizedCommandId,
-        displayCommand: commandMeta.displayCommand,
-        meta: Object.keys(metaPayload).length > 0 ? metaPayload : null
-      });
+        meta: metaPayload,
+        machineState: cncController.lastStatus
+      };
+
+      const commands = await pluginManager.processCommand(commandValue, pluginContext);
+
+      // Iterate through command array and send each to controller
+      for (const cmd of commands) {
+        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+        const cmdMeta = { ...metaPayload, ...(cmd.meta || {}) };
+
+        await cncController.sendCommand(cmd.command, {
+          commandId: cmd.commandId || normalizedCommandId,
+          displayCommand: cmdDisplayCommand,
+          meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+        });
+      }
 
       if (commandValue === '?' && metaPayload.sourceId !== 'system') {
         const rawData = cncController.getRawData();

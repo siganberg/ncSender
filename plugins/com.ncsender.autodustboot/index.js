@@ -198,152 +198,147 @@ export function onLoad(ctx) {
     </html>
   `);
 
-  ctx.registerEventHandler('onBeforeCommand', async (line, context) => {
-    const pluginId = 'com.ncsender.autodustboot';
-
-    if (context.meta?.processedByPlugins?.includes(pluginId)) {
-      return line;
-    }
-
-    function markAsProcessed(meta = {}) {
-      const processedByPlugins = meta.processedByPlugins || [];
-      if (!processedByPlugins.includes(pluginId)) {
-        processedByPlugins.push(pluginId);
-      }
-      return { ...meta, processedByPlugins };
-    }
-
-    function normalizeGCode(code) {
-      return code.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
-    }
-
-    function stripLineNumber(code) {
-      return code.replace(/^N\d+\s*/i, '');
-    }
-
-    const trimmedLine = line.trim().toUpperCase();
-    const lineWithoutNumber = stripLineNumber(trimmedLine);
-    const normalizedLine = normalizeGCode(lineWithoutNumber);
+  // NEW API: onBeforeCommand receives command array
+  ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
     const settings = ctx.getSettings();
-    const retractCommand = settings.retractCommand || 'M9';
     const expandCommand = settings.expandCommand || 'M8';
-    const normalizedRetractCmd = normalizeGCode(retractCommand);
-    const normalizedExpandCmd = normalizeGCode(expandCommand);
+    const retractCommand = settings.retractCommand || 'M9';
     const delayAfterExpand = settings.delayAfterExpand !== undefined ? settings.delayAfterExpand : 1;
     const retractOnHome = settings.retractOnHome !== undefined ? settings.retractOnHome : true;
     const retractOnRapidMove = settings.retractOnRapidMove !== undefined ? settings.retractOnRapidMove : true;
 
     const hasExpandRetract = expandCommand && retractCommand;
-
-    // Helper function to create expand/retract sequence without original command
-    function wrapWithExpandRetract(includeExpand = true) {
-      const lines = ['(Start of AutoDustBoot Plugin Sequence)'];
-
-      if (includeExpand) {
-        lines.push(expandCommand);
-        lines.push('G4 P0.1');
-      }
-
-      lines.push(retractCommand);
-      lines.push('(End of AutoDustBoot Plugin Sequence)');
-
-      return lines.join('\n');
+    if (!hasExpandRetract) {
+      return commands; // No configuration, pass through
     }
 
-    // Detect M6 tool change command (M6 optionally followed by T and tool number, but not M60, M61, etc.)
-    const m6Pattern = /\bM6(?:\s*T(\d+)|T(\d+))?(?!\d)/i;
-    const m6Match = normalizedLine.match(m6Pattern);
+    // Debug: Log all commands received
+    ctx.log(`Processing ${commands.length} command(s), sourceId: ${context.sourceId}, retractOnRapidMove: ${retractOnRapidMove}`);
+    commands.forEach((cmd, idx) => {
+      ctx.log(`  [${idx}] isOriginal: ${cmd.isOriginal}, command: "${cmd.command}"`);
+    });
 
-    if (m6Match && hasExpandRetract) {
+    // Helper to create expand/retract sequence
+    function createExpandRetractSequence(includeExpand = true) {
+      const sequence = ['(Start of AutoDustBoot Plugin Sequence)'];
+
+      if (includeExpand) {
+        sequence.push(expandCommand);
+        sequence.push('G4 P0.1');
+      }
+
+      sequence.push(retractCommand);
+      sequence.push('(End of AutoDustBoot Plugin Sequence)');
+
+      return sequence.map(cmd => ({ command: cmd }));
+    }
+
+    // Find original M6 command
+    const m6Pattern = /\bM6(?:\s*T(\d+)|T(\d+))?(?!\d)/i;
+    const m6Index = commands.findIndex(cmd =>
+      cmd.isOriginal && m6Pattern.test(cmd.command.toUpperCase())
+    );
+
+    if (m6Index !== -1) {
+      const m6Match = commands[m6Index].command.match(m6Pattern);
       const toolNumber = m6Match[1] || m6Match[2];
 
       // Only process if we have a valid tool number
-      if (!toolNumber || !Number.isFinite(parseInt(toolNumber, 10))) {
-        // M6 without valid tool number - let it pass through
-        return line;
-      }
+      if (toolNumber && Number.isFinite(parseInt(toolNumber, 10))) {
+        const location = context.lineNumber !== undefined
+          ? `at line ${context.lineNumber}`
+          : `from ${context.sourceId}`;
+        ctx.log(`M6 tool change detected with T${toolNumber} ${location}`);
 
-      const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
-      ctx.log(`M6 tool change detected with T${toolNumber} ${location}`);
-
-      if (context.sourceId === 'job') {
-        ctx.log('M6 from job source, sending retract and tracking tool change');
-        isToolChanging = true;
-        // Send sequence as single multi-line command, then original command separately
-        await ctx.sendGcode(wrapWithExpandRetract(false), {
-          displayCommand: wrapWithExpandRetract(false),
-          meta: markAsProcessed(context.meta || {})
-        });
-        return line;
-      } else {
-        // Send sequence as single multi-line command, then original command separately
-        await ctx.sendGcode(wrapWithExpandRetract(true), {
-          displayCommand: wrapWithExpandRetract(true),
-          meta: markAsProcessed(context.meta || {})
-        });
-        return line;
+        if (context.sourceId === 'job') {
+          ctx.log('M6 from job source, tracking tool change');
+          isToolChanging = true;
+          // Insert retract sequence before M6
+          const sequence = createExpandRetractSequence(false);
+          commands.splice(m6Index, 0, ...sequence);
+          return commands;
+        } else {
+          // Client/macro source - full expand/retract sequence
+          const sequence = createExpandRetractSequence(true);
+          commands.splice(m6Index, 0, ...sequence);
+          return commands;
+        }
       }
     }
 
+    // Handle job post-tool-change expansion
     if (isToolChanging && context.sourceId === 'job') {
-      if (normalizedLine.startsWith(normalizedExpandCmd)) {
-        ctx.log(`Skipping expand command: ${line.trim()}`);
-        return `; ${line.trim()} (Skipped by AutoDustBoot)`;
-      }
+      const normalizedExpandCmd = expandCommand.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
 
-      const hasXMovement = /[^A-Z]X[-+]?\d+\.?\d*/i.test(line);
-      const hasYMovement = /[^A-Z]Y[-+]?\d+\.?\d*/i.test(line);
+      // Skip expand command from G-code (we'll inject it ourselves)
+      for (let i = 0; i < commands.length; i++) {
+        const cmd = commands[i];
+        const normalizedLine = cmd.command.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
 
-      if (hasXMovement || hasYMovement) {
-        ctx.log(`First XY movement after tool change at line ${context.lineNumber}`);
-
-        isToolChanging = false;
-
-        await ctx.sendGcode(line.trim(), {
-          displayCommand: line.trim(),
-          meta: markAsProcessed(context.meta)
-        });
-
-        await ctx.sendGcode(expandCommand, {
-          displayCommand: `${expandCommand} (AutoDustBoot - Expand After XY)`,
-          meta: markAsProcessed()
-        });
-
-        if (delayAfterExpand > 0) {
-          await ctx.sendGcode(`G4 P${delayAfterExpand}`, {
-            displayCommand: `G4 P${delayAfterExpand} (AutoDustBoot - Delay)`,
-            meta: markAsProcessed()
-          });
+        if (normalizedLine.startsWith(normalizedExpandCmd)) {
+          ctx.log(`Skipping expand command: ${cmd.command.trim()}`);
+          cmd.command = `; ${cmd.command.trim()} (Skipped by AutoDustBoot)`;
+          continue;
         }
 
-        return null;
+        // Check for first XY movement
+        const hasXMovement = /[^A-Z]X[-+]?\d+\.?\d*/i.test(cmd.command);
+        const hasYMovement = /[^A-Z]Y[-+]?\d+\.?\d*/i.test(cmd.command);
+
+        if (cmd.isOriginal && (hasXMovement || hasYMovement)) {
+          ctx.log(`First XY movement after tool change at line ${context.lineNumber}`);
+          isToolChanging = false;
+
+          // Insert expand command and delay after this XY movement
+          const expandSequence = [
+            { command: expandCommand },
+          ];
+
+          if (delayAfterExpand > 0) {
+            expandSequence.push({ command: `G4 P${delayAfterExpand}` });
+          }
+
+          commands.splice(i + 1, 0, ...expandSequence);
+          return commands;
+        }
       }
     }
 
-    if (trimmedLine.startsWith('$H') && hasExpandRetract && retractOnHome) {
-      ctx.log(`Home command detected: ${line.trim()}`);
-      // Send sequence as single multi-line command, then original command separately
-      await ctx.sendGcode(wrapWithExpandRetract(true), {
-        displayCommand: wrapWithExpandRetract(true),
-        meta: markAsProcessed(context.meta || {})
+    // Handle $H home command
+    const homeIndex = commands.findIndex(cmd =>
+      cmd.isOriginal && cmd.command.trim().toUpperCase().startsWith('$H')
+    );
+
+    if (homeIndex !== -1 && retractOnHome) {
+      ctx.log(`Home command detected: ${commands[homeIndex].command.trim()}`);
+      const sequence = createExpandRetractSequence(true);
+      commands.splice(homeIndex, 0, ...sequence);
+      return commands;
+    }
+
+    // Handle G0 rapid move (client/macro only)
+    if ((context.sourceId === 'client' || context.sourceId === 'macro') && retractOnRapidMove) {
+      ctx.log(`Checking for G0 rapid move...`);
+      const g0Index = commands.findIndex(cmd => {
+        const normalized = cmd.command.toUpperCase().replace(/([GM])0+(\d)/g, '$1$2');
+        const hasG0 = /\bG0\b/i.test(normalized);
+        ctx.log(`  Command: "${cmd.command}" -> normalized: "${normalized}", isOriginal: ${cmd.isOriginal}, hasG0: ${hasG0}`);
+        return cmd.isOriginal && hasG0;
       });
-      return line;
-    }
 
-    if ((context.sourceId === 'client' || context.sourceId === 'macro') && hasExpandRetract && retractOnRapidMove) {
-      const hasG0 = /\bG0\b/i.test(normalizedLine);
-      if (hasG0) {
-        ctx.log(`G0 command from ${context.sourceId} detected: ${line.trim()}`);
-        // Send sequence as single multi-line command, then original command separately
-        await ctx.sendGcode(wrapWithExpandRetract(true), {
-          displayCommand: wrapWithExpandRetract(true),
-          meta: markAsProcessed(context.meta || {})
-        });
-        return line;
+      if (g0Index !== -1) {
+        ctx.log(`G0 command from ${context.sourceId} detected: ${commands[g0Index].command.trim()}`);
+        const sequence = createExpandRetractSequence(true);
+        commands.splice(g0Index, 0, ...sequence);
+        return commands;
+      } else {
+        ctx.log(`No G0 command found in original commands`);
       }
+    } else {
+      ctx.log(`Skipping G0 check - sourceId: ${context.sourceId}, retractOnRapidMove: ${retractOnRapidMove}`);
     }
 
-    return line;
+    return commands;
   });
 
   ctx.registerEventHandler('onAfterJobEnd', async () => {

@@ -854,21 +854,9 @@ export class CNCController extends EventEmitter {
       }
     }
 
-    const commandContext = {
-      sourceId: normalizedMeta?.sourceId || null,
-      commandId: resolvedCommandId,
-      displayCommand: displayCommand || cleanCommand,
-      meta: normalizedMeta,
-      machineState: this.lastStatus
-    };
-
-    let modifiedCommand = await pluginEventBus.emitChain('onBeforeCommand', cleanCommand, commandContext);
-
-    if (modifiedCommand === null || modifiedCommand === undefined) {
-      return { status: 'skipped', id: resolvedCommandId };
-    }
-
-    const finalCommand = typeof modifiedCommand === 'string' ? modifiedCommand.trim() : cleanCommand;
+    // Plugin chain removed - commands are now pre-processed by Plugin Manager
+    // before reaching the controller
+    const finalCommand = cleanCommand;
 
     // Intercept user ? command - return cached status instead of sending to controller
     // But allow polling (sourceId: 'system') to go through

@@ -203,21 +203,6 @@ class PluginManager {
         this.eventBus.registerPluginHandler(pluginId, eventName, handler);
       },
 
-      sendGcode: async (gcode, options = {}) => {
-        if (!this.cncController) {
-          throw new Error('CNC controller not available');
-        }
-        // Add plugin sourceId if not already provided
-        const enhancedOptions = { ...options };
-        if (!enhancedOptions.meta) {
-          enhancedOptions.meta = {};
-        }
-        if (!enhancedOptions.meta.sourceId) {
-          enhancedOptions.meta.sourceId = `plugin:${pluginId}`;
-        }
-        return await this.cncController.sendCommand(gcode, enhancedOptions);
-      },
-
       broadcast: (eventName, data) => {
         if (!this.broadcast) {
           throw new Error('Broadcast function not available');
@@ -493,6 +478,55 @@ class PluginManager {
 
   getEventBus() {
     return this.eventBus;
+  }
+
+  async processCommand(command, context = {}) {
+    log(`[Plugin Manager] processCommand called with: "${command}", sourceId: ${context.sourceId}`);
+    log(`[Plugin Manager] Number of registered plugins: ${this.plugins.size}`);
+
+    // Initialize command array with original command
+    let commands = [{
+      command: command,
+      isOriginal: true,
+      displayCommand: null,
+      meta: context.meta || {},
+      commandId: context.commandId || null
+    }];
+
+    // Iterate through all registered plugins in order
+    for (const [pluginId] of this.plugins.entries()) {
+      log(`[Plugin Manager] Checking plugin: ${pluginId}`);
+      const pluginContext = this.pluginContexts.get(pluginId);
+
+      // Get handlers registered via ctx.registerEventHandler('onBeforeCommand', ...)
+      const pluginEventHandlers = this.eventBus.pluginHandlers.get(pluginId);
+      const handlers = pluginEventHandlers?.get('onBeforeCommand') || [];
+
+      if (handlers.length > 0) {
+        log(`[Plugin Manager] Found ${handlers.length} onBeforeCommand handler(s) for plugin: ${pluginId}`);
+
+        for (const handler of handlers) {
+          try {
+            const result = await handler(commands, context, pluginContext);
+            // Plugin returns modified array or undefined (no changes)
+            if (Array.isArray(result)) {
+              log(`[Plugin Manager] Plugin ${pluginId} returned ${result.length} commands`);
+              commands = result;
+            } else {
+              log(`[Plugin Manager] Plugin ${pluginId} returned undefined (no changes)`);
+            }
+          } catch (error) {
+            log(`Error in plugin "${pluginId}" onBeforeCommand:`, error);
+            // Continue with other plugins even if one fails
+          }
+        }
+      } else {
+        log(`[Plugin Manager] Plugin ${pluginId} does not have onBeforeCommand handler`);
+      }
+    }
+
+    log(`[Plugin Manager] Returning ${commands.length} command(s)`);
+    return commands;
   }
 
   getPluginConfigUI(pluginId) {

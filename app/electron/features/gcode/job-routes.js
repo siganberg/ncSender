@@ -6,6 +6,7 @@ import path from 'node:path';
 import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
+import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -314,20 +315,43 @@ export class GCodeJobProcessor {
         const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
         try {
-          const response = await this.cncController.sendCommand(commandToSend, {
+          // Process command through Plugin Manager
+          const pluginContext = {
+            sourceId: this.sourceId,
             commandId,
-            displayCommand: cleanLine, // Show original line in UI
+            lineNumber: this.currentLineNumber,
             meta: {
               lineNumber: this.currentLineNumber,
               job: { filename: this.filename },
               sourceId: this.sourceId
-            }
-          });
+            },
+            machineState: this.cncController.lastStatus
+          };
+
+          const commands = await pluginManager.processCommand(commandToSend, pluginContext);
+
+          // Iterate through command array and send each to controller
+          let lastResponse = null;
+          for (const cmd of commands) {
+            const cmdDisplayCommand = cmd.displayCommand || cleanLine;
+            const cmdMeta = {
+              lineNumber: this.currentLineNumber,
+              job: { filename: this.filename },
+              sourceId: this.sourceId,
+              ...(cmd.meta || {})
+            };
+
+            lastResponse = await this.cncController.sendCommand(cmd.command, {
+              commandId: cmd.commandId || commandId,
+              displayCommand: cmdDisplayCommand,
+              meta: cmdMeta
+            });
+          }
 
           // Update progress based on lines sent (for accurate progress calculation)
           try { this.progressProvider?.onAdvanceToLine?.(this.currentLineNumber); } catch {}
 
-          await this.eventBus.emitAsync('onAfterGcodeLine', cleanLine, response, lineContext);
+          await this.eventBus.emitAsync('onAfterGcodeLine', cleanLine, lastResponse, lineContext);
         } catch (error) {
           this.isStopped = true;
           this.isRunning = false;
