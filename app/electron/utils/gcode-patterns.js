@@ -85,3 +85,29 @@ export function isM6Command(command) {
 export function getM6Pattern() {
   return M6_PATTERN;
 }
+
+/**
+ * Check if M6 command is for the same tool as currently loaded
+ *
+ * @param {string} command - The G-code command to check
+ * @param {number} currentTool - The currently loaded tool number
+ * @returns {Object} Object with { isSameTool, toolNumber, matched }
+ *
+ * @example
+ * checkSameToolChange('M6 T2', 2)  // { isSameTool: true, toolNumber: 2, matched: true }
+ * checkSameToolChange('M6 T3', 2)  // { isSameTool: false, toolNumber: 3, matched: true }
+ * checkSameToolChange('G0 X10', 2) // { isSameTool: false, toolNumber: null, matched: false }
+ */
+export function checkSameToolChange(command, currentTool) {
+  const parsed = parseM6Command(command);
+
+  if (!parsed?.matched || parsed.toolNumber === null) {
+    return { isSameTool: false, toolNumber: null, matched: false };
+  }
+
+  return {
+    isSameTool: parsed.toolNumber === currentTool,
+    toolNumber: parsed.toolNumber,
+    matched: true
+  };
+}

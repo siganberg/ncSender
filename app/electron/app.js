@@ -16,6 +16,7 @@ import { createWebSocketLayer } from './server/websocket.js';
 import { registerCncEventHandlers } from './server/cnc-events.js';
 import { mountHttp } from './server/http.js';
 import { pluginManager } from './core/plugin-manager.js';
+import { CommandProcessor } from './core/command-processor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,13 +44,25 @@ export async function createApp(options = {}) {
 
   const autoConnector = createAutoConnector({ cncController, log });
 
+  // Create a wrapper object that will hold commandProcessor reference
+  // This allows WebSocket layer to access it after initialization
+  const commandProcessorWrapper = { instance: null };
+
   const { wss, broadcast, sendWsMessage, getClientWebSocket, shutdown: shutdownWebSocket } = createWebSocketLayer({
     httpServer: server,
     cncController,
     jobManager,
     jogManager,
     context,
-    log
+    log,
+    commandProcessor: commandProcessorWrapper
+  });
+
+  // Now initialize CommandProcessor with broadcast function
+  commandProcessorWrapper.instance = new CommandProcessor({
+    cncController,
+    pluginManager,
+    broadcast
   });
 
   const userDataDir = getUserDataDir();
@@ -113,7 +126,8 @@ export async function createApp(options = {}) {
     commandHistory: context.commandHistory,
     maxHistorySize: context.MAX_HISTORY_SIZE,
     filesDir,
-    upload
+    upload,
+    commandProcessor: commandProcessorWrapper
   });
 
   const { teardown: teardownCncEvents } = registerCncEventHandlers({

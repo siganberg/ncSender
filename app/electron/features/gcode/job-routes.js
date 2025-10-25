@@ -6,13 +6,12 @@ import path from 'node:path';
 import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
-import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast) {
+export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, commandProcessor) {
   const router = Router();
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -59,7 +58,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Start the job processor using singleton manager
-      await jobManager.startJob(filePath, filename, actualCNCController, broadcast, { serverState });
+      await jobManager.startJob(filePath, filename, actualCNCController, broadcast, commandProcessor, { serverState });
 
       log('G-code job started:', filename);
       res.json({ success: true, message: 'G-code job started', filename });
@@ -131,11 +130,12 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
 }
 
 export class GCodeJobProcessor {
-  constructor(filePath, filename, cncController, broadcast, options = {}) {
+  constructor(filePath, filename, cncController, broadcast, commandProcessor, options = {}) {
     this.filePath = filePath;
     this.filename = filename;
     this.cncController = cncController;
     this.broadcast = broadcast;
+    this.commandProcessor = commandProcessor;
     this.currentLineNumber = 0;
     this.totalLines = 0;
     this.isRunning = false;
@@ -328,7 +328,16 @@ export class GCodeJobProcessor {
             machineState: this.cncController.lastStatus
           };
 
-          const commands = await pluginManager.processCommand(commandToSend, pluginContext);
+          const result = await this.commandProcessor.instance.process(commandToSend, pluginContext);
+
+          // Check if command was skipped (e.g., same-tool M6)
+          if (!result.shouldContinue) {
+            // Update progress and continue to next line
+            try { this.progressProvider?.onAdvanceToLine?.(this.currentLineNumber); } catch {}
+            continue;
+          }
+
+          const commands = result.commands;
 
           // Iterate through command array and send each to controller
           let lastResponse = null;

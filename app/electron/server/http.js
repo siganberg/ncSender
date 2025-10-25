@@ -27,7 +27,8 @@ export function mountHttp({
   commandHistory,
   maxHistorySize,
   filesDir,
-  upload
+  upload,
+  commandProcessor
 }) {
   app.use('/api', (req, _res, next) => {
     log(`API ${req.method} ${req.path}`, req.body && Object.keys(req.body).length > 0 ? req.body : '');
@@ -37,15 +38,15 @@ export function mountHttp({
   app.use('/api', createSystemRoutes(serverState, cncController, updateSenderStatus));
   app.use('/api', createSettingsRoutes(serverState, cncController, broadcast));
   app.use('/api', createAlarmRoutes(serverState, cncController));
-  app.use('/api', createCNCRoutes(cncController, broadcast));
+  app.use('/api', createCNCRoutes(cncController, broadcast, commandProcessor));
   app.use('/api/command-history', createCommandHistoryRoutes(commandHistory, maxHistorySize, broadcast));
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
-  app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast));
+  app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, commandProcessor));
   app.use('/api/firmware', createFirmwareRoutes(cncController));
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
-  app.use('/api', createMacroRoutes(cncController));
-  app.use('/api', createToolRoutes(cncController, serverState));
+  app.use('/api', createMacroRoutes(cncController, commandProcessor));
+  app.use('/api', createToolRoutes(cncController, serverState, commandProcessor));
   app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
 
   log('Serving client files from:', clientDistPath);

@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { pluginManager } from '../../core/plugin-manager.js';
 import {
   readMacros,
   getMacro,
@@ -12,7 +11,7 @@ const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createMacroRoutes(cncController) {
+export function createMacroRoutes(cncController, commandProcessor) {
   const router = Router();
 
   router.get('/macros', (req, res) => {
@@ -108,7 +107,7 @@ export function createMacroRoutes(cncController) {
       // Send all commands as a single multi-line command
       const multiLineCommand = commands.join('\n');
 
-      // Process command through Plugin Manager
+      // Process command through Command Processor
       const pluginContext = {
         sourceId: 'macro',
         commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -116,7 +115,18 @@ export function createMacroRoutes(cncController) {
         machineState: cncController.lastStatus
       };
 
-      const processedCommands = await pluginManager.processCommand(multiLineCommand, pluginContext);
+      const result = await commandProcessor.instance.process(multiLineCommand, pluginContext);
+
+      // Check if command was skipped (e.g., same-tool M6)
+      if (!result.shouldContinue) {
+        return res.json({
+          success: true,
+          message: `Macro "${macro.name}" executed (skipped same-tool change)`,
+          commandsExecuted: commands.length
+        });
+      }
+
+      const processedCommands = result.commands;
 
       // Iterate through command array and send each to controller
       for (const cmd of processedCommands) {

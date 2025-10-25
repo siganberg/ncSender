@@ -7,7 +7,6 @@ import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
-import { parseM6Command } from '../../utils/gcode-patterns.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -822,35 +821,8 @@ export class CNCController extends EventEmitter {
       throw new Error('Command is empty');
     }
 
-    // Check if M6 command with same tool as current - skip before plugins see it
-    const m6Parse = parseM6Command(cleanCommand);
-    if (m6Parse?.matched && m6Parse.toolNumber !== null) {
-      const requestedTool = m6Parse.toolNumber;
-      const currentTool = this.lastStatus?.tool ?? 0;
-
-      if (requestedTool === currentTool) {
-        log(`Skipping tool change command (M6 T${requestedTool}) - tool is already loaded.`);
-
-        const metaForAck = normalizedMeta ? { ...normalizedMeta } : {};
-        metaForAck.skippedToolChange = true;
-        metaForAck.skipReason = 'tool-already-loaded';
-
-        const ackPayload = {
-          id: resolvedCommandId,
-          command: cleanCommand.toUpperCase(),
-          displayCommand: displayCommand || cleanCommand,
-          meta: Object.keys(metaForAck).length > 0 ? metaForAck : null,
-          status: 'success',
-          timestamp: new Date().toISOString()
-        };
-
-        this.emit('command-ack', ackPayload);
-        return ackPayload;
-      }
-    }
-
-    // Plugin chain removed - commands are now pre-processed by Plugin Manager
-    // before reaching the controller
+    // Same-tool detection moved to CommandProcessor (upstream)
+    // Commands are pre-processed by CommandProcessor → Plugin Manager before reaching controller
     const finalCommand = cleanCommand;
 
     // Intercept user ? command - return cached status instead of sending to controller

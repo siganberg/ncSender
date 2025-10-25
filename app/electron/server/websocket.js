@@ -144,19 +144,14 @@ const isToolChangeCommand = (cmd) => {
   return parsed?.matched === true;
 };
 
-const parseToolParam = (cmd) => {
-  if (!cmd || typeof cmd !== 'string') return undefined;
-  const parsed = parseM6Command(cmd);
-  return parsed?.toolNumber ?? undefined;
-};
-
 export function createWebSocketLayer({
   httpServer,
   cncController,
   jobManager,
   jogManager,
   context,
-  log
+  log,
+  commandProcessor
 }) {
   const {
     serverState,
@@ -302,7 +297,7 @@ export function createWebSocketLayer({
         }
       }
 
-      // Process command through Plugin Manager
+      // Process command through Command Processor
       const pluginContext = {
         sourceId: metaPayload.sourceId || 'client',
         commandId: normalizedCommandId,
@@ -310,7 +305,14 @@ export function createWebSocketLayer({
         machineState: cncController.lastStatus
       };
 
-      const commands = await pluginManager.processCommand(commandValue, pluginContext);
+      const result = await commandProcessor.instance.process(commandValue, pluginContext);
+
+      // Check if command was skipped (e.g., same-tool M6)
+      if (!result.shouldContinue) {
+        return; // Early return - command already handled and broadcast
+      }
+
+      const commands = result.commands;
 
       // Iterate through command array and send each to controller
       for (const cmd of commands) {
@@ -350,22 +352,11 @@ export function createWebSocketLayer({
     const payload = toCommandPayload(event, { status: 'pending' });
     broadcast('cnc-command', payload);
 
+    // Set isToolChanging flag for M6 commands
+    // Note: Same-tool M6 commands are now filtered by CommandProcessor upstream,
+    // so this will only trigger for different-tool M6 commands
     if (isToolChangeCommand(payload.command)) {
-      try {
-        const requestedTool = parseToolParam(payload.command);
-        const currentTool = Number(serverState?.machineState?.tool);
-        if (
-          requestedTool !== undefined
-          && Number.isFinite(currentTool)
-          && requestedTool === currentTool
-        ) {
-          log(`M6 queued for current tool T${requestedTool}; skipping isToolChanging toggle`);
-        } else {
-          setToolChanging(true);
-        }
-      } catch (error) {
-        setToolChanging(true);
-      }
+      setToolChanging(true);
     }
 
     if (event.meta?.continuous) {

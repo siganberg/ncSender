@@ -1,12 +1,11 @@
 import { Router } from 'express';
 import { jobManager } from '../gcode/job-manager.js';
-import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
 
-export function createCNCRoutes(cncController, broadcast) {
+export function createCNCRoutes(cncController, broadcast, commandProcessor) {
   const router = Router();
 
   const translateCommandInput = (rawCommand) => {
@@ -167,7 +166,7 @@ export function createCNCRoutes(cncController, broadcast) {
         metaPayload.sourceId = 'client';
       }
 
-      // Process command through Plugin Manager
+      // Process command through Command Processor
       const pluginContext = {
         sourceId: metaPayload.sourceId || 'client',
         commandId: commandMeta.id,
@@ -175,7 +174,14 @@ export function createCNCRoutes(cncController, broadcast) {
         machineState: cncController.lastStatus
       };
 
-      const commands = await pluginManager.processCommand(commandValue, pluginContext);
+      const result = await commandProcessor.instance.process(commandValue, pluginContext);
+
+      // Check if command was skipped (e.g., same-tool M6)
+      if (!result.shouldContinue) {
+        return res.json({ success: true, commandId: commandMeta.id, skipped: true });
+      }
+
+      const commands = result.commands;
 
       // Iterate through command array and send each to controller
       for (const cmd of commands) {

@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { pluginManager } from '../../core/plugin-manager.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -54,7 +53,7 @@ const computeWorkPosition = (machineState) => {
   return null;
 };
 
-export function createToolRoutes(cncController, serverState) {
+export function createToolRoutes(cncController, serverState, commandProcessor) {
   const router = Router();
 
   router.post('/tool-change', async (req, res) => {
@@ -94,7 +93,7 @@ export function createToolRoutes(cncController, serverState) {
         try {
           log(`Executing tool change command: ${command}`);
 
-          // Process command through Plugin Manager
+          // Process command through Command Processor
           const pluginContext = {
             sourceId: 'tool-change',
             commandId: `tool-change-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -102,7 +101,15 @@ export function createToolRoutes(cncController, serverState) {
             machineState: cncController.lastStatus
           };
 
-          const processedCommands = await pluginManager.processCommand(command, pluginContext);
+          const result = await commandProcessor.instance.process(command, pluginContext);
+
+          // Check if command was skipped (e.g., same-tool M6)
+          if (!result.shouldContinue) {
+            commandsExecuted++;
+            continue; // Skip to next command
+          }
+
+          const processedCommands = result.commands;
 
           // Iterate through command array and send each to controller
           for (const cmd of processedCommands) {
