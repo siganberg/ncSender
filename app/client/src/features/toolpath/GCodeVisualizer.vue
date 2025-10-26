@@ -67,20 +67,20 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="numberOfToolsToShow > 0" class="tools-legend tools-legend--bottom">
+      <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool" class="tools-legend tools-legend--bottom">
+        <!-- Numbered tools T1, T2, etc. -->
         <div
-          v-for="t in numberOfToolsToShow + 1"
+          v-for="t in numberOfToolsToShow"
           :key="t"
           class="tools-legend__item"
           :class="{
-            'active': t === numberOfToolsToShow + 1 ? currentTool > numberOfToolsToShow : currentTool === t,
+            'active': currentTool === t,
             'used': toolsUsed.includes(t),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress[t]?.triggered,
-            'blink-border': toolPress[t]?.blinking,
-            'manual-tool': t === numberOfToolsToShow + 1
+            'blink-border': toolPress[t]?.blinking
           }"
-          :title="t === numberOfToolsToShow + 1 ? 'Manual Tool (Hold to change)' : (currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`)"
+          :title="currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`"
           @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
@@ -89,16 +89,59 @@
           @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">{{ t === numberOfToolsToShow + 1 ? 'Manual' : `T${t}` }}</span>
-          <svg v-if="t !== numberOfToolsToShow + 1" class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <span class="tools-legend__label">T{{ t }}</span>
+          <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
             <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
           </svg>
-          <div v-else class="manual-tool-indicator">
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-          </div>
+        </div>
+
+        <!-- Manual Tool -->
+        <div
+          v-if="showManualTool"
+          :key="'manual'"
+          class="tools-legend__item manual-tool"
+          :class="{
+            'active': currentTool > numberOfToolsToShow && currentTool !== 999,
+            'used': toolsUsed.some(t => t > numberOfToolsToShow && t !== 999),
+            'disabled': isToolActionsDisabled,
+            'long-press-triggered': toolPress['manual']?.triggered,
+            'blink-border': toolPress['manual']?.blinking
+          }"
+          title="Manual Tool (Hold to change)"
+          @mousedown="isToolActionsDisabled ? null : startToolPress('manual', $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress('manual')"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('manual')"
+          @touchstart="isToolActionsDisabled ? null : startToolPress('manual', $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress('manual')"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('manual')"
+        >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['manual']?.progress || 0}%` }"></div>
+          <span class="tools-legend__label">Manual</span>
+        </div>
+
+        <!-- TLS Tool -->
+        <div
+          v-if="showTlsTool"
+          :key="'tls'"
+          class="tools-legend__item tls-tool"
+          :class="{
+            'active': currentTool === 999,
+            'used': toolsUsed.includes(999),
+            'disabled': isToolActionsDisabled,
+            'long-press-triggered': toolPress['tls']?.triggered,
+            'blink-border': toolPress['tls']?.blinking
+          }"
+          title="TLS Tool (Hold to change)"
+          @mousedown="isToolActionsDisabled ? null : startToolPress('tls', $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress('tls')"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('tls')"
+          @touchstart="isToolActionsDisabled ? null : startToolPress('tls', $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress('tls')"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('tls')"
+        >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['tls']?.progress || 0}%` }"></div>
+          <span class="tools-legend__label">TLS</span>
         </div>
       </div>
 
@@ -368,9 +411,11 @@ const toolsUsed = ref<number[]>([]);
 
 // Number of tools to display (from settings)
 const numberOfToolsToShow = ref<number>(0);
+const showManualTool = ref<boolean>(false);
+const showTlsTool = ref<boolean>(false);
 
 // Tool press state for long-press interaction
-const toolPress = ref<Record<number, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});
+const toolPress = ref<Record<number | string, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});
 
 // Three.js objects
 let scene: THREE.Scene;
@@ -1637,7 +1682,7 @@ function extractToolsFromGCode(content: string): number[] {
 const LONG_PRESS_MS_TOOL = 1500;
 const DELAY_BEFORE_VISUAL_MS = 150;
 
-const startToolPress = (toolNumber: number, _evt?: Event) => {
+const startToolPress = (toolNumber: number | string, _evt?: Event) => {
   if (_evt) _evt.preventDefault();
   if (isToolChanging.value) return;
 
@@ -1668,8 +1713,25 @@ const startToolPress = (toolNumber: number, _evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_TOOL && !state.triggered) {
       state.triggered = true;
-      // If this is the current tool, send T0 to unload, otherwise send the tool number
-      const toolToLoad = props.currentTool === toolNumber ? 0 : toolNumber;
+
+      // Handle TLS specially - send $TLS command directly
+      if (toolNumber === 'tls') {
+        sendTLSCommand();
+        state.progress = 0;
+        state.active = false;
+        return;
+      }
+
+      // Determine tool number to send
+      let toolToLoad: number;
+      if (toolNumber === 'manual') {
+        // Manual tool - use a number greater than numberOfToolsToShow
+        toolToLoad = props.currentTool > numberOfToolsToShow.value ? 0 : numberOfToolsToShow.value + 1;
+      } else {
+        // Regular numbered tool - if this is the current tool, send T0 to unload, otherwise send the tool number
+        toolToLoad = props.currentTool === toolNumber ? 0 : toolNumber as number;
+      }
+
       sendToolChangeMacro(toolToLoad);
       state.progress = 0;
       state.active = false;
@@ -1682,7 +1744,7 @@ const startToolPress = (toolNumber: number, _evt?: Event) => {
   state.raf = requestAnimationFrame(tick);
 };
 
-const endToolPress = (toolNumber: number) => {
+const endToolPress = (toolNumber: number | string) => {
   const state = toolPress.value[toolNumber];
   if (!state) return;
 
@@ -1716,7 +1778,15 @@ const sendToolChangeMacro = async (toolNumber: number) => {
   }
 };
 
-const cancelToolPress = (toolNumber: number) => {
+const sendTLSCommand = async () => {
+  try {
+    await api.sendCommand('$TLS');
+  } catch (error) {
+    console.error('[GCodeVisualizer] Failed to send $TLS command', error);
+  }
+};
+
+const cancelToolPress = (toolNumber: number | string) => {
   const state = toolPress.value[toolNumber];
   if (!state) return;
 
@@ -1733,6 +1803,12 @@ onMounted(async () => {
   if (settings) {
     if (typeof settings.tool?.count === 'number') {
       numberOfToolsToShow.value = settings.tool.count;
+    }
+    if (typeof settings.tool?.manual === 'boolean') {
+      showManualTool.value = settings.tool.manual;
+    }
+    if (typeof settings.tool?.tls === 'boolean') {
+      showTlsTool.value = settings.tool.tls;
     }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
@@ -1758,6 +1834,12 @@ onMounted(async () => {
     // Apply only the changed settings
     if (changedSettings.tool?.count !== undefined) {
       numberOfToolsToShow.value = changedSettings.tool.count;
+    }
+    if (changedSettings.tool?.manual !== undefined) {
+      showManualTool.value = changedSettings.tool.manual;
+    }
+    if (changedSettings.tool?.tls !== undefined) {
+      showTlsTool.value = changedSettings.tool.tls;
     }
     // Future settings can be added here
     // if ('someOtherSetting' in changedSettings) { ... }
@@ -2092,6 +2174,12 @@ watch(() => store.status.mistCoolant, (newValue) => {
   font-weight: 500;
 }
 
+.tools-legend__item.manual-tool .tools-legend__label,
+.tools-legend__item.tls-tool .tools-legend__label {
+  text-align: center;
+  flex: 1;
+}
+
 .tools-legend__icon {
   display: block;
   width: 40px;
@@ -2134,6 +2222,24 @@ watch(() => store.status.mistCoolant, (newValue) => {
 }
 
 .tools-legend__item.active .manual-tool-indicator .bar {
+  opacity: 0.7;
+}
+
+.tls-tool-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 16px;
+}
+
+.tls-tool-indicator svg {
+  width: 20px;
+  height: 20px;
+  opacity: 0.4;
+}
+
+.tools-legend__item.active .tls-tool-indicator svg {
   opacity: 0.7;
 }
 

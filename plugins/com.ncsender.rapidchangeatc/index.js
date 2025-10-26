@@ -76,6 +76,7 @@ export async function onLoad(ctx) {
 
   // Set tool.source to indicate this plugin controls the tool count
   // and sync the count from the plugin's pocket configuration
+  // Also enable manual and TLS tools
   try {
     const response = await fetch(`http://localhost:${resolveServerPort(pluginSettings, appSettings)}/api/settings`, {
       method: 'PATCH',
@@ -83,23 +84,82 @@ export async function onLoad(ctx) {
       body: JSON.stringify({
         tool: {
           count: pocketCount,
-          source: 'com.ncsender.rapidchangeatc'
+          source: 'com.ncsender.rapidchangeatc',
+          manual: true,
+          tls: true
         }
       })
     });
 
     if (response.ok) {
-      ctx.log(`Tool count synchronized: ${pocketCount} (source: com.ncsender.rapidchangeatc)`);
+      ctx.log(`Tool settings synchronized: count=${pocketCount}, manual=true, tls=true (source: com.ncsender.rapidchangeatc)`);
     } else {
-      ctx.log(`Failed to sync tool count: ${response.status}`);
+      ctx.log(`Failed to sync tool settings: ${response.status}`);
     }
   } catch (error) {
-    ctx.log('Failed to sync tool count on plugin load:', error);
+    ctx.log('Failed to sync tool settings on plugin load:', error);
   }
 
   // NEW API: onBeforeCommand receives command array
   ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
     const settings = ctx.getSettings() || {};
+
+    // Check for $TLS command and replace with tool length setter routine
+    const tlsIndex = commands.findIndex(cmd =>
+      cmd.isOriginal && cmd.command.trim().toUpperCase() === '$TLS'
+    );
+
+    if (tlsIndex !== -1) {
+      ctx.log('$TLS command detected, replacing with tool length setter routine');
+
+      // Get tool setter coordinates from settings
+      const toolSetterX = settings.toolSetter?.x ?? 0;
+      const toolSetterY = settings.toolSetter?.y ?? 0;
+      const zSafe = 0;
+      const zProbeStart = -20;
+      const seekDistance = 50;
+      const seekFeedrate = 800;
+
+      // Define toolLengthSet function (same as in M6 handler)
+      const toolLengthSet = () => [
+        `G53 G0 Z${zSafe}`, // Move to safe Z
+        `G53 G0 X${toolSetterX} Y${toolSetterY}`,
+        `G53 G0 Z${zProbeStart}`, // Move to probe start height
+        `G43.1 Z0`,
+        `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
+        `G0 G91 Z5`,
+        `G38.2 G91 Z-5 F250`,
+        `G91 G0 Z5`,
+        `G90`,
+        `#<_ofs_idx> = [#5220 * 20 + 5203]`, // 5203 = base of first Z offset (G54)
+        `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
+        `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
+        `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+        `$TLR`
+      ];
+
+      // Build TLS program with metric switch and rollback
+      const toolLengthSetProgram = [
+        '(Start of Tool Length Setter)',
+        '#<wasMetric> = #<_metric>',
+        'G21', // Set to metric
+        ...toolLengthSet(),
+        'O202 IF [#<wasMetric> EQ 0]',
+        '  G20',
+        'O202 ENDIF',
+        '(End of Tool Length Setter)'
+      ];
+
+      // Replace the $TLS command with the expanded program
+      const expandedCommands = toolLengthSetProgram.map(line => ({
+        command: line,
+        displayCommand: null,
+        isOriginal: false
+      }));
+
+      // Replace the $TLS command with expanded commands
+      commands.splice(tlsIndex, 1, ...expandedCommands);
+    }
 
     // Find original M6 command
     const m6Index = commands.findIndex(cmd => {
@@ -1088,13 +1148,15 @@ export async function onUnload(ctx) {
       body: JSON.stringify({
         tool: {
           source: null,
-          count: 0
+          count: 0,
+          manual: false,
+          tls: false
         }
       })
     });
 
     if (response.ok) {
-      ctx.log('Tool count control returned to manual settings');
+      ctx.log('Tool settings reset: count=0, manual=false, tls=false, source=null');
     } else {
       ctx.log(`Failed to reset tool settings: ${response.status}`);
     }

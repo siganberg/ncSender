@@ -72,7 +72,9 @@ const DEFAULT_SETTINGS = {
   },
   tool: {
     count: 0,
-    source: null
+    source: null,
+    tls: false,
+    manual: false
   },
   useDoorAsPause : true
 };
