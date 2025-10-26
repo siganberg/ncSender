@@ -105,7 +105,8 @@ function createToolLengthSetProgram(settings) {
     'O202 IF [#<wasMetric> EQ 0]',
     '  G20',
     'O202 ENDIF',
-    '(End of Tool Length Setter)'
+    '(End of Tool Length Setter)',
+    `(MSG, TOOL CHANGE COMPLETE)`
   ];
 }
 
@@ -120,12 +121,28 @@ function handleTLSCommand(commands, settings, ctx) {
 
   ctx.log('$TLS command detected, replacing with tool length setter routine');
 
+  const tlsCommand = commands[tlsIndex];
   const toolLengthSetProgram = createToolLengthSetProgram(settings);
-  const expandedCommands = toolLengthSetProgram.map(line => ({
-    command: line,
-    displayCommand: null,
-    isOriginal: false
-  }));
+  const showMacroCommand = settings.showMacroCommand ?? false;
+
+  const expandedCommands = toolLengthSetProgram.map((line, index) => {
+    if (index === 0) {
+      // First command - show $TLS if hiding macro, otherwise show actual command
+      return {
+        command: line,
+        displayCommand: showMacroCommand ? null : tlsCommand.command.trim(),
+        isOriginal: false
+      };
+    } else {
+      // Rest of commands - hide if not showing macro
+      return {
+        command: line,
+        displayCommand: null,
+        isOriginal: false,
+        meta: showMacroCommand ? {} : { silent: true }
+      };
+    }
+  });
 
   commands.splice(tlsIndex, 1, ...expandedCommands);
 }
@@ -157,13 +174,25 @@ function handleM6Command(commands, context, settings, ctx) {
 
   const toolChangeProgram = buildToolChangeProgram(settings, currentTool, toolNumber);
   const showMacroCommand = settings.showMacroCommand ?? false;
-  const displayCmd = showMacroCommand ? null : m6Command.command.trim();
 
-  const expandedCommands = toolChangeProgram.map((line, index) => ({
-    command: line,
-    displayCommand: index === 0 ? displayCmd : null,
-    isOriginal: false
-  }));
+  const expandedCommands = toolChangeProgram.map((line, index) => {
+    if (index === 0) {
+      // First command - show M6 if hiding macro, otherwise show actual command
+      return {
+        command: line,
+        displayCommand: showMacroCommand ? null : m6Command.command.trim(),
+        isOriginal: false
+      };
+    } else {
+      // Rest of commands - hide if not showing macro
+      return {
+        command: line,
+        displayCommand: null,
+        isOriginal: false,
+        meta: showMacroCommand ? {} : { silent: true }
+      };
+    }
+  });
 
   commands.splice(m6Index, 1, ...expandedCommands);
 }
