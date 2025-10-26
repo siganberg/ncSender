@@ -1,9 +1,11 @@
 const { contextBridge, nativeTheme, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ncSender', {
-  getApiBaseUrl: () => {
+  getApiBaseUrl: (fallbackPort) => {
     // Return API base URL - used by the client to determine server location
-    return process.env.VITE_API_BASE_URL || 'http://localhost:3000';
+    // The fallbackPort is provided by the caller as a default
+    const port = fallbackPort || 8090;
+    return `http://localhost:${port}`;
   },
 
   theme: {

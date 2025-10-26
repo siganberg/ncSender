@@ -455,13 +455,16 @@ export async function onLoad(ctx) {
   const pluginSettings = ctx.getSettings() || {};
   const appSettings = ctx.getAppSettings() || {};
 
+  // Check if plugin has been configured (has required settings)
+  const isConfigured = pluginSettings.pocket1 && pluginSettings.pockets;
+
   // Sync tool count from plugin config to app settings
   const pocketCount = pluginSettings.pockets || 0;
   const currentToolSettings = appSettings.tool || {};
 
   // Set tool.source to indicate this plugin controls the tool count
   // and sync the count from the plugin's pocket configuration
-  // Also enable manual and TLS tools
+  // Only enable manual and TLS tools if plugin is configured
   // Add small delay to avoid race condition with onUnload during hot reload
   await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -473,14 +476,14 @@ export async function onLoad(ctx) {
         tool: {
           count: pocketCount,
           source: 'com.ncsender.rapidchangeatc',
-          manual: true,
-          tls: true
+          manual: isConfigured,
+          tls: isConfigured
         }
       })
     });
 
     if (response.ok) {
-      ctx.log(`Tool settings synchronized: count=${pocketCount}, manual=true, tls=true (source: com.ncsender.rapidchangeatc)`);
+      ctx.log(`Tool settings synchronized: count=${pocketCount}, manual=${isConfigured}, tls=${isConfigured} (source: com.ncsender.rapidchangeatc)`);
     } else {
       ctx.log(`Failed to sync tool settings: ${response.status}`);
     }
@@ -491,6 +494,13 @@ export async function onLoad(ctx) {
   // NEW API: onBeforeCommand receives command array
   ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
     const rawSettings = ctx.getSettings() || {};
+
+    // Skip command handling if plugin is not configured
+    if (!rawSettings.pocket1 || !rawSettings.pockets) {
+      ctx.log('Plugin not configured, skipping command handling');
+      return commands;
+    }
+
     const settings = buildInitialConfig(rawSettings);
 
     // Handle $TLS command
@@ -1240,7 +1250,9 @@ export async function onLoad(ctx) {
                   body: JSON.stringify({
                     tool: {
                       count: toolCount,
-                      source: 'com.ncsender.rapidchangeatc'
+                      source: 'com.ncsender.rapidchangeatc',
+                      manual: true,
+                      tls: true
                     }
                   })
                 });

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pluginEventBus } from './plugin-event-bus.js';
 import { readSettings } from './settings-manager.js';
 import { getUserDataDir } from '../utils/paths.js';
+import { parseM6Command } from '../utils/gcode-patterns.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
@@ -290,6 +291,11 @@ class PluginManager {
         // Register to receive WebSocket events that are broadcast
         // This allows plugins to react to CNC events in real-time
         this.eventBus.registerPluginHandler(pluginId, `ws:${eventName}`, handler);
+      },
+
+      // Utility functions for plugins
+      utils: {
+        parseM6Command: parseM6Command
       }
     };
 
