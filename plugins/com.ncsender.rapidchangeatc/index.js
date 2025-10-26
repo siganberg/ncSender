@@ -88,7 +88,7 @@ function createToolLengthSetRoutine(settings) {
     `#<_ofs_idx> = [#5220 * 20 + 5203]`,
     `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
     `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
-    `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+    `G43.1 Z[#<_rc_trigger_mach_z>]`,
     `$TLR`
   ];
 }
