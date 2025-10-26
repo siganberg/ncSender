@@ -102,8 +102,8 @@
           :key="'manual'"
           class="tools-legend__item manual-tool"
           :class="{
-            'active': currentTool > numberOfToolsToShow && currentTool !== 999,
-            'used': toolsUsed.some(t => t > numberOfToolsToShow && t !== 999),
+            'active': currentTool > numberOfToolsToShow,
+            'used': toolsUsed.some(t => t > numberOfToolsToShow),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress['manual']?.triggered,
             'blink-border': toolPress['manual']?.blinking
@@ -126,19 +126,17 @@
           :key="'tls'"
           class="tools-legend__item tls-tool"
           :class="{
-            'active': currentTool === 999,
-            'used': toolsUsed.includes(999),
-            'disabled': isToolActionsDisabled,
+            'disabled': isToolActionsDisabled || currentTool === 0,
             'long-press-triggered': toolPress['tls']?.triggered,
             'blink-border': toolPress['tls']?.blinking
           }"
-          title="TLS Tool (Hold to change)"
-          @mousedown="isToolActionsDisabled ? null : startToolPress('tls', $event)"
-          @mouseup="isToolActionsDisabled ? null : endToolPress('tls')"
-          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('tls')"
-          @touchstart="isToolActionsDisabled ? null : startToolPress('tls', $event)"
-          @touchend="isToolActionsDisabled ? null : endToolPress('tls')"
-          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('tls')"
+          title="TLS - Tool Length Setter (Hold to measure current tool)"
+          @mousedown="isToolActionsDisabled || currentTool === 0 ? null : startToolPress('tls', $event)"
+          @mouseup="isToolActionsDisabled || currentTool === 0 ? null : endToolPress('tls')"
+          @mouseleave="isToolActionsDisabled || currentTool === 0 ? null : cancelToolPress('tls')"
+          @touchstart="isToolActionsDisabled || currentTool === 0 ? null : startToolPress('tls', $event)"
+          @touchend="isToolActionsDisabled || currentTool === 0 ? null : endToolPress('tls')"
+          @touchcancel="isToolActionsDisabled || currentTool === 0 ? null : cancelToolPress('tls')"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['tls']?.progress || 0}%` }"></div>
           <span class="tools-legend__label">TLS</span>

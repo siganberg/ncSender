@@ -85,6 +85,54 @@ const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
 
 // === Helper Functions ===
 
+// Helper: Format G-code with proper indentation based on O-code control structures
+function formatGCode(gcode) {
+  const lines = gcode.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '');
+
+  const formatted = [];
+  let indentLevel = 0;
+
+  for (const line of lines) {
+    const upperLine = line.toUpperCase();
+    const isOCode = upperLine.startsWith('O');
+
+    // Decrease indent for closing/else keywords
+    if (isOCode && (
+      upperLine.includes('ENDIF') ||
+      upperLine.includes('ENDWHILE') ||
+      upperLine.includes('ENDREPEAT') ||
+      upperLine.includes('ENDSUB') ||
+      upperLine.includes('ELSE')
+    )) {
+      indentLevel = Math.max(0, indentLevel - 1);
+    }
+
+    // Add line with current indentation
+    const indent = '  '.repeat(indentLevel);
+    formatted.push(indent + line);
+
+    // Increase indent for opening keywords
+    if (isOCode && (
+      upperLine.includes(' IF ') ||
+      upperLine.includes(' WHILE ') ||
+      upperLine.includes(' DO ') ||
+      upperLine.includes('REPEAT') ||
+      upperLine.includes(' SUB')
+    )) {
+      indentLevel++;
+    }
+
+    // Special case: ELSE also increases indent after being printed
+    if (isOCode && upperLine.includes('ELSE') && !upperLine.includes('ELSEIF')) {
+      indentLevel++;
+    }
+  }
+
+  return formatted;
+}
+
 // Shared TLS routine generator
 function createToolLengthSetRoutine(settings) {
   const gcode = `
@@ -156,6 +204,46 @@ function handleTLSCommand(commands, settings, ctx) {
   });
 
   commands.splice(tlsIndex, 1, ...expandedCommands);
+}
+
+function handlePocket1Command(commands, settings, ctx) {
+  const pocket1Index = commands.findIndex(cmd =>
+    cmd.isOriginal && cmd.command.trim().toUpperCase() === '$POCKET1'
+  );
+
+  if (pocket1Index === -1) {
+    return; // No $POCKET1 command found
+  }
+
+  ctx.log('$POCKET1 command detected, moving to pocket 1 position');
+
+  const pocket1Command = commands[pocket1Index];
+  const gcode = `
+    G53 G21 G90 G0 Z${settings.zSafe}
+    G53 G21 G90 G0 X${settings.pocket1.x} Y${settings.pocket1.y}
+  `.trim();
+
+  const pocket1Program = formatGCode(gcode);
+  const showMacroCommand = settings.showMacroCommand ?? false;
+
+  const expandedCommands = pocket1Program.map((line, index) => {
+    if (index === 0) {
+      return {
+        command: line,
+        displayCommand: showMacroCommand ? null : pocket1Command.command.trim(),
+        isOriginal: false
+      };
+    } else {
+      return {
+        command: line,
+        displayCommand: null,
+        isOriginal: false,
+        meta: showMacroCommand ? {} : { silent: true }
+      };
+    }
+  });
+
+  commands.splice(pocket1Index, 1, ...expandedCommands);
 }
 
 function handleM6Command(commands, context, settings, ctx) {
@@ -283,7 +371,7 @@ function createToolLoad(settings, tool) {
 
 // Build unload tool section
 function buildUnloadTool(settings, currentTool, sourcePos) {
-  if (currentTool === 0 || currentTool === 98) {
+  if (currentTool === 0) {
     return '';
   }
   if (currentTool > settings.pockets) {
@@ -357,10 +445,8 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
     (MSG, TOOL CHANGE COMPLETE: T${toolNumber})
   `.trim();
 
-  // Clean up empty lines, trim whitespace, and convert to array
-  return gcode.split('\n')
-    .map(line => line.trim())
-    .filter(line => line !== '');
+  // Format G-code with proper indentation
+  return formatGCode(gcode);
 }
 
 // === Plugin Lifecycle ===
@@ -412,6 +498,9 @@ export async function onLoad(ctx) {
 
     // Handle $TLS command
     handleTLSCommand(commands, settings, ctx);
+
+    // Handle $POCKET1 command
+    handlePocket1Command(commands, settings, ctx);
 
     // Handle M6 tool change command
     handleM6Command(commands, context, settings, ctx);
