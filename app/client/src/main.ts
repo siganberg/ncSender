@@ -5,14 +5,6 @@ import { loadSettings } from './lib/settings-store.js';
 import { initializeKeyboardShortcuts } from './features/keyboard';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
 import { registerWebComponents } from './web-components';
-import { getApiBaseUrl } from './lib/api-base';
-
-if (typeof window !== 'undefined') {
-  window.ncSender = {
-    ...(window.ncSender || {}),
-    getApiBaseUrl
-  };
-}
 
 // Disable context menu globally for touch screen compatibility
 document.addEventListener('contextmenu', (e) => {

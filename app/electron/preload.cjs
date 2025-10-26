@@ -1,6 +1,11 @@
 const { contextBridge, nativeTheme, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ncSender', {
+  getApiBaseUrl: () => {
+    // Return API base URL - used by the client to determine server location
+    return process.env.VITE_API_BASE_URL || 'http://localhost:3000';
+  },
+
   theme: {
     shouldUseDark: () => nativeTheme.shouldUseDarkColors
   },

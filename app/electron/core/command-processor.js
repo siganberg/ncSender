@@ -50,9 +50,13 @@ export class CommandProcessor {
     const m6Parse = parseM6Command(command);
     const isValidM6 = m6Parse?.matched && m6Parse.toolNumber !== null;
 
-    // Set isToolChanging flag for all valid M6 commands (same-tool or different-tool)
+    // Check for same-tool M6 command
+    const currentTool = machineState?.tool ?? this.cncController.lastStatus?.tool ?? 0;
+    const sameToolCheck = checkSameToolChange(command, currentTool);
+
+    // Set isToolChanging flag only for valid M6 commands that are NOT same-tool changes
     // Only set if tool count > 0 (tools are configured/visible in UI)
-    if (isValidM6) {
+    if (isValidM6 && !sameToolCheck.isSameTool) {
       const toolCount = getSetting('tool')?.count ?? 0;
       if (toolCount > 0 && this.serverState.machineState.isToolChanging !== true) {
         log(`Setting isToolChanging -> true (M6 T${m6Parse.toolNumber})`);
@@ -60,10 +64,6 @@ export class CommandProcessor {
         this.broadcast('server-state-updated', this.serverState);
       }
     }
-
-    // Check for same-tool M6 command
-    const currentTool = machineState?.tool ?? this.cncController.lastStatus?.tool ?? 0;
-    const sameToolCheck = checkSameToolChange(command, currentTool);
 
     if (sameToolCheck.isSameTool) {
       log(`Same-tool M6 detected: T${sameToolCheck.toolNumber} (current: T${currentTool}) - skipping`);
