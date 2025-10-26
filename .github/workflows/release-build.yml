@@ -251,30 +251,20 @@ jobs:
             done
           fi
 
-          # Linux x64 assets (.deb and AppImage)
+          # Linux x64 assets (only .deb)
           if [ -d "artifacts/linux-x64-artifacts" ]; then
             for file in artifacts/linux-x64-artifacts/*.deb; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_linux_x64.deb"
               fi
             done
-            for file in artifacts/linux-x64-artifacts/*.AppImage; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.AppImage"
-              fi
-            done
           fi
 
-          # Linux ARM64 assets (.deb and AppImage)
+          # Linux ARM64 assets (only .deb)
           if [ -d "artifacts/linux-arm64-artifacts" ]; then
             for file in artifacts/linux-arm64-artifacts/*.deb; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
-              fi
-            done
-            for file in artifacts/linux-arm64-artifacts/*.AppImage; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.AppImage"
               fi
             done
           fi
