@@ -271,10 +271,17 @@ jobs:
 
           # Merge latest-linux.yml from both x64 and arm64 builds
           if [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ] && [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
-            # Use x64 as base and append arm64 files section
-            cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
-            # Extract files section from arm64 yml and append
-            sed -n '/^files:/,$ p' "artifacts/linux-arm64-artifacts/latest-linux.yml" | tail -n +2 >> "release-assets/latest-linux.yml"
+            # Merge the two YAML files properly
+            {
+              # Get header from x64 (version, releaseDate, etc.)
+              sed '/^files:/q' "artifacts/linux-x64-artifacts/latest-linux.yml" | head -n -1
+              # Start files array
+              echo "files:"
+              # Get x64 file entry
+              sed -n '/^files:/,$ p' "artifacts/linux-x64-artifacts/latest-linux.yml" | tail -n +2
+              # Get arm64 file entry
+              sed -n '/^files:/,$ p' "artifacts/linux-arm64-artifacts/latest-linux.yml" | tail -n +2
+            } > "release-assets/latest-linux.yml"
           elif [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ]; then
             cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
           elif [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
