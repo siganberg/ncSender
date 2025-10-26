@@ -1,4 +1,6 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- General bug fixes and stability improvements
+- Fixed autodustboot plugin functionality
+- Resolved API call failures affecting server communication
+- Fixed plugin system issues
