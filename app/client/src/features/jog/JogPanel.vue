@@ -270,7 +270,7 @@ import StepControl from './StepControl.vue';
 import JogControls from './JogControls.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatCoordinate } from '@/lib/units';
+import { formatCoordinate, getUnitGCode, mmToInches } from '@/lib/units';
 
 const store = useJogStore();
 const appStore = useAppStore();
@@ -752,17 +752,28 @@ const goToPark = async () => {
       // Not set - don't show dialog, user might be continuing to hold for save
       return;
     }
-    // Parse parking location (format: "x,y,z")
-    const [x, y, z] = response.parkingLocation.split(',').map(v => parseFloat(v));
+    // Parse parking location (format: "x,y,z") - stored in mm
+    const [xMm, yMm, zMm] = response.parkingLocation.split(',').map(v => parseFloat(v));
 
-    // Send parking G-code commands in sequence
-    const safeZ = safeZCommand.value;
+    // Convert to current units if imperial
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const unitsGCode = getUnitGCode(appStore.unitsPreference.value);
+    const x = isImperial ? mmToInches(xMm) : xMm;
+    const y = isImperial ? mmToInches(yMm) : yMm;
+    const z = isImperial ? mmToInches(zMm) : zMm;
+
+    // Safe Z also needs conversion
+    const safeZMm = safeZValue.value;
+    const safeZ = isImperial ? mmToInches(safeZMm) : safeZMm;
+
+    const safeZStr = formatMachineCoord(safeZ);
     const xStr = formatMachineCoord(x);
     const yStr = formatMachineCoord(y);
-    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${safeZ}`, displayCommand: `G53 G21 G90 G0 Z${safeZ}` });
-    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 G21 G90 G0 X${xStr} Y${yStr}` });
     const zStr = formatMachineCoord(z);
-    await api.sendCommandViaWebSocket({ command: `G53 G21 G90 G0 Z${zStr}`, displayCommand: `G53 G21 G90 G0 Z${zStr}` });
+
+    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 Z${safeZStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 Z${safeZStr}` });
+    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}` });
+    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 Z${zStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 Z${zStr}` });
   } catch (_err) {
     // Network or other errors: ignore during active press
     return;
@@ -1146,14 +1157,26 @@ const goToCorner = async (corner: CornerType) => {
   if (motionControlsDisabled.value) {
     return;
   }
-  const { x, y } = getCornerPosition(corner);
-  const safeZ = safeZCommand.value;
+  // Get corner position in mm
+  const { x: xMm, y: yMm } = getCornerPosition(corner);
+
+  // Convert to current units if imperial
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const unitsGCode = getUnitGCode(appStore.unitsPreference.value);
+  const x = isImperial ? mmToInches(xMm) : xMm;
+  const y = isImperial ? mmToInches(yMm) : yMm;
+
+  // Safe Z also needs conversion
+  const safeZMm = safeZValue.value;
+  const safeZ = isImperial ? mmToInches(safeZMm) : safeZMm;
+
+  const safeZStr = formatMachineCoord(safeZ);
   const xStr = formatMachineCoord(x);
   const yStr = formatMachineCoord(y);
 
   try {
     // Send both moves as a multi-line command
-    const multiLineCommand = `G53 G21 G90 G0 Z${safeZ}\nG53 G21 G90 G0 X${xStr} Y${yStr}`;
+    const multiLineCommand = `G53 ${unitsGCode} G90 G0 Z${safeZStr}\nG53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}`;
 
     await api.sendCommandViaWebSocket({
       command: multiLineCommand
