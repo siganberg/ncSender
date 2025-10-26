@@ -27,16 +27,9 @@
       </section>
 
       <section class="update-dialog__status" :class="{ 'update-dialog__status--error': Boolean(props.state.error) }">
-        <div class="status-header">
-          <div class="status-text">
-            <span>{{ statusText }}</span>
-            <span v-if="props.state.error" class="status-text__error">{{ props.state.error }}</span>
-          </div>
-          <button class="status-copy-btn" :class="copyStatusButtonClass" @click="copyStatus">
-            <span v-if="copyStatusFeedback === 'copied'">Copied!</span>
-            <span v-else-if="copyStatusFeedback === 'failed'">Copy Failed</span>
-            <span v-else>Copy Status</span>
-          </button>
+        <div class="status-text">
+          <span>{{ statusText }}</span>
+          <span v-if="props.state.error" class="status-text__error">{{ props.state.error }}</span>
         </div>
         <div v-if="props.state.isDownloading" class="status-progress">
           <div class="progress-bar">
@@ -51,19 +44,8 @@
 
       <section class="update-dialog__notes">
         <header class="notes-header">
-          <div>
-            <h3>Release Notes</h3>
-            <p v-if="props.state.releaseName" class="notes-subtitle">{{ props.state.releaseName }}</p>
-          </div>
-          <a
-            v-if="props.state.releaseUrl"
-            :href="props.state.releaseUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="notes-link"
-          >
-            View on GitHub
-          </a>
+          <h3>Release Notes</h3>
+          <p v-if="props.state.releaseName" class="notes-subtitle">{{ props.state.releaseName }}</p>
         </header>
         <div class="notes-body" v-html="releaseNotesHtml"></div>
       </section>
@@ -82,22 +64,11 @@
         <div class="actions-right">
           <button class="btn btn-secondary" @click="emit('close')">Close</button>
           <button
-            v-if="showDownloadOnlyButton"
             class="btn btn-primary"
-            @click="emit('download-only')"
-            :disabled="!props.state.isAvailable || props.state.isDownloading || props.state.isChecking"
+            @click="openGitHubRelease"
+            :disabled="!props.state.isAvailable || !props.state.releaseUrl || props.state.isChecking"
           >
-            <span v-if="props.state.isDownloading" class="spinner"></span>
             <span>Download Update</span>
-          </button>
-          <button
-            v-else
-            class="btn btn-primary"
-            @click="emit('download-install')"
-            :disabled="!props.state.isAvailable || props.state.isDownloading || props.state.isChecking"
-          >
-            <span v-if="props.state.isDownloading" class="spinner"></span>
-            <span>Download & Install</span>
           </button>
         </div>
       </footer>
@@ -168,71 +139,6 @@ const downloadPercentText = computed(() => {
   return `${percent.toFixed(0)}%`;
 });
 
-const statusDetails = computed(() => {
-  const parts: string[] = [
-    `Channel: ${channelLabel.value}`,
-    `Current version: v${props.state.currentVersion}`
-  ];
-  if (props.state.latestVersion) {
-    parts.push(`Latest version: v${props.state.latestVersion}`);
-  }
-  parts.push(`Status: ${statusText.value}`);
-  if (props.state.error) {
-    parts.push(`Error: ${props.state.error}`);
-  }
-  if (props.state.isDownloading) {
-    parts.push(`Progress: ${downloadPercentText.value}`);
-  }
-  if (props.state.downloadPath) {
-    parts.push(`Download path: ${props.state.downloadPath}`);
-  }
-  if (props.state.releaseName) {
-    parts.push(`Release name: ${props.state.releaseName}`);
-  }
-  if (props.state.releaseUrl) {
-    parts.push(`Release URL: ${props.state.releaseUrl}`);
-  }
-  return parts.join('\n');
-});
-
-const copyStatusFeedback = ref<'idle' | 'copied' | 'failed'>('idle');
-let copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
-
-const copyStatusButtonClass = computed(() => ({
-  'status-copy-btn--copied': copyStatusFeedback.value === 'copied',
-  'status-copy-btn--failed': copyStatusFeedback.value === 'failed'
-}));
-
-const copyStatus = async () => {
-  const text = statusDetails.value;
-  if (!text) {
-    return;
-  }
-  const reset = () => {
-    copyStatusFeedback.value = 'idle';
-    if (copyStatusTimer) {
-      clearTimeout(copyStatusTimer);
-      copyStatusTimer = null;
-    }
-  };
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      copyStatusFeedback.value = 'copied';
-      if (copyStatusTimer) clearTimeout(copyStatusTimer);
-      copyStatusTimer = setTimeout(reset, 1800);
-    } else {
-      window.prompt('Copy update status', text);
-    }
-  } catch (error) {
-    console.error('Failed to copy update status:', error);
-    copyStatusFeedback.value = 'failed';
-    if (copyStatusTimer) clearTimeout(copyStatusTimer);
-    copyStatusTimer = setTimeout(reset, 2000);
-    window.prompt('Copy update status', text);
-  }
-};
-
 const releaseNotesText = computed(() => {
   const notes = props.state.releaseNotes?.trim();
   if (!notes) {
@@ -268,6 +174,15 @@ const releaseNotesHtml = computed(() => {
 });
 
 const showDownloadOnlyButton = computed(() => !props.state.canInstall);
+
+const openGitHubRelease = () => {
+  if (props.state.releaseUrl) {
+    // Open in full browser window (maximized)
+    const width = window.screen.availWidth;
+    const height = window.screen.availHeight;
+    window.open(props.state.releaseUrl, '_blank', `width=${width},height=${height},left=0,top=0,noopener,noreferrer`);
+  }
+};
 </script>
 
 <style scoped>
@@ -360,13 +275,6 @@ const showDownloadOnlyButton = computed(() => !props.state.canInstall);
   border-color: rgba(255, 107, 107, 0.35);
 }
 
-.status-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .status-text {
   display: flex;
   flex-direction: column;
@@ -377,35 +285,6 @@ const showDownloadOnlyButton = computed(() => !props.state.canInstall);
 
 .status-text__error {
   font-size: 0.9rem;
-  color: #ff7a7a;
-}
-
-.status-copy-btn {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-  user-select: none;
-}
-
-.status-copy-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-elevated);
-  color: var(--color-text-primary);
-}
-
-.status-copy-btn--copied {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.status-copy-btn--failed {
-  border-color: #ff7a7a;
   color: #ff7a7a;
 }
 
@@ -455,13 +334,6 @@ const showDownloadOnlyButton = computed(() => !props.state.canInstall);
   gap: 12px;
 }
 
-.notes-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
 .notes-header h3 {
   margin: 0;
   font-size: 1.1rem;
@@ -471,17 +343,6 @@ const showDownloadOnlyButton = computed(() => !props.state.canInstall);
   margin: 4px 0 0 0;
   font-size: 0.85rem;
   color: var(--color-text-secondary);
-}
-
-.notes-link {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-accent);
-  text-decoration: none;
-}
-
-.notes-link:hover {
-  text-decoration: underline;
 }
 
 .notes-body {
