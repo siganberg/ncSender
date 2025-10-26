@@ -149,7 +149,6 @@ function createToolLengthSetRoutine(settings) {
     #<_cur_wcs_z_ofs> = #[#<_ofs_idx>]
     #<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]
     G43.1 Z[#<_rc_trigger_mach_z>]
-    $TLR
   `.trim();
   return gcode.split('\n');
 }
