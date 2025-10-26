@@ -117,8 +117,8 @@ jobs:
           name: windows-${{ matrix.arch }}-artifacts
           path: app/dist-electron/**
 
-  raspberry-pi:
-    name: Raspberry Pi Build
+  linux-arm64:
+    name: Linux ARM64 Build
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
@@ -152,7 +152,7 @@ jobs:
         run: npm run build:client
         working-directory: app
 
-      - name: Build Electron (Raspberry Pi ARM64)
+      - name: Build Electron (Linux ARM64)
         run: |
           rm -rf dist-electron
           npm run dist -- --linux --arm64 --publish never
@@ -162,18 +162,18 @@ jobs:
 
       - name: List built artifacts
         run: |
-          echo "Built Raspberry Pi artifacts:"
+          echo "Built Linux ARM64 artifacts:"
           ls -lh app/dist-electron/
 
-      - name: Upload Raspberry Pi Artifact
+      - name: Upload Linux ARM64 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: raspberry-pi-artifacts
-          path: app/dist-electron/*.deb
+          name: linux-arm64-artifacts
+          path: app/dist-electron/**
 
   release:
     name: Create Release
-    needs: [macos, linux, windows, raspberry-pi]
+    needs: [macos, linux, windows, linux-arm64]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
@@ -251,42 +251,34 @@ jobs:
             done
           fi
 
-          # Linux assets (skip AppImage to reduce release clutter)
+          # Linux x64 assets (only .deb)
           if [ -d "artifacts/linux-x64-artifacts" ]; then
             for file in artifacts/linux-x64-artifacts/*.deb; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_linux_x64.deb"
               fi
             done
-            for file in artifacts/linux-x64-artifacts/*.rpm; do
+          fi
+
+          # Linux ARM64 assets (only .deb)
+          if [ -d "artifacts/linux-arm64-artifacts" ]; then
+            for file in artifacts/linux-arm64-artifacts/*.deb; do
               if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.rpm"
-              fi
-            done
-            for file in artifacts/linux-x64-artifacts/*.tar.gz; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.tar.gz"
-              fi
-            done
-            for file in artifacts/linux-x64-artifacts/latest-linux.yml; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/latest-linux.yml"
+                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
               fi
             done
           fi
 
-          # Raspberry Pi assets (rename for clarity)
-          if [ -d "artifacts/raspberry-pi-artifacts" ]; then
-            for file in artifacts/raspberry-pi-artifacts/*.deb; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.deb"
-              fi
-            done
-            for file in artifacts/raspberry-pi-artifacts/*.AppImage; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_raspberry-pi_arm64.AppImage"
-              fi
-            done
+          # Merge latest-linux.yml from both x64 and arm64 builds
+          if [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ] && [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
+            # Use x64 as base and append arm64 files section
+            cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
+            # Extract files section from arm64 yml and append
+            sed -n '/^files:/,$ p' "artifacts/linux-arm64-artifacts/latest-linux.yml" | tail -n +2 >> "release-assets/latest-linux.yml"
+          elif [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ]; then
+            cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
+          elif [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
+            cp "artifacts/linux-arm64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
           fi
 
           echo "Release assets to upload:"
