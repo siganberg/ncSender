@@ -87,6 +87,7 @@ const status = reactive({
   rapidOverride: 100,
   spindleOverride: 100,
   tool: 0,
+  tlo: { x: 0, y: 0, z: 0, a: 0 },
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
@@ -224,6 +225,14 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof report.tool === 'number') {
     status.tool = report.tool;
+  }
+
+  if ((report as any).tlo && typeof (report as any).tlo === 'object') {
+    const tlo = (report as any).tlo;
+    status.tlo.x = tlo.x ?? 0;
+    status.tlo.y = tlo.y ?? 0;
+    status.tlo.z = tlo.z ?? 0;
+    status.tlo.a = tlo.a ?? 0;
   }
 
   if (typeof report.homed === 'boolean') {

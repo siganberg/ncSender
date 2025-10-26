@@ -72,6 +72,11 @@ export class CNCController extends EventEmitter {
           // Ignore errors during initial setup
         });
 
+        // Request coordinate data including TLO (Tool Length Offset)
+        this.sendCommand('$#', { meta: { sourceId: 'system' } }).catch(() => {
+          // Ignore errors during initial setup
+        });
+
         // Publish the first status report so clients receive an immediate connection indicator
         this.emit('data', trimmedData, null);
       }
@@ -80,6 +85,10 @@ export class CNCController extends EventEmitter {
       this.parseStatusReport(trimmedData);
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
       this.parseGCodeModes(trimmedData);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
+    } else if (trimmedData.startsWith('[TLO:') && trimmedData.endsWith(']')) {
+      this.parseTLO(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -303,7 +312,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'tlo', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -352,6 +361,35 @@ export class CNCController extends EventEmitter {
     // Emit updated status if anything changed
     if (hasChanges) {
       this.emit('status-report', { ...this.lastStatus });
+    }
+  }
+
+  parseTLO(data) {
+    // Example: [TLO:0.000,0.000,0.000,0.000]
+    const content = data.substring(5, data.length - 1); // Remove [TLO: and ]
+    const values = content.split(',').map(v => parseFloat(v));
+
+    if (values.length >= 4) {
+      const newTLO = {
+        x: values[0],
+        y: values[1],
+        z: values[2],
+        a: values[3]
+      };
+
+      // Check if TLO has changed
+      const oldTLO = this.lastStatus.tlo;
+      const hasChanges = !oldTLO ||
+        oldTLO.x !== newTLO.x ||
+        oldTLO.y !== newTLO.y ||
+        oldTLO.z !== newTLO.z ||
+        oldTLO.a !== newTLO.a;
+
+      if (hasChanges) {
+        log('TLO detected:', newTLO);
+        this.lastStatus.tlo = newTLO;
+        this.emit('status-report', { ...this.lastStatus });
+      }
     }
   }
 

@@ -127,6 +127,7 @@
           class="tools-legend__item tls-tool"
           :class="{
             'disabled': isToolActionsDisabled || currentTool === 0,
+            'glow': shouldTLSGlow,
             'long-press-triggered': toolPress['tls']?.triggered,
             'blink-border': toolPress['tls']?.blinking
           }"
@@ -289,6 +290,7 @@ const props = withDefaults(defineProps<{
   spindleRpm?: number;
   alarmMessage?: string;
   currentTool?: number;
+  toolLengthOffset?: { x: number; y: number; z: number; a: number };
 }>(), {
   view: 'top', // Default to top view
   theme: 'dark', // Default to dark theme
@@ -300,7 +302,8 @@ const props = withDefaults(defineProps<{
   zMaxTravel: DEFAULT_Z_TRAVEL_MM,
   machineOrientation: () => ({ xHome: 'min', yHome: 'max', zHome: 'max', homeCorner: 'back-left' }),
   spindleRpm: 0,
-  jobLoaded: null
+  jobLoaded: null,
+  toolLengthOffset: () => ({ x: 0, y: 0, z: 0, a: 0 })
 });
 
 const emit = defineEmits<{
@@ -314,6 +317,11 @@ const isConnecting = computed(() => normalizedSenderStatus.value === 'connecting
 const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
 const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
 const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
+
+// TLS button should glow when a tool is loaded but TLO Z is 0
+const shouldTLSGlow = computed(() => {
+  return (props.currentTool ?? 0) > 0 && (props.toolLengthOffset?.z ?? 0) === 0;
+});
 
 const isMachineConnected = computed(() => {
   const status = normalizedSenderStatus.value;
@@ -2163,6 +2171,20 @@ watch(() => store.status.mistCoolant, (newValue) => {
 
 .tools-legend__item.blink-border {
   animation: blink-border-tool 0.4s ease-in-out;
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6), inset 0 0 0 2px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.8), inset 0 0 0 2px rgba(239, 68, 68, 0.6);
+  }
+}
+
+.tools-legend__item.glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .tools-legend__label {

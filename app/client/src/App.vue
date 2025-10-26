@@ -38,6 +38,7 @@
         :machine-orientation="machineOrientation"
         :spindle-rpm="status.spindleRpm"
         :current-tool="status.tool"
+        :tool-length-offset="status.tlo"
         :alarm-message="alarmMessage"
         @change-view="viewport = $event"
       />
