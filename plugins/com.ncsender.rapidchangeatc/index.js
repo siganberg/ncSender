@@ -3,8 +3,6 @@
  * Provides quick access tooling workflow controls.
  */
 
-import { parseM6Command } from '../../app/electron/utils/gcode-patterns.js';
-
 const ALLOWED_COLLET_SIZES = ['ER11', 'ER16', 'ER20', 'ER25', 'ER32'];
 const ALLOWED_MODELS = ['Basic', 'Pro', 'Premium'];
 const ORIENTATIONS = ['X', 'Y'];
@@ -249,7 +247,7 @@ function handleM6Command(commands, context, settings, ctx) {
   // Find original M6 command
   const m6Index = commands.findIndex(cmd => {
     if (!cmd.isOriginal) return false;
-    const parsed = parseM6Command(cmd.command);
+    const parsed = ctx.utils.parseM6Command(cmd.command);
     return parsed?.matched && parsed.toolNumber !== null;
   });
 
@@ -258,7 +256,7 @@ function handleM6Command(commands, context, settings, ctx) {
   }
 
   const m6Command = commands[m6Index];
-  const parsed = parseM6Command(m6Command.command);
+  const parsed = ctx.utils.parseM6Command(m6Command.command);
 
   if (!parsed?.matched || parsed.toolNumber === null) {
     return;

@@ -1,5 +1,3 @@
-import { parseM6Command } from '../../app/electron/utils/gcode-patterns.js';
-
 let isToolChanging = false;
 
 export function onLoad(ctx) {
