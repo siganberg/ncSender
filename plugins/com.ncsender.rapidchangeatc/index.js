@@ -37,17 +37,36 @@ const sanitizeCoords = (coords = {}) => ({
 });
 
 const buildInitialConfig = (raw = {}) => ({
+  // UI Settings
   colletSize: sanitizeColletSize(raw.colletSize ?? raw.model),
   pockets: clampPockets(raw.pockets),
   model: sanitizeModel(raw.model ?? raw.trip ?? raw.modelName ?? raw.machineModel),
   orientation: sanitizeOrientation(raw.orientation),
   direction: sanitizeDirection(raw.direction),
+  showMacroCommand: raw.showMacroCommand ?? false,
+  spindleDelay: clampSpindleDelay(raw.spindleDelay),
+
+  // Position Settings
   pocket1: sanitizeCoords(raw.pocket1),
   toolSetter: sanitizeCoords(raw.toolSetter),
   manualTool: sanitizeCoords(raw.manualTool),
-  showMacroCommand: raw.showMacroCommand ?? false,
-  spindleDelay: clampSpindleDelay(raw.spindleDelay),
-  zEngagement: toFiniteNumber(raw.zEngagement, -100)
+  pocketDistance: toFiniteNumber(raw.pocketDistance, 45),
+
+  // Z-axis Settings
+  zEngagement: toFiniteNumber(raw.zEngagement, -100),
+  zSafe: toFiniteNumber(raw.zSafe, 0),
+  zSpinOff: toFiniteNumber(raw.zSpinOff, 23),
+  zRetreat: toFiniteNumber(raw.zRetreat, 7),
+  zProbeStart: toFiniteNumber(raw.zProbeStart, -20),
+
+  // Tool Change Settings
+  unloadRpm: toFiniteNumber(raw.unloadRpm, 1500),
+  loadRpm: toFiniteNumber(raw.loadRpm, 1200),
+  engageFeedrate: toFiniteNumber(raw.engageFeedrate, 3500),
+
+  // Tool Setter Settings
+  seekDistance: toFiniteNumber(raw.seekDistance, 50),
+  seekFeedrate: toFiniteNumber(raw.seekFeedrate, 800)
 });
 
 const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
@@ -68,44 +87,38 @@ const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
 
 // Shared TLS routine generator
 function createToolLengthSetRoutine(settings) {
-  const toolSetterX = settings.toolSetter?.x ?? 0;
-  const toolSetterY = settings.toolSetter?.y ?? 0;
-  const zSafe = settings.zSafe ?? 0;
-  const zProbeStart = settings.zProbeStart ?? -20;
-  const seekDistance = settings.seekDistance ?? 50;
-  const seekFeedrate = settings.seekFeedrate ?? 800;
-
-  return [
-    `G53 G0 Z${zSafe}`,
-    `G53 G0 X${toolSetterX} Y${toolSetterY}`,
-    `G53 G0 Z${zProbeStart}`,
-    `G43.1 Z0`,
-    `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
-    `G0 G91 Z5`,
-    `G38.2 G91 Z-5 F250`,
-    `G91 G0 Z5`,
-    `G90`,
-    `#<_ofs_idx> = [#5220 * 20 + 5203]`,
-    `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
-    `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
-    `G43.1 Z[#<_rc_trigger_mach_z>]`,
-    `$TLR`
-  ];
+  const gcode = `
+    G53 G0 Z${settings.zSafe}
+    G53 G0 X${settings.toolSetter.x} Y${settings.toolSetter.y}
+    G53 G0 Z${settings.zProbeStart}
+    G43.1 Z0
+    G38.2 G91 Z-${settings.seekDistance} F${settings.seekFeedrate}
+    G0 G91 Z5
+    G38.2 G91 Z-5 F250
+    G91 G0 Z5
+    G90
+    #<_ofs_idx> = [#5220 * 20 + 5203]
+    #<_cur_wcs_z_ofs> = #[#<_ofs_idx>]
+    #<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]
+    G43.1 Z[#<_rc_trigger_mach_z>]
+    $TLR
+  `.trim();
+  return gcode.split('\n');
 }
 
 function createToolLengthSetProgram(settings) {
-  const zSafe = settings.zSafe ?? 0;
-
-  return [
-    '(Start of Tool Length Setter)',
-    '#<return_units> = [20 + #<_metric>]',
-    'G21',
-    ...createToolLengthSetRoutine(settings),
-    `G53 G0 Z${zSafe}`,
-    'G[#<return_units>]',
-    '(End of Tool Length Setter)',
-    `(MSG, TOOL CHANGE COMPLETE)`
-  ];
+  const tlsRoutine = createToolLengthSetRoutine(settings).join('\n');
+  const gcode = `
+    (Start of Tool Length Setter)
+    #<return_units> = [20 + #<_metric>]
+    G21
+    ${tlsRoutine}
+    G53 G0 Z${settings.zSafe}
+    G[#<return_units>]
+    (End of Tool Length Setter)
+    (MSG, TOOL CHANGE COMPLETE)
+  `.trim();
+  return gcode.split('\n');
 }
 
 function handleTLSCommand(commands, settings, ctx) {
@@ -195,156 +208,157 @@ function handleM6Command(commands, context, settings, ctx) {
   commands.splice(m6Index, 1, ...expandedCommands);
 }
 
-function buildToolChangeProgram(settings, currentTool, toolNumber) {
-  const pocket1X = settings.pocket1?.x ?? 0;
-  const pocket1Y = settings.pocket1?.y ?? 0;
-  const orientation = settings.orientation ?? 'Y';
+// Helper: Calculate pocket position based on tool number
+function calculatePocketPosition(settings, toolNum) {
+  if (toolNum <= 0) {
+    return { x: settings.pocket1.x, y: settings.pocket1.y };
+  }
   const direction = settings.direction === 'Negative' ? -1 : 1;
-  const spindleDelay = settings.spindleDelay ?? 0;
-  const pocketDistance = settings.pocketDistance ?? 45;
-  const zEngagement = settings.zEngagement ?? -100;
-  const zSpinOff = settings.zSpinOff ?? 23;
-  const zRetreat = settings.zRetreat ?? 7;
-  const zSafe = settings.zSafe ?? 0;
-  const zone1 = zEngagement + zSpinOff;
-  const zone2 = zEngagement + 28;
-  const unloadRpm = settings.unloadRpm ?? 1500;
-  const loadRpm = settings.loadRpm ?? 1200;
-  const engageFeedrate = settings.engageFeedrate ?? 3500;
+  const offset = (toolNum - 1) * settings.pocketDistance * direction;
+  if (settings.orientation === 'Y') {
+    return { x: settings.pocket1.x, y: settings.pocket1.y + offset };
+  } else {
+    return { x: settings.pocket1.x + offset, y: settings.pocket1.y };
+  }
+}
 
-  const manualToolX = settings.manualTool?.x ?? 0;
-  const manualToolY = settings.manualTool?.y ?? 0;
-  const toolSetterX = settings.toolSetter?.x ?? 0;
-  const toolSetterY = settings.toolSetter?.y ?? 0;
-  const pocketCount = settings.pockets ?? 6;
+// Helper: Manual tool change fallback routine
+function createManualToolFallback(settings) {
+  return `
+    G53 G0 Z${settings.zSafe}
+    G53 G0 X${settings.manualTool.x} Y${settings.manualTool.y}
+    M0
+  `.trim();
+}
 
-  const calculatePocketPosition = (toolNum) => {
-    if (toolNum <= 0) {
-      return { x: pocket1X, y: pocket1Y };
-    }
-    const offset = (toolNum - 1) * pocketDistance * direction;
-    if (orientation === 'Y') {
-      return { x: pocket1X, y: pocket1Y + offset };
-    } else {
-      return { x: pocket1X + offset, y: pocket1Y };
-    }
-  };
+// Helper: Tool unload routine
+function createToolUnload(settings) {
+  const zone1 = settings.zEngagement + settings.zSpinOff;
+  return `
+    G53 G0 Z${settings.zEngagement + settings.zSpinOff}
+    G65P6
+    M4 S${settings.unloadRpm}
+    G53 G1 Z${settings.zEngagement} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement + settings.zRetreat} F${settings.engageFeedrate}
+    G65P6
+    M5
+    G53 G0 Z${zone1}
+    G4 P0.2
+  `.trim();
+}
 
-  const withIndent = (arr) => ({
-    indent: (tabs = 0) => {
-      const indentStr = '  '.repeat(tabs);
-      return arr.map(line => `${indentStr}${line}`);
-    },
-    raw: () => arr
-  });
+// Helper: Tool load routine
+function createToolLoad(settings, tool) {
+  const zone1 = settings.zEngagement + settings.zSpinOff;
+  const zone2 = settings.zEngagement + 28;
+  const manualFallback1 = createManualToolFallback(settings);
+  const manualFallback2 = createManualToolFallback(settings);
 
-  const manualToolFallback = () => withIndent([
-    `G53 G0 Z${zSafe}`,
-    `G53 G0 X${manualToolX} Y${manualToolY}`,
-    `M0`
-  ]);
+  return `
+    G53 G0 Z${settings.zEngagement + settings.zSpinOff}
+    G65P6
+    M3 S${settings.loadRpm}
+    G53 G1 Z${settings.zEngagement} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement + settings.zRetreat} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement + settings.zRetreat} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement} F${settings.engageFeedrate}
+    G53 G1 Z${settings.zEngagement + settings.zRetreat} F${settings.engageFeedrate}
+    G65P6
+    M5
+    G53 G0 Z${zone1}
+    G4 P0.2
+    o300 IF [#<_probe_state> EQ 0]
+    ${manualFallback1}
+    o300 ELSE
+       G53 G0 Z${zone2}
+       G4 P0.2
+       o301 IF [#<_probe_state> EQ 1]
+    ${manualFallback2}
+       o301 ENDIF
+    o300 ENDIF
+    M61 Q${tool}
+  `.trim();
+}
 
-  const toolUnload = () => withIndent([
-    `G53 G0 Z${zEngagement+zSpinOff}`,
-    `G65P6`,
-    `M4 S${unloadRpm}`,
-    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
-    `G65P6`,
-    `M5`,
-    `G53 G0 Z${zone1}`,
-    `G4 P0.2`
-  ]);
+// Build unload tool section
+function buildUnloadTool(settings, currentTool, sourcePos) {
+  if (currentTool === 0 || currentTool === 98) {
+    return '';
+  }
+  if (currentTool > settings.pockets) {
+    return `
+      G53 G0 Z${settings.zSafe}
+      ${createManualToolFallback(settings)}
+      M61 Q0
+    `.trim();
+  } else {
+    return `
+      G53 G0 Z${settings.zSafe}
+      G53 G0 X${sourcePos.x} Y${sourcePos.y}
+      ${createToolUnload(settings)}
+      o100 IF [#<_probe_state> EQ 1]
+        ${createToolUnload(settings)}
+        o101 IF [#<_probe_state> EQ 1]
+          ${createManualToolFallback(settings)}
+        o101 ENDIF
+      o100 ENDIF
+      M61 Q0
+    `.trim();
+  }
+}
 
-  const toolLoad = (tool) => [
-    `G53 G0 Z${zEngagement+zSpinOff}`,
-    `G65P6`,
-    `M3 S${loadRpm}`,
-    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
-    `G65P6`,
-    `M5`,
-    `G53 G0 Z${zone1}`,
-    `G4 P0.2`,
-    `o300 IF [#<_probe_state> EQ 0]`,
-    ...manualToolFallback().indent(1),
-    `o300 ELSE`,
-    `   G53 G0 Z${zone2}`,
-    `   G4 P0.2`,
-    `   o301 IF [#<_probe_state> EQ 1]`,
-    ...manualToolFallback().indent(2),
-    `   o301 ENDIF`,
-    `o300 ENDIF`,
-    `M61 Q${tool}`
-  ];
-
-  const sourcePos = calculatePocketPosition(currentTool);
-  const targetPos = calculatePocketPosition(toolNumber);
-
-  const toolChangeProgram = [
-    '(Start of RapidChangeATC Plugin Sequence)',
-    `#<return_units> = [20 + #<_metric>]`,
-    `G21`,
-    `M5`
-  ];
-
-  if (spindleDelay > 0) {
-    toolChangeProgram.push(`G4 P${spindleDelay}`);
+// Build load tool section
+function buildLoadTool(settings, toolNumber, targetPos, tlsRoutine) {
+  if (toolNumber === 0) {
+    return '';
   }
 
-  if (currentTool > 0) {
-    if (currentTool <= pocketCount) {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`,
-        `G53 G0 X${sourcePos.x} Y${sourcePos.y}`,
-        ...toolUnload().indent(0),
-        `o100 IF [#<_probe_state> EQ 1]`,
-        ...toolUnload().indent(1),
-        `  o101 IF [#<_probe_state> EQ 1]`,
-        ...manualToolFallback().indent(2),
-        `  o101 ENDIF`,
-        `o100 ENDIF`,
-        `M61 Q0`
-      );
-    } else {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`,
-        ...manualToolFallback().indent(0),
-        `M61 Q0`
-      );
-    }
+  if (toolNumber <= settings.pockets) {
+    return `
+      G53 G0 Z${settings.zSafe}
+      G53 G0 X${targetPos.x} Y${targetPos.y}
+      ${createToolLoad(settings, toolNumber)}
+      ${tlsRoutine}
+    `.trim();
+  } else {
+    return `
+      G53 G0 Z${settings.zSafe}
+      ${createManualToolFallback(settings)}
+      M61 Q${toolNumber}
+      ${tlsRoutine}
+    `.trim();
   }
+}
 
-  if (toolNumber > 0) {
-    if (toolNumber <= pocketCount) {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`,
-        `G53 G0 X${targetPos.x} Y${targetPos.y}`,
-        ...toolLoad(toolNumber),
-        ...createToolLengthSetRoutine(settings)
-      );
-    } else {
-      toolChangeProgram.push(
-        `G53 G0 Z${zSafe}`,
-        ...manualToolFallback().indent(0),
-        `M61 Q${toolNumber}`,
-        ...createToolLengthSetRoutine(settings)
-      );
-    }
-  }
+function buildToolChangeProgram(settings, currentTool, toolNumber) {
+  // Calculate positions and prepare components
+  const sourcePos = calculatePocketPosition(settings, currentTool);
+  const targetPos = calculatePocketPosition(settings, toolNumber);
+  const tlsRoutine = createToolLengthSetRoutine(settings).join('\n');
 
-  toolChangeProgram.push(
-    `G53 G0 Z${zSafe}`,
-    'G[#<return_units>]',
-    '(End of RapidChangeATC Plugin Sequence)',
-    `(MSG, TOOL CHANGE COMPLETE: T${toolNumber})`
-  );
+  // Build sections
+  const spindleDelaySection = settings.spindleDelay > 0 ? `G4 P${settings.spindleDelay}` : '';
+  const unloadSection = buildUnloadTool(settings, currentTool, sourcePos);
+  const loadSection = buildLoadTool(settings, toolNumber, targetPos, tlsRoutine);
 
-  return toolChangeProgram;
+  // Assemble complete program
+  const gcode = `
+    (Start of RapidChangeATC Plugin Sequence)
+    #<return_units> = [20 + #<_metric>]
+    G21
+    M5
+    ${spindleDelaySection}
+    ${unloadSection}
+    ${loadSection}
+    G53 G0 Z${settings.zSafe}
+    G[#<return_units>]
+    (End of RapidChangeATC Plugin Sequence)
+    (MSG, TOOL CHANGE COMPLETE: T${toolNumber})
+  `.trim();
+
+  // Clean up empty lines and convert to array
+  return gcode.split('\n').filter(line => line.trim() !== '');
 }
 
 // === Plugin Lifecycle ===
@@ -391,7 +405,8 @@ export async function onLoad(ctx) {
 
   // NEW API: onBeforeCommand receives command array
   ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
-    const settings = ctx.getSettings() || {};
+    const rawSettings = ctx.getSettings() || {};
+    const settings = buildInitialConfig(rawSettings);
 
     // Handle $TLS command
     handleTLSCommand(commands, settings, ctx);
