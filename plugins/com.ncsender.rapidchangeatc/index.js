@@ -357,8 +357,10 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
     (MSG, TOOL CHANGE COMPLETE: T${toolNumber})
   `.trim();
 
-  // Clean up empty lines and convert to array
-  return gcode.split('\n').filter(line => line.trim() !== '');
+  // Clean up empty lines, trim whitespace, and convert to array
+  return gcode.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '');
 }
 
 // === Plugin Lifecycle ===
