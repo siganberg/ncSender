@@ -105,6 +105,7 @@ export class CNCController extends EventEmitter {
       // Detect tool change completion message from plugins (e.g., RapidChange ATC)
       if (trimmedData.includes('[MSG:TOOL CHANGE COMPLETE')) {
         this.emit('tool-change-complete', trimmedData);
+        return; // Skip broadcasting this message to terminal
       }
 
       const sourceId = this.activeCommand?.meta?.sourceId || null;
