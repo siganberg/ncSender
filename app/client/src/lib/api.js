@@ -756,18 +756,11 @@ class NCClient {
   }
 
   async triggerToolChange(toolNumber) {
-    const response = await fetch(`${this.baseUrl}/api/tool-change`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: toolNumber })
+    return this.sendCommandViaWebSocket({
+      command: `M6 T${toolNumber}`,
+      displayCommand: `M6 T${toolNumber}`,
+      meta: { sourceId: 'tool-change', toolNumber }
     });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to execute tool change' }));
-      throw new Error(error.error || 'Failed to execute tool change');
-    }
-
-    return response.json();
   }
 
   async triggerTLS() {

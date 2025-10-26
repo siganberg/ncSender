@@ -1,7 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
 import { pluginManager } from '../core/plugin-manager.js';
-import { parseM6Command } from '../utils/gcode-patterns.js';
+import { parseM6Command, isM6Command } from '../utils/gcode-patterns.js';
 
 const WS_READY_STATE_OPEN = 1;
 const realtimeJobCommands = new Set(['!', '~', '\\x18']);
@@ -359,7 +359,7 @@ export function createWebSocketLayer({
 
       // Handle M6 command - set tool changing flag and save return position
       let m6ReturnPosition = null;
-      if (commandValue.trim().match(/^M6\s+T\d+/i)) {
+      if (isM6Command(commandValue)) {
         log('M6 command detected, setting isToolChanging flag');
         serverState.machineState.isToolChanging = true;
 
@@ -405,6 +405,23 @@ export function createWebSocketLayer({
             command: returnCommand,
             displayCommand: returnCommand,
             meta: { ...metaPayload, sourceId: metaPayload.sourceId || 'tls' }
+          }
+        ];
+        log('Total commands to execute:', commands.length);
+      }
+
+      // Add return-to-position command for M6
+      if (isM6Command(commandValue) && m6ReturnPosition) {
+        const xCommand = m6ReturnPosition.x.toFixed(3);
+        const yCommand = m6ReturnPosition.y.toFixed(3);
+        const returnCommand = `G53 G21 G0 X${xCommand} Y${yCommand}`;
+        log('Adding M6 return command:', returnCommand);
+        commands = [
+          ...commands,
+          {
+            command: returnCommand,
+            displayCommand: returnCommand,
+            meta: { ...metaPayload, sourceId: metaPayload.sourceId || 'tool-change' }
           }
         ];
         log('Total commands to execute:', commands.length);
