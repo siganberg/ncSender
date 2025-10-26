@@ -51,7 +51,7 @@ export function createToolRoutes(cncController, serverState, commandProcessor) {
 
       const commands = [
         '$TLS',
-        ...(hasReturnPosition ? [`G53 G0 X${xCommand} Y${yCommand}`] : [])
+        ...(hasReturnPosition ? [`G53 G21 G0 X${xCommand} Y${yCommand}`] : [])
       ];
 
       const meta = {
@@ -151,7 +151,7 @@ export function createToolRoutes(cncController, serverState, commandProcessor) {
 
       const commands = [
         `M6 T${parsedTool}`,
-        ...(hasReturnPosition ? [`G53 G0 X${xCommand} Y${yCommand}`] : [])
+        ...(hasReturnPosition ? [`G53 G21 G0 X${xCommand} Y${yCommand}`] : [])
       ];
 
       const meta = {
