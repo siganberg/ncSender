@@ -6,5 +6,6 @@
   "author": "ncSender",
   "description": "Rapid tool change workflow helper for automatic tool changers.",
   "category": "tool-changer",
-  "priority": 50
+  "priority": 50,
+  "icon": "logo.png"
 }

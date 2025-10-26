@@ -30,6 +30,8 @@ export interface PluginListItem {
   installedAt?: string;
   hasConfig: boolean;
   hasIcon: boolean;
+  category: string;
+  priority?: number;
 }
 
 export interface ToolMenuItem {
@@ -125,6 +127,18 @@ export async function executeToolMenuItem(
     method: 'POST',
     headers,
     body: JSON.stringify({ pluginId, label })
+  });
+
+  if (!response.ok) {
+    await parseError(response);
+  }
+}
+
+export async function reorderPlugins(pluginIds: string[]): Promise<void> {
+  const response = await fetch(buildUrl('/reorder'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pluginIds })
   });
 
   if (!response.ok) {

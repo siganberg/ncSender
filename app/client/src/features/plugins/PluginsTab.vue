@@ -50,8 +50,190 @@
         <p class="empty-hint">Install a plugin to extend ncSender functionality</p>
       </div>
 
-      <div v-else class="plugins-list">
-        <div v-for="plugin in plugins" :key="plugin.id" class="plugin-card">
+      <div v-else class="plugins-container">
+        <!-- Sortable Plugins Section -->
+        <div v-if="sortablePlugins.length > 0" class="plugins-section">
+          <h4 class="section-header">Event-based Plugins (Sortable)</h4>
+          <div class="plugins-table sortable">
+            <div
+              v-for="(plugin, index) in sortablePlugins"
+              :key="plugin.id"
+              class="plugin-row"
+              :class="{ dragging: draggedIndex === index }"
+              draggable="true"
+              @dragstart="handleDragStart(index, $event)"
+              @dragover="handleDragOver($event)"
+              @drop="handleDrop(index, $event)"
+              @dragend="handleDragEnd"
+            >
+              <div class="drag-handle">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+                </svg>
+              </div>
+
+              <div class="plugin-icon-cell">
+                <img
+                  v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
+                  :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
+                  :alt="`${plugin.name} icon`"
+                  class="plugin-icon-small"
+                  @error="brokenIcons[plugin.id] = true"
+                />
+                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16">
+                  <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </div>
+
+              <div class="plugin-info-cell">
+                <div class="plugin-name-row">
+                  <div class="plugin-name-text">{{ plugin.name }}</div>
+                  <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
+                  <span v-else class="status-badge status-disabled">Disabled</span>
+                </div>
+                <div class="plugin-meta-row">
+                  <span class="plugin-category-text">{{ plugin.category }}</span>
+                  <span class="plugin-version-text">v{{ plugin.version }}</span>
+                  <span v-if="plugin.installedAt" class="plugin-installed-text">
+                    Installed {{ formatDate(plugin.installedAt) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="plugin-actions-cell">
+                <button
+                  v-if="plugin.hasConfig"
+                  class="btn-icon"
+                  @click="openConfigPanel(plugin)"
+                  title="Configure"
+                  :disabled="!plugin.enabled || !plugin.loaded"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="btn-icon"
+                  @click="togglePlugin(plugin)"
+                  :title="plugin.enabled ? 'Disable' : 'Enable'"
+                  :disabled="toggling === plugin.id"
+                >
+                  <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/>
+                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                  </svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="btn-icon btn-icon-danger"
+                  @click="confirmUninstall(plugin)"
+                  title="Uninstall"
+                  :disabled="uninstalling === plugin.id"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Divider -->
+        <div v-if="sortablePlugins.length > 0 && otherPlugins.length > 0" class="section-divider"></div>
+
+        <!-- Other Plugins Section -->
+        <div v-if="otherPlugins.length > 0" class="plugins-section">
+          <h4 class="section-header">Other Plugins</h4>
+          <div class="plugins-table">
+            <div
+              v-for="plugin in otherPlugins"
+              :key="plugin.id"
+              class="plugin-row"
+            >
+              <div class="drag-handle-placeholder"></div>
+
+              <div class="plugin-icon-cell">
+                <img
+                  v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
+                  :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
+                  :alt="`${plugin.name} icon`"
+                  class="plugin-icon-small"
+                  @error="brokenIcons[plugin.id] = true"
+                />
+                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16">
+                  <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </div>
+
+              <div class="plugin-info-cell">
+                <div class="plugin-name-row">
+                  <div class="plugin-name-text">{{ plugin.name }}</div>
+                  <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
+                  <span v-else class="status-badge status-disabled">Disabled</span>
+                </div>
+                <div class="plugin-meta-row">
+                  <span class="plugin-category-text">{{ plugin.category }}</span>
+                  <span class="plugin-version-text">v{{ plugin.version }}</span>
+                  <span v-if="plugin.installedAt" class="plugin-installed-text">
+                    Installed {{ formatDate(plugin.installedAt) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="plugin-actions-cell">
+                <button
+                  v-if="plugin.hasConfig"
+                  class="btn-icon"
+                  @click="openConfigPanel(plugin)"
+                  title="Configure"
+                  :disabled="!plugin.enabled || !plugin.loaded"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="btn-icon"
+                  @click="togglePlugin(plugin)"
+                  :title="plugin.enabled ? 'Disable' : 'Enable'"
+                  :disabled="toggling === plugin.id"
+                >
+                  <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/>
+                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                  </svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="btn-icon btn-icon-danger"
+                  @click="confirmUninstall(plugin)"
+                  title="Uninstall"
+                  :disabled="uninstalling === plugin.id"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Keep old card view for reference - will remove after testing -->
+        <div v-if="false" class="plugin-card-old">
           <div class="plugin-thumbnail">
             <img
               v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
@@ -308,7 +490,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import { api } from '@/lib/api';
@@ -319,6 +501,7 @@ import {
   setPluginEnabled,
   reloadPlugin as reloadPluginRequest,
   uninstallPlugin as uninstallPluginRequest,
+  reorderPlugins,
   PluginListItem
 } from './api';
 
@@ -346,6 +529,81 @@ const githubUrl = ref<string>('');
 let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
+
+// Separate plugins by priority for drag-n-drop
+const sortablePlugins = computed(() =>
+  plugins.value.filter(p => p.priority !== undefined && p.priority !== null)
+);
+
+const otherPlugins = computed(() =>
+  plugins.value.filter(p => p.priority === undefined || p.priority === null)
+);
+
+// Drag-n-drop state
+let draggedIndex: number | null = null;
+
+const handleDragStart = (index: number, event: DragEvent) => {
+  draggedIndex = index;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/html', (event.target as HTMLElement).innerHTML);
+  }
+};
+
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+};
+
+const handleDrop = async (targetIndex: number, event: DragEvent) => {
+  event.preventDefault();
+
+  if (draggedIndex === null || draggedIndex === targetIndex) {
+    return;
+  }
+
+  // Reorder the sortable plugins array
+  const items = [...sortablePlugins.value];
+  const [removed] = items.splice(draggedIndex, 1);
+  items.splice(targetIndex, 0, removed);
+
+  // Update the main plugins array
+  const newPlugins = [
+    ...items,
+    ...otherPlugins.value
+  ];
+  plugins.value = newPlugins;
+
+  // Send new order to backend
+  const pluginIds = items.map(p => p.id);
+  try {
+    await reorderPlugins(pluginIds);
+  } catch (error) {
+    console.error('Failed to reorder plugins:', error);
+    // Revert the local change
+    await loadPlugins();
+  }
+};
+
+const handleDragEnd = () => {
+  draggedIndex = null;
+};
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  return `${Math.floor(diffDays / 365)} years ago`;
+};
 
 const savePluginConfig = () => {
   if (configIframe.value && configIframe.value.contentWindow) {
@@ -1299,5 +1557,185 @@ onBeforeUnmount(() => {
 
 .config-panel-content :deep(button:hover) {
   opacity: 0.9;
+}
+
+.plugins-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.plugins-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 20px;
+}
+
+.section-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.section-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 16px 0;
+}
+
+.plugins-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: 24px 64px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  padding-left: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  transition: all 0.15s ease;
+  min-height: 80px;
+}
+
+.plugin-row:hover {
+  background: var(--color-surface-muted);
+}
+
+.plugin-row[draggable="true"] {
+  cursor: move;
+}
+
+.plugin-row.dragging {
+  opacity: 0.5;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  cursor: grab;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  height: 100%;
+  min-height: 48px;
+}
+
+.drag-handle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.plugin-row:hover .drag-handle {
+  opacity: 1;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle-placeholder {
+  width: 24px;
+}
+
+.plugin-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plugin-icon-small {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-small);
+  object-fit: contain;
+}
+
+.plugin-icon-placeholder {
+  width: 48px;
+  height: 48px;
+  opacity: 0.3;
+}
+
+.plugin-info-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plugin-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plugin-name-text {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+}
+
+.plugin-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plugin-category-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  text-transform: capitalize;
+  background: var(--color-surface-muted);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.plugin-version-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.plugin-installed-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-enabled {
+  background: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+}
+
+.status-disabled {
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--color-text-secondary);
+}
+
+.plugin-actions-cell {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 </style>

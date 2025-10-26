@@ -1069,6 +1069,8 @@ export async function onLoad(ctx) {
     `,
       { size: 'large' }
     );
+  }, {
+    icon: 'logo.png'
   });
 }
 
