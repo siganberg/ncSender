@@ -144,6 +144,15 @@ export function onLoad(ctx) {
             </label>
             <p class="help-text">Automatically retract the AutoDustBoot during all rapid moves, except when running jobs.</p>
           </div>
+
+          <div class="form-group">
+            <label for="showAddedGCode">Show Added GCode in Terminal</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="showAddedGCode">
+              <span class="toggle-slider"></span>
+            </label>
+            <p class="help-text">When enabled, shows the AutoDustBoot commands in the terminal. When disabled, commands are executed silently.</p>
+          </div>
         </div>
       </div>
 
@@ -158,6 +167,7 @@ export function onLoad(ctx) {
               document.getElementById('delayAfterExpand').value = settings.delayAfterExpand !== undefined ? settings.delayAfterExpand : 1;
               document.getElementById('retractOnHome').checked = settings.retractOnHome !== undefined ? settings.retractOnHome : true;
               document.getElementById('retractOnRapidMove').checked = settings.retractOnRapidMove !== undefined ? settings.retractOnRapidMove : true;
+              document.getElementById('showAddedGCode').checked = settings.showAddedGCode !== undefined ? settings.showAddedGCode : false;
             }
           } catch (error) {
             console.error('Failed to load settings:', error);
@@ -170,13 +180,15 @@ export function onLoad(ctx) {
           const delayAfterExpand = parseInt(document.getElementById('delayAfterExpand').value, 10);
           const retractOnHome = document.getElementById('retractOnHome').checked;
           const retractOnRapidMove = document.getElementById('retractOnRapidMove').checked;
+          const showAddedGCode = document.getElementById('showAddedGCode').checked;
 
           const settings = {
             retractCommand,
             expandCommand,
             delayAfterExpand,
             retractOnHome,
-            retractOnRapidMove
+            retractOnRapidMove,
+            showAddedGCode
           };
 
           try {
@@ -195,6 +207,7 @@ export function onLoad(ctx) {
         document.getElementById('delayAfterExpand').addEventListener('blur', saveAutoDustBootConfig);
         document.getElementById('retractOnHome').addEventListener('change', saveAutoDustBootConfig);
         document.getElementById('retractOnRapidMove').addEventListener('change', saveAutoDustBootConfig);
+        document.getElementById('showAddedGCode').addEventListener('change', saveAutoDustBootConfig);
       </script>
     </body>
     </html>
@@ -208,6 +221,7 @@ export function onLoad(ctx) {
     const delayAfterExpand = settings.delayAfterExpand !== undefined ? settings.delayAfterExpand : 1;
     const retractOnHome = settings.retractOnHome !== undefined ? settings.retractOnHome : true;
     const retractOnRapidMove = settings.retractOnRapidMove !== undefined ? settings.retractOnRapidMove : true;
+    const showAddedGCode = settings.showAddedGCode !== undefined ? settings.showAddedGCode : false;
 
     const hasExpandRetract = expandCommand && retractCommand;
     if (!hasExpandRetract) {
@@ -216,7 +230,11 @@ export function onLoad(ctx) {
 
     // Helper to create expand/retract sequence as a single multi-line command
     function createExpandRetractSequence(includeExpand = true) {
-      const sequence = ['(Start of AutoDustBoot Plugin Sequence)'];
+      const sequence = [];
+
+      if (showAddedGCode) {
+        sequence.push('(Start of AutoDustBoot Plugin Sequence)');
+      }
 
       if (includeExpand) {
         sequence.push(expandCommand);
@@ -224,13 +242,17 @@ export function onLoad(ctx) {
       }
 
       sequence.push(retractCommand);
-      sequence.push('(End of AutoDustBoot Plugin Sequence)');
+
+      if (showAddedGCode) {
+        sequence.push('(End of AutoDustBoot Plugin Sequence)');
+      }
 
       // Return single command object with multi-line command string
-      // displayCommand is null to show the first line in terminal
+      // When showAddedGCode is false, use silent meta to hide from terminal
       return {
         command: sequence.join('\n'),
-        displayCommand: null
+        displayCommand: null,
+        meta: showAddedGCode ? {} : { silent: true }
       };
     }
 
@@ -304,7 +326,8 @@ export function onLoad(ctx) {
 
           const expandSequence = {
             command: expandLines.join('\n'),
-            displayCommand: null
+            displayCommand: null,
+            meta: showAddedGCode ? {} : { silent: true }
           };
           commands.splice(i + 1, 0, expandSequence);
           return commands;
