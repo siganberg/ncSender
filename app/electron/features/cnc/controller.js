@@ -72,8 +72,8 @@ export class CNCController extends EventEmitter {
           // Ignore errors during initial setup
         });
 
-        // Request coordinate data including TLO (Tool Length Offset)
-        this.sendCommand('$#', { meta: { sourceId: 'system' } }).catch(() => {
+        // Request tool length offset status
+        this.sendCommand('$#=_tool_offset', { meta: { sourceId: 'system' } }).catch(() => {
           // Ignore errors during initial setup
         });
 
@@ -87,8 +87,8 @@ export class CNCController extends EventEmitter {
       this.parseGCodeModes(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
-    } else if (trimmedData.startsWith('[TLO:') && trimmedData.endsWith(']')) {
-      this.parseTLO(trimmedData);
+    } else if (trimmedData.startsWith('[PARAM:') && trimmedData.endsWith(']')) {
+      this.parseParam(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -312,7 +312,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'tlo', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -364,30 +364,17 @@ export class CNCController extends EventEmitter {
     }
   }
 
-  parseTLO(data) {
-    // Example: [TLO:0.000,0.000,0.000,0.000]
-    const content = data.substring(5, data.length - 1); // Remove [TLO: and ]
-    const values = content.split(',').map(v => parseFloat(v));
+  parseParam(data) {
+    // Example: [PARAM:_TOOL_OFFSET=1]
+    const content = data.substring(7, data.length - 1); // Remove [PARAM: and ]
 
-    if (values.length >= 4) {
-      const newTLO = {
-        x: values[0],
-        y: values[1],
-        z: values[2],
-        a: values[3]
-      };
+    if (content.startsWith('_TOOL_OFFSET=')) {
+      const value = content.substring(13); // Remove _TOOL_OFFSET=
+      const toolLengthSet = value === '1';
 
-      // Check if TLO has changed
-      const oldTLO = this.lastStatus.tlo;
-      const hasChanges = !oldTLO ||
-        oldTLO.x !== newTLO.x ||
-        oldTLO.y !== newTLO.y ||
-        oldTLO.z !== newTLO.z ||
-        oldTLO.a !== newTLO.a;
-
-      if (hasChanges) {
-        log('TLO detected:', newTLO);
-        this.lastStatus.tlo = newTLO;
+      if (this.lastStatus.toolLengthSet !== toolLengthSet) {
+        log('Tool length set status:', toolLengthSet);
+        this.lastStatus.toolLengthSet = toolLengthSet;
         this.emit('status-report', { ...this.lastStatus });
       }
     }
