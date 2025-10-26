@@ -63,6 +63,266 @@ const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
   return 8090;
 };
 
+// === Helper Functions ===
+
+// Shared TLS routine generator
+function createToolLengthSetRoutine(settings) {
+  const toolSetterX = settings.toolSetter?.x ?? 0;
+  const toolSetterY = settings.toolSetter?.y ?? 0;
+  const zSafe = settings.zSafe ?? 0;
+  const zProbeStart = settings.zProbeStart ?? -20;
+  const seekDistance = settings.seekDistance ?? 50;
+  const seekFeedrate = settings.seekFeedrate ?? 800;
+
+  return [
+    `G53 G0 Z${zSafe}`,
+    `G53 G0 X${toolSetterX} Y${toolSetterY}`,
+    `G53 G0 Z${zProbeStart}`,
+    `G43.1 Z0`,
+    `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
+    `G0 G91 Z5`,
+    `G38.2 G91 Z-5 F250`,
+    `G91 G0 Z5`,
+    `G90`,
+    `#<_ofs_idx> = [#5220 * 20 + 5203]`,
+    `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
+    `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
+    `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
+    `$TLR`
+  ];
+}
+
+function createToolLengthSetProgram(settings) {
+  const zSafe = settings.zSafe ?? 0;
+
+  return [
+    '(Start of Tool Length Setter)',
+    '#<wasMetric> = #<_metric>',
+    'G21',
+    ...createToolLengthSetRoutine(settings),
+    `G53 G0 Z${zSafe}`,
+    'O202 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O202 ENDIF',
+    '(End of Tool Length Setter)'
+  ];
+}
+
+function handleTLSCommand(commands, settings, ctx) {
+  const tlsIndex = commands.findIndex(cmd =>
+    cmd.isOriginal && cmd.command.trim().toUpperCase() === '$TLS'
+  );
+
+  if (tlsIndex === -1) {
+    return; // No $TLS command found
+  }
+
+  ctx.log('$TLS command detected, replacing with tool length setter routine');
+
+  const toolLengthSetProgram = createToolLengthSetProgram(settings);
+  const expandedCommands = toolLengthSetProgram.map(line => ({
+    command: line,
+    displayCommand: null,
+    isOriginal: false
+  }));
+
+  commands.splice(tlsIndex, 1, ...expandedCommands);
+}
+
+function handleM6Command(commands, context, settings, ctx) {
+  // Find original M6 command
+  const m6Index = commands.findIndex(cmd => {
+    if (!cmd.isOriginal) return false;
+    const parsed = parseM6Command(cmd.command);
+    return parsed?.matched && parsed.toolNumber !== null;
+  });
+
+  if (m6Index === -1) {
+    return; // No M6 found
+  }
+
+  const m6Command = commands[m6Index];
+  const parsed = parseM6Command(m6Command.command);
+
+  if (!parsed?.matched || parsed.toolNumber === null) {
+    return;
+  }
+
+  const toolNumber = parsed.toolNumber;
+  const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
+  const currentTool = context.machineState?.tool ?? 0;
+
+  ctx.log(`M6 detected with tool T${toolNumber} ${location}, current tool: T${currentTool}, executing tool change program`);
+
+  const toolChangeProgram = buildToolChangeProgram(settings, currentTool, toolNumber);
+  const showMacroCommand = settings.showMacroCommand ?? false;
+  const displayCmd = showMacroCommand ? null : m6Command.command.trim();
+
+  const expandedCommands = toolChangeProgram.map((line, index) => ({
+    command: line,
+    displayCommand: index === 0 ? displayCmd : null,
+    isOriginal: false
+  }));
+
+  commands.splice(m6Index, 1, ...expandedCommands);
+}
+
+function buildToolChangeProgram(settings, currentTool, toolNumber) {
+  const pocket1X = settings.pocket1?.x ?? 0;
+  const pocket1Y = settings.pocket1?.y ?? 0;
+  const orientation = settings.orientation ?? 'Y';
+  const direction = settings.direction === 'Negative' ? -1 : 1;
+  const spindleDelay = settings.spindleDelay ?? 0;
+  const pocketDistance = settings.pocketDistance ?? 45;
+  const toolEngagement = settings.toolEngagement ?? -100;
+  const zSpinOff = settings.zSpinOff ?? 23;
+  const zRetreat = settings.zRetreat ?? 7;
+  const zSafe = settings.zSafe ?? 0;
+  const zone1 = toolEngagement + zSpinOff;
+  const zone2 = toolEngagement + 28;
+  const unloadRpm = settings.unloadRpm ?? 1500;
+  const loadRpm = settings.loadRpm ?? 1200;
+  const engageFeedrate = settings.engageFeedrate ?? 3500;
+
+  const manualToolX = settings.manualTool?.x ?? 0;
+  const manualToolY = settings.manualTool?.y ?? 0;
+  const toolSetterX = settings.toolSetter?.x ?? 0;
+  const toolSetterY = settings.toolSetter?.y ?? 0;
+  const pocketCount = settings.pockets ?? 6;
+
+  const calculatePocketPosition = (toolNum) => {
+    if (toolNum <= 0) {
+      return { x: pocket1X, y: pocket1Y };
+    }
+    const offset = (toolNum - 1) * pocketDistance * direction;
+    if (orientation === 'Y') {
+      return { x: pocket1X, y: pocket1Y + offset };
+    } else {
+      return { x: pocket1X + offset, y: pocket1Y };
+    }
+  };
+
+  const withIndent = (arr) => ({
+    indent: (tabs = 0) => {
+      const indentStr = '  '.repeat(tabs);
+      return arr.map(line => `${indentStr}${line}`);
+    },
+    raw: () => arr
+  });
+
+  const manualToolFallback = () => withIndent([
+    `G53 G0 Z${zSafe}`,
+    `G53 G0 X${manualToolX} Y${manualToolY}`,
+    `M0`
+  ]);
+
+  const toolUnload = () => withIndent([
+    `G53 G0 Z${toolEngagement+zSpinOff}`,
+    `G65P6`,
+    `M4 S${unloadRpm}`,
+    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G65P6`,
+    `M5`,
+    `G53 G0 Z${zone1}`,
+    `G4 P0.2`
+  ]);
+
+  const toolLoad = (tool) => [
+    `G53 G0 Z${toolEngagement+zSpinOff}`,
+    `G65P6`,
+    `M3 S${loadRpm}`,
+    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G65P6`,
+    `M5`,
+    `G53 G0 Z${zone1}`,
+    `G4 P0.2`,
+    `o300 IF [#<_probe_state> EQ 0]`,
+    ...manualToolFallback().indent(1),
+    `o300 ELSE`,
+    `   G53 G0 Z${zone2}`,
+    `   G4 P0.2`,
+    `   o301 IF [#<_probe_state> EQ 1]`,
+    ...manualToolFallback().indent(2),
+    `   o301 ENDIF`,
+    `o300 ENDIF`,
+    `M61 Q${tool}`
+  ];
+
+  const sourcePos = calculatePocketPosition(currentTool);
+  const targetPos = calculatePocketPosition(toolNumber);
+
+  const toolChangeProgram = [
+    '(Start of RapidChangeATC Plugin Sequence)',
+    `#<wasMetric> = #<_metric>`,
+    `G21`,
+    `M5`
+  ];
+
+  if (spindleDelay > 0) {
+    toolChangeProgram.push(`G4 P${spindleDelay}`);
+  }
+
+  if (currentTool > 0) {
+    if (currentTool <= pocketCount) {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`,
+        `G53 G0 X${sourcePos.x} Y${sourcePos.y}`,
+        ...toolUnload().indent(0),
+        `o100 IF [#<_probe_state> EQ 1]`,
+        ...toolUnload().indent(1),
+        `  o101 IF [#<_probe_state> EQ 1]`,
+        ...manualToolFallback().indent(2),
+        `  o101 ENDIF`,
+        `o100 ENDIF`,
+        `M61 Q0`
+      );
+    } else {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`,
+        ...manualToolFallback().indent(0),
+        `M61 Q0`
+      );
+    }
+  }
+
+  if (toolNumber > 0) {
+    if (toolNumber <= pocketCount) {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`,
+        `G53 G0 X${targetPos.x} Y${targetPos.y}`,
+        ...toolLoad(toolNumber),
+        ...createToolLengthSetRoutine(settings)
+      );
+    } else {
+      toolChangeProgram.push(
+        `G53 G0 Z${zSafe}`,
+        ...manualToolFallback().indent(0),
+        `M61 Q${toolNumber}`,
+        ...createToolLengthSetRoutine(settings)
+      );
+    }
+  }
+
+  toolChangeProgram.push(
+    `G53 G0 Z${zSafe}`,
+    'O201 IF [#<wasMetric> EQ 0]',
+    '  G20',
+    'O201 ENDIF',
+    '(End of RapidChangeATC Plugin Sequence)',
+    `(MSG, TOOL CHANGE COMPLETE: T${toolNumber})`
+  );
+
+  return toolChangeProgram;
+}
+
+// === Plugin Lifecycle ===
+
 export async function onLoad(ctx) {
   ctx.log('Rapid Change ATC plugin loaded');
 
@@ -104,296 +364,11 @@ export async function onLoad(ctx) {
   ctx.registerEventHandler('onBeforeCommand', async (commands, context) => {
     const settings = ctx.getSettings() || {};
 
-    // Check for $TLS command and replace with tool length setter routine
-    const tlsIndex = commands.findIndex(cmd =>
-      cmd.isOriginal && cmd.command.trim().toUpperCase() === '$TLS'
-    );
+    // Handle $TLS command
+    handleTLSCommand(commands, settings, ctx);
 
-    if (tlsIndex !== -1) {
-      ctx.log('$TLS command detected, replacing with tool length setter routine');
-
-      // Get tool setter coordinates from settings
-      const toolSetterX = settings.toolSetter?.x ?? 0;
-      const toolSetterY = settings.toolSetter?.y ?? 0;
-      const zSafe = 0;
-      const zProbeStart = -20;
-      const seekDistance = 50;
-      const seekFeedrate = 800;
-
-      // Define toolLengthSet function (same as in M6 handler)
-      const toolLengthSet = () => [
-        `G53 G0 Z${zSafe}`, // Move to safe Z
-        `G53 G0 X${toolSetterX} Y${toolSetterY}`,
-        `G53 G0 Z${zProbeStart}`, // Move to probe start height
-        `G43.1 Z0`,
-        `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
-        `G0 G91 Z5`,
-        `G38.2 G91 Z-5 F250`,
-        `G91 G0 Z5`,
-        `G90`,
-        `#<_ofs_idx> = [#5220 * 20 + 5203]`, // 5203 = base of first Z offset (G54)
-        `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
-        `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
-        `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
-        `$TLR`
-      ];
-
-      // Build TLS program with metric switch and rollback
-      const toolLengthSetProgram = [
-        '(Start of Tool Length Setter)',
-        '#<wasMetric> = #<_metric>',
-        'G21', // Set to metric
-        ...toolLengthSet(),
-        'O202 IF [#<wasMetric> EQ 0]',
-        '  G20',
-        'O202 ENDIF',
-        '(End of Tool Length Setter)'
-      ];
-
-      // Replace the $TLS command with the expanded program
-      const expandedCommands = toolLengthSetProgram.map(line => ({
-        command: line,
-        displayCommand: null,
-        isOriginal: false
-      }));
-
-      // Replace the $TLS command with expanded commands
-      commands.splice(tlsIndex, 1, ...expandedCommands);
-    }
-
-    // Find original M6 command
-    const m6Index = commands.findIndex(cmd => {
-      if (!cmd.isOriginal) return false;
-      const parsed = parseM6Command(cmd.command);
-      return parsed?.matched && parsed.toolNumber !== null;
-    });
-
-    if (m6Index === -1) {
-      return commands; // No M6 found, pass through
-    }
-
-    const m6Command = commands[m6Index];
-    const parsed = parseM6Command(m6Command.command);
-
-    if (!parsed?.matched || parsed.toolNumber === null) {
-      return commands; // Shouldn't happen, but safety check
-    }
-
-    const toolNumber = parsed.toolNumber;
-
-    const location = context.lineNumber !== undefined ? `at line ${context.lineNumber}` : `from ${context.sourceId}`;
-
-    // Get current tool number from machine state passed in context
-    const currentTool = context.machineState?.tool ?? 0;
-
-    ctx.log(`M6 detected with tool T${toolNumber} ${location}, current tool: T${currentTool}, executing tool change program`);
-
-    // Get plugin settings for pocket coordinates
-    const pocket1X = settings.pocket1?.x ?? 0;
-    const pocket1Y = settings.pocket1?.y ?? 0;
-    const orientation = settings.orientation ?? 'Y'; // 'X' or 'Y'
-    const direction = settings.direction === 'Negative' ? -1 : 1;
-    const spindleDelay = settings.spindleDelay ?? 0;
-    const pocketDistance = 45; // Distance between pockets in mm
-    const toolEngagement = -100;
-    const zSpinOff = 23;
-    const zRetreat = 7;
-    const zSafe = 0;
-    const zone1 = toolEngagement + zSpinOff;
-    const zone2 = toolEngagement + 28;
-    const unloadRpm = 1500;
-    const loadRpm = 1200;
-    const engageFeedrate = 3500;
-    const zProbeStart = -20;
-    const seekDistance = 50;
-    const seekFeedrate = 800;
-
-    // Helper to calculate pocket position based on tool number
-    const calculatePocketPosition = (toolNum) => {
-      if (toolNum <= 0) {
-        return { x: pocket1X, y: pocket1Y };
-      }
-      const offset = (toolNum - 1) * pocketDistance * direction;
-      if (orientation === 'Y') {
-        return { x: pocket1X, y: pocket1Y + offset };
-      } else {
-        return { x: pocket1X + offset, y: pocket1Y };
-      }
-    };
-
-    // Manual tool location fallback
-    const manualToolX = settings.manualTool?.x ?? 0;
-    const manualToolY = settings.manualTool?.y ?? 0;
-
-    // Tool setter coordinates
-    const toolSetterX = settings.toolSetter?.x ?? 0;
-    const toolSetterY = settings.toolSetter?.y ?? 0;
-    const pocketCount = settings.pockets ?? 6;
-
-
-    // Helper to add indent method to arrays
-    const withIndent = (arr) => ({
-      indent: (tabs = 0) => {
-        const indentStr = '  '.repeat(tabs);
-        return arr.map(line => `${indentStr}${line}`);
-      },
-      raw: () => arr
-    });
-
-    // Function to generate manual tool fallback sequence
-    const manualToolFallback = () => withIndent([
-      `G53 G0 Z${zSafe}`,
-      `G53 G0 X${manualToolX} Y${manualToolY}`,
-      `M0`
-    ]);
-
-    // Function to generate unload sequence commands
-    const toolUnload = () => withIndent([
-      `G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
-      `G65P6`, // disabled delay
-      `M4 S${unloadRpm}`, // Start spindle for unload
-      `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-      `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-      `G65P6`, // disabled delay
-      `M5`, // Spindle stop
-      `G53 G0 Z${zone1}`, // Move to zone 1
-      `G4 P0.2`
-    ]);
-
-    // Function to generate load sequence commands
-    const toolLoad = (tool) => [
-      `G53 G0 Z${toolEngagement+zSpinOff}`, // Lower to engage tool
-      `G65P6`, // disabled delay
-      `M3 S${loadRpm}`, // Start spindle for loading
-      `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-      `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-      `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-      `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-      `G53 G1 Z${toolEngagement} F${engageFeedrate}`, // Engage tool
-      `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-      `G65P6`, // disabled delay
-      `M5`, // Spindle stop
-      `G53 G0 Z${zone1}`,
-      `G4 P0.2`,
-      `o300 IF [#<_probe_state> EQ 0]`,
-      ...manualToolFallback().indent(1),
-      `o300 ELSE`,
-      `   G53 G0 Z${zone2}`,
-      `   G4 P0.2`,
-      `   o301 IF [#<_probe_state> EQ 1]`,
-      ...manualToolFallback().indent(2),
-      `   o301 ENDIF`,
-      `o300 ENDIF`,
-      `M61 Q${tool}` // Load new tool
-    ];
-
-    // Function to generate tool length setting routine
-    const toolLengthSet = () => [
-      `G53 G0 Z${zSafe}`, // Move to safe Z
-      `G53 G0 X${toolSetterX} Y${toolSetterY}`,
-      `G53 G0 Z${zProbeStart}`, // Move to probe start height
-      `G43.1 Z0`,
-      `G38.2 G91 Z-${seekDistance} F${seekFeedrate}`,
-      `G0 G91 Z5`,
-      `G38.2 G91 Z-5 F250`,
-      `G91 G0 Z5`,
-      `G90`,
-      `#<_ofs_idx> = [#5220 * 20 + 5203]`, // 5203 = base of first Z offset (G54)
-      `#<_cur_wcs_z_ofs> = #[#<_ofs_idx>]`,
-      `#<_rc_trigger_mach_z> = [#5063 + #<_cur_wcs_z_ofs>]`,
-      `G43.1 Z-[#<_rc_tlo_ref> - #<_rc_trigger_mach_z>]`,
-      `$TLR`
-    ];
-
-    // Calculate source and target pocket positions
-    const sourcePos = calculatePocketPosition(currentTool);
-    const targetPos = calculatePocketPosition(toolNumber);
-
-    // Build tool change G-code program
-    const toolChangeProgram = [
-      '(Start of RapidChangeATC Plugin Sequence)',
-      `#<wasMetric> = #<_metric>`,
-      `G21`, // Set to metric
-      `M5` // Spindle stop
-    ];
-
-    // Add spindle delay if configured
-    if (spindleDelay > 0) {
-      toolChangeProgram.push(`G4 P${spindleDelay}`);
-    }
-
-    // Unloading - only if current tool is loaded (currentTool > 0)
-    if (currentTool > 0) {
-      if (currentTool <= pocketCount) {
-        // Current tool is in ATC pocket range - use automatic unloading
-        toolChangeProgram.push(
-          `G53 G0 Z${zSafe}`, // Move to safe Z
-          `G53 G0 X${sourcePos.x} Y${sourcePos.y}`, // Move to source pocket
-          ...toolUnload().indent(0),
-          `o100 IF [#<_probe_state> EQ 1]`,
-          ...toolUnload().indent(1),
-          `  o101 IF [#<_probe_state> EQ 1]`,
-          ...manualToolFallback().indent(2),
-          `  o101 ENDIF`,
-          `o100 ENDIF`,
-          `M61 Q0`
-        );
-      } else {
-        // Current tool exceeds pocket count - use manual unload
-        toolChangeProgram.push(
-          `G53 G0 Z${zSafe}`, // Move to safe Z
-          ...manualToolFallback().indent(0),
-          `M61 Q0`
-        );
-      }
-    }
-
-    // Loading - only if target tool is valid (toolNumber > 0)
-    if (toolNumber > 0) {
-      if (toolNumber <= pocketCount) {
-        // Tool is in ATC pocket range - use automatic loading
-        toolChangeProgram.push(
-          `G53 G0 Z${zSafe}`, // Move to safe Z
-          `G53 G0 X${targetPos.x} Y${targetPos.y}`, // Move to target pocket
-          ...toolLoad(toolNumber),
-          ...toolLengthSet()
-        );
-      } else {
-        // Tool number exceeds pocket count - use manual tool change
-        toolChangeProgram.push(
-          `G53 G0 Z${zSafe}`, // Move to safe Z
-          ...manualToolFallback().indent(0),
-          `M61 Q${toolNumber}`, // Set tool number
-          ...toolLengthSet()
-        );
-      }
-    }
-
-    toolChangeProgram.push(
-      `G53 G0 Z${zSafe}`, // Move to safe Z
-      'O201 IF [#<wasMetric> EQ 0]',
-      '  G20',
-      'O201 ENDIF',
-      '(End of RapidChangeATC Plugin Sequence)',
-      `(MSG, TOOL CHANGE COMPLETE: T${toolNumber})`
-    );
-
-    // Check if user wants to show full macro command (default: false)
-    const showMacroCommand = settings.showMacroCommand ?? false;
-
-    // Determine the display command
-    const displayCmd = showMacroCommand ? null : m6Command.command.trim();
-
-    // Convert tool change program into individual command objects
-    const toolChangeCommands = toolChangeProgram.map((line, index) => ({
-      command: line,
-      displayCommand: index === 0 && displayCmd ? displayCmd : null, // Only first command shows M6
-      meta: (index === 0 || showMacroCommand) ? {} : { silent: true }, // Mark as silent unless first command or showMacroCommand is enabled
-      isOriginal: false
-    }));
-
-    // Replace the M6 command with individual commands
-    commands.splice(m6Index, 1, ...toolChangeCommands);
+    // Handle M6 tool change command
+    handleM6Command(commands, context, settings, ctx);
 
     return commands;
   });
