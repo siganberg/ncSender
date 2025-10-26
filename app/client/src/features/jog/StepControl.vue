@@ -7,7 +7,7 @@
       :class="['chip', { active: value === currentStep }]"
       @click="$emit('update:step', value)"
     >
-      {{ formatStepSize(value) }}
+      {{ formatStepSizeDisplay(value) }}
     </button>
     <span class="feed-rate-label">Feed</span>
     <select
@@ -29,7 +29,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { mmToInches } from '@/lib/units';
+import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
 const appStore = useAppStore();
 
@@ -81,26 +81,12 @@ const getCurrentFeedRateOptions = (): number[] => {
   return [500, 1000, 3000, 5000];
 };
 
-const formatStepSize = (mmValue: number): string => {
-  const units = appStore.unitsPreference.value;
-  if (units === 'imperial') {
-    const inches = mmToInches(mmValue);
-    return (Math.round(inches * 1000) / 1000).toFixed(3);
-  }
-  return mmValue.toString();
-};
-
-const roundFeedRate = (feedRateInTargetUnits: number, units: string): number => {
-  if (units === 'imperial') {
-    return Math.round(feedRateInTargetUnits / 10) * 10;
-  }
-  return Math.round(feedRateInTargetUnits);
+const formatStepSizeDisplay = (mmValue: number): string => {
+  return formatStepSize(mmValue, appStore.unitsPreference.value);
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {
-  const units = appStore.unitsPreference.value;
-  const converted = units === 'imperial' ? mmToInches(mmPerMin) : mmPerMin;
-  return roundFeedRate(converted, units).toString();
+  return formatJogFeedRate(mmPerMin, appStore.unitsPreference.value);
 };
 
 const handleFeedRateChange = (event: Event) => {

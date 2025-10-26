@@ -71,6 +71,31 @@ export function formatFeedRate(mmPerMin: number, units: UnitsPreference = 'metri
 }
 
 /**
+ * Format step size for jog controls (3 decimals for imperial, as-is for metric)
+ * Used by StepControl and JogControls to ensure consistency
+ */
+export function formatStepSize(mmValue: number, units: UnitsPreference = 'metric'): string {
+  if (units === 'imperial') {
+    const inches = mmToInches(mmValue);
+    return (Math.round(inches * 1000) / 1000).toFixed(3);
+  }
+  return mmValue.toString();
+}
+
+/**
+ * Format feed rate for jog controls (rounded to nearest 10 for imperial, rounded for metric)
+ * Used by StepControl and JogControls to ensure consistency
+ */
+export function formatJogFeedRate(mmPerMin: number, units: UnitsPreference = 'metric'): string {
+  if (units === 'imperial') {
+    const converted = mmPerMinToInPerMin(mmPerMin);
+    const rounded = Math.round(converted / 10) * 10;
+    return rounded.toString();
+  }
+  return Math.round(mmPerMin).toString();
+}
+
+/**
  * Get the unit label for coordinates/distances
  */
 export function getDistanceUnitLabel(units: UnitsPreference = 'metric'): string {
