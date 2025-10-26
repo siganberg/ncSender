@@ -6,7 +6,7 @@ export const zParkHeight = 4;
 export const getZProbeRoutine = (zOffset = 0) => {
   return [
     '; Probe Z',
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-25 F200',
     'G0 Z4',
@@ -15,9 +15,7 @@ export const getZProbeRoutine = (zOffset = 0) => {
     `G10 L20 Z${zOffset}`,
     `G0 Z${zParkHeight}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -33,7 +31,7 @@ export const getXProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
 
   return [
     `; Probe X - ${selectedSide}`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 X0',
     'G91 G21',
     `G38.2 X${fastProbe} F150`,
@@ -43,9 +41,7 @@ export const getXProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
     `G10 L20 X${offset}`,
     `G0 X${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -61,7 +57,7 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
 
   return [
     `; Probe Y - ${selectedSide}`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 Y0',
     'G91 G21',
     `G38.2 Y${fastProbe} F150`,
@@ -71,9 +67,7 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
     `G10 L20 Y${offset}`,
     `G0 Y${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -97,7 +91,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
 
   const code = [
     `; Probe XY - ${selectedCorner}`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G91 G21',
   ];
 
@@ -135,9 +129,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
     'G0 Z10',
     'G90 G0 X0 Y0',
     'G21',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;
@@ -176,7 +168,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
 
   const code = [
     '; Probing Center - Inner',
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
     `#<RAPID_SEARCH> = ${rapidMovement}`,
@@ -232,9 +224,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;
@@ -261,7 +251,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
 
   code.push(
     '; Probing Center - Outer',
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
     `#<RAPID_SEARCH> = ${rapidMovement}`,
@@ -332,9 +322,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;

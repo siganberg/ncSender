@@ -4,7 +4,7 @@
 export const getZProbeRoutine = (zThickness = 25) => {
   return [
     '; Probe Z - Standard Block',
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-30 F200',
     'G0 Z4',
@@ -13,9 +13,7 @@ export const getZProbeRoutine = (zThickness = 25) => {
     `G10 L20 Z${zThickness}`,
     'G0 Z10',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -29,7 +27,7 @@ export const getXProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
 
   return [
     `; Probe X - ${selectedSide} (Standard Block)`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 X0',
     'G91 G21',
     `G38.2 X${fastProbe} F150`,
@@ -39,9 +37,7 @@ export const getXProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
     `G10 L20 X${offset}`,
     `G0 X${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -55,7 +51,7 @@ export const getYProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
 
   return [
     `; Probe Y - ${selectedSide} (Standard Block)`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 Y0',
     'G91 G21',
     `G38.2 Y${fastProbe} F150`,
@@ -65,9 +61,7 @@ export const getYProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
     `G10 L20 Y${offset}`,
     `G0 Y${moveAway}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -89,7 +83,7 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMo
 
   const code = [
     `; Probe XY - ${selectedCorner} (Standard Block)`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G91 G21',
   ];
 
@@ -127,9 +121,7 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMo
     'G0 Z10',
     'G90 G0 X0 Y0',
     'G21',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;

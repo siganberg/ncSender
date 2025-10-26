@@ -98,13 +98,11 @@ function createToolLengthSetProgram(settings) {
 
   return [
     '(Start of Tool Length Setter)',
-    '#<wasMetric> = #<_metric>',
+    '#<return_units> = [20 + #<_metric>]',
     'G21',
     ...createToolLengthSetRoutine(settings),
     `G53 G0 Z${zSafe}`,
-    'O202 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O202 ENDIF',
+    'G[#<return_units>]',
     '(End of Tool Length Setter)',
     `(MSG, TOOL CHANGE COMPLETE)`
   ];
@@ -289,7 +287,7 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
 
   const toolChangeProgram = [
     '(Start of RapidChangeATC Plugin Sequence)',
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     `G21`,
     `M5`
   ];
@@ -341,9 +339,7 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
 
   toolChangeProgram.push(
     `G53 G0 Z${zSafe}`,
-    'O201 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O201 ENDIF',
+    'G[#<return_units>]',
     '(End of RapidChangeATC Plugin Sequence)',
     `(MSG, TOOL CHANGE COMPLETE: T${toolNumber})`
   );

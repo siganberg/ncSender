@@ -125,7 +125,7 @@ const buildAxisProbeSequence = ({
 export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
   return [
     `; Probe Z - AutoZero Touch (${selectedBitDiameter})`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-25 F200',
     `G0 Z${BOUNCE}`,
@@ -134,9 +134,7 @@ export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
     `G10 L20 Z${PLATE_THICKNESS}`,
     'G0 Z5',
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   ];
 };
 
@@ -148,7 +146,7 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
 
   const code = [
     `; Probe X - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];
 
@@ -164,9 +162,7 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   code.push(
     `G10 L20 X${halfClearance * isLeft}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;
@@ -180,7 +176,7 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
 
   const code = [
     `; Probe Y - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];
 
@@ -196,9 +192,7 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   code.push(
     `G10 L20 Y${halfClearance * isBottom}`,
     'G90',
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;
@@ -221,7 +215,7 @@ export const getXYProbeRoutine = (options = {}) => {
 
   const code = [
     `; Probe XY - ${selectedCorner} (AutoZero Touch - ${spec.displayDiameter})`,
-    `#<wasMetric> = #<_metric>`,
+    `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];
 
@@ -261,9 +255,7 @@ export const getXYProbeRoutine = (options = {}) => {
   }
 
   code.push(
-    'O100 IF [#<wasMetric> EQ 0]',
-    '  G20',
-    'O100 ENDIF'
+    'G[#<return_units>]'
   );
 
   return code;
