@@ -257,12 +257,12 @@ export function onLoad(ctx) {
     // Find original M6 command
     const m6Index = commands.findIndex(cmd => {
       if (!cmd.isOriginal) return false;
-      const parsed = parseM6Command(cmd.command);
+      const parsed = ctx.utils.parseM6Command(cmd.command);
       return parsed?.matched && parsed.toolNumber !== null;
     });
 
     if (m6Index !== -1) {
-      const parsed = parseM6Command(commands[m6Index].command);
+      const parsed = ctx.utils.parseM6Command(commands[m6Index].command);
       const toolNumber = parsed?.toolNumber;
 
       // Only process if we have a valid tool number
