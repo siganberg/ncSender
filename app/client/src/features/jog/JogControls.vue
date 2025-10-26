@@ -449,7 +449,7 @@ onBeforeUnmount(() => {
 
 .jog-grid {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   align-items: stretch;
   justify-content: center;
   height: 100%;
