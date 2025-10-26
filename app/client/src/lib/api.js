@@ -770,6 +770,20 @@ class NCClient {
     return response.json();
   }
 
+  async triggerTLS() {
+    const response = await fetch(`${this.baseUrl}/api/tls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to execute TLS' }));
+      throw new Error(error.error || 'Failed to execute TLS');
+    }
+
+    return response.json();
+  }
+
   // Settings methods
   async getSettings() {
     const response = await fetch(`${this.baseUrl}/api/settings`);

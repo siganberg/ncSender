@@ -36,6 +36,98 @@ const parseCoordinate = (value) => {
 export function createToolRoutes(cncController, serverState, commandProcessor) {
   const router = Router();
 
+  router.post('/tls', async (req, res) => {
+    try {
+      if (!cncController || !cncController.isConnected) {
+        return res.status(503).json({ error: 'CNC controller is not connected' });
+      }
+
+      const machineState = serverState?.machineState;
+      const machinePosition = parseCoordinate(machineState?.MPos);
+      const hasReturnPosition = machinePosition && [machinePosition.x, machinePosition.y].every(Number.isFinite);
+
+      const xCommand = hasReturnPosition ? machinePosition.x.toFixed(3) : null;
+      const yCommand = hasReturnPosition ? machinePosition.y.toFixed(3) : null;
+
+      const commands = [
+        '$TLS',
+        ...(hasReturnPosition ? [`G53 G0 X${xCommand} Y${yCommand}`] : [])
+      ];
+
+      const meta = {
+        sourceId: 'tls',
+        originalMachinePosition: hasReturnPosition ? { x: machinePosition.x, y: machinePosition.y } : null
+      };
+
+      let commandsExecuted = 0;
+      for (const command of commands) {
+        try {
+          log(`Executing TLS command: ${command}`);
+
+          // Process command through Command Processor
+          const pluginContext = {
+            sourceId: 'tls',
+            commandId: `tls-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            meta,
+            machineState: cncController.lastStatus
+          };
+
+          const result = await commandProcessor.instance.process(command, pluginContext);
+
+          if (!result.shouldContinue) {
+            commandsExecuted++;
+            continue;
+          }
+
+          const processedCommands = result.commands;
+
+          // Iterate through command array and send each to controller
+          for (const cmd of processedCommands) {
+            const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+            const cmdMeta = { ...meta, ...(cmd.meta || {}) };
+
+            // Generate unique commandId for each command in the array
+            const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+            await cncController.sendCommand(cmd.command, {
+              commandId: uniqueCommandId,
+              displayCommand: cmdDisplayCommand,
+              meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+            });
+          }
+
+          commandsExecuted++;
+        } catch (error) {
+          // If queue was flushed (e.g., user pressed Stop/soft reset), treat as intentional cancellation
+          if (error.code === 'COMMAND_FLUSHED') {
+            log('TLS cancelled by user (queue flush)');
+            return res.json({
+              success: true,
+              cancelled: true,
+              commandsExecuted,
+              message: 'TLS cancelled by user'
+            });
+          }
+          throw error;
+        }
+      }
+
+      res.json({
+        success: true,
+        commandsExecuted,
+        machinePosition: hasReturnPosition ? { x: machinePosition.x, y: machinePosition.y } : null
+      });
+    } catch (error) {
+      log('Error executing TLS:', error);
+      log('Error stack:', error.stack);
+      res.status(500).json({
+        error: 'Failed to execute TLS',
+        message: error.message,
+        details: error.stack
+      });
+    }
+  });
+
   router.post('/tool-change', async (req, res) => {
     try {
       if (!cncController || !cncController.isConnected) {

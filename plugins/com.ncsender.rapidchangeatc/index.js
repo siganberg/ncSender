@@ -46,7 +46,8 @@ const buildInitialConfig = (raw = {}) => ({
   toolSetter: sanitizeCoords(raw.toolSetter),
   manualTool: sanitizeCoords(raw.manualTool),
   showMacroCommand: raw.showMacroCommand ?? false,
-  spindleDelay: clampSpindleDelay(raw.spindleDelay)
+  spindleDelay: clampSpindleDelay(raw.spindleDelay),
+  zEngagement: toFiniteNumber(raw.zEngagement, -100)
 });
 
 const resolveServerPort = (pluginSettings = {}, appSettings = {}) => {
@@ -174,12 +175,12 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
   const direction = settings.direction === 'Negative' ? -1 : 1;
   const spindleDelay = settings.spindleDelay ?? 0;
   const pocketDistance = settings.pocketDistance ?? 45;
-  const toolEngagement = settings.toolEngagement ?? -100;
+  const zEngagement = settings.zEngagement ?? -100;
   const zSpinOff = settings.zSpinOff ?? 23;
   const zRetreat = settings.zRetreat ?? 7;
   const zSafe = settings.zSafe ?? 0;
-  const zone1 = toolEngagement + zSpinOff;
-  const zone2 = toolEngagement + 28;
+  const zone1 = zEngagement + zSpinOff;
+  const zone2 = zEngagement + 28;
   const unloadRpm = settings.unloadRpm ?? 1500;
   const loadRpm = settings.loadRpm ?? 1200;
   const engageFeedrate = settings.engageFeedrate ?? 3500;
@@ -217,11 +218,11 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
   ]);
 
   const toolUnload = () => withIndent([
-    `G53 G0 Z${toolEngagement+zSpinOff}`,
+    `G53 G0 Z${zEngagement+zSpinOff}`,
     `G65P6`,
     `M4 S${unloadRpm}`,
-    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
     `G65P6`,
     `M5`,
     `G53 G0 Z${zone1}`,
@@ -229,15 +230,15 @@ function buildToolChangeProgram(settings, currentTool, toolNumber) {
   ]);
 
   const toolLoad = (tool) => [
-    `G53 G0 Z${toolEngagement+zSpinOff}`,
+    `G53 G0 Z${zEngagement+zSpinOff}`,
     `G65P6`,
     `M3 S${loadRpm}`,
-    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement} F${engageFeedrate}`,
-    `G53 G1 Z${toolEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement} F${engageFeedrate}`,
+    `G53 G1 Z${zEngagement+zRetreat} F${engageFeedrate}`,
     `G65P6`,
     `M5`,
     `G53 G0 Z${zone1}`,
@@ -337,6 +338,9 @@ export async function onLoad(ctx) {
   // Set tool.source to indicate this plugin controls the tool count
   // and sync the count from the plugin's pocket configuration
   // Also enable manual and TLS tools
+  // Add small delay to avoid race condition with onUnload during hot reload
+  await new Promise(resolve => setTimeout(resolve, 100));
+
   try {
     const response = await fetch(`http://localhost:${resolveServerPort(pluginSettings, appSettings)}/api/settings`, {
       method: 'PATCH',
@@ -759,9 +763,19 @@ export async function onLoad(ctx) {
             </div>
           </div>
 
-          <div class="rc-form-group">
-            <label class="rc-form-label">Spindle Delay (seconds)</label>
-            <input type="number" class="rc-input" id="rc-spindle-delay" value="0" min="0" max="10" step="1">
+          <div class="rc-form-row-wide">
+            <div class="rc-form-group">
+              <label class="rc-form-label">Spindle Delay (seconds)</label>
+              <input type="number" class="rc-input" id="rc-spindle-delay" value="0" min="0" max="10" step="1">
+            </div>
+
+            <div class="rc-form-group">
+              <label class="rc-form-label">Z Engagement</label>
+              <div class="rc-coordinate-group" style="grid-template-columns: 1fr auto;">
+                <input type="number" class="rc-input" id="rc-zengagement" value="-100" step="0.001">
+                <button type="button" class="rc-button rc-button-grab" id="rc-zengagement-grab">Grab</button>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -815,19 +829,19 @@ export async function onLoad(ctx) {
             if (typeof raw === 'string' && raw.length > 0) {
               const parts = raw.split(',').map((part) => Number.parseFloat(part.trim()));
               if (parts.length >= 2 && parts.every(Number.isFinite)) {
-                return { x: parts[0], y: parts[1] };
+                return { x: parts[0], y: parts[1], z: parts[2] };
               }
             }
             if (Array.isArray(raw) && raw.length >= 2) {
-              const [x, y] = raw;
+              const [x, y, z] = raw;
               if ([x, y].every(Number.isFinite)) {
-                return { x, y };
+                return { x, y, z };
               }
             }
             if (raw && typeof raw === 'object') {
-              const { x, y } = raw;
+              const { x, y, z } = raw;
               if ([x, y].every(Number.isFinite)) {
-                return { x, y };
+                return { x, y, z };
               }
             }
             return null;
@@ -943,6 +957,11 @@ export async function onLoad(ctx) {
               spindleDelayInput.value = String(initialConfig.spindleDelay ?? 0);
             }
 
+            const zEngagementInput = getInput('rc-zengagement');
+            if (zEngagementInput) {
+              zEngagementInput.value = formatCoordinate(initialConfig.zEngagement ?? -100);
+            }
+
             const showMacroCommandCheck = getInput('rc-show-macro-command');
             if (showMacroCommandCheck) {
               showMacroCommandCheck.checked = !!initialConfig.showMacroCommand;
@@ -966,6 +985,25 @@ export async function onLoad(ctx) {
               setCoordinateInputs(prefix, coords);
             } catch (error) {
               console.error('[RapidChangeATC] Failed to grab machine coordinates:', error);
+              notifyError('Failed to read machine coordinates. Please try again.');
+            }
+          };
+
+          const grabZCoordinate = async (inputId) => {
+            try {
+              const coords = await fetchMachineCoordinates();
+
+              if (!coords) {
+                notifyError('Unable to determine machine coordinates. Ensure the machine is connected and reporting status.');
+                return;
+              }
+
+              const input = getInput(inputId);
+              if (input && coords.z !== undefined) {
+                input.value = formatCoordinate(coords.z);
+              }
+            } catch (error) {
+              console.error('[RapidChangeATC] Failed to grab Z coordinate:', error);
               notifyError('Failed to read machine coordinates. Please try again.');
             }
           };
@@ -1010,6 +1048,7 @@ export async function onLoad(ctx) {
             const manualToolX = getInput('rc-manualtool-x');
             const manualToolY = getInput('rc-manualtool-y');
             const spindleDelayInput = getInput('rc-spindle-delay');
+            const zEngagementInput = getInput('rc-zengagement');
             const showMacroCommandCheck = getInput('rc-show-macro-command');
 
             return {
@@ -1020,6 +1059,7 @@ export async function onLoad(ctx) {
               direction: getRadioValue('direction'),
               showMacroCommand: showMacroCommandCheck ? showMacroCommandCheck.checked : false,
               spindleDelay: spindleDelayInput ? getParseInt(spindleDelayInput.value) : 0,
+              zEngagement: zEngagementInput ? getParseFloat(zEngagementInput.value) : -100,
               pocket1: {
                 x: pocket1X ? getParseFloat(pocket1X.value) : null,
                 y: pocket1Y ? getParseFloat(pocket1Y.value) : null
@@ -1092,6 +1132,24 @@ export async function onLoad(ctx) {
                 saveButton.disabled = false;
                 saveButton.classList.remove('rc-button-busy');
               }
+            });
+          }
+
+          // Register Z Engagement grab button
+          const zEngagementButton = getInput('rc-zengagement-grab');
+          if (zEngagementButton) {
+            zEngagementButton.addEventListener('click', () => {
+              if (zEngagementButton.disabled) {
+                return;
+              }
+
+              zEngagementButton.disabled = true;
+              zEngagementButton.classList.add('rc-button-busy');
+
+              grabZCoordinate('rc-zengagement').finally(() => {
+                zEngagementButton.disabled = false;
+                zEngagementButton.classList.remove('rc-button-busy');
+              });
             });
           }
 

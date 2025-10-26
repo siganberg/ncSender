@@ -1780,9 +1780,9 @@ const sendToolChangeMacro = async (toolNumber: number) => {
 
 const sendTLSCommand = async () => {
   try {
-    await api.sendCommand('$TLS');
+    await api.triggerTLS();
   } catch (error) {
-    console.error('[GCodeVisualizer] Failed to send $TLS command', error);
+    console.error('[GCodeVisualizer] Failed to execute TLS', error);
   }
 };
 
