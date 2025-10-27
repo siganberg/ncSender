@@ -296,37 +296,11 @@ jobs:
 
           # Rewrite Linux updater manifests to match renamed asset filenames
           if [ -f "release-assets/latest-linux.yml" ]; then
-            python3 - <<PY
-          from pathlib import Path
-          path = Path("release-assets/latest-linux.yml")
-          text = path.read_text()
-          version = "${VERSION}"
-          tag = "${TAG}"
-          original_appimage = f"ncSender-{version}.AppImage"
-          original_deb = f"ncsender_{version}_amd64.deb"
-          replacement_appimage = f"ncSender_{tag}_linux_x64.AppImage"
-          replacement_deb = f"ncSender_{tag}_linux_x64.deb"
-          text = text.replace(original_appimage, replacement_appimage)
-          text = text.replace(original_deb, replacement_deb)
-          path.write_text(text)
-PY
+            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/latest-linux.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncSender-{version}.AppImage', f'ncSender_{tag}_linux_x64.AppImage'); text = text.replace(f'ncsender_{version}_amd64.deb', f'ncSender_{tag}_linux_x64.deb'); path.write_text(text)"
           fi
 
           if [ -f "release-assets/latest-linux-arm64.yml" ]; then
-            python3 - <<PY
-          from pathlib import Path
-          path = Path("release-assets/latest-linux-arm64.yml")
-          text = path.read_text()
-          version = "${VERSION}"
-          tag = "${TAG}"
-          original_appimage = f"ncSender-{version}-arm64.AppImage"
-          original_deb = f"ncsender_{version}_arm64.deb"
-          replacement_appimage = f"ncSender_{tag}_linux_arm64.AppImage"
-          replacement_deb = f"ncSender_{tag}_linux_arm64.deb"
-          text = text.replace(original_appimage, replacement_appimage)
-          text = text.replace(original_deb, replacement_deb)
-          path.write_text(text)
-PY
+            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/latest-linux-arm64.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncSender-{version}-arm64.AppImage', f'ncSender_{tag}_linux_arm64.AppImage'); text = text.replace(f'ncsender_{version}_arm64.deb', f'ncSender_{tag}_linux_arm64.deb'); path.write_text(text)"
           fi
 
           echo "Release assets to upload:"
