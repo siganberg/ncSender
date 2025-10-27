@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Enabled automatic updates for Linux users
+### 🐛 Bug Fixes
+- Fixed Linux ARM64 architecture metadata handling in release process
