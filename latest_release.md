@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Removed unnecessary release information configuration for cleaner application setup
+- Enhanced Linux build support with architecture-specific configuration files
