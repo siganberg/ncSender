@@ -35,8 +35,36 @@ grep "\"version\":" app/package.json
 echo ""
 if git rev-list "$LATEST_TAG..HEAD" --count | grep -q "^0$"; then
     echo "⚠️  No new commits since $LATEST_TAG"
-    git restore app/package.json
-    exit 1
+    echo "Will update package.json with new version and create tag"
+    echo ""
+
+    # Ask for confirmation (commented out for now)
+    # read -p "Do you want to commit and push the version bump as $NEW_TAG? (y/n) " -n 1 -r
+    # echo ""
+    # if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+    # Commit the version change only
+    git add app/package.json
+    git commit -m "chore: create new release $NEW_TAG"
+
+    # Push the commit
+    git push origin $(git branch --show-current)
+
+    # Create and push the tag
+    git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+    git push origin "$NEW_TAG"
+
+    echo ""
+    echo "✅ Successfully created and pushed $NEW_TAG"
+    echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
+    exit 0
+
+    # else
+    #     # Revert the changes
+    #     git restore app/package.json
+    #     echo "Cancelled. Changes reverted."
+    #     exit 1
+    # fi
 fi
 
 # Get commit messages
