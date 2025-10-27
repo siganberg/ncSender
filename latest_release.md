@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Enhanced Linux build support with architecture-specific configuration files
+- Enabled automatic updates for Linux users
