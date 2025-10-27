@@ -15,8 +15,8 @@ const EXCLUSIVE_CATEGORIES = new Set(['tool-changer']);
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
 const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');
-// Always save settings to user data directory's plugins folder, even in dev mode
-const PLUGIN_SETTINGS_DIR = path.join(getUserDataDir(), 'plugins');
+// Always save settings to separate plugin-config directory that is never touched during install/uninstall
+const PLUGIN_SETTINGS_DIR = path.join(getUserDataDir(), 'plugin-config');
 const REGISTRY_PATH = path.join(getUserDataDir(), 'plugins.json');
 
 if (DEV_PLUGINS_DIR) {

@@ -63,9 +63,9 @@ async function createWindow() {
     await mainWindow.loadURL(appUrl);
     console.log(`Electron app loaded: ${appUrl}`);
 
-    if (isDev) {
-      mainWindow.webContents.openDevTools({ mode: 'detach' });
-    }
+    // if (isDev) {
+    //   mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // }
   } catch (error) {
     console.error('Failed to load app URL:', error);
     // Fallback to loading a basic error page
