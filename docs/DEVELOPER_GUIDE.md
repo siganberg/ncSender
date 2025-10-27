@@ -47,6 +47,50 @@ cd app
 npm run install:all   # installs in app/ and app/client/
 ```
 
+## Working with Plugin Submodules
+
+Plugins are maintained in separate repositories and added as git submodules for easier development and independent versioning.
+
+**Clone with submodules:**
+```bash
+git clone --recursive git@github.com:siganberg/ncSender.git
+```
+
+**If already cloned, initialize submodules:**
+```bash
+git submodule update --init --recursive
+```
+
+**Making changes to a plugin:**
+```bash
+# Navigate to the plugin directory
+cd plugins/com.ncsender.rapidchangeatc
+
+# Make your changes to the plugin files
+# Edit index.js, manifest.json, etc.
+
+# Commit and push changes in the plugin repo
+git add .
+git commit -m "Fix: description of changes"
+git push
+
+# Return to main repo and update the submodule reference
+cd ../..
+git add plugins/com.ncsender.rapidchangeatc
+git commit -m "Update rapidchangeatc plugin"
+git push
+```
+
+**Update all plugins to latest versions:**
+```bash
+git submodule update --remote --merge
+```
+
+**Plugin repositories:**
+- [autodustboot](https://github.com/siganberg/ncsender-plugin-autodustboot)
+- [rapidchangeatc](https://github.com/siganberg/ncsender-plugin-rapidchangeatc)
+- [surfacing](https://github.com/siganberg/ncsender-plugin-surfacing)
+
 ## Run from Source (Quick Start)
 For a production-like run without building installers:
 ```
