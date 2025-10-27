@@ -1,8 +1,8 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Improved update notification experience by opening download page directly in browser instead of in-app download
-- Enhanced joystick Z-axis controls with reduced spacing between Z+ and Z- buttons for easier access
+### 🐛 Bug Fixes
+- Fixed automatic update detection on Linux systems
+- Added support for viewing release notes when updates are available
 
-### 🛠️ Build & CI
-- Updated CI build configuration
+### 🔧 Improvements
+- Simplified Linux installation by providing only .deb packages for better compatibility
