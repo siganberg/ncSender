@@ -6,6 +6,13 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import AdmZip from 'adm-zip';
+import { fileURLToPath } from 'node:url';
+
+// Get app version from package.json
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJsonPath = path.join(__dirname, '../../..', 'package.json');
+const packageJson = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
+const APP_VERSION = packageJson.version;
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}] [PLUGIN ROUTES]`, ...args);
@@ -18,12 +25,37 @@ if (!fsSync.existsSync(uploadTempDir)) {
 
 const upload = multer({ dest: uploadTempDir });
 
-async function readAndValidateManifest(manifestPath) {
+function compareVersions(v1, v2) {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const num1 = parts1[i] || 0;
+    const num2 = parts2[i] || 0;
+
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+
+  return 0;
+}
+
+async function readAndValidateManifest(manifestPath, appVersion = null) {
   const manifestContent = await fs.readFile(manifestPath, 'utf8');
   const manifest = JSON.parse(manifestContent);
 
   if (!manifest.id || !manifest.name || !manifest.version || !manifest.entry) {
     throw new Error('Invalid manifest: missing required fields (id, name, version, entry)');
+  }
+
+  // Check if plugin requires a minimum app version
+  if (appVersion && manifest.minAppVersion) {
+    if (compareVersions(manifest.minAppVersion, appVersion) > 0) {
+      throw new Error(
+        `Plugin "${manifest.name}" requires ncSender v${manifest.minAppVersion} or higher. ` +
+        `Current version is v${appVersion}. Please update ncSender before installing this plugin.`
+      );
+    }
   }
 
   return manifest;
@@ -221,7 +253,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       // Read manifest to get icon path
       let manifest;
       try {
-        manifest = await readAndValidateManifest(manifestPath);
+        manifest = await readAndValidateManifest(manifestPath, APP_VERSION);
       } catch (error) {
         return res.status(404).json({ error: 'Plugin manifest not found' });
       }
@@ -277,9 +309,9 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       // Read manifest
       let manifest;
       try {
-        manifest = await readAndValidateManifest(manifestPath);
+        manifest = await readAndValidateManifest(manifestPath, APP_VERSION);
       } catch (error) {
-        return res.status(400).json({ error: 'Invalid plugin: manifest.json not found or invalid' });
+        return res.status(400).json({ error: error.message || 'Invalid plugin: manifest.json not found or invalid' });
       }
 
       // Register and enable the plugin
@@ -330,7 +362,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       const manifestPath = path.join(extractDir, files[0], 'manifest.json');
-      const manifest = await readAndValidateManifest(manifestPath);
+      const manifest = await readAndValidateManifest(manifestPath, APP_VERSION);
 
       const pluginDir = path.join(pluginsDir, manifest.id);
       await fs.rm(pluginDir, { recursive: true, force: true });
@@ -449,7 +481,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
       // Validate manifest
       const manifestPath = path.join(pluginSourceDir, 'manifest.json');
-      const manifest = await readAndValidateManifest(manifestPath);
+      const manifest = await readAndValidateManifest(manifestPath, APP_VERSION);
 
       // Copy plugin to plugins directory
       const pluginDir = path.join(pluginsDir, manifest.id);
