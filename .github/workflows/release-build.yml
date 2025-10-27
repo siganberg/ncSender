@@ -282,9 +282,13 @@ jobs:
           # Copy architecture-specific YAML files
           if [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ]; then
             cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
+          elif [ -f "artifacts/linux-x64-artifacts/latest-linux-x64.yml" ]; then
+            cp "artifacts/linux-x64-artifacts/latest-linux-x64.yml" "release-assets/latest-linux.yml"
           fi
 
-          if [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
+          if [ -f "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" ]; then
+            cp "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" "release-assets/latest-linux-arm64.yml"
+          elif [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
             cp "artifacts/linux-arm64-artifacts/latest-linux.yml" "release-assets/latest-linux-arm64.yml"
           fi
 
