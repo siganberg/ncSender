@@ -255,12 +255,12 @@ jobs:
           if [ -d "artifacts/linux-x64-artifacts" ]; then
             for file in artifacts/linux-x64-artifacts/*.AppImage; do
               if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.AppImage"
+                cp "$file" "release-assets/$(basename "$file")"
               fi
             done
             for file in artifacts/linux-x64-artifacts/*.deb; do
               if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.deb"
+                cp "$file" "release-assets/$(basename "$file")"
               fi
             done
           fi
@@ -269,12 +269,12 @@ jobs:
           if [ -d "artifacts/linux-arm64-artifacts" ]; then
             for file in artifacts/linux-arm64-artifacts/*.AppImage; do
               if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.AppImage"
+                cp "$file" "release-assets/$(basename "$file")"
               fi
             done
             for file in artifacts/linux-arm64-artifacts/*.deb; do
               if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
+                cp "$file" "release-assets/$(basename "$file")"
               fi
             done
           fi
