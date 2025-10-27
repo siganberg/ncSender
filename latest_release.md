@@ -1,10 +1,18 @@
 ## What's Changed
 
-### 🐧 Linux Support
-- Added auto-update functionality for Linux installations
-- Improved Linux package distribution with Debian (.deb) format
-- Enhanced Linux update detection and release notes display
+### ✨ New Features
+- Added ability to control plugin priority reordering in settings
+- Added plugin version requirement checking to ensure compatibility
+- Added support for installing plugins directly from root-level GitHub repositories
+
+### 🐛 Bug Fixes
+- Fixed sortable functionality for plugin management
+- Fixed sample plugin URL references
+
+### 📚 Documentation
+- Added comprehensive plugin development guide
+- Documented minAppVersion field for plugin manifest
 
 ### 🔧 Improvements
-- Refined release automation and asset management
-- Better handling of platform-specific update manifests
+- Improved plugin management by migrating to git submodules for better version control
+- Updated included plugins to latest versions
