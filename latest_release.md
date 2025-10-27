@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed deployment workflow script formatting issue
+- Fixed Linux auto-update manifest generation to properly handle renamed release assets
