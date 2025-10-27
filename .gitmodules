@@ -1,9 +1,0 @@
-[submodule "plugins/com.ncsender.autodustboot"]
-	path = plugins/com.ncsender.autodustboot
-	url = git@github.com:siganberg/ncsender-plugin-autodustboot.git
-[submodule "plugins/com.ncsender.rapidchangeatc"]
-	path = plugins/com.ncsender.rapidchangeatc
-	url = git@github.com:siganberg/ncsender-plugin-rapidchangeatc.git
-[submodule "plugins/com.ncsender.surfacing"]
-	path = plugins/com.ncsender.surfacing
-	url = git@github.com:siganberg/ncsender-plugin-surfacing.git
