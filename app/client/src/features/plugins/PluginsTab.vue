@@ -59,18 +59,21 @@
               v-for="(plugin, index) in sortablePlugins"
               :key="plugin.id"
               class="plugin-row"
-              :class="{ dragging: draggedIndex === index }"
-              draggable="true"
-              @dragstart="handleDragStart(index, $event)"
-              @dragover="handleDragOver($event)"
-              @drop="handleDrop(index, $event)"
-              @dragend="handleDragEnd"
+              :draggable="allowPriorityReordering"
+              v-on="allowPriorityReordering ? {
+                dragstart: (e) => handleDragStart(plugin.id, e),
+                dragenter: handleDragEnter,
+                dragover: handleDragOver,
+                drop: (e) => handleDrop(index, e),
+                dragend: handleDragEnd
+              } : {}"
             >
-              <div class="drag-handle">
+              <div v-if="allowPriorityReordering" class="drag-handle">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
                 </svg>
               </div>
+              <div v-else class="drag-handle-placeholder"></div>
 
               <div class="plugin-icon-cell">
                 <img
@@ -494,6 +497,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import { api } from '@/lib/api';
+import { settingsStore } from '@/lib/settings-store';
 import {
   fetchPlugins,
   fetchPluginConfigUI,
@@ -530,6 +534,11 @@ let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
 
+// Check if plugin reordering is allowed from settings
+const allowPriorityReordering = computed(() =>
+  settingsStore.data?.plugins?.allowPriorityReordering ?? false
+);
+
 // Separate plugins by priority for drag-n-drop
 const sortablePlugins = computed(() =>
   plugins.value.filter(p => p.priority !== undefined && p.priority !== null)
@@ -540,10 +549,10 @@ const otherPlugins = computed(() =>
 );
 
 // Drag-n-drop state
-let draggedIndex: number | null = null;
+let draggedPluginId: string | null = null;
 
-const handleDragStart = (index: number, event: DragEvent) => {
-  draggedIndex = index;
+const handleDragStart = (pluginId: string, event: DragEvent) => {
+  draggedPluginId = pluginId;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/html', (event.target as HTMLElement).innerHTML);
@@ -552,21 +561,33 @@ const handleDragStart = (index: number, event: DragEvent) => {
 
 const handleDragOver = (event: DragEvent) => {
   event.preventDefault();
+  event.stopPropagation();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move';
   }
 };
 
+const handleDragEnter = (event: DragEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+};
+
 const handleDrop = async (targetIndex: number, event: DragEvent) => {
   event.preventDefault();
 
-  if (draggedIndex === null || draggedIndex === targetIndex) {
+  if (!draggedPluginId) {
+    return;
+  }
+
+  const fromIndex = sortablePlugins.value.findIndex(p => p.id === draggedPluginId);
+  if (fromIndex === -1 || fromIndex === targetIndex) {
+    draggedPluginId = null;
     return;
   }
 
   // Reorder the sortable plugins array
   const items = [...sortablePlugins.value];
-  const [removed] = items.splice(draggedIndex, 1);
+  const [removed] = items.splice(fromIndex, 1);
   items.splice(targetIndex, 0, removed);
 
   // Update the main plugins array
@@ -584,11 +605,13 @@ const handleDrop = async (targetIndex: number, event: DragEvent) => {
     console.error('Failed to reorder plugins:', error);
     // Revert the local change
     await loadPlugins();
+  } finally {
+    draggedPluginId = null;
   }
 };
 
 const handleDragEnd = () => {
-  draggedIndex = null;
+  draggedPluginId = null;
 };
 
 const formatDate = (dateString: string) => {
@@ -1615,8 +1638,8 @@ onBeforeUnmount(() => {
   cursor: move;
 }
 
-.plugin-row.dragging {
-  opacity: 0.5;
+.plugin-row[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .drag-handle {

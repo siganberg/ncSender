@@ -76,6 +76,9 @@ const DEFAULT_SETTINGS = {
     tls: false,
     manual: false
   },
+  plugins: {
+    allowPriorityReordering: false
+  },
   useDoorAsPause : true
 };
 
