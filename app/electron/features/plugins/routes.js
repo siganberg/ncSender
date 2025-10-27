@@ -394,110 +394,83 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
-  // Install plugin from GitHub URL
-  router.post('/install-from-github', asyncHandler(async (req, res) => {
+  // Install plugin from ZIP URL
+  router.post('/install-from-url', asyncHandler(async (req, res) => {
     const { url } = req.body;
 
     if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: 'GitHub URL is required' });
+      return res.status(400).json({ error: 'ZIP URL is required' });
     }
 
-    // Parse GitHub URL - support two formats:
-    // 1. Root repo format: https://github.com/owner/repo/tree/branch
-    // 2. Subdirectory format: https://github.com/owner/repo/tree/branch/path/to/plugin
-    let owner, repo, branch, pluginPath;
-
-    // Try root repo format first (for dedicated plugin repos)
-    const rootRepoRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+))?$/;
-    const rootMatch = url.match(rootRepoRegex);
-
-    if (rootMatch) {
-      [, owner, repo, branch] = rootMatch;
-      branch = branch || 'main'; // Default to main if not specified
-      pluginPath = null; // Root of repo is the plugin
-      log(`Installing plugin from GitHub (root): ${owner}/${repo} (branch: ${branch})`);
-    } else {
-      // Try subdirectory format (for monorepo plugins)
-      const subdirRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/;
-      const subdirMatch = url.match(subdirRegex);
-
-      if (!subdirMatch) {
-        return res.status(400).json({
-          error: 'Invalid GitHub URL format. Expected: https://github.com/owner/repo or https://github.com/owner/repo/tree/branch/path'
-        });
-      }
-
-      [, owner, repo, branch, pluginPath] = subdirMatch;
-      log(`Installing plugin from GitHub (subdir): ${owner}/${repo}/${pluginPath} (branch: ${branch})`);
-    }
-
-    // Only allow main branch for security
-    if (branch !== 'main') {
-      return res.status(400).json({
-        error: 'Only plugins from the main branch are allowed for security reasons'
-      });
-    }
+    log(`Installing plugin from URL: ${url}`);
 
     try {
       const extractDir = path.join(os.tmpdir(), 'ncsender-plugin-extract', Date.now().toString());
       await fs.mkdir(extractDir, { recursive: true });
 
-      // Download archive from GitHub
-      const archiveUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`;
-      log(`Downloading: ${archiveUrl}`);
-
-      // Download using fetch (follows redirects)
+      // Download ZIP file from URL
       let zipBuffer;
       try {
         const fetchFn = globalThis.fetch;
         if (typeof fetchFn !== 'function') {
           throw new Error('Global fetch API is not available');
         }
-        const response = await fetchFn(archiveUrl, { redirect: 'follow' });
+
+        log(`Fetching ZIP from: ${url}`);
+        const response = await fetchFn(url, {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'ncSender-Plugin-Installer'
+          }
+        });
+
         if (!response.ok) {
-          throw new Error(`Unexpected response status: ${response.status}`);
+          throw new Error(`Failed to download ZIP file: ${response.status} ${response.statusText}`);
         }
+
+        // Check content type to ensure it's a ZIP file
+        const contentType = response.headers.get('content-type');
+        log(`Content-Type: ${contentType}`);
+
+        if (contentType && !contentType.includes('application/zip') && !contentType.includes('application/octet-stream')) {
+          log(`Warning: Unexpected content type: ${contentType}`);
+        }
+
         const arrayBuffer = await response.arrayBuffer();
         zipBuffer = Buffer.from(arrayBuffer);
+        log(`Downloaded ${zipBuffer.length} bytes`);
       } catch (error) {
-        log('Error downloading GitHub archive:', error);
-        throw new Error('Failed to download repository from GitHub');
+        log('Error downloading ZIP file:', error);
+        throw new Error(`Failed to download ZIP file: ${error.message}`);
       }
 
       // Extract ZIP
-      const repoExtractDir = path.join(extractDir, 'repo');
-      await fs.mkdir(repoExtractDir, { recursive: true });
-
       try {
         const zip = new AdmZip(zipBuffer);
-        zip.extractAllTo(repoExtractDir, true);
+        zip.extractAllTo(extractDir, true);
       } catch (error) {
-        log('Error extracting GitHub archive:', error);
-        throw new Error('Failed to extract repository archive');
+        log('Error extracting ZIP file:', error);
+        throw new Error('Invalid ZIP file');
       }
 
-      // Find the plugin directory
-      // After extraction, directory structure is: repo-branch/[path/to/plugin]
-      const extractedDirs = await fs.readdir(repoExtractDir);
-      if (extractedDirs.length === 0) {
-        throw new Error('Repository archive is empty');
+      // Find the plugin directory (should contain manifest.json)
+      const files = await fs.readdir(extractDir);
+      if (files.length === 0) {
+        throw new Error('ZIP archive is empty');
       }
 
-      const repoRootDir = path.join(repoExtractDir, extractedDirs[0]);
-
-      // Determine plugin source directory
+      // Check if there's a single directory (common case) or multiple files at root
       let pluginSourceDir;
-      if (pluginPath) {
-        // Subdirectory format - plugin is in a subdirectory
-        pluginSourceDir = path.join(repoRootDir, pluginPath);
-        try {
-          await fs.access(pluginSourceDir);
-        } catch (error) {
-          throw new Error(`Plugin path not found in repository: ${pluginPath}`);
+      if (files.length === 1) {
+        const singleItem = path.join(extractDir, files[0]);
+        const stats = await fs.stat(singleItem);
+        if (stats.isDirectory()) {
+          pluginSourceDir = singleItem;
+        } else {
+          pluginSourceDir = extractDir;
         }
       } else {
-        // Root format - plugin is at repo root
-        pluginSourceDir = repoRootDir;
+        pluginSourceDir = extractDir;
       }
 
       // Validate manifest
@@ -523,17 +496,17 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
       res.json({
         success: true,
-        message: `Plugin "${manifest.name}" installed successfully from GitHub`,
+        message: `Plugin "${manifest.name}" installed successfully from URL`,
         plugin: {
           id: manifest.id,
           name: manifest.name,
           version: manifest.version,
-          source: 'github'
+          source: 'url'
         }
       });
     } catch (error) {
-      log('Error installing plugin from GitHub:', error);
-      res.status(500).json({ error: error.message || 'Failed to install plugin from GitHub' });
+      log('Error installing plugin from URL:', error);
+      res.status(500).json({ error: error.message || 'Failed to install plugin from URL' });
     }
   }));
 

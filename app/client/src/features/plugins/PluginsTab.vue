@@ -390,13 +390,14 @@
         <!-- Tab Selector -->
         <div class="install-tabs">
           <button
-            :class="['tab-button', { active: installMethod === 'github' }]"
-            @click="installMethod = 'github'"
+            :class="['tab-button', { active: installMethod === 'url' }]"
+            @click="installMethod = 'url'"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
+              <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
+              <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243z"/>
             </svg>
-            GitHub URL
+            ZIP URL
           </button>
           <button
             :class="['tab-button', { active: installMethod === 'file' }]"
@@ -411,35 +412,23 @@
           </button>
         </div>
 
-        <!-- GitHub URL -->
-        <div v-if="installMethod === 'github'" class="install-method-content">
-          <p>Enter the GitHub URL of the plugin:</p>
+        <!-- ZIP URL -->
+        <div v-if="installMethod === 'url'" class="install-method-content">
+          <p>Enter the direct URL to the plugin ZIP file:</p>
 
           <div class="url-input-wrapper">
             <input
-              v-model="githubUrl"
+              v-model="zipUrl"
               type="text"
-              placeholder="https://github.com/owner/repo/tree/main/path/to/plugin"
+              placeholder="https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
               class="url-input"
-              @keyup.enter="installFromGitHub"
+              @keyup.enter="installFromUrl"
               @contextmenu.stop
             />
           </div>
 
-          <div class="install-hint">
-            <strong>Example:</strong>
-            <div class="example-url-wrapper">
-              <code class="example-url">https://github.com/siganberg/ncsender-plugin-surfacing</code>
-              <button class="btn-copy" @click="copyExampleUrl" title="Copy to clipboard">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
-                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-          <p class="install-hint install-note">
-            Only plugins from the <code>main</code> branch are supported for security reasons.
+          <p class="install-hint">
+            Plugin must be a ZIP archive containing manifest.json and plugin code.
           </p>
         </div>
 
@@ -471,12 +460,12 @@
         <div class="install-actions">
           <button class="btn btn-secondary" @click="closeInstallDialog">Cancel</button>
           <button
-            v-if="installMethod === 'github'"
+            v-if="installMethod === 'url'"
             class="btn btn-primary"
-            @click="installFromGitHub"
-            :disabled="!githubUrl || installing"
+            @click="installFromUrl"
+            :disabled="!zipUrl || installing"
           >
-            Install from GitHub
+            Install from URL
           </button>
           <button
             v-else
@@ -528,8 +517,8 @@ const showConfigPanel = ref(false);
 const selectedPluginForConfig = ref<PluginListItem | null>(null);
 const configUIContent = ref('');
 const configIframe = ref<HTMLIFrameElement | null>(null);
-const installMethod = ref<'file' | 'github'>('github');
-const githubUrl = ref<string>('');
+const installMethod = ref<'file' | 'url'>('url');
+const zipUrl = ref<string>('');
 let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
@@ -873,69 +862,59 @@ const uploadPlugin = async () => {
   }
 };
 
-const installFromGitHub = async () => {
-  if (!githubUrl.value) return;
+const installFromUrl = async () => {
+  if (!zipUrl.value) return;
 
   installing.value = true;
   installError.value = null;
 
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-github`, {
+    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-url`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: githubUrl.value }),
+      body: JSON.stringify({ url: zipUrl.value }),
     });
 
-    const data = await response.json();
+    let data;
+    const contentType = response.headers.get('content-type');
+
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        throw new Error('Invalid JSON response from server');
+      }
+    } else {
+      // Not JSON - try to get text for debugging
+      const text = await response.text();
+      console.error('Non-JSON response:', text.substring(0, 200));
+      throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`);
+    }
 
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to install plugin from GitHub');
+      throw new Error(data.error || 'Failed to install plugin from URL');
     }
 
     installSuccess.value = true;
     await loadPlugins();
   } catch (error: any) {
-    installError.value = error.message || 'Failed to install plugin from GitHub';
-    console.error('Error installing plugin from GitHub:', error);
+    installError.value = error.message || 'Failed to install plugin from URL';
+    console.error('Error installing plugin from URL:', error);
   } finally {
     installing.value = false;
   }
 };
 
-const copyExampleUrl = async () => {
-  const exampleUrl = 'https://github.com/siganberg/ncsender-plugin-surfacing';
-  try {
-    // Try modern clipboard API first
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(exampleUrl);
-    } else {
-      // Fallback for Electron or older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = exampleUrl;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-    // Also populate the input field
-    githubUrl.value = exampleUrl;
-  } catch (error) {
-    console.error('Failed to copy to clipboard:', JSON.stringify(error));
-    // Still populate the input field as fallback
-    githubUrl.value = exampleUrl;
-  }
-};
 
 const closeInstallDialog = () => {
   showInstallDialog.value = false;
   selectedFile.value = null;
   selectedFileName.value = '';
-  githubUrl.value = '';
-  installMethod.value = 'github';
+  zipUrl.value = '';
+  installMethod.value = 'url';
   installing.value = false;
   installSuccess.value = false;
   installError.value = null;
