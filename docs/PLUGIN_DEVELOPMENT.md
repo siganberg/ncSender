@@ -35,6 +35,7 @@ The `manifest.json` file defines plugin metadata:
   "id": "com.example.myplugin",
   "name": "My Plugin",
   "version": "1.0.0",
+  "minAppVersion": "0.3.0",
   "author": "Your Name",
   "description": "Plugin description",
   "entry": "index.js",
@@ -57,6 +58,7 @@ The `manifest.json` file defines plugin metadata:
 
 ### Optional Fields
 
+- **minAppVersion**: Minimum ncSender version required (e.g., "0.3.0"). Installation will be blocked if the app version is lower than this requirement
 - **author**: Plugin author name
 - **description**: Brief description of plugin functionality
 - **events**: Array of event names this plugin listens to
