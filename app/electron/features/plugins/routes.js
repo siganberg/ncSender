@@ -402,18 +402,34 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       return res.status(400).json({ error: 'GitHub URL is required' });
     }
 
-    // Parse GitHub URL
-    // Expected format: https://github.com/owner/repo/tree/branch/path/to/plugin
-    const githubRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/;
-    const match = url.match(githubRegex);
+    // Parse GitHub URL - support two formats:
+    // 1. Root repo format: https://github.com/owner/repo/tree/branch
+    // 2. Subdirectory format: https://github.com/owner/repo/tree/branch/path/to/plugin
+    let owner, repo, branch, pluginPath;
 
-    if (!match) {
-      return res.status(400).json({
-        error: 'Invalid GitHub URL format. Expected: https://github.com/owner/repo/tree/branch/path/to/plugin'
-      });
+    // Try root repo format first (for dedicated plugin repos)
+    const rootRepoRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+))?$/;
+    const rootMatch = url.match(rootRepoRegex);
+
+    if (rootMatch) {
+      [, owner, repo, branch] = rootMatch;
+      branch = branch || 'main'; // Default to main if not specified
+      pluginPath = null; // Root of repo is the plugin
+      log(`Installing plugin from GitHub (root): ${owner}/${repo} (branch: ${branch})`);
+    } else {
+      // Try subdirectory format (for monorepo plugins)
+      const subdirRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/;
+      const subdirMatch = url.match(subdirRegex);
+
+      if (!subdirMatch) {
+        return res.status(400).json({
+          error: 'Invalid GitHub URL format. Expected: https://github.com/owner/repo or https://github.com/owner/repo/tree/branch/path'
+        });
+      }
+
+      [, owner, repo, branch, pluginPath] = subdirMatch;
+      log(`Installing plugin from GitHub (subdir): ${owner}/${repo}/${pluginPath} (branch: ${branch})`);
     }
-
-    const [, owner, repo, branch, pluginPath] = match;
 
     // Only allow main branch for security
     if (branch !== 'main') {
@@ -421,8 +437,6 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
         error: 'Only plugins from the main branch are allowed for security reasons'
       });
     }
-
-    log(`Installing plugin from GitHub: ${owner}/${repo}/${pluginPath} (branch: ${branch})`);
 
     try {
       const extractDir = path.join(os.tmpdir(), 'ncsender-plugin-extract', Date.now().toString());
@@ -463,20 +477,27 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       // Find the plugin directory
-      // After extraction, directory structure is: repo-branch/path/to/plugin
+      // After extraction, directory structure is: repo-branch/[path/to/plugin]
       const extractedDirs = await fs.readdir(repoExtractDir);
       if (extractedDirs.length === 0) {
         throw new Error('Repository archive is empty');
       }
 
       const repoRootDir = path.join(repoExtractDir, extractedDirs[0]);
-      const pluginSourceDir = path.join(repoRootDir, pluginPath);
 
-      // Check if plugin directory exists
-      try {
-        await fs.access(pluginSourceDir);
-      } catch (error) {
-        throw new Error(`Plugin path not found in repository: ${pluginPath}`);
+      // Determine plugin source directory
+      let pluginSourceDir;
+      if (pluginPath) {
+        // Subdirectory format - plugin is in a subdirectory
+        pluginSourceDir = path.join(repoRootDir, pluginPath);
+        try {
+          await fs.access(pluginSourceDir);
+        } catch (error) {
+          throw new Error(`Plugin path not found in repository: ${pluginPath}`);
+        }
+      } else {
+        // Root format - plugin is at repo root
+        pluginSourceDir = repoRootDir;
       }
 
       // Validate manifest
