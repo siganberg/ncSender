@@ -53,7 +53,7 @@
       <div v-else class="plugins-container">
         <!-- Sortable Plugins Section -->
         <div v-if="sortablePlugins.length > 0" class="plugins-section">
-          <h4 class="section-header">Event-based Plugins (Sortable)</h4>
+          <h4 class="section-header">Event-based Plugins{{ allowPriorityReordering ? ' (Sortable)' : '' }}</h4>
           <div class="plugins-table sortable">
             <div
               v-for="(plugin, index) in sortablePlugins"

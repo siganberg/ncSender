@@ -1094,8 +1094,12 @@ onUnmounted(() => {
 const openSettings = async () => {
   showSettings.value = true;
 
-  // Reload connection settings from backend
+  // Reload settings from backend
   try {
+    // Refresh the settings store so all components get the latest settings
+    const { loadSettings } = await import('./lib/settings-store.js');
+    await loadSettings();
+
     const freshSettings = await api.getSettings();
     if (freshSettings && freshSettings.connection) {
       // Update connection settings with fresh data from nested connection object
