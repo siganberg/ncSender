@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Fixed automatic updates on Linux systems to properly detect and install new versions
+### 🐛 Bug Fixes
+- Fixed deployment workflow script formatting issue
