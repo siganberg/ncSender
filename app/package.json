@@ -85,9 +85,6 @@
         "deb"
       ],
       "maintainer": "Francis Marasigan <support@franciscreation.com>"
-    },
-    "releaseInfo": {
-      "releaseNotesFile": "latest_release.md"
     }
   }
 }
