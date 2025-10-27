@@ -82,6 +82,7 @@
       "icon": "assets/icons",
       "category": "Office",
       "target": [
+        "AppImage",
         "deb"
       ],
       "maintainer": "Francis Marasigan <support@franciscreation.com>"

@@ -63,7 +63,26 @@
         </div>
         <div class="actions-right">
           <button class="btn btn-secondary" @click="emit('close')">Close</button>
+          <template v-if="props.state.canInstall">
+            <button
+              class="btn btn-primary"
+              @click="emit('download-install')"
+              :disabled="!props.state.isAvailable || props.state.isChecking || props.state.isDownloading"
+            >
+              <span v-if="props.state.isDownloading" class="spinner"></span>
+              <span>{{ props.state.isDownloading ? 'Downloading…' : 'Download & Install' }}</span>
+            </button>
+            <button
+              class="btn btn-ghost"
+              v-if="props.state.releaseUrl"
+              @click="openGitHubRelease"
+              :disabled="props.state.isChecking"
+            >
+              Release Page
+            </button>
+          </template>
           <button
+            v-else
             class="btn btn-primary"
             @click="openGitHubRelease"
             :disabled="!props.state.isAvailable || !props.state.releaseUrl || props.state.isChecking"
@@ -77,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import Dialog from './Dialog.vue';
 
 interface UpdateDialogState {
@@ -172,8 +191,6 @@ const releaseNotesHtml = computed(() => {
     .replace(/\n\n/g, '<br><br>')
     .replace(/\n/g, '<br>');
 });
-
-const showDownloadOnlyButton = computed(() => !props.state.canInstall);
 
 const openGitHubRelease = () => {
   if (props.state.releaseUrl) {

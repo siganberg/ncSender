@@ -22,7 +22,7 @@ const DEFAULT_DISABLE_INSTALL = process.env.NCSENDER_UPDATE_DISABLE_INSTALL === 
   ? true
   : (process.env.NCSENDER_UPDATE_DISABLE_INSTALL === 'false'
       ? false
-      : process.platform === 'darwin');
+      : process.platform !== 'linux');
 
 const formatReleaseNotes = (releaseNotes) => {
   if (!releaseNotes) {
@@ -117,6 +117,25 @@ class UpdateManager {
     this.initialized = false;
   }
 
+  buildReleaseUrl(info) {
+    const directUrl = info?.html_url ?? info?.sourceUrl ?? null;
+    if (directUrl) {
+      return directUrl;
+    }
+
+    const version = normalizeVersion(info?.version ?? info?.tagName ?? info?.tag_name);
+    const tagName = info?.tagName ?? info?.tag_name;
+    const tag = tagName
+      ? (String(tagName).startsWith('v') ? String(tagName) : `v${tagName}`)
+      : (version ? (version.startsWith('v') ? version : `v${version}`) : null);
+
+    if (!tag) {
+      return `https://github.com/${OWNER}/${REPO}/releases`;
+    }
+
+    return `https://github.com/${OWNER}/${REPO}/releases/tag/${tag}`;
+  }
+
   init() {
     if (this.initialized) {
       return;
@@ -161,7 +180,8 @@ class UpdateManager {
       this.latestInfo = info;
       this.sendToRenderer('updates:available', toRendererPayload(info, {
         channel: UPDATE_CHANNELS.STABLE,
-        canInstall: true
+        canInstall: !this.disableInstall,
+        sourceUrl: this.buildReleaseUrl(info)
       }));
     });
 
@@ -200,7 +220,8 @@ class UpdateManager {
       this.sendToRenderer('updates:downloaded', toRendererPayload(info, {
         channel: UPDATE_CHANNELS.STABLE,
         downloadedAt: new Date().toISOString(),
-        canInstall: !this.disableInstall
+        canInstall: !this.disableInstall,
+        sourceUrl: this.buildReleaseUrl(info)
       }));
 
       if (this.installOnComplete && !this.disableInstall) {
