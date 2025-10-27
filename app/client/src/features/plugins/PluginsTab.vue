@@ -429,7 +429,7 @@
           <div class="install-hint">
             <strong>Example:</strong>
             <div class="example-url-wrapper">
-              <code class="example-url">https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot</code>
+              <code class="example-url">https://github.com/siganberg/ncsender-plugin-surfacing</code>
               <button class="btn-copy" @click="copyExampleUrl" title="Copy to clipboard">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
@@ -905,7 +905,7 @@ const installFromGitHub = async () => {
 };
 
 const copyExampleUrl = async () => {
-  const exampleUrl = 'https://github.com/siganberg/ncSender/tree/main/plugins/com.ncsender.autodustboot';
+  const exampleUrl = 'https://github.com/siganberg/ncsender-plugin-surfacing';
   try {
     // Try modern clipboard API first
     if (navigator.clipboard && navigator.clipboard.writeText) {
