@@ -161,28 +161,29 @@ echo "========================================="
 cat "$RELEASE_NOTES_FILE"
 echo "========================================="
 
-# Ask for confirmation
+# Ask for confirmation (commented out for now)
 echo ""
-read -p "Do you want to commit, tag, and push with these release notes? (y/n) " -n 1 -r
+# read -p "Do you want to commit, tag, and push with these release notes? (y/n) " -n 1 -r
+# echo ""
+# if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+# Commit the version change and release notes
+git add app/package.json "$RELEASE_NOTES_FILE"
+git commit -m "chore: create new release $NEW_TAG"
+
+# Push the commit
+git push origin $(git branch --show-current)
+
+# Create and push the tag (using simple message since CI will use latest_release.md)
+git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+git push origin "$NEW_TAG"
+
 echo ""
+echo "✅ Successfully created and pushed $NEW_TAG"
+echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
 
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    # Commit the version change and release notes
-    git add app/package.json "$RELEASE_NOTES_FILE"
-    git commit -m "chore: create new release $NEW_TAG"
-
-    # Push the commit
-    git push origin $(git branch --show-current)
-
-    # Create and push the tag (using simple message since CI will use latest_release.md)
-    git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
-    git push origin "$NEW_TAG"
-
-    echo ""
-    echo "✅ Successfully created and pushed $NEW_TAG"
-    echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
-else
-    # Revert the changes
-    git restore app/package.json "$RELEASE_NOTES_FILE"
-    echo "Cancelled. Changes reverted."
-fi
+# else
+#     # Revert the changes
+#     git restore app/package.json "$RELEASE_NOTES_FILE"
+#     echo "Cancelled. Changes reverted."
+# fi
