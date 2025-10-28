@@ -1,4 +1,7 @@
 ## What's Changed
 
+### ✨ New Features
+- Plugins can now subscribe to real-time server state updates for better integration and responsiveness
+
 ### 🔧 Improvements
-- Disabled automatic opening of developer tools on application launch for cleaner startup experience
+- Simplified plugin management by removing submodule dependencies from main repository
