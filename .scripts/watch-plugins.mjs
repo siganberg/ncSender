@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
-const pluginsDir = path.join(projectRoot, 'plugins');
+const pluginsDir = process.env.DEV_PLUGINS_DIR || path.join(projectRoot, 'plugins');
 const syncScript = path.join(projectRoot, '.scripts', 'sync-plugins.sh');
 
 const debounceMs = Number.parseInt(process.env.PLUGIN_SYNC_DEBOUNCE ?? '250', 10);

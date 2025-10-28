@@ -17,7 +17,8 @@ fi
 
 # Get the script directory (project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE_PLUGINS_DIR="$SCRIPT_DIR/plugins"
+# Use DEV_PLUGINS_DIR env variable if set, otherwise fall back to default
+SOURCE_PLUGINS_DIR="${DEV_PLUGINS_DIR:-$SCRIPT_DIR/plugins}"
 
 # Default port
 PORT="${NCSENDER_PORT:-8090}"
