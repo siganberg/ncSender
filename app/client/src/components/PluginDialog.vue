@@ -100,9 +100,24 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
+let serverStateUnsubscribe: (() => void) | null = null;
+
+const forwardServerState = (state: any) => {
+  if (!show.value) return;
+
+  // Forward server state updates to plugin dialog via postMessage
+  window.postMessage({
+    type: 'server-state-update',
+    state: state
+  }, '*');
+};
+
 onMounted(() => {
   // Listen for plugin:show-dialog events from WebSocket
   unsubscribe = api.on('plugin:show-dialog', handlePluginDialog);
+
+  // Subscribe to server state updates and forward to plugin
+  serverStateUnsubscribe = api.onServerStateUpdated(forwardServerState);
 
   // Listen for postMessage events from dialog iframe
   window.addEventListener('message', handlePostMessage);
@@ -112,6 +127,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (unsubscribe) {
     unsubscribe();
+  }
+  if (serverStateUnsubscribe) {
+    serverStateUnsubscribe();
   }
   window.removeEventListener('message', handlePostMessage);
   window.removeEventListener('keydown', handleKeydown);
