@@ -364,6 +364,18 @@
     />
   </Dialog>
 
+  <!-- Category Conflict Dialog -->
+  <Dialog v-if="showCategoryConflict && selectedPlugin" @close="showCategoryConflict = false" :show-header="false" size="small">
+    <ConfirmPanel
+      title="Only One Tool Changer Plugin Allowed"
+      :message="`You already have ${conflictingPlugins.map(p => p.name).join(', ')} enabled. Please disable it first before enabling ${selectedPlugin.name}.`"
+      cancel-text="OK"
+      :show-confirm="false"
+      variant="warning"
+      @cancel="showCategoryConflict = false"
+    />
+  </Dialog>
+
   <!-- Install Plugin Dialog -->
   <Dialog v-if="showInstallDialog" @close="closeInstallDialog" :show-header="false" size="small">
     <div class="install-dialog">
@@ -506,6 +518,9 @@ const toggling = ref<string | null>(null);
 const uninstalling = ref<string | null>(null);
 const selectedPlugin = ref<PluginListItem | null>(null);
 const showUninstallConfirm = ref(false);
+const showCategoryConflict = ref(false);
+const conflictingPlugins = ref<Array<{ id: string; name: string }>>([]);
+const conflictCategory = ref<string>('');
 const showInstallDialog = ref(false);
 const selectedFile = ref<File | null>(null);
 const selectedFileName = ref<string>('');
@@ -799,8 +814,21 @@ const togglePlugin = async (plugin: PluginListItem) => {
     await setPluginEnabled(plugin.id, !plugin.enabled);
     await loadPlugins();
   } catch (error: any) {
-    loadError.value = error.message || 'Failed to toggle plugin';
-    console.error('Error toggling plugin:', error);
+    console.log('Toggle error:', JSON.stringify({
+      hasResponse: !!error.response,
+      status: error.response?.status,
+      data: error.response?.data
+    }));
+
+    if (error.response?.status === 409 && error.response?.data?.error === 'CATEGORY_CONFLICT') {
+      selectedPlugin.value = plugin;
+      conflictingPlugins.value = error.response.data.conflictingPlugins;
+      conflictCategory.value = error.response.data.category;
+      showCategoryConflict.value = true;
+    } else {
+      loadError.value = error.message || 'Failed to toggle plugin';
+      console.error('Error toggling plugin:', error);
+    }
   } finally {
     toggling.value = null;
   }

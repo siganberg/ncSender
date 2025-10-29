@@ -443,14 +443,11 @@ class PluginManager {
         p.enabled === true
       );
 
-      for (const conflictingPlugin of conflictingPlugins) {
-        log(`Disabling "${conflictingPlugin.id}" due to exclusive category "${plugin.category}"`);
-        conflictingPlugin.enabled = false;
-
-        // Unload the conflicting plugin
-        if (this.plugins.has(conflictingPlugin.id)) {
-          await this.unloadPlugin(conflictingPlugin.id);
-        }
+      if (conflictingPlugins.length > 0) {
+        const error = new Error('CATEGORY_CONFLICT');
+        error.conflictingPlugins = conflictingPlugins.map(p => ({ id: p.id, name: p.name }));
+        error.category = plugin.category;
+        throw error;
       }
     }
 

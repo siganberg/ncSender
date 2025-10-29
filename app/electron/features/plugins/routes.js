@@ -109,7 +109,16 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       res.json({ success: true, message: `Plugin "${pluginId}" enabled` });
     } catch (error) {
       log('Error enabling plugin:', error);
-      res.status(500).json({ error: error.message || 'Failed to enable plugin' });
+
+      if (error.message === 'CATEGORY_CONFLICT') {
+        res.status(409).json({
+          error: 'CATEGORY_CONFLICT',
+          conflictingPlugins: error.conflictingPlugins,
+          category: error.category
+        });
+      } else {
+        res.status(500).json({ error: error.message || 'Failed to enable plugin' });
+      }
     }
   });
 

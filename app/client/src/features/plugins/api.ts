@@ -8,15 +8,24 @@ function buildUrl(path: string) {
 
 async function parseError(response: Response) {
   let message = `Request failed (${response.status})`;
+  let errorData: any = null;
+
   try {
     const data = await response.json();
+    errorData = data;
     if (data && typeof data.error === 'string') {
       message = data.error;
     }
   } catch {
     // Ignore JSON parsing errors
   }
-  throw new Error(message);
+
+  const error: any = new Error(message);
+  error.response = {
+    status: response.status,
+    data: errorData
+  };
+  throw error;
 }
 
 export interface PluginListItem {
