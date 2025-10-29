@@ -42,9 +42,20 @@ const dialogContent = ref<HTMLDivElement | null>(null);
 
 let unsubscribe: (() => void) | null = null;
 
-const handlePluginDialog = (data: PluginDialogData) => {
+const handlePluginDialog = async (data: PluginDialogData) => {
   dialogData.value = data;
   show.value = true;
+
+  // Send initial server state to plugin
+  try {
+    const currentState = await api.getServerState();
+    window.postMessage({
+      type: 'server-state-update',
+      state: currentState
+    }, '*');
+  } catch (error) {
+    console.warn('Failed to get initial server state for plugin:', error);
+  }
 
   // Execute scripts after DOM is updated
   nextTick(() => {
@@ -89,8 +100,8 @@ const handlePostMessage = (event: MessageEvent) => {
 
   // Forward plugin-specific messages to the backend
   if (dialogData.value.pluginId && event.data.type === 'plugin-message') {
-    // Extract the inner data object and forward that to the plugin
-    api.emit(`plugin:${dialogData.value.pluginId}:message`, event.data.data);
+    // Extract the inner data object and forward that to the plugin via WebSocket
+    api.sendWebSocketMessage(`plugin:${dialogData.value.pluginId}:message`, event.data.data);
   }
 };
 
@@ -101,6 +112,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 };
 
 let serverStateUnsubscribe: (() => void) | null = null;
+let cncDataUnsubscribe: (() => void) | null = null;
 
 const forwardServerState = (state: any) => {
   if (!show.value) return;
@@ -112,12 +124,25 @@ const forwardServerState = (state: any) => {
   }, '*');
 };
 
+const forwardCNCData = (data: any) => {
+  if (!show.value) return;
+
+  // Forward cnc-data to plugin dialog via postMessage
+  window.postMessage({
+    type: 'cnc-data',
+    data: data
+  }, '*');
+};
+
 onMounted(() => {
   // Listen for plugin:show-dialog events from WebSocket
   unsubscribe = api.on('plugin:show-dialog', handlePluginDialog);
 
   // Subscribe to server state updates and forward to plugin
   serverStateUnsubscribe = api.onServerStateUpdated(forwardServerState);
+
+  // Subscribe to cnc-data events and forward to plugin
+  cncDataUnsubscribe = api.on('cnc-data', forwardCNCData);
 
   // Listen for postMessage events from dialog iframe
   window.addEventListener('message', handlePostMessage);
@@ -130,6 +155,9 @@ onBeforeUnmount(() => {
   }
   if (serverStateUnsubscribe) {
     serverStateUnsubscribe();
+  }
+  if (cncDataUnsubscribe) {
+    cncDataUnsubscribe();
   }
   window.removeEventListener('message', handlePostMessage);
   window.removeEventListener('keydown', handleKeydown);
