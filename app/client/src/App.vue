@@ -702,6 +702,14 @@
 
     <!-- Plugin Dialog -->
     <PluginDialog />
+
+  <!-- Plugin Modal Dialog -->
+  <ModalDialog
+    :isOpen="showPluginModal"
+    :content="pluginModalContent"
+    :closable="pluginModalClosable"
+    @close="showPluginModal = false"
+  />
   </template>
 </template>
 
@@ -716,6 +724,7 @@ import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
 import PluginDialog from './components/PluginDialog.vue';
+import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import { api } from './lib/api.js';
@@ -781,6 +790,11 @@ const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
+
+// Plugin modal dialog state
+const showPluginModal = ref(false);
+const pluginModalContent = ref('');
+const pluginModalClosable = ref(true);
 
 const openUpdateDialog = () => {
   if (!updateState.supported) {
@@ -1061,6 +1075,23 @@ const handleClickOutside = (event) => {
 // Add click outside listener
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
+
+  window.addEventListener('message', (event) => {
+    if (event.data.type === 'show-modal') {
+      showPluginModal.value = true;
+      pluginModalContent.value = event.data.content;
+      pluginModalClosable.value = event.data.closable !== false;
+    } else if (event.data.type === 'close-modal') {
+      showPluginModal.value = false;
+    }
+  });
+
+  api.on('plugin:show-modal', (data: any) => {
+    showPluginModal.value = true;
+    pluginModalContent.value = data.content;
+    pluginModalClosable.value = data.closable !== false;
+  });
+
   window.addEventListener('settings-changed', (event: Event) => {
     const detail = (event as CustomEvent)?.detail;
     if (detail?.jog) {

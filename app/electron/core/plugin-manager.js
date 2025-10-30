@@ -261,6 +261,28 @@ class PluginManager {
         }
       },
 
+      showModal: (content, options = {}) => {
+        const payload = {
+          pluginId,
+          content,
+          closable: options.closable !== false
+        };
+
+        const stack = this.executionContextStack.get(pluginId);
+        const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
+        const isClientOnly = activeContext?.clientOnly || false;
+        const executionWs = activeContext?.ws || null;
+
+        if (isClientOnly && executionWs && this.sendWsMessage) {
+          this.sendWsMessage(executionWs, 'plugin:show-modal', payload);
+        } else {
+          if (!this.broadcast) {
+            throw new Error('Broadcast function not available');
+          }
+          this.broadcast('plugin:show-modal', payload);
+        }
+      },
+
       registerToolMenu: (label, callback, options = {}) => {
         if (!this.toolMenuItems) {
           this.toolMenuItems = [];
