@@ -55,10 +55,8 @@ export class CommandProcessor {
     const sameToolCheck = checkSameToolChange(command, currentTool);
 
     // Set isToolChanging flag only for valid M6 commands that are NOT same-tool changes
-    // Only set if tool count > 0 (tools are configured/visible in UI)
     if (isValidM6 && !sameToolCheck.isSameTool) {
-      const toolCount = getSetting('tool')?.count ?? 0;
-      if (toolCount > 0 && this.serverState.machineState.isToolChanging !== true) {
+      if (this.serverState.machineState.isToolChanging !== true) {
         log(`Setting isToolChanging -> true (M6 T${m6Parse.toolNumber})`);
         this.serverState.machineState.isToolChanging = true;
         this.broadcast('server-state-updated', this.serverState);

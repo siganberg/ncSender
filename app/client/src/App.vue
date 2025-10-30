@@ -1083,6 +1083,10 @@ onMounted(() => {
       pluginModalClosable.value = event.data.closable !== false;
     } else if (event.data.type === 'close-modal') {
       showPluginModal.value = false;
+    } else if (event.data.type === 'send-command') {
+      api.sendCommand(event.data.command, {
+        displayCommand: event.data.displayCommand
+      });
     }
   });
 
