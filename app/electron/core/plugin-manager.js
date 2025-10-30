@@ -141,7 +141,7 @@ class PluginManager {
     }
 
     try {
-      const pluginModule = await import(`file://${entryPath}`);
+      const pluginModule = await import(`file://${entryPath}?t=${Date.now()}`);
 
       const context = this.createPluginContext(pluginId, manifest);
       this.pluginContexts.set(pluginId, context);
