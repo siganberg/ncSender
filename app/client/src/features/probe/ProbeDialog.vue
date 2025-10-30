@@ -14,7 +14,7 @@
                 <label class="probe-label">Probe Type</label>
                 <select v-model="probeType" class="probe-select" :disabled="isProbing">
                   <option value="3d-probe">3D Probe</option>
-                  <option value="standard-block">Standard Block</option>
+                  <!-- <option value="standard-block">Standard Block</option> -->
                   <option value="autozero-touch">AutoZero Touch</option>
                 </select>
               </div>

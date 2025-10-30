@@ -29,6 +29,7 @@
         :view="viewport"
         :theme="theme"
         :sender-status="currentSenderStatus"
+        :machine-state="serverState.machineState"
         :job-loaded="serverState.jobLoaded"
         :work-coords="status.workCoords"
         :work-offset="status.wco"

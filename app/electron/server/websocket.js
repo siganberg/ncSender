@@ -20,7 +20,6 @@ const sanitizeForJson = (value) => JSON.parse(JSON.stringify(value, (key, item) 
     }
   }
   if (key === 'isProbing'
-      || key === 'isToolChanging'
       || key === 'totalEstimatedSec'
       || key === 'progressProvider'
       || key === 'jobStartTime'

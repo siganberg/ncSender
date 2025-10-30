@@ -108,7 +108,7 @@
             'long-press-triggered': toolPress['manual']?.triggered,
             'blink-border': toolPress['manual']?.blinking
           }"
-          title="Manual Tool (Hold to change)"
+          :title="`${manualToolLabel} (Hold to change)`"
           @mousedown="isToolActionsDisabled ? null : startToolPress('manual', $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress('manual')"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress('manual')"
@@ -117,7 +117,7 @@
           @touchcancel="isToolActionsDisabled ? null : cancelToolPress('manual')"
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['manual']?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">Manual</span>
+          <span class="tools-legend__label">{{ manualToolLabel }}</span>
         </div>
 
         <!-- TLS Tool -->
@@ -280,6 +280,7 @@ const props = withDefaults(defineProps<{
   view: 'top' | 'front' | 'iso';
   theme: 'light' | 'dark';
   senderStatus?: string;
+  machineState?: { isToolChanging?: boolean };
   jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed' } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   workOffset?: { x: number; y: number; z: number; a: number };
@@ -295,6 +296,7 @@ const props = withDefaults(defineProps<{
   view: 'top', // Default to top view
   theme: 'dark', // Default to dark theme
   senderStatus: 'connecting',
+  machineState: () => ({ isToolChanging: false }),
   workCoords: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   workOffset: () => ({ x: 0, y: 0, z: 0, a: 0 }),
   gridSizeX: DEFAULT_GRID_SIZE_MM,
@@ -419,6 +421,14 @@ const toolsUsed = ref<number[]>([]);
 const numberOfToolsToShow = ref<number>(0);
 const showManualTool = ref<boolean>(false);
 const showTlsTool = ref<boolean>(false);
+
+// Manual tool label - show T{currentTool} when tool count is 0, otherwise show "Manual"
+const manualToolLabel = computed(() => {
+  if (numberOfToolsToShow.value === 0 && showManualTool.value) {
+    return `T${props.currentTool ?? 0}`;
+  }
+  return 'Manual';
+});
 
 // Tool press state for long-press interaction
 const toolPress = ref<Record<number | string, { start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean }>>({});
@@ -1046,9 +1056,10 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     // Detect tools used based on M6 lines with tool numbers
     toolsUsed.value = extractToolsFromGCode(data.content);
 
-    // Check if G-code has out of bounds movements (only when sender is idle)
+    // Check if G-code has out of bounds movements (only when sender is idle and not tool changing)
     const currentStatus = props.senderStatus?.toLowerCase();
-    if (currentStatus === 'idle') {
+    const isToolChanging = props.machineState?.isToolChanging === true;
+    if (currentStatus === 'idle' && !isToolChanging) {
       showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
       outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
       outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
