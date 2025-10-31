@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Enhanced tool changing state tracking and UI responsiveness during tool change operations
+### 🐛 Bug Fixes
+- Fixed window not maximizing properly on Linux at startup
