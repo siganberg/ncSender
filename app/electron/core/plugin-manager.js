@@ -421,6 +421,11 @@ class PluginManager {
       pluginEntry.priority = manifest.priority;
     }
 
+    // Only add repository if it exists in manifest
+    if (manifest.repository !== undefined) {
+      pluginEntry.repository = manifest.repository;
+    }
+
     if (existingIndex >= 0) {
       registry[existingIndex] = pluginEntry;
     } else {
