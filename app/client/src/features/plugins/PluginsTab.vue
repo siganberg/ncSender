@@ -517,7 +517,7 @@
   </Dialog>
 
   <!-- Update Plugin Dialog -->
-  <Dialog v-if="showUpdateDialog && selectedPluginForUpdate" @close="showUpdateDialog = false" :show-header="false" size="medium">
+  <Dialog v-if="showUpdateDialog && selectedPluginForUpdate" @close="showUpdateDialog = false" :show-header="false" size="small">
     <div class="update-dialog">
       <h3>Update {{ selectedPluginForUpdate.name }}</h3>
 
