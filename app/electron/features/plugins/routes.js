@@ -547,12 +547,18 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     try {
       // Fetch latest release from GitHub API
       const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-      const response = await fetch(apiUrl, {
-        headers: {
-          'User-Agent': 'ncSender-Plugin-Manager',
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
+      const headers = {
+        'User-Agent': 'ncSender-Plugin-Manager',
+        'Accept': 'application/vnd.github.v3+json'
+      };
+
+      // Use GitHub token in development (increases rate limit from 60 to 5000 req/hour)
+      // Normal users use unauthenticated requests with 60 req/hour limit
+      if (process.env.NODE_ENV === 'development' && process.env.GITHUB_TOKEN) {
+        headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+      }
+
+      const response = await fetch(apiUrl, { headers });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -627,12 +633,18 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     try {
       // Fetch latest release
       const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-      const response = await fetch(apiUrl, {
-        headers: {
-          'User-Agent': 'ncSender-Plugin-Manager',
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
+      const headers = {
+        'User-Agent': 'ncSender-Plugin-Manager',
+        'Accept': 'application/vnd.github.v3+json'
+      };
+
+      // Use GitHub token in development (increases rate limit from 60 to 5000 req/hour)
+      // Normal users use unauthenticated requests with 60 req/hour limit
+      if (process.env.NODE_ENV === 'development' && process.env.GITHUB_TOKEN) {
+        headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+      }
+
+      const response = await fetch(apiUrl, { headers });
 
       if (!response.ok) {
         if (response.status === 403) {
