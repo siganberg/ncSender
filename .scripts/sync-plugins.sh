@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Sync development plugins from repo to application data directory
-# This script copies plugins from the plugins/ directory to the user's ncSender data folder
+# This script copies plugins from the ncSender.plugins/ directory to the user's ncSender data folder
 
 # Determine the platform-specific plugins directory
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -17,8 +17,8 @@ fi
 
 # Get the script directory (project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Use DEV_PLUGINS_DIR env variable if set, otherwise fall back to sibling plugins directory
-SOURCE_PLUGINS_DIR="${DEV_PLUGINS_DIR:-$(dirname "$SCRIPT_DIR")/plugins}"
+# Use DEV_PLUGINS_DIR env variable if set, otherwise fall back to sibling ncSender.plugins directory
+SOURCE_PLUGINS_DIR="${DEV_PLUGINS_DIR:-$(dirname "$SCRIPT_DIR")/ncSender.plugins}"
 
 # Default port
 PORT="${NCSENDER_PORT:-8090}"
@@ -58,7 +58,7 @@ if [ -d "$SOURCE_PLUGINS_DIR" ]; then
     echo ""
     echo "✓ All plugins synced successfully"
 else
-    echo "Error: plugins/ directory not found in project root"
+    echo "Error: ncSender.plugins/ directory not found in project root"
     exit 1
 fi
 
