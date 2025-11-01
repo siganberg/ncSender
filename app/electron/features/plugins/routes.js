@@ -561,6 +561,15 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
             message: 'No releases found for this plugin'
           });
         }
+        if (response.status === 403) {
+          const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+          const rateLimitReset = response.headers.get('x-ratelimit-reset');
+          const resetDate = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000) : null;
+          const errorMsg = rateLimitRemaining === '0'
+            ? `GitHub API rate limit exceeded. Resets at ${resetDate?.toLocaleTimeString() || 'unknown'}`
+            : 'GitHub API access forbidden';
+          return res.status(403).json({ error: errorMsg });
+        }
         throw new Error(`GitHub API error: ${response.status}`);
       }
 
@@ -626,6 +635,15 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+          const rateLimitReset = response.headers.get('x-ratelimit-reset');
+          const resetDate = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000) : null;
+          const errorMsg = rateLimitRemaining === '0'
+            ? `GitHub API rate limit exceeded. Resets at ${resetDate?.toLocaleTimeString() || 'unknown'}`
+            : 'GitHub API access forbidden';
+          throw new Error(errorMsg);
+        }
         throw new Error(`GitHub API error: ${response.status}`);
       }
 
