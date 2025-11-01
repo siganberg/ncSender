@@ -530,6 +530,11 @@
         <p>Updating plugin...</p>
       </div>
 
+      <div v-else-if="!updateInfo && !updateError" class="updating-state">
+        <div class="loading-spinner"></div>
+        <p>Checking for updates...</p>
+      </div>
+
       <div v-else-if="updateInfo" class="update-info">
         <div class="version-info">
           <div class="version-row">
@@ -872,9 +877,6 @@ const loadPlugins = async () => {
       }
     });
     brokenIcons.value = filteredMap;
-
-    // Check for updates for plugins with repository field
-    checkForUpdates();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to load plugins';
     console.error('Error loading plugins:', error);
@@ -932,28 +934,25 @@ const confirmUninstall = (plugin: PluginListItem) => {
   selectedPlugin.value = plugin;
   showUninstallConfirm.value = true;
 };
-
-// Check for updates for all plugins with repository
-const checkForUpdates = async () => {
-  for (const plugin of plugins.value) {
-    if (plugin.repository) {
-      try {
-        const info = await checkPluginUpdate(plugin.id);
-        plugin.updateInfo = info;
-      } catch (error) {
-        console.error(`Failed to check update for ${plugin.id}:`, error);
-        plugin.updateInfo = null;
-      }
-    }
-  }
-};
-
 // Show update dialog
 const showUpdateInfo = async (plugin: PluginListItem) => {
   selectedPluginForUpdate.value = plugin;
-  updateInfo.value = plugin.updateInfo || null;
   updateError.value = null;
   showUpdateDialog.value = true;
+
+  // Check for updates when dialog is opened
+  if (plugin.repository) {
+    try {
+      updateInfo.value = null; // Clear previous info
+      const info = await checkPluginUpdate(plugin.id);
+      plugin.updateInfo = info;
+      updateInfo.value = info;
+    } catch (error: any) {
+      console.error(`Failed to check update for ${plugin.id}:`, JSON.stringify(error));
+      updateError.value = error.message || 'Failed to check for updates';
+      updateInfo.value = null;
+    }
+  }
 };
 
 // Perform plugin update
