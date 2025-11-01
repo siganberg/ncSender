@@ -887,8 +887,16 @@ export class CNCController extends EventEmitter {
 
     // Check if this is a real-time command (GRBL real-time commands or hex bytes >= 0x80)
     const realTimeCommands = ['!', '~', '?', '\x18'];
-    const isRealTimeCommand = finalCommand.length === 1 &&
+    let isRealTimeCommand = finalCommand.length === 1 &&
       (realTimeCommands.includes(finalCommand) || finalCommand.charCodeAt(0) >= 0x80);
+
+    // Treat M7 (mist), M8 (flood), M9 (coolant off) as realtime commands
+    // UNLESS they come from job-manager (which sends them as part of G-code programs)
+    const isCoolantCommand = /^M[789]$/i.test(finalCommand);
+    const isFromJobManager = normalizedMeta?.sourceId === 'job-manager';
+    if (isCoolantCommand && !isFromJobManager) {
+      isRealTimeCommand = true;
+    }
 
     // Check if this is a jog cancel command (0x85)
     const isJogCancel = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x85;
