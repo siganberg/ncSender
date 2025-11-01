@@ -28,6 +28,17 @@ async function parseError(response: Response) {
   throw error;
 }
 
+export interface PluginUpdateInfo {
+  hasUpdate: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseNotes: string;
+  releaseUrl: string;
+  downloadUrl: string | null;
+  publishedAt: string;
+  message?: string;
+}
+
 export interface PluginListItem {
   id: string;
   name: string;
@@ -41,6 +52,8 @@ export interface PluginListItem {
   hasIcon: boolean;
   category: string;
   priority?: number;
+  repository?: string;
+  updateInfo?: PluginUpdateInfo | null;
 }
 
 export interface ToolMenuItem {
@@ -150,6 +163,23 @@ export async function reorderPlugins(pluginIds: string[]): Promise<void> {
     body: JSON.stringify({ pluginIds })
   });
 
+  if (!response.ok) {
+    await parseError(response);
+  }
+}
+
+export async function checkPluginUpdate(pluginId: string): Promise<PluginUpdateInfo> {
+  const response = await fetch(buildUrl(`/${pluginId}/check-update`));
+  if (!response.ok) {
+    await parseError(response);
+  }
+  return await response.json();
+}
+
+export async function updatePlugin(pluginId: string): Promise<void> {
+  const response = await fetch(buildUrl(`/${pluginId}/update`), {
+    method: 'POST'
+  });
   if (!response.ok) {
     await parseError(response);
   }

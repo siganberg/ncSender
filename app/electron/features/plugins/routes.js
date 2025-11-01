@@ -519,5 +519,209 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   }));
 
+  // Check for plugin updates from GitHub
+  router.get('/:pluginId/check-update', asyncHandler(async (req, res) => {
+    const { pluginId } = req.params;
+
+    // Get plugin info
+    const plugins = pluginManager.getInstalledPlugins();
+    const plugin = plugins.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      return res.status(404).json({ error: 'Plugin not found' });
+    }
+
+    if (!plugin.repository) {
+      return res.status(400).json({ error: 'Plugin does not have a repository configured' });
+    }
+
+    // Extract owner and repo from GitHub URL
+    // Expected format: https://github.com/owner/repo
+    const match = plugin.repository.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid repository URL format' });
+    }
+
+    const [, owner, repo] = match;
+
+    try {
+      // Fetch latest release from GitHub API
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'ncSender-Plugin-Manager',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json({
+            hasUpdate: false,
+            message: 'No releases found for this plugin'
+          });
+        }
+        throw new Error(`GitHub API error: ${response.status}`);
+      }
+
+      const release = await response.json();
+      const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
+      const currentVersion = plugin.version;
+
+      // Compare versions
+      const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+
+      // Find the ZIP asset
+      const zipAsset = release.assets.find(asset =>
+        asset.name.endsWith('.zip') && asset.browser_download_url
+      );
+
+      res.json({
+        hasUpdate,
+        currentVersion,
+        latestVersion,
+        releaseNotes: release.body || '',
+        releaseUrl: release.html_url,
+        downloadUrl: zipAsset ? zipAsset.browser_download_url : null,
+        publishedAt: release.published_at
+      });
+    } catch (error) {
+      log('Error checking for plugin update:', error);
+      res.status(500).json({ error: error.message || 'Failed to check for updates' });
+    }
+  }));
+
+  // Update plugin to latest version
+  router.post('/:pluginId/update', asyncHandler(async (req, res) => {
+    const { pluginId } = req.params;
+
+    // Get plugin info
+    const plugins = pluginManager.getInstalledPlugins();
+    const plugin = plugins.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      return res.status(404).json({ error: 'Plugin not found' });
+    }
+
+    if (!plugin.repository) {
+      return res.status(400).json({ error: 'Plugin does not have a repository configured' });
+    }
+
+    // Extract owner and repo from GitHub URL
+    const match = plugin.repository.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid repository URL format' });
+    }
+
+    const [, owner, repo] = match;
+
+    try {
+      // Fetch latest release
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'ncSender-Plugin-Manager',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status}`);
+      }
+
+      const release = await response.json();
+
+      // Find the ZIP asset
+      const zipAsset = release.assets.find(asset =>
+        asset.name.endsWith('.zip') && asset.browser_download_url
+      );
+
+      if (!zipAsset) {
+        throw new Error('No ZIP file found in the latest release');
+      }
+
+      // Download and install the plugin using the existing install-from-url logic
+      const extractDir = path.join(os.tmpdir(), 'ncsender-plugin-extract', Date.now().toString());
+      await fs.mkdir(extractDir, { recursive: true });
+
+      // Download ZIP file
+      log(`Downloading plugin update from: ${zipAsset.browser_download_url}`);
+      const downloadResponse = await fetch(zipAsset.browser_download_url, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'ncSender-Plugin-Manager'
+        }
+      });
+
+      if (!downloadResponse.ok) {
+        throw new Error(`Failed to download plugin: ${downloadResponse.status}`);
+      }
+
+      const arrayBuffer = await downloadResponse.arrayBuffer();
+      const zipBuffer = Buffer.from(arrayBuffer);
+
+      // Extract ZIP
+      const zip = new AdmZip(zipBuffer);
+      zip.extractAllTo(extractDir, true);
+
+      // Find the plugin directory
+      const files = await fs.readdir(extractDir);
+      if (files.length === 0) {
+        throw new Error('ZIP archive is empty');
+      }
+
+      let pluginSourceDir;
+      if (files.length === 1) {
+        const singleItem = path.join(extractDir, files[0]);
+        const stats = await fs.stat(singleItem);
+        if (stats.isDirectory()) {
+          pluginSourceDir = singleItem;
+        } else {
+          pluginSourceDir = extractDir;
+        }
+      } else {
+        pluginSourceDir = extractDir;
+      }
+
+      // Validate manifest
+      const manifestPath = path.join(pluginSourceDir, 'manifest.json');
+      const manifest = await readAndValidateManifest(manifestPath, APP_VERSION);
+
+      // Verify it's the same plugin
+      if (manifest.id !== pluginId) {
+        throw new Error(`Plugin ID mismatch: expected ${pluginId}, got ${manifest.id}`);
+      }
+
+      // Copy plugin to plugins directory (overwrite existing)
+      const pluginDir = path.join(pluginsDir, manifest.id);
+      await fs.rm(pluginDir, { recursive: true, force: true });
+      await fs.cp(pluginSourceDir, pluginDir, { recursive: true });
+
+      // Reload the plugin
+      await pluginManager.reloadPlugin(manifest.id);
+
+      // Broadcast to all clients
+      if (broadcast) {
+        broadcast('plugins:tools-changed', { pluginId: manifest.id, action: 'updated' });
+      }
+
+      // Cleanup
+      await fs.rm(extractDir, { recursive: true, force: true });
+
+      res.json({
+        success: true,
+        message: `Plugin "${manifest.name}" updated to version ${manifest.version}`,
+        plugin: {
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version
+        }
+      });
+    } catch (error) {
+      log('Error updating plugin:', error);
+      res.status(500).json({ error: error.message || 'Failed to update plugin' });
+    }
+  }));
+
   return router;
 }
