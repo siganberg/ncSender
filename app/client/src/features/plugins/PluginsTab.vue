@@ -96,7 +96,19 @@
                 </div>
                 <div class="plugin-meta-row">
                   <span class="plugin-category-text">{{ plugin.category }}</span>
-                  <span class="plugin-version-text">v{{ plugin.version }}</span>
+                  <span
+                    class="plugin-version-text"
+                    :class="{ 'has-update': plugin.updateInfo?.hasUpdate, 'clickable': plugin.repository }"
+                    @click="plugin.repository && showUpdateInfo(plugin)"
+                  >
+                    v{{ plugin.version }}
+                    <span v-if="plugin.updateInfo?.hasUpdate" class="update-badge" title="Update available">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg>
+                    </span>
+                  </span>
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
                   </span>
@@ -183,7 +195,19 @@
                 </div>
                 <div class="plugin-meta-row">
                   <span class="plugin-category-text">{{ plugin.category }}</span>
-                  <span class="plugin-version-text">v{{ plugin.version }}</span>
+                  <span
+                    class="plugin-version-text"
+                    :class="{ 'has-update': plugin.updateInfo?.hasUpdate, 'clickable': plugin.repository }"
+                    @click="plugin.repository && showUpdateInfo(plugin)"
+                  >
+                    v{{ plugin.version }}
+                    <span v-if="plugin.updateInfo?.hasUpdate" class="update-badge" title="Update available">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg>
+                    </span>
+                  </span>
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
                   </span>
@@ -491,6 +515,63 @@
       </div>
     </div>
   </Dialog>
+
+  <!-- Update Plugin Dialog -->
+  <Dialog v-if="showUpdateDialog && selectedPluginForUpdate" @close="showUpdateDialog = false" :show-header="false" size="medium">
+    <div class="update-dialog">
+      <h3>Update {{ selectedPluginForUpdate.name }}</h3>
+
+      <div v-if="updateError" class="error">
+        {{ updateError }}
+      </div>
+
+      <div v-if="updating" class="updating-state">
+        <div class="loading-spinner"></div>
+        <p>Updating plugin...</p>
+      </div>
+
+      <div v-else-if="updateInfo" class="update-info">
+        <div class="version-info">
+          <div class="version-row">
+            <span class="label">Current version:</span>
+            <span class="version">v{{ updateInfo.currentVersion }}</span>
+          </div>
+          <div class="version-row">
+            <span class="label">Latest version:</span>
+            <span class="version new-version">v{{ updateInfo.latestVersion }}</span>
+          </div>
+          <div class="version-row" v-if="updateInfo.publishedAt">
+            <span class="label">Published:</span>
+            <span class="date">{{ new Date(updateInfo.publishedAt).toLocaleDateString() }}</span>
+          </div>
+        </div>
+
+        <div v-if="updateInfo.releaseNotes" class="release-notes">
+          <h4>Release Notes</h4>
+          <div class="notes-content">{{ updateInfo.releaseNotes }}</div>
+        </div>
+
+        <div class="update-actions">
+          <button class="btn btn-secondary" @click="showUpdateDialog = false" :disabled="updating">Cancel</button>
+          <a
+            v-if="updateInfo.releaseUrl"
+            :href="updateInfo.releaseUrl"
+            target="_blank"
+            class="btn btn-secondary"
+          >
+            View on GitHub
+          </a>
+          <button
+            class="btn btn-primary"
+            @click="performUpdate"
+            :disabled="updating || !updateInfo.hasUpdate"
+          >
+            Update
+          </button>
+        </div>
+      </div>
+    </div>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -507,7 +588,10 @@ import {
   reloadPlugin as reloadPluginRequest,
   uninstallPlugin as uninstallPluginRequest,
   reorderPlugins,
-  PluginListItem
+  checkPluginUpdate,
+  updatePlugin,
+  PluginListItem,
+  PluginUpdateInfo
 } from './api';
 
 const plugins = ref<PluginListItem[]>([]);
@@ -537,6 +621,13 @@ const zipUrl = ref<string>('');
 let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
+
+// Update checking state
+const showUpdateDialog = ref(false);
+const selectedPluginForUpdate = ref<PluginListItem | null>(null);
+const updateInfo = ref<PluginUpdateInfo | null>(null);
+const updating = ref(false);
+const updateError = ref<string | null>(null);
 
 // Check if plugin reordering is allowed from settings
 const allowPriorityReordering = computed(() =>
@@ -781,6 +872,9 @@ const loadPlugins = async () => {
       }
     });
     brokenIcons.value = filteredMap;
+
+    // Check for updates for plugins with repository field
+    checkForUpdates();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to load plugins';
     console.error('Error loading plugins:', error);
@@ -837,6 +931,48 @@ const togglePlugin = async (plugin: PluginListItem) => {
 const confirmUninstall = (plugin: PluginListItem) => {
   selectedPlugin.value = plugin;
   showUninstallConfirm.value = true;
+};
+
+// Check for updates for all plugins with repository
+const checkForUpdates = async () => {
+  for (const plugin of plugins.value) {
+    if (plugin.repository) {
+      try {
+        const info = await checkPluginUpdate(plugin.id);
+        plugin.updateInfo = info;
+      } catch (error) {
+        console.error(`Failed to check update for ${plugin.id}:`, error);
+        plugin.updateInfo = null;
+      }
+    }
+  }
+};
+
+// Show update dialog
+const showUpdateInfo = async (plugin: PluginListItem) => {
+  selectedPluginForUpdate.value = plugin;
+  updateInfo.value = plugin.updateInfo || null;
+  updateError.value = null;
+  showUpdateDialog.value = true;
+};
+
+// Perform plugin update
+const performUpdate = async () => {
+  if (!selectedPluginForUpdate.value) return;
+
+  updating.value = true;
+  updateError.value = null;
+
+  try {
+    await updatePlugin(selectedPluginForUpdate.value.id);
+    showUpdateDialog.value = false;
+    await loadPlugins();
+  } catch (error: any) {
+    updateError.value = error.message || 'Failed to update plugin';
+    console.error('Error updating plugin:', error);
+  } finally {
+    updating.value = false;
+  }
 };
 
 const uninstallPlugin = async () => {
@@ -1767,5 +1903,165 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.plugin-version-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plugin-version-text.clickable {
+  cursor: pointer;
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.plugin-version-text.clickable:hover {
+  opacity: 0.8;
+}
+
+.plugin-version-text.has-update {
+  font-weight: 600;
+}
+
+.update-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.update-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  padding: var(--gap-lg);
+}
+
+.update-dialog h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--color-text-primary);
+}
+
+.updating-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-xl) 0;
+}
+
+.loading-spinner {
+  border: 3px solid var(--color-border);
+  border-top: 3px solid var(--color-accent);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.update-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+}
+
+.version-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  padding: var(--gap-md);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+}
+
+.version-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.version-row .label {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.version-row .version {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.version-row .new-version {
+  color: var(--color-accent);
+}
+
+.version-row .date {
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.release-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+.release-notes h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text-primary);
+}
+
+.notes-content {
+  padding: var(--gap-md);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  border: 1px solid var(--color-border);
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.update-actions {
+  display: flex;
+  gap: var(--gap-sm);
+  justify-content: flex-end;
+  padding-top: var(--gap-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.update-actions .btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.update-actions .btn-secondary:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 </style>
