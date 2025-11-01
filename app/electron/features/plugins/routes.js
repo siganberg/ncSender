@@ -727,6 +727,9 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       await fs.rm(pluginDir, { recursive: true, force: true });
       await fs.cp(pluginSourceDir, pluginDir, { recursive: true });
 
+      // Update the registry with new version
+      await pluginManager.installPlugin(manifest.id, manifest);
+
       // Reload the plugin
       await pluginManager.reloadPlugin(manifest.id);
 
