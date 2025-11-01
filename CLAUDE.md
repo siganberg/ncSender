@@ -59,9 +59,15 @@ This file contains development preferences and patterns to follow when working o
 - **Format**: Use standard git commit format with summary line and bullet points for details
 - **Focus**: Describe what was changed and why, not who made the change
 
-## Git Release Note
+## Git Release
 
-- Everytime I ask to create a git release note, start from the last tag to the head.
+### Creating Releases
+- **IMPORTANT**: Always use the release script: `./.scripts/release.sh`
+- **Never**: Manually bump versions, create tags, or push releases
+- The release script handles everything: version bump, commit, tag, push, and triggers CI/CD
+
+### Release Notes
+- When asked to create a git release note, start from the last tag to the head.
 - If latest tag is on the same head, use the prior tag.
 - Always make the release note, focus on users not developers.
 - Add emoji on the categories.
