@@ -1758,8 +1758,6 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  justify-content: center;
-  align-items: center;
 }
 
 .zip-content-centered {
@@ -1768,6 +1766,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-lg);
+  margin: auto;
 }
 
 .zip-instruction {
