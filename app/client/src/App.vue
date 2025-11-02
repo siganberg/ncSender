@@ -2878,6 +2878,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .tab-panel--keyboard,
+.tab-panel--plugins,
 .tab-panel--firmware {
   padding: 0;
   gap: 0;

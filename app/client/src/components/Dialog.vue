@@ -62,8 +62,9 @@ defineEmits<{
 }
 
 .dialog--medium-minus {
-  width: auto;
-  height: auto;
+  width: 850px;
+  max-width: 90vw;
+  height: 60vh;
 }
 
 .dialog--medium {

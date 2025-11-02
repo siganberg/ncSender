@@ -108,15 +108,15 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
       res.json({ success: true, message: `Plugin "${pluginId}" enabled` });
     } catch (error) {
-      log('Error enabling plugin:', error);
-
       if (error.message === 'CATEGORY_CONFLICT') {
+        log(`Plugin "${req.params.pluginId}" not enabled: Category conflict with ${error.conflictingPlugins.map(p => p.name).join(', ')}`);
         res.status(409).json({
           error: 'CATEGORY_CONFLICT',
           conflictingPlugins: error.conflictingPlugins,
           category: error.category
         });
       } else {
+        log('Error enabling plugin:', error);
         res.status(500).json({ error: error.message || 'Failed to enable plugin' });
       }
     }
@@ -526,8 +526,17 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
         }
       });
     } catch (error) {
-      log('Error installing plugin from URL:', error);
-      res.status(500).json({ error: error.message || 'Failed to install plugin from URL' });
+      if (error.message === 'CATEGORY_CONFLICT') {
+        log(`Plugin installed from URL but not enabled: Category conflict with ${error.conflictingPlugins?.map(p => p.name).join(', ') || 'existing plugin'}`);
+        res.status(409).json({
+          error: 'CATEGORY_CONFLICT',
+          conflictingPlugins: error.conflictingPlugins,
+          category: error.category
+        });
+      } else {
+        log('Error installing plugin from URL:', error);
+        res.status(500).json({ error: error.message || 'Failed to install plugin from URL' });
+      }
     }
   }));
 

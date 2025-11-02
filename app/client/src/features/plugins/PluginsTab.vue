@@ -34,7 +34,7 @@
           <h3>Installed Plugins</h3>
           <span class="plugin-count">{{ plugins.length }} plugin{{ plugins.length !== 1 ? 's' : '' }}</span>
         </div>
-        <button class="btn btn-primary" @click="showInstallDialog = true">
+        <button class="btn btn-primary" @click="openInstallDialog">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
             <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
           </svg>
@@ -42,15 +42,16 @@
         </button>
       </div>
 
-      <div v-if="plugins.length === 0 && !loading" class="empty-state">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5"/>
-        </svg>
-        <p>No plugins installed</p>
-        <p class="empty-hint">Install a plugin to extend ncSender functionality</p>
-      </div>
+      <div class="plugins-scrollable">
+        <div v-if="plugins.length === 0 && !loading" class="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5"/>
+          </svg>
+          <p>No plugins installed</p>
+          <p class="empty-hint">Install a plugin to extend ncSender functionality</p>
+        </div>
 
-      <div v-else class="plugins-container">
+        <div v-else class="plugins-container">
         <!-- Sortable Plugins Section -->
         <div v-if="sortablePlugins.length > 0" class="plugins-section">
           <h4 class="section-header">Event-based Plugins{{ allowPriorityReordering ? ' (Sortable)' : '' }}</h4>
@@ -83,8 +84,15 @@
                   class="plugin-icon-small"
                   @error="brokenIcons[plugin.id] = true"
                 />
-                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16">
-                  <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5"/>
+                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32">
+                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
+                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
+                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
+                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
+                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
+                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
+                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
+                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
                 </svg>
               </div>
 
@@ -160,8 +168,6 @@
           </div>
         </div>
 
-        <!-- Section Divider -->
-        <div v-if="sortablePlugins.length > 0 && otherPlugins.length > 0" class="section-divider"></div>
 
         <!-- Other Plugins Section -->
         <div v-if="otherPlugins.length > 0" class="plugins-section">
@@ -182,8 +188,15 @@
                   class="plugin-icon-small"
                   @error="brokenIcons[plugin.id] = true"
                 />
-                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16">
-                  <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5"/>
+                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32">
+                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
+                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
+                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
+                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
+                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
+                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
+                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
+                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
                 </svg>
               </div>
 
@@ -371,6 +384,7 @@
               </button>
             </div>
         </div>
+        </div>
       </div>
     </div>
   </div>
@@ -401,11 +415,11 @@
   </Dialog>
 
   <!-- Install Plugin Dialog -->
-  <Dialog v-if="showInstallDialog" @close="closeInstallDialog" :show-header="false" size="small">
-    <div class="install-dialog">
+  <Dialog v-if="showInstallDialog" @close="closeInstallDialog" :show-header="false" :size="installing || installSuccess || installCategoryConflict ? 'small' : 'medium-minus'">
+    <div class="install-dialog" :class="{ 'install-dialog--compact': installing || installSuccess || installCategoryConflict }">
       <h3>Install Plugin</h3>
 
-      <div v-if="installError" class="error">
+      <div v-if="installError && !installCategoryConflict" class="error">
         {{ installError }}
       </div>
 
@@ -414,11 +428,13 @@
         <p>Installing plugin...</p>
       </div>
 
-      <div v-else-if="installSuccess" class="success-state">
+      <div v-else-if="installSuccess || installCategoryConflict" class="success-state">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
           <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
         </svg>
-        <p class="success-message">Plugin installed successfully!</p>
+        <p class="success-message">
+          {{ installCategoryConflict ? 'Plugin installed successfully but not activated. Another plugin in the same category is already active.' : 'Plugin installed successfully!' }}
+        </p>
         <button class="btn btn-primary" @click="closeInstallDialog">Done</button>
       </div>
 
@@ -426,66 +442,140 @@
         <!-- Tab Selector -->
         <div class="install-tabs">
           <button
-            :class="['tab-button', { active: installMethod === 'url' }]"
-            @click="installMethod = 'url'"
+            :class="['tab-button', { active: installMethod === 'registry' }]"
+            @click="installMethod = 'registry'"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
-              <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243z"/>
+              <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
             </svg>
-            ZIP URL
+            Registry
           </button>
           <button
-            :class="['tab-button', { active: installMethod === 'file' }]"
-            @click="installMethod = 'file'"
+            :class="['tab-button', { active: installMethod === 'zip' }]"
+            @click="installMethod = 'zip'"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
               <path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
               <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2"/>
               <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1z"/>
             </svg>
-            ZIP File
+            ZIP
           </button>
         </div>
 
-        <!-- ZIP URL -->
-        <div v-if="installMethod === 'url'" class="install-method-content">
-          <p>Enter the direct URL to the plugin ZIP file:</p>
-
-          <div class="url-input-wrapper">
+        <!-- Registry -->
+        <div v-if="installMethod === 'registry'" class="install-method-content">
+          <div class="registry-search">
             <input
-              v-model="zipUrl"
+              v-model="registrySearch"
               type="text"
-              placeholder="https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
+              placeholder="Search plugins..."
               class="url-input"
-              @keyup.enter="installFromUrl"
-              @contextmenu.stop
             />
           </div>
 
-          <p class="install-hint">
-            Plugin must be a ZIP archive containing manifest.json and plugin code.
-          </p>
+          <div v-if="loadingRegistry" class="loading-registry">
+            <div class="loading-spinner"></div>
+            <p>Loading plugin registry...</p>
+          </div>
+
+          <div v-else-if="registryError" class="error">
+            {{ registryError }}
+          </div>
+
+          <div v-else-if="filteredRegistryPlugins.length === 0" class="no-plugins">
+            <p>No plugins found</p>
+          </div>
+
+          <div v-else class="registry-list">
+            <div
+              v-for="plugin in filteredRegistryPlugins"
+              :key="plugin.id"
+              class="registry-plugin"
+            >
+              <div class="registry-plugin-icon">
+                <img
+                  v-if="plugin.iconUrl && !brokenRegistryIcons[plugin.id]"
+                  :src="plugin.iconUrl"
+                  :alt="plugin.name"
+                  @error="handleRegistryIconError(plugin.id)"
+                />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 32 32">
+                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
+                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
+                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
+                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
+                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
+                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
+                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
+                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
+                </svg>
+              </div>
+              <div class="registry-plugin-info">
+                <h4>{{ plugin.name }}</h4>
+                <p class="registry-plugin-description">{{ plugin.description }}</p>
+                <div class="registry-plugin-meta">
+                  <span class="registry-plugin-author">{{ plugin.author }}</span>
+                </div>
+              </div>
+              <div class="registry-plugin-actions">
+                <button
+                  v-if="isPluginInstalled(plugin.id)"
+                  class="btn btn-secondary"
+                  disabled
+                >
+                  Installed
+                </button>
+                <button
+                  v-else
+                  class="btn btn-primary"
+                  @click="installFromRegistry(plugin)"
+                  :disabled="installing"
+                >
+                  Install
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- ZIP File Upload -->
+        <!-- ZIP -->
         <div v-else class="install-method-content">
-          <div class="file-input-wrapper">
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".zip"
-              @change="handleFileSelect"
-              class="file-input"
-            />
-            <button class="btn btn-secondary" @click="triggerFileSelect">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
-                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
-              </svg>
-              Choose File
-            </button>
-            <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
+          <p>Install from ZIP file or URL:</p>
+
+          <div class="zip-input-section">
+            <div class="url-input-wrapper">
+              <input
+                v-model="zipUrl"
+                type="text"
+                placeholder="https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
+                class="url-input"
+                @keyup.enter="installFromUrl"
+                @contextmenu.stop
+              />
+            </div>
+
+            <div class="zip-divider">
+              <span>OR</span>
+            </div>
+
+            <div class="file-input-wrapper">
+              <input
+                ref="fileInput"
+                type="file"
+                accept=".zip"
+                @change="handleFileSelect"
+                class="file-input"
+              />
+              <button class="btn btn-secondary" @click="triggerFileSelect">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
+                </svg>
+                Choose File
+              </button>
+              <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
+            </div>
           </div>
 
           <p class="install-hint">
@@ -494,20 +584,20 @@
         </div>
 
         <div class="install-actions">
-          <button class="btn btn-secondary" @click="closeInstallDialog">Cancel</button>
+          <button class="btn btn-primary install-close-btn" @click="closeInstallDialog">Close</button>
           <button
-            v-if="installMethod === 'url'"
+            v-if="installMethod === 'zip' && zipUrl"
             class="btn btn-primary"
             @click="installFromUrl"
-            :disabled="!zipUrl || installing"
+            :disabled="installing"
           >
             Install from URL
           </button>
           <button
-            v-else
+            v-else-if="installMethod === 'zip' && selectedFile"
             class="btn btn-primary"
             @click="uploadPlugin"
-            :disabled="!selectedFile || installing"
+            :disabled="installing"
           >
             Install from File
           </button>
@@ -615,14 +705,21 @@ const selectedFile = ref<File | null>(null);
 const selectedFileName = ref<string>('');
 const installing = ref(false);
 const installSuccess = ref(false);
+const installCategoryConflict = ref(false);
 const installError = ref<string | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const showConfigPanel = ref(false);
 const selectedPluginForConfig = ref<PluginListItem | null>(null);
 const configUIContent = ref('');
 const configIframe = ref<HTMLIFrameElement | null>(null);
-const installMethod = ref<'file' | 'url'>('url');
+const installMethod = ref<'zip' | 'registry'>('registry');
 const zipUrl = ref<string>('');
+const registryPlugins = ref<any[]>([]);
+const registrySearch = ref<string>('');
+const loadingRegistry = ref(false);
+const registryError = ref<string | null>(null);
+const registryCacheExpiry = ref<number>(0);
+const brokenRegistryIcons = ref<Record<string, boolean>>({});
 let unsubscribePluginsChanged: (() => void) | null = null;
 let refreshPending = false;
 const brokenIcons = ref<Record<string, boolean>>({});
@@ -1018,6 +1115,18 @@ const uploadPlugin = async () => {
     installSuccess.value = true;
     await loadPlugins();
   } catch (error: any) {
+    if (error.response?.status === 409 && (error.response?.data?.error === 'CATEGORY_CONFLICT' || error.response?.data?.error?.includes('CATEGORY_CONFLICT'))) {
+      installCategoryConflict.value = true;
+      installing.value = false;
+      await loadPlugins();
+      return;
+    }
+    if (error.message?.includes('CATEGORY_CONFLICT')) {
+      installCategoryConflict.value = true;
+      installing.value = false;
+      await loadPlugins();
+      return;
+    }
     installError.value = error.message || 'Failed to install plugin';
     console.error('Error installing plugin:', error);
   } finally {
@@ -1058,12 +1167,24 @@ const installFromUrl = async () => {
     }
 
     if (!response.ok) {
+      if (response.status === 409 && (data.error === 'CATEGORY_CONFLICT' || data.error?.includes('CATEGORY_CONFLICT'))) {
+        installCategoryConflict.value = true;
+        installing.value = false;
+        await loadPlugins();
+        return;
+      }
       throw new Error(data.error || 'Failed to install plugin from URL');
     }
 
     installSuccess.value = true;
     await loadPlugins();
   } catch (error: any) {
+    if (error.message?.includes('CATEGORY_CONFLICT')) {
+      installCategoryConflict.value = true;
+      installing.value = false;
+      await loadPlugins();
+      return;
+    }
     installError.value = error.message || 'Failed to install plugin from URL';
     console.error('Error installing plugin from URL:', error);
   } finally {
@@ -1072,14 +1193,20 @@ const installFromUrl = async () => {
 };
 
 
+const openInstallDialog = () => {
+  showInstallDialog.value = true;
+  loadRegistryPlugins();
+};
+
 const closeInstallDialog = () => {
   showInstallDialog.value = false;
   selectedFile.value = null;
   selectedFileName.value = '';
   zipUrl.value = '';
-  installMethod.value = 'url';
+  installMethod.value = 'registry';
   installing.value = false;
   installSuccess.value = false;
+  installCategoryConflict.value = false;
   installError.value = null;
 
   if (fileInput.value) {
@@ -1101,6 +1228,122 @@ const formatTime = (timestamp: string) => {
 
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+};
+
+const REGISTRY_URL = 'https://raw.githubusercontent.com/siganberg/ncSender.plugins-registry/main/plugins.json';
+const CACHE_DURATION = 3600000;
+
+const filteredRegistryPlugins = computed(() => {
+  if (!registrySearch.value) return registryPlugins.value;
+
+  const search = registrySearch.value.toLowerCase();
+  return registryPlugins.value.filter(plugin =>
+    plugin.name.toLowerCase().includes(search) ||
+    plugin.description.toLowerCase().includes(search) ||
+    plugin.author.toLowerCase().includes(search)
+  );
+});
+
+const loadRegistryPlugins = async () => {
+  const now = Date.now();
+  if (registryPlugins.value.length > 0 && now < registryCacheExpiry.value) {
+    return;
+  }
+
+  loadingRegistry.value = true;
+  registryError.value = null;
+
+  try {
+    const response = await fetch(REGISTRY_URL, { cache: 'no-cache' });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch registry: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    registryPlugins.value = data;
+    registryCacheExpiry.value = now + CACHE_DURATION;
+  } catch (error: any) {
+    registryError.value = error.message || 'Failed to load plugin registry';
+    console.error('Error loading registry:', error);
+  } finally {
+    loadingRegistry.value = false;
+  }
+};
+
+const isPluginInstalled = (pluginId: string) => {
+  return plugins.value.some(p => p.id === pluginId);
+};
+
+const installFromRegistry = async (plugin: any) => {
+  installing.value = true;
+  installError.value = null;
+
+  try {
+    const repoPath = plugin.repository.replace('https://github.com/', '');
+    const apiUrl = `https://api.github.com/repos/${repoPath}/releases/latest`;
+
+    const releaseResponse = await fetch(apiUrl);
+    if (!releaseResponse.ok) {
+      throw new Error('Failed to fetch latest release information');
+    }
+
+    const releaseData = await releaseResponse.json();
+    const zipAsset = releaseData.assets.find((asset: any) => asset.name.endsWith('.zip'));
+
+    if (!zipAsset) {
+      throw new Error('No ZIP file found in latest release');
+    }
+
+    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url: zipAsset.browser_download_url }),
+    });
+
+    let data;
+    const contentType = response.headers.get('content-type');
+
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        throw new Error('Invalid JSON response from server');
+      }
+    } else {
+      const text = await response.text();
+      throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`);
+    }
+
+    if (!response.ok) {
+      if (response.status === 409 && (data.error === 'CATEGORY_CONFLICT' || data.error?.includes('CATEGORY_CONFLICT'))) {
+        installCategoryConflict.value = true;
+        installing.value = false;
+        await loadPlugins();
+        return;
+      }
+      throw new Error(data.error || 'Failed to install plugin from registry');
+    }
+
+    installSuccess.value = true;
+    await loadPlugins();
+  } catch (error: any) {
+    if (error.message?.includes('CATEGORY_CONFLICT')) {
+      installCategoryConflict.value = true;
+      installing.value = false;
+      await loadPlugins();
+      return;
+    }
+    installError.value = error.message || 'Failed to install plugin from registry';
+    console.error('Error installing plugin from registry:', error);
+  } finally {
+    installing.value = false;
+  }
+};
+
+const handleRegistryIconError = (pluginId: string) => {
+  brokenRegistryIcons.value[pluginId] = true;
 };
 
 onMounted(() => {
@@ -1141,6 +1384,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .plugins-header {
@@ -1148,8 +1393,16 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   padding: var(--gap-md);
-  padding-top: 0px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.plugins-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
   background: var(--color-surface);
 }
 
@@ -1180,6 +1433,7 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -1286,6 +1540,11 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.plugin-thumbnail:has(.plugin-icon-placeholder) {
+  background: transparent;
+  border-radius: 0;
+}
+
 .plugin-thumbnail svg {
   opacity: 0.5;
 }
@@ -1372,6 +1631,14 @@ onBeforeUnmount(() => {
 
 .install-dialog {
   padding: var(--gap-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.install-dialog--compact {
+  height: auto;
 }
 
 .install-dialog h3 {
@@ -1478,7 +1745,9 @@ onBeforeUnmount(() => {
 .install-method-content {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .install-method-content p {
@@ -1562,9 +1831,19 @@ onBeforeUnmount(() => {
 
 .install-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--gap-sm);
   margin-top: var(--gap-md);
+}
+
+.install-actions .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.install-close-btn {
+  padding: 12px 24px !important;
 }
 
 .installing-state,
@@ -1575,6 +1854,12 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: var(--gap-xl) var(--gap-md);
   text-align: center;
+}
+
+.install-dialog:not(.install-dialog--compact) .installing-state,
+.install-dialog:not(.install-dialog--compact) .success-state {
+  flex: 1;
+  height: 100%;
 }
 
 .installing-state p,
@@ -1600,13 +1885,180 @@ onBeforeUnmount(() => {
 }
 
 .success-message {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 400;
   color: var(--color-text-primary);
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .upload-form p {
   margin-bottom: var(--gap-sm);
+}
+
+.zip-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+.zip-divider {
+  text-align: center;
+  position: relative;
+  margin: var(--gap-sm) 0;
+}
+
+.zip-divider span {
+  background: var(--color-surface);
+  padding: 0 var(--gap-md);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  position: relative;
+  z-index: 1;
+}
+
+.zip-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.registry-search {
+  margin-bottom: var(--gap-md);
+}
+
+.loading-registry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.loading-registry .loading-spinner {
+  width: 32px;
+  height: 32px;
+  margin-bottom: var(--gap-md);
+}
+
+.no-plugins {
+  text-align: center;
+  padding: var(--gap-xl);
+  color: var(--color-text-secondary);
+}
+
+.registry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.registry-plugin {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: all 0.2s ease;
+}
+
+.registry-plugin:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.registry-plugin-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.registry-plugin-icon:has(img) {
+  background: var(--color-surface);
+  border-radius: var(--radius-small);
+}
+
+.registry-plugin-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.registry-plugin-icon svg {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.registry-plugin-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.registry-plugin-info h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.registry-plugin-description {
+  margin: 0 0 0 0 !important;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.registry-plugin-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.registry-plugin-author {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.registry-plugin-version {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Courier New', monospace;
+}
+
+.registry-plugin-actions {
+  flex-shrink: 0;
+}
+
+.registry-plugin-actions .btn {
+  min-width: 100px;
 }
 
 .config-panel-view {
@@ -1728,6 +2180,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  padding: 0 var(--gap-md) var(--gap-md) var(--gap-md);
 }
 
 .plugins-section {
@@ -1744,12 +2197,6 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0;
-}
-
-.section-divider {
-  height: 1px;
-  background: var(--color-border);
-  margin: 16px 0;
 }
 
 .plugins-table {
@@ -1827,9 +2274,9 @@ onBeforeUnmount(() => {
 }
 
 .plugin-icon-placeholder {
-  width: 48px;
-  height: 48px;
-  opacity: 0.3;
+  width: 64px;
+  height: 64px;
+  opacity: 0.6;
 }
 
 .plugin-info-cell {
