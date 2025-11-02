@@ -187,9 +187,9 @@ const releaseNotesHtml = computed(() => {
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     // Wrap lists
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    // Line breaks
-    .replace(/\n\n/g, '<br><br>')
-    .replace(/\n/g, '<br>');
+    // Line breaks - single break for paragraphs
+    .replace(/\n\n/g, '<br>')
+    .replace(/\n/g, ' ');
 });
 
 const openGitHubRelease = () => {
@@ -375,7 +375,7 @@ const openGitHubRelease = () => {
 .notes-body :deep(h1),
 .notes-body :deep(h2),
 .notes-body :deep(h3) {
-  margin: 16px 0 8px 0;
+  margin: 12px 0 6px 0;
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -399,12 +399,12 @@ const openGitHubRelease = () => {
 }
 
 .notes-body :deep(ul) {
-  margin: 8px 0;
+  margin: 4px 0;
   padding-left: 24px;
 }
 
 .notes-body :deep(li) {
-  margin: 4px 0;
+  margin: 2px 0;
   color: var(--color-text-primary);
 }
 
