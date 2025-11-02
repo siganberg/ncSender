@@ -323,9 +323,18 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
         return res.status(400).json({ error: error.message || 'Invalid plugin: manifest.json not found or invalid' });
       }
 
-      // Register and enable the plugin
+      // Check if plugin is already registered
+      const installedPlugins = pluginManager.getInstalledPlugins();
+      const existingPlugin = installedPlugins.find(p => p.id === manifest.id);
+      const shouldEnable = existingPlugin ? existingPlugin.enabled : true;
+
+      // Register the plugin (updates manifest but preserves enabled state)
       await pluginManager.installPlugin(manifest.id, manifest);
-      await pluginManager.enablePlugin(manifest.id);
+
+      // Only enable if it should be enabled
+      if (shouldEnable) {
+        await pluginManager.enablePlugin(manifest.id);
+      }
 
       // Broadcast to all clients that plugin tools have changed
       if (broadcast) {
@@ -334,11 +343,14 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
       res.json({
         success: true,
-        message: `Plugin "${manifest.name}" registered and enabled`,
+        message: shouldEnable
+          ? `Plugin "${manifest.name}" registered and enabled`
+          : `Plugin "${manifest.name}" registered (disabled)`,
         plugin: {
           id: manifest.id,
           name: manifest.name,
-          version: manifest.version
+          version: manifest.version,
+          enabled: shouldEnable
         }
       });
     } catch (error) {
