@@ -1,6 +1,10 @@
 <template>
   <div class="dialog-backdrop" @click.self="$emit('close')" :style="{ zIndex }">
-    <div class="dialog" :class="[size ? `dialog--${size}` : '']">
+    <div
+      class="dialog"
+      :class="[size ? `dialog--${size}` : '']"
+      :style="customStyle"
+    >
       <header v-if="showHeader" class="dialog__header">
         <h2 class="dialog__title"><slot name="title">Dialog</slot></h2>
         <button class="dialog__close" @click="$emit('close')" aria-label="Close dialog">&times;</button>
@@ -13,11 +17,32 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+
+const props = defineProps<{
   showHeader?: boolean;
   size?: 'small' | 'small-plus' | 'medium-minus' | 'medium' | 'large';
   zIndex?: number;
+  width?: string;
+  height?: string;
+  maxWidth?: string;
+  maxHeight?: string;
+  minWidth?: string;
+  minHeight?: string;
 }>()
+
+const customStyle = computed(() => {
+  const style: Record<string, string> = {};
+
+  if (props.width) style.width = props.width;
+  if (props.height) style.height = props.height;
+  if (props.maxWidth) style.maxWidth = props.maxWidth;
+  if (props.maxHeight) style.maxHeight = props.maxHeight;
+  if (props.minWidth) style.minWidth = props.minWidth;
+  if (props.minHeight) style.minHeight = props.minHeight;
+
+  return Object.keys(style).length > 0 ? style : undefined;
+});
 
 defineEmits<{
   (e: 'close'): void;
@@ -62,9 +87,8 @@ defineEmits<{
 }
 
 .dialog--medium-minus {
-  width: 850px;
-  max-width: 90vw;
-  height: 60vh;
+  width: auto;
+  height: auto;
 }
 
 .dialog--medium {

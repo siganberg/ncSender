@@ -415,7 +415,15 @@
   </Dialog>
 
   <!-- Install Plugin Dialog -->
-  <Dialog v-if="showInstallDialog" @close="closeInstallDialog" :show-header="false" :size="installing || installSuccess || installCategoryConflict ? 'small' : 'medium-minus'">
+  <Dialog
+    v-if="showInstallDialog"
+    @close="closeInstallDialog"
+    :show-header="false"
+    :size="installing || installSuccess || installCategoryConflict ? 'small' : undefined"
+    :width="!(installing || installSuccess || installCategoryConflict) ? '850px' : undefined"
+    :max-width="!(installing || installSuccess || installCategoryConflict) ? '90vw' : undefined"
+    :height="!(installing || installSuccess || installCategoryConflict) ? '60vh' : undefined"
+  >
     <div class="install-dialog" :class="{ 'install-dialog--compact': installing || installSuccess || installCategoryConflict }">
       <h3>Install Plugin</h3>
 
