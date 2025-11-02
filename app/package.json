@@ -26,7 +26,8 @@
     "dist": "npm run build && electron-builder",
     "install:all": "npm install && cd client && npm install",
     "plugins:watch": "node ../.scripts/watch-plugins.mjs",
-    "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:watch\""
+    "plugins:reload": "node ../.scripts/reload-plugin.mjs",
+    "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:reload com.ncsender.toolbench\""
   },
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",

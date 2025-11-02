@@ -96,7 +96,6 @@ export class CNCController extends EventEmitter {
       const message = grblErrors[code] || 'Unknown error';
       this.handleCommandError({ code, message });
       this.emit('cnc-error', { code, message });
-      this.sendRecoveryNewline();
     } else if (trimmedData.toLowerCase().startsWith('alarm')) {
       this.handleCommandError({ code: 'ALARM', message: trimmedData });
       this.emit('cnc-error', { code: 'ALARM', message: trimmedData });
@@ -203,15 +202,6 @@ export class CNCController extends EventEmitter {
 
     cmd.reject(error);
     this.emit('command-ack', payload);
-  }
-
-  sendRecoveryNewline() {
-    try {
-      this.writeToConnection('\n');
-      log('Sent newline to reset firmware parser state after error');
-    } catch (error) {
-      log('Failed to send recovery newline:', error);
-    }
   }
 
   parseStatusReport(data) {

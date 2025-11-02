@@ -391,19 +391,27 @@ class PluginManager {
     const registry = this.loadRegistry();
 
     const existingIndex = registry.findIndex(p => p.id === pluginId);
+    const existingPlugin = existingIndex >= 0 ? registry[existingIndex] : null;
 
-    // Check for exclusive category conflicts
-    let shouldEnable = true;
-    if (manifest.category && EXCLUSIVE_CATEGORIES.has(manifest.category)) {
-      const conflictingPlugin = registry.find(p =>
-        p.id !== pluginId &&
-        p.category === manifest.category &&
-        p.enabled === true
-      );
-      if (conflictingPlugin) {
-        shouldEnable = false;
-        log(`Plugin "${pluginId}" has exclusive category "${manifest.category}" - ` +
-            `disabling by default because "${conflictingPlugin.id}" is already enabled`);
+    // Determine enabled state
+    let shouldEnable;
+    if (existingPlugin !== null) {
+      // Preserve existing enabled state for updates
+      shouldEnable = existingPlugin.enabled;
+    } else {
+      // For new installs, check for exclusive category conflicts
+      shouldEnable = true;
+      if (manifest.category && EXCLUSIVE_CATEGORIES.has(manifest.category)) {
+        const conflictingPlugin = registry.find(p =>
+          p.id !== pluginId &&
+          p.category === manifest.category &&
+          p.enabled === true
+        );
+        if (conflictingPlugin) {
+          shouldEnable = false;
+          log(`Plugin "${pluginId}" has exclusive category "${manifest.category}" - ` +
+              `disabling by default because "${conflictingPlugin.id}" is already enabled`);
+        }
       }
     }
 
@@ -413,7 +421,7 @@ class PluginManager {
       version: manifest.version,
       category: manifest.category,
       enabled: shouldEnable,
-      installedAt: new Date().toISOString()
+      installedAt: existingPlugin?.installedAt || new Date().toISOString()
     };
 
     // Only add priority if it exists in manifest
