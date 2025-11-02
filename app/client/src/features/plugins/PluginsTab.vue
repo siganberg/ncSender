@@ -549,46 +549,48 @@
 
         <!-- ZIP -->
         <div v-else class="install-method-content">
-          <p>Install from ZIP file or URL:</p>
+          <div class="zip-content-centered">
+            <p class="zip-instruction">Install from ZIP file or URL:</p>
 
-          <div class="zip-input-section">
-            <div class="url-input-wrapper">
-              <input
-                v-model="zipUrl"
-                type="text"
-                placeholder="https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
-                class="url-input"
-                @keyup.enter="installFromUrl"
-                @contextmenu.stop
-              />
+            <div class="zip-input-section">
+              <div class="url-input-wrapper">
+                <input
+                  v-model="zipUrl"
+                  type="text"
+                  placeholder="https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
+                  class="url-input"
+                  @keyup.enter="installFromUrl"
+                  @contextmenu.stop
+                />
+              </div>
+
+              <div class="zip-divider">
+                <span>OR</span>
+              </div>
+
+              <div class="file-input-wrapper">
+                <input
+                  ref="fileInput"
+                  type="file"
+                  accept=".zip"
+                  @change="handleFileSelect"
+                  class="file-input"
+                />
+                <button class="btn btn-secondary" @click="triggerFileSelect">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                    <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
+                  </svg>
+                  Choose File
+                </button>
+                <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
+              </div>
             </div>
 
-            <div class="zip-divider">
-              <span>OR</span>
-            </div>
-
-            <div class="file-input-wrapper">
-              <input
-                ref="fileInput"
-                type="file"
-                accept=".zip"
-                @change="handleFileSelect"
-                class="file-input"
-              />
-              <button class="btn btn-secondary" @click="triggerFileSelect">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
-                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
-                </svg>
-                Choose File
-              </button>
-              <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
-            </div>
+            <p class="install-hint">
+              Plugin must be a ZIP archive containing manifest.json and plugin code.
+            </p>
           </div>
-
-          <p class="install-hint">
-            Plugin must be a ZIP archive containing manifest.json and plugin code.
-          </p>
         </div>
 
         <div class="install-actions">
@@ -1756,6 +1758,23 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  justify-content: center;
+  align-items: center;
+}
+
+.zip-content-centered {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+}
+
+.zip-instruction {
+  margin: 0;
+  color: var(--color-text-primary);
+  text-align: center;
+  font-size: 1rem;
 }
 
 .install-method-content p {
@@ -1814,8 +1833,9 @@ onBeforeUnmount(() => {
 
 .file-input-wrapper {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--gap-md);
+  gap: var(--gap-sm);
 }
 
 .file-input {
@@ -1826,6 +1846,7 @@ onBeforeUnmount(() => {
   background: var(--color-surface-muted);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
+  white-space: nowrap;
 }
 
 .btn-secondary:hover {
@@ -1835,6 +1856,8 @@ onBeforeUnmount(() => {
 .file-name {
   color: var(--color-text-secondary);
   font-size: 0.9rem;
+  text-align: center;
+  word-break: break-all;
 }
 
 .install-actions {
