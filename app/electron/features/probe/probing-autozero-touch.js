@@ -2,7 +2,7 @@
 // For AutoZero touch probe with various bit diameters
 
 const BOUNCE = 3;
-const PLATE_THICKNESS = 4; // mm
+const PLATE_THICKNESS = 5; // mm
 const AUTO_PLATE_INNER_DIMENSION = 45;
 const AUTO_DIAMETER_FALLBACK = 6.35; // Assume 1/4" when auto-detecting
 const TIP_EFFECTIVE_DIAMETER = 0.5; // Effective diameter for tip probing
