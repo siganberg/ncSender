@@ -38,6 +38,7 @@ async function createWindow() {
     minHeight: 720,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#111720' : '#F7F9FC',
     autoHideMenuBar: true,
+    show: false,
     kiosk: isKiosk,
     fullscreen: isKiosk,
     fullscreenable: true,
@@ -49,17 +50,23 @@ async function createWindow() {
     }
   });
 
-  // Maximize window by default (unless in kiosk mode)
-  if (!isKiosk) {
-    // Try maximize() first (works on some Linux WMs like Zorin)
-    mainWindow.maximize();
-
-    // Then use setBounds as fallback (works on Pi 5 Debian Bookworm and others)
-    // Use workArea instead of workAreaSize to get proper position and dimensions
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { x, y, width, height } = primaryDisplay.workArea;
-    mainWindow.setBounds({ x, y, width, height });
-  }
+  // Wait until content is ready before maximizing
+  mainWindow.once('ready-to-show', () => {
+    if (!isKiosk) {
+      try {
+        mainWindow.maximize();
+        mainWindow.show();
+      } catch (e) {
+        console.warn('Maximize failed:', e);
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { x, y, width, height } = primaryDisplay.workArea;
+        mainWindow.setBounds({ x, y, width, height });
+        mainWindow.show();
+      }
+    } else {
+      mainWindow.show();
+    }
+  });
 
   // Load the UI from the embedded server
   const appUrl = `http://localhost:${serverPort}`;
