@@ -1,14 +1,10 @@
 ## What's Changed
 
-### ✨ New Features
-- Add gamepad controller support with visual debug overlay
-- Add diagonal jog control support for both gamepad and keyboard
-- Add real-time monitoring and display of all gamepad axes
-
-### 🔧 Improvements
-- Improve window maximize behavior using ready-to-show event
-- Improve diagonal jog detection with full-strength priority for more responsive control
+### 🎮 Gamepad Improvements
+- Improved diagonal jogging detection for smoother diagonal movement
+- Fine-tuned gamepad axis activation thresholds for better responsiveness
+- Added gamepad debug overlay toggle button in app header for easier troubleshooting
 
 ### 🐛 Bug Fixes
-- Fix window maximize overflow issue on Raspberry Pi
-- Fix diagonal jog command execution order
+- Fixed diagonal direction detection issues
+- Fixed syntax errors in diagonal jog logic
