@@ -47,6 +47,10 @@ class GamepadManager {
     this.actionsExecutedThisFrame.clear();
 
     const gamepads = navigator.getGamepads();
+    const connectedGamepads = Array.from(gamepads).filter(g => g !== null);
+    if (connectedGamepads.length > 0 && Math.random() < 0.01) {
+      console.log(`Polling ${connectedGamepads.length} gamepad(s)`);
+    }
     const currentButtonStates = new Map<string, boolean>();
 
     for (const gamepad of gamepads) {
@@ -84,6 +88,10 @@ class GamepadManager {
             });
           }
         }
+      }
+
+      if (activeJogActions.size > 0) {
+        console.log('Active jog actions:', Array.from(activeJogActions.entries()).map(([id, meta]) => `${meta.axis}${meta.direction > 0 ? '+' : '-'}`));
       }
 
       const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
