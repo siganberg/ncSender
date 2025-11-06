@@ -55,7 +55,7 @@ class GamepadManager {
       }
 
       const bindings = gamepadBindingStore.getAllBindings();
-      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 }>();
+      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string }>();
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -76,32 +76,50 @@ class GamepadManager {
         if (isActive) {
           const jogMeta = JOG_ACTIONS[actionId];
           if (jogMeta) {
-            activeJogActions.set(actionId, { axis: jogMeta.axis, direction: jogMeta.direction });
+            activeJogActions.set(actionId, { axis: jogMeta.axis, direction: jogMeta.direction, bindingKey });
           }
         }
+      }
 
-        if (isActive && !wasActive) {
+      const isDiagonal = this.handleDiagonalJogs(gamepad.index, activeJogActions);
+
+      for (const [actionId, bindingStr] of Object.entries(bindings)) {
+        if (!bindingStr) {
+          continue;
+        }
+
+        const binding = parseGamepadBinding(bindingStr);
+        if (!binding) {
+          continue;
+        }
+
+        const bindingKey = `${gamepad.index}-${bindingStr}`;
+        const isActive = currentButtonStates.get(bindingKey) || false;
+        const wasActive = this.previousButtonStates.get(bindingKey) || false;
+
+        const jogMeta = JOG_ACTIONS[actionId];
+        const shouldSkipDueTodiagonal = isDiagonal && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y');
+
+        if (isActive && !wasActive && !shouldSkipDueTodiagonal) {
           this.handleGamepadButtonDown(actionId, bindingKey, binding);
         } else if (!isActive && wasActive) {
           this.handleGamepadButtonUp(actionId, bindingKey);
         }
       }
-
-      this.handleDiagonalJogs(gamepad.index, activeJogActions);
     }
 
     this.previousButtonStates = currentButtonStates;
   };
 
-  private handleDiagonalJogs(gamepadIndex: number, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 }>) {
-    let xAction: { actionId: string, direction: 1 | -1 } | null = null;
-    let yAction: { actionId: string, direction: 1 | -1 } | null = null;
+  private handleDiagonalJogs(gamepadIndex: number, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string }>): boolean {
+    let xAction: { actionId: string, direction: 1 | -1, bindingKey: string } | null = null;
+    let yAction: { actionId: string, direction: 1 | -1, bindingKey: string } | null = null;
 
     for (const [actionId, meta] of activeJogActions.entries()) {
       if (meta.axis === 'X') {
-        xAction = { actionId, direction: meta.direction };
+        xAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey };
       } else if (meta.axis === 'Y') {
-        yAction = { actionId, direction: meta.direction };
+        yAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey };
       }
     }
 
@@ -146,6 +164,8 @@ class GamepadManager {
           }
         }
       }
+
+      return true;
     } else {
       const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
         key.startsWith(`${gamepadIndex}-diagonal-`)
@@ -157,6 +177,8 @@ class GamepadManager {
           this.handleGamepadButtonUp('', diagonalKey);
         }
       }
+
+      return false;
     }
   }
 
@@ -180,16 +202,6 @@ class GamepadManager {
     if (jogMeta || diagonalJogMeta) {
       if (this.jogStates.has(bindingKey)) {
         return;
-      }
-
-      if (jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
-        const gamepadIndex = parseInt(bindingKey.split('-')[0]);
-        const hasDiagonal = Array.from(this.jogStates.keys()).some(key =>
-          key.startsWith(`${gamepadIndex}-diagonal-`)
-        );
-        if (hasDiagonal) {
-          return;
-        }
       }
 
       const state: ActiveJogState = jogMeta
