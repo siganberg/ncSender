@@ -4,7 +4,7 @@ export interface GamepadBinding {
   direction?: 'positive' | 'negative';
 }
 
-const AXIS_THRESHOLD = 0.75;
+const AXIS_THRESHOLD = 0.95;
 const FULL_STRENGTH_THRESHOLD = 0.95;
 
 export function formatGamepadBinding(binding: GamepadBinding): string {

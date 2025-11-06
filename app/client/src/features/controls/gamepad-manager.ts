@@ -117,8 +117,7 @@ class GamepadManager {
   };
 
   private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
-    const LEADING_AXIS_THRESHOLD = 0.5;
-    const LAGGING_AXIS_GAP = 0.1;
+    const DIAGONAL_THRESHOLD = 0.5;
 
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
     let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
@@ -139,8 +138,7 @@ class GamepadManager {
       const yAxisIndex = xAction.axisIndex !== undefined ? (xAction.axisIndex === 0 ? 1 : xAction.axisIndex === 1 ? 0 : -1) : -1;
       if (yAxisIndex >= 0 && yAxisIndex < gamepad.axes.length) {
         yStrength = Math.abs(gamepad.axes[yAxisIndex]);
-        const laggingThreshold = Math.max(0, xStrength - LAGGING_AXIS_GAP);
-        if (yStrength >= laggingThreshold) {
+        if (yStrength >= DIAGONAL_THRESHOLD) {
           const yDir = gamepad.axes[yAxisIndex] > 0 ? 1 : -1;
           yAction = { actionId: '', direction: yDir as 1 | -1, bindingKey: '', axisIndex: yAxisIndex };
         }
@@ -149,20 +147,14 @@ class GamepadManager {
       const xAxisIndex = yAction.axisIndex !== undefined ? (yAction.axisIndex === 0 ? 1 : yAction.axisIndex === 1 ? 0 : -1) : -1;
       if (xAxisIndex >= 0 && xAxisIndex < gamepad.axes.length) {
         xStrength = Math.abs(gamepad.axes[xAxisIndex]);
-        const laggingThreshold = Math.max(0, yStrength - LAGGING_AXIS_GAP);
-        if (xStrength >= laggingThreshold) {
+        if (xStrength >= DIAGONAL_THRESHOLD) {
           const xDir = gamepad.axes[xAxisIndex] > 0 ? 1 : -1;
           xAction = { actionId: '', direction: xDir as 1 | -1, bindingKey: '', axisIndex: xAxisIndex };
         }
       }
     }
 
-    if (xAction && yAction) {
-      const leadingStrength = Math.max(xStrength, yStrength);
-      const laggingStrength = Math.min(xStrength, yStrength);
-      const laggingThreshold = Math.max(0, leadingStrength - LAGGING_AXIS_GAP);
-
-      if (leadingStrength >= LEADING_AXIS_THRESHOLD && laggingStrength >= laggingThreshold) {
+    if (xAction && yAction && xStrength >= DIAGONAL_THRESHOLD && yStrength >= DIAGONAL_THRESHOLD) {
         const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
 
         const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
