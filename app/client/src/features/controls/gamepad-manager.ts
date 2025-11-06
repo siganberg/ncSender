@@ -47,26 +47,11 @@ class GamepadManager {
     this.actionsExecutedThisFrame.clear();
 
     const gamepads = navigator.getGamepads();
-    const connectedGamepads = Array.from(gamepads).filter(g => g !== null);
-    if (connectedGamepads.length > 0 && Math.random() < 0.01) {
-      console.log(`Polling ${connectedGamepads.length} gamepad(s)`);
-    }
     const currentButtonStates = new Map<string, boolean>();
 
     for (const gamepad of gamepads) {
       if (!gamepad) {
         continue;
-      }
-
-      const hasSignificantInput = gamepad.axes.some(axis => Math.abs(axis) > 0.1);
-      if (hasSignificantInput) {
-        const allAxes = gamepad.axes.map((value, index) => ({
-          index,
-          value: value.toFixed(3),
-          absValue: Math.abs(value).toFixed(3),
-          aboveThreshold: Math.abs(value) > 0.5
-        }));
-        console.log('Gamepad axes (real-time):', JSON.stringify(allAxes));
       }
 
       const bindings = gamepadBindingStore.getAllBindings();
@@ -101,24 +86,6 @@ class GamepadManager {
         }
       }
 
-      if (activeJogActions.size > 0) {
-        const actions = Array.from(activeJogActions.entries()).map(([id, meta]) => ({
-          action: id,
-          axis: meta.axis,
-          direction: meta.direction > 0 ? '+' : '-',
-          axisIndex: meta.axisIndex
-        }));
-
-        const allAxes = gamepad.axes.map((value, index) => ({
-          index,
-          value: value.toFixed(3),
-          absValue: Math.abs(value).toFixed(3)
-        }));
-
-        console.log('Active jog actions:', JSON.stringify(actions));
-        console.log('All axes:', JSON.stringify(allAxes));
-      }
-
       const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
@@ -150,37 +117,44 @@ class GamepadManager {
   };
 
   private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
+    const DIAGONAL_THRESHOLD = 0.2;
+
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
     let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
+    let xStrength = 0;
+    let yStrength = 0;
 
     for (const [actionId, meta] of activeJogActions.entries()) {
       if (meta.axis === 'X') {
         xAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
+        xStrength = xAction.axisIndex !== undefined ? Math.abs(gamepad.axes[xAction.axisIndex]) : 0;
       } else if (meta.axis === 'Y') {
         yAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
+        yStrength = yAction.axisIndex !== undefined ? Math.abs(gamepad.axes[yAction.axisIndex]) : 0;
       }
     }
 
-    if (xAction && yAction) {
-      const xIsFullStrength = xAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, xAction.axisIndex);
-      const yIsFullStrength = yAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, yAction.axisIndex);
-
-      const xStrength = xAction.axisIndex !== undefined ? Math.abs(gamepad.axes[xAction.axisIndex]) : 0;
-      const yStrength = yAction.axisIndex !== undefined ? Math.abs(gamepad.axes[yAction.axisIndex]) : 0;
-
-      console.log('Diagonal detection:', JSON.stringify({
-        X: { strength: xStrength.toFixed(3), fullStrength: xIsFullStrength },
-        Y: { strength: yStrength.toFixed(3), fullStrength: yIsFullStrength }
-      }));
-
-      if (xIsFullStrength && !yIsFullStrength) {
-        console.log('→ Allowing X-only movement (X at full strength)');
-        return false;
+    if (xAction && !yAction) {
+      const yAxisIndex = xAction.axisIndex !== undefined ? (xAction.axisIndex === 0 ? 1 : xAction.axisIndex === 1 ? 0 : -1) : -1;
+      if (yAxisIndex >= 0 && yAxisIndex < gamepad.axes.length) {
+        yStrength = Math.abs(gamepad.axes[yAxisIndex]);
+        if (yStrength > DIAGONAL_THRESHOLD) {
+          const yDir = gamepad.axes[yAxisIndex] > 0 ? 1 : -1;
+          yAction = { actionId: '', direction: yDir as 1 | -1, bindingKey: '', axisIndex: yAxisIndex };
+        }
       }
-      if (yIsFullStrength && !xIsFullStrength) {
-        console.log('→ Allowing Y-only movement (Y at full strength)');
-        return false;
+    } else if (yAction && !xAction) {
+      const xAxisIndex = yAction.axisIndex !== undefined ? (yAction.axisIndex === 0 ? 1 : yAction.axisIndex === 1 ? 0 : -1) : -1;
+      if (xAxisIndex >= 0 && xAxisIndex < gamepad.axes.length) {
+        xStrength = Math.abs(gamepad.axes[xAxisIndex]);
+        if (xStrength > DIAGONAL_THRESHOLD) {
+          const xDir = gamepad.axes[xAxisIndex] > 0 ? 1 : -1;
+          xAction = { actionId: '', direction: xDir as 1 | -1, bindingKey: '', axisIndex: xAxisIndex };
+        }
       }
+    }
+
+    if (xAction && yAction && xStrength > DIAGONAL_THRESHOLD && yStrength > DIAGONAL_THRESHOLD) {
       const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
 
       const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
@@ -217,8 +191,6 @@ class GamepadManager {
               state.timerId = window.setTimeout(() => {
                 this.beginLongPress(diagonalKey, state);
               }, LONG_PRESS_DELAY_MS);
-
-              console.log('→ Triggering diagonal jog');
             }
           }
         }
