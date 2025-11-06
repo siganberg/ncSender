@@ -51,7 +51,14 @@ async function createWindow() {
 
   // Maximize window by default (unless in kiosk mode)
   if (!isKiosk) {
+    // Try maximize() first (works on some Linux WMs like Zorin)
     mainWindow.maximize();
+
+    // Then use setBounds as fallback (works on Pi 5 Debian Bookworm and others)
+    // Use workArea instead of workAreaSize to get proper position and dimensions
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { x, y, width, height } = primaryDisplay.workArea;
+    mainWindow.setBounds({ x, y, width, height });
   }
 
   // Load the UI from the embedded server
