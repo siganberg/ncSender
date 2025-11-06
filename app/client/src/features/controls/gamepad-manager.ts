@@ -117,7 +117,8 @@ class GamepadManager {
   };
 
   private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
-    const DIAGONAL_THRESHOLD = 0.2;
+    const LEADING_AXIS_THRESHOLD = 0.75;
+    const LAGGING_AXIS_GAP = 0.2;
 
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
     let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
@@ -138,7 +139,8 @@ class GamepadManager {
       const yAxisIndex = xAction.axisIndex !== undefined ? (xAction.axisIndex === 0 ? 1 : xAction.axisIndex === 1 ? 0 : -1) : -1;
       if (yAxisIndex >= 0 && yAxisIndex < gamepad.axes.length) {
         yStrength = Math.abs(gamepad.axes[yAxisIndex]);
-        if (yStrength > DIAGONAL_THRESHOLD) {
+        const laggingThreshold = Math.max(0, xStrength - LAGGING_AXIS_GAP);
+        if (yStrength >= laggingThreshold) {
           const yDir = gamepad.axes[yAxisIndex] > 0 ? 1 : -1;
           yAction = { actionId: '', direction: yDir as 1 | -1, bindingKey: '', axisIndex: yAxisIndex };
         }
@@ -147,70 +149,77 @@ class GamepadManager {
       const xAxisIndex = yAction.axisIndex !== undefined ? (yAction.axisIndex === 0 ? 1 : yAction.axisIndex === 1 ? 0 : -1) : -1;
       if (xAxisIndex >= 0 && xAxisIndex < gamepad.axes.length) {
         xStrength = Math.abs(gamepad.axes[xAxisIndex]);
-        if (xStrength > DIAGONAL_THRESHOLD) {
+        const laggingThreshold = Math.max(0, yStrength - LAGGING_AXIS_GAP);
+        if (xStrength >= laggingThreshold) {
           const xDir = gamepad.axes[xAxisIndex] > 0 ? 1 : -1;
           xAction = { actionId: '', direction: xDir as 1 | -1, bindingKey: '', axisIndex: xAxisIndex };
         }
       }
     }
 
-    if (xAction && yAction && xStrength > DIAGONAL_THRESHOLD && yStrength > DIAGONAL_THRESHOLD) {
-      const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
+    if (xAction && yAction) {
+      const leadingStrength = Math.max(xStrength, yStrength);
+      const laggingStrength = Math.min(xStrength, yStrength);
+      const laggingThreshold = Math.max(0, leadingStrength - LAGGING_AXIS_GAP);
 
-      const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
-        const meta = DIAGONAL_JOG_ACTIONS[id];
-        return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
-      });
+      if (leadingStrength >= LEADING_AXIS_THRESHOLD && laggingStrength >= laggingThreshold) {
+        const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
 
-      if (diagonalActionId) {
-        const action = commandRegistry.getAction(diagonalActionId);
-        if (action && (!action.isEnabled || action.isEnabled())) {
-          const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
+        const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
+          const meta = DIAGONAL_JOG_ACTIONS[id];
+          return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
+        });
 
-          if (!this.jogStates.has(diagonalKey)) {
-            const wasActive = this.previousButtonStates.get(diagonalKey) || false;
-            this.previousButtonStates.set(diagonalKey, true);
+        if (diagonalActionId) {
+          const action = commandRegistry.getAction(diagonalActionId);
+          if (action && (!action.isEnabled || action.isEnabled())) {
+            const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
 
-            if (!wasActive) {
-              const state: ActiveJogState = {
-                xDir: diagonalMeta.xDir,
-                yDir: diagonalMeta.yDir,
-                bindingKey: diagonalKey,
-                timerId: null,
-                longPressTriggered: false,
-                longPressActive: false,
-                cancelled: false,
-                session: null,
-                promise: null,
-                handledShortStep: false,
-                finished: false
-              };
+            if (!this.jogStates.has(diagonalKey)) {
+              const wasActive = this.previousButtonStates.get(diagonalKey) || false;
+              this.previousButtonStates.set(diagonalKey, true);
 
-              this.jogStates.set(diagonalKey, state);
+              if (!wasActive) {
+                const state: ActiveJogState = {
+                  xDir: diagonalMeta.xDir,
+                  yDir: diagonalMeta.yDir,
+                  bindingKey: diagonalKey,
+                  timerId: null,
+                  longPressTriggered: false,
+                  longPressActive: false,
+                  cancelled: false,
+                  session: null,
+                  promise: null,
+                  handledShortStep: false,
+                  finished: false
+                };
 
-              state.timerId = window.setTimeout(() => {
-                this.beginLongPress(diagonalKey, state);
-              }, LONG_PRESS_DELAY_MS);
+                this.jogStates.set(diagonalKey, state);
+
+                state.timerId = window.setTimeout(() => {
+                  this.beginLongPress(diagonalKey, state);
+                }, LONG_PRESS_DELAY_MS);
+              }
             }
           }
         }
+
+        return true;
       }
-
-      return true;
-    } else {
-      const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
-        key.startsWith(`${gamepad.index}-diagonal-`)
-      );
-
-      for (const diagonalKey of diagonalKeys) {
-        const state = this.jogStates.get(diagonalKey);
-        if (state && !state.finished) {
-          this.handleGamepadButtonUp('', diagonalKey);
-        }
-      }
-
-      return false;
     }
+
+    const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
+      key.startsWith(`${gamepad.index}-diagonal-`)
+    );
+
+    for (const diagonalKey of diagonalKeys) {
+      const state = this.jogStates.get(diagonalKey);
+      if (state && !state.finished) {
+        this.handleGamepadButtonUp('', diagonalKey);
+      }
+    }
+
+    return false;
   }
 
   private handleGamepadButtonDown(actionId: string, bindingKey: string, binding: GamepadBinding): void {
