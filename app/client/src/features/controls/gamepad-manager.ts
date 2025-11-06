@@ -2,7 +2,7 @@ import { watchEffect } from 'vue';
 import { commandRegistry } from '@/lib/command-registry';
 import { gamepadBindingStore } from './gamepad-binding-store';
 import { keyBindingStore } from './key-binding-store';
-import { parseGamepadBinding, isGamepadInputActive, type GamepadBinding } from './gamepad-utils';
+import { parseGamepadBinding, isGamepadInputActive, isAxisAtFullStrength, type GamepadBinding } from './gamepad-utils';
 import {
   JOG_ACTIONS,
   DIAGONAL_JOG_ACTIONS,
@@ -55,7 +55,7 @@ class GamepadManager {
       }
 
       const bindings = gamepadBindingStore.getAllBindings();
-      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string }>();
+      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>();
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -76,12 +76,17 @@ class GamepadManager {
         if (isActive) {
           const jogMeta = JOG_ACTIONS[actionId];
           if (jogMeta) {
-            activeJogActions.set(actionId, { axis: jogMeta.axis, direction: jogMeta.direction, bindingKey });
+            activeJogActions.set(actionId, {
+              axis: jogMeta.axis,
+              direction: jogMeta.direction,
+              bindingKey,
+              axisIndex: binding.type === 'axis' ? binding.index : undefined
+            });
           }
         }
       }
 
-      const isDiagonal = this.handleDiagonalJogs(gamepad.index, activeJogActions);
+      const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -111,20 +116,29 @@ class GamepadManager {
     this.previousButtonStates = currentButtonStates;
   };
 
-  private handleDiagonalJogs(gamepadIndex: number, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string }>): boolean {
-    let xAction: { actionId: string, direction: 1 | -1, bindingKey: string } | null = null;
-    let yAction: { actionId: string, direction: 1 | -1, bindingKey: string } | null = null;
+  private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
+    let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
+    let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
 
     for (const [actionId, meta] of activeJogActions.entries()) {
       if (meta.axis === 'X') {
-        xAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey };
+        xAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
       } else if (meta.axis === 'Y') {
-        yAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey };
+        yAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
       }
     }
 
     if (xAction && yAction) {
-      const diagonalKey = `${gamepadIndex}-diagonal-${xAction.direction}-${yAction.direction}`;
+      const xIsFullStrength = xAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, xAction.axisIndex);
+      const yIsFullStrength = yAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, yAction.axisIndex);
+
+      if (xIsFullStrength && !yIsFullStrength) {
+        return false;
+      }
+      if (yIsFullStrength && !xIsFullStrength) {
+        return false;
+      }
+      const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
 
       const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
         const meta = DIAGONAL_JOG_ACTIONS[id];
@@ -168,7 +182,7 @@ class GamepadManager {
       return true;
     } else {
       const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
-        key.startsWith(`${gamepadIndex}-diagonal-`)
+        key.startsWith(`${gamepad.index}-diagonal-`)
       );
 
       for (const diagonalKey of diagonalKeys) {

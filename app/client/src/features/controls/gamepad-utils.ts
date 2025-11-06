@@ -5,6 +5,7 @@ export interface GamepadBinding {
 }
 
 const AXIS_THRESHOLD = 0.5;
+const FULL_STRENGTH_THRESHOLD = 0.95;
 
 export function formatGamepadBinding(binding: GamepadBinding): string {
   if (binding.type === 'button') {
@@ -84,4 +85,12 @@ export function isGamepadInputActive(gamepad: Gamepad, binding: GamepadBinding):
   }
 
   return false;
+}
+
+export function getAxisStrength(gamepad: Gamepad, axisIndex: number): number {
+  return Math.abs(gamepad.axes[axisIndex] || 0);
+}
+
+export function isAxisAtFullStrength(gamepad: Gamepad, axisIndex: number): boolean {
+  return getAxisStrength(gamepad, axisIndex) > FULL_STRENGTH_THRESHOLD;
 }
