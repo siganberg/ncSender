@@ -1,7 +1,13 @@
 <template>
   <div class="toolbar" :class="statusClass">
     <div class="toolbar__left">
-      <img src="/assets/ncsender.svg" alt="ncSender Logo" class="logo-image" />
+      <img
+        src="/assets/ncsender.svg"
+        alt="ncSender Logo"
+        class="logo-image logo-image--clickable"
+        @click="showGamepadDebug = !showGamepadDebug"
+        title="Toggle Gamepad Debug"
+      />
       <div class="logo-container">
         <span class="logo">ncSender</span>
         <span
@@ -56,16 +62,6 @@
         <span v-else class="update-indicator__dot"></span>
         <span class="update-indicator__label">{{ updateIndicatorLabel }}</span>
         <span v-if="updateStatusCopied" class="update-indicator__copy-feedback">Copied!</span>
-      </button>
-      <button
-        class="gamepad-debug-btn"
-        @click="showGamepadDebug = !showGamepadDebug"
-        :class="{ active: showGamepadDebug }"
-        title="Toggle Gamepad Debug"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M0 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2.5-1a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m2 0a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m5 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2M3 10.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z"/>
-        </svg>
       </button>
       <div class="unit-display">
         <label class="unit-label">Unit:</label>
@@ -298,6 +294,16 @@ const onWorkspaceChange = (e: Event) => {
   background: rgba(255, 255, 255, 0.9);
   border-radius: var(--radius-small);
   padding: 4px;
+}
+
+.logo-image--clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.logo-image--clickable:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
 }
 
 .logo-container {
@@ -743,32 +749,6 @@ button.danger {
 @keyframes pulse-glow-teal {
   0%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6); }
   50% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(26, 188, 156, 0.9); }
-}
-
-/* Gamepad debug button */
-.gamepad-debug-btn {
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.gamepad-debug-btn:hover {
-  background: var(--color-surface);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.gamepad-debug-btn.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
 }
 
 /* Theme toggle button */
