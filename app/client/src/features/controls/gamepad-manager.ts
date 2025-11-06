@@ -91,7 +91,13 @@ class GamepadManager {
       }
 
       if (activeJogActions.size > 0) {
-        console.log('Active jog actions:', Array.from(activeJogActions.entries()).map(([id, meta]) => `${meta.axis}${meta.direction > 0 ? '+' : '-'}`));
+        const actions = Array.from(activeJogActions.entries()).map(([id, meta]) => ({
+          action: id,
+          axis: meta.axis,
+          direction: meta.direction > 0 ? '+' : '-',
+          axisIndex: meta.axisIndex
+        }));
+        console.log('Active jog actions:', JSON.stringify(actions));
       }
 
       const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
@@ -143,7 +149,10 @@ class GamepadManager {
       const xStrength = xAction.axisIndex !== undefined ? Math.abs(gamepad.axes[xAction.axisIndex]) : 0;
       const yStrength = yAction.axisIndex !== undefined ? Math.abs(gamepad.axes[yAction.axisIndex]) : 0;
 
-      console.log(`Diagonal detection: X=${xStrength.toFixed(3)} (full=${xIsFullStrength}), Y=${yStrength.toFixed(3)} (full=${yIsFullStrength})`);
+      console.log('Diagonal detection:', JSON.stringify({
+        X: { strength: xStrength.toFixed(3), fullStrength: xIsFullStrength },
+        Y: { strength: yStrength.toFixed(3), fullStrength: yIsFullStrength }
+      }));
 
       if (xIsFullStrength && !yIsFullStrength) {
         console.log('→ Allowing X-only movement (X at full strength)');
