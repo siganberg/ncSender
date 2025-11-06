@@ -118,7 +118,7 @@ class GamepadManager {
 
   private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
     const LEADING_AXIS_THRESHOLD = 0.5;
-    const LAGGING_AXIS_GAP = 0.2;
+    const LAGGING_AXIS_GAP = 0.1;
 
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
     let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
