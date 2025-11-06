@@ -58,7 +58,7 @@ defineEmits<{
   close: [];
 }>();
 
-const threshold = 0.5;
+const threshold = 0.75;
 const fullStrengthThreshold = 0.95;
 
 interface GamepadState {
