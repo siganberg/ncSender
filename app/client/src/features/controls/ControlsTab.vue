@@ -16,6 +16,17 @@
             class="search-input"
           />
           <div class="toggle-container">
+            <button
+              class="btn-debug"
+              @click="showGamepadDebug = !showGamepadDebug"
+              :class="{ active: showGamepadDebug }"
+              title="Toggle Gamepad Debug Overlay"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M0 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2.5-1a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m2 0a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m5 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2M3 10.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z"/>
+              </svg>
+              Debug
+            </button>
             <label class="toggle-label">Enable Keyboard</label>
             <ToggleSwitch
               :model-value="shortcutsEnabled"
@@ -171,6 +182,9 @@
       @cancel="showResetConfirm = false"
     />
   </Dialog>
+
+  <!-- Gamepad Debug Overlay -->
+  <GamepadDebugOverlay :enabled="showGamepadDebug" @close="showGamepadDebug = false" />
 </template>
 
 <script setup lang="ts">
@@ -178,6 +192,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
+import GamepadDebugOverlay from './GamepadDebugOverlay.vue';
 import { commandRegistry } from '@/lib/command-registry';
 import { keyBindingStore } from './key-binding-store';
 import { comboFromEvent } from './keyboard-utils';
@@ -251,6 +266,7 @@ const captureGamepadActionId = ref<string | null>(null);
 const captureError = ref<string | null>(null);
 const isResetting = ref(false);
 const showResetConfirm = ref(false);
+const showGamepadDebug = ref(false);
 
 watch(
   () => keyBindingStore.state.bindings,
@@ -502,6 +518,33 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
   font-weight: 500;
   white-space: nowrap;
+}
+
+.btn-debug {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 6px 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-debug:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btn-debug.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
 }
 
 .btn {
