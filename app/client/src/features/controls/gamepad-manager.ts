@@ -55,6 +55,7 @@ class GamepadManager {
       }
 
       const bindings = gamepadBindingStore.getAllBindings();
+      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 }>();
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -72,16 +73,92 @@ class GamepadManager {
 
         currentButtonStates.set(bindingKey, isActive);
 
+        if (isActive) {
+          const jogMeta = JOG_ACTIONS[actionId];
+          if (jogMeta) {
+            activeJogActions.set(actionId, { axis: jogMeta.axis, direction: jogMeta.direction });
+          }
+        }
+
         if (isActive && !wasActive) {
           this.handleGamepadButtonDown(actionId, bindingKey, binding);
         } else if (!isActive && wasActive) {
           this.handleGamepadButtonUp(actionId, bindingKey);
         }
       }
+
+      this.handleDiagonalJogs(gamepad.index, activeJogActions);
     }
 
     this.previousButtonStates = currentButtonStates;
   };
+
+  private handleDiagonalJogs(gamepadIndex: number, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 }>) {
+    let xAction: { actionId: string, direction: 1 | -1 } | null = null;
+    let yAction: { actionId: string, direction: 1 | -1 } | null = null;
+
+    for (const [actionId, meta] of activeJogActions.entries()) {
+      if (meta.axis === 'X') {
+        xAction = { actionId, direction: meta.direction };
+      } else if (meta.axis === 'Y') {
+        yAction = { actionId, direction: meta.direction };
+      }
+    }
+
+    if (xAction && yAction) {
+      const diagonalKey = `${gamepadIndex}-diagonal-${xAction.direction}-${yAction.direction}`;
+
+      const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
+        const meta = DIAGONAL_JOG_ACTIONS[id];
+        return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
+      });
+
+      if (diagonalActionId) {
+        const action = commandRegistry.getAction(diagonalActionId);
+        if (action && (!action.isEnabled || action.isEnabled())) {
+          const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
+
+          if (!this.jogStates.has(diagonalKey)) {
+            const wasActive = this.previousButtonStates.get(diagonalKey) || false;
+            this.previousButtonStates.set(diagonalKey, true);
+
+            if (!wasActive) {
+              const state: ActiveJogState = {
+                xDir: diagonalMeta.xDir,
+                yDir: diagonalMeta.yDir,
+                bindingKey: diagonalKey,
+                timerId: null,
+                longPressTriggered: false,
+                longPressActive: false,
+                cancelled: false,
+                session: null,
+                promise: null,
+                handledShortStep: false,
+                finished: false
+              };
+
+              this.jogStates.set(diagonalKey, state);
+
+              state.timerId = window.setTimeout(() => {
+                this.beginLongPress(diagonalKey, state);
+              }, LONG_PRESS_DELAY_MS);
+            }
+          }
+        }
+      }
+    } else {
+      const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
+        key.startsWith(`${gamepadIndex}-diagonal-`)
+      );
+
+      for (const diagonalKey of diagonalKeys) {
+        const state = this.jogStates.get(diagonalKey);
+        if (state && !state.finished) {
+          this.handleGamepadButtonUp('', diagonalKey);
+        }
+      }
+    }
+  }
 
   private handleGamepadButtonDown(actionId: string, bindingKey: string, binding: GamepadBinding): void {
     if (this.actionsExecutedThisFrame.has(actionId)) {
@@ -103,6 +180,16 @@ class GamepadManager {
     if (jogMeta || diagonalJogMeta) {
       if (this.jogStates.has(bindingKey)) {
         return;
+      }
+
+      if (jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+        const gamepadIndex = parseInt(bindingKey.split('-')[0]);
+        const hasDiagonal = Array.from(this.jogStates.keys()).some(key =>
+          key.startsWith(`${gamepadIndex}-diagonal-`)
+        );
+        if (hasDiagonal) {
+          return;
+        }
       }
 
       const state: ActiveJogState = jogMeta
