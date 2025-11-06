@@ -133,13 +133,23 @@ class GamepadManager {
       const jogMeta = JOG_ACTIONS[actionId];
       if (!jogMeta) continue;
 
-      const strength = Math.abs(gamepad.axes[binding.index]);
+      const axisValue = gamepad.axes[binding.index];
+      const strength = Math.abs(axisValue);
       const bindingKey = `${gamepad.index}-${bindingStr}`;
 
-      if (jogMeta.axis === 'X' && strength >= DIAGONAL_THRESHOLD) {
+      // Check if axis is moving in the correct direction for this binding
+      const isCorrectDirection =
+        (binding.direction === 'positive' && axisValue > 0) ||
+        (binding.direction === 'negative' && axisValue < 0);
+
+      if (!isCorrectDirection || strength < DIAGONAL_THRESHOLD) {
+        continue;
+      }
+
+      if (jogMeta.axis === 'X') {
         xAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
         xStrength = strength;
-      } else if (jogMeta.axis === 'Y' && strength >= DIAGONAL_THRESHOLD) {
+      } else if (jogMeta.axis === 'Y') {
         yAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
         yStrength = strength;
       }
