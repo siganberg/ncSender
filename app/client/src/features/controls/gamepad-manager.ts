@@ -58,6 +58,17 @@ class GamepadManager {
         continue;
       }
 
+      const hasSignificantInput = gamepad.axes.some(axis => Math.abs(axis) > 0.1);
+      if (hasSignificantInput) {
+        const allAxes = gamepad.axes.map((value, index) => ({
+          index,
+          value: value.toFixed(3),
+          absValue: Math.abs(value).toFixed(3),
+          aboveThreshold: Math.abs(value) > 0.5
+        }));
+        console.log('Gamepad axes (real-time):', JSON.stringify(allAxes));
+      }
+
       const bindings = gamepadBindingStore.getAllBindings();
       const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>();
 
