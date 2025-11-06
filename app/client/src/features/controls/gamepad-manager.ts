@@ -197,7 +197,6 @@ class GamepadManager {
         }
 
         return true;
-      }
     }
 
     const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
