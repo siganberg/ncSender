@@ -60,6 +60,7 @@ const state = reactive<KeyboardState>({
   settings: sanitizeKeyboardSettings(null),
   featureEnabled: true,
   captureMode: false,
+  controlsTabActive: false,
   loaded: false
 });
 
@@ -240,6 +241,14 @@ export const keyBindingStore = {
 
   isCaptureMode(): boolean {
     return state.captureMode;
+  },
+
+  setControlsTabActive(active: boolean): void {
+    state.controlsTabActive = active;
+  },
+
+  isControlsTabActive(): boolean {
+    return state.controlsTabActive;
   }
 };
 

@@ -35,7 +35,7 @@ class KeyboardManager {
   private jogStates = new Map<string, ActiveJogState>();
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (!this.enabled || keyBindingStore.isCaptureMode()) {
+    if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
       return;
     }
 

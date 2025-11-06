@@ -1,12 +1,16 @@
 import { registerCoreKeyboardActions } from './actions';
 import { keyBindingStore } from './key-binding-store';
+import { gamepadBindingStore } from './gamepad-binding-store';
 import { getKeyboardManager } from './keyboard-manager';
+import { getGamepadManager } from './gamepad-manager';
 import { useMacroStore } from '../macro/store';
 
 export function initializeKeyboardShortcuts(): void {
   keyBindingStore.bootstrap();
+  gamepadBindingStore.bootstrap();
   registerCoreKeyboardActions();
   getKeyboardManager();
+  getGamepadManager();
   try {
     const macroStore = useMacroStore();
     macroStore.loadMacros?.().catch(() => {

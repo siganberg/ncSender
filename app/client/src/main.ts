@@ -2,7 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
 import { loadSettings } from './lib/settings-store.js';
-import { initializeKeyboardShortcuts } from './features/keyboard';
+import { initializeKeyboardShortcuts } from './features/controls';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
 import { registerWebComponents } from './web-components';
 

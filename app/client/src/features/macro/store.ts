@@ -3,7 +3,7 @@ import { api } from './api';
 import type { Macro } from './types';
 import { commandRegistry } from '@/lib/command-registry';
 import { useAppStore } from '@/composables/use-app-store';
-import { keyBindingStore } from '@/features/keyboard/key-binding-store';
+import { keyBindingStore } from '@/features/controls/key-binding-store';
 
 const MACRO_ACTION_PREFIX = 'Macro:';
 const registeredMacroActions = new Set<string>();
