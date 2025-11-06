@@ -97,7 +97,15 @@ class GamepadManager {
           direction: meta.direction > 0 ? '+' : '-',
           axisIndex: meta.axisIndex
         }));
+
+        const allAxes = gamepad.axes.map((value, index) => ({
+          index,
+          value: value.toFixed(3),
+          absValue: Math.abs(value).toFixed(3)
+        }));
+
         console.log('Active jog actions:', JSON.stringify(actions));
+        console.log('All axes:', JSON.stringify(allAxes));
       }
 
       const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
