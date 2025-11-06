@@ -86,7 +86,7 @@ class GamepadManager {
         }
       }
 
-      const isDiagonal = this.handleDiagonalJogs(gamepad, activeJogActions);
+      const isDiagonal = this.handleDiagonalJogs(gamepad, bindings);
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -116,7 +116,7 @@ class GamepadManager {
     this.previousButtonStates = currentButtonStates;
   };
 
-  private handleDiagonalJogs(gamepad: Gamepad, activeJogActions: Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>): boolean {
+  private handleDiagonalJogs(gamepad: Gamepad, bindings: Record<string, string | null>): boolean {
     const DIAGONAL_THRESHOLD = 0.5;
 
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
@@ -124,33 +124,24 @@ class GamepadManager {
     let xStrength = 0;
     let yStrength = 0;
 
-    for (const [actionId, meta] of activeJogActions.entries()) {
-      if (meta.axis === 'X') {
-        xAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
-        xStrength = xAction.axisIndex !== undefined ? Math.abs(gamepad.axes[xAction.axisIndex]) : 0;
-      } else if (meta.axis === 'Y') {
-        yAction = { actionId, direction: meta.direction, bindingKey: meta.bindingKey, axisIndex: meta.axisIndex };
-        yStrength = yAction.axisIndex !== undefined ? Math.abs(gamepad.axes[yAction.axisIndex]) : 0;
-      }
-    }
+    for (const [actionId, bindingStr] of Object.entries(bindings)) {
+      if (!bindingStr) continue;
 
-    if (xAction && !yAction) {
-      const yAxisIndex = xAction.axisIndex !== undefined ? (xAction.axisIndex === 0 ? 1 : xAction.axisIndex === 1 ? 0 : -1) : -1;
-      if (yAxisIndex >= 0 && yAxisIndex < gamepad.axes.length) {
-        yStrength = Math.abs(gamepad.axes[yAxisIndex]);
-        if (yStrength >= DIAGONAL_THRESHOLD) {
-          const yDir = gamepad.axes[yAxisIndex] > 0 ? 1 : -1;
-          yAction = { actionId: '', direction: yDir as 1 | -1, bindingKey: '', axisIndex: yAxisIndex };
-        }
-      }
-    } else if (yAction && !xAction) {
-      const xAxisIndex = yAction.axisIndex !== undefined ? (yAction.axisIndex === 0 ? 1 : yAction.axisIndex === 1 ? 0 : -1) : -1;
-      if (xAxisIndex >= 0 && xAxisIndex < gamepad.axes.length) {
-        xStrength = Math.abs(gamepad.axes[xAxisIndex]);
-        if (xStrength >= DIAGONAL_THRESHOLD) {
-          const xDir = gamepad.axes[xAxisIndex] > 0 ? 1 : -1;
-          xAction = { actionId: '', direction: xDir as 1 | -1, bindingKey: '', axisIndex: xAxisIndex };
-        }
+      const binding = parseGamepadBinding(bindingStr);
+      if (!binding || binding.type !== 'axis') continue;
+
+      const jogMeta = JOG_ACTIONS[actionId];
+      if (!jogMeta) continue;
+
+      const strength = Math.abs(gamepad.axes[binding.index]);
+      const bindingKey = `${gamepad.index}-${bindingStr}`;
+
+      if (jogMeta.axis === 'X' && strength >= DIAGONAL_THRESHOLD) {
+        xAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
+        xStrength = strength;
+      } else if (jogMeta.axis === 'Y' && strength >= DIAGONAL_THRESHOLD) {
+        yAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
+        yStrength = strength;
       }
     }
 
