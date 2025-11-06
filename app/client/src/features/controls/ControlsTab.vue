@@ -16,17 +16,6 @@
             class="search-input"
           />
           <div class="toggle-container">
-            <button
-              class="btn-debug"
-              @click="showGamepadDebug = !showGamepadDebug"
-              :class="{ active: showGamepadDebug }"
-              title="Toggle Gamepad Debug Overlay"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M0 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2.5-1a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m2 0a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m5 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2M3 10.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z"/>
-              </svg>
-              Debug
-            </button>
             <label class="toggle-label">Enable Keyboard</label>
             <ToggleSwitch
               :model-value="shortcutsEnabled"
@@ -65,8 +54,37 @@
                     </div>
                   </template>
                   <template v-else>
-                    <span v-if="bindingMap[action.id]" class="binding-chip">{{ bindingMap[action.id] }}</span>
-                    <span v-else class="binding-empty">Not set</span>
+                    <div class="binding-cell">
+                      <span
+                        v-if="bindingMap[action.id]"
+                        class="binding-chip binding-chip-clickable"
+                        :class="{ disabled: !shortcutsEnabled }"
+                        @click="shortcutsEnabled && startCapture(action.id)"
+                        title="Click to change"
+                      >
+                        {{ bindingMap[action.id] }}
+                      </span>
+                      <span
+                        v-else
+                        class="binding-empty binding-empty-clickable"
+                        :class="{ disabled: !shortcutsEnabled }"
+                        @click="shortcutsEnabled && startCapture(action.id)"
+                        title="Click to set"
+                      >
+                        Not set
+                      </span>
+                      <button
+                        v-if="bindingMap[action.id]"
+                        class="btn-icon-mini btn-icon-danger"
+                        :disabled="!shortcutsEnabled"
+                        @click.stop="clearBinding(action.id)"
+                        title="Remove keyboard binding"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                        </svg>
+                      </button>
+                    </div>
                   </template>
                 </td>
                 <td>
@@ -77,8 +95,37 @@
                     </div>
                   </template>
                   <template v-else>
-                    <span v-if="gamepadBindingMap[action.id]" class="binding-chip">{{ gamepadBindingMap[action.id] }}</span>
-                    <span v-else class="binding-empty">Not set</span>
+                    <div class="binding-cell">
+                      <span
+                        v-if="gamepadBindingMap[action.id]"
+                        class="binding-chip binding-chip-clickable"
+                        :class="{ disabled: !shortcutsEnabled }"
+                        @click="shortcutsEnabled && startGamepadCapture(action.id)"
+                        title="Click to change"
+                      >
+                        {{ gamepadBindingMap[action.id] }}
+                      </span>
+                      <span
+                        v-else
+                        class="binding-empty binding-empty-clickable"
+                        :class="{ disabled: !shortcutsEnabled }"
+                        @click="shortcutsEnabled && startGamepadCapture(action.id)"
+                        title="Click to set"
+                      >
+                        Not set
+                      </span>
+                      <button
+                        v-if="gamepadBindingMap[action.id]"
+                        class="btn-icon-mini btn-icon-danger"
+                        :disabled="!shortcutsEnabled"
+                        @click.stop="clearGamepadBinding(action.id)"
+                        title="Remove gamepad binding"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                        </svg>
+                      </button>
+                    </div>
                   </template>
                 </td>
                 <td class="binding-actions">
@@ -86,29 +133,6 @@
                     <button class="btn-icon" @click="cancelCapture" title="Cancel">
                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                         <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                      </svg>
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button class="btn-icon" :disabled="!shortcutsEnabled" @click="startCapture(action.id)" title="Change Keyboard">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M0 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm13 .5v1a.5.5 0 0 0 1 0v-1a.5.5 0 0 0-1 0M2.5 7a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1zM4 9.5v1a.5.5 0 0 0 1 0v-1a.5.5 0 0 0-1 0M2.5 9a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1zm7-2.5v1a.5.5 0 0 0 1 0v-1a.5.5 0 0 0-1 0m-3 0v1a.5.5 0 0 0 1 0v-1a.5.5 0 0 0-1 0M8 7a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1zM6.5 9a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1zM5 9.5v1a.5.5 0 0 0 1 0v-1a.5.5 0 0 0-1 0m5.5-.5a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1zM11 7a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1z"/>
-                      </svg>
-                    </button>
-                    <button class="btn-icon" :disabled="!shortcutsEnabled" @click="startGamepadCapture(action.id)" title="Change Gamepad">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M0 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2.5-1a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m2 0a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1m5 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2M3 10.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z"/>
-                      </svg>
-                    </button>
-                    <button
-                      class="btn-icon btn-icon-danger"
-                      :disabled="!shortcutsEnabled || (!bindingMap[action.id] && !gamepadBindingMap[action.id])"
-                      @click="clearAllBindings(action.id)"
-                      title="Remove All"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
                       </svg>
                     </button>
                   </template>
@@ -147,9 +171,6 @@
       @cancel="showResetConfirm = false"
     />
   </Dialog>
-
-  <!-- Gamepad Debug Overlay -->
-  <GamepadDebugOverlay :enabled="showGamepadDebug" @close="showGamepadDebug = false" />
 </template>
 
 <script setup lang="ts">
@@ -157,7 +178,6 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
-import GamepadDebugOverlay from './GamepadDebugOverlay.vue';
 import { commandRegistry } from '@/lib/command-registry';
 import { keyBindingStore } from './key-binding-store';
 import { comboFromEvent } from './keyboard-utils';
@@ -171,7 +191,9 @@ const searchQuery = ref('');
 
 const registryState = commandRegistry.getState();
 const actionList = computed(() => {
+  const diagonalActions = ['JogXPlusYPlus', 'JogXPlusYMinus', 'JogXMinusYPlus', 'JogXMinusYMinus'];
   return Object.values(registryState.actions)
+    .filter(action => !diagonalActions.includes(action.id))
     .slice()
     .sort((a, b) => {
       const groupDiff = (a.group || '').localeCompare(b.group || '');
@@ -229,7 +251,6 @@ const captureGamepadActionId = ref<string | null>(null);
 const captureError = ref<string | null>(null);
 const isResetting = ref(false);
 const showResetConfirm = ref(false);
-const showGamepadDebug = ref(false);
 
 watch(
   () => keyBindingStore.state.bindings,
@@ -303,6 +324,15 @@ const clearBinding = async (actionId: string) => {
   }
 };
 
+const clearGamepadBinding = async (actionId: string) => {
+  try {
+    await gamepadBindingStore.clearBindingForAction(actionId);
+  } catch (error: any) {
+    console.error('Failed to clear gamepad binding:', JSON.stringify(error));
+    captureError.value = error?.message || 'Failed to clear gamepad binding';
+  }
+};
+
 const startGamepadCapture = (actionId: string) => {
   if (!shortcutsEnabled.value) {
     return;
@@ -312,15 +342,6 @@ const startGamepadCapture = (actionId: string) => {
   keyBindingStore.setCaptureMode(true);
 };
 
-const clearAllBindings = async (actionId: string) => {
-  try {
-    await keyBindingStore.clearBindingForAction(actionId);
-    await gamepadBindingStore.clearBindingForAction(actionId);
-  } catch (error: any) {
-    console.error('Failed to clear bindings:', error);
-    captureError.value = error?.message || 'Failed to clear bindings';
-  }
-};
 
 const resetToDefaults = () => {
   showResetConfirm.value = true;
@@ -542,6 +563,32 @@ onBeforeUnmount(() => {
   color: var(--color-danger, #f87171);
 }
 
+.btn-icon-mini {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 4px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.btn-icon-mini:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--color-surface-muted);
+  border-color: var(--color-danger, #f87171);
+  color: var(--color-danger, #f87171);
+}
+
+.btn-icon-mini:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
 .error {
   color: var(--color-danger, #f87171);
   margin: 0 var(--gap-md) var(--gap-md) var(--gap-md);
@@ -682,6 +729,12 @@ onBeforeUnmount(() => {
   }
 }
 
+.binding-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .binding-chip {
   display: inline-flex;
   align-items: center;
@@ -693,6 +746,22 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
+.binding-chip-clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.binding-chip-clickable:hover:not(.disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.binding-chip-clickable.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .binding-empty {
   display: inline-flex;
   align-items: center;
@@ -702,6 +771,22 @@ onBeforeUnmount(() => {
   padding: 8px 16px;
   color: var(--color-text-secondary);
   font-style: italic;
+}
+
+.binding-empty-clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.binding-empty-clickable:hover:not(.disabled) {
+  background: var(--color-border);
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.binding-empty-clickable.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .capture-container {
@@ -778,30 +863,4 @@ onBeforeUnmount(() => {
   opacity: 0.8;
 }
 
-.btn-debug {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  padding: 8px 12px;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  font-weight: 500;
-  font-size: 0.9rem;
-}
-
-.btn-debug:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.btn-debug.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
-}
 </style>

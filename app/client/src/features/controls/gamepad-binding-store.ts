@@ -12,11 +12,23 @@ function cloneBindings(bindings: Record<string, string | null>): Record<string, 
   return Object.fromEntries(Object.entries(bindings));
 }
 
+const DEFAULT_GAMEPAD_BINDINGS: Record<string, string> = {
+  JogXPlus: 'Axis 0+',
+  JogXMinus: 'Axis 0-',
+  JogYPlus: 'Axis 1+',
+  JogYMinus: 'Axis 1-',
+  JogZPlus: 'Axis 3+',
+  JogZMinus: 'Axis 3-',
+  SetJogStepSize0_1: 'Button 0',
+  SetJogStepSize1: 'Button 1',
+  SetJogStepSize10: 'Button 3'
+};
+
 function sanitizeBindings(raw: any): Record<string, string | null> {
   const result: Record<string, string | null> = {};
 
   if (!raw || typeof raw !== 'object') {
-    return result;
+    return { ...DEFAULT_GAMEPAD_BINDINGS };
   }
 
   for (const [actionId, bindingStr] of Object.entries(raw)) {
@@ -34,6 +46,12 @@ function sanitizeBindings(raw: any): Record<string, string | null> {
       if (parsed) {
         result[actionId] = bindingStr;
       }
+    }
+  }
+
+  for (const [actionId, defaultBinding] of Object.entries(DEFAULT_GAMEPAD_BINDINGS)) {
+    if (!(actionId in result)) {
+      result[actionId] = defaultBinding;
     }
   }
 
@@ -127,7 +145,7 @@ export const gamepadBindingStore = {
   },
 
   async resetToDefaults(): Promise<void> {
-    await persistBindings({});
+    await persistBindings({ ...DEFAULT_GAMEPAD_BINDINGS });
   }
 };
 

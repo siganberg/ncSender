@@ -33,6 +33,7 @@ interface ActiveJogState {
 class KeyboardManager {
   private enabled = false;
   private jogStates = new Map<string, ActiveJogState>();
+  private activeDiagonalKey: string | null = null;
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -77,8 +78,19 @@ class KeyboardManager {
         return;
       }
 
+      if (this.activeDiagonalKey && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
+
+      const isDiagonal = this.checkAndHandleDiagonalJog(eventCode, jogMeta, combo);
+      if (isDiagonal) {
+        return;
+      }
 
       const state: ActiveJogState = jogMeta
         ? {
@@ -121,6 +133,109 @@ class KeyboardManager {
     commandRegistry.execute(actionId);
   };
 
+  private checkAndHandleDiagonalJog(eventCode: string, jogMeta: { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 } | undefined, combo: string): boolean {
+    if (!jogMeta || jogMeta.axis === 'Z') {
+      return false;
+    }
+
+    let xAction: { eventCode: string, direction: 1 | -1, combo: string, state?: ActiveJogState } | null = null;
+    let yAction: { eventCode: string, direction: 1 | -1, combo: string, state?: ActiveJogState } | null = null;
+
+    for (const [stateEventCode, state] of this.jogStates.entries()) {
+      if (state.finished) {
+        continue;
+      }
+      if (state.axis === 'X') {
+        xAction = { eventCode: stateEventCode, direction: state.direction!, combo: state.combo, state };
+      } else if (state.axis === 'Y') {
+        yAction = { eventCode: stateEventCode, direction: state.direction!, combo: state.combo, state };
+      }
+    }
+
+    if (jogMeta.axis === 'X') {
+      xAction = { eventCode, direction: jogMeta.direction, combo };
+    } else if (jogMeta.axis === 'Y') {
+      yAction = { eventCode, direction: jogMeta.direction, combo };
+    }
+
+    if (xAction && yAction) {
+      const existingXState = xAction.state;
+      const existingYState = yAction.state;
+
+      if ((existingXState && existingXState.longPressTriggered) || (existingYState && existingYState.longPressTriggered)) {
+        return false;
+      }
+
+      const diagonalKey = `diagonal-${xAction.direction}-${yAction.direction}`;
+
+      if (this.jogStates.has(diagonalKey)) {
+        return true;
+      }
+
+      const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
+        const meta = DIAGONAL_JOG_ACTIONS[id];
+        return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
+      });
+
+      if (diagonalActionId) {
+        const action = commandRegistry.getAction(diagonalActionId);
+        if (action && (!action.isEnabled || action.isEnabled())) {
+          const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
+
+          if (xAction.eventCode !== eventCode) {
+            const xState = this.jogStates.get(xAction.eventCode);
+            if (xState && !xState.finished) {
+              xState.cancelled = true;
+              xState.handledShortStep = true;
+              if (xState.timerId !== null) {
+                clearTimeout(xState.timerId);
+                xState.timerId = null;
+              }
+              this.cleanupJogState(xAction.eventCode, xState);
+            }
+          }
+          if (yAction.eventCode !== eventCode) {
+            const yState = this.jogStates.get(yAction.eventCode);
+            if (yState && !yState.finished) {
+              yState.cancelled = true;
+              yState.handledShortStep = true;
+              if (yState.timerId !== null) {
+                clearTimeout(yState.timerId);
+                yState.timerId = null;
+              }
+              this.cleanupJogState(yAction.eventCode, yState);
+            }
+          }
+
+          const diagonalState: ActiveJogState = {
+            xDir: diagonalMeta.xDir,
+            yDir: diagonalMeta.yDir,
+            combo: `${xAction.combo}+${yAction.combo}`,
+            timerId: null,
+            longPressTriggered: false,
+            longPressActive: false,
+            cancelled: false,
+            session: null,
+            promise: null,
+            handledShortStep: false,
+            finished: false
+          };
+
+          this.jogStates.set(diagonalKey, diagonalState);
+          this.activeDiagonalKey = diagonalKey;
+
+          diagonalState.timerId = window.setTimeout(() => {
+            this.beginLongPress(diagonalKey, diagonalState);
+          }, LONG_PRESS_DELAY_MS);
+
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private handleKeyUp = (event: KeyboardEvent) => {
     const combo = comboFromEvent(event);
     const actionId = combo ? keyBindingStore.getBinding(combo) : undefined;
@@ -132,6 +247,7 @@ class KeyboardManager {
         event.preventDefault();
         event.stopPropagation();
       }
+      this.checkAndReleaseDiagonalOnKeyUp(actionId);
       return;
     }
 
@@ -141,6 +257,7 @@ class KeyboardManager {
         event.preventDefault();
         event.stopPropagation();
       }
+      this.checkAndReleaseDiagonalOnKeyUp(actionId);
       return;
     }
 
@@ -170,7 +287,6 @@ class KeyboardManager {
     }
 
     if (state.promise) {
-      // Long press requested but acknowledgement pending - rely on promise resolution to honour cancellation
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -180,6 +296,48 @@ class KeyboardManager {
     event.preventDefault();
     event.stopPropagation();
   };
+
+  private checkAndReleaseDiagonalOnKeyUp(actionId: string | undefined): void {
+    if (!actionId) {
+      return;
+    }
+
+    const jogMeta = JOG_ACTIONS[actionId];
+    if (!jogMeta || jogMeta.axis === 'Z') {
+      return;
+    }
+
+    const diagonalKeys = Array.from(this.jogStates.keys()).filter(key => key.startsWith('diagonal-'));
+    for (const diagonalKey of diagonalKeys) {
+      const state = this.jogStates.get(diagonalKey);
+      if (state && !state.finished) {
+        state.cancelled = true;
+
+        if (state.timerId !== null) {
+          clearTimeout(state.timerId);
+          state.timerId = null;
+          this.runShortJog(diagonalKey, state);
+          return;
+        }
+
+        if (!state.longPressTriggered) {
+          this.cleanupJogState(diagonalKey, state);
+          return;
+        }
+
+        if (state.longPressActive && state.session) {
+          this.stopContinuousJog(diagonalKey, state);
+          return;
+        }
+
+        if (state.promise) {
+          return;
+        }
+
+        this.cleanupJogState(diagonalKey, state);
+      }
+    }
+  }
 
   private handleWindowBlur = () => {
     for (const [eventCode, state] of Array.from(this.jogStates.entries())) {
@@ -317,6 +475,9 @@ class KeyboardManager {
   private cleanupJogState(eventCode: string, state: ActiveJogState): void {
     if (state.finished) {
       this.jogStates.delete(eventCode);
+      if (this.activeDiagonalKey === eventCode) {
+        this.activeDiagonalKey = null;
+      }
       return;
     }
 
@@ -328,6 +489,10 @@ class KeyboardManager {
     }
 
     this.jogStates.delete(eventCode);
+
+    if (this.activeDiagonalKey === eventCode) {
+      this.activeDiagonalKey = null;
+    }
   }
 
   constructor() {
