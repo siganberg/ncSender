@@ -132,10 +132,17 @@ class GamepadManager {
       const xIsFullStrength = xAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, xAction.axisIndex);
       const yIsFullStrength = yAction.axisIndex !== undefined && isAxisAtFullStrength(gamepad, yAction.axisIndex);
 
+      const xStrength = xAction.axisIndex !== undefined ? Math.abs(gamepad.axes[xAction.axisIndex]) : 0;
+      const yStrength = yAction.axisIndex !== undefined ? Math.abs(gamepad.axes[yAction.axisIndex]) : 0;
+
+      console.log(`Diagonal detection: X=${xStrength.toFixed(3)} (full=${xIsFullStrength}), Y=${yStrength.toFixed(3)} (full=${yIsFullStrength})`);
+
       if (xIsFullStrength && !yIsFullStrength) {
+        console.log('→ Allowing X-only movement (X at full strength)');
         return false;
       }
       if (yIsFullStrength && !xIsFullStrength) {
+        console.log('→ Allowing Y-only movement (Y at full strength)');
         return false;
       }
       const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
@@ -174,6 +181,8 @@ class GamepadManager {
               state.timerId = window.setTimeout(() => {
                 this.beginLongPress(diagonalKey, state);
               }, LONG_PRESS_DELAY_MS);
+
+              console.log('→ Triggering diagonal jog');
             }
           }
         }
