@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { setGroupColor } from '../../probe-mesh-utils';
 import { loadOBJWithGroups } from '../../custom-obj-loader';
-import { getCornerPosition, getSidePosition } from '../geometry';
 import type {
   ProbeStrategy,
   ProbeStrategyContext,
@@ -12,7 +11,16 @@ import type {
   ProbeSide
 } from '../types';
 
-const STANDARD_BLOCK_SCALE = 200;
+const STANDARD_BLOCK_X_OFFSET = -3.3;
+const STANDARD_BLOCK_Y_OFFSET = -3.3;
+const STANDARD_BLOCK_Z_POSITION = -0.95;
+
+const cornerRotations: Record<ProbeCorner, number> = {
+  BottomLeft: 0,
+  TopLeft: -Math.PI / 2,
+  TopRight: -Math.PI,
+  BottomRight: -(3 * Math.PI) / 2
+};
 
 export class StandardBlockStrategy implements ProbeStrategy {
   readonly type = 'standard-block';
@@ -23,7 +31,6 @@ export class StandardBlockStrategy implements ProbeStrategy {
 
   private context: ProbeStrategyContext | null = null;
   private probeModel: THREE.Group | null = null;
-  private scaledSize: THREE.Vector3 | null = null;
 
   async load(context: ProbeStrategyContext): Promise<void> {
     this.context = context;
@@ -49,6 +56,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
     setGroupColor(object, 'Nut', 0x606060);
 
     this.centerProbe(object);
+    this.positionDefault(object);
 
     this.probeModel = object;
     context.scene.add(object);
@@ -61,41 +69,37 @@ export class StandardBlockStrategy implements ProbeStrategy {
     this.context.scene.remove(this.probeModel);
     this.disposeObject(this.probeModel);
     this.probeModel = null;
-    this.scaledSize = null;
   }
 
   async handleAxisChange(axis: ProbingAxis, selections: SelectionState): Promise<void> {
-    if (!this.context || !this.probeModel) return;
-
-    const plate = this.context.plateManager.getPlate();
-    if (!plate) return;
+    if (!this.probeModel) return;
 
     if (['XYZ', 'XY'].includes(axis) && selections.corner) {
-      this.moveToCorner(axis, selections.corner);
-      return;
-    }
-
-    if ((axis === 'X' || axis === 'Y') && selections.side) {
+      this.moveToCorner(selections.corner);
+    } else if ((axis === 'X' || axis === 'Y') && selections.side) {
       this.moveToSide(axis, selections.side);
-      return;
+    } else {
+      this.positionDefault(this.probeModel);
     }
 
-    this.setCenteredHeight(axis);
-    this.probeModel.position.x = 0;
-    this.probeModel.position.y = 0;
-    this.context.render();
+    this.context?.render();
   }
 
   handleCornerChange(axis: ProbingAxis, corner: ProbeCorner): void {
-    if (!this.context || !this.probeModel) return;
+    if (!this.probeModel) return;
     if (!['XYZ', 'XY'].includes(axis)) return;
-    this.moveToCorner(axis, corner);
+    this.moveToCorner(corner);
+    this.context?.render();
   }
 
   handleSideChange(axis: ProbingAxis, side: ProbeSide): void {
-    if (!this.context || !this.probeModel) return;
-    if (!(axis === 'X' || axis === 'Y')) return;
+    if (!this.probeModel) return;
+    if (!((axis === 'X' && (side === 'Left' || side === 'Right')) || (axis === 'Y' && (side === 'Front' || side === 'Back')))) {
+      return;
+    }
+
     this.moveToSide(axis, side);
+    this.context?.render();
   }
 
   handleProbeActiveChange(isActive: boolean): void {
@@ -108,44 +112,78 @@ export class StandardBlockStrategy implements ProbeStrategy {
     return this.probeModel;
   }
 
-  private moveToCorner(axis: ProbingAxis, corner: ProbeCorner): void {
-    if (!this.context || !this.probeModel || !this.scaledSize) return;
-    const plate = this.context.plateManager.getPlate();
-    if (!plate) return;
-
-    const inset = axis === 'XY' ? -1 : 2;
-    const { x, y } = getCornerPosition(plate, corner, { inset });
-    const z = axis === 'XY' ? this.scaledSize.z / 2 - 1 : this.scaledSize.z / 2;
-
-    this.probeModel.position.set(x, y, z);
-    this.context.render();
-  }
-
-  private moveToSide(axis: ProbingAxis, side: ProbeSide): void {
-    if (!this.context || !this.probeModel) return;
-    const plate = this.context.plateManager.getPlate();
-    if (!plate) return;
-
-    const { x, y } = getSidePosition(plate, axis, side);
-    this.probeModel.position.set(x, y, 1);
-    this.context.render();
-  }
-
-  private setCenteredHeight(axis: ProbingAxis): void {
-    if (!this.probeModel) return;
-    const z = axis === 'Center - Inner' ? 0 : 4;
-    this.probeModel.position.z = z;
-  }
-
   private centerProbe(object: THREE.Object3D): void {
+    if (!this.context) return;
+
     const bbox = new THREE.Box3().setFromObject(object);
     const center = bbox.getCenter(new THREE.Vector3());
     object.position.sub(center);
-    object.scale.multiplyScalar(STANDARD_BLOCK_SCALE);
 
-    const scaledBBox = new THREE.Box3().setFromObject(object);
-    this.scaledSize = scaledBBox.getSize(new THREE.Vector3());
-    object.position.z += this.scaledSize.z / 2;
+    const plateScale = this.context.plateManager.getScale();
+    object.scale.multiplyScalar(plateScale);
+  }
+
+  private positionDefault(object: THREE.Object3D): void {
+    object.position.x = STANDARD_BLOCK_X_OFFSET;
+    object.position.y = STANDARD_BLOCK_Y_OFFSET;
+    object.position.z = STANDARD_BLOCK_Z_POSITION;
+    object.rotation.z = 0;
+  }
+
+  private moveToCorner(corner: ProbeCorner): void {
+    if (!this.probeModel) return;
+
+    const rotation = cornerRotations[corner];
+    const { radius, initialAngle } = this.getDefaultPolar();
+    const newAngle = initialAngle + rotation;
+
+    this.probeModel.position.x = radius * Math.cos(newAngle);
+    this.probeModel.position.y = radius * Math.sin(newAngle);
+    this.probeModel.position.z = STANDARD_BLOCK_Z_POSITION;
+    this.probeModel.rotation.z = rotation;
+  }
+
+  private moveToSide(axis: ProbingAxis, side: ProbeSide): void {
+    if (!this.probeModel) return;
+
+    const rotation = this.getSideRotation(axis, side);
+    if (rotation === null) {
+      this.positionDefault(this.probeModel);
+      return;
+    }
+
+    const { radius, initialAngle } = this.getDefaultPolar();
+    const newAngle = initialAngle + rotation;
+
+    this.probeModel.position.x = radius * Math.cos(newAngle);
+    this.probeModel.position.y = radius * Math.sin(newAngle);
+    this.probeModel.position.z = STANDARD_BLOCK_Z_POSITION;
+    this.probeModel.rotation.z = rotation;
+  }
+
+  private getSideRotation(axis: ProbingAxis, side: ProbeSide): number | null {
+    if (axis === 'X') {
+      if (side === 'Left') return 0;
+      if (side === 'Right') return Math.PI / 2;
+      return null;
+    }
+
+    if (axis === 'Y') {
+      if (side === 'Front') return 0;
+      if (side === 'Back') return -Math.PI / 2;
+      return null;
+    }
+
+    return null;
+  }
+
+  private getDefaultPolar(): { radius: number; initialAngle: number } {
+    const radius = Math.sqrt(
+      STANDARD_BLOCK_X_OFFSET * STANDARD_BLOCK_X_OFFSET +
+      STANDARD_BLOCK_Y_OFFSET * STANDARD_BLOCK_Y_OFFSET
+    );
+    const initialAngle = Math.atan2(STANDARD_BLOCK_Y_OFFSET, STANDARD_BLOCK_X_OFFSET);
+    return { radius, initialAngle };
   }
 
   private disposeObject(obj: THREE.Object3D): void {
