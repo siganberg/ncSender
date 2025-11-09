@@ -83,6 +83,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
       this.moveToSide(axis, selections.side);
     } else {
       this.positionDefault(this.probeModel);
+      this.resetProbeGroups();
     }
 
     this.context?.render();
@@ -98,6 +99,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
   handleSideChange(axis: ProbingAxis, side: ProbeSide): void {
     if (!this.probeModel) return;
     if (!((axis === 'X' && (side === 'Left' || side === 'Right')) || (axis === 'Y' && (side === 'Front' || side === 'Back')))) {
+      this.resetProbeGroups();
       return;
     }
 
@@ -169,6 +171,8 @@ export class StandardBlockStrategy implements ProbeStrategy {
     this.probeModel.position.y = radius * Math.sin(newAngle);
     this.probeModel.position.z = STANDARD_BLOCK_Z_POSITION;
     this.probeModel.rotation.z = rotation;
+
+    this.moveSpindleForSide(axis, side);
   }
 
   private getSideRotation(axis: ProbingAxis, side: ProbeSide): number | null {
@@ -214,6 +218,39 @@ export class StandardBlockStrategy implements ProbeStrategy {
     this.probeModel.traverse((child) => {
       if (child.name === 'Nut' || child.name === 'LED' || child.name === 'Body') {
         child.position.set(0, 0, 0);
+      }
+    });
+  }
+
+  private moveSpindleForSide(axis: ProbingAxis, side: ProbeSide): void {
+    if (!this.probeModel) return;
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (axis === 'X') {
+      if (side === 'Left') {
+        offsetX = -XY_AXIS_RADIAL_OFFSET;
+        offsetY = 0;
+      } else if (side === 'Right') {
+        offsetX = 0;
+        offsetY = -XY_AXIS_RADIAL_OFFSET;
+      }
+    } else if (axis === 'Y') {
+      if (side === 'Front') {
+        offsetX = 0;
+        offsetY = -XY_AXIS_RADIAL_OFFSET;
+      } else if (side === 'Back') {
+        offsetX = -XY_AXIS_RADIAL_OFFSET;
+        offsetY = 0;
+      }
+    }
+
+    this.probeModel.traverse((child) => {
+      if (child.name === 'Nut' || child.name === 'LED' || child.name === 'Body') {
+        child.position.x = offsetX;
+        child.position.y = offsetY;
+        child.position.z = XY_AXIS_Z_OFFSET;
       }
     });
   }

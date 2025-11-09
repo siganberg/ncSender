@@ -438,7 +438,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
 import StepControl from '../jog/StepControl.vue';
@@ -831,6 +831,45 @@ watch(() => selectedCorner.value, async (value) => {
         console.error('[ProbeDialog] Failed to save selected corner setting', JSON.stringify({ error: error.message }));
       }
     }
+  }
+});
+
+watch(() => selectedSide.value, async (value) => {
+  if (!isInitialLoad && value && (probingAxis.value === 'X' || probingAxis.value === 'Y')) {
+    const settingKey = probingAxis.value === 'X' ? 'selectedXSide' : 'selectedYSide';
+    try {
+      await updateSettings({ probe: { [settingKey]: value } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save selected side setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
+const loadSideForAxis = async (axis: string) => {
+  if (axis === 'X' || axis === 'Y') {
+    try {
+      const settings = await api.getSettings();
+      const settingKey = axis === 'X' ? 'selectedXSide' : 'selectedYSide';
+      const persistedSide = settings?.probe?.[settingKey];
+      const defaultSide = axis === 'X' ? 'Left' : 'Front';
+
+      selectedSide.value = persistedSide || defaultSide;
+    } catch (error) {
+      selectedSide.value = axis === 'X' ? 'Left' : 'Front';
+    }
+  }
+};
+
+watch(() => probingAxis.value, (newAxis) => {
+  loadSideForAxis(newAxis);
+});
+
+watch(() => probeType.value, async () => {
+  if (probingAxis.value === 'X' || probingAxis.value === 'Y') {
+    await nextTick();
+    setTimeout(async () => {
+      await loadSideForAxis(probingAxis.value);
+    }, 100);
   }
 });
 
