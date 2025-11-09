@@ -438,7 +438,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
 import StepControl from '../jog/StepControl.vue';
@@ -864,9 +864,8 @@ watch(() => probingAxis.value, (newAxis) => {
   loadSideForAxis(newAxis);
 });
 
-watch(() => probeType.value, async () => {
+watch(() => probeType.value, () => {
   if (probingAxis.value === 'X' || probingAxis.value === 'Y') {
-    await nextTick();
     setTimeout(async () => {
       await loadSideForAxis(probingAxis.value);
     }, 100);
