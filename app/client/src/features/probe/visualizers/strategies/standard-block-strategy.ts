@@ -11,9 +11,12 @@ import type {
   ProbeSide
 } from '../types';
 
-const STANDARD_BLOCK_X_OFFSET = -3.3;
-const STANDARD_BLOCK_Y_OFFSET = -3.3;
+const STANDARD_BLOCK_X_OFFSET = -3.8;
+const STANDARD_BLOCK_Y_OFFSET = -3.8;
 const STANDARD_BLOCK_Z_POSITION = -0.95;
+const STANDARD_BLOCK_SCALE_MULTIPLIER = 0.6;
+const XY_AXIS_RADIAL_OFFSET = 0.018;
+const XY_AXIS_Z_OFFSET = -0.02;
 
 const cornerRotations: Record<ProbeCorner, number> = {
   BottomLeft: 0,
@@ -75,7 +78,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
     if (!this.probeModel) return;
 
     if (['XYZ', 'XY'].includes(axis) && selections.corner) {
-      this.moveToCorner(selections.corner);
+      this.moveToCorner(axis, selections.corner);
     } else if ((axis === 'X' || axis === 'Y') && selections.side) {
       this.moveToSide(axis, selections.side);
     } else {
@@ -88,7 +91,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
   handleCornerChange(axis: ProbingAxis, corner: ProbeCorner): void {
     if (!this.probeModel) return;
     if (!['XYZ', 'XY'].includes(axis)) return;
-    this.moveToCorner(corner);
+    this.moveToCorner(axis, corner);
     this.context?.render();
   }
 
@@ -120,7 +123,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
     object.position.sub(center);
 
     const plateScale = this.context.plateManager.getScale();
-    object.scale.multiplyScalar(plateScale);
+    object.scale.multiplyScalar(plateScale * STANDARD_BLOCK_SCALE_MULTIPLIER);
   }
 
   private positionDefault(object: THREE.Object3D): void {
@@ -130,7 +133,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
     object.rotation.z = 0;
   }
 
-  private moveToCorner(corner: ProbeCorner): void {
+  private moveToCorner(axis: ProbingAxis, corner: ProbeCorner): void {
     if (!this.probeModel) return;
 
     const rotation = cornerRotations[corner];
@@ -141,6 +144,13 @@ export class StandardBlockStrategy implements ProbeStrategy {
     this.probeModel.position.y = radius * Math.sin(newAngle);
     this.probeModel.position.z = STANDARD_BLOCK_Z_POSITION;
     this.probeModel.rotation.z = rotation;
+
+    const isXYAxis = axis === 'XY';
+    if (isXYAxis) {
+      this.moveProbeGroups(corner, XY_AXIS_RADIAL_OFFSET, XY_AXIS_Z_OFFSET);
+    } else {
+      this.resetProbeGroups();
+    }
   }
 
   private moveToSide(axis: ProbingAxis, side: ProbeSide): void {
@@ -184,6 +194,28 @@ export class StandardBlockStrategy implements ProbeStrategy {
     );
     const initialAngle = Math.atan2(STANDARD_BLOCK_Y_OFFSET, STANDARD_BLOCK_X_OFFSET);
     return { radius, initialAngle };
+  }
+
+  private moveProbeGroups(corner: ProbeCorner, radialOffset: number, zOffset: number): void {
+    if (!this.probeModel) return;
+
+    this.probeModel.traverse((child) => {
+      if (child.name === 'Nut' || child.name === 'LED' || child.name === 'Body') {
+        child.position.x = -radialOffset;
+        child.position.y = -radialOffset;
+        child.position.z = zOffset;
+      }
+    });
+  }
+
+  private resetProbeGroups(): void {
+    if (!this.probeModel) return;
+
+    this.probeModel.traverse((child) => {
+      if (child.name === 'Nut' || child.name === 'LED' || child.name === 'Body') {
+        child.position.set(0, 0, 0);
+      }
+    });
   }
 
   private disposeObject(obj: THREE.Object3D): void {
