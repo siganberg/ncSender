@@ -1,7 +1,9 @@
 // Standard Block Probe routines
 // For rectangular touch probe blocks
 
-export const getZProbeRoutine = (zThickness = 25) => {
+export const zParkHeight = 4;
+
+export const getZProbeRoutine = (zThickness = 15) => {
   return [
     '; Probe Z - Standard Block',
     `#<return_units> = [20 + #<_metric>]`,
@@ -11,27 +13,28 @@ export const getZProbeRoutine = (zThickness = 25) => {
     'G38.2 Z-5 F75',
     'G4 P0.3',
     `G10 L20 Z${zThickness}`,
-    'G0 Z10',
+    `G0 Z${zParkHeight}`,
     'G90',
     'G[#<return_units>]'
   ];
 };
 
-export const getXProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
+export const getXProbeRoutine = ({ selectedSide, xyThickness = 10, bitDiameter = 6.35 }) => {
+  const bitRadius = bitDiameter / 2;
   const isLeft = selectedSide === 'Left';
   const fastProbe = isLeft ? 30 : -30;
   const bounce = isLeft ? -4 : 4;
   const slowProbe = isLeft ? 5 : -5;
-  const offset = isLeft ? -xyThickness : xyThickness;
+  const offset = isLeft ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
   const moveAway = isLeft ? -4 : 4;
 
   return [
-    `; Probe X - ${selectedSide} (Standard Block)`,
+    `; Probe X - ${selectedSide} (Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 X0',
     'G91 G21',
     `G38.2 X${fastProbe} F150`,
-    `G91 G0 X${bounce}`,
+    `G0 X${bounce}`,
     `G38.2 X${slowProbe} F75`,
     'G4 P0.3',
     `G10 L20 X${offset}`,
@@ -41,21 +44,22 @@ export const getXProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
   ];
 };
 
-export const getYProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
+export const getYProbeRoutine = ({ selectedSide, xyThickness = 10, bitDiameter = 6.35 }) => {
+  const bitRadius = bitDiameter / 2;
   const isFront = selectedSide === 'Front';
   const fastProbe = isFront ? 30 : -30;
   const bounce = isFront ? -4 : 4;
   const slowProbe = isFront ? 5 : -5;
-  const offset = isFront ? -xyThickness : xyThickness;
+  const offset = isFront ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
   const moveAway = isFront ? -4 : 4;
 
   return [
-    `; Probe Y - ${selectedSide} (Standard Block)`,
+    `; Probe Y - ${selectedSide} (Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 Y0',
     'G91 G21',
     `G38.2 Y${fastProbe} F150`,
-    `G91 G0 Y${bounce}`,
+    `G0 Y${bounce}`,
     `G38.2 Y${slowProbe} F75`,
     'G4 P0.3',
     `G10 L20 Y${offset}`,
@@ -65,7 +69,8 @@ export const getYProbeRoutine = ({ selectedSide, xyThickness = 50 }) => {
   ];
 };
 
-export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMove = false }) => {
+export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 10, bitDiameter = 6.35, skipPrepMove = false }) => {
+  const bitRadius = bitDiameter / 2;
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
   const isBottom = selectedCorner === 'BottomLeft' || selectedCorner === 'BottomRight';
 
@@ -75,14 +80,14 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMo
   const yRetract = isBottom ? -4 : 4;
   const xSlow = isLeft ? 5 : -5;
   const ySlow = isBottom ? 5 : -5;
-  const xOffset = isLeft ? -xyThickness : xyThickness;
-  const yOffset = isBottom ? -xyThickness : xyThickness;
+  const xOffset = isLeft ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
+  const yOffset = isBottom ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
 
-  const xMove = isLeft ? (xyThickness + 16) : -(xyThickness + 16);
-  const yMove = isBottom ? (xyThickness + 16) : -(xyThickness + 16);
+  const xMove = isLeft ? (xyThickness + bitDiameter + 5) : -(xyThickness + bitDiameter + 5);
+  const yMove = isBottom ? (xyThickness + bitDiameter + 5) : -(xyThickness + bitDiameter + 5);
 
   const code = [
-    `; Probe XY - ${selectedCorner} (Standard Block)`,
+    `; Probe XY - ${selectedCorner} (Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21',
   ];
@@ -105,12 +110,12 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMo
   code.push(
     `G0 X${xRetract * 2}`,
     `G0 Y${-yMove+yRetract}`,
-    `G0 X${xMove}`,
+    `G0 X${xMove-xRetract}`,
   );
 
   code.push(
     `G38.2 Y${yProbe} F150`,
-    `G91 G0 Y${yRetract}`,
+    `G0 Y${yRetract}`,
     `G38.2 Y${ySlow} F75`,
     'G4 P0.3',
     `G10 L20 Y${yOffset}`,
@@ -127,9 +132,9 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 50, skipPrepMo
   return code;
 };
 
-export const getXYZProbeRoutine = ({ selectedCorner, xyThickness = 50, zThickness = 25, zProbeDistance = 3 }) => {
+export const getXYZProbeRoutine = ({ selectedCorner, xyThickness = 10, zThickness = 15, zProbeDistance = 3, bitDiameter = 6.35 }) => {
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
-  const xMove = isLeft ? -(xyThickness + 16) : (xyThickness + 16);
+  const xMove = isLeft ? -(xyThickness + bitDiameter + 5) : (xyThickness + bitDiameter + 5);
   const code = [];
 
   code.push(...getZProbeRoutine(zThickness));
@@ -137,10 +142,10 @@ export const getXYZProbeRoutine = ({ selectedCorner, xyThickness = 50, zThicknes
   code.push(
     'G91',
     `G0 X${xMove}`,
-    `G0 Z-${zProbeDistance + 10}`
+    `G0 Z-${zProbeDistance + zParkHeight}`
   );
 
-  code.push(...getXYProbeRoutine({ selectedCorner, xyThickness, skipPrepMove: true }));
+  code.push(...getXYProbeRoutine({ selectedCorner, xyThickness, bitDiameter, skipPrepMove: true }));
 
   return code;
 };

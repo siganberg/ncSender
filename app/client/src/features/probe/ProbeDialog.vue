@@ -14,7 +14,7 @@
                 <label class="probe-label">Probe Type</label>
                 <select v-model="probeType" class="probe-select" :disabled="isProbing">
                   <option value="3d-probe">3D Probe</option>
-                  <!-- <option value="standard-block">Standard Block</option> -->
+                  <option value="standard-block">Standard Block</option>
                   <option value="autozero-touch">AutoZero Touch</option>
                 </select>
               </div>
@@ -169,6 +169,65 @@
             </template>
 
             <template v-if="probeType === 'standard-block'">
+              <div class="probe-control-group">
+                <label class="probe-label">Bit Diameter</label>
+                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': standardBlockDropdownOpen }">
+                  <div
+                    class="custom-dropdown__trigger"
+                    @click="toggleStandardBlockDropdown"
+                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
+                  >
+                    <span class="custom-dropdown__value">{{ getStandardBlockDisplayValue() }}</span>
+                    <span class="custom-dropdown__arrow">▼</span>
+                  </div>
+
+                  <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
+                    <!-- Custom diameters (can be removed) -->
+                    <div
+                      v-for="diameter in standardBlockBitDiameters"
+                      :key="diameter"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === diameter.toString() }"
+                      @click="selectStandardBlockDiameter(diameter.toString())"
+                    >
+                      <button
+                        class="custom-dropdown__remove"
+                        @click.stop="removeStandardBlockDiameter(diameter)"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                      <span class="custom-dropdown__item-text">{{ diameter }}mm</span>
+                    </div>
+
+                    <!-- Divider before custom input -->
+                    <div class="custom-dropdown__divider"></div>
+
+                    <!-- Custom diameter input -->
+                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
+                      <input
+                        v-model.number="newStandardBlockDiameter"
+                        type="number"
+                        step="0.01"
+                        min="0.1"
+                        max="50"
+                        class="custom-dropdown__input"
+                        placeholder="Custom diameter (mm)"
+                        @click.stop
+                        @keyup.enter="addStandardBlockDiameter"
+                      />
+                      <button
+                        @click.stop="addStandardBlockDiameter"
+                        class="custom-dropdown__add-btn"
+                        :disabled="!newStandardBlockDiameter || newStandardBlockDiameter <= 0"
+                      >
+                        +Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Z Thickness</label>
@@ -419,8 +478,8 @@ const jogStep = ref(1); // Will be adjusted by watcher if needed
 const jogFeedRate = ref(3000);
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
-const zThickness = ref(25);
-const xyThickness = ref(50);
+const zThickness = ref(15);
+const xyThickness = ref(10);
 const zProbeDistance = ref(3);
 
 // AutoZero Touch probe state
@@ -428,6 +487,12 @@ const selectedBitDiameter = ref<string>('Auto');
 const customBitDiameters = ref<number[]>([2, 3.175, 6.35, 9.525, 12]);
 const newCustomDiameter = ref<number | null>(null);
 const dropdownOpen = ref(false);
+
+// Standard Block probe state
+const selectedStandardBlockBitDiameter = ref<string>('6.35');
+const standardBlockBitDiameters = ref<number[]>([3.175, 5, 6.35]);
+const newStandardBlockDiameter = ref<number | null>(null);
+const standardBlockDropdownOpen = ref(false);
 
 // Validation errors
 const errors = ref({
@@ -622,7 +687,15 @@ const handleRapidMovementBlur = async () => {
   validateRapidMovement();
   if (!errors.value.rapidMovement && rapidMovement.value !== originalValues.value.rapidMovement) {
     try {
-      await updateSettings({ probe: { '3d-probe': { rapidMovement: rapidMovement.value } } });
+      const settings: any = { probe: {} };
+      if (probeType.value === '3d-probe') {
+        settings.probe['3d-probe'] = { rapidMovement: rapidMovement.value };
+      } else if (probeType.value === 'standard-block') {
+        settings.probe['standard-block'] = { rapidMovement: rapidMovement.value };
+      } else if (probeType.value === 'autozero-touch') {
+        settings.probe['autozero-touch'] = { rapidMovement: rapidMovement.value };
+      }
+      await updateSettings(settings);
       originalValues.value.rapidMovement = rapidMovement.value;
     } catch (error) {
       console.error('[ProbeDialog] Failed to save rapid movement setting', JSON.stringify({ error: error.message }));
@@ -781,6 +854,16 @@ watch(() => selectedBitDiameter.value, async (value) => {
   }
 });
 
+watch(() => selectedStandardBlockBitDiameter.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { 'standard-block': { selectedBitDiameter: value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save standard block selected bit diameter setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 // Load settings when dialog opens
 watch(() => props.show, async (isShown) => {
   if (isShown) {
@@ -842,11 +925,25 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['standard-block']?.zProbeDistance === 'number') {
           zProbeDistance.value = settings.probe['standard-block'].zProbeDistance;
         }
+        if (typeof settings.probe?.['standard-block']?.rapidMovement === 'number') {
+          rapidMovement.value = settings.probe['standard-block'].rapidMovement;
+          originalValues.value.rapidMovement = settings.probe['standard-block'].rapidMovement;
+        }
+        if (typeof settings.probe?.['autozero-touch']?.rapidMovement === 'number') {
+          rapidMovement.value = settings.probe['autozero-touch'].rapidMovement;
+          originalValues.value.rapidMovement = settings.probe['autozero-touch'].rapidMovement;
+        }
         if (settings.probe?.selectedBitDiameter) {
           selectedBitDiameter.value = settings.probe.selectedBitDiameter;
         }
         if (Array.isArray(settings.probe?.bitDiameters)) {
           customBitDiameters.value = settings.probe.bitDiameters;
+        }
+        if (settings.probe?.['standard-block']?.selectedBitDiameter) {
+          selectedStandardBlockBitDiameter.value = settings.probe['standard-block'].selectedBitDiameter;
+        }
+        if (Array.isArray(settings.probe?.['standard-block']?.bitDiameters)) {
+          standardBlockBitDiameters.value = settings.probe['standard-block'].bitDiameters;
         }
       }
     } catch (error) {
@@ -1016,6 +1113,68 @@ const removeCustomDiameter = async (diameter: number) => {
   }
 };
 
+// Standard Block functions
+const toggleStandardBlockDropdown = () => {
+  if (!props.isProbing) {
+    standardBlockDropdownOpen.value = !standardBlockDropdownOpen.value;
+  }
+};
+
+const selectStandardBlockDiameter = (value: string) => {
+  selectedStandardBlockBitDiameter.value = value;
+  standardBlockDropdownOpen.value = false;
+};
+
+const getStandardBlockDisplayValue = () => {
+  return `${selectedStandardBlockBitDiameter.value}mm`;
+};
+
+const addStandardBlockDiameter = async () => {
+  if (newStandardBlockDiameter.value && newStandardBlockDiameter.value > 0) {
+    if (!standardBlockBitDiameters.value.includes(newStandardBlockDiameter.value)) {
+      standardBlockBitDiameters.value.push(newStandardBlockDiameter.value);
+      standardBlockBitDiameters.value.sort((a, b) => a - b);
+
+      if (!isInitialLoad) {
+        try {
+          await updateSettings({ probe: { 'standard-block': { bitDiameters: standardBlockBitDiameters.value } } });
+        } catch (error) {
+          console.error('[ProbeDialog] Failed to save standard block bit diameters', JSON.stringify({ error: error.message }));
+        }
+      }
+    }
+    newStandardBlockDiameter.value = null;
+  }
+};
+
+const removeStandardBlockDiameter = async (diameter: number) => {
+  const index = standardBlockBitDiameters.value.indexOf(diameter);
+  if (index > -1) {
+    standardBlockBitDiameters.value.splice(index, 1);
+
+    if (selectedStandardBlockBitDiameter.value === diameter.toString()) {
+      selectedStandardBlockBitDiameter.value = standardBlockBitDiameters.value.length > 0
+        ? standardBlockBitDiameters.value[0].toString()
+        : '6.35';
+    }
+
+    if (!isInitialLoad) {
+      try {
+        await updateSettings({
+          probe: {
+            'standard-block': {
+              bitDiameters: standardBlockBitDiameters.value,
+              selectedBitDiameter: selectedStandardBlockBitDiameter.value
+            }
+          }
+        });
+      } catch (error) {
+        console.error('[ProbeDialog] Failed to save standard block bit diameters', JSON.stringify({ error: error.message }));
+      }
+    }
+  }
+};
+
 const handleStartProbe = async () => {
   if (isAlarmState.value) {
     try {
@@ -1041,7 +1200,11 @@ const handleStartProbe = async () => {
       probeZFirst: probeZFirst.value,
       toolDiameter: ballPointDiameter.value || 6,
       zOffset: zOffset.value,
-      selectedBitDiameter: selectedBitDiameter.value
+      selectedBitDiameter: selectedBitDiameter.value,
+      zThickness: zThickness.value,
+      xyThickness: xyThickness.value,
+      zProbeDistance: zProbeDistance.value,
+      standardBlockBitDiameter: selectedStandardBlockBitDiameter.value
     };
 
     console.log('[Probe] Starting probe operation:', options);

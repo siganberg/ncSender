@@ -88,7 +88,7 @@ const STRATEGIES = {
     axes: {
       Z: {
         numbers: {
-          zThickness: { defaultValue: 25, min: 0 }
+          zThickness: { defaultValue: 15, min: 0 }
         },
         run: (options) => probeStandardBlock.getZProbeRoutine(options.zThickness)
       },
@@ -97,9 +97,10 @@ const STRATEGIES = {
           selectedCorner: { allowed: CORNER_VALUES, required: true }
         },
         numbers: {
-          xyThickness: { defaultValue: 50, min: 0 },
-          zThickness: { defaultValue: 25, min: 0 },
-          zProbeDistance: { defaultValue: 3, min: 0 }
+          xyThickness: { defaultValue: 10, min: 0 },
+          zThickness: { defaultValue: 15, min: 0 },
+          zProbeDistance: { defaultValue: 3, min: 0 },
+          bitDiameter: { defaultValue: 6.35, min: 0.1 }
         },
         run: (options) => probeStandardBlock.getXYZProbeRoutine(options)
       },
@@ -108,7 +109,8 @@ const STRATEGIES = {
           selectedCorner: { allowed: CORNER_VALUES, required: true }
         },
         numbers: {
-          xyThickness: { defaultValue: 50, min: 0 }
+          xyThickness: { defaultValue: 10, min: 0 },
+          bitDiameter: { defaultValue: 6.35, min: 0.1 }
         },
         run: (options) => probeStandardBlock.getXYProbeRoutine(options)
       },
@@ -117,7 +119,8 @@ const STRATEGIES = {
           selectedSide: { allowed: X_SIDE_VALUES, required: true }
         },
         numbers: {
-          xyThickness: { defaultValue: 50, min: 0 }
+          xyThickness: { defaultValue: 10, min: 0 },
+          bitDiameter: { defaultValue: 6.35, min: 0.1 }
         },
         run: (options) => probeStandardBlock.getXProbeRoutine(options)
       },
@@ -126,7 +129,8 @@ const STRATEGIES = {
           selectedSide: { allowed: Y_SIDE_VALUES, required: true }
         },
         numbers: {
-          xyThickness: { defaultValue: 50, min: 0 }
+          xyThickness: { defaultValue: 10, min: 0 },
+          bitDiameter: { defaultValue: 6.35, min: 0.1 }
         },
         run: (options) => probeStandardBlock.getYProbeRoutine(options)
       }
@@ -217,6 +221,11 @@ export const validateProbeOptions = (rawOptions) => {
 
   safe.probeType = probeType;
   safe.probingAxis = probingAxis;
+
+  // Map standardBlockBitDiameter to bitDiameter for Standard Block probe
+  if (probeType === 'standard-block' && source.standardBlockBitDiameter !== undefined) {
+    source.bitDiameter = source.standardBlockBitDiameter;
+  }
 
   if (axisConfig) {
     applyStringRules({ source, target: safe, errors }, axisConfig.strings);
