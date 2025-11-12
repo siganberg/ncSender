@@ -43,6 +43,13 @@ Download a release from the [Releases page](https://github.com/siganberg/ncSende
 - **Linux**: use the `.AppImage` or `.deb` (depending on your distro). Mark the AppImage as executable.
 - **Raspberry Pi**: use the ARM64 `.deb` or `.AppImage` package.
 
+## 🎥 Video Guide Playlist
+
+Check out the full video guide on YouTube:  
+[![Video Guide Playlist](https://img.youtube.com/vi/FKzFe8b-NkY/0.jpg)](https://www.youtube.com/watch?v=FKzFe8b-NkY&list=PL7x16nytZHiPXI6EPsmamY8EM6uo82eLs)
+
+📺 [Watch the full playlist here »](https://www.youtube.com/playlist?list=PL7x16nytZHiPXI6EPsmamY8EM6uo82eLs)
+
 ## 🚀 Quick Start
 1) Connect your controller
 - USB: plug your controller via USB. Default baud is 115200.
