@@ -753,14 +753,13 @@ const goToPark = async () => {
       return;
     }
     // Parse parking location (format: "x,y,z") - stored in mm
-    const [xMm, yMm, zMm] = response.parkingLocation.split(',').map(v => parseFloat(v));
+    const [xMm, yMm] = response.parkingLocation.split(',').map(v => parseFloat(v));
 
     // Convert to current units if imperial
     const isImperial = appStore.unitsPreference.value === 'imperial';
     const unitsGCode = getUnitGCode(appStore.unitsPreference.value);
     const x = isImperial ? mmToInches(xMm) : xMm;
     const y = isImperial ? mmToInches(yMm) : yMm;
-    const z = isImperial ? mmToInches(zMm) : zMm;
 
     // Safe Z also needs conversion
     const safeZMm = safeZValue.value;
@@ -769,11 +768,9 @@ const goToPark = async () => {
     const safeZStr = formatMachineCoord(safeZ);
     const xStr = formatMachineCoord(x);
     const yStr = formatMachineCoord(y);
-    const zStr = formatMachineCoord(z);
 
-    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 Z${safeZStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 Z${safeZStr}` });
-    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}` });
-    await api.sendCommandViaWebSocket({ command: `G53 ${unitsGCode} G90 G0 Z${zStr}`, displayCommand: `G53 ${unitsGCode} G90 G0 Z${zStr}` });
+    const command = `G53 ${unitsGCode} G90 G0 Z${safeZStr}\nG53 ${unitsGCode} G90 G0 X${xStr} Y${yStr}`;
+    await api.sendCommandViaWebSocket({ command, displayCommand: command });
   } catch (_err) {
     // Network or other errors: ignore during active press
     return;
