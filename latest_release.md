@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Reduced 3D probe X and Y dimension minimum to 3mm for smaller workpieces
+### 🐛 Bug Fixes
+- Fixed probe dialog closing accidentally by making it modal
