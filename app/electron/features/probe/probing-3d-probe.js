@@ -319,6 +319,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `#<Y2> = #5062`,
     `G0 Y${bounce}`,
     `G0 Z${zHop}`,
+    `G0 Y-${bounce}`,
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
     'G90',
