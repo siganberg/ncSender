@@ -103,7 +103,7 @@
                       v-model.number="xDimension"
                       type="number"
                       step="0.1"
-                      min="10"
+                      min="3"
                       max="1000"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.xDimension }"
@@ -123,7 +123,7 @@
                       v-model.number="yDimension"
                       type="number"
                       step="0.1"
-                      min="10"
+                      min="3"
                       max="1000"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.yDimension }"
@@ -607,16 +607,16 @@ const validateRapidMovement = () => {
 };
 
 const validateXDimension = () => {
-  if (xDimension.value < 10 || xDimension.value > 1000) {
-    errors.value.xDimension = 'Must be between 10 and 1000mm';
+  if (xDimension.value < 3 || xDimension.value > 1000) {
+    errors.value.xDimension = 'Must be between 3 and 1000mm';
   } else {
     errors.value.xDimension = '';
   }
 };
 
 const validateYDimension = () => {
-  if (yDimension.value < 10 || yDimension.value > 1000) {
-    errors.value.yDimension = 'Must be between 10 and 1000mm';
+  if (yDimension.value < 3 || yDimension.value > 1000) {
+    errors.value.yDimension = 'Must be between 3 and 1000mm';
   } else {
     errors.value.yDimension = '';
   }
