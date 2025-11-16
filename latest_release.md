@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed probe dialog closing accidentally by making it modal
+- Fixed 3D probe outer probing Y axis calculation that was missing bounce offset
