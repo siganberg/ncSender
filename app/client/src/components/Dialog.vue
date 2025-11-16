@@ -1,5 +1,5 @@
 <template>
-  <div class="dialog-backdrop" @click.self="$emit('close')" :style="{ zIndex }">
+  <div class="dialog-backdrop" @click.self="handleBackdropClick" :style="{ zIndex }">
     <div
       class="dialog"
       :class="[size ? `dialog--${size}` : '']"
@@ -29,6 +29,7 @@ const props = defineProps<{
   maxHeight?: string;
   minWidth?: string;
   minHeight?: string;
+  closeOnBackdropClick?: boolean;
 }>()
 
 const customStyle = computed(() => {
@@ -44,9 +45,15 @@ const customStyle = computed(() => {
   return Object.keys(style).length > 0 ? style : undefined;
 });
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'close'): void;
 }>();
+
+const handleBackdropClick = () => {
+  if (props.closeOnBackdropClick !== false) {
+    emit('close');
+  }
+};
 </script>
 
 <style scoped>

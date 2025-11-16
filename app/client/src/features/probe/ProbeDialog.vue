@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-if="show" @close="handleClose" size="medium-minus">
+  <Dialog v-if="show" @close="handleClose" size="medium-minus" :close-on-backdrop-click="false">
     <div class="probe-dialog">
       <div class="probe-dialog__header">
         <p class="probe-dialog__instructions">
