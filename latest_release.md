@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed 3D probe outer probing Y axis calculation that was missing bounce offset
+### 🔧 Improvements
+- Improved Standard Block Z probing accuracy by moving dwell time before fine probe step
