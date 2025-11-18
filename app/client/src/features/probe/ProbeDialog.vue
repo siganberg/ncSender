@@ -237,7 +237,7 @@
                       type="number"
                       step="0.1"
                       min="1"
-                      max="30"
+                      max="40"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zThickness }"
                       :disabled="isProbing"
@@ -575,8 +575,8 @@ const validateZOffset = () => {
 };
 
 const validateZThickness = () => {
-  if (zThickness.value < 1 || zThickness.value > 30) {
-    errors.value.zThickness = 'Must be between 1 and 30mm';
+  if (zThickness.value < 1 || zThickness.value > 40) {
+    errors.value.zThickness = 'Must be between 1 and 40mm';
   } else {
     errors.value.zThickness = '';
   }
