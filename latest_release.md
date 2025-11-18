@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Improved Standard Block Z probing accuracy by moving dwell time before fine probe step
+- Increased Standard Block Z thickness maximum to 40mm for better compatibility with thicker workpieces
