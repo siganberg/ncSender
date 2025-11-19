@@ -46,6 +46,46 @@ export class CommandProcessor {
       machineState
     } = context;
 
+    // Handle $NCSENDER_CLEAR_MSG command - clear plugin message and notify all clients
+    if (command.trim().toUpperCase() === '$NCSENDER_CLEAR_MSG') {
+      log('$NCSENDER_CLEAR_MSG command detected - clearing plugin message');
+
+      // Clear plugin message from settings
+      this.pluginManager.clearPluginMessage();
+
+      // Broadcast cnc-command (pending status)
+      this.broadcast('cnc-command', {
+        id: commandId,
+        command: '$NCSENDER_CLEAR_MSG',
+        displayCommand: '$NCSENDER_CLEAR_MSG',
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        sourceId: meta.sourceId || 'client'
+      });
+
+      // Broadcast cnc-command-result (success status)
+      this.broadcast('cnc-command-result', {
+        id: commandId,
+        command: '$NCSENDER_CLEAR_MSG',
+        displayCommand: '$NCSENDER_CLEAR_MSG',
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        sourceId: meta.sourceId || 'client'
+      });
+
+      // Return early - don't send to controller
+      return {
+        shouldContinue: false,
+        result: {
+          status: 'success',
+          id: commandId,
+          command: '$NCSENDER_CLEAR_MSG',
+          displayCommand: '$NCSENDER_CLEAR_MSG',
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+
     // Check if this is a valid M6 command
     const m6Parse = parseM6Command(command);
     const isValidM6 = m6Parse?.matched && m6Parse.toolNumber !== null;

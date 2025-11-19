@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pluginEventBus } from './plugin-event-bus.js';
-import { readSettings } from './settings-manager.js';
+import { readSettings, saveSettings } from './settings-manager.js';
 import { getUserDataDir } from '../utils/paths.js';
 import { parseM6Command } from '../utils/gcode-patterns.js';
 
@@ -46,6 +46,39 @@ class PluginManager {
     this.cncController = cncController;
     this.broadcast = broadcast;
     this.sendWsMessage = sendWsMessage;
+
+    // Register handler to intercept cnc-data and detect plugin messages
+    // This must be registered BEFORE plugins are loaded so it runs first
+    this.eventBus.on('ws:cnc-data', async (data) => {
+      if (typeof data === 'string') {
+        // Check for pattern: [MSG:PluginCode:MESSAGE_ID] or [MSG, PluginCode:MESSAGE_ID]
+        // Examples: [MSG:RCS:LOAD_MESSAGE] or [MSG, RCS:LOAD_MESSAGE]
+        const msgPattern = /\[MSG[,\s]*:?\s*([^:]+):([^\]]+)\]/i;
+        const match = data.match(msgPattern);
+
+        if (match) {
+          const pluginCode = match[1].trim();
+          const messageId = match[2].trim();
+
+          const pluginMessage = {
+            pluginCode,
+            messageId,
+            rawData: data,
+            timestamp: Date.now()
+          };
+
+          // Save to settings.pluginMessage
+          try {
+            const settings = readSettings() || {};
+            settings.pluginMessage = pluginMessage;
+            saveSettings(settings);
+            log('Saved plugin message to settings');
+          } catch (error) {
+            log('Failed to save plugin message to settings:', error);
+          }
+        }
+      }
+    });
 
     this.ensurePluginsDirectory();
 
@@ -280,6 +313,20 @@ class PluginManager {
             throw new Error('Broadcast function not available');
           }
           this.broadcast('plugin:show-modal', payload);
+
+          // Update pluginMessage with the actual modal payload
+          try {
+            const settings = readSettings() || {};
+            // Keep the original trigger info but add the modal payload
+            settings.pluginMessage = {
+              ...settings.pluginMessage,
+              modalPayload: payload
+            };
+            saveSettings(settings);
+            log('Updated pluginMessage with modal payload');
+          } catch (error) {
+            log('Failed to update pluginMessage with modal payload:', error);
+          }
         }
       },
 
@@ -687,6 +734,17 @@ class PluginManager {
       return fs.existsSync(iconPath);
     } catch {
       return false;
+    }
+  }
+
+  clearPluginMessage() {
+    try {
+      const settings = readSettings() || {};
+      settings.pluginMessage = null;
+      saveSettings(settings);
+      log('Cleared pluginMessage from settings');
+    } catch (error) {
+      log('Failed to clear pluginMessage from settings:', error);
     }
   }
 }

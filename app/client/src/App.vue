@@ -1085,7 +1085,8 @@ onMounted(() => {
     } else if (event.data.type === 'close-modal') {
       showPluginModal.value = false;
     } else if (event.data.type === 'send-command') {
-      api.sendCommand(event.data.command, {
+      api.sendCommandViaWebSocket({
+        command: event.data.command,
         displayCommand: event.data.displayCommand
       });
     }
@@ -1096,6 +1097,21 @@ onMounted(() => {
     pluginModalContent.value = data.content;
     pluginModalClosable.value = data.closable !== false;
   });
+
+  // Listen for $NCSENDER_CLEAR_MSG command result to close modal on all clients
+  api.on('cnc-command-result', (data: any) => {
+    if (data.command === '$NCSENDER_CLEAR_MSG' && data.status === 'success') {
+      showPluginModal.value = false;
+    }
+  });
+
+  // Check if there's a persisted modal in settings and restore it
+  const settings = getSettings();
+  if (settings?.pluginMessage?.modalPayload) {
+    showPluginModal.value = true;
+    pluginModalContent.value = settings.pluginMessage.modalPayload.content;
+    pluginModalClosable.value = settings.pluginMessage.modalPayload.closable !== false;
+  }
 
   window.addEventListener('settings-changed', (event: Event) => {
     const detail = (event as CustomEvent)?.detail;
