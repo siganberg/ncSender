@@ -1,4 +1,5 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Increased Standard Block Z thickness maximum to 40mm for better compatibility with thicker workpieces
+### ✨ New Features
+- Plugin modal dialogs now remember their position and state across sessions
+- Plugin settings and dialog positions now sync automatically across multiple connected clients
