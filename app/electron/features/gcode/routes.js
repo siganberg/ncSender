@@ -2,10 +2,25 @@ import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
+import { pluginManager } from '../../core/plugin-manager.js';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
 };
+
+// Cache directory for G-code file (single file, always overwritten)
+const PROCESSED_CACHE_DIR = path.join(getUserDataDir(), 'gcode-cache');
+const CACHE_FILE_PATH = path.join(PROCESSED_CACHE_DIR, 'current.gcode');
+
+// Ensure cache directory exists
+async function ensureCacheDir() {
+  try {
+    await fs.mkdir(PROCESSED_CACHE_DIR, { recursive: true });
+  } catch (error) {
+    log('Failed to create cache directory:', error);
+  }
+}
 
 function detectWorkspace(gcodeContent) {
   const lines = gcodeContent.split('\n');
@@ -43,12 +58,35 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Move file to final location with original name
       await fs.rename(tempPath, finalPath);
 
-      // Read file content for validation
-      const content = await fs.readFile(finalPath, 'utf8');
+      // Read file content
+      let content = await fs.readFile(finalPath, 'utf8');
+
+      // Process through post-processor plugins (onBeforeJobStart event)
+      const context = {
+        filename: originalName,
+        filePath: finalPath,
+        sourceId: 'upload'
+      };
+
+      try {
+        const processedContent = await pluginManager.getEventBus().emitChain('onBeforeJobStart', content, context);
+        if (processedContent && typeof processedContent === 'string') {
+          content = processedContent;
+          log('G-code processed by post-processor plugins');
+        }
+      } catch (error) {
+        log('Error processing G-code through plugins:', error);
+        // Continue with original content if plugin processing fails
+      }
+
+      // Always cache G-code to disk (whether processed or not) to avoid memory issues with large files
+      await ensureCacheDir();
+      await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
+      log('Cached G-code to:', CACHE_FILE_PATH);
 
       // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
-        filename: originalName,
+        filename: originalName,  // Original filename for display and API
         currentLine: 0,
         totalLines: content.split('\n').length,
         status: null,
@@ -69,7 +107,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
-        filename: originalName,
+        filename: originalName,  // Use original filename for display
         content: content,
         detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
@@ -127,12 +165,12 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
   // Get specific G-code file
   router.get('/:filename', async (req, res) => {
     try {
-      const filename = req.params.filename;
+      const filename = decodeURIComponent(req.params.filename);
       const filePath = path.join(filesDir, filename);
       const content = await fs.readFile(filePath, 'utf8');
       res.json({ filename, content });
     } catch (error) {
-      log('Error reading G-code file:', filename, 'from path:', filePath, error);
+      log('Error reading G-code file:', req.params.filename, error);
       res.status(404).json({ error: 'File not found' });
     }
   });
@@ -142,11 +180,34 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     try {
       const filename = req.params.filename;
       const filePath = path.join(filesDir, filename);
-      const content = await fs.readFile(filePath, 'utf8');
+      let content = await fs.readFile(filePath, 'utf8');
+
+      // Process through post-processor plugins (onBeforeJobStart event)
+      const context = {
+        filename: filename,
+        filePath: filePath,
+        sourceId: 'load'
+      };
+
+      try {
+        const processedContent = await pluginManager.getEventBus().emitChain('onBeforeJobStart', content, context);
+        if (processedContent && typeof processedContent === 'string') {
+          content = processedContent;
+          log('G-code processed by post-processor plugins');
+        }
+      } catch (error) {
+        log('Error processing G-code through plugins:', error);
+        // Continue with original content if plugin processing fails
+      }
+
+      // Always cache G-code to disk (whether processed or not) to avoid memory issues with large files
+      await ensureCacheDir();
+      await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
+      log('Cached G-code to:', CACHE_FILE_PATH);
 
       // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
-        filename: filename,
+        filename: filename,  // Original filename for display and API
         currentLine: 0,
         totalLines: content.split('\n').length,
         status: null,
@@ -167,7 +228,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
 
       // Broadcast G-code content to all connected clients for visualization
       const gcodeMessage = {
-        filename: filename,
+        filename: filename,  // Use original filename for display
         content: content,
         detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()

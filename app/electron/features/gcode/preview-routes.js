@@ -1,5 +1,8 @@
 import { Router } from 'express';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -13,10 +16,21 @@ export function createGCodePreviewRoutes(serverState, broadcast) {
     try {
       // Clear the loaded program from server state
       serverState.jobLoaded = null;
-      // No additional timing fields to reset; timing lives under jobLoaded
 
       // Clear from settings for persistence
       saveSettings({ lastLoadedFile: null });
+
+      // Delete the cache file
+      const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+      try {
+        await fs.unlink(cachePath);
+        log('Deleted cache file:', cachePath);
+      } catch (error) {
+        // Ignore if file doesn't exist
+        if (error.code !== 'ENOENT') {
+          log('Failed to delete cache file:', error);
+        }
+      }
 
       // Broadcast server state update to all connected clients
       broadcast('server-state-updated', serverState);

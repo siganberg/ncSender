@@ -344,21 +344,29 @@ async handleReorder() {
 - `tool-changer` - Tool change automation plugins
 
 #### Non-Exclusive Categories (multiple can be enabled)
+- `post-processor` - G-code file transformation (priority 120-150, runs before other plugins)
 - `gcode-generator` - G-code generation tools
 - `utility` - Utility/helper plugins
+- `custom` - User-defined category
 
 ### 7. Priority System Details
 
 #### Priority Assignment
 - **Higher number = Higher priority = Executes first**
-- Default range: 100, 90, 80, 70... (descending by 10)
+- Priority ranges by category:
+  - **post-processor**: 120-150 (runs before all other plugins)
+  - **tool-changer**: 50-100
+  - **utility**: 0-50
+  - **gcode-generator**: 0-50
+- Default range for UI drag-n-drop: 100, 90, 80, 70... (descending by 10)
 - Plugins without priority get `0` (execute last)
 
 #### Execution Order Example
 ```
-Priority 100: AutoDustBoot     → Executes FIRST
-Priority 50:  RapidChangeATC   → Executes SECOND
-Priority 0:   (no priority)    → Executes LAST
+Priority 150: CAM Post-Processor  → Executes FIRST (transforms entire file)
+Priority 100: AutoDustBoot        → Executes SECOND
+Priority 50:  RapidChangeATC      → Executes THIRD
+Priority 0:   (no priority)       → Executes LAST
 ```
 
 #### Command Flow Example

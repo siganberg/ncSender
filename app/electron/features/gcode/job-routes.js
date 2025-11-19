@@ -6,6 +6,7 @@ import path from 'node:path';
 import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -58,7 +59,12 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Start the job processor using singleton manager
-      await jobManager.startJob(filePath, filename, actualCNCController, broadcast, commandProcessor, { serverState });
+      // Always use the cache file (contains processed G-code if plugins ran)
+      const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+      const displayFilename = serverState.jobLoaded?.filename || filename;
+
+      log('Starting job with cached file:', cachePath);
+      await jobManager.startJob(cachePath, displayFilename, actualCNCController, broadcast, commandProcessor, { serverState });
 
       log('G-code job started:', filename);
       res.json({ success: true, message: 'G-code job started', filename });
@@ -195,14 +201,8 @@ export class GCodeJobProcessor {
     this.isStopped = false;
     this.currentLineNumber = 0;
 
-    const jobContext = {
-      filename: this.filename,
-      filePath: this.filePath,
-      sourceId: this.sourceId
-    };
-
-    content = await this.eventBus.emitChain('onBeforeJobStart', content, jobContext);
-
+    // Note: onBeforeJobStart event is now emitted at file load time (in routes.js)
+    // This ensures the visualizer shows the processed G-code and avoids double processing
     if (content !== null && typeof content === 'string') {
       this.gcodeContent = content;
     }

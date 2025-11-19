@@ -1,7 +1,10 @@
 import { WebSocketServer } from 'ws';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
 import { pluginManager } from '../core/plugin-manager.js';
 import { parseM6Command, isM6Command } from '../utils/gcode-patterns.js';
+import { getUserDataDir } from '../utils/paths.js';
 
 const WS_READY_STATE_OPEN = 1;
 const realtimeJobCommands = new Set(['!', '~', '\\x18']);
@@ -529,7 +532,7 @@ export function createWebSocketLayer({
     }
   };
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', async (ws) => {
     // Generate unique client ID
     const clientId = `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     ws.clientId = clientId;
@@ -643,6 +646,22 @@ export function createWebSocketLayer({
     computeJobProgressFields();
     updateSenderStatus();
     sendWsMessage(ws, 'server-state-updated', serverState);
+
+    // Send loaded G-code content if available (always from cache file)
+    if (serverState.jobLoaded?.filename) {
+      try {
+        const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+        const content = await fs.readFile(cachePath, 'utf8');
+        const gcodeMessage = {
+          filename: serverState.jobLoaded.filename,
+          content: content,
+          timestamp: new Date().toISOString()
+        };
+        sendWsMessage(ws, 'gcode-updated', gcodeMessage);
+      } catch (error) {
+        log('Failed to read cached G-code:', error);
+      }
+    }
 
     if (serverState.greetingMessage) {
       setTimeout(() => {

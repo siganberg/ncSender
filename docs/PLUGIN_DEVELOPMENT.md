@@ -115,6 +115,120 @@ ctx.emitToClient(eventName, data)        // Emit custom events to clients
 ctx.onWebSocketEvent(eventName, handler) // Subscribe to WebSocket events
 ```
 
+## Plugin Categories
+
+ncSender organizes plugins into categories based on their function:
+
+### Exclusive Categories
+
+Only one plugin of this category can be enabled at a time:
+
+- **tool-changer** (priority 50-100): Manages automatic tool changes
+
+### Non-Exclusive Categories
+
+Multiple plugins of these categories can be enabled simultaneously:
+
+- **post-processor** (priority 120-150): Transforms G-code files after loading, before execution
+- **utility** (priority 0-50): General-purpose helper plugins
+- **gcode-generator** (priority 0-50): Generates G-code programmatically
+- **custom** (priority varies): User-defined category
+
+### Post-Processor Plugins
+
+Post-processor plugins transform loaded G-code files to adapt CAM software output for specific machines or requirements. They run at high priority (120-150) to process G-code before other plugins.
+
+**Common Use Cases:**
+- Converting CAM software output to machine-specific format
+- Adjusting feed rates and spindle speeds for specific materials
+- Transforming tool change commands (automatic to manual, or vice versa)
+- Adding machine-specific initialization and shutdown sequences
+- Removing or adding safety checks
+- Stripping comments or debug information
+
+**Key Characteristics:**
+- Use `onBeforeJobStart` event for file-level transformation
+- Execute before tool-changer and other lower-priority plugins
+- Multiple post-processors can be chained (ordered by priority)
+- Should be fast and efficient (process entire file in memory)
+
+**Example Post-Processor:**
+
+```javascript
+export function onLoad(ctx) {
+  ctx.log('Post-Processor loaded');
+
+  ctx.registerEventHandler('onBeforeJobStart', async (content, context) => {
+    const settings = ctx.getSettings();
+    const lines = content.split('\n');
+    const processedLines = [];
+
+    ctx.log(`Processing file: ${context.filename}`);
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+
+      // Skip empty lines
+      if (line === '') continue;
+
+      // Strip comments if configured
+      if (settings.stripComments && line.startsWith('(')) {
+        continue;
+      }
+
+      // Transform tool changes to manual
+      if (settings.manualToolChange && line.match(/M6/i)) {
+        const toolMatch = line.match(/T(\d+)/i);
+        if (toolMatch) {
+          line = `M0 (Insert Tool ${toolMatch[1]})`;
+        }
+      }
+
+      // Adjust feed rates
+      if (settings.feedMultiplier && line.match(/F[\d.]+/)) {
+        line = line.replace(/F([\d.]+)/i, (match, feed) => {
+          const adjusted = parseFloat(feed) * settings.feedMultiplier;
+          return `F${adjusted.toFixed(1)}`;
+        });
+      }
+
+      // Adjust spindle speeds
+      if (settings.spindleMultiplier && line.match(/S\d+/i)) {
+        line = line.replace(/S(\d+)/i, (match, speed) => {
+          const adjusted = Math.round(parseInt(speed, 10) * settings.spindleMultiplier);
+          return `S${adjusted}`;
+        });
+      }
+
+      processedLines.push(line);
+    }
+
+    ctx.log(`Processed ${lines.length} → ${processedLines.length} lines`);
+    return processedLines.join('\n');
+  });
+}
+
+export function onUnload() {
+  console.log('Post-Processor unloaded');
+}
+```
+
+**Post-Processor manifest.json:**
+
+```json
+{
+  "id": "com.example.postprocessor",
+  "name": "CAM Post-Processor",
+  "version": "1.0.0",
+  "category": "post-processor",
+  "priority": 120,
+  "author": "Your Name",
+  "description": "Transforms CAM output for machine-specific format",
+  "entry": "index.js",
+  "events": ["onBeforeJobStart"]
+}
+```
+
 ## Available Events
 
 ### onBeforeJobStart

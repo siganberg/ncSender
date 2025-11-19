@@ -12,6 +12,13 @@ const log = (...args) => {
 // Categories that only allow one plugin to be enabled at a time
 const EXCLUSIVE_CATEGORIES = new Set(['tool-changer']);
 
+// Plugin Categories:
+// - tool-changer: Manages automatic tool changes (exclusive, priority 50-100)
+// - post-processor: Transforms G-code files before execution (non-exclusive, priority 120-150)
+// - utility: General-purpose helper plugins (non-exclusive, priority 0-50)
+// - gcode-generator: Generates G-code programmatically (non-exclusive, priority 0-50)
+// - custom: User-defined category (non-exclusive, priority varies)
+
 // Support development mode - load plugins from project directory
 const DEV_PLUGINS_DIR = process.env.DEV_PLUGINS_DIR;
 const PLUGINS_DIR = DEV_PLUGINS_DIR || path.join(getUserDataDir(), 'plugins');

@@ -80,15 +80,31 @@ export async function createApp(options = {}) {
   const lastLoadedFile = getSetting('lastLoadedFile');
   if (lastLoadedFile) {
     const filePath = path.join(filesDir, lastLoadedFile);
+    const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+
     try {
       await fs.access(filePath);
-      const content = await fs.readFile(filePath, 'utf8');
+
+      // Check if cached file exists from previous session (use it regardless of processing)
+      let content;
+      try {
+        await fs.access(cachePath);
+        content = await fs.readFile(cachePath, 'utf8');
+        log('Using cached G-code from previous session:', cachePath);
+      } catch {
+        // Cache doesn't exist, read original file (no processing on server restart)
+        content = await fs.readFile(filePath, 'utf8');
+        log('No cache found, using original file:', filePath);
+      }
+
+      // Set serverState
       context.serverState.jobLoaded = {
-        filename: lastLoadedFile,
+        filename: lastLoadedFile,  // Original filename for display and API
         currentLine: 0,
         totalLines: content.split('\n').length,
         status: null
       };
+
       log('Restored last loaded file from settings:', lastLoadedFile);
     } catch (error) {
       log('Last loaded file no longer exists, clearing from settings:', lastLoadedFile);

@@ -143,3 +143,19 @@ export async function getLinesRangeFromIDB(start, end) {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+export async function getGCodeFromIDB() {
+  if (!idbEnabled) return null;
+  try {
+    const lineCount = await getLineCountFromIDB();
+    const filename = await getFilenameFromIDB();
+    if (lineCount === 0) return null;
+
+    const lines = await getLinesRangeFromIDB(1, lineCount);
+    const content = lines.join('\n');
+    return { filename, content };
+  } catch (error) {
+    console.error('Failed to retrieve G-code from IndexedDB:', error);
+    return null;
+  }
+}

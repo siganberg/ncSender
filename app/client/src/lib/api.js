@@ -642,34 +642,6 @@ class NCClient {
     });
   }
 
-  async checkCurrentProgram() {
-    try {
-      const serverState = this.lastServerState;
-      if (!serverState) {
-        return; // No state available yet; rely on future WS update
-      }
-
-      if (serverState.jobLoaded?.filename) {
-        // Add small delay to ensure viewport is fully rendered before loading G-code
-        setTimeout(async () => {
-          try {
-            // Get the file content and emit the gcode-updated event
-            const fileData = await this.getGCodeFile(serverState.jobLoaded.filename);
-            this.emit('gcode-updated', {
-              filename: fileData.filename,
-              content: fileData.content,
-              timestamp: new Date().toISOString()
-            });
-          } catch (error) {
-            console.error('Error loading current program:', error);
-          }
-        }, 200); // 200ms delay
-      }
-    } catch (error) {
-      console.error('Error checking current program:', error);
-    }
-  }
-
   // No longer broadcasting ETA from client
 
   // G-code Job Control Methods
