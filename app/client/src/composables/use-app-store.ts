@@ -51,8 +51,8 @@ interface StatusReport {
   tool?: number;
   homed?: boolean;
   feedRate?: number;
-  feedRateCommanded?: number;
-  spindleRpm?: number;
+  spindleRpmTarget?: number;
+  spindleRpmActual?: number;
   floodCoolant?: boolean;
   mistCoolant?: boolean;
   spindleActive?: boolean;
@@ -82,7 +82,8 @@ const status = reactive({
   wco: { x: 0, y: 0, z: 0 },
   alarms: [] as string[],
   feedRate: 0,
-  spindleRpm: 0,
+  spindleRpmTarget: 0,
+  spindleRpmActual: 0,
   feedrateOverride: 100,
   rapidOverride: 100,
   spindleOverride: 100,
@@ -209,8 +210,11 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
   if (typeof (report as any).feedRate === 'number') {
     status.feedRate = (report as any).feedRate;
   }
-  if (typeof (report as any).spindleRpm === 'number') {
-    status.spindleRpm = (report as any).spindleRpm;
+  if (typeof (report as any).spindleRpmTarget === 'number') {
+    status.spindleRpmTarget = (report as any).spindleRpmTarget;
+  }
+  if (typeof (report as any).spindleRpmActual === 'number') {
+    status.spindleRpmActual = (report as any).spindleRpmActual;
   }
 
   if (typeof report.feedrateOverride === 'number') {

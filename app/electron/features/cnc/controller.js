@@ -247,15 +247,15 @@ export class CNCController extends EventEmitter {
         // Consider machine homed if value contains '1' (any axis homed)
         newStatus.homed = value.includes('1');
       } else if (key === 'FS') {
-        const [feed, spindle, commanded] = value ? value.split(',').map(Number) : [];
+        const [feed, targetRpm, actualRpm] = value ? value.split(',').map(Number) : [];
         if (Number.isFinite(feed)) {
           newStatus.feedRate = feed;
         }
-        if (Number.isFinite(spindle)) {
-          newStatus.spindleRpm = spindle;
+        if (Number.isFinite(targetRpm)) {
+          newStatus.spindleRpmTarget = targetRpm;
         }
-        if (Number.isFinite(commanded)) {
-          newStatus.feedRateCommanded = commanded;
+        if (Number.isFinite(actualRpm)) {
+          newStatus.spindleRpmActual = actualRpm;
         }
       } else if (key === 'A') {
         // Accessory state: S=Spindle, F=Flood, M=Mist
@@ -302,7 +302,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'feedRateCommanded', 'spindleRpm', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

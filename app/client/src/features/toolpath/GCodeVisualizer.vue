@@ -288,7 +288,8 @@ const props = withDefaults(defineProps<{
   gridSizeY?: number;
   zMaxTravel?: number | null;
   machineOrientation?: MachineOrientation;
-  spindleRpm?: number;
+  spindleRpmTarget?: number;
+  spindleRpmActual?: number;
   alarmMessage?: string;
   currentTool?: number;
   toolLengthSet?: boolean;
@@ -303,7 +304,8 @@ const props = withDefaults(defineProps<{
   gridSizeY: DEFAULT_GRID_SIZE_MM,
   zMaxTravel: DEFAULT_Z_TRAVEL_MM,
   machineOrientation: () => ({ xHome: 'min', yHome: 'max', zHome: 'max', homeCorner: 'back-left' }),
-  spindleRpm: 0,
+  spindleRpmTarget: 0,
+  spindleRpmActual: 0,
   jobLoaded: null,
   toolLengthSet: false
 });
@@ -997,7 +999,7 @@ const animate = () => {
     }
 
     // Rotate cutting pointer when spindle is spinning (throttled to 30 fps)
-    if (props.spindleRpm > 0) {
+    if (props.spindleRpmActual > 0) {
       const now = performance.now();
       if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
         // Rotate around Z axis (spindle axis after rotation)

@@ -48,7 +48,8 @@ const props = defineProps<{
     workCoords: Record<string, number>;
     alarms: string[];
     feedRate: number;
-    spindleRpm: number;
+    spindleRpmTarget: number;
+    spindleRpmActual: number;
   };
   consoleLines: Array<{ id: string | number; level: string; message: string; timestamp: string; status?: 'pending' | 'success' | 'error'; type?: 'command' | 'response'; sourceId?: string }>;
   jogConfig: {

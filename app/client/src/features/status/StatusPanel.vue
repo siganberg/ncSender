@@ -105,7 +105,7 @@
           <button @click="resetSpindleOverride" class="control-btn control-btn--primary metric-btn" title="Reset to 100%">
             Spindle ↻
           </button>
-          <span class="value">{{ status.spindleRpm }} rpm</span>
+          <span class="value">{{ status.spindleRpmActual }} / {{ status.spindleRpmTarget }} rpm</span>
         </div>
         <div class="override-control">
           <span class="override-label">{{ spindleOverride }}%</span>
@@ -155,7 +155,8 @@ const props = defineProps<{
     workCoords: Record<string, number>;
     alarms: string[];
     feedRate: number;
-    spindleRpm: number;
+    spindleRpmTarget: number;
+    spindleRpmActual: number;
     feedrateOverride: number;
     rapidOverride: number;
     spindleOverride: number;
