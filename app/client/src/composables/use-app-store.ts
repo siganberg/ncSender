@@ -647,6 +647,20 @@ export function initializeStore() {
     addResponseLine(data);
   });
 
+  // Handle initial greeting for late-joining clients (only add if not already in console)
+  api.on('initial-greeting', (data) => {
+    // Check if greeting is already in console history
+    const greetingExists = consoleLines.value.some(line =>
+      line.message && line.message.toLowerCase().includes('grbl') &&
+      line.message.toLowerCase().includes('help')
+    );
+
+    // Only add if it's not already there
+    if (!greetingExists) {
+      addResponseLine(data);
+    }
+  });
+
   // Listen for settings changes (including homeLocation)
   api.on('settings-changed', (changedSettings) => {
     if (changedSettings?.homeLocation) {

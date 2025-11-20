@@ -663,9 +663,10 @@ export function createWebSocketLayer({
       }
     }
 
+    // Send greeting message to late-joining clients (but mark as initial-greeting to prevent duplicate in console)
     if (serverState.greetingMessage) {
       setTimeout(() => {
-        sendWsMessage(ws, 'cnc-data', serverState.greetingMessage);
+        sendWsMessage(ws, 'initial-greeting', serverState.greetingMessage);
       }, 100);
     }
   });

@@ -122,6 +122,10 @@ export function registerCncEventHandlers({
     if (shouldFilterBroadcast(data)) {
       return;
     }
+    // Filter out greeting messages - they will be sent to late-joining clients only
+    if (typeof data === 'string' && data.toLowerCase().startsWith('grbl')) {
+      return;
+    }
     broadcast('cnc-data', data);
     pluginManager.getEventBus().emitAsync('ws:cnc-data', data);
   };

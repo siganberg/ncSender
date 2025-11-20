@@ -2139,6 +2139,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
+  min-width: 122px;
 }
 
 .tools-legend__item.used {
