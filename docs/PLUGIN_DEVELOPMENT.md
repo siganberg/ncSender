@@ -158,7 +158,7 @@ Post-processor plugins transform loaded G-code files to adapt CAM software outpu
 export function onLoad(ctx) {
   ctx.log('Post-Processor loaded');
 
-  ctx.registerEventHandler('onBeforeJobStart', async (content, context) => {
+  ctx.registerEventHandler('onGcodeProgramLoad', async (content, context) => {
     const settings = ctx.getSettings();
     const lines = content.split('\n');
     const processedLines = [];
@@ -225,33 +225,68 @@ export function onUnload() {
   "author": "Your Name",
   "description": "Transforms CAM output for machine-specific format",
   "entry": "index.js",
-  "events": ["onBeforeJobStart"]
+  "events": ["onGcodeProgramLoad"]
 }
 ```
 
 ## Available Events
 
-### onBeforeJobStart
+### onGcodeProgramLoad
 
-Called before a G-code job starts. Can modify the entire G-code content.
+Called when a G-code file is loaded or uploaded into ncSender. This is the primary event for post-processor plugins that transform G-code files.
+
+**When it fires:**
+- When a file is uploaded via the UI (`POST /api/gcode-files`)
+- When a file is loaded from the file list (`POST /api/gcode-files/:filename/load`)
+- Before the file is cached and displayed in the visualizer
 
 ```javascript
-ctx.registerEventHandler('onBeforeJobStart', async (gcode, context) => {
-  ctx.log('Job starting:', context.filename);
+ctx.registerEventHandler('onGcodeProgramLoad', async (gcode, context) => {
+  ctx.log('G-code file loaded:', context.filename);
+  ctx.log('Source:', context.sourceId); // 'upload' or 'load'
 
-  // Optionally modify G-code
-  const modifiedGcode = gcode.replace(/F100/g, 'F150');
+  // Transform the entire file
+  const modifiedGcode = gcode
+    .split('\n')
+    .map(line => {
+      // Strip comments
+      if (line.trim().startsWith('(')) return '';
+      // Adjust feed rates
+      return line.replace(/F(\d+)/g, (match, feed) => {
+        return `F${Math.round(parseInt(feed) * 1.2)}`;
+      });
+    })
+    .filter(line => line !== '')
+    .join('\n');
+
   return modifiedGcode;
-
-  // Or return the original
-  return gcode;
 });
 ```
 
 **Context:**
-- `filename`: Name of the G-code file
-- `filePath`: Full path to the file
-- `sourceId`: Source identifier
+- `filename`: Name of the G-code file (e.g., "example.gcode")
+- `filePath`: Full path to the file on disk
+- `sourceId`: Either `'upload'` (new file) or `'load'` (existing file)
+
+**Use cases:**
+- Converting CAM software output to machine-specific format
+- Adjusting feed rates and spindle speeds
+- Transforming tool change commands
+- Adding/removing safety checks
+- Stripping comments or debug information
+
+### onBeforeJobStart
+
+Called when a G-code job execution starts (when the user clicks "Start Job"). This is different from `onGcodeProgramLoad` which fires when files are loaded/uploaded.
+
+**Status:** Currently reserved for future implementation. For file-level post-processing, use `onGcodeProgramLoad` instead.
+
+**When it will fire (future):**
+- When user clicks "Start Job" button (`POST /api/gcode-jobs`)
+- After the file has been loaded and cached
+- Before the first G-code line is sent to the controller
+
+**Planned use case:** Dynamic adjustments based on machine state at job start time (e.g., adjusting based on current tool offset, workpiece coordinate system, etc.)
 
 ### onBeforeGcodeLine
 

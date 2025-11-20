@@ -61,7 +61,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Read file content
       let content = await fs.readFile(finalPath, 'utf8');
 
-      // Process through post-processor plugins (onBeforeJobStart event)
+      // Process through post-processor plugins (onGcodeProgramLoad event)
       const context = {
         filename: originalName,
         filePath: finalPath,
@@ -69,7 +69,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       };
 
       try {
-        const processedContent = await pluginManager.getEventBus().emitChain('onBeforeJobStart', content, context);
+        const processedContent = await pluginManager.getEventBus().emitChain('onGcodeProgramLoad', content, context);
         if (processedContent && typeof processedContent === 'string') {
           content = processedContent;
           log('G-code processed by post-processor plugins');
@@ -182,7 +182,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       const filePath = path.join(filesDir, filename);
       let content = await fs.readFile(filePath, 'utf8');
 
-      // Process through post-processor plugins (onBeforeJobStart event)
+      // Process through post-processor plugins (onGcodeProgramLoad event)
       const context = {
         filename: filename,
         filePath: filePath,
@@ -190,7 +190,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       };
 
       try {
-        const processedContent = await pluginManager.getEventBus().emitChain('onBeforeJobStart', content, context);
+        const processedContent = await pluginManager.getEventBus().emitChain('onGcodeProgramLoad', content, context);
         if (processedContent && typeof processedContent === 'string') {
           content = processedContent;
           log('G-code processed by post-processor plugins');
