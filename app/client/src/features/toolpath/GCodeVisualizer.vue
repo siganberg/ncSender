@@ -2130,7 +2130,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
   align-items: center;
   gap: 10px;
   background: var(--color-surface-muted);
-  padding: 6px 12px;
+  padding: 10px 20px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
@@ -2215,7 +2215,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
 .tools-legend__label {
   min-width: 32px;
   text-align: right;
-  font-size: 0.95rem;
+  font-size: 1.2rem;
   font-weight: 500;
 }
 
