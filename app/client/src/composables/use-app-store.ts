@@ -1,6 +1,6 @@
 import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
-import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled } from '@/lib/gcode-store.js';
+import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/lib/gcode-store.js';
 import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
@@ -766,6 +766,25 @@ export async function seedInitialState() {
     }
   } catch (e) {
     debugWarn('Unable to seed initial server state:', e);
+  }
+
+  // Load G-code from IDB if available (handles race condition where component mounts before WebSocket event)
+  if (isIDBEnabled()) {
+    try {
+      const gcodeData = await getGCodeFromIDB();
+      if (gcodeData?.content && gcodeData.content.trim().length > 0) {
+        debugLog('[Store] Loading existing G-code from IndexedDB on startup');
+        const lines = gcodeData.content.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+          lines.pop();
+        }
+        gcodeLineCount.value = lines.length;
+        gcodeFilename.value = gcodeData.filename || '';
+        gcodeContent.value = ''; // Keep empty for memory efficiency
+      }
+    } catch (error) {
+      debugLog('[Store] No existing G-code to load on startup (this is normal for first load)');
+    }
   }
 
   debugLog('Initial state seeded successfully');
