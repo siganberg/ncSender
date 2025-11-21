@@ -1,4 +1,6 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Enhanced server logging for FluidNC troubleshooting and diagnostics
+- Enhanced status logging for better visibility into system operations
+- Improved plugin messaging system for more reliable communication
+- Better terminal output filtering for cleaner console display
