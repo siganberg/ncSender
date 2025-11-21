@@ -1,7 +1,7 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Changed 3D view panning to right mouse button for better usability (previously middle mouse button)
+### ✨ New Features
+- Added video guide playlist link to README for easier onboarding
 
-### 🐛 Bug Fixes
-- Fixed tool button border color not updating correctly when switching between tools
+### 🔧 Improvements
+- Made panning mouse left button assignment consistent across all views for better user experience
