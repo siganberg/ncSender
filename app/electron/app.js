@@ -17,9 +17,15 @@ import { registerCncEventHandlers } from './server/cnc-events.js';
 import { mountHttp } from './server/http.js';
 import { pluginManager } from './core/plugin-manager.js';
 import { CommandProcessor } from './core/command-processor.js';
+import { readFile } from 'node:fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load package.json for version info
+const packageJson = JSON.parse(
+  await readFile(path.join(__dirname, '../package.json'), 'utf-8')
+);
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -159,6 +165,7 @@ export async function createApp(options = {}) {
 
   const start = () => new Promise((resolve) => {
     server.listen(port, '0.0.0.0', async () => {
+      log(`ncSender v${packageJson.version}`);
       log(`ncSender Server listening on port ${port}`);
       log(`HTTP API: http://localhost:${port}/api`);
       log(`WebSocket: ws://localhost:${port}`);

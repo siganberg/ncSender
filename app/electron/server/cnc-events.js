@@ -5,9 +5,12 @@ import { fetchAndSaveAlarmCodes } from '../features/alarms/routes.js';
 import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
 
+// Messages to filter from terminal broadcast
+// Add keywords here to prevent them from appearing in terminal history
 const FILTERED_BROADCAST_MESSAGES = [
   'RGBonToolChanged',
-  'RGBonToolSelected'
+  'RGBonToolSelected',
+  '[MSG:]'
 ];
 
 function shouldFilterBroadcast(data) {

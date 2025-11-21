@@ -129,9 +129,12 @@ export class CNCController extends EventEmitter {
       }
 
       // Detect tool change completion message from plugins (e.g., RapidChange ATC)
-      if (trimmedData.includes('[MSG:TOOL CHANGE COMPLETE')) {
-        this.emit('tool-change-complete', trimmedData);
-        return; // Skip broadcasting this message to terminal
+      // Plugin messages now require PLUGIN_ prefix (e.g., [MSG:PLUGIN_RCS:TOOL CHANGE COMPLETE])
+      if (trimmedData.includes('[MSG:PLUGIN_') || trimmedData.includes('[MSG, PLUGIN_')) {
+        if (trimmedData.toUpperCase().includes('TOOL CHANGE COMPLETE')) {
+          this.emit('tool-change-complete', trimmedData);
+          return; // Skip broadcasting this message to terminal
+        }
       }
 
       const sourceId = this.activeCommand?.meta?.sourceId || null;
@@ -301,6 +304,16 @@ export class CNCController extends EventEmitter {
         newStatus[key] = value;
       }
     });
+
+    // FluidNC compatibility: Detect homing completion via status change (Home → Idle)
+    // Keep existing H: field logic for GrblHAL
+    const prevStatus = this.lastStatus?.status;
+    const currStatus = newStatus.status;
+    if (prevStatus === 'Home' && currStatus === 'Idle') {
+      // Homing just completed - machine transitioned from Home to Idle
+      newStatus.homed = true;
+      log('Homing detected via status transition (Home → Idle)');
+    }
 
     // Only update accessory states if A: field was present in this report
     // This prevents resetting states when Grbl doesn't include the A: field

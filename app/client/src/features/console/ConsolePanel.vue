@@ -200,8 +200,24 @@ const tabs = [
 const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toLowerCase());
 const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
 
+// Messages to filter from terminal display
+// These are still broadcast to clients but hidden from terminal history
+const TERMINAL_FILTERED_MESSAGES = [
+  '$NCSENDER_'
+];
+
+function shouldFilterFromTerminal(message: string): boolean {
+  if (typeof message !== 'string') return false;
+  return TERMINAL_FILTERED_MESSAGES.some(filterTerm => message.startsWith(filterTerm));
+}
+
 // Filter console lines to hide job-runner chatter but show probing commands
-const terminalLines = computed(() => (props.lines || []).filter(l => l?.sourceId !== 'job'));
+// Also filter out $NCSENDER_ commands from terminal display
+const terminalLines = computed(() => (props.lines || []).filter(l => {
+  if (l?.sourceId === 'job') return false;
+  if (shouldFilterFromTerminal(l?.message)) return false;
+  return true;
+}));
 
 // Plugin Tools state
 const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);

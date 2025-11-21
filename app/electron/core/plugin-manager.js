@@ -58,9 +58,9 @@ class PluginManager {
     // This must be registered BEFORE plugins are loaded so it runs first
     this.eventBus.on('ws:cnc-data', async (data) => {
       if (typeof data === 'string') {
-        // Check for pattern: [MSG:PluginCode:MESSAGE_ID] or [MSG, PluginCode:MESSAGE_ID]
-        // Examples: [MSG:RCS:LOAD_MESSAGE] or [MSG, RCS:LOAD_MESSAGE]
-        const msgPattern = /\[MSG[,\s]*:?\s*([^:]+):([^\]]+)\]/i;
+        // Check for pattern: [MSG:PLUGIN_PluginCode:MESSAGE_ID] or [MSG, PLUGIN_PluginCode:MESSAGE_ID]
+        // Examples: [MSG:PLUGIN_RCS:LOAD_MESSAGE] or [MSG, PLUGIN_RCS:LOAD_MESSAGE]
+        const msgPattern = /\[MSG[,\s]*:?\s*PLUGIN_([^:]+):([^\]]+)\]/i;
         const match = data.match(msgPattern);
 
         if (match) {
