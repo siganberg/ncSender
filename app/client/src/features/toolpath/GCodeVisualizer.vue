@@ -90,6 +90,7 @@
             'long-press-triggered': toolPress[t]?.triggered,
             'blink-border': toolPress[t]?.blinking
           }"
+          :style="toolsUsed.includes(t) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(t)}` } : {}"
           :title="currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`"
           @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
@@ -1212,6 +1213,15 @@ const toggleTool = (toolNumber: number) => {
   }
 };
 
+// Get tool color from the color palette
+const getToolColor = (toolNumber: number): string => {
+  const tool = toolPathColors.value.find(t => t.number === toolNumber);
+  if (tool) {
+    return '#' + tool.color.toString(16).padStart(6, '0');
+  }
+  return '#1abc9c'; // Fallback to default accent color
+};
+
 // Probe dialog
 const openProbeDialog = () => {
   showProbeDialog.value = true;
@@ -2200,23 +2210,12 @@ watch(() => store.status.mistCoolant, (newValue) => {
   min-width: 122px;
 }
 
-.tools-legend__item.used {
-  background: rgba(26, 188, 156, 0.1);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
-}
-
 .tools-legend__item.active {
   opacity: 1;
   background: var(--color-accent);
   color: #fff;
-  box-shadow: none;
   transform: none;
   cursor: default;
-}
-
-/* When tool is both active AND used by program, add inner border to show it's in the program */
-.tools-legend__item.active.used {
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
 .tools-legend__item.disabled {
@@ -2459,7 +2458,8 @@ h2 {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
-  font-size: 0.9rem;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .spindle-toggle:hover {
