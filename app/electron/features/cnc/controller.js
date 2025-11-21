@@ -129,8 +129,9 @@ export class CNCController extends EventEmitter {
       }
 
       // Detect tool change completion message from plugins (e.g., RapidChange ATC)
-      // Plugin messages now require PLUGIN_ prefix (e.g., [MSG:PLUGIN_RCS:TOOL CHANGE COMPLETE])
-      if (trimmedData.includes('[MSG:PLUGIN_') || trimmedData.includes('[MSG, PLUGIN_')) {
+      // Supports both old format: [MSG:TOOL CHANGE COMPLETE] or [MSG:RCS:TOOL CHANGE COMPLETE]
+      // And new format: [MSG:PLUGIN_RCS:TOOL CHANGE COMPLETE]
+      if (trimmedData.includes('[MSG:') || trimmedData.includes('[MSG,')) {
         if (trimmedData.toUpperCase().includes('TOOL CHANGE COMPLETE')) {
           this.emit('tool-change-complete', trimmedData);
           return; // Skip broadcasting this message to terminal
