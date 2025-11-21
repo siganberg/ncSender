@@ -8,6 +8,10 @@ Apparently, the more I build features, the more tokens I burn. Send help (or cof
 
 [![Support on Patreon](https://img.shields.io/badge/Support%20on-Patreon-orange.svg)](https://www.patreon.com/c/FrancisCreation)
 
+Or make a one-time donation via PayPal:
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate/?business=JK9NA7HLPQE7N&no_recurring=0&item_name=To+fund+the+development+of+ncSender&currency_code=USD)
+
 
 
 
