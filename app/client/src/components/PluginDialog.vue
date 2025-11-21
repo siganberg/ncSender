@@ -1,10 +1,10 @@
 <template>
-  <div v-if="show" class="plugin-dialog-backdrop" @click.self="closeDialog">
+  <div v-if="show" class="plugin-dialog-backdrop" @click.self="handleBackdropClick">
     <div class="plugin-dialog-container">
       <div class="plugin-dialog">
         <div class="plugin-dialog-header">
           <h3>{{ dialogData.title }}</h3>
-          <button class="close-button" type="button" @click="closeDialog" aria-label="Close dialog">
+          <button v-if="isClosable" class="close-button" type="button" @click="closeDialog" aria-label="Close dialog">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
               <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
             </svg>
@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { api } from '@/lib/api';
 
 interface PluginDialogData {
@@ -41,6 +41,10 @@ const dialogData = ref<PluginDialogData>({
 const dialogContent = ref<HTMLDivElement | null>(null);
 
 let unsubscribe: (() => void) | null = null;
+
+const isClosable = computed(() => {
+  return dialogData.value.options.closable !== false;
+});
 
 const handlePluginDialog = async (data: PluginDialogData) => {
   dialogData.value = data;
@@ -89,6 +93,12 @@ const closeDialog = () => {
   show.value = false;
 };
 
+const handleBackdropClick = () => {
+  if (isClosable.value) {
+    closeDialog();
+  }
+};
+
 const handlePostMessage = (event: MessageEvent) => {
   if (!event.data || !event.data.type) return;
 
@@ -106,7 +116,7 @@ const handlePostMessage = (event: MessageEvent) => {
 };
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && show.value) {
+  if (event.key === 'Escape' && show.value && isClosable.value) {
     closeDialog();
   }
 };

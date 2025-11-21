@@ -1214,6 +1214,8 @@ h2 {
 /* Tools Tab */
 .tools-tab {
   min-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .tools-list {

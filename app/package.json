@@ -27,7 +27,8 @@
     "install:all": "npm install && cd client && npm install",
     "plugins:watch": "node ../.scripts/watch-plugins.mjs",
     "plugins:reload": "node ../.scripts/reload-plugin.mjs",
-    "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:reload com.ncsender.toolbench\""
+    "plugins:reload:all": "node ../.scripts/reload-all-plugins.mjs",
+    "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:reload:all\""
   },
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",
