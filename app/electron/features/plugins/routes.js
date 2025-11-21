@@ -174,6 +174,19 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
 
   router.get('/:pluginId/settings', asyncHandler(async (req, res) => {
     const { pluginId } = req.params;
+
+    // Check if plugin is enabled
+    const plugins = pluginManager.getInstalledPlugins();
+    const plugin = plugins.find(p => p.id === pluginId);
+
+    if (!plugin) {
+      return res.status(404).json({ error: 'Plugin not found' });
+    }
+
+    if (!plugin.enabled) {
+      return res.status(403).json({ error: 'Plugin is disabled' });
+    }
+
     const settings = pluginManager.getPluginSettings(pluginId);
     res.json(settings);
   }));

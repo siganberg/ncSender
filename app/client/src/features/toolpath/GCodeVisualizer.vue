@@ -88,10 +88,11 @@
             'used': toolsUsed.includes(t),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress[t]?.triggered,
-            'blink-border': toolPress[t]?.blinking
+            'blink-border': toolPress[t]?.blinking,
+            'expanded': showToolInfo === t
           }"
           :style="toolsUsed.includes(t) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(t)}` } : {}"
-          :title="currentTool === t ? `Tool T${t} (Current - Hold to unload)` : `Tool T${t} (Hold to change)`"
+          :title="getToolTooltip(t)"
           @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
@@ -105,6 +106,18 @@
             <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
             <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
           </svg>
+          <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
+            <template v-if="toolInventory[t].diameter || toolInventory[t].type">
+              <span v-if="toolInventory[t].diameter">Ø{{ toolInventory[t].diameter.toFixed(3) }}mm</span>
+              <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
+              <span v-if="toolInventory[t].type">{{
+                { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
+                  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'probe': 'Probe'
+                }[toolInventory[t].type] || toolInventory[t].type
+              }}</span>
+            </template>
+            <template v-else>{{ toolInventory[t].name }}</template>
+          </span>
         </div>
 
         <!-- Manual Tool -->
@@ -400,6 +413,8 @@ const showProbeDialog = ref(false);
 const probeActive = ref(false); // Probe pin active state from CNC
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
+const toolInventory = ref<Record<number, any> | null>(null); // Tool inventory data from plugin
+const showToolInfo = ref<number | null>(null); // Currently displayed tool info popup
 const outOfBoundsAxes = ref<string[]>([]);
 const outOfBoundsDirections = ref<string[]>([]);
 const outOfBoundsMessage = computed(() => {
@@ -1826,14 +1841,22 @@ const endToolPress = (toolNumber: number | string) => {
   if (state.raf) cancelAnimationFrame(state.raf);
   state.raf = undefined;
 
-  // If not triggered (incomplete press), show blink feedback
+  // If not triggered (incomplete press), check if we should toggle expansion
   if (!state.triggered && state.active) {
     state.active = false;
     state.progress = 0;
-    state.blinking = true;
-    setTimeout(() => {
-      state.blinking = false;
-    }, 400);
+
+    // If this is a numbered tool with inventory data, toggle expansion instead of blink
+    if (typeof toolNumber === 'number' && toolInventory.value?.[toolNumber]) {
+      toggleToolInfo(toolNumber);
+    } else {
+      // No inventory data - close any expanded tool and show blink feedback
+      showToolInfo.value = null;
+      state.blinking = true;
+      setTimeout(() => {
+        state.blinking = false;
+      }, 400);
+    }
   } else {
     state.active = false;
     state.progress = 0;
@@ -1872,6 +1895,66 @@ const cancelToolPress = (toolNumber: number | string) => {
   state.triggered = false;
 };
 
+// Load tool inventory from plugin (agnostic - works without plugin)
+const loadToolInventory = async () => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/plugins/com.ncsender.toolinventory/settings`);
+    if (response.ok) {
+      const data = await response.json();
+      // Convert tools array to lookup map by toolNumber for quick access
+      if (data.tools && Array.isArray(data.tools)) {
+        const inventory: Record<number, any> = {};
+        data.tools.forEach((tool: any) => {
+          if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
+            inventory[tool.toolNumber] = tool;
+          }
+        });
+        toolInventory.value = inventory;
+      }
+    }
+  } catch (err) {
+    // Plugin not installed or error - gracefully degrade to basic tooltips
+    toolInventory.value = null;
+  }
+};
+
+// Get enhanced tooltip for tool (includes inventory data if available)
+const getToolTooltip = (toolNumber: number): string => {
+  const baseText = props.currentTool === toolNumber
+    ? `Tool T${toolNumber} (Current - Hold to unload)`
+    : `Tool T${toolNumber} (Hold to change)`;
+
+  const toolInfo = toolInventory.value?.[toolNumber];
+  if (!toolInfo) return baseText;
+
+  const details: string[] = [];
+  if (toolInfo.name) details.push(toolInfo.name);
+  if (toolInfo.diameter) details.push(`Ø${toolInfo.diameter.toFixed(3)}mm`);
+  if (toolInfo.type) {
+    const typeMap: Record<string, string> = {
+      'flat': 'Flat End Mill',
+      'ball': 'Ball End Mill',
+      'v-bit': 'V-Bit',
+      'drill': 'Drill',
+      'chamfer': 'Chamfer',
+      'surfacing': 'Surfacing',
+      'probe': 'Probe'
+    };
+    details.push(typeMap[toolInfo.type] || toolInfo.type);
+  }
+
+  return details.length > 0 ? `${baseText}\n${details.join(' • ')}` : baseText;
+};
+
+// Toggle tool expansion (for click/tap interaction)
+const toggleToolInfo = (toolNumber: number) => {
+  if (showToolInfo.value === toolNumber) {
+    showToolInfo.value = null;
+  } else {
+    showToolInfo.value = toolNumber;
+  }
+};
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
@@ -1899,6 +1982,9 @@ onMounted(async () => {
   // Mark initial load complete so watchers can save changes
   isInitialLoad = false;
 
+  // Load tool inventory from plugin (if available)
+  await loadToolInventory();
+
   initThreeJS();
   window.addEventListener('resize', handleResize);
 
@@ -1918,6 +2004,28 @@ onMounted(async () => {
     }
     // Future settings can be added here
     // if ('someOtherSetting' in changedSettings) { ... }
+  });
+
+  // Listen for tool inventory updates from plugin
+  window.addEventListener('message', (event: MessageEvent) => {
+    if (event.data?.type === 'tool-inventory-updated' && event.data?.pluginId === 'com.ncsender.toolinventory') {
+      // Re-fetch tool inventory data
+      loadToolInventory();
+    }
+  });
+
+  // Listen for plugin enable/disable events
+  api.on('plugins:tools-changed', (data: any) => {
+    if (data?.pluginId === 'com.ncsender.toolinventory') {
+      if (data.action === 'enabled') {
+        // Plugin was enabled - reload inventory
+        loadToolInventory();
+      } else if (data.action === 'disabled') {
+        // Plugin was disabled - clear inventory
+        toolInventory.value = null;
+        showToolInfo.value = null;
+      }
+    }
   });
 
   // Watch for container size changes
@@ -2183,6 +2291,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  align-items: flex-end;
 }
 
 .tools-legend--bottom {
@@ -2202,13 +2311,15 @@ watch(() => store.status.mistCoolant, (newValue) => {
   padding: 10px 20px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
-  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, min-width 0.3s ease, max-width 0.3s ease;
   box-shadow: inset 0 0 0 1px var(--color-border);
   overflow: hidden;
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
   min-width: 122px;
+  max-width: 122px;
+  white-space: nowrap;
 }
 
 .tools-legend__item.active {
@@ -2953,5 +3064,41 @@ body.theme-light .dot--rapid {
 .confirm-dialog__btn--danger:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+/* Tool Expansion */
+.tools-legend__item.expanded {
+  min-width: 310px;
+  max-width: 310px;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+.tool-name-expanded {
+  font-size: 0.95rem;
+  color: var(--color-text-primary);
+  opacity: 0;
+  animation: fadeInFromRight 0.3s ease forwards;
+  animation-delay: 0.15s;
+  margin-right: auto;
+  margin-left: 0;
+  padding-right: 8px;
+  font-weight: 500;
+  order: -1;
+}
+
+.tools-legend__item.active .tool-name-expanded {
+  color: #fff;
+}
+
+@keyframes fadeInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 </style>
