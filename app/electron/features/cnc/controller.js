@@ -14,6 +14,22 @@ const log = (...args) => {
 
 const MAX_QUEUE_SIZE = 200;
 
+// Fields to track for change logging
+// Excludes frequently changing fields like MPos, feedRate, Bf, Ln, WCO
+const WATCHED_STATUS_FIELDS = [
+  'status',           // Machine state changes
+  'homed',            // Homing status
+  'workspace',        // Active workspace (G54, G55, etc.)
+  'tool',             // Active tool number
+  'toolLengthSet',    // Tool length offset set
+  'spindleActive',    // Spindle on/off
+  'floodCoolant',     // Flood coolant state
+  'mistCoolant',      // Mist coolant state
+  'probeActive',      // Probe trigger state
+  'feedrateOverride', // Feed override changes
+  'rapidOverride',    // Rapid override changes
+];
+
 export class CNCController extends EventEmitter {
   constructor() {
     super();
@@ -42,6 +58,9 @@ export class CNCController extends EventEmitter {
     });
 
     this.lastStatusLogTs = 0;
+
+    // Track last logged values for watched fields
+    this.lastLoggedValues = {};
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -60,7 +79,6 @@ export class CNCController extends EventEmitter {
   handleIncomingData(trimmedData) {
     if (trimmedData.endsWith('>')) {
       if (this.isVerifyingConnection && !this.hasReceivedFirstStatus) {
-        log('Received initial status report, marking controller as ready:', trimmedData);
         this.hasReceivedFirstStatus = true;
         this.isVerifyingConnection = false;
         this.isConnected = true;
@@ -313,15 +331,26 @@ export class CNCController extends EventEmitter {
 
     // Only emit if there are actual changes
     if (hasChanges) {
-      // Log specific property changes for debugging
-      const debugFields = ['WCS', 'workspace'];
-      for (const field of debugFields) {
-        if (newStatus[field] !== this.lastStatus[field]) {
-          log(`[DEBUG] ${field} changed:`, JSON.stringify({
-            old: this.lastStatus[field],
-            new: newStatus[field]
-          }));
+      // Collect all property changes for watched fields
+      const changes = [];
+      for (const field of WATCHED_STATUS_FIELDS) {
+        const oldValue = this.lastLoggedValues[field];
+        const newValue = newStatus[field];
+
+        // Only track if value actually changed
+        if (oldValue !== newValue) {
+          changes.push(`${field}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+          this.lastLoggedValues[field] = newValue;
         }
+      }
+
+      // Log all changes from this status report together
+      if (changes.length > 0) {
+        log('[STATUS REPORT]');
+        console.log({
+          changes,
+          reportRaw: data
+        });
       }
 
       this.lastStatus = newStatus;
@@ -711,6 +740,9 @@ export class CNCController extends EventEmitter {
     this.cancelConnection();
     this.stopPolling();
     this.flushQueue('disconnect');
+
+    // Reset change tracking
+    this.lastLoggedValues = {};
 
     // Additional cleanup for any remaining connections
     if (this.connection) {
