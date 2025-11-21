@@ -31,20 +31,6 @@
               <span>Auto-Fit</span>
             </div>
           </div>
-          <div class="legend-group" role="group" aria-label="Current segment legend">
-            <div class="legend-item" :class="{ 'legend-item--disabled': !showRapids }" @click="toggleRapids">
-              <span class="dot dot--rapid" :class="{ 'dot--disabled': !showRapids }"></span>
-              <span class="legend-label">Rapid (G0)</span>
-            </div>
-            <div class="legend-item" :class="{ 'legend-item--disabled': !showCutting }" @click="toggleCutting">
-              <span class="dot dot--cutting" :class="{ 'dot--disabled': !showCutting }"></span>
-              <span class="legend-label">Cutting (G1/G2/G3)</span>
-            </div>
-            <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
-              <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
-              <span class="legend-label">Spindle</span>
-            </div>
-          </div>
         </div>
         <div class="file-controls">
           <input
@@ -63,6 +49,30 @@
           <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
             <svg width="24" height="24"><use href="#emoji-folder"></use></svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Segment Legend - right side center -->
+      <div class="floating-toolbar floating-toolbar--right">
+        <div class="legend-group" role="group" aria-label="Current segment legend">
+          <div
+            v-for="tool in toolPathColors"
+            :key="tool.number"
+            class="legend-item"
+            :class="{ 'legend-item--disabled': !tool.visible }"
+            @click="toggleTool(tool.number)"
+          >
+            <span
+              class="dot"
+              :class="{ 'dot--disabled': !tool.visible }"
+              :style="{ backgroundColor: '#' + tool.color.toString(16).padStart(6, '0') }"
+            ></span>
+            <span class="legend-label">Tool T{{ tool.number }}</span>
+          </div>
+          <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
+            <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
+            <span class="legend-label">Spindle</span>
+          </div>
         </div>
       </div>
 
@@ -381,6 +391,7 @@ const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
 const autoFitMode = ref(false); // Auto-fit mode - off by default
+const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
 const floodEnabled = ref(false); // Flood coolant - off by default
 const mistEnabled = ref(false); // Mist coolant - off by default
 const showFileManager = ref(false);
@@ -753,17 +764,35 @@ const onMouseMove = (event: MouseEvent) => {
   const deltaY = event.clientY - previousMousePosition.y;
 
   if (isRotating) {
-    // Rotate camera around scene center maintaining Z-up
-    const spherical = new THREE.Spherical();
-    spherical.setFromVector3(camera.position.clone().sub(cameraTarget));
+    // Onshape-style trackball rotation
+    // Rotate around screen axes, not spherical coordinates
+    const rotationSpeed = 0.005;
 
-    spherical.theta -= deltaX * 0.01;
-    spherical.phi += deltaY * 0.01;
+    // Get camera's right and up vectors (in world space)
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 0, 1); // Always use world Z-up for vertical rotation
 
-    // Limit vertical rotation (phi from 0.1 to PI-0.1)
-    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+    right.setFromMatrixColumn(camera.matrix, 0); // Camera's right vector
+    right.z = 0; // Project onto XY plane to keep rotation around Z-axis
+    right.normalize();
 
-    camera.position.setFromSpherical(spherical).add(cameraTarget);
+    // Create rotation around the up axis (Z) for horizontal mouse movement
+    const horizontalRotation = new THREE.Quaternion();
+    horizontalRotation.setFromAxisAngle(up, -deltaX * rotationSpeed);
+
+    // Create rotation around the right axis for vertical mouse movement
+    const verticalRotation = new THREE.Quaternion();
+    verticalRotation.setFromAxisAngle(right, -deltaY * rotationSpeed);
+
+    // Combine rotations
+    const combinedRotation = new THREE.Quaternion();
+    combinedRotation.multiplyQuaternions(horizontalRotation, verticalRotation);
+
+    // Apply rotation to camera position around the target
+    const offset = camera.position.clone().sub(cameraTarget);
+    offset.applyQuaternion(combinedRotation);
+    camera.position.copy(cameraTarget).add(offset);
+
     camera.up.set(0, 0, 1); // Maintain Z-up orientation
     camera.lookAt(cameraTarget);
   } else if (isPanning) {
@@ -1055,6 +1084,9 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
 
     gcodeVisualizer.render(data.content);
 
+    // Get tool colors from visualizer
+    toolPathColors.value = gcodeVisualizer.getToolsInfo();
+
     // Detect tools used based on M6 lines with tool numbers
     toolsUsed.value = extractToolsFromGCode(data.content);
 
@@ -1134,6 +1166,8 @@ const handleGCodeClear = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.clear();
   }
+  // Clear tool colors
+  toolPathColors.value = [];
   // Also clear G-code preview content
   if (store && typeof store.clearGCodePreview === 'function') {
     store.clearGCodePreview();
@@ -1164,6 +1198,17 @@ const toggleSpindle = () => {
   showSpindle.value = !showSpindle.value;
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
+  }
+};
+
+const toggleTool = (toolNumber: number) => {
+  if (!gcodeVisualizer) return;
+
+  // Find and toggle the tool in our local array
+  const tool = toolPathColors.value.find(t => t.number === toolNumber);
+  if (tool) {
+    tool.visible = !tool.visible;
+    gcodeVisualizer.setToolVisibility(toolNumber, tool.visible);
   }
 };
 
@@ -2111,6 +2156,17 @@ watch(() => store.status.mistCoolant, (newValue) => {
   right: 16px;
 }
 
+.floating-toolbar--right {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+
 .tools-legend {
   margin-top: 6px;
   display: flex;
@@ -2309,7 +2365,8 @@ watch(() => store.status.mistCoolant, (newValue) => {
   border-radius: var(--radius-small);
   padding: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 500;
   background: var(--color-accent);
   color: white;
   width: 70px;
@@ -2382,7 +2439,8 @@ h2 {
   cursor: pointer;
   background: var(--color-surface-muted);
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .view-button.active {
@@ -2493,9 +2551,10 @@ input:checked + .slider:before {
   justify-content: flex-start;
   gap: 8px;
   background: transparent;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: var(--radius-small);
-  font-size: 0.9rem;
+  font-size: 16px;
+  font-weight: 500;
   color: var(--color-text-primary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2506,6 +2565,7 @@ input:checked + .slider:before {
 .legend-label {
   flex: 1 1 auto;
   text-align: left;
+  font-size: 16px;
 }
 
 .legend-item .dot {

@@ -10,11 +10,16 @@ class GCodeVisualizer {
         // G-code movement types colors
         this.moveColors = {
             rapid: 0x00ff66,  // Rapid moves (dark theme default)
-            cutting: 0x3e85c7,  // Cutting moves - Light Blue
+            cutting: 0x3e85c7,  // Cutting moves - Light Blue (fallback)
             completedRapid: 0x333333,  // Completed rapid - Dark Gray
             completedCutting: 0x444444,  // Completed cutting - Dark Gray
             outOfBounds: 0xcc5555  // Out of bounds - Muted Red
         };
+
+        // Tool-based colors (generated dynamically)
+        this.toolColors = new Map(); // toolNumber -> color hex
+        this.toolsUsed = new Set(); // Set of tool numbers used in program
+        this.toolVisibility = new Map(); // toolNumber -> boolean (visible/hidden)
 
         // Grid boundaries (set via setGridBounds)
         this.gridBounds = null; // { minX, maxX, minY, maxY, minZ?, maxZ? }
@@ -29,6 +34,7 @@ class GCodeVisualizer {
         // Track line numbers for completion marking and original move type per line
         this.lineNumberMap = new Map(); // lineNumber -> { startVertexIdx, endVertexIdx }
         this.lineMoveType = new Map();  // lineNumber -> 'rapid' | 'cutting'
+        this.lineToolNumber = new Map(); // lineNumber -> tool number (for cutting moves)
         this.completedLines = new Set();
 
         // Track which axes have any out-of-bounds vertices
@@ -39,12 +45,89 @@ class GCodeVisualizer {
         return this;
     }
 
+    // Get the original color for a line based on its tool (both rapid and cutting use tool color)
+    getLineColor(lineNumber) {
+        const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+        const toolNum = this.lineToolNumber.get(lineNumber);
+
+        // Use tool-specific color for all moves if tool is known
+        if (toolNum !== undefined && this.toolColors.has(toolNum)) {
+            return new THREE.Color(this.toolColors.get(toolNum));
+        }
+
+        // Fallback to move-type specific colors if no tool
+        if (moveType === 'rapid') {
+            return new THREE.Color(this.moveColors.rapid);
+        }
+        return new THREE.Color(this.moveColors.cutting);
+    }
+
+    // Predefined color palette for tools (up to 16 tools)
+    getToolColorPalette() {
+        return [
+            0x3e85c7,  // T1  - Blue (default cutting color)
+            0xffa500,  // T2  - Orange
+            0x4ecdc4,  // T3  - Cyan
+            0xffe66d,  // T4  - Yellow
+            0x95e1d3,  // T5  - Mint
+            0xaa96da,  // T6  - Purple
+            0xfcbad3,  // T7  - Pink
+            0xa8e6cf,  // T8  - Light Green
+            0xffd3b6,  // T9  - Peach
+            0xc7ceea,  // T10 - Lavender
+            0xb4f8c8,  // T11 - Pastel Green
+            0xfbe7c6,  // T12 - Cream
+            0xa0e7e5,  // T13 - Aqua
+            0xdda15e,  // T14 - Bronze
+            0x9d84b7,  // T15 - Violet
+            0x81b29a   // T16 - Sage Green
+        ];
+    }
+
+    // Get color for a specific tool number
+    generateToolColor(toolNumber, totalTools) {
+        const palette = this.getToolColorPalette();
+
+        // Use predefined color if within palette range
+        if (toolNumber > 0 && toolNumber <= palette.length) {
+            return palette[toolNumber - 1];
+        }
+
+        // For tools beyond T16, generate colors using HSL
+        const hue = ((toolNumber - 1) % 360);
+        const saturation = 70;
+        const lightness = 55;
+
+        // Convert HSL to RGB
+        const h = hue / 360;
+        const s = saturation / 100;
+        const l = lightness / 100;
+
+        const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1/6) return p + (q - p) * 6 * t;
+            if (t < 1/2) return q;
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        const r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+        const g = Math.round(hue2rgb(p, q, h) * 255);
+        const b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+
+        return (r << 16) | (g << 8) | b;
+    }
+
     clear() {
         this.pathLines.forEach(line => {
             this.group.remove(line);
         });
         this.pathLines = [];
         this.lineNumberMap.clear();
+        this.lineToolNumber.clear();
         this.completedLines.clear();
     }
 
@@ -83,9 +166,35 @@ class GCodeVisualizer {
         let lastMoveType = null;
         let unitScale = 1; // Track unit conversion: 1 for mm (G21), 25.4 for inches (G20)
         let hasOutOfBounds = false; // Track if any points are out of bounds
-        // Reset axes tracking for fresh parse
+        let currentTool = null; // Track active tool number
+
+        // Reset tracking
         this._outOfBoundsAxes.clear();
         this._outOfBoundsDirections.clear();
+        this.toolsUsed.clear();
+        this.toolColors.clear();
+
+        // First pass: identify all tools used in the program
+        const toolsInProgram = new Set();
+        lines.forEach(line => {
+            const cleanLine = line.split(';')[0].trim().toUpperCase();
+            const tMatch = cleanLine.match(/T(\d+)/);
+            if (tMatch) {
+                toolsInProgram.add(parseInt(tMatch[1]));
+            }
+        });
+
+        // Generate colors for each tool
+        const sortedTools = Array.from(toolsInProgram).sort((a, b) => a - b);
+        sortedTools.forEach((toolNum, index) => {
+            const color = this.generateToolColor(toolNum, sortedTools.length);
+            this.toolColors.set(toolNum, color);
+            this.toolsUsed.add(toolNum);
+            // Initialize visibility to true (shown by default)
+            if (!this.toolVisibility.has(toolNum)) {
+                this.toolVisibility.set(toolNum, true);
+            }
+        });
 
         const rapidColor = new THREE.Color(this.moveColors.rapid);
         const cuttingColor = new THREE.Color(this.moveColors.cutting);
@@ -106,6 +215,12 @@ class GCodeVisualizer {
             const zMatch = cleanLine.match(/Z([-+]?\d*\.?\d+)/);
             const iMatch = cleanLine.match(/I([-+]?\d*\.?\d+)/);
             const jMatch = cleanLine.match(/J([-+]?\d*\.?\d+)/);
+            const tMatch = cleanLine.match(/T(\d+)/);
+
+            // Track tool changes
+            if (tMatch) {
+                currentTool = parseInt(tMatch[1]);
+            }
 
             if (gMatch) {
                 const gCode = parseInt(gMatch[1]);
@@ -136,6 +251,10 @@ class GCodeVisualizer {
                 const isRapid = lastMoveType === 0;
                 // Record original move type for this line number
                 this.lineMoveType.set(lineNumber, isRapid ? 'rapid' : 'cutting');
+                // Record tool number for all moves (both rapid and cutting)
+                if (currentTool !== null) {
+                    this.lineToolNumber.set(lineNumber, currentTool);
+                }
 
                 // Check if move is out of bounds
                 const oob1 = this._axisOutOfBounds(currentPos.x, currentPos.y, currentPos.z);
@@ -147,7 +266,20 @@ class GCodeVisualizer {
                 if (oob1.y || oob2.y) this._outOfBoundsAxes.add('Y');
                 if (oob1.z || oob2.z) this._outOfBoundsAxes.add('Z');
 
-                const color = isOutOfBounds ? outOfBoundsColor : (isRapid ? rapidColor : cuttingColor);
+                // Determine color based on tool (both rapid and cutting use same tool color)
+                let color;
+                if (isOutOfBounds) {
+                    color = outOfBoundsColor;
+                } else {
+                    // Use tool-based color for all moves (rapid and cutting) if tool is known
+                    if (currentTool !== null && this.toolColors.has(currentTool)) {
+                        color = new THREE.Color(this.toolColors.get(currentTool));
+                    } else if (isRapid) {
+                        color = rapidColor; // Fallback to rapid color if no tool
+                    } else {
+                        color = cuttingColor; // Fallback to cutting color if no tool
+                    }
+                }
 
                 if (lastMoveType === 2 || lastMoveType === 3) {
                     // Arc move
@@ -206,6 +338,7 @@ class GCodeVisualizer {
         // Reset per-line maps for fresh render
         this.lineNumberMap.clear();
         this.lineMoveType.clear();
+        this.lineToolNumber.clear();
 
         const { vertices, colors, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
 
@@ -232,7 +365,7 @@ class GCodeVisualizer {
             `,
             fragmentShader: `
                 uniform vec3 rapidColor;
-                uniform vec3 cuttingColor;
+                uniform vec3 outOfBoundsColor;
                 uniform bool showRapid;
                 uniform bool showCutting;
                 uniform float opacity;
@@ -240,13 +373,18 @@ class GCodeVisualizer {
                 varying vec3 vColor;
 
                 void main() {
-                    // Calculate distance from vertex color to each reference color
-                    float distToRapid = distance(vColor, rapidColor);
-                    float distToCutting = distance(vColor, cuttingColor);
+                    // Discard hidden tools (black color = hidden)
+                    if (length(vColor) < 0.01) discard;
 
-                    // Determine which color group this vertex belongs to (with tolerance)
+                    // Calculate distance from vertex color to rapid and out-of-bounds colors
+                    float distToRapid = distance(vColor, rapidColor);
+                    float distToOutOfBounds = distance(vColor, outOfBoundsColor);
+
+                    // Determine color group (with tolerance)
                     bool isRapid = distToRapid < 0.1;
-                    bool isCutting = distToCutting < 0.1;
+                    bool isOutOfBounds = distToOutOfBounds < 0.1;
+                    // Anything that's not rapid or out-of-bounds is a cutting move (tool-based color)
+                    bool isCutting = !isRapid && !isOutOfBounds;
 
                     // Discard fragment if its color group is hidden
                     if (isRapid && !showRapid) discard;
@@ -257,7 +395,7 @@ class GCodeVisualizer {
             `,
             uniforms: {
                 rapidColor: { value: new THREE.Color(this.moveColors.rapid) },
-                cuttingColor: { value: new THREE.Color(this.moveColors.cutting) },
+                outOfBoundsColor: { value: new THREE.Color(this.moveColors.outOfBounds) },
                 showRapid: { value: this.showRapid },
                 showCutting: { value: this.showCutting },
                 opacity: { value: 0.9 }
@@ -389,21 +527,18 @@ class GCodeVisualizer {
         const line = this.pathLines[0];
         if (!line || !line.geometry.attributes.color) return;
 
-        // Reset all previously completed vertices to their original colors based on move type
+        // Reset all previously completed vertices to their original colors
         const colors = line.geometry.attributes.color.array;
-        const rapidColor = new THREE.Color(this.moveColors.rapid);
-        const cuttingColor = new THREE.Color(this.moveColors.cutting);
 
         this.completedLines.forEach(lineNumber => {
             const range = this.lineNumberMap.get(lineNumber);
             if (!range) return;
             const { startVertexIdx, endVertexIdx } = range;
-            const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
-            const base = moveType === 'rapid' ? rapidColor : cuttingColor;
+            const originalColor = this.getLineColor(lineNumber);
             for (let i = startVertexIdx; i < endVertexIdx; i++) {
-                colors[i * 3] = base.r;
-                colors[i * 3 + 1] = base.g;
-                colors[i * 3 + 2] = base.b;
+                colors[i * 3] = originalColor.r;
+                colors[i * 3 + 1] = originalColor.g;
+                colors[i * 3 + 2] = originalColor.b;
             }
         });
 
@@ -422,8 +557,6 @@ class GCodeVisualizer {
 
             const colors = colorAttr.array;
             const positions = posAttr.array;
-            const rapidColor = new THREE.Color(this.moveColors.rapid);
-            const cuttingColor = new THREE.Color(this.moveColors.cutting);
             const completedRapid = new THREE.Color(this.moveColors.completedRapid);
             const completedCutting = new THREE.Color(this.moveColors.completedCutting);
             const oobColor = new THREE.Color(this.moveColors.outOfBounds);
@@ -439,7 +572,7 @@ class GCodeVisualizer {
                 const isCompleted = this.completedLines.has(lineNumber);
 
                 const baseCompleted = moveType === 'rapid' ? completedRapid : completedCutting;
-                const baseActive = moveType === 'rapid' ? rapidColor : cuttingColor;
+                const baseActive = this.getLineColor(lineNumber);
 
                 for (let i = startVertexIdx; i < endVertexIdx; i++) {
                     const x = positions[i * 3];
@@ -490,6 +623,76 @@ class GCodeVisualizer {
             cutting: true,
             rapid: true
         };
+    }
+
+    // Get all tools used in the program with their colors and visibility
+    getToolsInfo() {
+        const tools = [];
+        this.toolsUsed.forEach(toolNum => {
+            tools.push({
+                number: toolNum,
+                color: this.toolColors.get(toolNum),
+                visible: this.toolVisibility.get(toolNum) !== false
+            });
+        });
+        return tools.sort((a, b) => a.number - b.number);
+    }
+
+    // Toggle visibility for a specific tool
+    setToolVisibility(toolNumber, visible) {
+        this.toolVisibility.set(toolNumber, visible);
+        this.updateVertexVisibility();
+    }
+
+    // Update vertex colors based on tool visibility
+    updateVertexVisibility() {
+        const line = this.pathLines[0];
+        if (!line || !line.geometry.attributes.color) return;
+
+        const colors = line.geometry.attributes.color.array;
+        const positions = line.geometry.attributes.position.array;
+        const completedRapid = new THREE.Color(this.moveColors.completedRapid);
+        const completedCutting = new THREE.Color(this.moveColors.completedCutting);
+        const oobColor = new THREE.Color(this.moveColors.outOfBounds);
+
+        // Iterate through all lines and update colors based on visibility
+        for (const [lineNumber, range] of this.lineNumberMap.entries()) {
+            const { startVertexIdx, endVertexIdx } = range;
+            const toolNum = this.lineToolNumber.get(lineNumber);
+            const isCompleted = this.completedLines.has(lineNumber);
+            const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+
+            // Check if this line's tool is hidden
+            const isToolHidden = toolNum !== undefined && this.toolVisibility.get(toolNum) === false;
+
+            for (let i = startVertexIdx; i < endVertexIdx; i++) {
+                let c;
+
+                if (isToolHidden) {
+                    // Make vertices transparent/invisible by setting alpha to 0 in fragment shader
+                    // For now, we'll use a very dark gray to indicate hidden
+                    c = new THREE.Color(0x000000);
+                } else {
+                    const x = positions[i * 3];
+                    const y = positions[i * 3 + 1];
+                    const z = positions[i * 3 + 2];
+
+                    if (isCompleted) {
+                        c = moveType === 'rapid' ? completedRapid : completedCutting;
+                    } else if (this.gridBounds && this.isPointOutOfBounds(x, y, z)) {
+                        c = oobColor;
+                    } else {
+                        c = this.getLineColor(lineNumber);
+                    }
+                }
+
+                colors[i * 3] = c.r;
+                colors[i * 3 + 1] = c.g;
+                colors[i * 3 + 2] = c.b;
+            }
+        }
+
+        line.geometry.attributes.color.needsUpdate = true;
     }
 
     getOutOfBoundsAxes() {
