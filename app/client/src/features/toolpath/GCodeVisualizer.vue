@@ -755,7 +755,7 @@ const onMouseDown = (event: MouseEvent) => {
   // Only allow rotation in 3D view, not in top or side views
   const isOrthographicView = props.view === 'top' || props.view === 'front';
   isRotating = event.button === 0 && !isOrthographicView; // Left click for rotation (3D only)
-  isPanning = event.button === 1 || (event.button === 0 && isOrthographicView); // Middle click for all views, left click in ortho views
+  isPanning = event.button === 2 || (event.button === 0 && isOrthographicView); // Right click for panning (or left click in ortho views)
 };
 
 const onMouseMove = (event: MouseEvent) => {
