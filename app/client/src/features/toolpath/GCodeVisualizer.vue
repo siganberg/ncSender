@@ -2244,7 +2244,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
   background: var(--color-surface-muted) !important;
   color: var(--color-text-primary) !important;
   transform: none !important;
-  box-shadow: inset 0 0 0 1px var(--color-border) !important;
+  /* Keep the tool segment color border - don't override it */
 }
 
 @keyframes blink-border-tool {
