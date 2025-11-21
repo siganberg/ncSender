@@ -19,6 +19,17 @@ Or make a one-time donation via PayPal:
 
 ncSender is a lightweight, cross‑platform CNC controller with a clean UI and built‑in 3D toolpath preview. It connects to GrblHAL controllers over USB serial or Ethernet and can run either as a desktop app (Electron) or as a small local server you access from any browser on your network.
 
+## 📸 Screenshots
+
+### Dark Mode
+![ncSender Dark Mode](image.png)
+
+### Light Mode
+![ncSender Light Mode](image-1.png)
+
+### Portrait Mode
+![ncSender Portrait Mode](image-2.png)
+
 ## ✨ Why ncSender
 - Cross‑platform desktop app (macOS, Windows, Linux, Raspberry Pi).
 - USB serial and Ethernet (telnet‑style) connectivity.
@@ -49,7 +60,7 @@ Download a release from the [Releases page](https://github.com/siganberg/ncSende
 
 ## 🎥 Video Guide Playlist
 
-Check out the full video guide on YouTube:  
+Check out the full video guide on YouTube:
 [![Video Guide Playlist](https://img.youtube.com/vi/FKzFe8b-NkY/0.jpg)](https://www.youtube.com/watch?v=FKzFe8b-NkY&list=PL7x16nytZHiPXI6EPsmamY8EM6uo82eLs)
 
 📺 [Watch the full playlist here »](https://www.youtube.com/playlist?list=PL7x16nytZHiPXI6EPsmamY8EM6uo82eLs)
