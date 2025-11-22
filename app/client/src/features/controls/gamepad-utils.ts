@@ -4,7 +4,8 @@ export interface GamepadBinding {
   direction?: 'positive' | 'negative';
 }
 
-const AXIS_THRESHOLD = 0.95;
+const AXIS_BINDING_THRESHOLD = 0.95; // High threshold for detecting new bindings
+const AXIS_ACTIVE_THRESHOLD = 0.8; // Threshold for single axis movement (diagonal has priority at 0.3)
 const FULL_STRENGTH_THRESHOLD = 0.95;
 
 export function formatGamepadBinding(binding: GamepadBinding): string {
@@ -52,13 +53,13 @@ export function detectGamepadInput(gamepad: Gamepad): GamepadBinding | null {
 
   for (let i = 0; i < gamepad.axes.length; i++) {
     const value = gamepad.axes[i];
-    if (value > AXIS_THRESHOLD) {
+    if (value > AXIS_BINDING_THRESHOLD) {
       return {
         type: 'axis',
         index: i,
         direction: 'positive'
       };
-    } else if (value < -AXIS_THRESHOLD) {
+    } else if (value < -AXIS_BINDING_THRESHOLD) {
       return {
         type: 'axis',
         index: i,
@@ -78,9 +79,9 @@ export function isGamepadInputActive(gamepad: Gamepad, binding: GamepadBinding):
   if (binding.type === 'axis') {
     const value = gamepad.axes[binding.index];
     if (binding.direction === 'positive') {
-      return value > AXIS_THRESHOLD;
+      return value > AXIS_ACTIVE_THRESHOLD;
     } else {
-      return value < -AXIS_THRESHOLD;
+      return value < -AXIS_ACTIVE_THRESHOLD;
     }
   }
 

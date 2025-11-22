@@ -38,6 +38,7 @@ class GamepadManager {
   private jogStates = new Map<string, ActiveJogState>();
   private previousButtonStates = new Map<string, boolean>();
   private actionsExecutedThisFrame = new Set<string>();
+  private previousDiagonalState = new Map<string, boolean>();
 
   private pollGamepads = () => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -87,6 +88,33 @@ class GamepadManager {
       }
 
       const isDiagonal = this.handleDiagonalJogs(gamepad, bindings);
+      const gamepadKey = `gamepad-${gamepad.index}`;
+      const wasDiagonal = this.previousDiagonalState.get(gamepadKey) || false;
+
+      // Handle transition from diagonal to single-axis or vice versa
+      if (wasDiagonal && !isDiagonal) {
+        // Diagonal just ended - stop any diagonal jog and check for single-axis
+        const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
+          key.startsWith(`${gamepad.index}-diagonal-`)
+        );
+        for (const diagonalKey of diagonalKeys) {
+          this.handleGamepadButtonUp('', diagonalKey);
+        }
+      } else if (!wasDiagonal && isDiagonal) {
+        // Diagonal just started - stop any single-axis X/Y jogs
+        for (const [actionId, bindingStr] of Object.entries(bindings)) {
+          if (!bindingStr) continue;
+          const jogMeta = JOG_ACTIONS[actionId];
+          if (jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+            const bindingKey = `${gamepad.index}-${bindingStr}`;
+            if (this.jogStates.has(bindingKey)) {
+              this.handleGamepadButtonUp(actionId, bindingKey);
+            }
+          }
+        }
+      }
+
+      this.previousDiagonalState.set(gamepadKey, isDiagonal);
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
         if (!bindingStr) {
@@ -105,7 +133,14 @@ class GamepadManager {
         const jogMeta = JOG_ACTIONS[actionId];
         const shouldSkipDueTodiagonal = isDiagonal && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y');
 
-        if (isActive && !wasActive && !shouldSkipDueTodiagonal) {
+        // Transition from diagonal to single-axis: force trigger if axis is active
+        const justEndedDiagonal = wasDiagonal && !isDiagonal;
+        if (justEndedDiagonal && isActive && !shouldSkipDueTodiagonal && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+          // Force trigger to handle transition from diagonal to single-axis
+          if (!this.jogStates.has(bindingKey)) {
+            this.handleGamepadButtonDown(actionId, bindingKey, binding);
+          }
+        } else if (isActive && !wasActive && !shouldSkipDueTodiagonal) {
           this.handleGamepadButtonDown(actionId, bindingKey, binding);
         } else if (!isActive && wasActive) {
           this.handleGamepadButtonUp(actionId, bindingKey);
@@ -117,7 +152,7 @@ class GamepadManager {
   };
 
   private handleDiagonalJogs(gamepad: Gamepad, bindings: Record<string, string | null>): boolean {
-    const DIAGONAL_THRESHOLD = 0.5;
+    const DIAGONAL_THRESHOLD = 0.3;
 
     let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
     let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
