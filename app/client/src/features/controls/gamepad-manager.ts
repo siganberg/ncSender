@@ -12,6 +12,7 @@ import {
   startContinuousDiagonalJogSession,
   type ContinuousJogSession
 } from './actions';
+import { useAppStore } from '@/composables/use-app-store';
 
 const LONG_PRESS_DELAY_MS = 300;
 const POLL_INTERVAL_MS = 16;
@@ -39,6 +40,8 @@ class GamepadManager {
   private previousButtonStates = new Map<string, boolean>();
   private actionsExecutedThisFrame = new Set<string>();
   private previousDiagonalState = new Map<string, boolean>();
+  private previousStepSize: number | null = null;
+  private previousFeedRate: number | null = null;
 
   private pollGamepads = () => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -46,6 +49,21 @@ class GamepadManager {
     }
 
     this.actionsExecutedThisFrame.clear();
+
+    // Check for step size or feed rate changes - restart continuous jogs if changed
+    const appStore = useAppStore();
+    const currentStepSize = appStore.jogConfig.stepSize;
+    const currentFeedRate = appStore.jogConfig.feedRate;
+
+    if (this.previousStepSize !== null && this.previousFeedRate !== null) {
+      if (currentStepSize !== this.previousStepSize || currentFeedRate !== this.previousFeedRate) {
+        // Step or feed rate changed - restart all continuous jogs
+        this.restartContinuousJogs();
+      }
+    }
+
+    this.previousStepSize = currentStepSize;
+    this.previousFeedRate = currentFeedRate;
 
     const gamepads = navigator.getGamepads();
     const currentButtonStates = new Map<string, boolean>();
@@ -460,6 +478,62 @@ class GamepadManager {
     }
 
     this.jogStates.delete(bindingKey);
+  }
+
+  private restartContinuousJogs(): void {
+    // Collect all active continuous jog states
+    const activeJogs: Array<{ bindingKey: string; state: ActiveJogState }> = [];
+
+    for (const [bindingKey, state] of this.jogStates.entries()) {
+      if (state.longPressActive && state.session) {
+        activeJogs.push({ bindingKey, state });
+      }
+    }
+
+    // Stop and restart each continuous jog
+    for (const { bindingKey, state } of activeJogs) {
+      const session = state.session;
+      if (!session) continue;
+
+      // Stop the current session
+      session.stop('settings-changed').catch((error) => {
+        console.error('Failed to stop continuous jog for restart:', JSON.stringify(error));
+      });
+
+      // Reset state for restart
+      state.session = null;
+      state.longPressActive = false;
+      state.longPressTriggered = false;
+
+      // Start new session with updated settings
+      const promise = state.axis !== undefined && state.direction !== undefined
+        ? startContinuousJogSession(state.axis, state.direction)
+        : startContinuousDiagonalJogSession(state.xDir!, state.yDir!);
+
+      state.promise = promise;
+
+      promise
+        .then((session) => {
+          if (state.finished || state.cancelled) {
+            if (session) {
+              session.stop('cancelled-during-restart').catch(() => {});
+            }
+            return;
+          }
+          state.session = session;
+          state.longPressActive = Boolean(session);
+          state.longPressTriggered = true;
+        })
+        .catch((error) => {
+          console.error('Failed to restart continuous jog session:', JSON.stringify(error));
+          state.longPressActive = false;
+        })
+        .finally(() => {
+          if (!state.finished) {
+            state.promise = null;
+          }
+        });
+    }
   }
 
   private handleDisconnect = () => {
