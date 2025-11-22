@@ -112,7 +112,7 @@
               <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
               <span v-if="toolInventory[t].type">{{
                 { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
-                  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'probe': 'Probe'
+                  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'thread-mill': 'Thread Mill', 'probe': 'Probe'
                 }[toolInventory[t].type] || toolInventory[t].type
               }}</span>
             </template>
@@ -1582,6 +1582,20 @@ watch(() => props.workOffset, (newOffset) => {
 watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
     rebuildGrid(props.workOffset);
+  }
+});
+
+// Auto-expand tool button when current tool changes
+watch(() => props.currentTool, (newTool) => {
+  if (newTool && newTool > 0 && toolInventory.value && toolInventory.value[newTool]) {
+    showToolInfo.value = newTool;
+  }
+});
+
+// Collapse tool button when job completes or machine goes idle
+watch(() => [normalizedSenderStatus.value, props.jobLoaded?.status], ([senderStatus, jobStatus]) => {
+  if (senderStatus === 'idle' || jobStatus === 'completed' || jobStatus === 'stopped') {
+    showToolInfo.value = null;
   }
 });
 
