@@ -1,5 +1,5 @@
 <template>
-  <label class="toggle-switch">
+  <label class="toggle-switch" :class="{ 'toggle-switch--disabled': disabled }">
     <span class="toggle-switch__wrapper">
       <input
         type="checkbox"
@@ -7,6 +7,7 @@
         role="switch"
         :aria-checked="modelValue"
         :checked="modelValue"
+        :disabled="disabled"
         @change="$emit('update:modelValue', ($event.target as HTMLInputElement).checked)"
       />
       <span
@@ -24,6 +25,7 @@
 defineProps<{
   modelValue: boolean;
   label?: string;
+  disabled?: boolean;
 }>();
 
 defineEmits<{
@@ -94,5 +96,11 @@ defineEmits<{
 .toggle-switch__label {
   font-size: 0.9rem;
   user-select: none;
+}
+
+.toggle-switch--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 </style>

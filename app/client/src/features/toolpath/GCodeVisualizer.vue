@@ -90,8 +90,8 @@
           @touchcancel="stopScrollPress"
           aria-label="Scroll tools up"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 4L4 8L12 8L8 4Z" fill="currentColor"/>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8L6 14L18 14L12 8Z" fill="currentColor"/>
           </svg>
         </button>
 
@@ -151,8 +151,8 @@
           @touchcancel="stopScrollPress"
           aria-label="Scroll tools down"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 12L4 8L12 8L8 12Z" fill="currentColor"/>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 16L6 10L18 10L12 16Z" fill="currentColor"/>
           </svg>
         </button>
 
@@ -1952,6 +1952,8 @@ const toolsScrollContainer = ref<HTMLElement | null>(null);
 let scrollAnimationFrame: number | null = null;
 let scrollDirection: 'up' | 'down' | null = null;
 let scrollTimeout: number | null = null;
+let idleScrollTimeout: number | null = null; // Timeout to return to current tool after idle
+let isMouseOverTools = false; // Track if mouse is over the tools container
 
 // Smooth continuous scroll using requestAnimationFrame
 const smoothScroll = () => {
@@ -2007,7 +2009,7 @@ const stopScrollPress = () => {
 
 // Handle mouse wheel scroll - snap to nearest button after scrolling stops
 const handleToolsScroll = () => {
-  // Clear previous timeout
+  // Clear previous snap timeout
   if (scrollTimeout !== null) {
     clearTimeout(scrollTimeout);
   }
@@ -2024,11 +2026,67 @@ const handleToolsWheel = (event: WheelEvent) => {
   event.stopPropagation(); // Prevent event from bubbling to visualizer
 };
 
-// Setup scroll event listener when container is mounted
+// Handle mouse entering tools container
+const handleToolsMouseEnter = () => {
+  isMouseOverTools = true;
+
+  // Clear idle timeout when mouse enters
+  if (idleScrollTimeout !== null) {
+    clearTimeout(idleScrollTimeout);
+    idleScrollTimeout = null;
+  }
+};
+
+// Handle mouse leaving tools container
+const handleToolsMouseLeave = () => {
+  isMouseOverTools = false;
+
+  // Start 5-second idle timeout to return to current tool
+  if (idleScrollTimeout !== null) {
+    clearTimeout(idleScrollTimeout);
+  }
+
+  idleScrollTimeout = window.setTimeout(() => {
+    scrollToCurrentTool();
+    idleScrollTimeout = null;
+  }, 5000);
+};
+
+// Scroll to show the current active tool
+const scrollToCurrentTool = () => {
+  if (!toolsScrollContainer.value || !props.currentTool) return;
+
+  const toolNumber = props.currentTool;
+  const buttonHeight = 44;
+  const gap = 10;
+  const itemHeight = buttonHeight + gap;
+
+  // Calculate scroll position to center the current tool (or show it in view)
+  // Scroll to position where current tool is at index 3 (middle of 8 visible tools)
+  const targetIndex = toolNumber - 1; // Zero-based index
+  const scrollPosition = Math.max(0, (targetIndex - 3) * itemHeight);
+
+  toolsScrollContainer.value.scrollTo({
+    top: scrollPosition,
+    behavior: 'smooth'
+  });
+};
+
+// Watch for current tool changes and scroll to it
+watch(() => props.currentTool, () => {
+  scrollToCurrentTool();
+}, { flush: 'post' }); // Run after DOM updates
+
+// Setup scroll and mouse event listeners when container is mounted
 watch(toolsScrollContainer, (container) => {
   if (container) {
     container.addEventListener('scroll', handleToolsScroll);
     container.addEventListener('wheel', handleToolsWheel, { passive: false });
+    container.addEventListener('mouseenter', handleToolsMouseEnter);
+    container.addEventListener('mouseleave', handleToolsMouseLeave);
+
+    // Scroll to current tool on initial mount
+    setTimeout(() => scrollToCurrentTool(), 100);
   }
 });
 
@@ -2434,7 +2492,7 @@ watch(() => store.status.mistCoolant, (newValue) => {
 .tools-legend--bottom {
   position: absolute;
   right: 16px;
-  top: 50%;
+  top: 48%;
   transform: translateY(-50%);
   pointer-events: none; /* display-only to avoid blocking controls */
 }

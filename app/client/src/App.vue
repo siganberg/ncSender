@@ -194,26 +194,28 @@
 
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
-            <div class="setting-item setting-item--with-note">
-              <div class="setting-item-content">
-                <label class="setting-label">Number of Tools</label>
-                <div v-if="toolSource" class="settings-note">
-                  Control is disabled because it is currently controlled by {{ toolSource }}
-                </div>
+            <div class="settings-group">
+              <div v-if="toolSource" class="settings-note">
+                Controls are disabled because they are currently controlled by {{ toolSource }}
               </div>
-              <select class="setting-select" v-model.number="toolCount" :disabled="toolCountDisabled">
-                <option :value="0">0</option>
-                <option :value="1">1</option>
-                <option :value="2">2</option>
-                <option :value="3">3</option>
-                <option :value="4">4</option>
-                <option :value="5">5</option>
-                <option :value="6">6</option>
-                <option :value="7">7</option>
-                <option :value="8">8</option>
-                <option :value="9">9</option>
-                <option :value="10">10</option>
-              </select>
+              <div class="setting-item">
+                <label class="setting-label">Number of Tools</label>
+                <select class="setting-select" v-model.number="toolCount" :disabled="toolCountDisabled">
+                  <option v-for="n in 100" :key="n-1" :value="n-1">{{ n-1 }}</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">Manual Button</label>
+                <ToggleSwitch v-model="showManualButton" :disabled="toolCountDisabled" />
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">TLS Button</label>
+                <ToggleSwitch v-model="showTLSButton" :disabled="toolCountDisabled" />
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">Probe Button</label>
+                <ToggleSwitch v-model="showProbeButton" :disabled="true" />
+              </div>
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
@@ -920,6 +922,9 @@ const currentGradient = computed(() => {
 const toolCount = ref(initialSettings?.tool?.count ?? 0);
 const toolSource = ref(initialSettings?.tool?.source ?? null);
 const toolCountDisabled = computed(() => toolSource.value !== null);
+const showManualButton = ref(initialSettings?.tool?.manual ?? true);
+const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
+const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
@@ -1702,6 +1707,45 @@ watch(toolCount, async (newValue) => {
     }
   });
   // Note: No local update here - wait for server broadcast to ensure all clients update together
+});
+
+// Watch showManualButton and save changes
+watch(showManualButton, async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    tool: {
+      manual: newValue
+    }
+  });
+});
+
+// Watch showTLSButton and save changes
+watch(showTLSButton, async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    tool: {
+      tls: newValue
+    }
+  });
+});
+
+// Watch showProbeButton and save changes
+watch(showProbeButton, async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    tool: {
+      probe: newValue
+    }
+  });
 });
 
 // Watch useDoorAsPause and save changes
