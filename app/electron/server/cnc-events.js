@@ -161,6 +161,7 @@ export function registerCncEventHandlers({
     // If entering alarm state, include alarm code and description in machineState
     if (currentMachineStatus === 'alarm') {
       const lastAlarmCode = getSetting('lastAlarmCode');
+
       if (typeof lastAlarmCode === 'number') {
         serverState.machineState.alarmCode = lastAlarmCode;
 
@@ -181,6 +182,11 @@ export function registerCncEventHandlers({
 
         serverState.machineState.alarmDescription = description;
         log(`Machine in alarm state - Code: ${lastAlarmCode}, Description: ${description}`);
+      } else {
+        // No alarm code saved, but machine is in alarm state
+        serverState.machineState.alarmCode = null;
+        serverState.machineState.alarmDescription = 'Unknown Alarm';
+        log('Machine in alarm state but no alarm code saved');
       }
     } else {
       // Not in alarm state - clear alarm info from machineState and settings

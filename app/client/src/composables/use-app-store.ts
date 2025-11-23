@@ -572,9 +572,9 @@ export function initializeStore() {
     // Update alarm indicators based on senderStatus and machineState
     if (derivedSenderStatus === 'alarm') {
       // If in alarm state, read alarm info from machineState
-      if (serverState.machineState?.alarmCode) {
+      if (serverState.machineState?.alarmDescription) {
         lastAlarmCode.value = serverState.machineState.alarmCode;
-        alarmMessage.value = serverState.machineState.alarmDescription || 'Unknown Alarm';
+        alarmMessage.value = serverState.machineState.alarmDescription;
       }
     } else {
       // Clear alarm indicators if senderStatus is no longer alarm
@@ -767,9 +767,9 @@ export async function seedInitialState() {
       // Update alarm indicators based on senderStatus and machineState
       if (derivedSenderStatus === 'alarm') {
         // If in alarm state, read alarm info from machineState
-        if (serverState.machineState?.alarmCode) {
+        if (serverState.machineState?.alarmDescription) {
           lastAlarmCode.value = serverState.machineState.alarmCode;
-          alarmMessage.value = serverState.machineState.alarmDescription || 'Unknown Alarm';
+          alarmMessage.value = serverState.machineState.alarmDescription;
         }
       } else {
         lastAlarmCode.value = undefined;
