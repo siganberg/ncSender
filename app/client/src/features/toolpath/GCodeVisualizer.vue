@@ -80,7 +80,7 @@
       <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool" class="tools-legend tools-legend--bottom">
         <!-- Scroll Up Button -->
         <button
-          v-if="numberOfToolsToShow > 7"
+          v-if="numberOfToolsToShow > 8"
           class="tools-scroll-btn tools-scroll-btn--up"
           @mousedown="startScrollPress('up')"
           @mouseup="stopScrollPress"
@@ -141,7 +141,7 @@
 
         <!-- Scroll Down Button -->
         <button
-          v-if="numberOfToolsToShow > 7"
+          v-if="numberOfToolsToShow > 8"
           class="tools-scroll-btn tools-scroll-btn--down"
           @mousedown="startScrollPress('down')"
           @mouseup="stopScrollPress"
@@ -1949,63 +1949,88 @@ const cancelToolPress = (toolNumber: number | string) => {
 const toolsScrollContainer = ref<HTMLElement | null>(null);
 
 // Long-press state for scroll buttons
-let scrollInterval: number | null = null;
+let scrollAnimationFrame: number | null = null;
+let scrollDirection: 'up' | 'down' | null = null;
+let scrollTimeout: number | null = null;
 
-// Scroll tools list up/down
-const scrollToolsUp = () => {
-  if (!toolsScrollContainer.value) return;
-  const scrollAmount = 54; // One button height (44px) + gap (10px)
-  toolsScrollContainer.value.scrollBy({
-    top: -scrollAmount,
-    behavior: 'smooth'
-  });
+// Smooth continuous scroll using requestAnimationFrame
+const smoothScroll = () => {
+  if (!toolsScrollContainer.value || !scrollDirection) return;
+
+  const scrollSpeed = 2; // Pixels per frame for smooth scrolling
+  const delta = scrollDirection === 'up' ? -scrollSpeed : scrollSpeed;
+
+  toolsScrollContainer.value.scrollTop += delta;
+
+  // Continue scrolling
+  scrollAnimationFrame = requestAnimationFrame(smoothScroll);
 };
 
-const scrollToolsDown = () => {
+// Snap scroll position to nearest button alignment
+const snapToNearestButton = () => {
   if (!toolsScrollContainer.value) return;
-  const scrollAmount = 54; // One button height (44px) + gap (10px)
-  toolsScrollContainer.value.scrollBy({
-    top: scrollAmount,
+
+  const buttonHeight = 44;
+  const gap = 10;
+  const itemHeight = buttonHeight + gap;
+  const currentScroll = toolsScrollContainer.value.scrollTop;
+
+  // Find nearest snap point (multiple of itemHeight)
+  const nearestIndex = Math.round(currentScroll / itemHeight);
+  const snapPosition = nearestIndex * itemHeight;
+
+  toolsScrollContainer.value.scrollTo({
+    top: snapPosition,
     behavior: 'smooth'
   });
 };
 
 // Start continuous scroll on long press
 const startScrollPress = (direction: 'up' | 'down') => {
-  // Immediate first scroll
-  if (direction === 'up') {
-    scrollToolsUp();
-  } else {
-    scrollToolsDown();
+  scrollDirection = direction;
+  if (scrollAnimationFrame === null) {
+    scrollAnimationFrame = requestAnimationFrame(smoothScroll);
   }
-
-  // Start continuous scrolling after 300ms delay
-  const startTime = Date.now();
-  const checkAndScroll = () => {
-    if (scrollInterval === null) return;
-
-    const elapsed = Date.now() - startTime;
-    if (elapsed > 300) {
-      // After initial delay, scroll continuously
-      if (direction === 'up') {
-        scrollToolsUp();
-      } else {
-        scrollToolsDown();
-      }
-    }
-    scrollInterval = window.setTimeout(checkAndScroll, 150); // Repeat every 150ms
-  };
-
-  scrollInterval = window.setTimeout(checkAndScroll, 150);
 };
 
-// Stop continuous scroll
+// Stop continuous scroll and snap to nearest button
 const stopScrollPress = () => {
-  if (scrollInterval !== null) {
-    clearTimeout(scrollInterval);
-    scrollInterval = null;
+  if (scrollAnimationFrame !== null) {
+    cancelAnimationFrame(scrollAnimationFrame);
+    scrollAnimationFrame = null;
   }
+  scrollDirection = null;
+
+  // Snap to nearest button position
+  snapToNearestButton();
 };
+
+// Handle mouse wheel scroll - snap to nearest button after scrolling stops
+const handleToolsScroll = () => {
+  // Clear previous timeout
+  if (scrollTimeout !== null) {
+    clearTimeout(scrollTimeout);
+  }
+
+  // Set new timeout - snap to position after 150ms of no scrolling
+  scrollTimeout = window.setTimeout(() => {
+    snapToNearestButton();
+    scrollTimeout = null;
+  }, 150);
+};
+
+// Prevent wheel events from reaching the G-code visualizer
+const handleToolsWheel = (event: WheelEvent) => {
+  event.stopPropagation(); // Prevent event from bubbling to visualizer
+};
+
+// Setup scroll event listener when container is mounted
+watch(toolsScrollContainer, (container) => {
+  if (container) {
+    container.addEventListener('scroll', handleToolsScroll);
+    container.addEventListener('wheel', handleToolsWheel, { passive: false });
+  }
+});
 
 // Load tool inventory from plugin (agnostic - works without plugin)
 const loadToolInventory = async () => {
@@ -2419,12 +2444,14 @@ watch(() => store.status.mistCoolant, (newValue) => {
   flex-direction: column;
   gap: 10px;
   align-items: flex-end;
-  max-height: 368px; /* 7 buttons × 44px + 6 gaps × 10px = 308px + 60px */
+  max-height: 422px; /* 8 buttons × 44px + 7 gaps × 10px = 352px + 70px */
   overflow-y: auto;
   overflow-x: visible;
   align-self: flex-end;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
+  pointer-events: auto; /* Catch pointer events in gap areas */
+  cursor: pointer; /* Show pointer cursor */
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */
