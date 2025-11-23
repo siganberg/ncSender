@@ -454,6 +454,14 @@ export async function initializeFirmwareOnConnection(cncController) {
     } catch (error) {
       log('Failed to refresh firmware values on connection:', error?.message || error);
     }
+
+    // Fetch alarm codes from controller
+    try {
+      const { fetchAndSaveAlarmCodes } = await import('../alarms/routes.js');
+      await fetchAndSaveAlarmCodes(cncController);
+    } catch (error) {
+      log('Failed to fetch alarm codes on connection:', error?.message || error);
+    }
   } catch (error) {
     log('Error initializing firmware on connection:', error);
   } finally {

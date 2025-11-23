@@ -1216,9 +1216,11 @@ const removeStandardBlockDiameter = async (diameter: number) => {
 const handleStartProbe = async () => {
   if (isAlarmState.value) {
     try {
-      // Soft reset followed by unlock clears the alarm state
+      // Send soft-reset first
       await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait 500ms for controller to process soft-reset
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Then send unlock to clear alarm state
       await api.sendCommand('$X', { meta: { sourceId: 'client' } });
     } catch (error) {
       console.error('[Probe] Failed to unlock machine from probe dialog:', error);

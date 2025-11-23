@@ -1993,10 +1993,8 @@ onMounted(async () => {
     await loadSetupUsbPorts();
   }
 
-  // Fetch alarm description on page load if lastAlarmCode exists
-  if (lastAlarmCode.value !== undefined && lastAlarmCode.value !== null) {
-    await fetchAlarmDescription(lastAlarmCode.value);
-  }
+  // Alarm description is now read from machineState in use-app-store.ts
+  // No need to fetch separately
 
   // Apply colors after settings are loaded
   applyColors();
@@ -2052,10 +2050,11 @@ const toggleTheme = () => {
 
 const handleUnlock = async () => {
   try {
-    // Send soft reset first, then unlock
+    // Send soft-reset first
     await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
-    // Wait a bit for reset to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait 500ms for controller to process soft-reset
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // Then send unlock
     await api.sendCommand('$X', { meta: { sourceId: 'client' } });
   } catch (error) {
     console.error('Failed to send unlock command:', error);

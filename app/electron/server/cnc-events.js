@@ -1,9 +1,27 @@
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs/promises';
-import { saveSettings, removeSetting } from '../core/settings-manager.js';
+import { saveSettings, removeSetting, getSetting } from '../core/settings-manager.js';
 import { fetchAndSaveAlarmCodes } from '../features/alarms/routes.js';
 import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
+import { grblAlarms } from '../features/cnc/grbl-alarms.js';
+
+function getUserDataDir() {
+  const platform = os.platform();
+  const appName = 'ncSender';
+
+  switch (platform) {
+    case 'win32':
+      return path.join(os.homedir(), 'AppData', 'Roaming', appName);
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Application Support', appName);
+    case 'linux':
+      return path.join(os.homedir(), '.config', appName);
+    default:
+      return path.join(os.homedir(), `.${appName}`);
+  }
+}
 
 // Messages to filter from terminal broadcast
 // Add keywords here to prevent them from appearing in terminal history
@@ -133,14 +151,51 @@ export function registerCncEventHandlers({
     pluginManager.getEventBus().emitAsync('ws:cnc-data', data);
   };
 
-  const handleStatusReport = (status) => {
+  const handleStatusReport = async (status) => {
     const prevMachineState = { ...serverState.machineState };
     serverState.machineState = { ...serverState.machineState, ...status };
 
-    const hasChanged = JSON.stringify(prevMachineState) !== JSON.stringify(serverState.machineState);
-
     const currentMachineStatus = status?.status?.toLowerCase();
     const prevMachineStatus = prevMachineState?.status;
+
+    // If entering alarm state, include alarm code and description in machineState
+    if (currentMachineStatus === 'alarm') {
+      const lastAlarmCode = getSetting('lastAlarmCode');
+      if (typeof lastAlarmCode === 'number') {
+        serverState.machineState.alarmCode = lastAlarmCode;
+
+        // Look up alarm description
+        let description = null;
+        try {
+          const alarmsFilePath = path.join(getUserDataDir(), 'alarms.json');
+          const alarmsText = await fs.readFile(alarmsFilePath, 'utf8');
+          const alarms = JSON.parse(alarmsText);
+          description = alarms[lastAlarmCode];
+        } catch (err) {
+          // Fall back to standard GRBL alarms
+        }
+
+        if (!description) {
+          description = grblAlarms[lastAlarmCode] || 'Unknown Alarm';
+        }
+
+        serverState.machineState.alarmDescription = description;
+        log(`Machine in alarm state - Code: ${lastAlarmCode}, Description: ${description}`);
+      }
+    } else {
+      // Not in alarm state - clear alarm info from machineState and settings
+      delete serverState.machineState.alarmCode;
+      delete serverState.machineState.alarmDescription;
+
+      // Clear lastAlarmCode from settings when exiting alarm state
+      const lastAlarmCode = getSetting('lastAlarmCode');
+      if (lastAlarmCode !== undefined && lastAlarmCode !== null) {
+        await removeSetting('lastAlarmCode');
+        log('Cleared lastAlarmCode from settings (machine not in alarm state)');
+      }
+    }
+
+    const hasChanged = JSON.stringify(prevMachineState) !== JSON.stringify(serverState.machineState);
 
     if (currentMachineStatus === 'alarm' && prevMachineStatus !== 'alarm' && jobManager.hasActiveJob()) {
       log('Machine entered alarm state, resetting job manager');
@@ -162,32 +217,59 @@ export function registerCncEventHandlers({
     pluginManager.getEventBus().emitAsync('ws:cnc-response', response);
   };
 
-  const handleCncError = (errorData) => {
+  const handleCncError = async (errorData) => {
     try {
-      let alarmCode = errorData.code;
+      let enrichedErrorData = { ...errorData };
 
-      if (alarmCode === 'ALARM' && errorData.message) {
-        const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
-        if (alarmMatch) {
-          alarmCode = parseInt(alarmMatch[1], 10);
-          saveSettings({ lastAlarmCode: alarmCode });
-          log('Saved lastAlarmCode to settings:', alarmCode);
+      // If this is an alarm with a code, save it and look up description
+      if (errorData.code === 'ALARM' && typeof errorData.alarmCode === 'number') {
+        const alarmCode = errorData.alarmCode;
+
+        // Save alarm code to settings for display purposes
+        await saveSettings({ lastAlarmCode: alarmCode });
+        log(`Saved alarm code ${alarmCode} to settings`);
+
+        let description = null;
+
+        // Try to read alarm descriptions from alarms.json (controller-specific)
+        try {
+          const alarmsFilePath = path.join(getUserDataDir(), 'alarms.json');
+          const alarmsText = await fs.readFile(alarmsFilePath, 'utf8');
+          const alarms = JSON.parse(alarmsText);
+          description = alarms[alarmCode];
+
+          if (description) {
+            log(`Alarm ${alarmCode} description from alarms.json: ${description}`);
+          }
+        } catch (err) {
+          // alarms.json doesn't exist or can't be read, will use fallback
+          log('Could not read alarm descriptions from alarms.json, using fallback:', err.message);
         }
+
+        // If no description from alarms.json, use standard GRBL fallback
+        if (!description) {
+          description = grblAlarms[alarmCode];
+          if (description) {
+            log(`Alarm ${alarmCode} description from fallback: ${description}`);
+          } else {
+            description = 'Unknown Alarm';
+            log(`Alarm ${alarmCode} has no description in fallback`);
+          }
+        }
+
+        enrichedErrorData.alarmDescription = description;
       }
 
-      broadcast('cnc-error', errorData);
+      // Broadcast alarm to frontend with description
+      broadcast('cnc-error', enrichedErrorData);
     } catch (error) {
-      log('Failed to save lastAlarmCode:', error);
+      log('Failed to broadcast cnc-error:', error);
     }
   };
 
-  const handleUnlock = () => {
-    try {
-      removeSetting('lastAlarmCode');
-      log('Cleared lastAlarmCode from settings');
-    } catch (error) {
-      log('Failed to clear lastAlarmCode:', error);
-    }
+  const handleUnlock = async () => {
+    // Clear saved alarm code when unlocking
+    await removeSetting('lastAlarmCode');
   };
 
   const handleStop = () => {

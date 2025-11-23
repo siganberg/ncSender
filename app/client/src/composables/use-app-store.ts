@@ -543,15 +543,8 @@ export function initializeStore() {
       timestamp: new Date().toISOString()
     });
 
-    // Check if it's an alarm (errorData.message contains "ALARM:X")
-    if (errorData.message && errorData.message.toUpperCase().startsWith('ALARM:')) {
-      const alarmMatch = errorData.message.match(/alarm:(\d+)/i);
-      if (alarmMatch) {
-        const code = parseInt(alarmMatch[1]);
-        lastAlarmCode.value = code;
-        await fetchAlarmDescription(code);
-      }
-    }
+    // cnc-error is only for terminal logging
+    // Alarm display is handled by server-state-updated → machineState
   });
 
   // Server state updates (main synchronization event)
@@ -576,8 +569,15 @@ export function initializeStore() {
       status.machineState = 'offline';
     }
 
-    // Clear alarm indicators if senderStatus is no longer alarm
-    if (derivedSenderStatus !== 'alarm') {
+    // Update alarm indicators based on senderStatus and machineState
+    if (derivedSenderStatus === 'alarm') {
+      // If in alarm state, read alarm info from machineState
+      if (serverState.machineState?.alarmCode) {
+        lastAlarmCode.value = serverState.machineState.alarmCode;
+        alarmMessage.value = serverState.machineState.alarmDescription || 'Unknown Alarm';
+      }
+    } else {
+      // Clear alarm indicators if senderStatus is no longer alarm
       lastAlarmCode.value = undefined;
       alarmMessage.value = '';
     }
@@ -764,7 +764,14 @@ export async function seedInitialState() {
         status.machineState = 'offline';
       }
 
-      if (derivedSenderStatus !== 'alarm') {
+      // Update alarm indicators based on senderStatus and machineState
+      if (derivedSenderStatus === 'alarm') {
+        // If in alarm state, read alarm info from machineState
+        if (serverState.machineState?.alarmCode) {
+          lastAlarmCode.value = serverState.machineState.alarmCode;
+          alarmMessage.value = serverState.machineState.alarmDescription || 'Unknown Alarm';
+        }
+      } else {
         lastAlarmCode.value = undefined;
         alarmMessage.value = '';
       }

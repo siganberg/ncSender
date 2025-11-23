@@ -47,7 +47,6 @@ export function createServerContext() {
     const machineStatusRaw = serverState.machineState?.status;
     const machineStatus = typeof machineStatusRaw === 'string' ? machineStatusRaw.toLowerCase() : undefined;
     const homed = serverState.machineState?.homed;
-    const lastAlarmCode = getSetting('lastAlarmCode');
     const isToolChanging = serverState.machineState?.isToolChanging === true;
     const isProbing = serverState.machineState?.isProbing === true;
     const jobLoadedStatus = serverState.jobLoaded?.status;
@@ -58,9 +57,6 @@ export function createServerContext() {
       return 'connecting';
     }
 
-    if (lastAlarmCode !== undefined && lastAlarmCode !== null) {
-      return 'alarm';
-    }
     if (machineStatus === 'alarm') {
       return 'alarm';
     }

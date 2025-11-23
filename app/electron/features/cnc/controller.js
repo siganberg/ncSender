@@ -115,8 +115,16 @@ export class CNCController extends EventEmitter {
       this.handleCommandError({ code, message });
       this.emit('cnc-error', { code, message });
     } else if (trimmedData.toLowerCase().startsWith('alarm')) {
+      // Parse alarm code from format: ALARM:1
+      const alarmMatch = trimmedData.match(/alarm:(\d+)/i);
+      const alarmCode = alarmMatch ? parseInt(alarmMatch[1]) : null;
+
       this.handleCommandError({ code: 'ALARM', message: trimmedData });
-      this.emit('cnc-error', { code: 'ALARM', message: trimmedData });
+      this.emit('cnc-error', {
+        code: 'ALARM',
+        alarmCode,
+        message: trimmedData
+      });
     } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
       log('CNC controller responded:', trimmedData);
       this.handleCommandOk();
@@ -512,16 +520,14 @@ export class CNCController extends EventEmitter {
     this.greetingMessage = null;
     this.emitConnectionStatus('verifying', false);
 
-    // Kick off status polling immediately so we can confirm readiness without relying on greetings
-    this.startPolling();
-
-    //-- auto send soft-reset to clear all previous states of the controller such as Door trigger.
-    log('Sending soft-reset to CNC controller upon connection establishment...');
+    // Send soft-reset FIRST before any other commands (required for grblHAL and FluidNC)
+    log('Sending soft-reset to CNC controller as first command upon connection...');
     this.sendCommand('\x18', { meta: { sourceId: 'system' } }).catch(() => {
-      // Ignore errors during the initial status request
+      // Ignore errors during the initial soft-reset
     });
 
-
+    // Kick off status polling after soft-reset
+    this.startPolling();
   }
 
   onConnectionClosed(type) {
