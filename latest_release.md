@@ -1,4 +1,5 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Added real-time monitoring for STEP file changes
+### 🐛 Bug Fixes
+- Fixed alarm handling to show "Unknown" status when alarm code is not recognized
+- General stability improvements and bug fixes
