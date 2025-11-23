@@ -78,8 +78,25 @@
 
       <!-- Tools list - bottom right above current tool -->
       <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool" class="tools-legend tools-legend--bottom">
+        <!-- Scroll Up Button -->
+        <button
+          v-if="numberOfToolsToShow > 7"
+          class="tools-scroll-btn tools-scroll-btn--up"
+          @mousedown="startScrollPress('up')"
+          @mouseup="stopScrollPress"
+          @mouseleave="stopScrollPress"
+          @touchstart="startScrollPress('up')"
+          @touchend="stopScrollPress"
+          @touchcancel="stopScrollPress"
+          aria-label="Scroll tools up"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 4L4 8L12 8L8 4Z" fill="currentColor"/>
+          </svg>
+        </button>
+
         <!-- Scrollable container for numbered tools -->
-        <div v-if="numberOfToolsToShow > 0" class="tools-scrollable">
+        <div v-if="numberOfToolsToShow > 0" ref="toolsScrollContainer" class="tools-scrollable">
           <div
             v-for="t in numberOfToolsToShow"
             :key="t"
@@ -121,6 +138,23 @@
             </span>
           </div>
         </div>
+
+        <!-- Scroll Down Button -->
+        <button
+          v-if="numberOfToolsToShow > 7"
+          class="tools-scroll-btn tools-scroll-btn--down"
+          @mousedown="startScrollPress('down')"
+          @mouseup="stopScrollPress"
+          @mouseleave="stopScrollPress"
+          @touchstart="startScrollPress('down')"
+          @touchend="stopScrollPress"
+          @touchcancel="stopScrollPress"
+          aria-label="Scroll tools down"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 12L4 8L12 8L8 12Z" fill="currentColor"/>
+          </svg>
+        </button>
 
         <!-- Manual Tool -->
         <div
@@ -1911,6 +1945,68 @@ const cancelToolPress = (toolNumber: number | string) => {
   state.triggered = false;
 };
 
+// Ref for scrollable tools container
+const toolsScrollContainer = ref<HTMLElement | null>(null);
+
+// Long-press state for scroll buttons
+let scrollInterval: number | null = null;
+
+// Scroll tools list up/down
+const scrollToolsUp = () => {
+  if (!toolsScrollContainer.value) return;
+  const scrollAmount = 54; // One button height (44px) + gap (10px)
+  toolsScrollContainer.value.scrollBy({
+    top: -scrollAmount,
+    behavior: 'smooth'
+  });
+};
+
+const scrollToolsDown = () => {
+  if (!toolsScrollContainer.value) return;
+  const scrollAmount = 54; // One button height (44px) + gap (10px)
+  toolsScrollContainer.value.scrollBy({
+    top: scrollAmount,
+    behavior: 'smooth'
+  });
+};
+
+// Start continuous scroll on long press
+const startScrollPress = (direction: 'up' | 'down') => {
+  // Immediate first scroll
+  if (direction === 'up') {
+    scrollToolsUp();
+  } else {
+    scrollToolsDown();
+  }
+
+  // Start continuous scrolling after 300ms delay
+  const startTime = Date.now();
+  const checkAndScroll = () => {
+    if (scrollInterval === null) return;
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed > 300) {
+      // After initial delay, scroll continuously
+      if (direction === 'up') {
+        scrollToolsUp();
+      } else {
+        scrollToolsDown();
+      }
+    }
+    scrollInterval = window.setTimeout(checkAndScroll, 150); // Repeat every 150ms
+  };
+
+  scrollInterval = window.setTimeout(checkAndScroll, 150);
+};
+
+// Stop continuous scroll
+const stopScrollPress = () => {
+  if (scrollInterval !== null) {
+    clearTimeout(scrollInterval);
+    scrollInterval = null;
+  }
+};
+
 // Load tool inventory from plugin (agnostic - works without plugin)
 const loadToolInventory = async () => {
   try {
@@ -2326,25 +2422,42 @@ watch(() => store.status.mistCoolant, (newValue) => {
   max-height: 368px; /* 7 buttons × 44px + 6 gaps × 10px = 308px + 60px */
   overflow-y: auto;
   overflow-x: visible;
-  padding-right: 8px;
   align-self: flex-end;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
 .tools-scrollable::-webkit-scrollbar {
-  width: 6px;
+  display: none;
 }
 
-.tools-scrollable::-webkit-scrollbar-track {
-  background: transparent;
+.tools-scroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 122px;
+  height: 32px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.15s ease, transform 0.1s ease;
+  flex-shrink: 0;
 }
 
-.tools-scrollable::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+.tools-scroll-btn:hover {
+  background: var(--color-surface);
 }
 
-.tools-scrollable::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+.tools-scroll-btn:active {
+  transform: scale(0.95);
+}
+
+.tools-scroll-btn svg {
+  opacity: 0.7;
 }
 
 .tools-legend__item {
