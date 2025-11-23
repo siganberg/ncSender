@@ -2,14 +2,12 @@
 
 ## 💖 Support My Work
 
-If you enjoy **ncSender** and my other CNC / maker projects, consider supporting me on [Patreon](https://www.patreon.com/c/FrancisCreation)!
+If you enjoy **ncSender** and my other CNC / maker projects, consider supporting me!
 Your support helps keep the development going — and also funds my growing addiction to using AI tools for coding. 😆
 Apparently, the more I build features, the more tokens I burn. Send help (or coffee). ☕️
 
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-pink.svg?logo=github)](https://github.com/sponsors/siganberg)
 [![Support on Patreon](https://img.shields.io/badge/Support%20on-Patreon-orange.svg)](https://www.patreon.com/c/FrancisCreation)
-
-Or make a one-time donation via PayPal:
-
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate/?business=JK9NA7HLPQE7N&no_recurring=0&item_name=To+fund+the+development+of+ncSender&currency_code=USD)
 
 
