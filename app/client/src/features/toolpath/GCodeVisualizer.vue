@@ -78,46 +78,48 @@
 
       <!-- Tools list - bottom right above current tool -->
       <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool" class="tools-legend tools-legend--bottom">
-        <!-- Numbered tools T1, T2, etc. -->
-        <div
-          v-for="t in numberOfToolsToShow"
-          :key="t"
-          class="tools-legend__item"
-          :class="{
-            'active': currentTool === t,
-            'used': toolsUsed.includes(t),
-            'disabled': isToolActionsDisabled,
-            'long-press-triggered': toolPress[t]?.triggered,
-            'blink-border': toolPress[t]?.blinking,
-            'expanded': showToolInfo === t
-          }"
-          :style="toolsUsed.includes(t) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(t)}` } : {}"
-          :title="getToolTooltip(t)"
-          @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
-          @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
-          @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
-          @touchstart="isToolActionsDisabled ? null : startToolPress(t, $event)"
-          @touchend="isToolActionsDisabled ? null : endToolPress(t)"
-          @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
-        >
-          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">T{{ t }}</span>
-          <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
-            <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
-          </svg>
-          <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
-            <template v-if="toolInventory[t].diameter || toolInventory[t].type">
-              <span v-if="toolInventory[t].diameter">Ø{{ toolInventory[t].diameter.toFixed(3) }}mm</span>
-              <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
-              <span v-if="toolInventory[t].type">{{
-                { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
-                  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'thread-mill': 'Thread Mill', 'probe': 'Probe'
-                }[toolInventory[t].type] || toolInventory[t].type
-              }}</span>
-            </template>
-            <template v-else>{{ toolInventory[t].name }}</template>
-          </span>
+        <!-- Scrollable container for numbered tools -->
+        <div v-if="numberOfToolsToShow > 0" class="tools-scrollable">
+          <div
+            v-for="t in numberOfToolsToShow"
+            :key="t"
+            class="tools-legend__item"
+            :class="{
+              'active': currentTool === t,
+              'used': toolsUsed.includes(t),
+              'disabled': isToolActionsDisabled,
+              'long-press-triggered': toolPress[t]?.triggered,
+              'blink-border': toolPress[t]?.blinking,
+              'expanded': showToolInfo === t
+            }"
+            :style="toolsUsed.includes(t) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(t)}` } : {}"
+            :title="getToolTooltip(t)"
+            @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
+            @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
+            @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
+            @touchstart="isToolActionsDisabled ? null : startToolPress(t, $event)"
+            @touchend="isToolActionsDisabled ? null : endToolPress(t)"
+            @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
+          >
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
+            <span class="tools-legend__label">T{{ t }}</span>
+            <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
+              <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
+            </svg>
+            <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
+              <template v-if="toolInventory[t].diameter || toolInventory[t].type">
+                <span v-if="toolInventory[t].diameter">Ø{{ toolInventory[t].diameter.toFixed(3) }}mm</span>
+                <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
+                <span v-if="toolInventory[t].type">{{
+                  { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
+                    'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'thread-mill': 'Thread Mill', 'probe': 'Probe'
+                  }[toolInventory[t].type] || toolInventory[t].type
+                }}</span>
+              </template>
+              <template v-else>{{ toolInventory[t].name }}</template>
+            </span>
+          </div>
         </div>
 
         <!-- Manual Tool -->
@@ -2316,6 +2318,35 @@ watch(() => store.status.mistCoolant, (newValue) => {
   pointer-events: none; /* display-only to avoid blocking controls */
 }
 
+.tools-scrollable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  max-height: 368px; /* 7 buttons × 44px + 6 gaps × 10px = 308px + 60px */
+  overflow-y: auto;
+  overflow-x: visible;
+  padding-right: 8px;
+  align-self: flex-end;
+}
+
+.tools-scrollable::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tools-scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tools-scrollable::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+.tools-scrollable::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
 .tools-legend__item {
   position: relative;
   display: flex;
@@ -2331,8 +2362,11 @@ watch(() => store.status.mistCoolant, (newValue) => {
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
+  width: 122px;
   min-width: 122px;
   max-width: 122px;
+  min-height: 44px;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
