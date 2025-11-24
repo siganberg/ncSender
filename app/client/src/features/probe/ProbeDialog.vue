@@ -35,7 +35,7 @@
 
             <div class="probe-control-group">
               <label class="probe-label">Rapid Movement</label>
-              <div class="probe-input-with-unit">
+              <div class="probe-input-with-unit probe-input-wrapper">
                 <input
                   v-model.number="rapidMovement"
                   type="number"
@@ -49,15 +49,15 @@
                   @blur="handleRapidMovementBlur"
                 />
                 <span class="probe-unit">mm/min</span>
+                <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
               </div>
-              <span v-if="errors.rapidMovement" class="probe-error">{{ errors.rapidMovement }}</span>
             </div>
 
             <template v-if="probeType === '3d-probe'">
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Diameter</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="ballPointDiameter"
                       type="number"
@@ -70,13 +70,13 @@
                       @blur="handleBallPointDiameterBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.ballPointDiameter" class="probe-error-tooltip">{{ errors.ballPointDiameter }}</span>
                   </div>
-                  <span v-if="errors.ballPointDiameter" class="probe-error">{{ errors.ballPointDiameter }}</span>
                 </div>
 
                 <div class="probe-control-group">
                   <label class="probe-label">Z-Plunge</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="zPlunge"
                       type="number"
@@ -90,15 +90,15 @@
                       @blur="handleZPlungeBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.zPlunge" class="probe-error-tooltip">{{ errors.zPlunge }}</span>
                   </div>
-                  <span v-if="errors.zPlunge" class="probe-error">{{ errors.zPlunge }}</span>
                 </div>
               </div>
 
               <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">X Dimension</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="xDimension"
                       type="number"
@@ -112,13 +112,13 @@
                       @blur="handleXDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.xDimension" class="probe-error-tooltip">{{ errors.xDimension }}</span>
                   </div>
-                  <span v-if="errors.xDimension" class="probe-error">{{ errors.xDimension }}</span>
                 </div>
 
                 <div class="probe-control-group">
                   <label class="probe-label">Y Dimension</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="yDimension"
                       type="number"
@@ -132,21 +132,21 @@
                       @blur="handleYDimensionBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.yDimension" class="probe-error-tooltip">{{ errors.yDimension }}</span>
                   </div>
-                  <span v-if="errors.yDimension" class="probe-error">{{ errors.yDimension }}</span>
                 </div>
               </div>
 
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Z-Offset</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="zOffset"
                       type="number"
                       step="0.01"
-                      min="-0.5"
-                      max="0.5"
+                      min="-2"
+                      max="2"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zOffset }"
                       :disabled="isProbing"
@@ -154,8 +154,8 @@
                       @blur="handleZOffsetBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.zOffset" class="probe-error-tooltip">{{ errors.zOffset }}</span>
                   </div>
-                  <span v-if="errors.zOffset" class="probe-error">{{ errors.zOffset }}</span>
                 </div>
 
                 <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group">
@@ -231,7 +231,7 @@
               <div class="probe-control-row">
                 <div class="probe-control-group">
                   <label class="probe-label">Z Thickness</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="zThickness"
                       type="number"
@@ -245,13 +245,13 @@
                       @blur="handleZThicknessBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
                   </div>
-                  <span v-if="errors.zThickness" class="probe-error">{{ errors.zThickness }}</span>
                 </div>
 
                 <div class="probe-control-group">
                   <label class="probe-label">XY Thickness</label>
-                  <div class="probe-input-with-unit">
+                  <div class="probe-input-with-unit probe-input-wrapper">
                     <input
                       v-model.number="xyThickness"
                       type="number"
@@ -265,14 +265,14 @@
                       @blur="handleXYThicknessBlur"
                     />
                     <span class="probe-unit">mm</span>
+                    <span v-if="errors.xyThickness" class="probe-error-tooltip">{{ errors.xyThickness }}</span>
                   </div>
-                  <span v-if="errors.xyThickness" class="probe-error">{{ errors.xyThickness }}</span>
                 </div>
               </div>
 
               <div class="probe-control-group">
                 <label class="probe-label">Z Probe Distance</label>
-                <div class="probe-input-with-unit">
+                <div class="probe-input-with-unit probe-input-wrapper">
                   <input
                     v-model.number="zProbeDistance"
                     type="number"
@@ -286,8 +286,8 @@
                     @blur="handleZProbeDistanceBlur"
                   />
                   <span class="probe-unit">mm</span>
+                  <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
                 </div>
-                <span v-if="errors.zProbeDistance" class="probe-error">{{ errors.zProbeDistance }}</span>
               </div>
             </template>
 
@@ -567,8 +567,8 @@ const validateZPlunge = () => {
 const validateZOffset = () => {
   if (isNaN(zOffset.value)) {
     errors.value.zOffset = 'Must be a valid number';
-  } else if (zOffset.value < -0.5 || zOffset.value > 0.5) {
-    errors.value.zOffset = 'Must be between -0.5 and 0.5mm';
+  } else if (zOffset.value < -2 || zOffset.value > 2) {
+    errors.value.zOffset = 'Must be between -2 and 2mm';
   } else {
     errors.value.zOffset = '';
   }
@@ -1449,6 +1449,10 @@ const handleStartProbe = async () => {
   gap: 6px;
 }
 
+.probe-input-wrapper {
+  position: relative;
+}
+
 .probe-unit {
   font-size: 0.85rem;
   color: var(--color-text-secondary);
@@ -1460,6 +1464,30 @@ const handleStartProbe = async () => {
   margin-top: 4px;
   font-size: 0.85rem;
   color: #ff6b6b;
+}
+
+.probe-error-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: #ff6b6b;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.probe-error-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  border: 5px solid transparent;
+  border-top-color: #ff6b6b;
 }
 
 .probe-dialog__footer {
