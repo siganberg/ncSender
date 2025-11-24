@@ -140,9 +140,9 @@
               <div
                 class="gcode-line"
                 :class="getGcodeLineClasses(item.index)"
-                :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
+                :style="{ height: rowHeight + 'px' }"
               >
-                <span class="line-number">Line {{ item.index + 1 }}:</span>
+                <span class="line-number">{{ item.index + 1 }}</span>
                 <span class="line-content">{{ getGcodeText(item.index) }}</span>
               </div>
             </template>
@@ -167,7 +167,7 @@
           </button>
         </div>
         <div class="modal-toolbar">
-          <div class="search-box">
+          <div v-if="!isEditMode" class="search-box">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
               <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
             </svg>
@@ -198,23 +198,17 @@
             </button>
           </div>
           <div class="modal-actions">
-            <div class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
+            <div v-if="!isEditMode" class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
               <span class="toggle-label">Auto-Scroll</span>
               <div class="toggle-switch">
                 <div class="toggle-handle"></div>
               </div>
             </div>
-            <button @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }">
+            <button v-if="!isEditMode" @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }" :disabled="isProgramRunning">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
               </svg>
               {{ isEditMode ? 'View Mode' : 'Edit Mode' }}
-            </button>
-            <button v-if="isEditMode && hasUnsavedChanges" @click="saveGcodeChanges" class="save-button">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
-              </svg>
-              Save Changes
             </button>
           </div>
         </div>
@@ -233,21 +227,33 @@
                 <div
                   class="gcode-line"
                   :class="getModalGcodeLineClasses(item.index)"
-                  :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
+                  :style="{ height: rowHeight + 'px' }"
                 >
-                  <span class="line-number">Line {{ item.index + 1 }}:</span>
+                  <span class="line-number">{{ item.index + 1 }}</span>
                   <span class="line-content" v-html="highlightSearchMatch(getGcodeText(item.index))"></span>
                 </div>
               </template>
             </RecycleScroller>
           </div>
-          <textarea
-            v-else
-            v-model="editableGcode"
-            class="gcode-editor"
-            spellcheck="false"
-            @input="onGcodeEdit"
-          ></textarea>
+          <div v-else class="gcode-editor-container">
+            <div class="editor-wrapper">
+              <div class="line-numbers" ref="lineNumbersRef">
+                <div v-for="n in editorLineCount" :key="n" class="line-num">{{ n }}</div>
+              </div>
+              <textarea
+                v-model="editableGcode"
+                class="gcode-editor"
+                spellcheck="false"
+                @input="onGcodeEdit"
+                @scroll="syncLineNumbersScroll"
+                ref="editorTextareaRef"
+              ></textarea>
+            </div>
+            <div class="editor-actions">
+              <button @click="cancelEdit" class="cancel-button">Cancel</button>
+              <button @click="commitEdit" class="commit-button">Commit Changes</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -310,6 +316,12 @@ const isEditMode = ref(false);
 const editableGcode = ref('');
 const hasUnsavedChanges = ref(false);
 const autoScrollModal = ref(true);
+const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const lineNumbersRef = ref<HTMLDivElement | null>(null);
+
+const editorLineCount = computed(() => {
+  return editableGcode.value.split('\n').length;
+});
 
 const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toLowerCase());
 const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
@@ -341,7 +353,7 @@ const executingTool = ref<string | null>(null);
 // G-code viewer state (virtualized via RecycleScroller)
 const lineHeight = ref(18); // height of a .gcode-line (no gap)
 const rowHeight = computed(() => lineHeight.value); // fixed per-row height
-const overscan = 20;
+const overscan = 50; // Increased buffer to reduce flickering during auto-scroll
 const totalLines = computed(() => {
   const count = store.gcodeLineCount?.value ?? 0;
   if (count > 0) return count;
@@ -356,7 +368,8 @@ const totalLines = computed(() => {
 
 const storageMode = computed(() => (isIDBEnabled() ? 'IndexedDB' : 'Memory'));
 const completedUpTo = computed(() => {
-  const val = store.gcodeCompletedUpTo?.value ?? 0;
+  // Use currentLine from jobLoaded - this matches what Job Progress displays
+  const val = store.jobLoaded.value?.currentLine ?? 0;
   return val;
 });
 const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'running'));
@@ -399,10 +412,26 @@ function classifyGcode(line: string): 'rapid' | 'cutting' | null {
   return 'cutting';
 }
 
+// Memoize classification results to reduce recalculations
+const classificationCache = reactive<{ [key: number]: 'rapid' | 'cutting' | null }>({});
+
 function getGcodeLineClasses(index: number) {
-  const completed = (index + 1 <= completedUpTo.value);
+  // Use throttled completedUpTo to reduce re-renders
+  const completed = (index + 1 <= throttledCompletedUpTo.value);
   const base: Record<string, boolean> = { 'gcode-line--completed': completed };
-  const kind = classifyGcode(getGcodeText(index));
+
+  // Use cached classification if available
+  let kind = classificationCache[index];
+  if (kind === undefined) {
+    const text = getGcodeText(index);
+    if (text) {
+      kind = classifyGcode(text);
+      classificationCache[index] = kind;
+    } else {
+      kind = null;
+    }
+  }
+
   if (kind === 'rapid') base['gcode-line--rapid'] = true;
   if (kind === 'cutting') base['gcode-line--cutting'] = true;
   return base;
@@ -418,7 +447,7 @@ async function fillGcodeCache(startIndex: number, endIndex: number) {
   } catch {}
 }
 
-function scrollToLineCentered(lineNumber: number) {
+async function scrollToLineCentered(lineNumber: number) {
   const el = gcodeOutput.value;
   if (!el || !lineNumber || totalLines.value === 0) return;
   const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineNumber - 1));
@@ -427,6 +456,15 @@ function scrollToLineCentered(lineNumber: number) {
   const desired = targetIndex * rowHeight.value - centerOffset;
   const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
   const clamped = Math.max(0, Math.min(maxScroll, desired));
+
+  // Pre-warm cache before scrolling to reduce flickering
+  if (!memLines.value) {
+    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
+    const start = Math.max(0, targetIndex - Math.floor(visibleCount / 2));
+    const end = Math.min(totalLines.value, start + visibleCount);
+    await fillGcodeCache(start, end);
+  }
+
   if (gcodeScrollerRef.value?.scrollToPosition) {
     gcodeScrollerRef.value.scrollToPosition(clamped);
   } else if (gcodeScrollerRef.value?.scrollToItem) {
@@ -440,19 +478,74 @@ function scrollToLineCentered(lineNumber: number) {
   }
 }
 
+// Throttle auto-scroll to reduce flickering from frequent updates
+let scrollThrottleTimer: number | null = null;
+let pendingScrollLine: number | null = null;
+
+// Throttled completed line state to reduce re-renders
+const throttledCompletedUpTo = ref(0);
+let completedThrottleTimer: number | null = null;
+let pendingCompletedUpTo: number = 0;
+let lastValidCompletedUpTo: number = 0;
+
 watch(completedUpTo, (val) => {
-  // Only update main view if modal is NOT open (reduce background work)
-  if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
-    scrollToLineCentered(val);
+  // If currentLine dropped significantly (more than 10 lines), job was restarted
+  if (val < lastValidCompletedUpTo - 10) {
+    console.log(`[Auto-scroll] Job restarted detected, resetting gate: ${val} << ${lastValidCompletedUpTo}`);
+    lastValidCompletedUpTo = 0;
+    throttledCompletedUpTo.value = 0;
+    pendingCompletedUpTo = 0;
   }
-  // Auto-scroll modal if open and auto-scroll enabled
-  if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
-    scrollToModalLine(val);
+
+  // Gate: Never allow completedUpTo to go backwards (small fluctuations)
+  if (val < lastValidCompletedUpTo) {
+    console.warn(`[Auto-scroll] Ignored backwards completedUpTo: ${val} < ${lastValidCompletedUpTo}`);
+    return;
   }
+
+  // Update last valid value
+  lastValidCompletedUpTo = val;
+
+  // Always store the latest values
+  pendingScrollLine = val;
+  pendingCompletedUpTo = val;
+
+  // Throttle completed state updates to reduce class recalculations
+  if (completedThrottleTimer === null) {
+    completedThrottleTimer = window.setTimeout(() => {
+      completedThrottleTimer = null;
+      // Use the latest pending value, not the stale closure value
+      throttledCompletedUpTo.value = pendingCompletedUpTo;
+    }, 200);
+  }
+
+  // Throttle scroll updates to every 300ms to reduce bouncing
+  if (scrollThrottleTimer !== null) return;
+
+  scrollThrottleTimer = window.setTimeout(() => {
+    scrollThrottleTimer = null;
+    // Use the latest pending value
+    const lineToScroll = pendingScrollLine;
+    if (lineToScroll === null) return;
+
+    // Only update main view if modal is NOT open (reduce background work)
+    if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
+      scrollToLineCentered(lineToScroll);
+    }
+    // Auto-scroll modal if open and auto-scroll enabled
+    if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
+      scrollToModalLine(lineToScroll);
+    }
+  }, 300);
 });
 
 watch(isProgramRunning, async (running) => {
   if (running) {
+    // Exit edit mode when job starts
+    if (isEditMode.value) {
+      isEditMode.value = false;
+    }
+
     const sourceId = store.jobLoaded.value?.sourceId;
 
     // Auto-switch tabs based on job source
@@ -512,6 +605,12 @@ watch(totalLines, async (newVal, oldVal) => {
   await nextTick();
   const el = gcodeOutput.value;
   if (el) el.scrollTop = 0;
+
+  // Clear classification cache when new file is loaded
+  if (newVal !== oldVal) {
+    Object.keys(classificationCache).forEach(key => delete classificationCache[parseInt(key)]);
+  }
+
   if (!memLines.value) {
     const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
     if (root && (root as HTMLElement).clientHeight) {
@@ -566,6 +665,11 @@ function onGcodeScroll() {
 // Reset cross-out and scroll to top when user closes Job Progress panel (status changes to null)
 watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
   if (oldVal && (oldVal === 'running' || oldVal === 'paused' || oldVal === 'stopped' || oldVal === 'completed') && val === null) {
+    // Reset the completed line gate when job ends
+    lastValidCompletedUpTo = 0;
+    throttledCompletedUpTo.value = 0;
+    pendingCompletedUpTo = 0;
+
     await nextTick();
     if (gcodeScrollerRef.value?.scrollToPosition) {
       gcodeScrollerRef.value.scrollToPosition(0);
@@ -573,6 +677,13 @@ watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
       const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
       if (root) (root as HTMLElement).scrollTop = 0;
     }
+  }
+
+  // Reset gate when a new job starts
+  if (val === 'running' && oldVal !== 'running') {
+    lastValidCompletedUpTo = 0;
+    throttledCompletedUpTo.value = 0;
+    pendingCompletedUpTo = 0;
   }
 });
 
@@ -912,7 +1023,7 @@ function onSearchInput() {
   }
 }
 
-function scrollToModalLine(lineIndex: number) {
+async function scrollToModalLine(lineIndex: number) {
   const el = modalGcodeOutput.value;
   if (!el || totalLines.value === 0) return;
 
@@ -922,6 +1033,14 @@ function scrollToModalLine(lineIndex: number) {
   const desired = targetIndex * rowHeight.value - centerOffset;
   const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
   const clamped = Math.max(0, Math.min(maxScroll, desired));
+
+  // Pre-warm cache before scrolling to reduce flickering
+  if (!memLines.value) {
+    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
+    const start = Math.max(0, targetIndex - Math.floor(visibleCount / 2));
+    const end = Math.min(totalLines.value, start + visibleCount);
+    await fillGcodeCache(start, end);
+  }
 
   if (modalGcodeScrollerRef.value?.scrollToPosition) {
     modalGcodeScrollerRef.value.scrollToPosition(clamped);
@@ -961,9 +1080,22 @@ function highlightSearchMatch(text: string): string {
 }
 
 function getModalGcodeLineClasses(index: number) {
-  const completed = (index + 1 <= completedUpTo.value);
+  // Use throttled completedUpTo to reduce re-renders
+  const completed = (index + 1 <= throttledCompletedUpTo.value);
   const base: Record<string, boolean> = { 'gcode-line--completed': completed };
-  const kind = classifyGcode(getGcodeText(index));
+
+  // Use cached classification if available
+  let kind = classificationCache[index];
+  if (kind === undefined) {
+    const text = getGcodeText(index);
+    if (text) {
+      kind = classifyGcode(text);
+      classificationCache[index] = kind;
+    } else {
+      kind = null;
+    }
+  }
+
   if (kind === 'rapid') base['gcode-line--rapid'] = true;
   if (kind === 'cutting') base['gcode-line--cutting'] = true;
 
@@ -990,9 +1122,16 @@ function onModalGcodeScroll() {
   }
 }
 
-function toggleEditMode() {
+async function toggleEditMode() {
   if (!isEditMode.value) {
-    editableGcode.value = memLines.value?.join('\n') || '';
+    // Load full content from memory or IDB
+    if (memLines.value) {
+      editableGcode.value = memLines.value.join('\n');
+    } else {
+      // Load from IDB
+      const lines = await getLinesRangeFromIDB(1, totalLines.value);
+      editableGcode.value = lines.join('\n');
+    }
     isEditMode.value = true;
     hasUnsavedChanges.value = false;
   } else {
@@ -1010,7 +1149,24 @@ function onGcodeEdit() {
   hasUnsavedChanges.value = true;
 }
 
-async function saveGcodeChanges() {
+function syncLineNumbersScroll() {
+  if (editorTextareaRef.value && lineNumbersRef.value) {
+    lineNumbersRef.value.scrollTop = editorTextareaRef.value.scrollTop;
+  }
+}
+
+function cancelEdit() {
+  if (hasUnsavedChanges.value) {
+    if (!confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+      return;
+    }
+  }
+  isEditMode.value = false;
+  hasUnsavedChanges.value = false;
+  editableGcode.value = '';
+}
+
+async function commitEdit() {
   try {
     const filename = store.gcodeFilename.value || 'modified.gcode';
 
@@ -1018,13 +1174,13 @@ async function saveGcodeChanges() {
     const file = new File([blob], filename, { type: 'text/plain' });
 
     await api.uploadGCodeFile(file);
-
     await api.loadGCodeFile(filename);
 
     hasUnsavedChanges.value = false;
     isEditMode.value = false;
+    editableGcode.value = '';
 
-    console.log('G-code changes saved successfully');
+    console.log('G-code changes committed successfully');
   } catch (error) {
     console.error('Failed to save G-code changes:', error);
     alert('Failed to save G-code changes. Please try again.');
@@ -1403,7 +1559,6 @@ h2 {
 .gcode-content {
   background: #141414;
   border-radius: var(--radius-small);
-  padding: var(--gap-xs);
   position: relative;
   flex: 1;
   overflow: hidden; /* RecycleScroller handles scroll */
@@ -1456,8 +1611,7 @@ h2 {
 }
 
 .gcode-line--completed .line-content {
-  text-decoration: line-through;
-  opacity: 0.7;
+  color: #555555 !important; /* Gray out completed lines (comments, empty lines, etc.) */
 }
 
 /* Color lines to match visualizer colors */
@@ -1478,9 +1632,15 @@ h2 {
 }
 
 .line-number {
-  color: var(--color-text-secondary);
-  min-width: 80px;
+  color: #666;
+  min-width: 60px;
   flex-shrink: 0;
+  text-align: right;
+  padding-right: 12px;
+  margin-right: 12px;
+  border-right: 1px solid var(--color-border);
+  background: #1a1a1a;
+  font-family: 'JetBrains Mono', monospace;
   pointer-events: none;
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
@@ -1491,6 +1651,7 @@ h2 {
 .line-content {
   color: #bdc3c7;
   flex: 1;
+  padding-left: 4px;
   cursor: text;
   white-space: pre;
   -webkit-user-select: text !important;
@@ -1598,9 +1759,9 @@ h2 {
 .gcode-detach-button {
   position: absolute;
   top: 8px;
-  right: 24px;
+  right: 25px;
   z-index: 10;
-  padding: 8px;
+  padding: 10px;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -1623,8 +1784,8 @@ h2 {
 }
 
 .gcode-detach-button svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 /* Modal Overlay */
@@ -1851,6 +2012,42 @@ h2 {
   user-select: text !important;
 }
 
+.gcode-editor-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.editor-wrapper {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: #141414;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.line-numbers {
+  background: #1a1a1a;
+  color: #666;
+  padding: 16px 8px 16px 12px;
+  text-align: right;
+  user-select: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-y: hidden;
+  border-right: 1px solid var(--color-border);
+  min-width: 60px;
+}
+
+.line-num {
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .gcode-editor {
   flex: 1;
   width: 100%;
@@ -1864,11 +2061,49 @@ h2 {
   resize: none;
   outline: none;
   tab-size: 2;
+  overflow-y: auto;
 }
 
 .gcode-editor:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
+  outline: none;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  justify-content: center;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.cancel-button, .commit-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-button {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.cancel-button:hover {
+  background: var(--color-surface-elevated);
+}
+
+.commit-button {
+  background: var(--gradient-accent);
+  color: white;
+}
+
+.commit-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 /* Search Match Highlighting */
@@ -1897,8 +2132,25 @@ body.theme-light .gcode-editor {
   color: var(--color-text-primary) !important;
 }
 
+body.theme-light .editor-wrapper {
+  background: var(--color-surface-muted) !important;
+  border-color: var(--color-border) !important;
+}
+
+body.theme-light .line-numbers {
+  background: var(--color-surface) !important;
+  color: #888 !important;
+  border-color: var(--color-border) !important;
+}
+
 body.theme-light .line-content {
   color: var(--color-text-primary) !important;
+}
+
+body.theme-light .line-number {
+  background: var(--color-surface) !important;
+  color: #888 !important;
+  border-color: var(--color-border) !important;
 }
 
 /* Preserve motion coloring in light theme */
