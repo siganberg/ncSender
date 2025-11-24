@@ -123,7 +123,6 @@ const machineOrientation = reactive({
 const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for compatibility
 const gcodeFilename = ref<string>('');
 const gcodeLineCount = ref<number>(0);
-const gcodeCompletedUpTo = ref<number>(0);
 
 // Jog config (shared UI state for current jog settings)
 const jogConfig = reactive({
@@ -261,7 +260,7 @@ const addOrUpdateCommandLine = (payload: any) => {
   }
 
   // Skip job commands - they're not displayed in terminal
-  // Visualizer & preview consume gcodeCompletedUpTo to reflect executed lines
+  // Visualizer & preview use jobLoaded.currentLine to reflect executed lines
   if (payload.sourceId === 'job') {
     return null;
   }
@@ -592,26 +591,7 @@ export function initializeStore() {
     const currentFilename = serverState.jobLoaded?.filename as string | undefined;
     const currentLine = serverState.jobLoaded?.currentLine;
 
-    if (currentStatus === 'running' && lastJobStatus !== 'running') {
-      gcodeCompletedUpTo.value = 0;
-    }
-
-    if ((currentStatus === 'running' || currentStatus === 'paused' || currentStatus === 'stopped' || currentStatus === 'completed') &&
-        typeof currentLine === 'number' && Number.isFinite(currentLine)) {
-      const nextCompleted = Math.max(0, Math.floor(currentLine));
-      if (gcodeCompletedUpTo.value !== nextCompleted) {
-        gcodeCompletedUpTo.value = nextCompleted;
-      }
-    }
-
-    // If user closed the job progress panel (status changed to null), reset G-code completion markers
-    try {
-      const status = serverState.jobLoaded?.status;
-      if (prevShowProgress === true && status === null) {
-        gcodeCompletedUpTo.value = 0;
-      }
-      prevShowProgress = (status === 'running' || status === 'paused' || status === 'stopped' || status === 'completed');
-    } catch {}
+    // Removed gcodeCompletedUpTo - now using jobLoaded.currentLine directly
     lastJobStatus = currentStatus;
     if (currentFilename) lastJobFilename = currentFilename;
 
@@ -638,13 +618,7 @@ export function initializeStore() {
       }).catch(() => {});
     }
 
-    // Update completed line tracking for viewers
-    const ln = (result as any)?.meta?.lineNumber;
-    if ((result as any)?.sourceId === 'job' && typeof ln === 'number' && ln > 0) {
-      if (ln > gcodeCompletedUpTo.value) {
-        gcodeCompletedUpTo.value = ln;
-      }
-    }
+    // Line completion tracking removed - viewers now use jobLoaded.currentLine
   });
 
   api.onData((data) => {
@@ -686,9 +660,7 @@ export function initializeStore() {
                           serverState.jobLoaded?.status === 'completed';
 
       // Reset only if it's a new file OR no active job state
-      if (isNewFile || !hasActiveJob) {
-        gcodeCompletedUpTo.value = 0;
-      }
+      // (gcodeCompletedUpTo removed - viewers now use jobLoaded.currentLine)
 
       if (isIDBEnabled()) {
         saveGCodeToIDB(data.filename || '', data.content)
@@ -785,8 +757,7 @@ export async function seedInitialState() {
       const jobStatus = serverState.jobLoaded?.status;
       const currentLine = serverState.jobLoaded?.currentLine;
       if (jobStatus && (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
-        gcodeCompletedUpTo.value = currentLine;
-        debugLog(`[Store] Restored completed line tracking from server: ${currentLine}`);
+        debugLog(`[Store] Line tracking restored from server: ${currentLine} (viewers use jobLoaded.currentLine)`);
       }
     }
   } catch (e) {
@@ -834,7 +805,6 @@ export function useAppStore() {
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
-      gcodeCompletedUpTo: readonly(gcodeCompletedUpTo),
       jogConfig,  // Writable - shared jog settings
 
     // Computed properties
@@ -862,7 +832,6 @@ export function useAppStore() {
       gcodeContent.value = '';
       gcodeFilename.value = '';
       gcodeLineCount.value = 0;
-      gcodeCompletedUpTo.value = 0;
     },
 
     setLastAlarmCode: async (code: number | string | undefined) => {

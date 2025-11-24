@@ -317,7 +317,7 @@ import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
 
 const store = useToolpathStore();
 const appStore = useAppStore();
-const { isJobRunning, isConnected: storeIsConnected, gcodeCompletedUpTo } = appStore;
+const { isJobRunning, isConnected: storeIsConnected } = appStore;
 
 type AxisHome = 'min' | 'max';
 type MachineOrientation = {
@@ -2446,7 +2446,7 @@ onUnmounted(() => {
 const markedLines = new Set<number>();
 
 watch(
-  () => gcodeCompletedUpTo?.value ?? 0,
+  () => props.jobLoaded?.currentLine ?? 0,
   (newVal, oldVal) => {
     const nextRaw = typeof newVal === 'number' ? newVal : 0;
     const prevRaw = typeof oldVal === 'number' ? oldVal : 0;
