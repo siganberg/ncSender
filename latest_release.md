@@ -1,10 +1,8 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added detached G-Code Preview window for better workflow flexibility
-
-### 🐛 Bug Fixes
-- Fixed bit swapping bug that was causing incorrect operation
+- Enhanced G-Code Preview with improved visualization capabilities
 
 ### 🔧 Improvements
-- Enabled draggable interface elements for improved usability
+- Refined Console Card tab interface for better usability
+- Relocated Copy All button to overlay position for cleaner tab layout
