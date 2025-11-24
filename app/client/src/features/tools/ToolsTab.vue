@@ -55,9 +55,36 @@
       </table>
     </div>
 
-        <!-- Footer with tool count -->
+        <!-- Footer with tool count and controls -->
         <div v-if="filteredTools.length > 0" class="tools-footer">
-          <div class="tool-count">{{ tools.length }} tool{{ tools.length !== 1 ? 's' : '' }} total</div>
+          <div class="tools-footer-content">
+            <div class="tools-footer-row">
+              <div class="tool-settings">
+                <div class="setting-item">
+                  <label class="setting-label">Magazine Size</label>
+                  <select class="setting-select" :value="toolCount" @change="handleMagazineSizeChange" :disabled="toolCountDisabled">
+                    <option v-for="n in 100" :key="n-1" :value="n-1">{{ n-1 }}</option>
+                  </select>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">Manual</label>
+                  <ToggleSwitch :modelValue="showManualButton" @update:modelValue="$emit('update:showManualButton', $event)" :disabled="toolCountDisabled" />
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">TLS</label>
+                  <ToggleSwitch :modelValue="showTlsButton" @update:modelValue="$emit('update:showTlsButton', $event)" :disabled="toolCountDisabled" />
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">Probe</label>
+                  <ToggleSwitch :modelValue="showProbeButton" @update:modelValue="$emit('update:showProbeButton', $event)" :disabled="true" />
+                </div>
+              </div>
+              <div class="tool-count">{{ tools.length }} tool{{ tools.length !== 1 ? 's' : '' }} total</div>
+            </div>
+            <div v-if="toolSourceName" class="settings-note">
+              Controls are disabled because they are currently controlled by Plugin: {{ toolSourceName }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -263,6 +290,20 @@
         @confirm="showImportSuccessDialog = false"
       />
     </Dialog>
+
+    <!-- Magazine Size Confirmation Dialog -->
+    <Dialog v-if="showMagazineSizeConfirmDialog" @close="cancelMagazineSizeChange" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Reduce Magazine Size"
+        :message="`Changing magazine size to ${pendingMagazineSize} will unassign ${affectedToolsCount} tool${affectedToolsCount !== 1 ? 's' : ''} that ${affectedToolsCount !== 1 ? 'are' : 'is'} currently assigned to slots T${(pendingMagazineSize || 0) + 1} and above. Do you want to continue?`"
+        :show-cancel="true"
+        confirm-text="Confirm"
+        cancel-text="Cancel"
+        variant="primary"
+        @confirm="confirmMagazineSizeChange"
+        @cancel="cancelMagazineSizeChange"
+      />
+    </Dialog>
   </div>
 </template>
 
@@ -271,6 +312,7 @@ import { ref, computed, onMounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import ToggleSwitch from '../../components/ToggleSwitch.vue';
 
 interface Tool {
   id: number;
@@ -308,7 +350,23 @@ interface Tool {
 
 const props = defineProps<{
   maxToolCount?: number;
+  toolCount?: number;
+  showManualButton?: boolean;
+  showTlsButton?: boolean;
+  showProbeButton?: boolean;
+  toolCountDisabled?: boolean;
+  toolSourceName?: string | null;
 }>();
+
+const emit = defineEmits<{
+  'update:toolCount': [value: number];
+  'update:showManualButton': [value: boolean];
+  'update:showTlsButton': [value: boolean];
+  'update:showProbeButton': [value: boolean];
+}>();
+
+// Computed
+const maxToolCount = computed(() => props.maxToolCount || 1);
 
 // State
 const tools = ref<Tool[]>([]);
@@ -317,7 +375,6 @@ const showToolForm = ref(false);
 const editingTool = ref<Tool | null>(null);
 const importFileInput = ref<HTMLInputElement | null>(null);
 const formErrors = ref<Record<string, string>>({});
-const maxToolCount = ref(props.maxToolCount || 1);
 
 // Dialog state
 const showSaveErrorDialog = ref(false);
@@ -334,6 +391,9 @@ const importConflictMessage = ref('');
 const importConflictTools = ref<Tool[]>([]);
 const showImportSuccessDialog = ref(false);
 const importSuccessMessage = ref('');
+const showMagazineSizeConfirmDialog = ref(false);
+const pendingMagazineSize = ref<number | null>(null);
+const affectedToolsCount = ref(0);
 
 // Tool form data
 const defaultToolForm = () => ({
@@ -378,12 +438,16 @@ const filteredTools = computed(() => {
 
   // Filter by search
   if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase();
+    const query = searchQuery.value.toLowerCase().trim();
     result = result.filter(tool => {
       const toolNum = tool.toolNumber !== null && tool.toolNumber !== undefined
         ? tool.toolNumber.toString()
         : '';
-      return toolNum.includes(query) ||
+
+      // Handle "T7" format - strip the "T" prefix if present
+      const searchTerm = query.startsWith('t') ? query.substring(1) : query;
+
+      return toolNum.includes(searchTerm) ||
         tool.name.toLowerCase().includes(query) ||
         tool.type.toLowerCase().includes(query);
     });
@@ -413,6 +477,73 @@ const loadTools = async () => {
   }
 };
 
+const handleMagazineSizeChange = (event: Event) => {
+  const newSize = parseInt((event.target as HTMLSelectElement).value);
+  const currentSize = props.toolCount || 0;
+
+  if (newSize < currentSize) {
+    // Check if there are any tools with toolNumber > newSize (1-indexed, so T1-T6 for size 6)
+    const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize);
+
+    if (affectedTools.length > 0) {
+      // Show confirmation dialog
+      pendingMagazineSize.value = newSize;
+      affectedToolsCount.value = affectedTools.length;
+      showMagazineSizeConfirmDialog.value = true;
+      return;
+    }
+  }
+
+  // No confirmation needed, emit the change
+  emit('update:toolCount', newSize);
+};
+
+const confirmMagazineSizeChange = async () => {
+  if (pendingMagazineSize.value === null) return;
+
+  const newSize = pendingMagazineSize.value;
+
+  // Unassign tools with toolNumber > newSize (1-indexed)
+  const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize);
+
+  try {
+    for (const tool of affectedTools) {
+      const response = await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...tool,
+          toolNumber: null
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to unassign tool ${tool.id}`);
+      }
+    }
+
+    // Reload tools to reflect changes
+    await loadTools();
+
+    // Emit the magazine size change
+    emit('update:toolCount', newSize);
+
+    // Close dialog
+    showMagazineSizeConfirmDialog.value = false;
+    pendingMagazineSize.value = null;
+  } catch (error) {
+    console.error('Error unassigning tools:', error);
+    showDeleteErrorDialog.value = true;
+    deleteErrorMessage.value = 'Failed to unassign tools. Please try again.';
+  }
+};
+
+const cancelMagazineSizeChange = () => {
+  showMagazineSizeConfirmDialog.value = false;
+  pendingMagazineSize.value = null;
+  affectedToolsCount.value = 0;
+};
+
 const formatType = (type: string) => {
   const typeMap: Record<string, string> = {
     'flat': 'Flat End Mill',
@@ -428,11 +559,22 @@ const formatType = (type: string) => {
 };
 
 const getToolNumberInfo = (num: number) => {
-  if (!editingTool.value || editingTool.value.toolNumber === num) {
+  // If editing a tool and this is the current tool number, don't show any info
+  if (editingTool.value?.toolNumber === num) {
     return '';
   }
+
+  // Find if another tool is using this number
   const assignedTool = tools.value.find(t => t.toolNumber === num && t.id !== editingTool.value?.id);
-  return assignedTool ? ` (Swap with: ${assignedTool.name})` : '';
+
+  if (assignedTool) {
+    // If editing, show "Swap with", if adding new, show "Already assigned to"
+    return editingTool.value
+      ? ` (Swap with: ${assignedTool.name})`
+      : ` (Already assigned to: ${assignedTool.name})`;
+  }
+
+  return '';
 };
 
 const addNewTool = () => {
@@ -694,6 +836,39 @@ onMounted(async () => {
   min-height: 0;
 }
 
+.tool-settings {
+  display: flex;
+  gap: var(--gap-lg);
+  align-items: center;
+}
+
+.tool-settings .setting-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.tool-settings .setting-label {
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.tool-settings .setting-select {
+  padding: 6px 12px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.tool-settings .setting-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .tools-header {
   display: flex;
   gap: var(--gap-sm);
@@ -894,14 +1069,34 @@ onMounted(async () => {
 }
 
 .tools-footer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: var(--gap-sm) var(--gap-md);
+  padding: var(--gap-md);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   flex-shrink: 0;
+}
+
+.tools-footer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tools-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tools-footer .tool-count {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.tools-footer .settings-note {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  text-align: left;
 }
 
 .tool-count {

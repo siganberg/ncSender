@@ -90,7 +90,7 @@
 
       <div class="tab-content">
         <!-- General Tab -->
-        <div v-if="activeTab === 'general'" class="tab-panel">
+        <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
           <div class="settings-section">
             <h3 class="section-title">Connection Settings</h3>
             <div class="setting-item">
@@ -195,80 +195,59 @@
           <div class="settings-section">
             <h3 class="section-title">Application Settings</h3>
             <div class="settings-group">
-              <div v-if="toolSource" class="settings-note">
-                Controls are disabled because they are currently controlled by {{ toolSource }}
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Use Door as Pause</label>
+                  <div class="settings-note">
+                    Note: Ensure that the parking parameters ($41, $42, $56, $57, $58, $59) are properly configured as part of your setup.
+                  </div>
+                </div>
+                <ToggleSwitch v-model="useDoorAsPause" />
               </div>
-              <div class="setting-item">
-                <label class="setting-label">Number of Tools</label>
-                <select class="setting-select" v-model.number="toolCount" :disabled="toolCountDisabled">
-                  <option v-for="n in 100" :key="n-1" :value="n-1">{{ n-1 }}</option>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Units</label>
+                  <div class="settings-note">
+                    Choose between Metric (mm) and Imperial (inches) for coordinates, distances, and feed rates.
+                  </div>
+                </div>
+                <div class="units-toggle">
+                  <button :class="['units-button', { active: unitsPreference === 'metric' }]" @click="setUnits('metric')">Metric (mm)</button>
+                  <button :class="['units-button', { active: unitsPreference === 'imperial' }]" @click="setUnits('imperial')">Imperial (in)</button>
+                </div>
+              </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Machine Home Location</label>
+                  <div class="settings-note">
+                    Specify where your machine's physical home position (0,0) is located on the machine table.
+                  </div>
+                </div>
+                <select class="setting-select" v-model="homeLocation" @change="saveHomeLocation">
+                  <option value="back-left">Back-Left (Default)</option>
+                  <option value="back-right">Back-Right</option>
+                  <option value="front-left">Front-Left</option>
+                  <option value="front-right">Front-Right</option>
                 </select>
               </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Enable Browser Debug Logging</label>
+                  <div class="settings-note">
+                    Enables console logging for debugging. Useful for troubleshooting issues.
+                  </div>
+                </div>
+                <ToggleSwitch v-model="consoleSettings.debugLogging" />
+              </div>
               <div class="setting-item">
-                <label class="setting-label">Manual Button</label>
-                <ToggleSwitch v-model="showManualButton" :disabled="toolCountDisabled" />
-              </div>
-              <div class="setting-item">
-                <label class="setting-label">TLS Button</label>
-                <ToggleSwitch v-model="showTLSButton" :disabled="toolCountDisabled" />
-              </div>
-              <div class="setting-item">
-                <label class="setting-label">Probe Button</label>
-                <ToggleSwitch v-model="showProbeButton" :disabled="true" />
-              </div>
-            </div>
-            <div class="setting-item setting-item--with-note">
-              <div class="setting-item-content">
-                <label class="setting-label">Use Door as Pause</label>
-                <div class="settings-note">
-                  Note: Ensure that the parking parameters ($41, $42, $56, $57, $58, $59) are properly configured as part of your setup.
+                <label class="setting-label">Accent / Gradient Color</label>
+                <div class="color-controls">
+                  <div class="color-picker-container">
+                    <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)" @change="saveColors">
+                    <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)" @change="saveColors">
+                  </div>
+                  <button class="reset-colors-button" @click="resetColors">Reset</button>
                 </div>
-              </div>
-              <ToggleSwitch v-model="useDoorAsPause" />
-            </div>
-            <div class="setting-item setting-item--with-note">
-              <div class="setting-item-content">
-                <label class="setting-label">Units</label>
-                <div class="settings-note">
-                  Choose between Metric (mm) and Imperial (inches) for coordinates, distances, and feed rates.
-                </div>
-              </div>
-              <div class="units-toggle">
-                <button :class="['units-button', { active: unitsPreference === 'metric' }]" @click="setUnits('metric')">Metric (mm)</button>
-                <button :class="['units-button', { active: unitsPreference === 'imperial' }]" @click="setUnits('imperial')">Imperial (in)</button>
-              </div>
-            </div>
-            <div class="setting-item setting-item--with-note">
-              <div class="setting-item-content">
-                <label class="setting-label">Machine Home Location</label>
-                <div class="settings-note">
-                  Specify where your machine's physical home position (0,0) is located on the machine table.
-                </div>
-              </div>
-              <select class="setting-select" v-model="homeLocation" @change="saveHomeLocation">
-                <option value="back-left">Back-Left (Default)</option>
-                <option value="back-right">Back-Right</option>
-                <option value="front-left">Front-Left</option>
-                <option value="front-right">Front-Right</option>
-              </select>
-            </div>
-            <div class="setting-item setting-item--with-note">
-              <div class="setting-item-content">
-                <label class="setting-label">Enable Browser Debug Logging</label>
-                <div class="settings-note">
-                  Enables console logging for debugging. Useful for troubleshooting issues.
-                </div>
-              </div>
-              <ToggleSwitch v-model="consoleSettings.debugLogging" />
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Accent / Gradient Color</label>
-              <div class="color-controls">
-                <div class="color-picker-container">
-                  <input type="color" class="color-picker" :value="accentColor" @input="updateAccentColor($event.target.value)" @change="saveColors">
-                  <input type="color" class="color-picker" :value="gradientColor" @input="updateGradientColor($event.target.value)" @change="saveColors">
-                </div>
-                <button class="reset-colors-button" @click="resetColors">Reset</button>
               </div>
             </div>
           </div>
@@ -277,7 +256,19 @@
 
         <!-- Tools Tab -->
         <div v-if="activeTab === 'tools'" class="tab-panel tab-panel--tools">
-          <ToolsTab :max-tool-count="toolCount" />
+          <ToolsTab
+            :max-tool-count="toolCount"
+            :tool-count="toolCount"
+            :show-manual-button="showManualButton"
+            :show-tls-button="showTLSButton"
+            :show-probe-button="showProbeButton"
+            :tool-count-disabled="toolCountDisabled"
+            :tool-source-name="toolSourceName"
+            @update:tool-count="handleToolCountUpdate"
+            @update:show-manual-button="handleShowManualButtonUpdate"
+            @update:show-tls-button="handleShowTLSButtonUpdate"
+            @update:show-probe-button="handleShowProbeButtonUpdate"
+          />
         </div>
 
         <!-- Controls Tab -->
@@ -932,6 +923,14 @@ const toolCountDisabled = computed(() => toolSource.value !== null);
 const showManualButton = ref(initialSettings?.tool?.manual ?? true);
 const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
 const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
+const loadedPlugins = ref<Array<{ id: string; name: string }>>([]);
+
+// Computed property to get the friendly plugin name from toolSource
+const toolSourceName = computed(() => {
+  if (!toolSource.value) return null;
+  const plugin = loadedPlugins.value.find(p => p.id === toolSource.value);
+  return plugin?.name || toolSource.value;
+});
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
@@ -1755,6 +1754,35 @@ watch(showProbeButton, async (newValue) => {
   });
 });
 
+// Event handlers for Tools tab controls
+const handleToolCountUpdate = async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  toolCount.value = newValue;
+};
+
+const handleShowManualButtonUpdate = async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  showManualButton.value = newValue;
+};
+
+const handleShowTLSButtonUpdate = async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  showTLSButton.value = newValue;
+};
+
+const handleShowProbeButtonUpdate = async (newValue) => {
+  if (toolSource.value !== null) {
+    return;
+  }
+  showProbeButton.value = newValue;
+};
+
 // Watch useDoorAsPause and save changes
 watch(useDoorAsPause, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2050,6 +2078,16 @@ onMounted(async () => {
   // Apply colors after settings are loaded
   applyColors();
 
+  // Fetch loaded plugins to get friendly names
+  try {
+    const response = await fetch('/api/plugins/loaded');
+    if (response.ok) {
+      loadedPlugins.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to fetch loaded plugins:', error);
+  }
+
   // Mark initial theme load complete
   await nextTick();
   isInitialThemeLoad = false;
@@ -2200,6 +2238,14 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   flex-direction: column;
   gap: var(--gap-lg);
   flex: 1;
+}
+
+.tab-panel--general {
+  gap: 0;
+}
+
+.tab-panel--general .settings-section {
+  margin: 15px 20px;
 }
 
 /* Settings Sections */
