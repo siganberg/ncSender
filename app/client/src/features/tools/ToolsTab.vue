@@ -26,7 +26,7 @@
         <table class="tools-table">
         <thead>
           <tr>
-            <th class="col-tool-number">T#</th>
+            <th class="col-tool-number">Tool #</th>
             <th class="col-description">Description</th>
             <th class="col-type">Type</th>
             <th class="col-diameter">Diameter (mm)</th>
@@ -820,17 +820,17 @@ onMounted(async () => {
 }
 
 .tools-table tbody tr:first-child td {
-  padding-top: var(--gap-lg);
+  padding-top: var(--gap-md);
 }
 
 .tools-table tbody tr:last-child td {
-  padding-bottom: var(--gap-lg);
+  padding-bottom: var(--gap-md);
 }
 
 .tools-table td {
-  padding: var(--gap-md);
+  padding: var(--gap-sm) var(--gap-md);
   border-bottom: 1px solid var(--color-border);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .tools-table td:first-child {
@@ -841,6 +841,10 @@ onMounted(async () => {
   padding-right: var(--gap-md);
 }
 
+.tools-table tbody tr:nth-child(even) {
+  background: var(--color-surface-muted);
+}
+
 .tools-table tbody tr:hover {
   background: var(--color-border);
 }
@@ -848,6 +852,7 @@ onMounted(async () => {
 .col-tool-number {
   width: 8%;
   min-width: 60px;
+  text-align: center;
 }
 
 .tool-number-badge {
@@ -960,7 +965,7 @@ onMounted(async () => {
 }
 
 .btn-small {
-  padding: 8px 16px;
+  padding: 10px 16px;
   font-size: 0.85rem;
 }
 
