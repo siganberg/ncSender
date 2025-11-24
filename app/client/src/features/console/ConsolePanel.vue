@@ -142,6 +142,7 @@
                 :style="{ height: rowHeight + 'px' }"
               >
                 <span class="line-number">{{ item.index + 1 }}</span>
+                <span v-if="isCurrentLine(item.index)" class="current-line-arrow">▶</span>
                 <span class="line-content">{{ getGcodeText(item.index) }}</span>
               </div>
             </template>
@@ -229,6 +230,7 @@
                   :style="{ height: rowHeight + 'px' }"
                 >
                   <span class="line-number">{{ item.index + 1 }}</span>
+                  <span v-if="isCurrentLine(item.index)" class="current-line-arrow">▶</span>
                   <span class="line-content" v-html="highlightSearchMatch(getGcodeText(item.index))"></span>
                 </div>
               </template>
@@ -413,6 +415,11 @@ function classifyGcode(line: string): 'rapid' | 'cutting' | null {
 
 // Memoize classification results to reduce recalculations
 const classificationCache = reactive<{ [key: number]: 'rapid' | 'cutting' | null }>({});
+
+function isCurrentLine(index: number) {
+  const currentLine = completedUpTo.value;
+  return isProgramRunning.value && currentLine > 0 && (index + 1 === currentLine);
+}
 
 function getGcodeLineClasses(index: number) {
   // Use throttled completedUpTo to reduce re-renders
@@ -1615,6 +1622,7 @@ h2 {
   gap: var(--gap-sm);
   padding: 0;
   cursor: text;
+  position: relative;
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
@@ -1652,6 +1660,18 @@ h2 {
   border-right: 1px solid var(--color-border);
   background: #1a1a1a;
   font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
+.current-line-arrow {
+  position: absolute;
+  left: 72px;
+  color: #ffff00;
+  font-size: 14px;
   pointer-events: none;
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
@@ -2144,6 +2164,10 @@ body.theme-light .line-number {
   background: var(--color-surface) !important;
   color: #888 !important;
   border-color: var(--color-border) !important;
+}
+
+body.theme-light .current-line-arrow {
+  color: #E67E22 !important;
 }
 
 /* Preserve motion coloring in light theme */
