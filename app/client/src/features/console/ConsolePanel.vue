@@ -18,13 +18,6 @@
           <div class="toggle-handle"></div>
         </div>
       </div>
-      <button v-if="activeTab === 'terminal'" @click="copyAllTerminalContent" class="copy-all-button" :disabled="terminalLines.length === 0" title="Copy all terminal content">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-          <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-        </svg>
-        Copy All
-      </button>
       <div class="auto-scroll-toggle" @click="autoScrollGcode = !autoScrollGcode" :class="{ active: autoScrollGcode }" v-if="activeTab === 'gcode-preview'">
         <span class="toggle-label">Auto-Scroll</span>
         <div class="toggle-switch">
@@ -36,6 +29,12 @@
     <!-- Terminal Tab -->
     <div v-if="activeTab === 'terminal'" class="tab-content">
       <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
+        <button @click="copyAllTerminalContent" class="terminal-copy-button" :disabled="terminalLines.length === 0" title="Copy all terminal content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+          </svg>
+        </button>
         <div v-if="terminalLines.length === 0" class="empty-state">
           All clear – give me a command!
         </div>
@@ -198,13 +197,13 @@
             </button>
           </div>
           <div class="modal-actions">
-            <div v-if="!isEditMode" class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
+            <div v-if="!isEditMode && isProgramRunning" class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
               <span class="toggle-label">Auto-Scroll</span>
               <div class="toggle-switch">
                 <div class="toggle-handle"></div>
               </div>
             </div>
-            <button v-if="!isEditMode" @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }" :disabled="isProgramRunning">
+            <button v-if="!isEditMode && !isProgramRunning" @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
               </svg>
@@ -491,7 +490,6 @@ let lastValidCompletedUpTo: number = 0;
 watch(completedUpTo, (val) => {
   // If currentLine dropped significantly (more than 10 lines), job was restarted
   if (val < lastValidCompletedUpTo - 10) {
-    console.log(`[Auto-scroll] Job restarted detected, resetting gate: ${val} << ${lastValidCompletedUpTo}`);
     lastValidCompletedUpTo = 0;
     throttledCompletedUpTo.value = 0;
     pendingCompletedUpTo = 0;
@@ -499,7 +497,6 @@ watch(completedUpTo, (val) => {
 
   // Gate: Never allow completedUpTo to go backwards (small fluctuations)
   if (val < lastValidCompletedUpTo) {
-    console.warn(`[Auto-scroll] Ignored backwards completedUpTo: ${val} < ${lastValidCompletedUpTo}`);
     return;
   }
 
@@ -1179,8 +1176,6 @@ async function commitEdit() {
     hasUnsavedChanges.value = false;
     isEditMode.value = false;
     editableGcode.value = '';
-
-    console.log('G-code changes committed successfully');
   } catch (error) {
     console.error('Failed to save G-code changes:', error);
     alert('Failed to save G-code changes. Please try again.');
@@ -1287,18 +1282,19 @@ h2 {
 .auto-scroll-toggle {
   display: flex;
   align-items: center;
-  gap: var(--gap-xs);
+  gap: 10px;
   cursor: pointer;
+  padding: 4px 8px;
 }
 
 .toggle-label {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: var(--color-text-secondary);
 }
 
 .toggle-switch {
-  width: 40px;
-  height: 22px;
+  width: 46px;
+  height: 26px;
   background: var(--color-surface-muted);
   border-radius: 999px;
   position: relative;
@@ -1306,8 +1302,8 @@ h2 {
 }
 
 .toggle-handle {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   background: white;
   border-radius: 50%;
   position: absolute;
@@ -1321,40 +1317,51 @@ h2 {
 }
 
 .auto-scroll-toggle.active .toggle-handle {
-  transform: translateX(18px);
+  transform: translateX(20px);
 }
 
-.copy-all-button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+/* Terminal Copy Button */
+.terminal-copy-button {
+  position: absolute;
+  top: 8px;
+  right: 25px;
+  z-index: 10;
+  padding: 10px;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
-  font-size: 0.8rem;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  backdrop-filter: blur(4px);
 }
 
-.copy-all-button:hover:not(:disabled) {
+.terminal-copy-button:hover:not(:disabled) {
   background: var(--color-surface);
   border-color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+  opacity: 1;
 }
 
-.copy-all-button:disabled {
-  opacity: 0.5;
+.terminal-copy-button:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
-.copy-all-button svg {
-  flex-shrink: 0;
+.terminal-copy-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .console-output {
   background: #141414;
   border-radius: var(--radius-small);
+  position: relative;
   padding: var(--gap-xs);
   display: flex;
   flex-direction: column;
@@ -1863,8 +1870,8 @@ h2 {
   min-width: 300px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -1873,6 +1880,8 @@ h2 {
 .search-box svg:first-child {
   color: var(--color-text-secondary);
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .search-input {
@@ -1880,7 +1889,7 @@ h2 {
   border: none;
   background: transparent;
   color: var(--color-text-primary);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   outline: none;
 }
 
@@ -1948,46 +1957,26 @@ h2 {
 .edit-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  color: var(--color-text-primary);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.edit-toggle:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-accent);
-}
-
-.edit-toggle.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
-}
-
-.save-button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 10px 16px;
   background: var(--gradient-accent);
   border: none;
   border-radius: var(--radius-small);
   color: white;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.save-button:hover {
+.edit-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.edit-toggle:hover {
+  opacity: 0.9;
   transform: translateY(-1px);
-  box-shadow: var(--shadow-elevated);
 }
 
 .modal-content {
