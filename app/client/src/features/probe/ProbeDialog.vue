@@ -3,7 +3,7 @@
     <div class="probe-dialog">
       <div class="probe-dialog__header">
         <p class="probe-dialog__instructions">
-          Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (red light should activate). Ensure the probe is positioned correctly for the selected probing axis.
+          Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.
         </p>
       </div>
       <div class="probe-dialog__content">
