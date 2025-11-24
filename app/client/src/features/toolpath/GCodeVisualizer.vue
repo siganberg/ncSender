@@ -433,6 +433,9 @@ const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || 
 const canvas = ref<HTMLElement>();
 const fileInput = ref<HTMLInputElement>();
 
+// Configuration: Enable/disable auto-snap on tool buttons scroll
+const ENABLE_TOOL_BUTTON_SNAP = false;
+
 // Reactive state
 const hasFile = ref(false);
 const isLoading = ref(false);
@@ -1955,6 +1958,11 @@ let scrollTimeout: number | null = null;
 let idleScrollTimeout: number | null = null; // Timeout to return to current tool after idle
 let isMouseOverTools = false; // Track if mouse is over the tools container
 
+// Drag scroll state for tools container
+let isToolsDragging = false;
+let toolsDragStartY = 0;
+let toolsDragStartScrollTop = 0;
+
 // Smooth continuous scroll using requestAnimationFrame
 const smoothScroll = () => {
   if (!toolsScrollContainer.value || !scrollDirection) return;
@@ -2003,8 +2011,10 @@ const stopScrollPress = () => {
   }
   scrollDirection = null;
 
-  // Snap to nearest button position
-  snapToNearestButton();
+  // Snap to nearest button position (if enabled)
+  if (ENABLE_TOOL_BUTTON_SNAP) {
+    snapToNearestButton();
+  }
 };
 
 // Handle mouse wheel scroll - snap to nearest button after scrolling stops
@@ -2014,11 +2024,13 @@ const handleToolsScroll = () => {
     clearTimeout(scrollTimeout);
   }
 
-  // Set new timeout - snap to position after 150ms of no scrolling
-  scrollTimeout = window.setTimeout(() => {
-    snapToNearestButton();
-    scrollTimeout = null;
-  }, 150);
+  // Set new timeout - snap to position after 150ms of no scrolling (if enabled)
+  if (ENABLE_TOOL_BUTTON_SNAP) {
+    scrollTimeout = window.setTimeout(() => {
+      snapToNearestButton();
+      scrollTimeout = null;
+    }, 150);
+  }
 };
 
 // Prevent wheel events from reaching the G-code visualizer
@@ -2041,6 +2053,11 @@ const handleToolsMouseEnter = () => {
 const handleToolsMouseLeave = () => {
   isMouseOverTools = false;
 
+  // End drag if in progress
+  if (isToolsDragging) {
+    handleDragEnd();
+  }
+
   // Start 5-second idle timeout to return to current tool
   if (idleScrollTimeout !== null) {
     clearTimeout(idleScrollTimeout);
@@ -2050,6 +2067,65 @@ const handleToolsMouseLeave = () => {
     scrollToCurrentTool();
     idleScrollTimeout = null;
   }, 5000);
+};
+
+// Handle drag start (mouse or touch)
+const handleDragStart = (event: MouseEvent | TouchEvent) => {
+  if (!toolsScrollContainer.value) return;
+
+  // Clear any pending snap timeout
+  if (scrollTimeout !== null) {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = null;
+  }
+
+  isToolsDragging = true;
+
+  // Get Y position from mouse or touch event
+  if (event instanceof MouseEvent) {
+    toolsDragStartY = event.clientY;
+    event.preventDefault(); // Prevent text selection
+  } else {
+    toolsDragStartY = event.touches[0].clientY;
+  }
+
+  toolsDragStartScrollTop = toolsScrollContainer.value.scrollTop;
+
+  // Add cursor style
+  toolsScrollContainer.value.style.cursor = 'grabbing';
+};
+
+// Handle drag move (mouse or touch)
+const handleDragMove = (event: MouseEvent | TouchEvent) => {
+  if (!isToolsDragging || !toolsScrollContainer.value) return;
+
+  // Get current Y position
+  let currentY: number;
+  if (event instanceof MouseEvent) {
+    currentY = event.clientY;
+  } else {
+    currentY = event.touches[0].clientY;
+    event.preventDefault(); // Prevent page scroll on touch devices
+  }
+
+  // Calculate delta and update scroll position
+  const deltaY = toolsDragStartY - currentY;
+  toolsScrollContainer.value.scrollTop = toolsDragStartScrollTop + deltaY;
+};
+
+// Handle drag end (mouse up, touch end, or mouse leave)
+const handleDragEnd = () => {
+  if (!isToolsDragging || !toolsScrollContainer.value) return;
+
+  isToolsDragging = false;
+
+  // Restore cursor
+  toolsScrollContainer.value.style.cursor = 'grab';
+
+  // Snap to nearest button (if enabled)
+  if (ENABLE_TOOL_BUTTON_SNAP) {
+    snapToNearestButton();
+  }
 };
 
 // Scroll to show the current active tool
@@ -2078,15 +2154,35 @@ watch(() => props.currentTool, () => {
 }, { flush: 'post' }); // Run after DOM updates
 
 // Setup scroll and mouse event listeners when container is mounted
-watch(toolsScrollContainer, (container) => {
+watch(toolsScrollContainer, (container, oldContainer, onCleanup) => {
   if (container) {
     container.addEventListener('scroll', handleToolsScroll);
     container.addEventListener('wheel', handleToolsWheel, { passive: false });
     container.addEventListener('mouseenter', handleToolsMouseEnter);
     container.addEventListener('mouseleave', handleToolsMouseLeave);
 
+    // Drag scrolling - mouse events
+    container.addEventListener('mousedown', handleDragStart);
+    document.addEventListener('mousemove', handleDragMove);
+    document.addEventListener('mouseup', handleDragEnd);
+
+    // Drag scrolling - touch events
+    container.addEventListener('touchstart', handleDragStart, { passive: false });
+    container.addEventListener('touchmove', handleDragMove, { passive: false });
+    document.addEventListener('touchend', handleDragEnd);
+
+    // Set cursor to indicate draggable
+    container.style.cursor = 'grab';
+
     // Scroll to current tool on initial mount
     setTimeout(() => scrollToCurrentTool(), 100);
+
+    // Cleanup function to remove event listeners
+    onCleanup(() => {
+      document.removeEventListener('mousemove', handleDragMove);
+      document.removeEventListener('mouseup', handleDragEnd);
+      document.removeEventListener('touchend', handleDragEnd);
+    });
   }
 });
 
