@@ -1,8 +1,11 @@
 ## What's Changed
 
 ### ✨ New Features
-- Enhanced G-Code Preview with improved visualization capabilities
+- Added arrow pointer to highlight the current line being executed during job runs
 
 ### 🔧 Improvements
-- Refined Console Card tab interface for better usability
-- Relocated Copy All button to overlay position for cleaner tab layout
+- Updated probe colors for better clarity: GREEN now indicates contact, RED indicates no contact
+- Improved probe validation
+
+### 🐛 Bug Fixes
+- Fixed issue where the current line indicator would not reset when re-running the same job
