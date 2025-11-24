@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/vue-virtual": "^3.13.12",
     "lodash": "^4.17.21",
     "three": "^0.146.0",
     "vue": "^3.4.21",

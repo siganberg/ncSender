@@ -34,36 +34,39 @@
     </header>
 
     <!-- Terminal Tab -->
-    <div v-if="activeTab === 'terminal'" class="tab-content">
+    <div class="tab-content" :class="{ 'tab-content--hidden': activeTab !== 'terminal' }">
       <div class="console-output" role="log" aria-live="polite" ref="consoleOutput">
         <div v-if="terminalLines.length === 0" class="empty-state">
           All clear – give me a command!
         </div>
-        <DynamicScroller
-          v-else
-          class="terminal-scroller"
-          :items="terminalLines"
-          :min-item-size="terminalRowHeight"
-          key-field="id"
-          :buffer="200"
-          ref="scrollerRef"
+        <div
+          v-else-if="terminalVirtualizer"
+          :style="{
+            height: `${terminalVirtualizer.getTotalSize()}px`,
+            position: 'relative'
+          }"
         >
-          <template #default="{ item, index, active }">
-            <DynamicScrollerItem
-              :item="item"
-              :index="index"
-              :active="active"
-              :size-dependencies="[item.message, item.timestamp, item.status, item.type]"
+          <div
+            v-for="virtualRow in terminalVirtualizer.getVirtualItems()"
+            :key="virtualRow.key"
+            :data-index="virtualRow.index"
+            :ref="terminalVirtualizer.measureElement"
+            :style="{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualRow.start}px)`
+            }"
+          >
+            <article
+              :class="['console-line', `console-line--${terminalLines[virtualRow.index].level}`, `console-line--${terminalLines[virtualRow.index].type}`]"
             >
-              <article
-                :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
-              >
-                <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
-                <span class="message">{{ item.message }}</span>
-              </article>
-            </DynamicScrollerItem>
-          </template>
-        </DynamicScroller>
+              <span class="timestamp">{{ terminalLines[virtualRow.index].timestamp }}{{ terminalLines[virtualRow.index].type === 'command' || terminalLines[virtualRow.index].type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(terminalLines[virtualRow.index])"></span></span>
+              <span class="message">{{ terminalLines[virtualRow.index].message }}</span>
+            </article>
+          </div>
+        </div>
       </div>
       <form class="console-input" @submit.prevent="sendCommand">
         <textarea
@@ -82,12 +85,12 @@
     </div>
 
     <!-- Macros Tab -->
-    <div v-if="activeTab === 'macros'" class="tab-content" :class="{ 'tab-content--locked': !isSenderIdle }">
+    <div class="tab-content" :class="{ 'tab-content--hidden': activeTab !== 'macros', 'tab-content--locked': !isSenderIdle }">
       <MacroPanel :connected="connected" />
     </div>
 
     <!-- Tools Tab -->
-    <div v-if="activeTab === 'tools'" class="tab-content tools-tab" :class="{ 'tab-content--locked': !isSenderIdle }">
+    <div class="tab-content tools-tab" :class="{ 'tab-content--hidden': activeTab !== 'tools', 'tab-content--locked': !isSenderIdle }">
       <div v-if="loadingTools" class="placeholder-content">
         <p>Loading plugin tools...</p>
       </div>
@@ -116,7 +119,7 @@
     </div>
 
     <!-- G-Code Preview Tab -->
-    <div v-if="activeTab === 'gcode-preview'" class="tab-content">
+    <div class="tab-content" :class="{ 'tab-content--hidden': activeTab !== 'gcode-preview' }">
       <div v-if="!totalLines" class="placeholder-content">
         <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
@@ -127,26 +130,32 @@
               <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
             </svg>
           </button>
-          <RecycleScroller
-            class="gcode-scroller"
-            :items="gcodeItems"
-            :item-size="rowHeight"
-            key-field="index"
-            :buffer="overscan"
-            ref="gcodeScrollerRef"
-            @scroll="onGcodeScroll"
+          <div
+            v-if="gcodeVirtualizer"
+            :style="{
+              height: `${gcodeVirtualizer.getTotalSize()}px`,
+              position: 'relative'
+            }"
           >
-            <template #default="{ item }">
-              <div
-                class="gcode-line"
-                :class="getGcodeLineClasses(item.index)"
-                :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
-              >
-                <span class="line-number">Line {{ item.index + 1 }}:</span>
-                <span class="line-content">{{ getGcodeText(item.index) }}</span>
-              </div>
-            </template>
-          </RecycleScroller>
+            <div
+              v-for="virtualRow in gcodeVirtualizer.getVirtualItems()"
+              :key="virtualRow.key"
+              :data-index="virtualRow.index"
+              :style="{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${rowHeight}px`,
+                lineHeight: `${rowHeight}px`,
+                transform: `translateY(${virtualRow.start}px)`
+              }"
+              :class="['gcode-line', ...Object.keys(getGcodeLineClasses(virtualRow.index)).filter(k => getGcodeLineClasses(virtualRow.index)[k])]"
+            >
+              <span class="line-number">Line {{ virtualRow.index + 1 }}:</span>
+              <span class="line-content">{{ getGcodeText(virtualRow.index) }}</span>
+            </div>
+          </div>
         </div>
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
@@ -220,26 +229,32 @@
         </div>
         <div class="modal-content">
           <div v-if="!isEditMode" class="gcode-modal-viewer" ref="modalGcodeOutput">
-            <RecycleScroller
-              class="gcode-scroller"
-              :items="filteredGcodeItems"
-              :item-size="rowHeight"
-              key-field="index"
-              :buffer="overscan"
-              ref="modalGcodeScrollerRef"
-              @scroll="onModalGcodeScroll"
+            <div
+              v-if="modalGcodeVirtualizer"
+              :style="{
+                height: `${modalGcodeVirtualizer.getTotalSize()}px`,
+                position: 'relative'
+              }"
             >
-              <template #default="{ item }">
-                <div
-                  class="gcode-line"
-                  :class="getModalGcodeLineClasses(item.index)"
-                  :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
-                >
-                  <span class="line-number">Line {{ item.index + 1 }}:</span>
-                  <span class="line-content" v-html="highlightSearchMatch(getGcodeText(item.index))"></span>
-                </div>
-              </template>
-            </RecycleScroller>
+              <div
+                v-for="virtualRow in modalGcodeVirtualizer.getVirtualItems()"
+                :key="virtualRow.key"
+                :data-index="virtualRow.index"
+                :style="{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${rowHeight}px`,
+                  lineHeight: `${rowHeight}px`,
+                  transform: `translateY(${virtualRow.start}px)`
+                }"
+                :class="['gcode-line', ...Object.keys(getModalGcodeLineClasses(filteredGcodeItems[virtualRow.index].index)).filter(k => getModalGcodeLineClasses(filteredGcodeItems[virtualRow.index].index)[k])]"
+              >
+                <span class="line-number">Line {{ filteredGcodeItems[virtualRow.index].index + 1 }}:</span>
+                <span class="line-content" v-html="highlightSearchMatch(getGcodeText(filteredGcodeItems[virtualRow.index].index))"></span>
+              </div>
+            </div>
           </div>
           <textarea
             v-else
@@ -261,8 +276,8 @@ import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../p
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
-import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
-import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
+import { useVirtualizer } from '@tanstack/vue-virtual';
+import type { VirtualizerOptions } from '@tanstack/vue-virtual';
 import MacroPanel from '../macro/MacroPanel.vue';
 
 const store = useConsoleStore();
@@ -284,12 +299,11 @@ const commandToSend = ref('');
 const autoScroll = ref(true);
 const autoScrollGcode = ref(true);
 const consoleOutput = ref<HTMLElement | null>(null);
-const scrollerRef = ref<any>(null);
 const gcodeOutput = ref<HTMLElement | null>(null);
-const gcodeScrollerRef = ref<any>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
+
 // Make Terminal the default tab and list it first
 const activeTab = ref('terminal');
 const tabs = [
@@ -302,7 +316,6 @@ const tabs = [
 // G-Code Modal state
 const showGcodeModal = ref(false);
 const modalGcodeOutput = ref<HTMLElement | null>(null);
-const modalGcodeScrollerRef = ref<any>(null);
 const searchQuery = ref('');
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
@@ -419,62 +432,10 @@ async function fillGcodeCache(startIndex: number, endIndex: number) {
 }
 
 function scrollToLineCentered(lineNumber: number) {
-  const el = gcodeOutput.value;
-  if (!el || !lineNumber || totalLines.value === 0) return;
+  if (!lineNumber || totalLines.value === 0) return;
   const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineNumber - 1));
-  const vh = el.clientHeight || 0;
-  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
-  const desired = targetIndex * rowHeight.value - centerOffset;
-  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
-  const clamped = Math.max(0, Math.min(maxScroll, desired));
-  if (gcodeScrollerRef.value?.scrollToPosition) {
-    gcodeScrollerRef.value.scrollToPosition(clamped);
-  } else if (gcodeScrollerRef.value?.scrollToItem) {
-    gcodeScrollerRef.value.scrollToItem(targetIndex);
-    // Adjust closer to center via direct scrollTop tweak
-    const root = gcodeScrollerRef.value?.$el || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
-  } else {
-    const root = gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
-  }
+  gcodeVirtualizer.value.scrollToIndex(targetIndex, { align: 'center', behavior: 'auto' });
 }
-
-watch(completedUpTo, (val) => {
-  // Only update main view if modal is NOT open (reduce background work)
-  if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
-    scrollToLineCentered(val);
-  }
-  // Auto-scroll modal if open and auto-scroll enabled
-  if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
-    scrollToModalLine(val);
-  }
-});
-
-watch(isProgramRunning, async (running) => {
-  if (running) {
-    const sourceId = store.jobLoaded.value?.sourceId;
-
-    // Auto-switch tabs based on job source
-    // - probing jobs switch to Terminal tab
-    // - job jobs switch to G-Code Preview tab
-    if (sourceId === 'probing') {
-      if (activeTab.value !== 'terminal') {
-        activeTab.value = 'terminal';
-      }
-    } else if (sourceId === 'job' || !sourceId) {
-      if (activeTab.value !== 'gcode-preview') {
-        activeTab.value = 'gcode-preview';
-        await nextTick();
-        measureLineHeight();
-      }
-    }
-
-    if (autoScrollGcode.value && activeTab.value === 'gcode-preview') {
-      scrollToLineCentered(completedUpTo.value);
-    }
-  }
-});
 
 function measureLineHeight() {
   const el = gcodeOutput.value;
@@ -492,88 +453,15 @@ function measureLineHeight() {
 onMounted(() => {
   nextTick(() => {
     measureLineHeight();
+    measureTerminalRowHeight();
     // Warm up cache for initial visible window
-    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
     if (!memLines.value) {
-      if (root && (root as HTMLElement).clientHeight) {
-        onGcodeScroll();
-      } else {
-        // Prefetch first chunk to avoid empty lines before any scroll
-        fillGcodeCache(0, Math.max(overscan, 200));
-      }
+      fillGcodeCache(0, Math.max(overscan, 200));
     }
     if (isProgramRunning.value && autoScrollGcode.value) {
       scrollToLineCentered(completedUpTo.value);
     }
   });
-});
-
-watch(totalLines, async (newVal, oldVal) => {
-  await nextTick();
-  const el = gcodeOutput.value;
-  if (el) el.scrollTop = 0;
-  if (!memLines.value) {
-    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root && (root as HTMLElement).clientHeight) {
-      onGcodeScroll();
-    } else {
-      fillGcodeCache(0, Math.max(overscan, 200));
-    }
-  }
-
-  // Auto-switch to G-Code Preview tab when new file is loaded
-  if (newVal > 0 && newVal !== oldVal) {
-    activeTab.value = 'gcode-preview';
-  }
-});
-
-watch(activeTab, async (tab) => {
-  if (tab === 'gcode-preview') {
-    await nextTick();
-    measureLineHeight();
-    // Warm up cache for initial window
-    onGcodeScroll();
-  } else if (tab === 'terminal') {
-    await nextTick();
-    measureTerminalRowHeight();
-    if (autoScroll.value && scrollerRef.value) {
-      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
-    }
-  }
-});
-
-// rAF scroll handler to reduce jank
-let scrolling = false;
-function onGcodeScroll() {
-  if (scrolling) return;
-  scrolling = true;
-  requestAnimationFrame(() => {
-    scrolling = false;
-    // Prefetch IDB window to keep text cache warm
-    if (!memLines.value) {
-      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-      if (!root) return;
-      const vh = (root as HTMLElement).clientHeight || 0;
-      const scrollTop = (root as HTMLElement).scrollTop || 0;
-      const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-      const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
-      const end = Math.min(totalLines.value, start + visibleCount);
-      fillGcodeCache(start, end);
-    }
-  });
-}
-
-// Reset cross-out and scroll to top when user closes Job Progress panel (status changes to null)
-watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
-  if (oldVal && (oldVal === 'running' || oldVal === 'paused' || oldVal === 'stopped' || oldVal === 'completed') && val === null) {
-    await nextTick();
-    if (gcodeScrollerRef.value?.scrollToPosition) {
-      gcodeScrollerRef.value.scrollToPosition(0);
-    } else {
-      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-      if (root) (root as HTMLElement).scrollTop = 0;
-    }
-  }
 });
 
 const copyAllTerminalContent = async () => {
@@ -769,11 +657,9 @@ const getStatusIcon = (line) => {
 };
 
 watch(autoScroll, (newValue) => {
-  if (newValue) {
+  if (newValue && terminalLines.value.length > 0) {
     nextTick(() => {
-      if (scrollerRef.value) {
-        scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
-      }
+      terminalVirtualizer.value.scrollToIndex(terminalLines.value.length - 1, { align: 'end' });
     });
   }
 });
@@ -792,24 +678,219 @@ function measureTerminalRowHeight() {
   if (h && h > 0) terminalRowHeight.value = Math.ceil(h);
 }
 
+// G-Code Modal Functions
+const filteredGcodeItems = computed(() => {
+  if (!searchQuery.value) {
+    return gcodeItems.value;
+  }
+  return gcodeItems.value.filter(item => searchResults.value.includes(item.index));
+});
+
+// TanStack Virtual - Terminal
+const terminalVirtualizerOptions = computed(() => ({
+  count: terminalLines.value.length,
+  getScrollElement: () => consoleOutput.value,
+  estimateSize: () => terminalRowHeight.value,
+  overscan: 10,
+}));
+const terminalVirtualizer = useVirtualizer(terminalVirtualizerOptions);
+
+// TanStack Virtual - G-Code Preview
+const gcodeVirtualizerOptions = computed(() => ({
+  count: totalLines.value,
+  getScrollElement: () => gcodeOutput.value,
+  estimateSize: () => rowHeight.value,
+  overscan: 20,
+}));
+const gcodeVirtualizer = useVirtualizer(gcodeVirtualizerOptions);
+
+// TanStack Virtual - Modal G-Code
+const modalGcodeVirtualizerOptions = computed(() => ({
+  count: filteredGcodeItems.value.length,
+  getScrollElement: () => modalGcodeOutput.value,
+  estimateSize: () => rowHeight.value,
+  overscan: 20,
+}));
+const modalGcodeVirtualizer = useVirtualizer(modalGcodeVirtualizerOptions);
+
+// Watch virtualizers and related state (must be after virtualizer declarations)
+watch(completedUpTo, (val) => {
+  // Only update main view if modal is NOT open (reduce background work)
+  if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
+    scrollToLineCentered(val);
+  }
+  // Auto-scroll modal if open and auto-scroll enabled
+  if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
+    scrollToModalLine(val);
+  }
+});
+
+watch(isProgramRunning, async (running) => {
+  if (running) {
+    const sourceId = store.jobLoaded.value?.sourceId;
+
+    // Auto-switch tabs based on job source
+    // - probing jobs switch to Terminal tab
+    // - job jobs switch to G-Code Preview tab
+    if (sourceId === 'probing') {
+      if (activeTab.value !== 'terminal') {
+        activeTab.value = 'terminal';
+      }
+    } else if (sourceId === 'job' || !sourceId) {
+      if (activeTab.value !== 'gcode-preview') {
+        activeTab.value = 'gcode-preview';
+        await nextTick();
+        measureLineHeight();
+      }
+    }
+
+    if (autoScrollGcode.value && activeTab.value === 'gcode-preview') {
+      scrollToLineCentered(completedUpTo.value);
+    }
+  }
+});
+
+watch(totalLines, async (newVal, oldVal) => {
+  await nextTick();
+  gcodeVirtualizer.value.scrollToIndex(0, { align: 'start' });
+  if (!memLines.value) {
+    fillGcodeCache(0, Math.max(overscan, 200));
+  }
+
+  // Auto-switch to G-Code Preview tab when new file is loaded
+  if (newVal > 0 && newVal !== oldVal) {
+    activeTab.value = 'gcode-preview';
+  }
+});
+
+watch(activeTab, async (tab) => {
+  if (tab === 'gcode-preview') {
+    await nextTick();
+    measureLineHeight();
+  } else if (tab === 'terminal') {
+    await nextTick();
+    measureTerminalRowHeight();
+    if (autoScroll.value && terminalLines.value.length > 0) {
+      terminalVirtualizer.value.scrollToIndex(terminalLines.value.length - 1, { align: 'end' });
+    }
+  }
+});
+
+watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
+  if (oldVal && (oldVal === 'running' || oldVal === 'paused' || oldVal === 'stopped' || oldVal === 'completed') && val === null) {
+    await nextTick();
+    gcodeVirtualizer.value.scrollToIndex(0, { align: 'start' });
+  }
+});
+
 let stopAutoScrollBindings: (() => void) | undefined;
+let stopVirtualizerWatches: (() => void)[] = [];
 
 onMounted(async () => {
   await nextTick();
   measureTerminalRowHeight();
+  measureLineHeight();
+
+  // Force virtualizers to re-evaluate after DOM is ready and has dimensions
+  await nextTick();
+
+  // Force virtualizers to measure their scroll elements
+  if (terminalVirtualizer.value) {
+    terminalVirtualizer.value.measure();
+  }
+  if (gcodeVirtualizer.value) {
+    gcodeVirtualizer.value.measure();
+  }
+  if (modalGcodeVirtualizer.value) {
+    modalGcodeVirtualizer.value.measure();
+  }
+
+  // Debug logging with JSON stringify for easy copy/paste
+  console.log('=== Virtualizer Debug Info ===');
+
+  const debugInfo: any = {
+    activeTab: activeTab.value,
+    consoleOutputExists: !!consoleOutput.value,
+    consoleOutputDimensions: consoleOutput.value?.getBoundingClientRect(),
+    gcodeOutputExists: !!gcodeOutput.value,
+    gcodeOutputDimensions: gcodeOutput.value?.getBoundingClientRect(),
+    terminalLinesCount: terminalLines.value.length,
+    totalGcodeLines: totalLines.value,
+    rowHeight: rowHeight.value,
+    terminalRowHeight: terminalRowHeight.value,
+  };
+
+  if (terminalVirtualizer.value) {
+    const tv = terminalVirtualizer.value;
+    debugInfo.terminal = {
+      scrollElementExists: !!tv.scrollElement,
+      totalSize: tv.getTotalSize(),
+      virtualItemsCount: tv.getVirtualItems().length,
+      range: tv.range,
+      scrollRect: tv.scrollRect,
+    };
+  }
+
+  if (gcodeVirtualizer.value) {
+    const gv = gcodeVirtualizer.value;
+    debugInfo.gcode = {
+      scrollElementExists: !!gv.scrollElement,
+      totalSize: gv.getTotalSize(),
+      virtualItemsCount: gv.getVirtualItems().length,
+      range: gv.range,
+      scrollRect: gv.scrollRect,
+    };
+  }
+
+  console.log('Debug Info JSON:', JSON.stringify(debugInfo, null, 2));
+
   // Auto-scroll to bottom on mount
-  if (autoScroll.value && scrollerRef.value) {
-    scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
+  if (autoScroll.value && terminalLines.value.length > 0 && terminalVirtualizer.value) {
+    terminalVirtualizer.value.scrollToIndex(terminalLines.value.length - 1, { align: 'end' });
   }
   stopAutoScrollBindings = store.startAutoScrollBindings(async (evt) => {
     // Skip auto-scroll for job events (they're not shown in terminal)
     if (evt?.sourceId === 'job') return;
 
-    if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
+    if (activeTab.value === 'terminal' && autoScroll.value && terminalLines.value.length > 0) {
       await nextTick();
-      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
+      terminalVirtualizer.value.scrollToIndex(terminalLines.value.length - 1, { align: 'end' });
     }
   });
+
+  // Set up virtualizer watches after mount
+  stopVirtualizerWatches.push(
+    watch(() => gcodeVirtualizer.value.getVirtualItems(), (items) => {
+      if (!memLines.value && items.length > 0) {
+        const firstIndex = items[0].index;
+        const lastIndex = items[items.length - 1].index;
+        const buffer = overscan;
+        const start = Math.max(0, firstIndex - buffer);
+        const end = Math.min(totalLines.value, lastIndex + buffer);
+        fillGcodeCache(start, end);
+      }
+    }, { deep: true })
+  );
+
+  stopVirtualizerWatches.push(
+    watch(() => modalGcodeVirtualizer.value.getVirtualItems(), (items) => {
+      if (!memLines.value && items.length > 0) {
+        const firstIndex = items[0].index;
+        const lastIndex = items[items.length - 1].index;
+        const buffer = overscan;
+
+        // Map filtered indices back to actual line indices
+        const actualIndices = items.map(item => filteredGcodeItems.value[item.index]?.index).filter(i => i !== undefined);
+        if (actualIndices.length === 0) return;
+
+        const minIndex = Math.min(...actualIndices);
+        const maxIndex = Math.max(...actualIndices);
+        const start = Math.max(0, minIndex - buffer);
+        const end = Math.min(totalLines.value, maxIndex + buffer);
+        fillGcodeCache(start, end);
+      }
+    }, { deep: true })
+  );
 });
 
 onBeforeUnmount(() => {
@@ -817,14 +898,16 @@ onBeforeUnmount(() => {
     try { stopAutoScrollBindings(); } catch {}
     stopAutoScrollBindings = undefined;
   }
+  stopVirtualizerWatches.forEach(stop => {
+    try { stop(); } catch {}
+  });
+  stopVirtualizerWatches = [];
 });
 
 watch(() => props.lines, async () => {
-  if (activeTab.value === 'terminal' && autoScroll.value) {
+  if (activeTab.value === 'terminal' && autoScroll.value && terminalLines.value.length > 0) {
     await nextTick();
-    if (scrollerRef.value) {
-      scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
-    }
+    terminalVirtualizer.value.scrollToIndex(terminalLines.value.length - 1, { align: 'end' });
   }
 }, { deep: true });
 
@@ -873,14 +956,6 @@ watch(showGcodeModal, async (isOpen) => {
   }
 });
 
-// G-Code Modal Functions
-const filteredGcodeItems = computed(() => {
-  if (!searchQuery.value) {
-    return gcodeItems.value;
-  }
-  return gcodeItems.value.filter(item => searchResults.value.includes(item.index));
-});
-
 const searchResultText = computed(() => {
   if (!searchQuery.value) return '';
   if (searchResults.value.length === 0) return 'No matches';
@@ -913,25 +988,17 @@ function onSearchInput() {
 }
 
 function scrollToModalLine(lineIndex: number) {
-  const el = modalGcodeOutput.value;
-  if (!el || totalLines.value === 0) return;
+  if (!modalGcodeOutput.value || totalLines.value === 0) return;
 
-  const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineIndex));
-  const vh = el.clientHeight || 0;
-  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
-  const desired = targetIndex * rowHeight.value - centerOffset;
-  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
-  const clamped = Math.max(0, Math.min(maxScroll, desired));
-
-  if (modalGcodeScrollerRef.value?.scrollToPosition) {
-    modalGcodeScrollerRef.value.scrollToPosition(clamped);
-  } else if (modalGcodeScrollerRef.value?.scrollToItem) {
-    modalGcodeScrollerRef.value.scrollToItem(targetIndex);
-    const root = modalGcodeScrollerRef.value?.$el || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
+  // If searching, find the item in filtered list
+  if (searchQuery.value) {
+    const filteredIndex = filteredGcodeItems.value.findIndex(item => item.index === lineIndex);
+    if (filteredIndex !== -1) {
+      modalGcodeVirtualizer.value.scrollToIndex(filteredIndex, { align: 'center', behavior: 'auto' });
+    }
   } else {
-    const root = modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
+    const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineIndex));
+    modalGcodeVirtualizer.value.scrollToIndex(targetIndex, { align: 'center', behavior: 'auto' });
   }
 }
 
@@ -975,19 +1042,6 @@ function getModalGcodeLineClasses(index: number) {
   }
 
   return base;
-}
-
-function onModalGcodeScroll() {
-  if (!memLines.value) {
-    const root = (modalGcodeScrollerRef.value && modalGcodeScrollerRef.value.$el) || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (!root) return;
-    const vh = (root as HTMLElement).clientHeight || 0;
-    const scrollTop = (root as HTMLElement).scrollTop || 0;
-    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-    const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
-    const end = Math.min(totalLines.value, start + visibleCount);
-    fillGcodeCache(start, end);
-  }
 }
 
 function toggleEditMode() {
@@ -1056,6 +1110,7 @@ async function saveGcodeChanges() {
   gap: var(--gap-sm);
   min-height: 150px !important;
   height: 100%;
+  position: relative;
 }
 
 .card__header {
@@ -1200,11 +1255,8 @@ h2 {
   background: #141414;
   border-radius: var(--radius-small);
   padding: var(--gap-xs);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-xs);
   flex: 1;
-  min-height: 0px;
+  min-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
@@ -1366,6 +1418,18 @@ h2 {
   min-height: 0;
 }
 
+.tab-content--hidden {
+  visibility: hidden;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
 .placeholder-content {
   display: flex;
   align-items: center;
@@ -1406,7 +1470,9 @@ h2 {
   padding: var(--gap-xs);
   position: relative;
   flex: 1;
-  overflow: hidden; /* RecycleScroller handles scroll */
+  min-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.85rem;
   cursor: text;
@@ -1414,7 +1480,6 @@ h2 {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
   user-select: text !important;
-  contain: content;
 }
 
 .gcode-scroller {
@@ -1841,7 +1906,8 @@ h2 {
   background: #141414;
   padding: var(--gap-xs);
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.9rem;
   cursor: text;
