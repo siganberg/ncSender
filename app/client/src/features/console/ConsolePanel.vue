@@ -1243,6 +1243,10 @@ h2 {
   position: relative;
   margin-bottom: -1px;
   min-width: 80px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tab-button:hover {
