@@ -2090,16 +2090,16 @@ watch(toolsScrollContainer, (container) => {
   }
 });
 
-// Load tool inventory from plugin (agnostic - works without plugin)
+// Load tool inventory from core tools API
 const loadToolInventory = async () => {
   try {
-    const response = await fetch(`${api.baseUrl}/api/plugins/com.ncsender.toolinventory/settings`);
+    const response = await fetch(`${api.baseUrl}/api/tools`);
     if (response.ok) {
-      const data = await response.json();
+      const tools = await response.json();
       // Convert tools array to lookup map by toolNumber for quick access
-      if (data.tools && Array.isArray(data.tools)) {
+      if (Array.isArray(tools)) {
         const inventory: Record<number, any> = {};
-        data.tools.forEach((tool: any) => {
+        tools.forEach((tool: any) => {
           if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
             inventory[tool.toolNumber] = tool;
           }
@@ -2108,7 +2108,7 @@ const loadToolInventory = async () => {
       }
     }
   } catch (err) {
-    // Plugin not installed or error - gracefully degrade to basic tooltips
+    // Error loading tools - gracefully degrade to basic tooltips
     toolInventory.value = null;
   }
 };
@@ -2201,26 +2201,10 @@ onMounted(async () => {
     // if ('someOtherSetting' in changedSettings) { ... }
   });
 
-  // Listen for tool inventory updates from plugin
-  window.addEventListener('message', (event: MessageEvent) => {
-    if (event.data?.type === 'tool-inventory-updated' && event.data?.pluginId === 'com.ncsender.toolinventory') {
-      // Re-fetch tool inventory data
-      loadToolInventory();
-    }
-  });
-
-  // Listen for plugin enable/disable events
-  api.on('plugins:tools-changed', (data: any) => {
-    if (data?.pluginId === 'com.ncsender.toolinventory') {
-      if (data.action === 'enabled') {
-        // Plugin was enabled - reload inventory
-        loadToolInventory();
-      } else if (data.action === 'disabled') {
-        // Plugin was disabled - clear inventory
-        toolInventory.value = null;
-        showToolInfo.value = null;
-      }
-    }
+  // Listen for tools updates via WebSocket
+  api.on('tools-updated', () => {
+    // Re-fetch tool inventory data when tools are updated
+    loadToolInventory();
   });
 
   // Watch for container size changes

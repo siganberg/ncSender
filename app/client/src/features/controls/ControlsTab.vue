@@ -700,6 +700,17 @@ onBeforeUnmount(() => {
   background: var(--color-surface-muted);
 }
 
+.bindings-table thead::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  height: 2px;
+  background: var(--color-surface-muted);
+  z-index: 6;
+}
+
 .bindings-table thead::after {
   content: '';
   position: absolute;

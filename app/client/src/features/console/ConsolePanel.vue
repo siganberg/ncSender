@@ -194,7 +194,7 @@ const tabs = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'gcode-preview', label: 'G-Code Preview' },
   { id: 'macros', label: 'Macros' },
-  { id: 'tools', label: 'Tools' }
+  { id: 'tools', label: 'Plugins' }
 ];
 
 const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toLowerCase());

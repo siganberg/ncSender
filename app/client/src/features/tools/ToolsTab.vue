@@ -1,0 +1,1077 @@
+<template>
+  <div class="tools-tab">
+    <div class="tools-content">
+      <div class="tools-inner-content">
+        <!-- Header with search and actions -->
+        <div class="tools-header">
+        <input
+          type="text"
+          class="tool-search"
+          v-model="searchQuery"
+          placeholder="Search tools by T#, name, or type..."
+        >
+        <button class="import-export-button" @click="importTools">Import</button>
+        <button class="import-export-button" @click="exportTools">Export</button>
+        <button class="btn btn-primary" @click="addNewTool">Add Tool</button>
+      </div>
+
+      <!-- Table container with empty state -->
+      <div v-if="filteredTools.length === 0" class="empty-state">
+        <div class="empty-state-text">No tools found</div>
+        <div class="empty-state-hint">Click "Add Tool" to add your first tool</div>
+      </div>
+
+      <!-- Tools table -->
+      <div v-else class="tools-table-container">
+        <table class="tools-table">
+        <thead>
+          <tr>
+            <th class="col-tool-number">T#</th>
+            <th class="col-description">Description</th>
+            <th class="col-type">Type</th>
+            <th class="col-diameter">Diameter (mm)</th>
+            <th class="col-tlo">TLO (mm)</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="tool in filteredTools" :key="tool.id">
+            <td class="col-tool-number">
+              <span v-if="tool.toolNumber !== null" class="tool-number-badge">T{{ tool.toolNumber }}</span>
+              <span v-else>-</span>
+            </td>
+            <td class="col-description">{{ tool.name }}</td>
+            <td class="col-type">{{ formatType(tool.type) }}</td>
+            <td class="col-diameter">{{ tool.diameter.toFixed(3) }}</td>
+            <td class="col-tlo">{{ tool.offsets.tlo.toFixed(3) }}</td>
+            <td class="col-actions">
+              <div class="tool-actions">
+                <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
+                <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+        <!-- Footer with tool count -->
+        <div v-if="filteredTools.length > 0" class="tools-footer">
+          <div class="tool-count">{{ tools.length }} tool{{ tools.length !== 1 ? 's' : '' }} total</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool Form Modal -->
+    <div v-if="showToolForm" class="modal-overlay" @click.self="closeToolForm">
+      <div class="modal-content">
+        <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
+        <form @submit.prevent="saveTool">
+          <!-- Tool Number -->
+          <div class="form-group">
+            <label class="form-label">Tool Number (T#)</label>
+            <select class="form-select" v-model="toolForm.toolNumber">
+              <option :value="null">None (Not in magazine)</option>
+              <option
+                v-for="num in maxToolCount"
+                :key="num"
+                :value="num"
+              >
+                T{{ num }}{{ getToolNumberInfo(num) }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Tool Name -->
+          <div class="form-group">
+            <label class="form-label required">Tool Name / Description</label>
+            <input
+              type="text"
+              class="form-input"
+              v-model="toolForm.name"
+              placeholder="e.g., 1/4in Flat Endmill"
+              required
+            >
+            <div v-if="formErrors.name" class="form-error">{{ formErrors.name }}</div>
+          </div>
+
+          <!-- Tool Type -->
+          <div class="form-group">
+            <label class="form-label required">Tool Type</label>
+            <select class="form-select" v-model="toolForm.type" required>
+              <option value="flat">Flat End Mill</option>
+              <option value="ball">Ball End Mill</option>
+              <option value="v-bit">V-Bit</option>
+              <option value="drill">Drill</option>
+              <option value="chamfer">Chamfer</option>
+              <option value="surfacing">Surfacing</option>
+              <option value="thread-mill">Thread Mill</option>
+              <option value="probe">Probe</option>
+            </select>
+          </div>
+
+          <!-- Diameter -->
+          <div class="form-group">
+            <label class="form-label required">Diameter (mm)</label>
+            <input
+              type="number"
+              class="form-input"
+              v-model.number="toolForm.diameter"
+              min="0.001"
+              step="0.001"
+              placeholder="6.350"
+              required
+            >
+            <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
+          </div>
+
+          <!-- TLO -->
+          <div class="form-group">
+            <label class="form-label">Tool Length Offset (mm)</label>
+            <input
+              type="number"
+              class="form-input"
+              v-model.number="toolForm.offsets.tlo"
+              step="0.001"
+              placeholder="0.000"
+            >
+          </div>
+
+          <!-- Notes -->
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea
+              class="form-textarea"
+              v-model="toolForm.metadata.notes"
+              placeholder="Any additional information about this tool..."
+            ></textarea>
+          </div>
+
+          <!-- SKU -->
+          <div class="form-group">
+            <label class="form-label">SKU / Part Number</label>
+            <input
+              type="text"
+              class="form-input"
+              v-model="toolForm.metadata.sku"
+              placeholder="e.g., MANUFACTURER-12345"
+            >
+          </div>
+
+          <!-- Footer -->
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeToolForm">Cancel</button>
+            <button type="submit" class="btn btn-primary">{{ editingTool ? 'Save Changes' : 'Add Tool' }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input
+      ref="importFileInput"
+      type="file"
+      accept=".json"
+      style="display: none"
+      @change="handleImport"
+    >
+
+    <!-- Save Error Dialog -->
+    <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Error Saving Tool"
+        :message="saveErrorMessage"
+        :show-cancel="false"
+        confirm-text="OK"
+        variant="primary"
+        @confirm="showSaveErrorDialog = false"
+      />
+    </Dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <Dialog v-if="showDeleteConfirmDialog" @close="showDeleteConfirmDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Delete Tool"
+        :message="`Are you sure you want to delete ${deleteToolRef?.name}?`"
+        :show-cancel="true"
+        confirm-text="Delete"
+        cancel-text="Cancel"
+        variant="danger"
+        @confirm="confirmDeleteTool"
+        @cancel="showDeleteConfirmDialog = false"
+      />
+    </Dialog>
+
+    <!-- Delete Error Dialog -->
+    <Dialog v-if="showDeleteErrorDialog" @close="showDeleteErrorDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Error Deleting Tool"
+        :message="deleteErrorMessage"
+        :show-cancel="false"
+        confirm-text="OK"
+        variant="primary"
+        @confirm="showDeleteErrorDialog = false"
+      />
+    </Dialog>
+
+    <!-- Export Warning Dialog -->
+    <Dialog v-if="showExportWarningDialog" @close="showExportWarningDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="No Tools to Export"
+        message="There are no tools in your library to export."
+        :show-cancel="false"
+        confirm-text="OK"
+        variant="primary"
+        @confirm="showExportWarningDialog = false"
+      />
+    </Dialog>
+
+    <!-- Import Error Dialog -->
+    <Dialog v-if="showImportErrorDialog" @close="showImportErrorDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Import Error"
+        :message="importErrorMessage"
+        :show-cancel="false"
+        confirm-text="OK"
+        variant="primary"
+        @confirm="showImportErrorDialog = false"
+      />
+    </Dialog>
+
+    <!-- Import Conflict Dialog -->
+    <Dialog v-if="showImportConflictDialog" @close="showImportConflictDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Confirm Import"
+        :message="importConflictMessage"
+        :show-cancel="true"
+        confirm-text="Replace and Import"
+        cancel-text="Cancel"
+        variant="primary"
+        @confirm="confirmImportWithConflicts"
+        @cancel="showImportConflictDialog = false"
+      />
+    </Dialog>
+
+    <!-- Import Success Dialog -->
+    <Dialog v-if="showImportSuccessDialog" @close="showImportSuccessDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Import Successful"
+        :message="importSuccessMessage"
+        :show-cancel="false"
+        confirm-text="OK"
+        variant="primary"
+        @confirm="showImportSuccessDialog = false"
+      />
+    </Dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue';
+import { api } from '../../lib/api.js';
+import Dialog from '../../components/Dialog.vue';
+import ConfirmPanel from '../../components/ConfirmPanel.vue';
+
+interface Tool {
+  id: number;
+  toolNumber: number | null;
+  name: string;
+  type: string;
+  diameter: number;
+  offsets: {
+    tlo: number;
+  };
+  metadata: {
+    notes: string;
+    image: string;
+    sku: string;
+  };
+  dimensions?: {
+    flute_length: number | null;
+    overall_length: number | null;
+    taper_angle: number | null;
+    radius: number | null;
+    stickout: number | null;
+  };
+  specs?: {
+    material: string | null;
+    coating: string | null;
+  };
+  life?: {
+    enabled: boolean;
+    total_minutes: number | null;
+    used_minutes: number;
+    remaining_minutes: number | null;
+    usage_count: number;
+  };
+}
+
+const props = defineProps<{
+  maxToolCount?: number;
+}>();
+
+// State
+const tools = ref<Tool[]>([]);
+const searchQuery = ref('');
+const showToolForm = ref(false);
+const editingTool = ref<Tool | null>(null);
+const importFileInput = ref<HTMLInputElement | null>(null);
+const formErrors = ref<Record<string, string>>({});
+const maxToolCount = ref(props.maxToolCount || 1);
+
+// Dialog state
+const showSaveErrorDialog = ref(false);
+const saveErrorMessage = ref('');
+const showDeleteConfirmDialog = ref(false);
+const deleteToolRef = ref<Tool | null>(null);
+const showDeleteErrorDialog = ref(false);
+const deleteErrorMessage = ref('');
+const showExportWarningDialog = ref(false);
+const showImportErrorDialog = ref(false);
+const importErrorMessage = ref('');
+const showImportConflictDialog = ref(false);
+const importConflictMessage = ref('');
+const importConflictTools = ref<Tool[]>([]);
+const showImportSuccessDialog = ref(false);
+const importSuccessMessage = ref('');
+
+// Tool form data
+const defaultToolForm = () => ({
+  id: 0,
+  toolNumber: null as number | null,
+  name: '',
+  type: 'flat',
+  diameter: 0,
+  offsets: {
+    tlo: 0
+  },
+  metadata: {
+    notes: '',
+    image: '',
+    sku: ''
+  },
+  dimensions: {
+    flute_length: null,
+    overall_length: null,
+    taper_angle: null,
+    radius: null,
+    stickout: null
+  },
+  specs: {
+    material: null,
+    coating: null
+  },
+  life: {
+    enabled: false,
+    total_minutes: null,
+    used_minutes: 0,
+    remaining_minutes: null,
+    usage_count: 0
+  }
+});
+
+const toolForm = ref(defaultToolForm());
+
+// Computed
+const filteredTools = computed(() => {
+  let result = tools.value;
+
+  // Filter by search
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase();
+    result = result.filter(tool => {
+      const toolNum = tool.toolNumber !== null && tool.toolNumber !== undefined
+        ? tool.toolNumber.toString()
+        : '';
+      return toolNum.includes(query) ||
+        tool.name.toLowerCase().includes(query) ||
+        tool.type.toLowerCase().includes(query);
+    });
+  }
+
+  // Sort by T# ascending (tools without toolNumber go to end)
+  result = [...result].sort((a, b) => {
+    const aVal = a.toolNumber !== null ? a.toolNumber : 9999;
+    const bVal = b.toolNumber !== null ? b.toolNumber : 9999;
+    return aVal - bVal;
+  });
+
+  return result;
+});
+
+// Methods
+const loadTools = async () => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools`);
+    if (response.ok) {
+      tools.value = await response.json();
+    } else {
+      console.error('Failed to load tools');
+    }
+  } catch (error) {
+    console.error('Error loading tools:', error);
+  }
+};
+
+const formatType = (type: string) => {
+  const typeMap: Record<string, string> = {
+    'flat': 'Flat End Mill',
+    'ball': 'Ball End Mill',
+    'v-bit': 'V-Bit',
+    'drill': 'Drill',
+    'chamfer': 'Chamfer',
+    'surfacing': 'Surfacing',
+    'probe': 'Probe',
+    'thread-mill': 'Thread Mill'
+  };
+  return typeMap[type] || type;
+};
+
+const getToolNumberInfo = (num: number) => {
+  if (!editingTool.value || editingTool.value.toolNumber === num) {
+    return '';
+  }
+  const assignedTool = tools.value.find(t => t.toolNumber === num && t.id !== editingTool.value?.id);
+  return assignedTool ? ` (Swap with: ${assignedTool.name})` : '';
+};
+
+const addNewTool = () => {
+  editingTool.value = null;
+  toolForm.value = defaultToolForm();
+  formErrors.value = {};
+  showToolForm.value = true;
+};
+
+const editTool = (tool: Tool) => {
+  editingTool.value = tool;
+  toolForm.value = JSON.parse(JSON.stringify(tool));
+  formErrors.value = {};
+  showToolForm.value = true;
+};
+
+const closeToolForm = () => {
+  showToolForm.value = false;
+  editingTool.value = null;
+  toolForm.value = defaultToolForm();
+  formErrors.value = {};
+};
+
+const validateToolForm = () => {
+  formErrors.value = {};
+  let isValid = true;
+
+  if (!toolForm.value.name || toolForm.value.name.trim() === '') {
+    formErrors.value.name = 'Tool name is required';
+    isValid = false;
+  }
+
+  if (!toolForm.value.diameter || toolForm.value.diameter <= 0) {
+    formErrors.value.diameter = 'Diameter must be greater than 0';
+    isValid = false;
+  }
+
+  return isValid;
+};
+
+const saveTool = async () => {
+  if (!validateToolForm()) {
+    return;
+  }
+
+  try {
+    const toolData = { ...toolForm.value };
+
+    // Handle tool number swapping on the server side
+    if (editingTool.value) {
+      // Update existing tool
+      const response = await fetch(`${api.baseUrl}/api/tools/${editingTool.value.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toolData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        saveErrorMessage.value = 'Failed to update tool: ' + (error.error || 'Unknown error');
+        showSaveErrorDialog.value = true;
+        return;
+      }
+    } else {
+      // Add new tool
+      const response = await fetch(`${api.baseUrl}/api/tools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toolData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        saveErrorMessage.value = 'Failed to add tool: ' + (error.error || 'Unknown error');
+        showSaveErrorDialog.value = true;
+        return;
+      }
+    }
+
+    await loadTools();
+    closeToolForm();
+  } catch (error) {
+    console.error('Error saving tool:', error);
+    saveErrorMessage.value = 'Failed to save tool';
+    showSaveErrorDialog.value = true;
+  }
+};
+
+const deleteTool = (tool: Tool) => {
+  deleteToolRef.value = tool;
+  showDeleteConfirmDialog.value = true;
+};
+
+const confirmDeleteTool = async () => {
+  const tool = deleteToolRef.value;
+  if (!tool) return;
+
+  showDeleteConfirmDialog.value = false;
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      await loadTools();
+    } else {
+      const error = await response.json();
+      deleteErrorMessage.value = 'Failed to delete tool: ' + (error.error || 'Unknown error');
+      showDeleteErrorDialog.value = true;
+    }
+  } catch (error) {
+    console.error('Error deleting tool:', error);
+    deleteErrorMessage.value = 'Failed to delete tool';
+    showDeleteErrorDialog.value = true;
+  } finally {
+    deleteToolRef.value = null;
+  }
+};
+
+const exportTools = () => {
+  if (tools.value.length === 0) {
+    showExportWarningDialog.value = true;
+    return;
+  }
+
+  const json = JSON.stringify(tools.value, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `tool-library-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const importTools = () => {
+  importFileInput.value?.click();
+};
+
+const handleImport = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const importedTools = JSON.parse(e.target?.result as string);
+
+      if (!Array.isArray(importedTools)) {
+        importErrorMessage.value = 'Invalid file format. Expected an array of tools.';
+        showImportErrorDialog.value = true;
+        return;
+      }
+
+      // Check for conflicts
+      const conflicts = importedTools.filter(importTool =>
+        tools.value.some(existingTool => existingTool.id === importTool.id)
+      );
+
+      if (conflicts.length > 0) {
+        const conflictList = conflicts.map(t => `T${t.id}`).join(', ');
+        importConflictMessage.value = `The following tool IDs already exist: ${conflictList}\n\nDo you want to replace existing tools and import?`;
+        importConflictTools.value = importedTools;
+        showImportConflictDialog.value = true;
+        return;
+      }
+
+      // No conflicts, proceed with import
+      await performImport(importedTools);
+    } catch (error) {
+      importErrorMessage.value = 'Failed to import tools. Invalid JSON file.';
+      showImportErrorDialog.value = true;
+      console.error('Import error:', error);
+    }
+  };
+  reader.readAsText(file);
+
+  // Reset file input
+  target.value = '';
+};
+
+const performImport = async (importedTools: Tool[]) => {
+  // Merge tools
+  const mergedTools = [...tools.value];
+  importedTools.forEach(importTool => {
+    const existingIndex = mergedTools.findIndex(t => t.id === importTool.id);
+    if (existingIndex >= 0) {
+      mergedTools[existingIndex] = importTool;
+    } else {
+      mergedTools.push(importTool);
+    }
+  });
+
+  // Save via bulk update
+  const response = await fetch(`${api.baseUrl}/api/tools`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(mergedTools)
+  });
+
+  if (response.ok) {
+    await loadTools();
+    importSuccessMessage.value = `Successfully imported ${importedTools.length} tool(s)`;
+    showImportSuccessDialog.value = true;
+  } else {
+    const error = await response.json();
+    importErrorMessage.value = 'Failed to import tools: ' + (error.error || 'Unknown error');
+    showImportErrorDialog.value = true;
+  }
+};
+
+const confirmImportWithConflicts = async () => {
+  showImportConflictDialog.value = false;
+  await performImport(importConflictTools.value);
+  importConflictTools.value = [];
+};
+
+// Lifecycle
+onMounted(async () => {
+  await loadTools();
+
+  // Load max tool count from settings
+  try {
+    const response = await fetch(`${api.baseUrl}/api/settings`);
+    if (response.ok) {
+      const settings = await response.json();
+      maxToolCount.value = settings?.tool?.count || 1;
+    }
+  } catch (error) {
+    console.error('Error loading tool count setting:', error);
+  }
+});
+</script>
+
+<style scoped>
+.tools-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--color-text-primary);
+}
+
+.tools-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+
+.tools-inner-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.tools-header {
+  display: flex;
+  gap: var(--gap-sm);
+  align-items: center;
+  padding: var(--gap-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.tool-search {
+  flex: 1;
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.tool-search:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.tool-search::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.import-export-button {
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.import-export-button:hover {
+  background: var(--color-border);
+}
+
+.tools-table-container {
+  flex: 1;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  min-height: 0;
+  background: var(--color-surface);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+  padding-bottom: 30px;
+}
+
+.tools-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 0;
+}
+
+.tools-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tools-table-container::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.tools-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+.tools-table-container::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.tools-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.tools-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-surface-muted);
+}
+
+.tools-table thead::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  height: 2px;
+  background: var(--color-surface-muted);
+  z-index: 11;
+}
+
+.tools-table thead::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-border);
+}
+
+.tools-table th {
+  padding: var(--gap-sm) var(--gap-md);
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.tools-table th.col-actions {
+  text-align: center;
+}
+
+.tools-table tbody tr:first-child td {
+  padding-top: var(--gap-lg);
+}
+
+.tools-table tbody tr:last-child td {
+  padding-bottom: var(--gap-lg);
+}
+
+.tools-table td {
+  padding: var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.tools-table td:first-child {
+  padding-left: var(--gap-md);
+}
+
+.tools-table td:last-child {
+  padding-right: var(--gap-md);
+}
+
+.tools-table tbody tr:hover {
+  background: var(--color-border);
+}
+
+.col-tool-number {
+  width: 8%;
+  min-width: 60px;
+}
+
+.tool-number-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.col-description {
+  width: 32%;
+}
+
+.col-type {
+  width: 15%;
+}
+
+.col-diameter {
+  width: 12%;
+}
+
+.col-tlo {
+  width: 12%;
+}
+
+.col-actions {
+  width: 21%;
+  text-align: center;
+}
+
+.tool-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tools-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: var(--gap-sm) var(--gap-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  flex-shrink: 0;
+}
+
+.tool-count {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.btn {
+  border: none;
+  border-radius: var(--radius-small);
+  padding: var(--gap-sm) var(--gap-md);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background 0.2s ease;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: white;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: var(--gap-sm) var(--gap-md);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btn-accent {
+  background: var(--color-accent) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.btn-danger {
+  background: var(--color-danger, #f87171) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.btn-small {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--color-text-secondary);
+}
+
+.empty-state-text {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.empty-state-hint {
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+/* Modal overlay for Add/Edit form */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.modal-content {
+  background: var(--color-surface);
+  border-radius: var(--radius-medium);
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.form-label.required::after {
+  content: ' *';
+  color: var(--color-error);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-error {
+  color: var(--color-error);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+</style>

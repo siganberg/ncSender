@@ -100,9 +100,9 @@ const handleBackdropClick = () => {
 
 .dialog--medium {
   max-width: none;
-  width: 50vw;
-  min-width: 600px;
-  height: 70vh;
+  width: 60vw;
+  min-width: 700px;
+  height: 80vh;
 }
 
 @media (orientation: portrait) {

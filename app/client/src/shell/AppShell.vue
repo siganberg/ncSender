@@ -40,7 +40,7 @@
 
 .shell__content {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(550px, 1fr);
+  grid-template-columns: minmax(0, 1.8fr) minmax(550px, 1fr);
   gap: var(--gap-md);
   height: 100%;
   min-height: 0; /* Allow shrinking */

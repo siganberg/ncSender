@@ -12,6 +12,7 @@ import { createFirmwareRoutes } from '../features/firmware/routes.js';
 import { createProbeRoutes } from '../features/probe/routes.js';
 import { createMacroRoutes } from '../features/macro/routes.js';
 import { createToolRoutes } from '../features/tool/routes.js';
+import { createToolsRoutes } from '../features/tools/routes.js';
 import { createPluginRoutes } from '../features/plugins/routes.js';
 
 export function mountHttp({
@@ -47,6 +48,7 @@ export function mountHttp({
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController, commandProcessor));
   app.use('/api', createToolRoutes(cncController, serverState, commandProcessor));
+  app.use('/api', createToolsRoutes(broadcast));
   app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
 
   log('Serving client files from:', clientDistPath);
