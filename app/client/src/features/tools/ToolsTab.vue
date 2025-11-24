@@ -622,21 +622,89 @@ const saveTool = async () => {
 
   try {
     const toolData = { ...toolForm.value };
+    console.log('Saving tool data:', JSON.stringify(toolData));
 
-    // Handle tool number swapping on the server side
     if (editingTool.value) {
-      // Update existing tool
-      const response = await fetch(`${api.baseUrl}/api/tools/${editingTool.value.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toolData)
-      });
+      // Check if we're swapping tool numbers
+      const newToolNumber = toolData.toolNumber;
+      const oldToolNumber = editingTool.value.toolNumber;
 
-      if (!response.ok) {
-        const error = await response.json();
-        saveErrorMessage.value = 'Failed to update tool: ' + (error.error || 'Unknown error');
-        showSaveErrorDialog.value = true;
-        return;
+      // Find if another tool is using the target tool number
+      const conflictingTool = tools.value.find(t =>
+        t.toolNumber === newToolNumber &&
+        t.id !== editingTool.value.id
+      );
+
+      if (conflictingTool && newToolNumber !== null && newToolNumber !== undefined) {
+        // Swap operation needed
+        console.log('Swapping tools:', { current: editingTool.value.id, conflicting: conflictingTool.id });
+
+        // Step 1: Unassign the conflicting tool temporarily
+        const unassignResponse = await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...conflictingTool,
+            toolNumber: null
+          })
+        });
+
+        if (!unassignResponse.ok) {
+          const error = await unassignResponse.json();
+          console.log('Tool unassign error:', JSON.stringify(error));
+          saveErrorMessage.value = 'Failed to unassign conflicting tool';
+          showSaveErrorDialog.value = true;
+          return;
+        }
+
+        // Step 2: Update the current tool with the new number
+        const updateResponse = await fetch(`${api.baseUrl}/api/tools/${editingTool.value.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toolData)
+        });
+
+        if (!updateResponse.ok) {
+          const error = await updateResponse.json();
+          console.log('Tool update error:', JSON.stringify(error));
+          const errorMsg = error.errors ? JSON.stringify(error.errors) : (error.error || 'Unknown error');
+          saveErrorMessage.value = 'Failed to update tool: ' + errorMsg;
+          showSaveErrorDialog.value = true;
+          return;
+        }
+
+        // Step 3: If the original tool had a number, assign it to the conflicting tool (complete the swap)
+        if (oldToolNumber !== null && oldToolNumber !== undefined) {
+          const swapResponse = await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...conflictingTool,
+              toolNumber: oldToolNumber
+            })
+          });
+
+          if (!swapResponse.ok) {
+            console.log('Warning: Failed to complete swap by assigning old number to conflicting tool');
+            // Don't fail the whole operation if this step fails
+          }
+        }
+      } else {
+        // No swap needed, just update normally
+        const response = await fetch(`${api.baseUrl}/api/tools/${editingTool.value.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toolData)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.log('Tool update error:', JSON.stringify(error));
+          const errorMsg = error.errors ? JSON.stringify(error.errors) : (error.error || 'Unknown error');
+          saveErrorMessage.value = 'Failed to update tool: ' + errorMsg;
+          showSaveErrorDialog.value = true;
+          return;
+        }
       }
     } else {
       // Add new tool
