@@ -122,6 +122,11 @@
       </div>
       <div v-else class="gcode-preview">
         <div class="gcode-content" ref="gcodeOutput">
+          <button class="gcode-detach-button" @click="showGcodeModal = true" title="Open in larger view">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
+            </svg>
+          </button>
           <RecycleScroller
             class="gcode-scroller"
             :items="gcodeItems"
@@ -146,6 +151,103 @@
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
           <span class="gcode-storage">{{ storageMode }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- G-Code Modal Dialog -->
+    <div v-if="showGcodeModal" class="modal-overlay" @click.self="showGcodeModal = false">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>{{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines</h3>
+          <button class="modal-close" @click="showGcodeModal = false" title="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-toolbar">
+          <div class="search-box">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="Search G-code..."
+              @input="onSearchInput"
+              class="search-input"
+            />
+            <span v-if="searchQuery" class="search-results">{{ searchResultText }}</span>
+            <div class="search-nav" v-if="searchResults.length > 0">
+              <button @click="goToPreviousSearchResult" title="Previous match" :disabled="searchResults.length === 0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
+                </svg>
+              </button>
+              <button @click="goToNextSearchResult" title="Next match" :disabled="searchResults.length === 0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1z"/>
+                </svg>
+              </button>
+            </div>
+            <button v-if="searchQuery" @click="clearSearch" class="clear-search" title="Clear search">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-actions">
+            <div class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
+              <span class="toggle-label">Auto-Scroll</span>
+              <div class="toggle-switch">
+                <div class="toggle-handle"></div>
+              </div>
+            </div>
+            <button @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+              </svg>
+              {{ isEditMode ? 'View Mode' : 'Edit Mode' }}
+            </button>
+            <button v-if="isEditMode && hasUnsavedChanges" @click="saveGcodeChanges" class="save-button">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+              </svg>
+              Save Changes
+            </button>
+          </div>
+        </div>
+        <div class="modal-content">
+          <div v-if="!isEditMode" class="gcode-modal-viewer" ref="modalGcodeOutput">
+            <RecycleScroller
+              class="gcode-scroller"
+              :items="filteredGcodeItems"
+              :item-size="rowHeight"
+              key-field="index"
+              :buffer="overscan"
+              ref="modalGcodeScrollerRef"
+              @scroll="onModalGcodeScroll"
+            >
+              <template #default="{ item }">
+                <div
+                  class="gcode-line"
+                  :class="getModalGcodeLineClasses(item.index)"
+                  :style="{ height: rowHeight + 'px', lineHeight: rowHeight + 'px' }"
+                >
+                  <span class="line-number">Line {{ item.index + 1 }}:</span>
+                  <span class="line-content" v-html="highlightSearchMatch(getGcodeText(item.index))"></span>
+                </div>
+              </template>
+            </RecycleScroller>
+          </div>
+          <textarea
+            v-else
+            v-model="editableGcode"
+            class="gcode-editor"
+            spellcheck="false"
+            @input="onGcodeEdit"
+          ></textarea>
         </div>
       </div>
     </div>
@@ -196,6 +298,18 @@ const tabs = [
   { id: 'macros', label: 'Macros' },
   { id: 'tools', label: 'Plugins' }
 ];
+
+// G-Code Modal state
+const showGcodeModal = ref(false);
+const modalGcodeOutput = ref<HTMLElement | null>(null);
+const modalGcodeScrollerRef = ref<any>(null);
+const searchQuery = ref('');
+const searchResults = ref<number[]>([]);
+const currentSearchIndex = ref(0);
+const isEditMode = ref(false);
+const editableGcode = ref('');
+const hasUnsavedChanges = ref(false);
+const autoScrollModal = ref(true);
 
 const normalizedSenderStatus = computed(() => (props.senderStatus || 'idle').toLowerCase());
 const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
@@ -297,7 +411,7 @@ function getGcodeLineClasses(index: number) {
 async function fillGcodeCache(startIndex: number, endIndex: number) {
   if (!isIDBEnabled() || memLines.value) return;
   try {
-    const endLine = Math.min(totalLines.value, endIndex); // convert to 1-based inclusive
+    const endLine = Math.min(totalLines.value, endIndex);
     if (endLine <= startIndex) return;
     const rows = await getLinesRangeFromIDB(startIndex + 1, endLine);
     rows.forEach((text, i) => { gcodeCache[startIndex + i] = text; });
@@ -327,8 +441,13 @@ function scrollToLineCentered(lineNumber: number) {
 }
 
 watch(completedUpTo, (val) => {
-  if (activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
+  // Only update main view if modal is NOT open (reduce background work)
+  if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
     scrollToLineCentered(val);
+  }
+  // Auto-scroll modal if open and auto-scroll enabled
+  if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
+    scrollToModalLine(val);
   }
 });
 
@@ -742,6 +861,175 @@ watch(activeTab, (newTab) => {
     loadToolMenuItems();
   }
 });
+
+// Watch modal open/close to sync main view
+watch(showGcodeModal, async (isOpen) => {
+  if (!isOpen) {
+    // Modal closed - sync main view to current position if program is running
+    await nextTick();
+    if (activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
+      scrollToLineCentered(completedUpTo.value);
+    }
+  }
+});
+
+// G-Code Modal Functions
+const filteredGcodeItems = computed(() => {
+  if (!searchQuery.value) {
+    return gcodeItems.value;
+  }
+  return gcodeItems.value.filter(item => searchResults.value.includes(item.index));
+});
+
+const searchResultText = computed(() => {
+  if (!searchQuery.value) return '';
+  if (searchResults.value.length === 0) return 'No matches';
+  return `${currentSearchIndex.value + 1} of ${searchResults.value.length}`;
+});
+
+function onSearchInput() {
+  if (!searchQuery.value) {
+    searchResults.value = [];
+    currentSearchIndex.value = 0;
+    return;
+  }
+
+  const query = searchQuery.value.toLowerCase();
+  const results: number[] = [];
+
+  for (let i = 0; i < totalLines.value; i++) {
+    const text = getGcodeText(i).toLowerCase();
+    if (text.includes(query)) {
+      results.push(i);
+    }
+  }
+
+  searchResults.value = results;
+  currentSearchIndex.value = 0;
+
+  if (results.length > 0) {
+    scrollToModalLine(results[0]);
+  }
+}
+
+function scrollToModalLine(lineIndex: number) {
+  const el = modalGcodeOutput.value;
+  if (!el || totalLines.value === 0) return;
+
+  const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineIndex));
+  const vh = el.clientHeight || 0;
+  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
+  const desired = targetIndex * rowHeight.value - centerOffset;
+  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
+  const clamped = Math.max(0, Math.min(maxScroll, desired));
+
+  if (modalGcodeScrollerRef.value?.scrollToPosition) {
+    modalGcodeScrollerRef.value.scrollToPosition(clamped);
+  } else if (modalGcodeScrollerRef.value?.scrollToItem) {
+    modalGcodeScrollerRef.value.scrollToItem(targetIndex);
+    const root = modalGcodeScrollerRef.value?.$el || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (root) root.scrollTop = clamped;
+  } else {
+    const root = modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (root) root.scrollTop = clamped;
+  }
+}
+
+function goToPreviousSearchResult() {
+  if (searchResults.value.length === 0) return;
+  currentSearchIndex.value = (currentSearchIndex.value - 1 + searchResults.value.length) % searchResults.value.length;
+  scrollToModalLine(searchResults.value[currentSearchIndex.value]);
+}
+
+function goToNextSearchResult() {
+  if (searchResults.value.length === 0) return;
+  currentSearchIndex.value = (currentSearchIndex.value + 1) % searchResults.value.length;
+  scrollToModalLine(searchResults.value[currentSearchIndex.value]);
+}
+
+function clearSearch() {
+  searchQuery.value = '';
+  searchResults.value = [];
+  currentSearchIndex.value = 0;
+}
+
+function highlightSearchMatch(text: string): string {
+  if (!searchQuery.value) return text;
+  const query = searchQuery.value;
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  return text.replace(regex, '<mark>$1</mark>');
+}
+
+function getModalGcodeLineClasses(index: number) {
+  const completed = (index + 1 <= completedUpTo.value);
+  const base: Record<string, boolean> = { 'gcode-line--completed': completed };
+  const kind = classifyGcode(getGcodeText(index));
+  if (kind === 'rapid') base['gcode-line--rapid'] = true;
+  if (kind === 'cutting') base['gcode-line--cutting'] = true;
+
+  if (searchResults.value.includes(index)) {
+    base['gcode-line--search-match'] = true;
+    if (searchResults.value[currentSearchIndex.value] === index) {
+      base['gcode-line--current-match'] = true;
+    }
+  }
+
+  return base;
+}
+
+function onModalGcodeScroll() {
+  if (!memLines.value) {
+    const root = (modalGcodeScrollerRef.value && modalGcodeScrollerRef.value.$el) || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
+    if (!root) return;
+    const vh = (root as HTMLElement).clientHeight || 0;
+    const scrollTop = (root as HTMLElement).scrollTop || 0;
+    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
+    const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
+    const end = Math.min(totalLines.value, start + visibleCount);
+    fillGcodeCache(start, end);
+  }
+}
+
+function toggleEditMode() {
+  if (!isEditMode.value) {
+    editableGcode.value = memLines.value?.join('\n') || '';
+    isEditMode.value = true;
+    hasUnsavedChanges.value = false;
+  } else {
+    if (hasUnsavedChanges.value) {
+      if (!confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+        return;
+      }
+    }
+    isEditMode.value = false;
+    hasUnsavedChanges.value = false;
+  }
+}
+
+function onGcodeEdit() {
+  hasUnsavedChanges.value = true;
+}
+
+async function saveGcodeChanges() {
+  try {
+    const filename = store.gcodeFilename.value || 'modified.gcode';
+
+    const blob = new Blob([editableGcode.value], { type: 'text/plain' });
+    const file = new File([blob], filename, { type: 'text/plain' });
+
+    await api.uploadGCodeFile(file);
+
+    await api.loadGCodeFile(filename);
+
+    hasUnsavedChanges.value = false;
+    isEditMode.value = false;
+
+    console.log('G-code changes saved successfully');
+  } catch (error) {
+    console.error('Failed to save G-code changes:', error);
+    alert('Failed to save G-code changes. Please try again.');
+  }
+}
 </script>
 
 <style scoped>
@@ -1305,11 +1593,306 @@ h2 {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* G-Code Detach Button */
+.gcode-detach-button {
+  position: absolute;
+  top: 8px;
+  right: 24px;
+  z-index: 10;
+  padding: 8px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  backdrop-filter: blur(4px);
+}
+
+.gcode-detach-button:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+  opacity: 1;
+}
+
+.gcode-detach-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-dialog {
+  background: var(--color-surface);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-elevated);
+  width: 90%;
+  max-width: 1400px;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.modal-close {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-small);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.modal-toolbar {
+  display: flex;
+  gap: var(--gap-sm);
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  flex-wrap: wrap;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.search-box svg:first-child {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.search-results {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+.search-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.search-nav button {
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.search-nav button:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+}
+
+.search-nav button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clear-search {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.clear-search:hover {
+  color: var(--color-text-primary);
+}
+
+.modal-actions {
+  display: flex;
+  gap: var(--gap-xs);
+  align-items: center;
+}
+
+.edit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.edit-toggle:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+}
+
+.edit-toggle.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.save-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--gradient-accent);
+  border: none;
+  border-radius: var(--radius-small);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.save-button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+}
+
+.modal-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.gcode-modal-viewer {
+  background: #141414;
+  padding: var(--gap-xs);
+  flex: 1;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+.gcode-editor {
+  flex: 1;
+  width: 100%;
+  background: #141414;
+  color: #bdc3c7;
+  border: none;
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  tab-size: 2;
+}
+
+.gcode-editor:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Search Match Highlighting */
+.gcode-line--search-match {
+  background: rgba(255, 255, 0, 0.1);
+}
+
+.gcode-line--current-match {
+  background: rgba(255, 165, 0, 0.2);
+}
+
+.line-content :deep(mark) {
+  background: yellow;
+  color: black;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
 </style>
 
 <style>
 body.theme-light .console-output,
-body.theme-light .gcode-content {
+body.theme-light .gcode-content,
+body.theme-light .gcode-modal-viewer,
+body.theme-light .gcode-editor {
   background: var(--color-surface-muted) !important;
   color: var(--color-text-primary) !important;
 }
