@@ -162,7 +162,9 @@ export class GCodeJobProcessor {
 
     if (typeof Ln === 'string' || typeof Ln === 'number') {
       const executingLine = parseInt(Ln, 10);
-      if (Number.isFinite(executingLine) && executingLine >= 0) {
+      // Only trust Ln if it's reasonable (not greater than lines we've sent)
+      // This prevents stale Ln values from previous jobs being used
+      if (Number.isFinite(executingLine) && executingLine >= 0 && executingLine <= this.currentLineNumber) {
         return executingLine;
       }
     }
