@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added ability to detach the terminal into a separate window for improved workflow flexibility
+- Added detach terminal functionality allowing you to separate the terminal window from the main application
