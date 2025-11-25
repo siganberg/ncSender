@@ -284,34 +284,8 @@
           </div>
         </div>
         <div class="modal-content modal-content--terminal">
-          <div class="terminal-quick-controls">
-            <button @click="sendQuickCommand('$X')" :disabled="!connected" class="quick-control-btn" title="Unlock machine ($X)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
-              </svg>
-              <span>Unlock</span>
-            </button>
-            <button @click="sendQuickCommand('$H')" :disabled="!connected" class="quick-control-btn" title="Home machine ($H)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L8 2.207l6.646 6.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.707 1.5Z"/>
-                <path d="m8 3.293 6 6V13.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5V9.293l6-6Z"/>
-              </svg>
-              <span>Home</span>
-            </button>
-            <button @click="sendQuickCommand('\x18')" :disabled="!connected" class="quick-control-btn quick-control-btn--danger" title="Soft Reset (Ctrl-X)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-              </svg>
-              <span>Reset</span>
-            </button>
-            <button @click="sendQuickCommand('?')" :disabled="!connected" class="quick-control-btn" title="Get machine status (?)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-                <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
-              </svg>
-              <span>Status</span>
-            </button>
+          <div class="terminal-left-column">
+            <div class="terminal-quick-controls">
             <button @click="clearTerminal" class="quick-control-btn" title="Clear terminal">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
@@ -319,14 +293,100 @@
               </svg>
               <span>Clear</span>
             </button>
+            <button @click="sendQuickCommand('$H')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Home machine ($H)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L8 2.207l6.646 6.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.707 1.5Z"/>
+                <path d="m8 3.293 6 6V13.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5V9.293l6-6Z"/>
+              </svg>
+              <span>Home</span>
+            </button>
+            <button @click="sendQuickCommand('$X')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Unlock machine ($X)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2z"/>
+              </svg>
+              <span>Unlock</span>
+            </button>
+            <button @click="sendQuickCommand('\x18')" :disabled="!connected || !isSenderIdle" class="quick-control-btn quick-control-btn--danger" title="Soft Reset (Ctrl-X)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+              <span>Reset</span>
+            </button>
+            <button @click="sendQuickCommand('?')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Get machine status (?)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+              </svg>
+              <span>Status</span>
+            </button>
+            <button @click="sendQuickCommand('$help')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Show help ($help)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+              </svg>
+              <span>Help</span>
+            </button>
+            <button @click="sendQuickCommand('$I')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Show information ($I)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+              </svg>
+              <span>Information</span>
+            </button>
+            <button @click="sendQuickCommand('$$')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Controller settings ($$)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+              </svg>
+              <span>Controller Settings</span>
+            </button>
+            <button @click="sendQuickCommand('$G')" :disabled="!connected || !isSenderIdle" class="quick-control-btn" title="Modal state ($G)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3z"/>
+              </svg>
+              <span>Modal State</span>
+            </button>
+            <div class="spindle-control">
+              <button @click="sendSpindleCW" :disabled="!connected || !isSenderIdle" class="quick-control-btn spindle-control__btn" title="Spindle CW (M3)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3zM1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8z"/>
+                  <path d="m10.854 8.146-2-2a.5.5 0 0 0-.708 0l-2 2a.5.5 0 0 0 .708.708L8 7.707l1.146 1.147a.5.5 0 0 0 .708-.708z"/>
+                </svg>
+                <span>Spindle CW</span>
+              </button>
+              <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
+                <option v-for="rpm in Array.from({length: 24}, (_, i) => (i + 1) * 1000)" :key="rpm" :value="rpm">{{ rpm }}</option>
+              </select>
+            </div>
+            <div class="spindle-control">
+              <button @click="sendSpindleCCW" :disabled="!connected || !isSenderIdle" class="quick-control-btn spindle-control__btn" title="Spindle CCW (M4)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3zM1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8z"/>
+                  <path d="M10.854 7.854 9.707 9H11.5a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 1 0v1.793l1.146-1.147a.5.5 0 0 1 .708.708z"/>
+                </svg>
+                <span>Spindle CCW</span>
+              </button>
+              <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
+                <option v-for="rpm in Array.from({length: 24}, (_, i) => (i + 1) * 1000)" :key="rpm" :value="rpm">{{ rpm }}</option>
+              </select>
+            </div>
+            <button @click="sendQuickCommand('M5')" :disabled="!connected || !isSenderIdle" class="quick-control-btn quick-control-btn--danger" title="Stop spindle (M5)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                <path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3z"/>
+              </svg>
+              <span>Stop Spindle</span>
+            </button>
+            </div>
           </div>
-          <div class="terminal-modal-viewer">
+          <div class="terminal-right-column">
+            <div class="terminal-modal-viewer">
             <button @click="copyAllTerminalContent" class="terminal-modal-copy-button" :disabled="terminalLines.length === 0" title="Copy all terminal content">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                 <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
               </svg>
             </button>
+            <div class="console-output console-output--modal">
             <div v-if="terminalLines.length === 0" class="empty-state">
               All clear – give me a command!
             </div>
@@ -355,6 +415,7 @@
                 </DynamicScrollerItem>
               </template>
             </DynamicScroller>
+            </div>
           </div>
           <div class="terminal-modal-controls">
             <div class="control-buttons">
@@ -386,6 +447,7 @@
                 <button type="submit" class="primary" :disabled="!connected">Send</button>
               </div>
             </form>
+          </div>
           </div>
         </div>
       </div>
@@ -448,6 +510,7 @@ const searchQuery = ref('');
 const showTerminalModal = ref(false);
 const modalTerminalScrollerRef = ref<any>(null);
 const autoScrollTerminalModal = ref(true);
+const spindleRPM = ref(10000);
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const isEditMode = ref(false);
@@ -848,8 +911,6 @@ const copyAllTerminalContent = async () => {
       document.execCommand('copy');
       document.body.removeChild(textarea);
     }
-
-    console.log('Terminal content copied to clipboard');
   } catch (error) {
     console.error('Failed to copy terminal content:', error);
     alert('Failed to copy terminal content');
@@ -1014,6 +1075,14 @@ const navigateHistory = (direction: 'up' | 'down') => {
       commandToSend.value = currentInput.value;
     }
   }
+};
+
+const sendSpindleCW = () => {
+  sendQuickCommand(`M3 S${spindleRPM.value}`);
+};
+
+const sendSpindleCCW = () => {
+  sendQuickCommand(`M4 S${spindleRPM.value}`);
 };
 
 let unsubscribeHistory;
@@ -1645,6 +1714,15 @@ h2 {
   user-select: text !important;
 }
 
+.console-output .timestamp,
+.console-output .timestamp * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  pointer-events: none !important;
+}
+
 .console-line {
   display: flex;
   gap: 8px;
@@ -2087,6 +2165,10 @@ h2 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 
 .modal-header {
@@ -2387,20 +2469,37 @@ h2 {
 /* Terminal Modal Styles */
 .modal-content--terminal {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   padding: var(--gap-md);
   gap: var(--gap-md);
 }
 
+.terminal-left-column {
+  width: 250px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-right-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  min-width: 0;
+}
+
 .terminal-quick-controls {
   display: flex;
+  flex-direction: column;
   gap: var(--gap-sm);
-  flex-wrap: wrap;
   padding: var(--gap-sm);
   background: var(--color-surface-muted);
   border-radius: var(--radius-small);
   border: 1px solid var(--color-border);
+  height: 100%;
+  overflow-y: auto;
 }
 
 .quick-control-btn {
@@ -2416,9 +2515,46 @@ h2 {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.spindle-control {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  border: 1px solid var(--color-accent);
+}
+
+.spindle-control__btn {
   flex: 1;
-  min-width: 100px;
-  justify-content: center;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.spindle-control__select {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 90px;
+  outline: none;
+}
+
+.spindle-control__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spindle-control__select option {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
 }
 
 .quick-control-btn:hover:not(:disabled) {
@@ -2452,6 +2588,25 @@ h2 {
   overflow: hidden;
   position: relative;
 }
+
+.console-output--modal {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+  background: transparent;
+}
+
+.console-output--modal .timestamp,
+.console-output--modal .timestamp * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  cursor: default !important;
+}
+
+/* Terminal modal viewer text selection is handled by .console-output and global CSS */
 
 .terminal-modal-copy-button {
   position: absolute;
@@ -2558,11 +2713,21 @@ h2 {
 
 <style>
 body.theme-light .console-output,
+body.theme-light .console-output--modal,
 body.theme-light .gcode-content,
 body.theme-light .gcode-modal-viewer,
+body.theme-light .terminal-modal-viewer,
 body.theme-light .gcode-editor {
   background: var(--color-surface-muted) !important;
   color: var(--color-text-primary) !important;
+}
+
+body.theme-light .terminal-modal-viewer {
+  border: none !important;
+}
+
+body.theme-light .console-output--modal {
+  background: transparent !important;
 }
 
 body.theme-light .editor-wrapper {
@@ -2595,4 +2760,34 @@ body.theme-light .gcode-line--rapid .line-content { color: #E67E22 !important; }
 body.theme-light .gcode-line--cutting .line-content { color: #3e85c7 !important; }
 body.theme-light .gcode-line--completed.gcode-line--rapid .line-content { color: #333333 !important; }
 body.theme-light .gcode-line--completed.gcode-line--cutting .line-content { color: #444444 !important; }
+
+/* Enable text selection in terminal modal - global override */
+.terminal-modal-viewer,
+.terminal-modal-viewer *,
+.terminal-modal-viewer .vue-recycle-scroller,
+.terminal-modal-viewer .vue-recycle-scroller *,
+.terminal-modal-viewer .console-line,
+.terminal-modal-viewer .message {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+  cursor: text !important;
+  pointer-events: auto !important;
+}
+
+/* Keep timestamps non-selectable */
+.terminal-modal-viewer .timestamp,
+.terminal-modal-viewer .timestamp *,
+.console-output--modal .timestamp,
+.console-output--modal .timestamp *,
+.console-output.console-output--modal .timestamp,
+.console-output.console-output--modal .timestamp * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  cursor: default !important;
+  pointer-events: none !important;
+}
 </style>
