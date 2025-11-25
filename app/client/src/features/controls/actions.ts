@@ -268,7 +268,8 @@ export function registerCoreKeyboardActions(): void {
         console.error('Failed to start/resume job:', error);
       }
     },
-    isEnabled: canStartOrResume
+    isEnabled: canStartOrResume,
+    requiresLongPress: true
   });
 
   commandRegistry.register({
