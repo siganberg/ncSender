@@ -352,5 +352,46 @@ export function registerCoreKeyboardActions(): void {
     isEnabled: () => keyBindingStore.isActive.value
   });
 
+  // Machine Control Actions
+  const machineGroup = 'Machine';
+
+  const canHome = () => {
+    if (!keyBindingStore.isActive.value) {
+      return false;
+    }
+    const { isConnected } = store;
+    return isConnected.value;
+  };
+
+  commandRegistry.register({
+    id: 'Home',
+    label: 'Home Machine',
+    group: machineGroup,
+    description: 'Home the machine',
+    handler: async () => {
+      try {
+        await api.sendCommand('$H');
+      } catch (error) {
+        console.error('Failed to home machine:', error);
+      }
+    },
+    isEnabled: canHome,
+    requiresLongPress: true
+  });
+
+  // Probe Actions
+  const probeGroup = 'Probe';
+
+  commandRegistry.register({
+    id: 'StartProbe',
+    label: 'Start Probe',
+    group: probeGroup,
+    description: 'Start probing (only when probe dialog is open)',
+    handler: () => {
+      window.dispatchEvent(new Event('probe-start-shortcut'));
+    },
+    isEnabled: () => keyBindingStore.isActive.value
+  });
+
   coreActionsRegistered = true;
 }

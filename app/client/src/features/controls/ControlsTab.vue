@@ -43,7 +43,6 @@
                 <th>Action</th>
                 <th>Keyboard</th>
                 <th>Gamepad</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -53,28 +52,54 @@
                 </td>
                 <td>
                   <div class="action-label">
-                    <strong>{{ action.label }}</strong>
+                    <div class="action-label-header">
+                      <strong>{{ action.label }}</strong>
+                      <span v-if="action.requiresLongPress" class="badge badge-long-press">REQUIRE LONG PRESS</span>
+                    </div>
                     <span v-if="action.description" class="action-description">{{ action.description }}</span>
                   </div>
                 </td>
                 <td>
                   <template v-if="captureActionId === action.id">
-                    <div class="capture-container">
-                      <span class="capture-message">Press a key combination...</span>
-                      <span v-if="bindingMap[action.id]" class="capture-current">Current: {{ bindingMap[action.id] }}</span>
+                    <div class="binding-cell">
+                      <div class="binding-combined binding-combined--capturing">
+                        <span class="binding-combined__value binding-combined__value--capturing">
+                          <span>Press a key combination...</span>
+                        </span>
+                        <button
+                          class="binding-combined__delete"
+                          @click.stop="cancelCapture"
+                          title="Cancel"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </template>
                   <template v-else>
                     <div class="binding-cell">
-                      <span
-                        v-if="bindingMap[action.id]"
-                        class="binding-chip binding-chip-clickable"
-                        :class="{ disabled: !shortcutsEnabled }"
-                        @click="shortcutsEnabled && startCapture(action.id)"
-                        title="Click to change"
-                      >
-                        {{ bindingMap[action.id] }}
-                      </span>
+                      <div v-if="bindingMap[action.id]" class="binding-combined">
+                        <span
+                          class="binding-combined__value"
+                          :class="{ disabled: !shortcutsEnabled }"
+                          @click="shortcutsEnabled && startCapture(action.id)"
+                          title="Click to change"
+                        >
+                          {{ bindingMap[action.id] }}
+                        </span>
+                        <button
+                          class="binding-combined__delete"
+                          :disabled="!shortcutsEnabled"
+                          @click.stop="clearBinding(action.id)"
+                          title="Remove keyboard binding"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                          </svg>
+                        </button>
+                      </div>
                       <span
                         v-else
                         class="binding-empty binding-empty-clickable"
@@ -84,38 +109,50 @@
                       >
                         Not set
                       </span>
-                      <button
-                        v-if="bindingMap[action.id]"
-                        class="btn-icon-mini btn-icon-danger"
-                        :disabled="!shortcutsEnabled"
-                        @click.stop="clearBinding(action.id)"
-                        title="Remove keyboard binding"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                          <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                        </svg>
-                      </button>
                     </div>
                   </template>
                 </td>
                 <td>
                   <template v-if="captureGamepadActionId === action.id">
-                    <div class="capture-container">
-                      <span class="capture-message">Press a button or move axis...</span>
-                      <span v-if="gamepadBindingMap[action.id]" class="capture-current">Current: {{ gamepadBindingMap[action.id] }}</span>
+                    <div class="binding-cell">
+                      <div class="binding-combined binding-combined--capturing">
+                        <span class="binding-combined__value binding-combined__value--capturing">
+                          <span>Press a button or move axis...</span>
+                        </span>
+                        <button
+                          class="binding-combined__delete"
+                          @click.stop="cancelCapture"
+                          title="Cancel"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </template>
                   <template v-else>
                     <div class="binding-cell">
-                      <span
-                        v-if="gamepadBindingMap[action.id]"
-                        class="binding-chip binding-chip-clickable"
-                        :class="{ disabled: !shortcutsEnabled }"
-                        @click="shortcutsEnabled && startGamepadCapture(action.id)"
-                        title="Click to change"
-                      >
-                        {{ gamepadBindingMap[action.id] }}
-                      </span>
+                      <div v-if="gamepadBindingMap[action.id]" class="binding-combined">
+                        <span
+                          class="binding-combined__value"
+                          :class="{ disabled: !shortcutsEnabled }"
+                          @click="shortcutsEnabled && startGamepadCapture(action.id)"
+                          title="Click to change"
+                        >
+                          {{ gamepadBindingMap[action.id] }}
+                        </span>
+                        <button
+                          class="binding-combined__delete"
+                          :disabled="!shortcutsEnabled"
+                          @click.stop="clearGamepadBinding(action.id)"
+                          title="Remove gamepad binding"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                          </svg>
+                        </button>
+                      </div>
                       <span
                         v-else
                         class="binding-empty binding-empty-clickable"
@@ -125,27 +162,7 @@
                       >
                         Not set
                       </span>
-                      <button
-                        v-if="gamepadBindingMap[action.id]"
-                        class="btn-icon-mini btn-icon-danger"
-                        :disabled="!shortcutsEnabled"
-                        @click.stop="clearGamepadBinding(action.id)"
-                        title="Remove gamepad binding"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                          <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                        </svg>
-                      </button>
                     </div>
-                  </template>
-                </td>
-                <td class="binding-actions">
-                  <template v-if="captureActionId === action.id || captureGamepadActionId === action.id">
-                    <button class="btn-icon" @click="cancelCapture" title="Cancel">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                      </svg>
-                    </button>
                   </template>
                 </td>
               </tr>
@@ -689,7 +706,7 @@ onBeforeUnmount(() => {
 
 .bindings-table td:nth-child(3),
 .bindings-table td:nth-child(4) {
-  width: 280px;
+  width: 220px;
   vertical-align: middle;
 }
 
@@ -728,6 +745,11 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
   border-bottom: 2px solid var(--color-border);
   background: var(--color-surface-muted);
+}
+
+.bindings-table th:nth-child(3),
+.bindings-table th:nth-child(4) {
+  text-align: center;
 }
 
 .bindings-table tbody tr:first-child td {
@@ -784,9 +806,92 @@ onBeforeUnmount(() => {
 }
 
 .binding-cell {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+}
+
+.binding-combined {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  width: 190px;
+  transition: all 0.2s ease;
+}
+
+.binding-combined__value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  background: var(--color-accent);
+  flex: 1;
+  min-width: 0;
+}
+
+.binding-combined__value:hover:not(.disabled) {
+  filter: brightness(1.1);
+}
+
+.binding-combined__value.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.binding-combined__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background: var(--color-danger, #f87171);
+  border: none;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.binding-combined__delete:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.binding-combined__delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.binding-combined--capturing {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.binding-combined__value--capturing {
+  overflow: hidden;
+  white-space: nowrap;
+  font-style: italic;
+  font-size: 0.85rem;
+  display: block;
+}
+
+.binding-combined__value--capturing span {
+  display: inline-block;
+  padding-left: 100%;
+  animation: scroll-text 10s linear infinite;
+}
+
+@keyframes scroll-text {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
 }
 
 .binding-chip {
@@ -819,12 +924,14 @@ onBeforeUnmount(() => {
 .binding-empty {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   padding: 8px 16px;
   color: var(--color-text-secondary);
   font-style: italic;
+  width: 190px;
 }
 
 .binding-empty-clickable {
@@ -847,6 +954,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 190px;
 }
 
 .capture-message {
@@ -873,9 +981,31 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.action-label-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .action-description {
   color: var(--color-text-secondary);
   font-size: 0.85rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-long-press {
+  background: #ff9500;
+  color: white;
 }
 
 .action-group {

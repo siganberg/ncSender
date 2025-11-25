@@ -14,7 +14,8 @@ import {
 } from './actions';
 import { useAppStore } from '@/composables/use-app-store';
 
-const LONG_PRESS_DELAY_MS = 300;
+const JOG_LONG_PRESS_DELAY_MS = 300;
+const ACTION_LONG_PRESS_DELAY_MS = 1000;
 const POLL_INTERVAL_MS = 16;
 
 interface ActiveJogState {
@@ -33,10 +34,19 @@ interface ActiveJogState {
   finished: boolean;
 }
 
+interface ActiveLongPressState {
+  actionId: string;
+  bindingKey: string;
+  timerId: number | null;
+  completed: boolean;
+  cancelled: boolean;
+}
+
 class GamepadManager {
   private enabled = false;
   private pollInterval: number | null = null;
   private jogStates = new Map<string, ActiveJogState>();
+  private longPressStates = new Map<string, ActiveLongPressState>();
   private previousButtonStates = new Map<string, boolean>();
   private actionsExecutedThisFrame = new Set<string>();
   private previousDiagonalState = new Map<string, boolean>();
@@ -244,7 +254,7 @@ class GamepadManager {
 
                 state.timerId = window.setTimeout(() => {
                   this.beginLongPress(diagonalKey, state);
-                }, LONG_PRESS_DELAY_MS);
+                }, JOG_LONG_PRESS_DELAY_MS);
               }
             }
           }
@@ -321,7 +331,28 @@ class GamepadManager {
 
       state.timerId = window.setTimeout(() => {
         this.beginLongPress(bindingKey, state);
-      }, LONG_PRESS_DELAY_MS);
+      }, JOG_LONG_PRESS_DELAY_MS);
+      return;
+    }
+
+    if (action.requiresLongPress) {
+      if (this.longPressStates.has(bindingKey)) {
+        return;
+      }
+
+      const longPressState: ActiveLongPressState = {
+        actionId,
+        bindingKey,
+        timerId: null,
+        completed: false,
+        cancelled: false
+      };
+
+      this.longPressStates.set(bindingKey, longPressState);
+
+      longPressState.timerId = window.setTimeout(() => {
+        this.executeLongPressAction(bindingKey, longPressState);
+      }, ACTION_LONG_PRESS_DELAY_MS);
       return;
     }
 
@@ -330,6 +361,19 @@ class GamepadManager {
   }
 
   private handleGamepadButtonUp(actionId: string, bindingKey: string): void {
+    const longPressState = this.longPressStates.get(bindingKey);
+    if (longPressState) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(bindingKey);
+      return;
+    }
+
     const state = this.jogStates.get(bindingKey);
     if (!state) {
       return;
@@ -536,7 +580,32 @@ class GamepadManager {
     }
   }
 
+  private executeLongPressAction(bindingKey: string, state: ActiveLongPressState): void {
+    if (state.cancelled) {
+      this.longPressStates.delete(bindingKey);
+      return;
+    }
+
+    state.timerId = null;
+    state.completed = true;
+
+    commandRegistry.execute(state.actionId).catch((error) => {
+      console.error(`Failed to execute long press action '${state.actionId}':`, JSON.stringify(error));
+    });
+  }
+
   private handleDisconnect = () => {
+    for (const [bindingKey, longPressState] of Array.from(this.longPressStates.entries())) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(bindingKey);
+    }
+
     for (const [bindingKey, state] of Array.from(this.jogStates.entries())) {
       if (state.finished) {
         this.jogStates.delete(bindingKey);

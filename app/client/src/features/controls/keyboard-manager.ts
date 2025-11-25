@@ -12,7 +12,8 @@ import {
   type ContinuousJogSession
 } from './actions';
 
-const LONG_PRESS_DELAY_MS = 300;
+const JOG_LONG_PRESS_DELAY_MS = 300;
+const ACTION_LONG_PRESS_DELAY_MS = 1000;
 
 interface ActiveJogState {
   axis?: 'X' | 'Y' | 'Z';
@@ -30,10 +31,19 @@ interface ActiveJogState {
   finished: boolean;
 }
 
+interface ActiveLongPressState {
+  actionId: string;
+  combo: string;
+  timerId: number | null;
+  completed: boolean;
+  cancelled: boolean;
+}
+
 class KeyboardManager {
   private enabled = false;
   private jogStates = new Map<string, ActiveJogState>();
   private activeDiagonalKey: string | null = null;
+  private longPressStates = new Map<string, ActiveLongPressState>();
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -124,7 +134,35 @@ class KeyboardManager {
 
       state.timerId = window.setTimeout(() => {
         this.beginLongPress(eventCode, state);
-      }, LONG_PRESS_DELAY_MS);
+      }, JOG_LONG_PRESS_DELAY_MS);
+      return;
+    }
+
+    if (action.requiresLongPress) {
+      const eventCode = event.code || combo;
+
+      if (this.longPressStates.has(eventCode)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const longPressState: ActiveLongPressState = {
+        actionId,
+        combo,
+        timerId: null,
+        completed: false,
+        cancelled: false
+      };
+
+      this.longPressStates.set(eventCode, longPressState);
+
+      longPressState.timerId = window.setTimeout(() => {
+        this.executeLongPressAction(eventCode, longPressState);
+      }, ACTION_LONG_PRESS_DELAY_MS);
       return;
     }
 
@@ -241,6 +279,21 @@ class KeyboardManager {
     const actionId = combo ? keyBindingStore.getBinding(combo) : undefined;
     const eventCode = event.code || combo || '';
 
+    const longPressState = this.longPressStates.get(eventCode);
+    if (longPressState) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(eventCode);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const state = this.jogStates.get(eventCode);
     if (!state) {
       if (actionId && (JOG_ACTIONS[actionId] || DIAGONAL_JOG_ACTIONS[actionId])) {
@@ -340,6 +393,17 @@ class KeyboardManager {
   }
 
   private handleWindowBlur = () => {
+    for (const [eventCode, longPressState] of Array.from(this.longPressStates.entries())) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(eventCode);
+    }
+
     for (const [eventCode, state] of Array.from(this.jogStates.entries())) {
       if (state.finished) {
         this.jogStates.delete(eventCode);
@@ -372,6 +436,20 @@ class KeyboardManager {
 
       this.cleanupJogState(eventCode, state);
     }
+  };
+
+  private executeLongPressAction(eventCode: string, state: ActiveLongPressState): void {
+    if (state.cancelled) {
+      this.longPressStates.delete(eventCode);
+      return;
+    }
+
+    state.timerId = null;
+    state.completed = true;
+
+    commandRegistry.execute(state.actionId).catch((error) => {
+      console.error(`Failed to execute long press action '${state.actionId}':`, error);
+    });
   };
 
   private beginLongPress(eventCode: string, state: ActiveJogState): void {

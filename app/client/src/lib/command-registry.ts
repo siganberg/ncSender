@@ -9,6 +9,7 @@ export interface CommandAction {
   group?: string;
   handler: CommandHandler;
   isEnabled?: () => boolean;
+  requiresLongPress?: boolean;
 }
 
 interface CommandState {

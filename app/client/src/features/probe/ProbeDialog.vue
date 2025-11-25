@@ -1101,12 +1101,20 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 };
 
+const handleProbeStartShortcut = () => {
+  if (props.show && !isPrimaryActionDisabled.value) {
+    handleStartProbe();
+  }
+};
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
+  window.addEventListener('probe-start-shortcut', handleProbeStartShortcut);
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside);
+  window.removeEventListener('probe-start-shortcut', handleProbeStartShortcut);
 });
 
 const addCustomDiameter = async () => {
