@@ -35,6 +35,11 @@
             <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
           </svg>
         </button>
+        <button class="terminal-detach-button" @click="showTerminalModal = true" title="Open in larger view">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
+          </svg>
+        </button>
         <div v-if="terminalLines.length === 0" class="empty-state">
           All clear – give me a command!
         </div>
@@ -258,6 +263,133 @@
         </div>
       </div>
     </div>
+
+    <!-- Terminal Modal Dialog -->
+    <div v-if="showTerminalModal" class="modal-overlay" @click.self="showTerminalModal = false">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>Terminal</h3>
+          <div class="modal-header-actions">
+            <div class="auto-scroll-toggle" @click="autoScrollTerminalModal = !autoScrollTerminalModal" :class="{ active: autoScrollTerminalModal }">
+              <span class="toggle-label">Auto-Scroll</span>
+              <div class="toggle-switch">
+                <div class="toggle-handle"></div>
+              </div>
+            </div>
+            <button class="modal-close" @click="showTerminalModal = false" title="Close">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-content modal-content--terminal">
+          <div class="terminal-quick-controls">
+            <button @click="sendQuickCommand('$X')" :disabled="!connected" class="quick-control-btn" title="Unlock machine ($X)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+              </svg>
+              <span>Unlock</span>
+            </button>
+            <button @click="sendQuickCommand('$H')" :disabled="!connected" class="quick-control-btn" title="Home machine ($H)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L8 2.207l6.646 6.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.707 1.5Z"/>
+                <path d="m8 3.293 6 6V13.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5V9.293l6-6Z"/>
+              </svg>
+              <span>Home</span>
+            </button>
+            <button @click="sendQuickCommand('\x18')" :disabled="!connected" class="quick-control-btn quick-control-btn--danger" title="Soft Reset (Ctrl-X)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+              <span>Reset</span>
+            </button>
+            <button @click="sendQuickCommand('?')" :disabled="!connected" class="quick-control-btn" title="Get machine status (?)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+              </svg>
+              <span>Status</span>
+            </button>
+            <button @click="clearTerminal" class="quick-control-btn" title="Clear terminal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+              </svg>
+              <span>Clear</span>
+            </button>
+          </div>
+          <div class="terminal-modal-viewer">
+            <button @click="copyAllTerminalContent" class="terminal-modal-copy-button" :disabled="terminalLines.length === 0" title="Copy all terminal content">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+              </svg>
+            </button>
+            <div v-if="terminalLines.length === 0" class="empty-state">
+              All clear – give me a command!
+            </div>
+            <DynamicScroller
+              v-else
+              class="terminal-scroller"
+              :items="terminalLines"
+              :min-item-size="terminalRowHeight"
+              key-field="id"
+              :buffer="200"
+              ref="modalTerminalScrollerRef"
+            >
+              <template #default="{ item, index, active }">
+                <DynamicScrollerItem
+                  :item="item"
+                  :index="index"
+                  :active="active"
+                  :size-dependencies="[item.message, item.timestamp, item.status, item.type]"
+                >
+                  <article
+                    :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
+                  >
+                    <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
+                    <span class="message">{{ item.message }}</span>
+                  </article>
+                </DynamicScrollerItem>
+              </template>
+            </DynamicScroller>
+          </div>
+          <div class="terminal-modal-controls">
+            <div class="control-buttons">
+              <!-- Touch-friendly control buttons will go here -->
+            </div>
+            <form class="console-input console-input--modal" @submit.prevent="sendCommand">
+              <textarea
+                class="console-input__textarea"
+                :placeholder="connected ? 'Send command(s)' : 'Connect to CNC to send commands'"
+                v-model="commandToSend"
+                @keydown="handleKeyDown"
+                :disabled="!connected"
+                rows="4"
+                ref="modalCommandInput"
+              ></textarea>
+              <div class="console-input__history-controls">
+                <button type="button" class="history-btn" @click="navigateHistory('up')" :disabled="!connected" title="Previous command">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
+                  </svg>
+                </button>
+                <button type="button" class="history-btn" @click="navigateHistory('down')" :disabled="!connected" title="Next command">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1z"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="console-input__actions">
+                <button type="submit" class="primary" :disabled="!connected">Send</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -311,6 +443,11 @@ const showGcodeModal = ref(false);
 const modalGcodeOutput = ref<HTMLElement | null>(null);
 const modalGcodeScrollerRef = ref<any>(null);
 const searchQuery = ref('');
+
+// Terminal Modal state
+const showTerminalModal = ref(false);
+const modalTerminalScrollerRef = ref<any>(null);
+const autoScrollTerminalModal = ref(true);
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const isEditMode = ref(false);
@@ -719,6 +856,10 @@ const copyAllTerminalContent = async () => {
   }
 };
 
+const clearTerminal = () => {
+  emit('clear');
+};
+
 const sendCommand = async () => {
   if (!commandToSend.value || !commandToSend.value.trim()) return;
 
@@ -755,6 +896,28 @@ const sendCommand = async () => {
   commandToSend.value = '';
   historyIndex.value = -1;
   currentInput.value = '';
+};
+
+const sendQuickCommand = async (command: string) => {
+  if (!command) return;
+
+  try {
+    await store.addToHistory(command);
+  } catch (error) {
+    console.error('Failed to append command to history:', error);
+  }
+
+  try {
+    await api.sendCommandViaWebSocket({
+      command,
+      displayCommand: command,
+      meta: {
+        sourceId: 'client'
+      }
+    });
+  } catch (error) {
+    console.error('Failed to send quick command via WebSocket:', error);
+  }
 };
 
 const loadCommandHistory = async () => {
@@ -825,6 +988,31 @@ const handleKeyDown = (event: KeyboardEvent) => {
     nextTick(() => {
       target.selectionStart = target.selectionEnd = target.value.length;
     });
+  }
+};
+
+const navigateHistory = (direction: 'up' | 'down') => {
+  if (direction === 'up') {
+    if (commandHistory.value.length === 0) return;
+
+    if (historyIndex.value === -1) {
+      currentInput.value = commandToSend.value;
+      historyIndex.value = commandHistory.value.length - 1;
+    } else if (historyIndex.value > 0) {
+      historyIndex.value--;
+    }
+
+    commandToSend.value = commandHistory.value[historyIndex.value];
+  } else if (direction === 'down') {
+    if (historyIndex.value === -1) return;
+
+    if (historyIndex.value < commandHistory.value.length - 1) {
+      historyIndex.value++;
+      commandToSend.value = commandHistory.value[historyIndex.value];
+    } else {
+      historyIndex.value = -1;
+      commandToSend.value = currentInput.value;
+    }
   }
 };
 
@@ -924,6 +1112,12 @@ onMounted(async () => {
       await nextTick();
       scrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
+
+    // Also auto-scroll modal if open
+    if (showTerminalModal.value && autoScrollTerminalModal.value && modalTerminalScrollerRef.value) {
+      await nextTick();
+      modalTerminalScrollerRef.value.scrollToItem(terminalLines.value.length - 1);
+    }
   });
 });
 
@@ -984,6 +1178,16 @@ watch(showGcodeModal, async (isOpen) => {
     await nextTick();
     if (activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
       scrollToLineCentered(completedUpTo.value);
+    }
+  }
+});
+
+// Watch terminal modal open to auto-scroll to bottom
+watch(showTerminalModal, async (isOpen) => {
+  if (isOpen) {
+    await nextTick();
+    if (autoScrollTerminalModal.value && modalTerminalScrollerRef.value) {
+      modalTerminalScrollerRef.value.scrollToItem(terminalLines.value.length - 1);
     }
   }
 });
@@ -1369,6 +1573,39 @@ h2 {
   height: 18px;
 }
 
+/* Terminal Detach Button */
+.terminal-detach-button {
+  position: absolute;
+  top: 8px;
+  right: 70px;
+  z-index: 10;
+  padding: 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-detach-button:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+  opacity: 1;
+}
+
+.terminal-detach-button svg {
+  width: 18px;
+  height: 18px;
+}
+
 .console-output {
   background: #141414;
   border-radius: var(--radius-small);
@@ -1501,6 +1738,12 @@ h2 {
   font-family: inherit;
   line-height: 1.4;
   overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.console-input__textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .console-input__textarea:disabled {
@@ -1862,6 +2105,12 @@ h2 {
   color: var(--color-text-primary);
 }
 
+.modal-header-actions {
+  display: flex;
+  gap: var(--gap-sm);
+  align-items: center;
+}
+
 .modal-close {
   padding: 6px;
   background: transparent;
@@ -2133,6 +2382,177 @@ h2 {
   color: black;
   padding: 1px 2px;
   border-radius: 2px;
+}
+
+/* Terminal Modal Styles */
+.modal-content--terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--gap-md);
+  gap: var(--gap-md);
+}
+
+.terminal-quick-controls {
+  display: flex;
+  gap: var(--gap-sm);
+  flex-wrap: wrap;
+  padding: var(--gap-sm);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  border: 1px solid var(--color-border);
+}
+
+.quick-control-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--gradient-accent);
+  border: none;
+  border-radius: var(--radius-small);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  min-width: 100px;
+  justify-content: center;
+}
+
+.quick-control-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-elevated);
+  opacity: 0.9;
+}
+
+.quick-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-control-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.quick-control-btn--danger {
+  background: var(--gradient-danger, linear-gradient(135deg, #f87171 0%, #dc2626 100%));
+}
+
+.terminal-modal-viewer {
+  background: #141414;
+  padding: var(--gap-xs);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  position: relative;
+}
+
+.terminal-modal-copy-button {
+  position: absolute;
+  top: 8px;
+  right: 28px;
+  z-index: 10;
+  padding: 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-modal-copy-button:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+  opacity: 1;
+}
+
+.terminal-modal-copy-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.terminal-modal-copy-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.terminal-modal-controls {
+  display: flex;
+  flex-direction: column;
+  padding: var(--gap-sm);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  border: 1px solid var(--color-border);
+}
+
+.control-buttons {
+  display: flex;
+  gap: var(--gap-sm);
+  flex-wrap: wrap;
+}
+
+.console-input--modal {
+  margin: 0;
+  align-items: stretch;
+}
+
+.console-input--modal .console-input__textarea {
+  flex: 1;
+  height: auto;
+  min-height: 100px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.console-input__history-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: var(--gap-xs);
+  margin-right: 0;
+  align-self: stretch;
+}
+
+.history-btn {
+  flex: 1;
+  padding: 0 20px;
+  background: var(--gradient-accent);
+  border: none;
+  border-radius: var(--radius-small);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  min-width: 50px;
+}
+
+.history-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.history-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.console-input--modal .console-input__actions {
+  align-items: stretch;
 }
 </style>
 
