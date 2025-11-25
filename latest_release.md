@@ -1,5 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Start job now requires a long press for added safety
-- Improved controls bindings layout
+### ✨ New Features
+- Added ability to detach the terminal into a separate window for improved workflow flexibility
