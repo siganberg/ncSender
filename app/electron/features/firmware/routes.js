@@ -442,9 +442,16 @@ export async function initializeFirmwareOnConnection(cncController) {
 
       for (const [id, value] of Object.entries(currentValues)) {
         if (!firmwareData.settings[id]) {
-          firmwareData.settings[id] = { id: parseInt(id, 10) };
+          // Setting doesn't exist - create minimal entry
+          firmwareData.settings[id] = { id: parseInt(id, 10), value };
+        } else {
+          // Setting exists - preserve ALL existing properties (name, unit, dataType, format, min, max, halDetails, group, etc.)
+          // Only update the value property to avoid losing metadata
+          firmwareData.settings[id] = {
+            ...firmwareData.settings[id],
+            value
+          };
         }
-        firmwareData.settings[id].value = value;
       }
       firmwareData.timestamp = new Date().toISOString();
 

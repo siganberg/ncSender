@@ -1592,34 +1592,35 @@ const clearFirmwareChanges = () => {
   importSummary.value = null;
 };
 
-// Export firmware settings to JSON file
+// Export firmware settings to GRBL text format
 const exportFirmwareSettings = () => {
   if (!firmwareData.value) {
     return;
   }
 
-  // Create a JSON blob with current settings values
-  const exportData = {};
+  // Create text content with $<id>=<value> format, one per line
+  const lines = [];
   for (const [id, setting] of Object.entries(firmwareData.value.settings)) {
-    exportData[id] = setting.value;
+    lines.push(`$${id}=${setting.value}`);
   }
 
-  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const textContent = lines.join('\n');
+  const blob = new Blob([textContent], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `firmware-settings-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `firmware-settings-${new Date().toISOString().split('T')[0]}.grbl`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
 
-// Import firmware settings from JSON file
+// Import firmware settings from JSON or GRBL text format
 const importFirmwareSettings = () => {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'application/json';
+  input.accept = '.json,.grbl,.txt';
 
   input.onchange = async (e) => {
     const file = e.target.files[0];
@@ -1627,7 +1628,36 @@ const importFirmwareSettings = () => {
 
     try {
       const text = await file.text();
-      const importedSettings = JSON.parse(text);
+      let importedSettings = {};
+
+      // Auto-detect format: try JSON first, then fallback to GRBL text format
+      try {
+        // Try parsing as JSON
+        importedSettings = JSON.parse(text);
+      } catch (jsonError) {
+        // Not JSON, parse as GRBL text format ($<id>=<value>)
+        const lines = text.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          // Skip empty lines and comments
+          if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) {
+            continue;
+          }
+
+          // Match $<id>=<value> format
+          const match = trimmed.match(/^\$(\d+)\s*=\s*(.+)$/);
+          if (match) {
+            const id = match[1];
+            const value = match[2].trim();
+            importedSettings[id] = value;
+          }
+        }
+
+        // If no valid settings were parsed, throw error
+        if (Object.keys(importedSettings).length === 0) {
+          throw new Error('No valid settings found in file. Expected format: $1=value or JSON');
+        }
+      }
 
       // Track only changes that differ from current values
       let changesCount = 0;

@@ -103,16 +103,23 @@ export function registerCncEventHandlers({
       }
 
       if (!firmwareData.settings) firmwareData.settings = {};
-      if (!firmwareData.settings[id]) {
-        firmwareData.settings[id] = { id: parseInt(id, 10) };
-      }
 
       // Check if value actually changed
-      const oldValue = firmwareData.settings[id].value;
+      const oldValue = firmwareData.settings[id]?.value;
       const newValue = String(value);
       const valueChanged = oldValue !== newValue;
 
-      firmwareData.settings[id].value = newValue;
+      if (!firmwareData.settings[id]) {
+        // Setting doesn't exist - create minimal entry
+        firmwareData.settings[id] = { id: parseInt(id, 10), value: newValue };
+      } else {
+        // Setting exists - preserve ALL existing properties (name, unit, dataType, format, min, max, halDetails, group, etc.)
+        // Only update the value property to avoid losing metadata
+        firmwareData.settings[id] = {
+          ...firmwareData.settings[id],
+          value: newValue
+        };
+      }
       firmwareData.timestamp = new Date().toISOString();
 
       try {
