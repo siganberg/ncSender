@@ -29,8 +29,8 @@
             <th class="col-tool-number">Tool #</th>
             <th class="col-description">Description</th>
             <th class="col-type">Type</th>
-            <th class="col-diameter">Diameter (mm)</th>
-            <th class="col-tlo">TLO (mm)</th>
+            <th class="col-diameter">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
+            <th class="col-tlo">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
             <th class="col-actions">Actions</th>
           </tr>
         </thead>
@@ -42,8 +42,8 @@
             </td>
             <td class="col-description">{{ tool.name }}</td>
             <td class="col-type">{{ formatType(tool.type) }}</td>
-            <td class="col-diameter">{{ tool.diameter.toFixed(3) }}</td>
-            <td class="col-tlo">{{ tool.offsets.tlo.toFixed(3) }}</td>
+            <td class="col-diameter">{{ formatCoordinate(tool.diameter, appStore.unitsPreference.value) }}</td>
+            <td class="col-tlo">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</td>
             <td class="col-actions">
               <div class="tool-actions">
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
@@ -139,14 +139,14 @@
 
           <!-- Diameter -->
           <div class="form-group">
-            <label class="form-label required">Diameter (mm)</label>
+            <label class="form-label required">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
             <input
               type="number"
               class="form-input"
               v-model.number="toolForm.diameter"
-              min="0.001"
-              step="0.001"
-              placeholder="6.350"
+              min="0.0001"
+              :step="diameterStep"
+              :placeholder="diameterPlaceholder"
               required
             >
             <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
@@ -154,13 +154,13 @@
 
           <!-- TLO -->
           <div class="form-group">
-            <label class="form-label">Tool Length Offset (mm)</label>
+            <label class="form-label">Tool Length Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
             <input
               type="number"
               class="form-input"
               v-model.number="toolForm.offsets.tlo"
-              step="0.001"
-              placeholder="0.000"
+              :step="diameterStep"
+              :placeholder="tloPlaceholder"
             >
           </div>
 
@@ -313,6 +313,8 @@ import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
+import { formatCoordinate, getDistanceUnitLabel, parseDistanceInput } from '@/lib/units';
+import { useAppStore } from '@/composables/use-app-store';
 
 interface Tool {
   id: number;
@@ -365,8 +367,14 @@ const emit = defineEmits<{
   'update:showProbeButton': [value: boolean];
 }>();
 
+// App store for units preference
+const appStore = useAppStore();
+
 // Computed
 const maxToolCount = computed(() => props.maxToolCount || 1);
+const diameterStep = computed(() => appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001);
+const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
+const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
 // State
 const tools = ref<Tool[]>([]);
@@ -586,7 +594,16 @@ const addNewTool = () => {
 
 const editTool = (tool: Tool) => {
   editingTool.value = tool;
-  toolForm.value = JSON.parse(JSON.stringify(tool));
+  const toolCopy = JSON.parse(JSON.stringify(tool));
+
+  // Convert values to display units if in imperial mode
+  const units = appStore.unitsPreference.value;
+  if (units === 'imperial') {
+    toolCopy.diameter = parseFloat((toolCopy.diameter / 25.4).toFixed(4));
+    toolCopy.offsets.tlo = parseFloat((toolCopy.offsets.tlo / 25.4).toFixed(4));
+  }
+
+  toolForm.value = toolCopy;
   formErrors.value = {};
   showToolForm.value = true;
 };
@@ -622,6 +639,14 @@ const saveTool = async () => {
 
   try {
     const toolData = { ...toolForm.value };
+
+    // Convert values back to mm if in imperial mode
+    const units = appStore.unitsPreference.value;
+    if (units === 'imperial') {
+      toolData.diameter = toolData.diameter * 25.4;
+      toolData.offsets.tlo = toolData.offsets.tlo * 25.4;
+    }
+
     console.log('Saving tool data:', JSON.stringify(toolData));
 
     if (editingTool.value) {
