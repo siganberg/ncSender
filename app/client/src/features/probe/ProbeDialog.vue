@@ -82,7 +82,7 @@
                       type="number"
                       step="0.1"
                       min="1"
-                      max="5"
+                      max="15"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zPlunge }"
                       :disabled="isProbing"
@@ -557,8 +557,8 @@ const validateBallPointDiameter = () => {
 };
 
 const validateZPlunge = () => {
-  if (zPlunge.value < 1 || zPlunge.value > 5) {
-    errors.value.zPlunge = 'Must be between 1 and 5mm';
+  if (zPlunge.value < 1 || zPlunge.value > 15) {
+    errors.value.zPlunge = 'Must be between 1 and 15mm';
   } else {
     errors.value.zPlunge = '';
   }
