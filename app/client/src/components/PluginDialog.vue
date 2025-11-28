@@ -198,7 +198,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: var(--gap-xs);
 }
 
 .plugin-dialog {

@@ -2,6 +2,16 @@
 
 This file contains development preferences and patterns to follow when working on the ncSender project.
 
+## File Paths
+
+### Plugin Development
+- **CRITICAL**: Always edit plugin source code in `/ncSender.plugins/` directory
+- **NEVER**: Edit plugins in production path (`~/Library/Application Support/ncSender/plugins/`)
+- **Source Locations**:
+  - Plugin source: `/Users/francis/projects/ncSender/ncSender.plugins/`
+  - Production path: `/Users/francis/Library/Application Support/ncSender/plugins/` (READ ONLY for reference)
+- **Rationale**: Changes to production files are overwritten on build/reload and do not persist in source control
+
 ## Architecture Patterns
 
 ### Vertical/Feature Architecture
