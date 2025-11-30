@@ -90,6 +90,9 @@ export class CommandProcessor {
     const m6Parse = parseM6Command(command);
     const isValidM6 = m6Parse?.matched && m6Parse.toolNumber !== null;
 
+    // Check if this is a $TLS command (case insensitive)
+    const isTLSCommand = command.trim().toUpperCase() === '$TLS';
+
     // Check for same-tool M6 command
     const currentTool = machineState?.tool ?? this.cncController.lastStatus?.tool ?? 0;
     const sameToolCheck = checkSameToolChange(command, currentTool);
@@ -146,10 +149,19 @@ export class CommandProcessor {
     try {
       const commands = await this.pluginManager.processCommand(command, context);
 
-      // If this is a valid M6 command, insert (MSG, TOOL CHANGE COMPLETE) at the end
+      // If this is a valid M6 command, insert (MSG, TOOL_CHANGE_COMPLETE) at the end
       if (isValidM6 && !sameToolCheck.isSameTool) {
         commands.push({
-          command: '(MSG, TOOL CHANGE COMPLETE)',
+          command: '(MSG, TOOL_CHANGE_COMPLETE)',
+          displayCommand: null,
+          isOriginal: false
+        });
+      }
+
+      // If this is a $TLS command, insert (MSG, TOOL_CHANGE_COMPLETE) at the end
+      if (isTLSCommand) {
+        commands.push({
+          command: '(MSG, TOOL_CHANGE_COMPLETE)',
           displayCommand: null,
           isOriginal: false
         });
