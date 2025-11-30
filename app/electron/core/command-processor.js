@@ -146,6 +146,15 @@ export class CommandProcessor {
     try {
       const commands = await this.pluginManager.processCommand(command, context);
 
+      // If this is a valid M6 command, insert (MSG, TOOL CHANGE COMPLETE) at the end
+      if (isValidM6 && !sameToolCheck.isSameTool) {
+        commands.push({
+          command: '(MSG, TOOL CHANGE COMPLETE)',
+          displayCommand: null,
+          isOriginal: false
+        });
+      }
+
       return {
         shouldContinue: true,
         commands
