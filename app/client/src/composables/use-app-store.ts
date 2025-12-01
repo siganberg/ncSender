@@ -667,7 +667,7 @@ export function initializeStore() {
           saveGCodeToIDB(data.filename || '', content)
             .then(({ lineCount }) => {
               gcodeLineCount.value = lineCount;
-              gcodeContent.value = '';
+              gcodeContent.value = content; // Keep in memory for fast virtual scroll access
               debugLog(`G-code saved to IndexedDB: ${lineCount} lines`);
 
               // Emit content-ready event for visualizer
@@ -797,7 +797,7 @@ export async function seedInitialState() {
         }
         gcodeLineCount.value = lines.length;
         gcodeFilename.value = gcodeData.filename || '';
-        gcodeContent.value = ''; // Keep empty for memory efficiency
+        gcodeContent.value = gcodeData.content; // Keep in memory for fast virtual scroll access
       }
     } catch (error) {
       debugLog('[Store] No existing G-code to load on startup (this is normal for first load)');

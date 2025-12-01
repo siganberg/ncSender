@@ -155,6 +155,7 @@
           >
             <template #default="{ item }">
               <div
+                v-memo="[getGcodeText(item.index), isCurrentLine(item.index), throttledCompletedUpTo]"
                 class="gcode-line"
                 :class="getGcodeLineClasses(item.index)"
                 :style="{ height: rowHeight + 'px' }"
@@ -243,6 +244,7 @@
             >
               <template #default="{ item }">
                 <div
+                  v-memo="[getGcodeText(item.index), isCurrentLine(item.index), throttledCompletedUpTo, searchQuery]"
                   class="gcode-line"
                   :class="getModalGcodeLineClasses(item.index)"
                   :style="{ height: rowHeight + 'px' }"
@@ -572,7 +574,7 @@ const executingTool = ref<string | null>(null);
 // G-code viewer state (virtualized via RecycleScroller)
 const lineHeight = ref(18); // height of a .gcode-line (no gap)
 const rowHeight = computed(() => lineHeight.value); // fixed per-row height
-const overscan = 50; // Increased buffer to reduce flickering during auto-scroll
+const overscan = 1000; // Very large buffer for ultra-smooth fast scrolling (VS Code style)
 const totalLines = computed(() => {
   const count = store.gcodeLineCount?.value ?? 0;
   if (count > 0) return count;
@@ -595,11 +597,29 @@ const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'runn
 
 // Minimal line cache for IDB mode
 const gcodeCache = reactive<{ [key: number]: string }>({});
+
+// Cache for split lines to avoid repeated splitting during virtual scroll
+let cachedSplitLines: string[] | null = null;
+let cachedContentRef: string | null = null;
+
 const memLines = computed(() => {
   const content = store.gcodeContent.value;
-  if (!content) return null;
+  if (!content) {
+    cachedSplitLines = null;
+    cachedContentRef = null;
+    return null;
+  }
+
+  // Return cached split if content hasn't changed
+  if (cachedSplitLines && cachedContentRef === content) {
+    return cachedSplitLines;
+  }
+
+  // Split and cache for subsequent accesses
   const arr = content.split('\n');
   while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop();
+  cachedSplitLines = arr;
+  cachedContentRef = content;
   return arr;
 });
 
