@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed issue handling large g-code programs
+### 🔧 Improvements
+- Improved G-Code preview rendering performance for smoother visualization
