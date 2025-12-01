@@ -2,6 +2,19 @@
   <section class="viewport">
     <!-- Full canvas with floating toolbars -->
     <div ref="canvas" class="viewport__canvas">
+      <!-- Loading Overlay -->
+      <div v-if="isLoading" class="loading-overlay">
+        <div class="loading-content">
+          <div class="loading-header">
+            <span class="loading-message">{{ loadingMessage }}</span>
+            <div class="loading-percent">{{ loadingProgress }}%</div>
+          </div>
+          <div class="loading-bar-container">
+            <div class="loading-bar" :style="{ width: `${loadingProgress}%` }"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Top floating toolbar -->
       <div class="floating-toolbar floating-toolbar--top">
         <div class="view-buttons" role="group" aria-label="Change viewport">
@@ -439,6 +452,8 @@ const ENABLE_TOOL_BUTTON_SNAP = false;
 // Reactive state
 const hasFile = ref(false);
 const isLoading = ref(false);
+const loadingProgress = ref(0);
+const loadingMessage = ref('');
 const showRapids = ref(true); // Default to shown like gSender
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
@@ -1127,8 +1142,24 @@ const handleFileLoad = async (event: Event) => {
   }
 };
 
-const handleGCodeUpdate = async (data: { filename: string; content: string; timestamp: string }) => {
+const handleGCodeUpdate = async (data: { filename: string; content?: string; timestamp: string }) => {
   try {
+    // If no content provided, show loading and wait for gcode-content-ready event (new metadata-only flow)
+    if (!data.content) {
+      console.log('[GCodeVisualizer] Metadata received, waiting for content download to complete');
+      isLoading.value = true;
+      loadingMessage.value = 'Downloading G-code...';
+      loadingProgress.value = 0;
+      return;
+    }
+
+    const content = data.content;
+
+    // Show loading for rendering
+    isLoading.value = true;
+    loadingMessage.value = 'Rendering toolpath...';
+    loadingProgress.value = 50;
+
     // Reset completed lines before rendering new G-code
     if (gcodeVisualizer) {
       gcodeVisualizer.resetCompletedLines();
@@ -1138,13 +1169,15 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     const gridBounds = computeGridBoundsFrom(props.workOffset);
     gcodeVisualizer.setGridBounds(gridBounds);
 
-    gcodeVisualizer.render(data.content);
+    loadingProgress.value = 70;
+    gcodeVisualizer.render(content);
+    loadingProgress.value = 90;
 
     // Get tool colors from visualizer
     toolPathColors.value = gcodeVisualizer.getToolsInfo();
 
     // Detect tools used based on M6 lines with tool numbers
-    toolsUsed.value = extractToolsFromGCode(data.content);
+    toolsUsed.value = extractToolsFromGCode(content);
 
     // Check if G-code has out of bounds movements (only when sender is idle and not tool changing)
     const currentStatus = props.senderStatus?.toLowerCase();
@@ -1202,8 +1235,15 @@ const handleGCodeUpdate = async (data: { filename: string; content: string; time
     axisLabelsGroup = createDynamicAxisLabels(gcodeBounds);
     scene.add(axisLabelsGroup);
     updatePointerScale();
+
+    // Complete loading
+    loadingProgress.value = 100;
+    setTimeout(() => {
+      isLoading.value = false;
+    }, 300);
   } catch (error) {
     console.error('Error rendering G-code:', error);
+    isLoading.value = false;
   }
 };
 
@@ -2315,6 +2355,14 @@ onMounted(async () => {
 
   // Set up WebSocket listeners for G-code events
   api.onGCodeUpdated(handleGCodeUpdate);
+  api.on('gcode-content-ready', handleGCodeUpdate);
+
+  // Listen for download progress
+  api.on('gcode-download-progress', (progress: { percent: number }) => {
+    if (isLoading.value && loadingMessage.value === 'Downloading G-code...') {
+      loadingProgress.value = Math.min(Math.round(progress.percent * 0.5), 50); // 0-50%
+    }
+  });
 
   // Check if there's already G-code loaded (for page reloads)
   // The WebSocket sends gcode-updated on connection, but there's a race condition
@@ -2513,6 +2561,67 @@ watch(() => store.status.mistCoolant, (newValue) => {
 </script>
 
 <style scoped>
+/* Loading Overlay */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-content {
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 24px 32px;
+  min-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.loading-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.loading-message {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.loading-percent {
+  font-size: 32px;
+  font-weight: bold;
+  color: var(--color-primary);
+  min-width: 80px;
+  text-align: right;
+}
+
+.loading-bar-container {
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.loading-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+  transition: width 0.3s ease;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+}
+
 /* Disable control buttons when not homed */
 .controls-disabled {
   opacity: 0.5;

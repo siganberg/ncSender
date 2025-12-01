@@ -2127,7 +2127,7 @@ onMounted(async () => {
   // and initialized in main.ts before the app mounts
 
   // Listen for gcode-updated events to check workspace mismatch
-  api.onGCodeUpdated((data: { filename: string; content: string; detectedWorkspace?: string; timestamp: string }) => {
+  api.onGCodeUpdated((data: { filename: string; totalLines?: number; size?: number; detectedWorkspace?: string; timestamp: string }) => {
     if (data.detectedWorkspace && data.detectedWorkspace !== workspace.value) {
       detectedWorkspace.value = data.detectedWorkspace;
       showWorkspaceMismatchDialog.value = true;

@@ -647,19 +647,20 @@ export function createWebSocketLayer({
     updateSenderStatus();
     sendWsMessage(ws, 'server-state-updated', serverState);
 
-    // Send loaded G-code content if available (always from cache file)
+    // Send loaded G-code metadata if available (not full content)
     if (serverState.jobLoaded?.filename) {
       try {
         const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
-        const content = await fs.readFile(cachePath, 'utf8');
+        const stats = await fs.stat(cachePath);
         const gcodeMessage = {
           filename: serverState.jobLoaded.filename,
-          content: content,
+          totalLines: serverState.jobLoaded.totalLines,
+          size: stats.size,
           timestamp: new Date().toISOString()
         };
         sendWsMessage(ws, 'gcode-updated', gcodeMessage);
       } catch (error) {
-        log('Failed to read cached G-code:', error);
+        log('Failed to read cached G-code metadata:', error);
       }
     }
 

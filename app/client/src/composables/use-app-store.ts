@@ -647,48 +647,69 @@ export function initializeStore() {
     }
   });
 
-  // G-code content updates
-  api.onGCodeUpdated((data) => {
-    if (data?.content) {
-      // Only reset completed tracking if this is a DIFFERENT file than what's currently loaded
-      // Check both the local filename AND the server's loaded job filename
-      const isNewFile = data.filename !== gcodeFilename.value &&
-                       data.filename !== serverState.jobLoaded?.filename;
-      const hasActiveJob = serverState.jobLoaded?.status === 'running' ||
-                          serverState.jobLoaded?.status === 'paused' ||
-                          serverState.jobLoaded?.status === 'stopped' ||
-                          serverState.jobLoaded?.status === 'completed';
+  // G-code content updates (now receives metadata, downloads content via HTTP)
+  api.onGCodeUpdated(async (data) => {
+    if (data?.filename) {
+      // Update metadata immediately
+      gcodeFilename.value = data.filename;
+      if (data.totalLines) {
+        gcodeLineCount.value = data.totalLines;
+      }
 
-      // Reset only if it's a new file OR no active job state
-      // (gcodeCompletedUpTo removed - viewers now use jobLoaded.currentLine)
+      // Download content via HTTP streaming
+      try {
+        debugLog(`Downloading G-code file via HTTP: ${data.filename}`);
+        const content = await api.downloadGCodeFile((progress) => {
+          api.emit('gcode-download-progress', { percent: progress.percent });
+        });
 
-      if (isIDBEnabled()) {
-        saveGCodeToIDB(data.filename || '', data.content)
-          .then(({ lineCount }) => {
-            gcodeLineCount.value = lineCount;
-            gcodeFilename.value = data.filename || '';
-            // Avoid keeping the entire content string in reactive state for memory
-            gcodeContent.value = '';
-          })
-          .catch((err) => {
-            console.error('Failed to persist G-code to IndexedDB:', err);
-            // Fallback: keep in memory if save failed
-            const lines = data.content.split('\n');
-            while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-              lines.pop();
-            }
-            gcodeContent.value = data.content;
-            gcodeFilename.value = data.filename || '';
-            gcodeLineCount.value = lines.length;
+        if (isIDBEnabled()) {
+          saveGCodeToIDB(data.filename || '', content)
+            .then(({ lineCount }) => {
+              gcodeLineCount.value = lineCount;
+              gcodeContent.value = '';
+              debugLog(`G-code saved to IndexedDB: ${lineCount} lines`);
+
+              // Emit content-ready event for visualizer
+              api.emit('gcode-content-ready', {
+                filename: data.filename,
+                content,
+                timestamp: new Date().toISOString()
+              });
+            })
+            .catch((err) => {
+              console.error('Failed to persist G-code to IndexedDB:', err);
+              const lines = content.split('\n');
+              while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+                lines.pop();
+              }
+              gcodeContent.value = content;
+              gcodeLineCount.value = lines.length;
+
+              // Emit content-ready event even on fallback
+              api.emit('gcode-content-ready', {
+                filename: data.filename,
+                content,
+                timestamp: new Date().toISOString()
+              });
+            });
+        } else {
+          const lines = content.split('\n');
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+          gcodeContent.value = content;
+          gcodeLineCount.value = lines.length;
+
+          // Emit content-ready event
+          api.emit('gcode-content-ready', {
+            filename: data.filename,
+            content,
+            timestamp: new Date().toISOString()
           });
-      } else {
-        const lines = data.content.split('\n');
-        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-          lines.pop();
         }
-        gcodeContent.value = data.content;
-        gcodeFilename.value = data.filename || '';
-        gcodeLineCount.value = lines.length;
+      } catch (err) {
+        console.error('Failed to download G-code file:', err);
       }
     }
   });

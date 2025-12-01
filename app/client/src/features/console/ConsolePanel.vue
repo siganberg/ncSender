@@ -125,6 +125,19 @@
         <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
       <div v-else class="gcode-preview">
+        <!-- Loading Overlay for G-Code Preview -->
+        <div v-if="gcodeLoading" class="gcode-loading-overlay">
+          <div class="gcode-loading-content">
+            <div class="gcode-loading-header">
+              <span class="gcode-loading-message">{{ gcodeLoadingMessage }}</span>
+              <div class="gcode-loading-percent">{{ gcodeLoadingProgress }}%</div>
+            </div>
+            <div class="gcode-loading-bar-container">
+              <div class="gcode-loading-bar" :style="{ width: `${gcodeLoadingProgress}%` }"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="gcode-content" ref="gcodeOutput">
           <button class="gcode-detach-button" @click="showGcodeModal = true" title="Open in larger view">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -549,6 +562,11 @@ const terminalLines = computed(() => (props.lines || []).filter(l => {
 // Plugin Tools state
 const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);
 const loadingTools = ref(false);
+
+// G-Code loading state
+const gcodeLoading = ref(false);
+const gcodeLoadingProgress = ref(0);
+const gcodeLoadingMessage = ref('');
 const executingTool = ref<string | null>(null);
 
 // G-code viewer state (virtualized via RecycleScroller)
@@ -787,6 +805,30 @@ function measureLineHeight() {
 }
 
 onMounted(() => {
+  // Listen for G-code loading events
+  api.on('gcode-updated', (data: any) => {
+    if (data?.filename && !data?.content) {
+      // Metadata received, show loading
+      gcodeLoading.value = true;
+      gcodeLoadingMessage.value = 'Downloading G-code...';
+      gcodeLoadingProgress.value = 0;
+    }
+  });
+
+  api.on('gcode-download-progress', (progress: { percent: number }) => {
+    if (gcodeLoading.value) {
+      gcodeLoadingProgress.value = Math.round(progress.percent);
+    }
+  });
+
+  api.on('gcode-content-ready', () => {
+    // Download complete, hide loading
+    gcodeLoadingProgress.value = 100;
+    setTimeout(() => {
+      gcodeLoading.value = false;
+    }, 500);
+  });
+
   nextTick(() => {
     measureLineHeight();
     // Warm up cache for initial visible window
@@ -1878,6 +1920,68 @@ h2 {
   flex: 1;
   min-height: 0;
   gap: var(--gap-xs);
+  position: relative;
+}
+
+/* G-Code Loading Overlay */
+.gcode-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.gcode-loading-content {
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 24px 32px;
+  min-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.gcode-loading-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.gcode-loading-message {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.gcode-loading-percent {
+  font-size: 32px;
+  font-weight: bold;
+  color: var(--color-primary);
+  min-width: 80px;
+  text-align: right;
+}
+
+.gcode-loading-bar-container {
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.gcode-loading-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+  transition: width 0.3s ease;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
 }
 
 .gcode-footer {

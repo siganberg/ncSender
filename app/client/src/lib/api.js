@@ -368,6 +368,33 @@ class NCClient {
     return await response.json();
   }
 
+  async downloadGCodeFile(onProgress) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/current/download`);
+    if (!response.ok) throw new Error('Failed to download G-code file');
+
+    const contentLength = response.headers.get('Content-Length');
+    const total = contentLength ? parseInt(contentLength, 10) : 0;
+    let loaded = 0;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let content = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      loaded += value.length;
+      content += decoder.decode(value, { stream: true });
+
+      if (onProgress && total > 0) {
+        onProgress({ loaded, total, percent: (loaded / total) * 100 });
+      }
+    }
+
+    return content;
+  }
+
   async clearGCode() {
     const response = await fetch(`${this.baseUrl}/api/gcode-preview/clear`, {
       method: 'POST',

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
 import { pluginManager } from '../../core/plugin-manager.js';
@@ -105,10 +106,14 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Detect workspace from G-code content
       const detectedWorkspace = detectWorkspace(content);
 
-      // Broadcast G-code content to all connected clients for visualization
+      // Get file stats for metadata
+      const stats = await fs.stat(CACHE_FILE_PATH);
+
+      // Broadcast G-code metadata to all connected clients (not full content)
       const gcodeMessage = {
-        filename: originalName,  // Use original filename for display
-        content: content,
+        filename: originalName,
+        totalLines: content.split('\n').length,
+        size: stats.size,
         detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
       };
@@ -159,6 +164,20 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     } catch (error) {
       log('Error listing G-code files:', error);
       res.status(500).json({ error: 'Failed to list files' });
+    }
+  });
+
+  // Stream current cached G-code file for download
+  router.get('/current/download', async (req, res) => {
+    try {
+      const stats = await fs.stat(CACHE_FILE_PATH);
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Length', stats.size);
+      const stream = createReadStream(CACHE_FILE_PATH);
+      stream.pipe(res);
+    } catch (error) {
+      log('Error streaming cached G-code file:', error);
+      res.status(404).json({ error: 'File not found' });
     }
   });
 
@@ -226,10 +245,14 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       // Detect workspace from G-code content
       const detectedWorkspace = detectWorkspace(content);
 
-      // Broadcast G-code content to all connected clients for visualization
+      // Get file stats for metadata
+      const stats = await fs.stat(CACHE_FILE_PATH);
+
+      // Broadcast G-code metadata to all connected clients (not full content)
       const gcodeMessage = {
-        filename: filename,  // Use original filename for display
-        content: content,
+        filename: filename,
+        totalLines: content.split('\n').length,
+        size: stats.size,
         detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
       };
