@@ -83,16 +83,23 @@ const cleanupStyles = () => {
   modalStylesBody.forEach(style => style.remove());
 };
 
+let scriptsExecuted = false;
+
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     document.body.style.overflow = 'hidden';
+    scriptsExecuted = false;
     nextTick(() => {
       nextTick(() => {
-        executeScripts();
+        if (!scriptsExecuted) {
+          scriptsExecuted = true;
+          executeScripts();
+        }
       });
     });
   } else {
     document.body.style.overflow = '';
+    scriptsExecuted = false;
     cleanupStyles();
   }
 });
@@ -101,7 +108,10 @@ watch(() => props.content, () => {
   if (props.isOpen) {
     nextTick(() => {
       nextTick(() => {
-        executeScripts();
+        if (!scriptsExecuted) {
+          scriptsExecuted = true;
+          executeScripts();
+        }
       });
     });
   }
