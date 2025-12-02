@@ -145,7 +145,7 @@
               class="form-input"
               v-model.number="toolForm.diameter"
               min="0.0001"
-              :step="diameterStep"
+              step="any"
               :placeholder="diameterPlaceholder"
               required
             >
@@ -159,7 +159,7 @@
               type="number"
               class="form-input"
               v-model.number="toolForm.offsets.tlo"
-              :step="diameterStep"
+              step="any"
               :placeholder="tloPlaceholder"
             >
           </div>
