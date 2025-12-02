@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Improved G-Code preview rendering performance for smoother visualization
+### 🐛 Bug Fixes
+- Fixed validation issue affecting data input
