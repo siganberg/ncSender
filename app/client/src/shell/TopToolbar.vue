@@ -31,6 +31,54 @@
           <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
         </select>
       </div>
+      <button
+        class="machine-info-button"
+        @click="showMachineInfo = !showMachineInfo"
+        @blur="handleMachineInfoBlur"
+        title="Machine Information"
+      >
+        <svg width="28" height="28"><use href="#emoji-cpu"></use></svg>
+      </button>
+      <div v-if="showMachineInfo" class="machine-info-tooltip">
+        <div class="machine-info-header">
+          <h3>Machine Information</h3>
+        </div>
+        <div class="machine-info-content">
+          <div class="machine-info-section">
+            <h4>Pins</h4>
+            <div class="pins-grid">
+              <div class="pin-item">
+                <span class="pin-name">X Limit</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('X') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">Y Limit</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('Y') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">Z Limit</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('Z') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">A Limit</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('A') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">Probe</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('P') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">TLS</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('T') }"></span>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">Door</span>
+                <span class="pin-led" :class="{ 'pin-led--on': getPinState('D') }"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="toolbar__center">
       <div class="machine-state">
@@ -163,6 +211,31 @@ const unitDisplayText = computed(() => {
 });
 
 const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
+
+// Machine info tooltip state
+const showMachineInfo = ref(false);
+
+const getPinState = (pinKey: string): boolean => {
+  // Special mapping for specific pins
+  if (pinKey === 'P') {
+    // Probe state from machineState.probeActive
+    return store.status.probeActive || false;
+  }
+
+  // Parse from Pn string (e.g., "XYZP" means X, Y, Z, and P are active)
+  const pnString = store.status.Pn || '';
+  return pnString.includes(pinKey);
+};
+
+const handleMachineInfoBlur = (event: FocusEvent) => {
+  // Close tooltip when clicking outside
+  const relatedTarget = event.relatedTarget as HTMLElement;
+  if (!relatedTarget || !relatedTarget.closest('.machine-info-tooltip')) {
+    setTimeout(() => {
+      showMachineInfo.value = false;
+    }, 150);
+  }
+};
 
 const updateState = computed(() => props.updateState);
 const updateSupported = computed(() => Boolean(updateState.value?.supported));
@@ -359,6 +432,123 @@ const onWorkspaceChange = (e: Event) => {
   border-radius: var(--radius-small);
   padding: 4px 8px;
   font-size: 0.95rem;
+}
+
+.machine-info-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  padding: 0;
+}
+
+.machine-info-button:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: var(--color-primary);
+}
+
+.machine-info-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 280px;
+  max-width: 400px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-elevated);
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.machine-info-header {
+  padding: var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.machine-info-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.machine-info-content {
+  padding: var(--gap-md);
+}
+
+.machine-info-section h4 {
+  margin: 0 0 var(--gap-sm) 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pins-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--gap-sm);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+}
+
+.pin-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: monospace;
+}
+
+.pin-led {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dc3545;
+  box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
+  transition: all 0.3s ease;
+}
+
+.pin-led--on {
+  background: #28a745;
+  box-shadow: 0 0 12px rgba(40, 167, 69, 0.8);
+}
+
+.empty-state {
+  padding: var(--gap-md);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
 }
 
 .unit-display {

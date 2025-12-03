@@ -234,6 +234,14 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
     status.toolLengthSet = (report as any).toolLengthSet;
   }
 
+  if (typeof (report as any).probeActive === 'boolean') {
+    status.probeActive = (report as any).probeActive;
+  }
+
+  if (typeof (report as any).Pn === 'string') {
+    status.Pn = (report as any).Pn;
+  }
+
   if (typeof report.homed === 'boolean') {
     status.homed = report.homed;
   }
