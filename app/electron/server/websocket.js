@@ -30,8 +30,7 @@ const sanitizeForJson = (value) => JSON.parse(JSON.stringify(value, (key, item) 
       || key === 'jobPauseAt'
       || key === 'jobPausedTotalSec'
       || key === 'feedRateCommanded'
-      || key === 'Bf'
-      || key === 'Pn') {
+      || key === 'Bf') {
     return undefined;
   }
   if (typeof item === 'function') {

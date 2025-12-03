@@ -64,12 +64,8 @@
                 <span class="pin-led" :class="{ 'pin-led--on': getPinState('A') }"></span>
               </div>
               <div class="pin-item">
-                <span class="pin-name">Probe</span>
+                <span class="pin-name">Probe/TLS</span>
                 <span class="pin-led" :class="{ 'pin-led--on': getPinState('P') }"></span>
-              </div>
-              <div class="pin-item">
-                <span class="pin-name">TLS</span>
-                <span class="pin-led" :class="{ 'pin-led--on': getPinState('T') }"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">Door</span>
@@ -216,12 +212,6 @@ const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
 const showMachineInfo = ref(false);
 
 const getPinState = (pinKey: string): boolean => {
-  // Special mapping for specific pins
-  if (pinKey === 'P') {
-    // Probe state from machineState.probeActive
-    return store.status.probeActive || false;
-  }
-
   // Parse from Pn string (e.g., "XYZP" means X, Y, Z, and P are active)
   const pnString = store.status.Pn || '';
   return pnString.includes(pinKey);
