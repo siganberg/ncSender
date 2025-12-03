@@ -155,7 +155,6 @@
           >
             <template #default="{ item }">
               <div
-                v-memo="[getGcodeText(item.index), isCurrentLine(item.index), throttledCompletedUpTo]"
                 class="gcode-line"
                 :class="getGcodeLineClasses(item.index)"
                 :style="{ height: rowHeight + 'px' }"
@@ -164,8 +163,7 @@
                 <span v-if="isCurrentLine(item.index)" class="current-line-arrow">▶</span>
                 <span class="line-content">{{ getGcodeText(item.index) }}</span>
               </div>
-            </template>
-          </RecycleScroller>
+            </template>          </RecycleScroller>
         </div>
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
