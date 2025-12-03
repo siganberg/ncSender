@@ -660,6 +660,10 @@ class NCClient {
     return this.on('server-state-updated', callback);
   }
 
+  onIOPinsUpdated(callback) {
+    return this.on('io-pins-updated', callback);
+  }
+
   // Backward compatibility - alias for server state updates that include machine state
   onMachineStateUpdated(callback) {
     return this.on('server-state-updated', (serverState) => {

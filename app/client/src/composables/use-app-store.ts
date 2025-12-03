@@ -599,6 +599,19 @@ export function initializeStore() {
     // We keep the last loaded file so users can review it.
   });
 
+  // IO Pins updates
+  api.onIOPinsUpdated((pins) => {
+    // Update individual pin states
+    for (const [pinKey, pinState] of Object.entries(pins)) {
+      // Map pin keys to status properties if needed
+      // For now, we'll store them in a pins object on status
+      if (!status.pins) {
+        status.pins = {};
+      }
+      status.pins[pinKey] = pinState;
+    }
+  });
+
   // Console/command events
   api.on('cnc-command', (commandEvent) => {
     addOrUpdateCommandLine(commandEvent);

@@ -126,10 +126,18 @@ export class CNCController extends EventEmitter {
         message: trimmedData
       });
     } else if (trimmedData.toLowerCase() === 'ok' || trimmedData.toLowerCase().endsWith(':ok')) {
-      log('CNC controller responded:', trimmedData);
+      const isSystemCommand = this.activeCommand?.meta?.sourceId === 'system';
+      if (!isSystemCommand) {
+        log('CNC controller responded:', trimmedData);
+      }
       this.handleCommandOk();
     } else {
-      log('CNC data:', trimmedData);
+      const isSystemCommand = this.activeCommand?.meta?.sourceId === 'system';
+
+      // Don't log system polling responses
+      if (!isSystemCommand) {
+        log('CNC data:', trimmedData);
+      }
 
       // Capture greeting message if it starts with "GrblHal" (case-insensitive)
       if (trimmedData.toLowerCase().startsWith('grblhal')) {
@@ -141,6 +149,11 @@ export class CNCController extends EventEmitter {
       if (trimmedData.toUpperCase().includes('[MSG:TOOL_CHANGE_COMPLETE]')) {
         this.emit('tool-change-complete', trimmedData);
         // Continue to broadcast this message
+      }
+
+      // Parse PINSTATE responses
+      if (trimmedData.toUpperCase().startsWith('[PINSTATE:')) {
+        this.handlePinStateResponse(trimmedData);
       }
 
       const sourceId = this.activeCommand?.meta?.sourceId || null;
@@ -373,7 +386,11 @@ export class CNCController extends EventEmitter {
       }
 
       this.lastStatus = newStatus;
-      this.emit('status-report', newStatus);
+
+      // Emit status report without pins (pins are handled separately)
+      const statusWithoutPins = { ...newStatus };
+      delete statusWithoutPins.pins;
+      this.emit('status-report', statusWithoutPins);
     }
   }
 
@@ -418,6 +435,61 @@ export class CNCController extends EventEmitter {
     }
   }
 
+  handlePinStateResponse(data) {
+    // Parse PINSTATE response format:
+    // [PINSTATE:<type>|<description>|<id>|<mode>|<capabilities>|<state>]
+    // Example: [PINSTATE:DOUT|P0 <- Flood enable (M8)|0|N|I|0]
+
+    try {
+      // Remove [PINSTATE: prefix and ] suffix
+      const content = data.substring(10, data.length - 1);
+      const parts = content.split('|');
+
+      if (parts.length !== 6) {
+        return; // Invalid format
+      }
+
+      const [type, description, id, mode, capabilities, state] = parts;
+
+      // Only process digital output pins
+      if (type !== 'DOUT') {
+        return;
+      }
+
+      // Only process pins labeled with P<n>
+      const pinMatch = description.match(/^P(\d+)/);
+      if (!pinMatch) {
+        return;
+      }
+
+      const pinId = `P${pinMatch[1]}`;
+      const pinState = parseInt(state) === 1; // Convert to boolean
+
+      // Extract port assignment if available (e.g., "P0 <- Flood enable (M8)" -> M8)
+      // Use port name as key if available, otherwise use pin ID
+      let pinKey = pinId;
+      const portMatch = description.match(/\(([^)]+)\)/);
+      if (portMatch) {
+        pinKey = portMatch[1]; // e.g., "M8", "M7", "M3/M4"
+      }
+
+      // Initialize pins object if it doesn't exist
+      if (!this.lastStatus.pins) {
+        this.lastStatus.pins = {};
+      }
+
+      // Check if pin state actually changed
+      const oldState = this.lastStatus.pins[pinKey];
+      if (oldState !== pinState) {
+        this.lastStatus.pins[pinKey] = pinState;
+        // Only emit the changed pin
+        this.emit('status-report', { pins: { [pinKey]: pinState } });
+      }
+    } catch (error) {
+      // Silently ignore parsing errors to avoid polluting logs
+    }
+  }
+
   startPolling() {
     if (this.statusPollInterval) return;
     this.statusPollInterval = setInterval(() => {
@@ -431,12 +503,29 @@ export class CNCController extends EventEmitter {
         }
       }
     }, 50);
+
+    // Start pin state polling (every 500ms)
+    if (!this.pinStatePollInterval) {
+      this.pinStatePollInterval = setInterval(() => {
+        if (this.connection && this.isConnected) {
+          try {
+            this.sendCommand('$pinstate', { meta: { sourceId: 'system' } });
+          } catch (error) {
+            console.warn('Pin state polling failed:', error.message);
+          }
+        }
+      }, 500);
+    }
   }
 
   stopPolling() {
     if (this.statusPollInterval) {
       clearInterval(this.statusPollInterval);
       this.statusPollInterval = null;
+    }
+    if (this.pinStatePollInterval) {
+      clearInterval(this.pinStatePollInterval);
+      this.pinStatePollInterval = null;
     }
   }
 
@@ -856,13 +945,20 @@ export class CNCController extends EventEmitter {
   }
 
   logCommandSent(rawCommand, isRealTime) {
+    // Don't log polling commands (? and $pinstate)
+    const isPollCommand = rawCommand === '?' || rawCommand.toUpperCase() === '$PINSTATE';
+
+    if (isPollCommand) {
+      return;
+    }
+
     if (isRealTime && rawCommand !== '?') {
       if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
         log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
       } else {
         log('Real-time command sent:', rawCommand);
       }
-    } else if (rawCommand && rawCommand.toUpperCase() !== '?') {
+    } else if (rawCommand) {
       log('Command sent:', rawCommand.toUpperCase());
     }
   }

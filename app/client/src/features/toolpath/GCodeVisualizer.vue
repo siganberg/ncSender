@@ -470,22 +470,31 @@ const probeActive = ref(false); // Probe pin active state from CNC
 const ioSwitchesConfig = ref<any>({});
 const ioSwitchStates = reactive<Record<string, boolean>>({});
 
-// Mapping from switch keys to machine state properties
-const ioSwitchStateMapping: Record<string, string> = {
-  flood: 'floodCoolant',
-  mist: 'mistCoolant',
-  // air and vacuum don't have server state tracking yet
+// Helper function to compute OFF command based on ON command
+const getOffCommand = (onCommand: string): string => {
+  if (!onCommand) return '';
+  if (onCommand === 'M7' || onCommand === 'M8') return 'M9';
+  // M64 P<n> -> M65 P<n>
+  const m64Match = onCommand.match(/M64\s+(P\d+)/i);
+  if (m64Match) {
+    return `M65 ${m64Match[1]}`;
+  }
+  return '';
 };
 
 const enabledIOSwitches = computed(() => {
   const enabled: Record<string, any> = {};
-  for (const [key, config] of Object.entries(ioSwitchesConfig.value)) {
-    if ((config as any).enabled) {
+  // Define order to match Settings table: Vacuum, Flood, Mist, Air
+  const switchOrder = ['vacuum', 'flood', 'mist', 'air'];
+
+  for (const key of switchOrder) {
+    const config = ioSwitchesConfig.value[key];
+    if (config && (config as any).enabled) {
+      const onCommand = (config as any).on;
       enabled[key] = {
         label: key.charAt(0).toUpperCase() + key.slice(1),
-        on: (config as any).on,
-        off: (config as any).off,
-        stateKey: ioSwitchStateMapping[key] || null
+        on: onCommand,
+        off: getOffCommand(onCommand)
       };
       // Initialize state if not exists
       if (!(key in ioSwitchStates)) {
@@ -2334,12 +2343,24 @@ onMounted(async () => {
     }
   }
 
-  // Initialize I/O switch states from current machine state
-  const currentStatus = appStore.status;
-  if (currentStatus) {
-    for (const [switchKey, stateKey] of Object.entries(ioSwitchStateMapping)) {
-      if (stateKey in currentStatus) {
-        ioSwitchStates[switchKey] = (currentStatus as any)[stateKey];
+  // Initialize I/O switch states from pin states
+  if (appStore.status?.pins) {
+    for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
+      if (!(config as any).enabled) continue;
+
+      const onCommand = (config as any).on;
+      if (!onCommand) continue;
+
+      // Extract pin key from command
+      let pinKey = onCommand;
+      const m64Match = onCommand.match(/M6[24]\s+(P\d+)/i);
+      if (m64Match) {
+        pinKey = m64Match[1];
+      }
+
+      // Initialize from existing pin state
+      if (pinKey in appStore.status.pins) {
+        ioSwitchStates[switchKey] = appStore.status.pins[pinKey];
       }
     }
   }
@@ -2385,15 +2406,30 @@ onMounted(async () => {
     }
   }, { deep: true });
 
-  // Watch machine state for I/O switch status updates from server
-  watch(() => appStore.status, (newStatus) => {
-    if (!newStatus) return;
-    for (const [switchKey, stateKey] of Object.entries(ioSwitchStateMapping)) {
-      if (stateKey in newStatus) {
-        ioSwitchStates[switchKey] = (newStatus as any)[stateKey];
+  // Listen for I/O pin updates from server
+  api.onIOPinsUpdated((pins) => {
+    // Map pin states to switch states based on their ON command
+    // For each switch, extract the pin key from its ON command and update state
+    for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
+      if (!(config as any).enabled) continue;
+
+      const onCommand = (config as any).on;
+      if (!onCommand) continue;
+
+      // Extract pin key from command
+      // Examples: "M7" -> "M7", "M8" -> "M8", "M64 P3" -> "P3"
+      let pinKey = onCommand;
+      const m64Match = onCommand.match(/M6[24]\s+(P\d+)/i);
+      if (m64Match) {
+        pinKey = m64Match[1]; // Extract "P3" from "M64 P3"
+      }
+
+      // Update switch state if this pin was in the update
+      if (pinKey in pins) {
+        ioSwitchStates[switchKey] = pins[pinKey];
       }
     }
-  }, { deep: true, immediate: true });
+  });
 
   // Listen for tools updates via WebSocket
   api.on('tools-updated', () => {

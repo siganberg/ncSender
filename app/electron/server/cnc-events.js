@@ -160,7 +160,18 @@ export function registerCncEventHandlers({
 
   const handleStatusReport = async (status) => {
     const prevMachineState = { ...serverState.machineState };
-    serverState.machineState = { ...serverState.machineState, ...status };
+
+    // Handle pin updates separately - broadcast as dedicated message type
+    if (status.pins && Object.keys(status.pins).length > 0) {
+      // Broadcast pin changes as a separate message type
+      broadcast('io-pins-updated', status.pins);
+      // Don't include pins in serverState
+      const statusWithoutPins = { ...status };
+      delete statusWithoutPins.pins;
+      serverState.machineState = { ...serverState.machineState, ...statusWithoutPins };
+    } else {
+      serverState.machineState = { ...serverState.machineState, ...status };
+    }
 
     const currentMachineStatus = status?.status?.toLowerCase();
     const prevMachineStatus = prevMachineState?.status;

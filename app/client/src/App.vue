@@ -265,6 +265,28 @@
                   </tr>
                 </thead>
                 <tbody>
+                  <!-- Vacuum -->
+                  <tr>
+                    <td>
+                      <ToggleSwitch v-model="ioSwitches.vacuum.enabled" />
+                    </td>
+                    <td class="switch-name">Vacuum</td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.vacuum.on" :disabled="!ioSwitches.vacuum.enabled">
+                        <option value="">None</option>
+                        <option value="M7">M7</option>
+                        <option value="M8">M8</option>
+                        <option value="M64 P1">M64 P1</option>
+                        <option value="M64 P2">M64 P2</option>
+                        <option value="M64 P3">M64 P3</option>
+                        <option value="M64 P4">M64 P4</option>
+                        <option value="M64 P5">M64 P5</option>
+                        <option value="M64 P6">M64 P6</option>
+                      </select>
+                    </td>
+                    <td class="off-command-label">{{ getOffCommand(ioSwitches.vacuum.on) || 'None' }}</td>
+                  </tr>
+
                   <!-- Flood -->
                   <tr>
                     <td>
@@ -284,18 +306,7 @@
                         <option value="M64 P6">M64 P6</option>
                       </select>
                     </td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.flood.off" :disabled="!ioSwitches.flood.enabled">
-                        <option value="">None</option>
-                        <option value="M9">M9</option>
-                        <option value="M65 P1">M65 P1</option>
-                        <option value="M65 P2">M65 P2</option>
-                        <option value="M65 P3">M65 P3</option>
-                        <option value="M65 P4">M65 P4</option>
-                        <option value="M65 P5">M65 P5</option>
-                        <option value="M65 P6">M65 P6</option>
-                      </select>
-                    </td>
+                    <td class="off-command-label">{{ getOffCommand(ioSwitches.flood.on) || 'None' }}</td>
                   </tr>
 
                   <!-- Mist -->
@@ -317,18 +328,7 @@
                         <option value="M64 P6">M64 P6</option>
                       </select>
                     </td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.mist.off" :disabled="!ioSwitches.mist.enabled">
-                        <option value="">None</option>
-                        <option value="M9">M9</option>
-                        <option value="M65 P1">M65 P1</option>
-                        <option value="M65 P2">M65 P2</option>
-                        <option value="M65 P3">M65 P3</option>
-                        <option value="M65 P4">M65 P4</option>
-                        <option value="M65 P5">M65 P5</option>
-                        <option value="M65 P6">M65 P6</option>
-                      </select>
-                    </td>
+                    <td class="off-command-label">{{ getOffCommand(ioSwitches.mist.on) || 'None' }}</td>
                   </tr>
 
                   <!-- Air -->
@@ -350,51 +350,7 @@
                         <option value="M64 P6">M64 P6</option>
                       </select>
                     </td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.air.off" :disabled="!ioSwitches.air.enabled">
-                        <option value="">None</option>
-                        <option value="M9">M9</option>
-                        <option value="M65 P1">M65 P1</option>
-                        <option value="M65 P2">M65 P2</option>
-                        <option value="M65 P3">M65 P3</option>
-                        <option value="M65 P4">M65 P4</option>
-                        <option value="M65 P5">M65 P5</option>
-                        <option value="M65 P6">M65 P6</option>
-                      </select>
-                    </td>
-                  </tr>
-
-                  <!-- Vacuum -->
-                  <tr>
-                    <td>
-                      <ToggleSwitch v-model="ioSwitches.vacuum.enabled" />
-                    </td>
-                    <td class="switch-name">Vacuum</td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.vacuum.on" :disabled="!ioSwitches.vacuum.enabled">
-                        <option value="">None</option>
-                        <option value="M7">M7</option>
-                        <option value="M8">M8</option>
-                        <option value="M64 P1">M64 P1</option>
-                        <option value="M64 P2">M64 P2</option>
-                        <option value="M64 P3">M64 P3</option>
-                        <option value="M64 P4">M64 P4</option>
-                        <option value="M64 P5">M64 P5</option>
-                        <option value="M64 P6">M64 P6</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.vacuum.off" :disabled="!ioSwitches.vacuum.enabled">
-                        <option value="">None</option>
-                        <option value="M9">M9</option>
-                        <option value="M65 P1">M65 P1</option>
-                        <option value="M65 P2">M65 P2</option>
-                        <option value="M65 P3">M65 P3</option>
-                        <option value="M65 P4">M65 P4</option>
-                        <option value="M65 P5">M65 P5</option>
-                        <option value="M65 P6">M65 P6</option>
-                      </select>
-                    </td>
+                    <td class="off-command-label">{{ getOffCommand(ioSwitches.air.on) || 'None' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1120,27 +1076,35 @@ const consoleSettings = reactive({
   debugLogging: initialSettings?.debugLogging ?? false
 });
 
+// Helper function to compute OFF command based on ON command
+const getOffCommand = (onCommand: string): string => {
+  if (!onCommand) return '';
+  if (onCommand === 'M7' || onCommand === 'M8') return 'M9';
+  // M64 P<n> -> M65 P<n>
+  const m64Match = onCommand.match(/M64\s+(P\d+)/i);
+  if (m64Match) {
+    return `M65 ${m64Match[1]}`;
+  }
+  return '';
+};
+
 // I/O Switches settings
 const ioSwitches = reactive({
   flood: {
     enabled: initialSettings?.ioSwitches?.flood?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.flood?.on || 'M8',
-    off: initialSettings?.ioSwitches?.flood?.off || 'M9'
+    on: initialSettings?.ioSwitches?.flood?.on || 'M8'
   },
   mist: {
     enabled: initialSettings?.ioSwitches?.mist?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.mist?.on || 'M7',
-    off: initialSettings?.ioSwitches?.mist?.off || 'M9'
+    on: initialSettings?.ioSwitches?.mist?.on || 'M7'
   },
   air: {
     enabled: initialSettings?.ioSwitches?.air?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.air?.on || '',
-    off: initialSettings?.ioSwitches?.air?.off || ''
+    on: initialSettings?.ioSwitches?.air?.on || ''
   },
   vacuum: {
     enabled: initialSettings?.ioSwitches?.vacuum?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.vacuum?.on || '',
-    off: initialSettings?.ioSwitches?.vacuum?.off || ''
+    on: initialSettings?.ioSwitches?.vacuum?.on || ''
   }
 });
 
@@ -2016,10 +1980,10 @@ watch(ioSwitches, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     ioSwitches: {
-      flood: { enabled: newValue.flood.enabled, on: newValue.flood.on, off: newValue.flood.off },
-      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on, off: newValue.mist.off },
-      air: { enabled: newValue.air.enabled, on: newValue.air.on, off: newValue.air.off },
-      vacuum: { enabled: newValue.vacuum.enabled, on: newValue.vacuum.on, off: newValue.vacuum.off }
+      flood: { enabled: newValue.flood.enabled, on: newValue.flood.on },
+      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on },
+      air: { enabled: newValue.air.enabled, on: newValue.air.on },
+      vacuum: { enabled: newValue.vacuum.enabled, on: newValue.vacuum.on }
     }
   });
 }, { deep: true });
@@ -2594,12 +2558,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .io-switches-table td:first-child {
-  width: 10%;
+  width: 80px;
   text-align: center;
 }
 
 .io-switches-table td:nth-child(2) {
-  width: 20%;
+  width: auto;
 }
 
 .io-switches-table td.switch-name {
@@ -2607,13 +2571,22 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   color: var(--color-text-primary);
 }
 
-.io-switches-table td:nth-child(3),
+.io-switches-table td:nth-child(3) {
+  width: 200px;
+}
+
 .io-switches-table td:nth-child(4) {
-  width: 35%;
+  width: 150px;
 }
 
 .io-switches-table select {
   width: 100%;
+}
+
+.io-switches-table .off-command-label {
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  font-size: 0.9rem;
 }
 
 .setting-value {
