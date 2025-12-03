@@ -2406,27 +2406,27 @@ onMounted(async () => {
     }
   }, { deep: true });
 
-  // Listen for I/O pin updates from server
-  api.onIOPinsUpdated((pins) => {
-    // Map pin states to switch states based on their ON command
-    // For each switch, extract the pin key from its ON command and update state
+  // Listen for I/O switch updates from server
+  api.onIOSwitchesUpdated((switches) => {
+    // Map switch states to I/O switch states based on their ON command
+    // For each switch, extract the switch key from its ON command and update state
     for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
       if (!(config as any).enabled) continue;
 
       const onCommand = (config as any).on;
       if (!onCommand) continue;
 
-      // Extract pin key from command
+      // Extract switch key from command
       // Examples: "M7" -> "M7", "M8" -> "M8", "M64 P3" -> "P3"
-      let pinKey = onCommand;
+      let switchStateKey = onCommand;
       const m64Match = onCommand.match(/M6[24]\s+(P\d+)/i);
       if (m64Match) {
-        pinKey = m64Match[1]; // Extract "P3" from "M64 P3"
+        switchStateKey = m64Match[1]; // Extract "P3" from "M64 P3"
       }
 
-      // Update switch state if this pin was in the update
-      if (pinKey in pins) {
-        ioSwitchStates[switchKey] = pins[pinKey];
+      // Update switch state if this switch was in the update
+      if (switchStateKey in switches) {
+        ioSwitchStates[switchKey] = switches[switchStateKey];
       }
     }
   });

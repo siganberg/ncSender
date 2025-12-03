@@ -387,10 +387,10 @@ export class CNCController extends EventEmitter {
 
       this.lastStatus = newStatus;
 
-      // Emit status report without pins (pins are handled separately)
-      const statusWithoutPins = { ...newStatus };
-      delete statusWithoutPins.pins;
-      this.emit('status-report', statusWithoutPins);
+      // Emit status report without switches (switches are handled separately)
+      const statusWithoutSwitches = { ...newStatus };
+      delete statusWithoutSwitches.switches;
+      this.emit('status-report', statusWithoutSwitches);
     }
   }
 
@@ -473,17 +473,17 @@ export class CNCController extends EventEmitter {
         pinKey = portMatch[1]; // e.g., "M8", "M7", "M3/M4"
       }
 
-      // Initialize pins object if it doesn't exist
-      if (!this.lastStatus.pins) {
-        this.lastStatus.pins = {};
+      // Initialize switches object if it doesn't exist
+      if (!this.lastStatus.switches) {
+        this.lastStatus.switches = {};
       }
 
-      // Check if pin state actually changed
-      const oldState = this.lastStatus.pins[pinKey];
+      // Check if switch state actually changed
+      const oldState = this.lastStatus.switches[pinKey];
       if (oldState !== pinState) {
-        this.lastStatus.pins[pinKey] = pinState;
-        // Only emit the changed pin
-        this.emit('status-report', { pins: { [pinKey]: pinState } });
+        this.lastStatus.switches[pinKey] = pinState;
+        // Only emit the changed switch
+        this.emit('status-report', { switches: { [pinKey]: pinState } });
       }
     } catch (error) {
       // Silently ignore parsing errors to avoid polluting logs

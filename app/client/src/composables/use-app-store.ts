@@ -607,16 +607,16 @@ export function initializeStore() {
     // We keep the last loaded file so users can review it.
   });
 
-  // IO Pins updates
-  api.onIOPinsUpdated((pins) => {
-    // Update individual pin states
-    for (const [pinKey, pinState] of Object.entries(pins)) {
-      // Map pin keys to status properties if needed
-      // For now, we'll store them in a pins object on status
-      if (!status.pins) {
-        status.pins = {};
+  // IO Switches updates
+  api.onIOSwitchesUpdated((switches) => {
+    // Update individual switch states
+    for (const [switchKey, switchState] of Object.entries(switches)) {
+      // Map switch keys to status properties if needed
+      // For now, we'll store them in a switches object on status
+      if (!status.switches) {
+        status.switches = {};
       }
-      status.pins[pinKey] = pinState;
+      status.switches[switchKey] = switchState;
     }
   });
 
