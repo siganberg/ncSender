@@ -252,6 +252,155 @@
             </div>
           </div>
 
+          <div class="settings-section">
+            <h3 class="section-title">I/O Switches</h3>
+            <div class="io-switches-table-container">
+              <table class="io-switches-table">
+                <thead>
+                  <tr>
+                    <th>Enabled</th>
+                    <th>Switch</th>
+                    <th>ON Command</th>
+                    <th>OFF Command</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Flood -->
+                  <tr>
+                    <td>
+                      <ToggleSwitch v-model="ioSwitches.flood.enabled" />
+                    </td>
+                    <td class="switch-name">Flood</td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.flood.on" :disabled="!ioSwitches.flood.enabled">
+                        <option value="">None</option>
+                        <option value="M7">M7</option>
+                        <option value="M8">M8</option>
+                        <option value="M64 P1">M64 P1</option>
+                        <option value="M64 P2">M64 P2</option>
+                        <option value="M64 P3">M64 P3</option>
+                        <option value="M64 P4">M64 P4</option>
+                        <option value="M64 P5">M64 P5</option>
+                        <option value="M64 P6">M64 P6</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.flood.off" :disabled="!ioSwitches.flood.enabled">
+                        <option value="">None</option>
+                        <option value="M9">M9</option>
+                        <option value="M65 P1">M65 P1</option>
+                        <option value="M65 P2">M65 P2</option>
+                        <option value="M65 P3">M65 P3</option>
+                        <option value="M65 P4">M65 P4</option>
+                        <option value="M65 P5">M65 P5</option>
+                        <option value="M65 P6">M65 P6</option>
+                      </select>
+                    </td>
+                  </tr>
+
+                  <!-- Mist -->
+                  <tr>
+                    <td>
+                      <ToggleSwitch v-model="ioSwitches.mist.enabled" />
+                    </td>
+                    <td class="switch-name">Mist</td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.mist.on" :disabled="!ioSwitches.mist.enabled">
+                        <option value="">None</option>
+                        <option value="M7">M7</option>
+                        <option value="M8">M8</option>
+                        <option value="M64 P1">M64 P1</option>
+                        <option value="M64 P2">M64 P2</option>
+                        <option value="M64 P3">M64 P3</option>
+                        <option value="M64 P4">M64 P4</option>
+                        <option value="M64 P5">M64 P5</option>
+                        <option value="M64 P6">M64 P6</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.mist.off" :disabled="!ioSwitches.mist.enabled">
+                        <option value="">None</option>
+                        <option value="M9">M9</option>
+                        <option value="M65 P1">M65 P1</option>
+                        <option value="M65 P2">M65 P2</option>
+                        <option value="M65 P3">M65 P3</option>
+                        <option value="M65 P4">M65 P4</option>
+                        <option value="M65 P5">M65 P5</option>
+                        <option value="M65 P6">M65 P6</option>
+                      </select>
+                    </td>
+                  </tr>
+
+                  <!-- Air -->
+                  <tr>
+                    <td>
+                      <ToggleSwitch v-model="ioSwitches.air.enabled" />
+                    </td>
+                    <td class="switch-name">Air</td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.air.on" :disabled="!ioSwitches.air.enabled">
+                        <option value="">None</option>
+                        <option value="M7">M7</option>
+                        <option value="M8">M8</option>
+                        <option value="M64 P1">M64 P1</option>
+                        <option value="M64 P2">M64 P2</option>
+                        <option value="M64 P3">M64 P3</option>
+                        <option value="M64 P4">M64 P4</option>
+                        <option value="M64 P5">M64 P5</option>
+                        <option value="M64 P6">M64 P6</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.air.off" :disabled="!ioSwitches.air.enabled">
+                        <option value="">None</option>
+                        <option value="M9">M9</option>
+                        <option value="M65 P1">M65 P1</option>
+                        <option value="M65 P2">M65 P2</option>
+                        <option value="M65 P3">M65 P3</option>
+                        <option value="M65 P4">M65 P4</option>
+                        <option value="M65 P5">M65 P5</option>
+                        <option value="M65 P6">M65 P6</option>
+                      </select>
+                    </td>
+                  </tr>
+
+                  <!-- Vacuum -->
+                  <tr>
+                    <td>
+                      <ToggleSwitch v-model="ioSwitches.vacuum.enabled" />
+                    </td>
+                    <td class="switch-name">Vacuum</td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.vacuum.on" :disabled="!ioSwitches.vacuum.enabled">
+                        <option value="">None</option>
+                        <option value="M7">M7</option>
+                        <option value="M8">M8</option>
+                        <option value="M64 P1">M64 P1</option>
+                        <option value="M64 P2">M64 P2</option>
+                        <option value="M64 P3">M64 P3</option>
+                        <option value="M64 P4">M64 P4</option>
+                        <option value="M64 P5">M64 P5</option>
+                        <option value="M64 P6">M64 P6</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="setting-select" v-model="ioSwitches.vacuum.off" :disabled="!ioSwitches.vacuum.enabled">
+                        <option value="">None</option>
+                        <option value="M9">M9</option>
+                        <option value="M65 P1">M65 P1</option>
+                        <option value="M65 P2">M65 P2</option>
+                        <option value="M65 P3">M65 P3</option>
+                        <option value="M65 P4">M65 P4</option>
+                        <option value="M65 P5">M65 P5</option>
+                        <option value="M65 P6">M65 P6</option>
+                      </select>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
 
         <!-- Tools Tab -->
@@ -969,6 +1118,30 @@ const setupSettings = reactive({
 const consoleSettings = reactive({
   autoClearConsole: initialSettings?.autoClearConsole ?? true,
   debugLogging: initialSettings?.debugLogging ?? false
+});
+
+// I/O Switches settings
+const ioSwitches = reactive({
+  flood: {
+    enabled: initialSettings?.ioSwitches?.flood?.enabled ?? false,
+    on: initialSettings?.ioSwitches?.flood?.on || 'M8',
+    off: initialSettings?.ioSwitches?.flood?.off || 'M9'
+  },
+  mist: {
+    enabled: initialSettings?.ioSwitches?.mist?.enabled ?? false,
+    on: initialSettings?.ioSwitches?.mist?.on || 'M7',
+    off: initialSettings?.ioSwitches?.mist?.off || 'M9'
+  },
+  air: {
+    enabled: initialSettings?.ioSwitches?.air?.enabled ?? false,
+    on: initialSettings?.ioSwitches?.air?.on || '',
+    off: initialSettings?.ioSwitches?.air?.off || ''
+  },
+  vacuum: {
+    enabled: initialSettings?.ioSwitches?.vacuum?.enabled ?? false,
+    on: initialSettings?.ioSwitches?.vacuum?.on || '',
+    off: initialSettings?.ioSwitches?.vacuum?.off || ''
+  }
 });
 
 // Firmware settings
@@ -1838,6 +2011,19 @@ watch(() => consoleSettings.debugLogging, async (newValue) => {
   });
 });
 
+// Watch I/O Switches changes
+watch(ioSwitches, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    ioSwitches: {
+      flood: { enabled: newValue.flood.enabled, on: newValue.flood.on, off: newValue.flood.off },
+      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on, off: newValue.mist.off },
+      air: { enabled: newValue.air.enabled, on: newValue.air.on, off: newValue.air.off },
+      vacuum: { enabled: newValue.vacuum.enabled, on: newValue.vacuum.on, off: newValue.vacuum.off }
+    }
+  });
+}, { deep: true });
+
 // Set units preference
 const setUnits = async (units) => {
   pendingUnitsChange.value = units;
@@ -2368,6 +2554,66 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   cursor: not-allowed;
   pointer-events: none;
   border-color: var(--color-border);
+}
+
+/* I/O Switches Table */
+.io-switches-table-container {
+  overflow-x: auto;
+}
+
+.io-switches-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.io-switches-table thead th {
+  text-align: left;
+  padding: var(--gap-sm) var(--gap-md);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.io-switches-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.io-switches-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.io-switches-table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+.io-switches-table td {
+  padding: var(--gap-md);
+  vertical-align: middle;
+}
+
+.io-switches-table td:first-child {
+  width: 10%;
+  text-align: center;
+}
+
+.io-switches-table td:nth-child(2) {
+  width: 20%;
+}
+
+.io-switches-table td.switch-name {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.io-switches-table td:nth-child(3),
+.io-switches-table td:nth-child(4) {
+  width: 35%;
+}
+
+.io-switches-table select {
+  width: 100%;
 }
 
 .setting-value {

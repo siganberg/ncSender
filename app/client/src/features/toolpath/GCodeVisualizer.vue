@@ -217,21 +217,23 @@
         </div>
       </div>
 
-      <!-- Coolant controls - lower left -->
+      <!-- I/O Switches controls - lower left -->
       <div class="coolant-controls">
-        <div class="spindle-toggle">
+        <div
+          v-for="(switchConfig, key) in enabledIOSwitches"
+          :key="key"
+          class="spindle-toggle"
+        >
           <label class="switch">
-            <input type="checkbox" :checked="floodEnabled" @change="toggleFlood" :disabled="isCoolantDisabled">
+            <input
+              type="checkbox"
+              :checked="ioSwitchStates[key]"
+              @change="toggleIOSwitch(key)"
+              :disabled="isCoolantDisabled"
+            >
             <span class="slider"></span>
           </label>
-          <span>Flood</span>
-        </div>
-        <div class="spindle-toggle">
-          <label class="switch">
-            <input type="checkbox" :checked="mistEnabled" @change="toggleMist" :disabled="isCoolantDisabled">
-            <span class="slider"></span>
-          </label>
-          <span>Mist</span>
+          <span>{{ switchConfig.label }}</span>
         </div>
       </div>
 
@@ -313,12 +315,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
-import { getSettings, updateSettings } from '../../lib/settings-store.js';
+import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../../components/Dialog.vue';
@@ -460,11 +462,39 @@ const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
 const autoFitMode = ref(false); // Auto-fit mode - off by default
 const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
-const floodEnabled = ref(false); // Flood coolant - off by default
-const mistEnabled = ref(false); // Mist coolant - off by default
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
 const probeActive = ref(false); // Probe pin active state from CNC
+
+// I/O Switches - dynamically loaded from settings
+const ioSwitchesConfig = ref<any>({});
+const ioSwitchStates = reactive<Record<string, boolean>>({});
+
+// Mapping from switch keys to machine state properties
+const ioSwitchStateMapping: Record<string, string> = {
+  flood: 'floodCoolant',
+  mist: 'mistCoolant',
+  // air and vacuum don't have server state tracking yet
+};
+
+const enabledIOSwitches = computed(() => {
+  const enabled: Record<string, any> = {};
+  for (const [key, config] of Object.entries(ioSwitchesConfig.value)) {
+    if ((config as any).enabled) {
+      enabled[key] = {
+        label: key.charAt(0).toUpperCase() + key.slice(1),
+        on: (config as any).on,
+        off: (config as any).off,
+        stateKey: ioSwitchStateMapping[key] || null
+      };
+      // Initialize state if not exists
+      if (!(key in ioSwitchStates)) {
+        ioSwitchStates[key] = false;
+      }
+    }
+  }
+  return enabled;
+});
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
 const toolInventory = ref<Record<number, any> | null>(null); // Tool inventory data from plugin
@@ -1805,31 +1835,24 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
   }
 });
 
-const toggleFlood = async () => {
-  floodEnabled.value = !floodEnabled.value;
-  try {
-    const command = floodEnabled.value ? 'M8' : 'M9';
-    await api.sendCommandViaWebSocket({
-      command,
-      displayCommand: command
-    });
-  } catch (error) {
-    console.error('Failed to toggle flood coolant:', error);
-    floodEnabled.value = !floodEnabled.value; // Revert on error
-  }
-};
+const toggleIOSwitch = async (switchKey: string) => {
+  const currentState = ioSwitchStates[switchKey];
+  const newState = !currentState;
+  ioSwitchStates[switchKey] = newState;
 
-const toggleMist = async () => {
-  mistEnabled.value = !mistEnabled.value;
   try {
-    const command = mistEnabled.value ? 'M7' : 'M9';
-    await api.sendCommandViaWebSocket({
-      command,
-      displayCommand: command
-    });
+    const switchConfig = enabledIOSwitches.value[switchKey];
+    const command = newState ? switchConfig.on : switchConfig.off;
+
+    if (command) {
+      await api.sendCommandViaWebSocket({
+        command,
+        displayCommand: command
+      });
+    }
   } catch (error) {
-    console.error('Failed to toggle mist coolant:', error);
-    mistEnabled.value = !mistEnabled.value; // Revert on error
+    console.error(`Failed to toggle ${switchKey}:`, error);
+    ioSwitchStates[switchKey] = currentState; // Revert on error
   }
 };
 
@@ -2305,6 +2328,20 @@ onMounted(async () => {
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
     }
+    // Load I/O Switches configuration
+    if (settings.ioSwitches) {
+      ioSwitchesConfig.value = settings.ioSwitches;
+    }
+  }
+
+  // Initialize I/O switch states from current machine state
+  const currentStatus = appStore.status;
+  if (currentStatus) {
+    for (const [switchKey, stateKey] of Object.entries(ioSwitchStateMapping)) {
+      if (stateKey in currentStatus) {
+        ioSwitchStates[switchKey] = (currentStatus as any)[stateKey];
+      }
+    }
   }
 
   // Wait for next tick to ensure all watchers have fired with isInitialLoad=true
@@ -2333,9 +2370,30 @@ onMounted(async () => {
     if (changedSettings.tool?.tls !== undefined) {
       showTlsTool.value = changedSettings.tool.tls;
     }
+    // Update I/O Switches config when settings change
+    if (changedSettings.ioSwitches !== undefined) {
+      ioSwitchesConfig.value = changedSettings.ioSwitches;
+    }
     // Future settings can be added here
     // if ('someOtherSetting' in changedSettings) { ... }
   });
+
+  // Watch for settings store changes (for reactive updates from Settings dialog)
+  watch(() => settingsStore.data?.ioSwitches, (newIOSwitches) => {
+    if (newIOSwitches) {
+      ioSwitchesConfig.value = newIOSwitches;
+    }
+  }, { deep: true });
+
+  // Watch machine state for I/O switch status updates from server
+  watch(() => appStore.status, (newStatus) => {
+    if (!newStatus) return;
+    for (const [switchKey, stateKey] of Object.entries(ioSwitchStateMapping)) {
+      if (stateKey in newStatus) {
+        ioSwitchStates[switchKey] = (newStatus as any)[stateKey];
+      }
+    }
+  }, { deep: true, immediate: true });
 
   // Listen for tools updates via WebSocket
   api.on('tools-updated', () => {
@@ -2546,18 +2604,6 @@ watch(
   { immediate: true }
 );
 
-// Watch for coolant state changes from machine status
-watch(() => store.status.floodCoolant, (newValue) => {
-  if (newValue !== undefined) {
-    floodEnabled.value = newValue;
-  }
-});
-
-watch(() => store.status.mistCoolant, (newValue) => {
-  if (newValue !== undefined) {
-    mistEnabled.value = newValue;
-  }
-});
 </script>
 
 <style scoped>
