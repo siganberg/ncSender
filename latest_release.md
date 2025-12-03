@@ -1,4 +1,8 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed duplicate message issue
+- Fixed G-Code preview display issue
+
+### ✨ New Features
+- Added support for additional I/O switches
+- Extended switch control capabilities
