@@ -25,7 +25,6 @@ const WATCHED_STATUS_FIELDS = [
   'spindleActive',    // Spindle on/off
   'floodCoolant',     // Flood coolant state
   'mistCoolant',      // Mist coolant state
-  'probeActive',      // Probe trigger state
   'feedrateOverride', // Feed override changes
   'rapidOverride',    // Rapid override changes
 ];
@@ -261,8 +260,7 @@ export class CNCController extends EventEmitter {
       newStatus = {};
     }
 
-    // Default probe state resets each report unless explicitly set
-    newStatus.probeActive = false;
+    // Default pin state resets each report unless explicitly set
     newStatus.Pn = '';
 
     // Update machine state (always present) - extract state name before colon
@@ -312,9 +310,7 @@ export class CNCController extends EventEmitter {
         }
       } else if (key === 'Pn') {
         // Pin state: P=Probe, X/Y/Z=Limit switches, etc.
-        const pins = value || '';
-        newStatus.probeActive = pins.includes('P');
-        newStatus.Pn = pins;
+        newStatus.Pn = value || '';
       } else if (key === 'WCS') {
         // Workspace coordinate system (G54, G55, etc.)
         newStatus.WCS = value;
@@ -352,7 +348,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'probeActive', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {

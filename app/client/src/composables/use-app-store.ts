@@ -92,7 +92,8 @@ const status = reactive({
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
-  spindleActive: false
+  spindleActive: false,
+  Pn: ''
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -232,10 +233,6 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).toolLengthSet === 'boolean') {
     status.toolLengthSet = (report as any).toolLengthSet;
-  }
-
-  if (typeof (report as any).probeActive === 'boolean') {
-    status.probeActive = (report as any).probeActive;
   }
 
   if (typeof (report as any).Pn === 'string') {

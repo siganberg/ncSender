@@ -303,7 +303,7 @@
   <ProbeDialog
     :show="showProbeDialog"
     :is-probing="store.isProbing.value"
-    :probe-active="probeActive"
+    :probe-active="getPinState('P')"
     @close="showProbeDialog = false"
   />
 
@@ -464,7 +464,12 @@ const autoFitMode = ref(false); // Auto-fit mode - off by default
 const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
-const probeActive = ref(false); // Probe pin active state from CNC
+
+// Helper to get pin state from Pn string
+const getPinState = (pinKey: string): boolean => {
+  const pnString = appStore.status.Pn || '';
+  return pnString.includes(pinKey);
+};
 
 // I/O Switches - dynamically loaded from settings
 const ioSwitchesConfig = ref<any>({});
@@ -2481,11 +2486,6 @@ onMounted(async () => {
   let hasRestoredInitialState = false;
   api.onServerStateUpdated((state: any) => {
     const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined;
-
-    // Update probe active state
-    if (state.machineState?.probeActive !== undefined) {
-      probeActive.value = state.machineState.probeActive;
-    }
 
     // Restore lastExecutedLine from server state on initial load (for page reloads)
     if (!hasRestoredInitialState && state.jobLoaded && gcodeVisualizer) {
