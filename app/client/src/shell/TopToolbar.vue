@@ -524,8 +524,8 @@ const onWorkspaceChange = (e: Event) => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #dc3545;
-  box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
+  background: #ff0000;
+  box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
   transition: all 0.3s ease;
 }
 
