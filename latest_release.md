@@ -1,5 +1,5 @@
 ## What's Changed
 
-### 🎨 Improvements
-- Adjusted red color theme
-- Added LED status indicators with real-time state binding
+### 🔧 Improvements
+- Simplified home button behavior by removing long press requirement
+- Improved probe detection reliability using status report data instead of separate probe active flag
