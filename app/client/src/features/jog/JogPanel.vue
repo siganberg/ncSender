@@ -528,6 +528,11 @@ const endHomePress = () => {
   homeActive = false;
   homePress.progress = 0;
 
+  // If long press wasn't triggered, execute home command
+  if (!homePress.triggered) {
+    goHome();
+  }
+
   // Reset triggered after delay
   setTimeout(() => {
     homePress.triggered = false;

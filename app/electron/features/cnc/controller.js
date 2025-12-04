@@ -153,6 +153,8 @@ export class CNCController extends EventEmitter {
       // Parse PINSTATE responses
       if (trimmedData.toUpperCase().startsWith('[PINSTATE:')) {
         this.handlePinStateResponse(trimmedData);
+        // Don't broadcast PINSTATE responses to terminal UI
+        return;
       }
 
       const sourceId = this.activeCommand?.meta?.sourceId || null;
