@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed duplicate $home command execution
+### 🔧 Improvements
+- Enhanced G-Code Visualizer with improved rendering and performance
