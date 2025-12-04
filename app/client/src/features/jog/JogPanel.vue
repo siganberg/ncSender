@@ -31,7 +31,6 @@
             v-if="!homeSplit"
             :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
             :disabled="isHoming"
-            @click="handleHomeClick"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
@@ -453,13 +452,6 @@ const motionControlsDisabled = computed(() => !store.isConnected.value || props.
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-
-const handleHomeClick = () => {
-  // Only execute on click if long press wasn't triggered
-  if (!homePress.triggered) {
-    goHome();
-  }
-};
 
 const goHome = async () => {
   try {
