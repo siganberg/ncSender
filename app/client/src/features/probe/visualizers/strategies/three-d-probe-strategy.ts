@@ -41,7 +41,7 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
       }
     });
 
-    setGroupColor(object, 'Led', 0xff0000);
+    setGroupColor(object, 'Led', 0x5cb85c);
     setGroupColor(object, 'Body', 0x606060);
 
     this.centerProbe(object);
@@ -98,7 +98,7 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
 
   handleProbeActiveChange(isActive: boolean): void {
     if (!this.probeModel) return;
-    const ledColor = isActive ? 0x00ff00 : 0xff0000;
+    const ledColor = isActive ? 0xff0000 : 0x5cb85c;
     setGroupColor(this.probeModel, 'Led', ledColor);
   }
 

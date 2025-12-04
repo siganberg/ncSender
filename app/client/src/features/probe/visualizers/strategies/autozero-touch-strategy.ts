@@ -51,8 +51,8 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
       }
     });
 
-    setGroupColor(object, 'LED', 0xff0000);
-    setGroupColor(object, 'Led', 0xff0000);
+    setGroupColor(object, 'LED', 0x5cb85c);
+    setGroupColor(object, 'Led', 0x5cb85c);
     setGroupColor(object, 'AutoPlate', 0xd3d3d3);
 
     this.centerProbe(object);
@@ -104,7 +104,7 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
 
   handleProbeActiveChange(isActive: boolean): void {
     if (!this.probeModel) return;
-    const ledColor = isActive ? 0x00ff00 : 0xff0000;
+    const ledColor = isActive ? 0xff0000 : 0x5cb85c;
     setGroupColor(this.probeModel, 'LED', ledColor);
     setGroupColor(this.probeModel, 'Led', ledColor);
   }

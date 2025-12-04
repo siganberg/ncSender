@@ -54,7 +54,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
       }
     });
 
-    setGroupColor(object, 'LED', 0xff0000);
+    setGroupColor(object, 'LED', 0x5cb85c);
     setGroupColor(object, 'Body', 0xe8e8e8);
     setGroupColor(object, 'Nut', 0x606060);
 
@@ -109,7 +109,7 @@ export class StandardBlockStrategy implements ProbeStrategy {
 
   handleProbeActiveChange(isActive: boolean): void {
     if (!this.probeModel) return;
-    const ledColor = isActive ? 0x00ff00 : 0xff0000;
+    const ledColor = isActive ? 0xff0000 : 0x5cb85c;
     setGroupColor(this.probeModel, 'LED', ledColor);
   }
 

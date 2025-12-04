@@ -1597,6 +1597,10 @@ input:checked + .slider {
   background-color: var(--color-accent);
 }
 
+input:not(:checked) + .slider {
+  background-color: var(--color-surface-muted);
+}
+
 input:checked + .slider:before {
   transform: translateX(26px);
 }
