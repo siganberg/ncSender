@@ -524,14 +524,14 @@ const onWorkspaceChange = (e: Event) => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #ff0000;
-  box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
+  background: #28a745;
+  box-shadow: 0 0 12px rgba(40, 167, 69, 0.8);
   transition: all 0.3s ease;
 }
 
 .pin-led--on {
-  background: #28a745;
-  box-shadow: 0 0 12px rgba(40, 167, 69, 0.8);
+  background: #ff0000;
+  box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
 }
 
 .empty-state {
