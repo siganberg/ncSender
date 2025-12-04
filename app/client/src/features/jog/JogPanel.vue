@@ -29,9 +29,9 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
             :disabled="isHoming"
-            @click="handleHomeDoubleClick"
+            @click="handleHomeClick"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
@@ -53,42 +53,24 @@
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.X.triggered, 'blink-border': homeSplitPress.X.blinking }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
               :disabled="isHoming"
-              @mousedown="startHomeSplitPress('X', $event)"
-              @mouseup="endHomeSplitPress('X')"
-              @mouseleave="cancelHomeSplitPress('X')"
-              @touchstart="startHomeSplitPress('X', $event)"
-              @touchend="endHomeSplitPress('X')"
-              @touchcancel="cancelHomeSplitPress('X')"
+              @click="goHomeAxis('X')"
             >
-              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.X.progress || 0}%` }"></div>
               HX
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.Y.triggered, 'blink-border': homeSplitPress.Y.blinking }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
               :disabled="isHoming"
-              @mousedown="startHomeSplitPress('Y', $event)"
-              @mouseup="endHomeSplitPress('Y')"
-              @mouseleave="cancelHomeSplitPress('Y')"
-              @touchstart="startHomeSplitPress('Y', $event)"
-              @touchend="endHomeSplitPress('Y')"
-              @touchcancel="cancelHomeSplitPress('Y')"
+              @click="goHomeAxis('Y')"
             >
-              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.Y.progress || 0}%` }"></div>
               HY
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value, 'long-press-triggered': homeSplitPress.Z.triggered, 'blink-border': homeSplitPress.Z.blinking }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
               :disabled="isHoming"
-              @mousedown="startHomeSplitPress('Z', $event)"
-              @mouseup="endHomeSplitPress('Z')"
-              @mouseleave="cancelHomeSplitPress('Z')"
-              @touchstart="startHomeSplitPress('Z', $event)"
-              @touchend="endHomeSplitPress('Z')"
-              @touchcancel="cancelHomeSplitPress('Z')"
+              @click="goHomeAxis('Z')"
             >
-              <div class="long-press-indicator long-press-horizontal" :style="{ width: `${homeSplitPress.Z.progress || 0}%` }"></div>
               HZ
             </button>
           </div>
@@ -472,15 +454,10 @@ const motionControlsDisabled = computed(() => !store.isConnected.value || props.
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 
-const handleHomeDoubleClick = () => {
-  const now = performance.now();
-  if (now - lastHomeClickTime < DOUBLE_CLICK_THRESHOLD_MS) {
-    // Double-click detected - expand to HX, HY, HZ
-    homeSplit.value = true;
-    lastHomeClickTime = 0; // Reset to prevent triple-click issues
-  } else {
-    // First click - record time
-    lastHomeClickTime = now;
+const handleHomeClick = () => {
+  // Only execute on click if long press wasn't triggered
+  if (!homePress.triggered) {
+    goHome();
   }
 };
 
@@ -495,34 +472,17 @@ const goHome = async () => {
 };
 
 
-// --- Home split (HX/HY/HZ) via double-click ---
+// --- Home split (HX/HY/HZ) via long press ---
 const homeSplit = ref(false);
 const homeGroupRef = ref<HTMLElement | null>(null);
-const LONG_PRESS_MS_HOME = 1500;
+const LONG_PRESS_MS_HOME = 1000;
 const DELAY_BEFORE_VISUAL_MS = 150;
-const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; touchUsed: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, touchUsed: false, blinking: false });
+const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
 let homeActive = false;
-let lastHomeClickTime = 0;
-
-// Home split buttons (HX/HY/HZ) with long-press
-const homeSplitPress = reactive({
-  X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
-  Z: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false }
-});
-
-type HomeSplitAxisType = 'X' | 'Y' | 'Z';
 
 const startHomePress = (_evt?: Event) => {
-  const isTouch = _evt?.type === 'touchstart';
-
   if (_evt) {
     _evt.preventDefault();
-  }
-
-  // Track if touch event was used
-  if (isTouch) {
-    homePress.touchUsed = true;
   }
 
   if (homeSplit.value) return;
@@ -548,8 +508,7 @@ const startHomePress = (_evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_HOME && !homePress.triggered) {
       homePress.triggered = true;
-      goHome(); // Execute home command
-      // reset the visual progress immediately
+      homeSplit.value = true; // Split into HX/HY/HZ on long press
       homePress.progress = 0;
       homePress.active = false;
       homeActive = false;
@@ -565,32 +524,13 @@ const startHomePress = (_evt?: Event) => {
 const endHomePress = () => {
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.raf = undefined;
-
-  // If not triggered (incomplete press), handle tap/double-tap for touch
-  if (!homePress.triggered && homePress.active) {
-    homePress.active = false;
-    homeActive = false;
-    homePress.progress = 0;
-
-    // Handle double-tap for touch events
-    if (homePress.touchUsed) {
-      handleHomeDoubleClick();
-    } else {
-      homePress.blinking = true;
-      setTimeout(() => {
-        homePress.blinking = false;
-      }, 400);
-    }
-  } else {
-    homePress.active = false;
-    homeActive = false;
-    homePress.progress = 0;
-  }
+  homePress.active = false;
+  homeActive = false;
+  homePress.progress = 0;
 
   // Reset triggered after delay
   setTimeout(() => {
     homePress.triggered = false;
-    homePress.touchUsed = false;
   }, 100);
 };
 
@@ -601,8 +541,6 @@ const cancelHomePress = () => {
   homeActive = false;
   homePress.progress = 0;
   homePress.triggered = false;
-  homePress.touchUsed = false;
-  homePress.blinking = false;
 };
 
 // Click outside to collapse back to single Home or XY0
@@ -659,87 +597,10 @@ const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
   }
 };
 
-const getHomeSplitPressState = (axis: HomeSplitAxisType) => {
-  return homeSplitPress[axis];
-};
-
-const startHomeSplitPress = (axis: HomeSplitAxisType, _evt?: Event) => {
-  if (_evt) _evt.preventDefault();
-  if (isHoming.value) return;
-
-  const state = getHomeSplitPressState(axis);
-  if (state.raf) cancelAnimationFrame(state.raf);
-
-  state.start = performance.now();
-  state.progress = 0;
-  state.active = true;
-  state.triggered = false;
-
-  const tick = () => {
-    if (!state.active) return;
-    const elapsed = performance.now() - state.start;
-
-    // Delay the visual indicator
-    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
-      state.progress = 0;
-    } else {
-      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
-      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_HOME - DELAY_BEFORE_VISUAL_MS)) * 100);
-      state.progress = pct;
-    }
-
-    if (elapsed >= LONG_PRESS_MS_HOME && !state.triggered) {
-      state.triggered = true;
-      goHomeAxis(axis);
-      state.progress = 0;
-      state.active = false;
-      return;
-    }
-
-    state.raf = requestAnimationFrame(tick);
-  };
-
-  state.raf = requestAnimationFrame(tick);
-};
-
-const endHomeSplitPress = (axis: HomeSplitAxisType) => {
-  const state = getHomeSplitPressState(axis);
-  if (state.raf) cancelAnimationFrame(state.raf);
-  state.raf = undefined;
-
-  // If not triggered (incomplete press), show blink feedback
-  if (!state.triggered && state.active) {
-    state.active = false;
-    state.progress = 0;
-    state.blinking = true;
-    setTimeout(() => {
-      state.blinking = false;
-    }, 400);
-  } else {
-    state.active = false;
-    state.progress = 0;
-  }
-
-  // Reset triggered after delay
-  setTimeout(() => {
-    state.triggered = false;
-  }, 100);
-};
-
-const cancelHomeSplitPress = (axis: HomeSplitAxisType) => {
-  const state = getHomeSplitPressState(axis);
-  if (state.raf) cancelAnimationFrame(state.raf);
-  state.raf = undefined;
-  state.active = false;
-  state.progress = 0;
-  state.triggered = false;
-  state.blinking = false;
-};
-
-// --- Parking location: 1.5s to go to park, 3s to save coordinates ---
+// --- Parking location: 1s to go to park, 2s to save coordinates ---
 const showParkingDialog = ref(false);
-const LONG_PRESS_MS_PARK_GO = 1500;
-const LONG_PRESS_MS_PARK_SAVE = 3000;
+const LONG_PRESS_MS_PARK_GO = 1000;
+const LONG_PRESS_MS_PARK_SAVE = 2000;
 const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; saved: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, saved: false, blinking: false });
 
 const goToPark = async () => {
@@ -896,7 +757,7 @@ const cancelParkPress = () => {
 };
 
 // Zero axis buttons with long-press
-const LONG_PRESS_MS_AXIS_ZERO = 1500;
+const LONG_PRESS_MS_AXIS_ZERO = 1000;
 const axisZeroPress = reactive({
   X: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false },
   Y: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false, touchUsed: false },
@@ -1058,7 +919,7 @@ const sendSoftReset = async () => {
 };
 
 // Corner button long-press handlers
-const LONG_PRESS_MS_CORNER = 1500;
+const LONG_PRESS_MS_CORNER = 1000;
 const cornerPress = reactive({
   topLeft: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
   topRight: { start: 0, progress: 0, raf: undefined as number | undefined, active: false, triggered: false, blinking: false },
