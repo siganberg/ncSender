@@ -1,4 +1,5 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Enhanced G-Code Visualizer with improved rendering and performance
+- Improved PIN LED visibility by inverting colors for better contrast
+- Fixed PIN state display to show correct on/off status
