@@ -251,6 +251,227 @@ const axisBounds = (size, offset, home) => {
     };
 };
 
+export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', zHome: 'max' }, units = 'metric' } = {}) => {
+    const group = new THREE.Group();
+
+    const MM_PER_INCH = 25.4;
+    const step = units === 'imperial' ? MM_PER_INCH / 2 : 10;
+    const majorStep = units === 'imperial' ? MM_PER_INCH * 5 : 100;
+
+    const xBounds = axisBounds(gridSizeX, workOffset.x || 0, orientation.xHome || 'min');
+    const zBounds = axisBounds(gridSizeZ, workOffset.z || 0, orientation.zHome || 'max');
+    const { min: minX, max: maxX } = xBounds;
+    const { min: minZ, max: maxZ } = zBounds;
+
+    const material = new THREE.LineBasicMaterial({
+        color: 0x77a9d7,
+        transparent: true,
+        opacity: 0.2
+    });
+
+    const majorMaterial = new THREE.LineBasicMaterial({
+        color: 0x77a9d7,
+        transparent: true,
+        opacity: 0.4
+    });
+
+    const xAxisLineMaterial = new THREE.LineBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 1.0
+    });
+
+    const zAxisLineMaterial = new THREE.LineBasicMaterial({
+        color: 0x0000ff,
+        transparent: true,
+        opacity: 1.0
+    });
+
+    const edgeMaterial = new THREE.LineBasicMaterial({
+        color: 0x77a9d7,
+        transparent: true,
+        opacity: 1.0
+    });
+
+    const points = [];
+    const majorPoints = [];
+
+    const isMajorLine = (value) => {
+        const remainder = Math.abs(value % majorStep);
+        return remainder < 0.01 || remainder > majorStep - 0.01;
+    };
+
+    // Horizontal lines (parallel to X axis) at different Z heights
+    for (let z = Math.round(minZ / step) * step; z <= maxZ; z += step) {
+        const linePoints = [
+            new THREE.Vector3(minX, 0, z),
+            new THREE.Vector3(maxX, 0, z)
+        ];
+
+        if (Math.abs(z) < 0.01) {
+            const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const xAxisLine = new THREE.Line(axisGeom, xAxisLineMaterial);
+            xAxisLine.renderOrder = 1;
+            group.add(xAxisLine);
+        } else if (isMajorLine(z)) {
+            majorPoints.push(...linePoints);
+        } else {
+            points.push(...linePoints);
+        }
+    }
+
+    // Vertical lines (parallel to Z axis) at different X positions
+    for (let x = Math.round(minX / step) * step; x <= maxX; x += step) {
+        const linePoints = [
+            new THREE.Vector3(x, 0, minZ),
+            new THREE.Vector3(x, 0, maxZ)
+        ];
+
+        if (Math.abs(x) < 0.01) {
+            const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const zAxisLine = new THREE.Line(axisGeom, zAxisLineMaterial);
+            zAxisLine.renderOrder = 1;
+            group.add(zAxisLine);
+        } else if (isMajorLine(x)) {
+            majorPoints.push(...linePoints);
+        } else {
+            points.push(...linePoints);
+        }
+    }
+
+    if (points.length > 0) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const lines = new THREE.LineSegments(geometry, material);
+        lines.renderOrder = 0;
+        group.add(lines);
+    }
+
+    if (majorPoints.length > 0) {
+        const majorGeometry = new THREE.BufferGeometry().setFromPoints(majorPoints);
+        const majorLines = new THREE.LineSegments(majorGeometry, majorMaterial);
+        majorLines.renderOrder = 0;
+        group.add(majorLines);
+    }
+
+    // Edge lines
+    const edgePoints = [
+        new THREE.Vector3(minX, 0, minZ),
+        new THREE.Vector3(maxX, 0, minZ),
+        new THREE.Vector3(minX, 0, maxZ),
+        new THREE.Vector3(maxX, 0, maxZ),
+        new THREE.Vector3(minX, 0, minZ),
+        new THREE.Vector3(minX, 0, maxZ),
+        new THREE.Vector3(maxX, 0, minZ),
+        new THREE.Vector3(maxX, 0, maxZ),
+    ];
+    const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    edgeLines.renderOrder = 1;
+    group.add(edgeLines);
+
+    const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
+
+    const shouldLabel = (value) => {
+        const remainder = Math.abs(value % labelStep);
+        return remainder < 0.01 || remainder > labelStep - 0.01;
+    };
+
+    // X-axis numbers (just below the X-axis line at Z=0)
+    // In side view, camera looks from -Y toward +Y, so labels face toward -Y
+    for (let x = Math.round(minX / step) * step; x <= maxX; x += step) {
+        if (Math.abs(x) < 0.01) continue;
+        if (!shouldLabel(x)) continue;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const scale = 4;
+        canvas.width = 128 * scale;
+        canvas.height = 64 * scale;
+        context.scale(scale, scale);
+
+        context.clearRect(0, 0, 128, 64);
+        context.fillStyle = '#cc6666';
+        context.font = 'bold 20px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.imageSmoothingEnabled = true;
+
+        const displayValue = units === 'imperial' ? Math.round(x / MM_PER_INCH).toString() : x.toString();
+        context.fillText(displayValue, 64, 32);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const planeGeometry = new THREE.PlaneGeometry(32, 20);
+        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        // Position just below X-axis (Z=0), offset by -5 in Z direction
+        // Rotate to face camera (looking from -Y)
+        mesh.position.set(x, -0.01, -5);
+        mesh.rotation.x = Math.PI / 2;
+        mesh.renderOrder = 2;
+        group.add(mesh);
+    }
+
+    // Z-axis numbers (on the Z-axis at X=0)
+    // In side view, camera looks from -Y toward +Y, so labels face toward -Y
+    for (let z = Math.round(minZ / step) * step; z <= maxZ; z += step) {
+        if (Math.abs(z) < 0.01) continue;
+        if (!shouldLabel(z)) continue;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const scale = 4;
+        canvas.width = 128 * scale;
+        canvas.height = 64 * scale;
+        context.scale(scale, scale);
+
+        context.clearRect(0, 0, 128, 64);
+        context.fillStyle = '#6666cc';
+        context.font = 'bold 20px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.imageSmoothingEnabled = true;
+
+        const displayValue = units === 'imperial' ? Math.round(z / MM_PER_INCH).toString() : z.toString();
+        context.fillText(displayValue, 64, 32);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const planeGeometry = new THREE.PlaneGeometry(32, 20);
+        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        // Position on Z-axis (X=0), offset by -5 in X direction
+        // Rotate to face camera (looking from -Y)
+        mesh.position.set(-5, -0.01, z);
+        mesh.rotation.x = Math.PI / 2;
+        mesh.renderOrder = 2;
+        group.add(mesh);
+    }
+
+    group.name = 'side-view-grid';
+    return group;
+};
+
 export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric' } = {}) => {
     const group = new THREE.Group();
 
@@ -540,7 +761,7 @@ export const createCoordinateAxes = (size = 50) => {
     return group;
 };
 
-export const createDynamicAxisLabels = (bounds) => {
+export const createDynamicAxisLabels = (bounds, view = 'top') => {
     const group = new THREE.Group();
 
     const createAxisLabel = (text, position, color) => {
@@ -589,13 +810,21 @@ export const createDynamicAxisLabels = (bounds) => {
         const zPos = new THREE.Vector3(0, 0, bounds.max.z + 20);
 
         group.add(createAxisLabel('X', xPos, 0xcc6666)); // Muted red
-        group.add(createAxisLabel('Y', yPos, 0x4d994d)); // Darker green
-        group.add(createAxisLabel('Z', zPos, 0x6666cc)); // Muted blue
+        if (view !== 'front') {
+            group.add(createAxisLabel('Y', yPos, 0x4d994d)); // Darker green (hide in side view)
+        }
+        if (view !== 'top') {
+            group.add(createAxisLabel('Z', zPos, 0x6666cc)); // Muted blue (hide in top view)
+        }
     } else {
         // Fallback positions if no bounds
         group.add(createAxisLabel('X', new THREE.Vector3(60, 0, 0), 0xcc6666)); // Muted red
-        group.add(createAxisLabel('Y', new THREE.Vector3(0, 60, 0), 0x4d994d)); // Darker green
-        group.add(createAxisLabel('Z', new THREE.Vector3(0, 0, 60), 0x6666cc)); // Muted blue
+        if (view !== 'front') {
+            group.add(createAxisLabel('Y', new THREE.Vector3(0, 60, 0), 0x4d994d)); // Darker green (hide in side view)
+        }
+        if (view !== 'top') {
+            group.add(createAxisLabel('Z', new THREE.Vector3(0, 0, 60), 0x6666cc)); // Muted blue (hide in top view)
+        }
     }
 
     group.name = 'axis-labels';

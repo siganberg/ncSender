@@ -318,7 +318,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
@@ -644,18 +644,28 @@ const applyBoundsAndWarnings = (bounds: ReturnType<typeof computeGridBoundsFrom>
   outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 };
 
-const rebuildGrid = (workOffset = props.workOffset) => {
+const rebuildGrid = (workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' = props.view) => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
   }
 
-  gridGroup = createGridLines({
-    gridSizeX: resolveGridSize(props.gridSizeX),
-    gridSizeY: resolveGridSize(props.gridSizeY),
-    workOffset,
-    orientation: resolvedOrientation.value,
-    units: appStore.unitsPreference.value
-  });
+  if (viewType === 'front') {
+    gridGroup = createSideViewGrid({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeZ: resolveZTravel(props.zMaxTravel),
+      workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+  } else {
+    gridGroup = createGridLines({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeY: resolveGridSize(props.gridSizeY),
+      workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+  }
 
   if (scene) {
     scene.add(gridGroup);
@@ -790,21 +800,31 @@ const initThreeJS = () => {
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
-  // Grid with numbers and major/minor lines
-  gridGroup = createGridLines({
-    gridSizeX: resolveGridSize(props.gridSizeX),
-    gridSizeY: resolveGridSize(props.gridSizeY),
-    workOffset: props.workOffset,
-    orientation: resolvedOrientation.value,
-    units: appStore.unitsPreference.value
-  });
+  // Grid with numbers and major/minor lines (use appropriate grid for initial view)
+  if (props.view === 'front') {
+    gridGroup = createSideViewGrid({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeZ: resolveZTravel(props.zMaxTravel),
+      workOffset: props.workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+  } else {
+    gridGroup = createGridLines({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeY: resolveGridSize(props.gridSizeY),
+      workOffset: props.workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+  }
   scene.add(gridGroup);
 
   axesGroup = createCoordinateAxes(50);
   scene.add(axesGroup);
 
   // Add initial axis labels
-  axisLabelsGroup = createDynamicAxisLabels(null);
+  axisLabelsGroup = createDynamicAxisLabels(null, props.view);
   scene.add(axisLabelsGroup);
 
   // G-code visualizer
@@ -1276,7 +1296,7 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     if (axisLabelsGroup) {
       scene.remove(axisLabelsGroup);
     }
-    axisLabelsGroup = createDynamicAxisLabels(gcodeBounds);
+    axisLabelsGroup = createDynamicAxisLabels(gcodeBounds, props.view);
     scene.add(axisLabelsGroup);
     updatePointerScale();
 
@@ -1642,6 +1662,14 @@ const updatePointerOpacity = () => {
 // Watch for view changes
 watch(() => props.view, (newView) => {
   setCameraView(newView);
+  // Rebuild grid for the new view (top/3D uses XY grid, side uses XZ grid)
+  rebuildGrid(props.workOffset, newView);
+  // Rebuild axis labels (hide Y in side view)
+  if (scene && axisLabelsGroup) {
+    scene.remove(axisLabelsGroup);
+    axisLabelsGroup = createDynamicAxisLabels(currentGCodeBounds, newView);
+    scene.add(axisLabelsGroup);
+  }
   // Auto fit to view when changing views with the specific view type
   if (autoFitMode.value && currentGCodeBounds) {
     fitCameraToBounds(currentGCodeBounds, newView);
