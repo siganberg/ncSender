@@ -150,13 +150,6 @@ export class CNCController extends EventEmitter {
         // Continue to broadcast this message
       }
 
-      // Parse PINSTATE responses
-      if (trimmedData.toUpperCase().startsWith('[PINSTATE:')) {
-        this.handlePinStateResponse(trimmedData);
-        // Don't broadcast PINSTATE responses to terminal UI
-        return;
-      }
-
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     }
@@ -433,60 +426,6 @@ export class CNCController extends EventEmitter {
     }
   }
 
-  handlePinStateResponse(data) {
-    // Parse PINSTATE response format:
-    // [PINSTATE:<type>|<description>|<id>|<mode>|<capabilities>|<state>]
-    // Example: [PINSTATE:DOUT|P0 <- Flood enable (M8)|0|N|I|0]
-
-    try {
-      // Remove [PINSTATE: prefix and ] suffix
-      const content = data.substring(10, data.length - 1);
-      const parts = content.split('|');
-
-      if (parts.length !== 6) {
-        return; // Invalid format
-      }
-
-      const [type, description, id, mode, capabilities, state] = parts;
-
-      // Only process digital output pins
-      if (type !== 'DOUT') {
-        return;
-      }
-
-      // Only process pins labeled with P<n>
-      const pinMatch = description.match(/^P(\d+)/);
-      if (!pinMatch) {
-        return;
-      }
-
-      const pinId = `P${pinMatch[1]}`;
-      const pinState = parseInt(state) === 1; // Convert to boolean
-
-      // Extract port assignment if available (e.g., "P0 <- Flood enable (M8)" -> M8)
-      // Use port name as key if available, otherwise use pin ID
-      let pinKey = pinId;
-      const portMatch = description.match(/\(([^)]+)\)/);
-      if (portMatch) {
-        pinKey = portMatch[1]; // e.g., "M8", "M7", "M3/M4"
-      }
-
-      // Initialize switches object if it doesn't exist
-      if (!this.lastStatus.switches) {
-        this.lastStatus.switches = {};
-      }
-
-      // Check if switch state actually changed
-      const oldState = this.lastStatus.switches[pinKey];
-      if (oldState !== pinState) {
-        this.lastStatus.switches[pinKey] = pinState;
-        // Only emit the changed switch
-        this.emit('status-report', { switches: { [pinKey]: pinState } });
-      }
-    } catch (error) {
-      // Silently ignore parsing errors to avoid polluting logs
-    }
-  }
 
   startPolling() {
     if (this.statusPollInterval) return;
@@ -501,29 +440,12 @@ export class CNCController extends EventEmitter {
         }
       }
     }, 50);
-
-    // Start pin state polling (every 500ms)
-    if (!this.pinStatePollInterval) {
-      this.pinStatePollInterval = setInterval(() => {
-        if (this.connection && this.isConnected) {
-          try {
-            this.sendCommand('$pinstate', { meta: { sourceId: 'system' } });
-          } catch (error) {
-            console.warn('Pin state polling failed:', error.message);
-          }
-        }
-      }, 500);
-    }
   }
 
   stopPolling() {
     if (this.statusPollInterval) {
       clearInterval(this.statusPollInterval);
       this.statusPollInterval = null;
-    }
-    if (this.pinStatePollInterval) {
-      clearInterval(this.pinStatePollInterval);
-      this.pinStatePollInterval = null;
     }
   }
 

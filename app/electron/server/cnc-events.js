@@ -161,17 +161,7 @@ export function registerCncEventHandlers({
   const handleStatusReport = async (status) => {
     const prevMachineState = { ...serverState.machineState };
 
-    // Handle switch updates separately - broadcast as dedicated message type
-    if (status.switches && Object.keys(status.switches).length > 0) {
-      // Broadcast switch changes as a separate message type
-      broadcast('io-switches-updated', status.switches);
-      // Don't include switches in serverState
-      const statusWithoutSwitches = { ...status };
-      delete statusWithoutSwitches.switches;
-      serverState.machineState = { ...serverState.machineState, ...statusWithoutSwitches };
-    } else {
-      serverState.machineState = { ...serverState.machineState, ...status };
-    }
+    serverState.machineState = { ...serverState.machineState, ...status };
 
     const currentMachineStatus = status?.status?.toLowerCase();
     const prevMachineStatus = prevMachineState?.status;

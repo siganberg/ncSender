@@ -260,53 +260,15 @@
                   <tr>
                     <th>Enabled</th>
                     <th>Switch</th>
-                    <th>ON Command</th>
-                    <th>OFF Command</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <!-- Vacuum -->
-                  <tr>
-                    <td>
-                      <ToggleSwitch v-model="ioSwitches.vacuum.enabled" />
-                    </td>
-                    <td class="switch-name">Vacuum</td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.vacuum.on" :disabled="!ioSwitches.vacuum.enabled">
-                        <option value="">None</option>
-                        <option value="M7">M7</option>
-                        <option value="M8">M8</option>
-                        <option value="M64 P1">M64 P1</option>
-                        <option value="M64 P2">M64 P2</option>
-                        <option value="M64 P3">M64 P3</option>
-                        <option value="M64 P4">M64 P4</option>
-                        <option value="M64 P5">M64 P5</option>
-                        <option value="M64 P6">M64 P6</option>
-                      </select>
-                    </td>
-                    <td class="off-command-label">{{ getOffCommand(ioSwitches.vacuum.on) || 'None' }}</td>
-                  </tr>
-
                   <!-- Flood -->
                   <tr>
                     <td>
                       <ToggleSwitch v-model="ioSwitches.flood.enabled" />
                     </td>
                     <td class="switch-name">Flood</td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.flood.on" :disabled="!ioSwitches.flood.enabled">
-                        <option value="">None</option>
-                        <option value="M7">M7</option>
-                        <option value="M8">M8</option>
-                        <option value="M64 P1">M64 P1</option>
-                        <option value="M64 P2">M64 P2</option>
-                        <option value="M64 P3">M64 P3</option>
-                        <option value="M64 P4">M64 P4</option>
-                        <option value="M64 P5">M64 P5</option>
-                        <option value="M64 P6">M64 P6</option>
-                      </select>
-                    </td>
-                    <td class="off-command-label">{{ getOffCommand(ioSwitches.flood.on) || 'None' }}</td>
                   </tr>
 
                   <!-- Mist -->
@@ -315,42 +277,6 @@
                       <ToggleSwitch v-model="ioSwitches.mist.enabled" />
                     </td>
                     <td class="switch-name">Mist</td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.mist.on" :disabled="!ioSwitches.mist.enabled">
-                        <option value="">None</option>
-                        <option value="M7">M7</option>
-                        <option value="M8">M8</option>
-                        <option value="M64 P1">M64 P1</option>
-                        <option value="M64 P2">M64 P2</option>
-                        <option value="M64 P3">M64 P3</option>
-                        <option value="M64 P4">M64 P4</option>
-                        <option value="M64 P5">M64 P5</option>
-                        <option value="M64 P6">M64 P6</option>
-                      </select>
-                    </td>
-                    <td class="off-command-label">{{ getOffCommand(ioSwitches.mist.on) || 'None' }}</td>
-                  </tr>
-
-                  <!-- Air -->
-                  <tr>
-                    <td>
-                      <ToggleSwitch v-model="ioSwitches.air.enabled" />
-                    </td>
-                    <td class="switch-name">Air</td>
-                    <td>
-                      <select class="setting-select" v-model="ioSwitches.air.on" :disabled="!ioSwitches.air.enabled">
-                        <option value="">None</option>
-                        <option value="M7">M7</option>
-                        <option value="M8">M8</option>
-                        <option value="M64 P1">M64 P1</option>
-                        <option value="M64 P2">M64 P2</option>
-                        <option value="M64 P3">M64 P3</option>
-                        <option value="M64 P4">M64 P4</option>
-                        <option value="M64 P5">M64 P5</option>
-                        <option value="M64 P6">M64 P6</option>
-                      </select>
-                    </td>
-                    <td class="off-command-label">{{ getOffCommand(ioSwitches.air.on) || 'None' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1091,20 +1017,12 @@ const getOffCommand = (onCommand: string): string => {
 // I/O Switches settings
 const ioSwitches = reactive({
   flood: {
-    enabled: initialSettings?.ioSwitches?.flood?.enabled ?? false,
+    enabled: initialSettings?.ioSwitches?.flood?.enabled ?? true,
     on: initialSettings?.ioSwitches?.flood?.on || 'M8'
   },
   mist: {
-    enabled: initialSettings?.ioSwitches?.mist?.enabled ?? false,
+    enabled: initialSettings?.ioSwitches?.mist?.enabled ?? true,
     on: initialSettings?.ioSwitches?.mist?.on || 'M7'
-  },
-  air: {
-    enabled: initialSettings?.ioSwitches?.air?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.air?.on || ''
-  },
-  vacuum: {
-    enabled: initialSettings?.ioSwitches?.vacuum?.enabled ?? false,
-    on: initialSettings?.ioSwitches?.vacuum?.on || ''
   }
 });
 
@@ -1981,9 +1899,7 @@ watch(ioSwitches, async (newValue) => {
   await updateSettings({
     ioSwitches: {
       flood: { enabled: newValue.flood.enabled, on: newValue.flood.on },
-      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on },
-      air: { enabled: newValue.air.enabled, on: newValue.air.on },
-      vacuum: { enabled: newValue.vacuum.enabled, on: newValue.vacuum.on }
+      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on }
     }
   });
 }, { deep: true });

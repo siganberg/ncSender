@@ -660,10 +660,6 @@ class NCClient {
     return this.on('server-state-updated', callback);
   }
 
-  onIOSwitchesUpdated(callback) {
-    return this.on('io-switches-updated', callback);
-  }
-
   // Backward compatibility - alias for server state updates that include machine state
   onMachineStateUpdated(callback) {
     return this.on('server-state-updated', (serverState) => {

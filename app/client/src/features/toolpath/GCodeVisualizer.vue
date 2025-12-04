@@ -489,8 +489,8 @@ const getOffCommand = (onCommand: string): string => {
 
 const enabledIOSwitches = computed(() => {
   const enabled: Record<string, any> = {};
-  // Define order to match Settings table: Vacuum, Flood, Mist, Air
-  const switchOrder = ['vacuum', 'flood', 'mist', 'air'];
+  // Define order to match Settings table: Flood, Mist
+  const switchOrder = ['flood', 'mist'];
 
   for (const key of switchOrder) {
     const config = ioSwitchesConfig.value[key];
@@ -2342,31 +2342,22 @@ onMounted(async () => {
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
     }
-    // Load I/O Switches configuration
-    if (settings.ioSwitches) {
-      ioSwitchesConfig.value = settings.ioSwitches;
-    }
+    // Load I/O Switches configuration with defaults
+    ioSwitchesConfig.value = settings.ioSwitches || {
+      flood: { enabled: true, on: 'M8' },
+      mist: { enabled: true, on: 'M7' }
+    };
   }
 
-  // Initialize I/O switch states from pin states
-  if (appStore.status?.pins) {
-    for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
-      if (!(config as any).enabled) continue;
+  // Initialize I/O switch states from machine status
+  for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
+    if (!(config as any).enabled) continue;
 
-      const onCommand = (config as any).on;
-      if (!onCommand) continue;
-
-      // Extract pin key from command
-      let pinKey = onCommand;
-      const m64Match = onCommand.match(/M6[24]\s+(P\d+)/i);
-      if (m64Match) {
-        pinKey = m64Match[1];
-      }
-
-      // Initialize from existing pin state
-      if (pinKey in appStore.status.pins) {
-        ioSwitchStates[switchKey] = appStore.status.pins[pinKey];
-      }
+    // Initialize flood and mist from status report coolant fields
+    if (switchKey === 'flood') {
+      ioSwitchStates.flood = appStore.status.floodCoolant ?? false;
+    } else if (switchKey === 'mist') {
+      ioSwitchStates.mist = appStore.status.mistCoolant ?? false;
     }
   }
 
@@ -2411,28 +2402,17 @@ onMounted(async () => {
     }
   }, { deep: true });
 
-  // Listen for I/O switch updates from server
-  api.onIOSwitchesUpdated((switches) => {
-    // Map switch states to I/O switch states based on their ON command
-    // For each switch, extract the switch key from its ON command and update state
-    for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
-      if (!(config as any).enabled) continue;
+  // Watch for flood coolant status changes and sync with flood switch
+  watch(() => appStore.status.floodCoolant, (newValue) => {
+    if ('flood' in ioSwitchStates && ioSwitchesConfig.value.flood?.enabled) {
+      ioSwitchStates.flood = newValue ?? false;
+    }
+  });
 
-      const onCommand = (config as any).on;
-      if (!onCommand) continue;
-
-      // Extract switch key from command
-      // Examples: "M7" -> "M7", "M8" -> "M8", "M64 P3" -> "P3"
-      let switchStateKey = onCommand;
-      const m64Match = onCommand.match(/M6[24]\s+(P\d+)/i);
-      if (m64Match) {
-        switchStateKey = m64Match[1]; // Extract "P3" from "M64 P3"
-      }
-
-      // Update switch state if this switch was in the update
-      if (switchStateKey in switches) {
-        ioSwitchStates[switchKey] = switches[switchStateKey];
-      }
+  // Watch for mist coolant status changes and sync with mist switch
+  watch(() => appStore.status.mistCoolant, (newValue) => {
+    if ('mist' in ioSwitchStates && ioSwitchesConfig.value.mist?.enabled) {
+      ioSwitchStates.mist = newValue ?? false;
     }
   });
 

@@ -604,19 +604,6 @@ export function initializeStore() {
     // We keep the last loaded file so users can review it.
   });
 
-  // IO Switches updates
-  api.onIOSwitchesUpdated((switches) => {
-    // Update individual switch states
-    for (const [switchKey, switchState] of Object.entries(switches)) {
-      // Map switch keys to status properties if needed
-      // For now, we'll store them in a switches object on status
-      if (!status.switches) {
-        status.switches = {};
-      }
-      status.switches[switchKey] = switchState;
-    }
-  });
-
   // Console/command events
   api.on('cnc-command', (commandEvent) => {
     addOrUpdateCommandLine(commandEvent);
