@@ -1,5 +1,6 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Simplified home button behavior by removing long press requirement
-- Improved probe detection reliability using status report data instead of separate probe active flag
+- Simplified probe status detection using direct status report data
+- Removed home button long-press requirement for easier operation
+- Optimized pin state handling for better performance
