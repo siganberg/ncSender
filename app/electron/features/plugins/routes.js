@@ -270,6 +270,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
   router.get('/:pluginId/icon', async (req, res) => {
     try {
       const { pluginId } = req.params;
+      const { file } = req.query; // Optional: specific icon file for per-tool icons
       const manifestPath = path.join(pluginsDir, pluginId, 'manifest.json');
 
       // Read manifest to get icon path
@@ -280,11 +281,14 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
         return res.status(404).json({ error: 'Plugin manifest not found' });
       }
 
-      if (!manifest.icon) {
+      // Use specific file if provided, otherwise fall back to manifest icon
+      const iconFile = file || manifest.icon;
+
+      if (!iconFile) {
         return res.status(404).json({ error: 'Plugin has no icon' });
       }
 
-      const iconPath = path.join(pluginsDir, pluginId, manifest.icon);
+      const iconPath = path.join(pluginsDir, pluginId, iconFile);
 
       // Check if icon file exists
       try {
@@ -294,7 +298,7 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
       }
 
       // Determine content type based on extension
-      const ext = path.extname(manifest.icon).toLowerCase();
+      const ext = path.extname(iconFile).toLowerCase();
       const contentTypes = {
         '.svg': 'image/svg+xml',
         '.png': 'image/png',
