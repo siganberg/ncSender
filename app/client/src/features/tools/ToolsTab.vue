@@ -63,7 +63,7 @@
                 <div class="setting-item">
                   <label class="setting-label">Magazine Size</label>
                   <select class="setting-select" :value="toolCount" @change="handleMagazineSizeChange" :disabled="toolCountDisabled">
-                    <option v-for="n in 100" :key="n-1" :value="n-1">{{ n-1 }}</option>
+                    <option v-for="n in 99" :key="n-1" :value="n-1">{{ n-1 }}</option>
                   </select>
                 </div>
                 <div class="setting-item">
@@ -76,7 +76,7 @@
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">Probe</label>
-                  <ToggleSwitch :modelValue="showProbeButton" @update:modelValue="$emit('update:showProbeButton', $event)" :disabled="true" />
+                  <ToggleSwitch :modelValue="showProbeButton" @update:modelValue="$emit('update:showProbeButton', $event)" :disabled="toolCountDisabled" />
                 </div>
               </div>
               <div class="tool-count">{{ tools.length }} tool{{ tools.length !== 1 ? 's' : '' }} total</div>

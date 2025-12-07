@@ -90,7 +90,7 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool" class="tools-legend tools-legend--bottom">
+      <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool || showProbeTool" class="tools-legend tools-legend--bottom">
         <!-- Scroll Up Button -->
         <button
           v-if="numberOfToolsToShow > 8"
@@ -175,8 +175,8 @@
           :key="'manual'"
           class="tools-legend__item manual-tool"
           :class="{
-            'active': currentTool > numberOfToolsToShow,
-            'used': toolsUsed.some(t => t > numberOfToolsToShow),
+            'active': currentTool > numberOfToolsToShow && currentTool < 99,
+            'used': toolsUsed.some(t => t > numberOfToolsToShow && t < 99),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress['manual']?.triggered,
             'blink-border': toolPress['manual']?.blinking
@@ -214,6 +214,29 @@
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['tls']?.progress || 0}%` }"></div>
           <span class="tools-legend__label">TLS</span>
+        </div>
+
+        <!-- Probe Tool -->
+        <div
+          v-if="showProbeTool"
+          :key="'probe'"
+          class="tools-legend__item probe-tool"
+          :class="{
+            'active': currentTool === 99,
+            'disabled': isToolActionsDisabled,
+            'long-press-triggered': toolPress['probe']?.triggered,
+            'blink-border': toolPress['probe']?.blinking
+          }"
+          title="Probe (Hold to load T99)"
+          @mousedown="isToolActionsDisabled ? null : startToolPress('probe', $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress('probe')"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('probe')"
+          @touchstart="isToolActionsDisabled ? null : startToolPress('probe', $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress('probe')"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('probe')"
+        >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['probe']?.progress || 0}%` }"></div>
+          <span class="tools-legend__label">Probe</span>
         </div>
       </div>
 
@@ -548,11 +571,19 @@ const toolsUsed = ref<number[]>([]);
 const numberOfToolsToShow = ref<number>(0);
 const showManualTool = ref<boolean>(false);
 const showTlsTool = ref<boolean>(false);
+const showProbeTool = ref<boolean>(false);
 
-// Manual tool label - show T{currentTool} when tool count is 0, otherwise show "Manual"
+// Manual tool label - show tool number when manual tool is active
 const manualToolLabel = computed(() => {
-  if (numberOfToolsToShow.value === 0 && showManualTool.value) {
-    return `T${props.currentTool ?? 0}`;
+  const tool = props.currentTool ?? 0;
+  const toolCount = numberOfToolsToShow.value;
+  const isManualToolActive = tool > toolCount && tool < 99;
+
+  if (toolCount === 0 && showManualTool.value) {
+    return `T${tool}`;
+  }
+  if (isManualToolActive) {
+    return `Manual (T${tool})`;
   }
   return 'Manual';
 });
@@ -1975,6 +2006,9 @@ const startToolPress = (toolNumber: number | string, _evt?: Event) => {
       if (toolNumber === 'manual') {
         // Manual tool - use a number greater than numberOfToolsToShow
         toolToLoad = props.currentTool > numberOfToolsToShow.value ? 0 : numberOfToolsToShow.value + 1;
+      } else if (toolNumber === 'probe') {
+        // Probe tool - T99 is reserved for probe
+        toolToLoad = props.currentTool === 99 ? 0 : 99;
       } else {
         // Regular numbered tool - if this is the current tool, send T0 to unload, otherwise send the tool number
         toolToLoad = props.currentTool === toolNumber ? 0 : toolNumber as number;
@@ -2364,6 +2398,9 @@ onMounted(async () => {
     if (typeof settings.tool?.tls === 'boolean') {
       showTlsTool.value = settings.tool.tls;
     }
+    if (typeof settings.tool?.probe === 'boolean') {
+      showProbeTool.value = settings.tool.probe;
+    }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
     }
@@ -2414,6 +2451,9 @@ onMounted(async () => {
     }
     if (changedSettings.tool?.tls !== undefined) {
       showTlsTool.value = changedSettings.tool.tls;
+    }
+    if (changedSettings.tool?.probe !== undefined) {
+      showProbeTool.value = changedSettings.tool.probe;
     }
     // Update I/O Switches config when settings change
     if (changedSettings.ioSwitches !== undefined) {
@@ -2914,10 +2954,23 @@ watch(
   font-weight: 500;
 }
 
+.tools-legend__item.manual-tool,
+.tools-legend__item.tls-tool,
+.tools-legend__item.probe-tool {
+  width: auto;
+  min-width: 122px;
+  justify-content: center;
+}
+
 .tools-legend__item.manual-tool .tools-legend__label,
-.tools-legend__item.tls-tool .tools-legend__label {
+.tools-legend__item.tls-tool .tools-legend__label,
+.tools-legend__item.probe-tool .tools-legend__label {
   text-align: center;
-  flex: 1;
+  flex: none;
+}
+
+.tools-legend__item.manual-tool .tools-legend__label {
+  font-size: 1rem;
 }
 
 .tools-legend__icon {
