@@ -1,5 +1,5 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Improved PIN LED visibility by inverting colors for better contrast
-- Fixed PIN state display to show correct on/off status
+### ✨ New Features
+- Added Probe button for easier workpiece probing operations
+- Added support for custom tool icons in the tool library
