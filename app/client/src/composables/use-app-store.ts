@@ -89,6 +89,7 @@ const status = reactive({
   spindleOverride: 100,
   tool: 0,
   toolLengthSet: false,
+  masterTLO: 0,
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
@@ -233,6 +234,10 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).toolLengthSet === 'boolean') {
     status.toolLengthSet = (report as any).toolLengthSet;
+  }
+
+  if (typeof (report as any).masterTLO === 'number') {
+    status.masterTLO = (report as any).masterTLO;
   }
 
   if (typeof (report as any).Pn === 'string') {

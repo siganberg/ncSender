@@ -368,6 +368,7 @@ const props = withDefaults(defineProps<{
   alarmMessage?: string;
   currentTool?: number;
   toolLengthSet?: boolean;
+  masterTlo?: number;
 }>(), {
   view: 'top', // Default to top view
   theme: 'dark', // Default to dark theme
@@ -382,7 +383,8 @@ const props = withDefaults(defineProps<{
   spindleRpmTarget: 0,
   spindleRpmActual: 0,
   jobLoaded: null,
-  toolLengthSet: false
+  toolLengthSet: false,
+  masterTlo: 0
 });
 
 const emit = defineEmits<{
@@ -397,9 +399,9 @@ const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
 const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
 const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
 
-// TLS button should glow when a tool is loaded but tool length is not set
+// TLS button should glow when a tool is loaded but master TLO is zero
 const shouldTLSGlow = computed(() => {
-  return (props.currentTool ?? 0) > 0 && !props.toolLengthSet;
+  return (props.currentTool ?? 0) > 0 && (props.masterTlo ?? 0) === 0;
 });
 
 const isMachineConnected = computed(() => {

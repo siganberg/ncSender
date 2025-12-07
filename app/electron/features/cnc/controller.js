@@ -94,6 +94,11 @@ export class CNCController extends EventEmitter {
           // Ignore errors during initial setup
         });
 
+        // Request coordinate system offsets (includes TLO for master tool offset)
+        this.sendCommand('$#', { meta: { sourceId: 'system' } }).catch(() => {
+          // Ignore errors during initial setup
+        });
+
         // Publish the first status report so clients receive an immediate connection indicator
         this.emit('data', trimmedData, null);
       }
@@ -106,6 +111,10 @@ export class CNCController extends EventEmitter {
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.startsWith('[PARAM:') && trimmedData.endsWith(']')) {
       this.parseParam(trimmedData);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
+    } else if (trimmedData.startsWith('[TLO:') && trimmedData.endsWith(']')) {
+      this.parseTLO(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -343,7 +352,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'WCS', 'workspace'];
+    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'masterTLO', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -426,6 +435,22 @@ export class CNCController extends EventEmitter {
     }
   }
 
+  parseTLO(data) {
+    // Example: [TLO:0.000,0.000,-41.525,0.000]
+    // Extract the Z offset (3rd value)
+    const content = data.substring(5, data.length - 1); // Remove [TLO: and ]
+    const values = content.split(',');
+
+    if (values.length >= 3) {
+      const zOffset = parseFloat(values[2]);
+
+      if (Number.isFinite(zOffset) && this.lastStatus.masterTLO !== zOffset) {
+        log('Master TLO:', zOffset);
+        this.lastStatus.masterTLO = zOffset;
+        this.emit('status-report', { ...this.lastStatus });
+      }
+    }
+  }
 
   startPolling() {
     if (this.statusPollInterval) return;

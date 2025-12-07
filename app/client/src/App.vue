@@ -41,6 +41,7 @@
         :spindle-rpm-actual="status.spindleRpmActual"
         :current-tool="status.tool"
         :tool-length-set="status.toolLengthSet"
+        :master-tlo="status.masterTLO"
         :alarm-message="alarmMessage"
         @change-view="viewport = $event"
       />
