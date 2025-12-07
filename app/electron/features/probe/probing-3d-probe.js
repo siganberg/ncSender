@@ -147,7 +147,7 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
   code.push(
     'G91',
     `G0 X${xMove}`,
-    `G0 Z-${zPlunge+zParkHeight}`
+    `G38.3 Z-${zPlunge+zParkHeight} F150`
   );
 
   code.push(...getXYProbeRoutine({ selectedCorner, toolDiameter, skipPrepMove: true, zPlunge }));
@@ -155,7 +155,7 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
   return code;
 };
 
-export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000 }) => {
+export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2, rapidMovement = 2000, zPlunge = 3 }) => {
   const ballPointDiameter = toolDiameter;
   const halfX = xDimension / 2;
   const halfY = yDimension / 2;
@@ -175,7 +175,8 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
     `#<RAPID_SEARCH> = ${rapidMovement}`,
     'G21 (mm mode)',
-    "G91 (incremental)",
+    'G91 (incremental)',
+    `G38.3 Z-${zPlunge+4}  F${searchFeed}`,
   ];
 
   if (safeRapidX > 0) {
@@ -225,6 +226,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
     `#<Y2> = #5062`,
     `G0 Y-[[#<Y2>-#<Y1>]/2]`,
     'G10 L20 X0 Y0',
+    `G0 Z${zPlunge+4}`,
     'G90',
     'G[#<return_units>]'
   );

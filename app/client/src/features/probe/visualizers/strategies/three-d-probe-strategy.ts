@@ -76,9 +76,9 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
     }
 
     if (axis === 'Center - Inner') {
-      this.probeModel.position.set(0, 0, 1.5);
+      this.probeModel.position.set(0, 0, 3);
     } else {
-      this.probeModel.position.set(0, 0, 4);
+      this.probeModel.position.set(0, 0, 3);
     }
 
     this.context.render();

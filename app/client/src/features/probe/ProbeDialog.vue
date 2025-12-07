@@ -385,7 +385,7 @@
               Click on the front or back side to select where to probe
             </div>
             <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              <strong>Important:</strong> Measure dimension as close as possible to prevent probe damage.
+              <strong>Important:</strong> Position the probe 3-5mm above at the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}. Measure dimension as close as possible to prevent probe damage.
             </div>
           </div>
           <div class="probe-dialog__column probe-dialog__column--viewer">

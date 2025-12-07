@@ -64,7 +64,8 @@ const STRATEGIES = {
           xDimension: { defaultValue: 0, min: 0 },
           yDimension: { defaultValue: 0, min: 0 },
           toolDiameter: { defaultValue: 2, min: 0 },
-          rapidMovement: { defaultValue: 2000, min: 1 }
+          rapidMovement: { defaultValue: 2000, min: 1 },
+          zPlunge: { defaultValue: 3, min: 0 }
         },
         run: (options) => probe3D.getCenterInnerRoutine(options)
       },
