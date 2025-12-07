@@ -71,7 +71,7 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
   ];
 };
 
-export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMove = false }) => {
+export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMove = false, zPlunge = 3 }) => {
   const toolRadius = toolDiameter / 2;
 
   const isLeft = selectedCorner === 'TopLeft' || selectedCorner === 'BottomLeft';
@@ -88,6 +88,8 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
 
   const xMove = isLeft ? (toolDiameter + 16) : -(toolDiameter + 16);
   const yMove = isBottom ? (toolDiameter + 16) : -(toolDiameter + 16);
+
+  const zRetract = zPlunge + zParkHeight;
 
   const code = [
     `; Probe XY - ${selectedCorner}`,
@@ -126,7 +128,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
   );
 
   code.push(
-    'G0 Z10',
+    `G0 Z${zRetract}`,
     'G90 G0 X0 Y0',
     'G21',
     'G[#<return_units>]'
@@ -148,7 +150,7 @@ export const getXYZProbeRoutine = ({ selectedCorner, toolDiameter = 6, zPlunge =
     `G0 Z-${zPlunge+zParkHeight}`
   );
 
-  code.push(...getXYProbeRoutine({ selectedCorner, toolDiameter, skipPrepMove: true }));
+  code.push(...getXYProbeRoutine({ selectedCorner, toolDiameter, skipPrepMove: true, zPlunge }));
 
   return code;
 };

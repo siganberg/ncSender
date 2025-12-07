@@ -74,7 +74,7 @@
                   </div>
                 </div>
 
-                <div class="probe-control-group">
+                <div v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-group">
                   <label class="probe-label">Z-Plunge</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
@@ -1247,6 +1247,7 @@ const handleStartProbe = async () => {
       rapidMovement: rapidMovement.value,
       probeZFirst: probeZFirst.value,
       toolDiameter: ballPointDiameter.value || 6,
+      zPlunge: zPlunge.value,
       zOffset: zOffset.value,
       selectedBitDiameter: selectedBitDiameter.value,
       zThickness: zThickness.value,
