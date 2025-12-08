@@ -208,8 +208,13 @@ class GCodeVisualizer {
             // Track vertex index for this (source) line
             frames.push(vertices.length / 3);
 
+            // Skip G53 moves (machine coordinates) - cannot visualize in workpiece coordinates
+            if (cleanLine.includes('G53')) {
+                return;
+            }
+
             // Parse G-code
-            const gMatch = cleanLine.match(/G(\d+)/);
+            const gMatch = cleanLine.match(/G(\d+)/g); // Match all G codes on the line
             const xMatch = cleanLine.match(/X([-+]?\d*\.?\d+)/);
             const yMatch = cleanLine.match(/Y([-+]?\d*\.?\d+)/);
             const zMatch = cleanLine.match(/Z([-+]?\d*\.?\d+)/);
@@ -223,17 +228,19 @@ class GCodeVisualizer {
             }
 
             if (gMatch) {
-                const gCode = parseInt(gMatch[1]);
-                // Track unit mode
-                if (gCode === 20) {
-                    unitScale = 25.4; // G20 = inches, convert to mm
-                } else if (gCode === 21) {
-                    unitScale = 1; // G21 = mm
-                }
-                // Track movement type
-                if ([0, 1, 2, 3].includes(gCode)) {
-                    lastMoveType = gCode;
-                }
+                gMatch.forEach(g => {
+                    const gCode = parseInt(g.substring(1));
+                    // Track unit mode
+                    if (gCode === 20) {
+                        unitScale = 25.4; // G20 = inches, convert to mm
+                    } else if (gCode === 21) {
+                        unitScale = 1; // G21 = mm
+                    }
+                    // Track movement type
+                    if ([0, 1, 2, 3].includes(gCode)) {
+                        lastMoveType = gCode;
+                    }
+                });
             }
 
             const newPos = { ...currentPos };
