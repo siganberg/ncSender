@@ -1,7 +1,4 @@
 ## What's Changed
 
-### ✨ New Features
-- Added z-plunge support for inner probing operations
-
-### 🐛 Bug Fixes
-- Fixed issue where z-plunge setting was not being applied correctly
+### 🔧 Improvements
+- Improved G-code visualization by skipping rendering of G53 machine coordinate commands
