@@ -429,6 +429,42 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     }
   });
 
+  // Save/update G-code file content at specific path
+  router.post('/file/save', async (req, res) => {
+    try {
+      const { path: relativePath, content } = req.body;
+      if (!relativePath) {
+        return res.status(400).json({ error: 'Path is required' });
+      }
+      if (typeof content !== 'string') {
+        return res.status(400).json({ error: 'Content is required' });
+      }
+
+      const safePath = getSafePath(filesDir, relativePath);
+
+      // Ensure parent directory exists
+      const parentDir = path.dirname(safePath);
+      await fs.mkdir(parentDir, { recursive: true });
+
+      // Write content to file
+      await fs.writeFile(safePath, content, 'utf8');
+
+      log('Saved G-code file:', relativePath);
+
+      res.json({
+        success: true,
+        filename: relativePath,
+        message: 'File saved successfully'
+      });
+    } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error saving G-code file:', error);
+      res.status(500).json({ error: 'Failed to save file' });
+    }
+  });
+
   // Delete specific G-code file (supports nested paths via body)
   router.post('/file/delete', async (req, res) => {
     try {

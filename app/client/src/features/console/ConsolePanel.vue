@@ -1507,10 +1507,8 @@ async function commitEdit() {
   try {
     const filename = store.gcodeFilename.value || 'modified.gcode';
 
-    const blob = new Blob([editableGcode.value], { type: 'text/plain' });
-    const file = new File([blob], filename, { type: 'text/plain' });
-
-    await api.uploadGCodeFile(file);
+    // Save file content directly at its path (supports nested folders)
+    await api.saveGCodeFile(filename, editableGcode.value);
     await api.loadGCodeFile(filename);
 
     hasUnsavedChanges.value = false;

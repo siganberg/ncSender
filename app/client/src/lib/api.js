@@ -371,6 +371,16 @@ class NCClient {
     return await response.json();
   }
 
+  async saveGCodeFile(filePath, content) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/file/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath, content })
+    });
+    if (!response.ok) throw new Error('Failed to save G-code file');
+    return await response.json();
+  }
+
   async createFolder(folderPath) {
     const response = await fetch(`${this.baseUrl}/api/gcode-files/folders`, {
       method: 'POST',
