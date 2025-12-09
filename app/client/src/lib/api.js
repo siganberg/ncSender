@@ -345,26 +345,69 @@ class NCClient {
     return await response.json();
   }
 
-  async getGCodeFile(filename) {
-    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}`);
+  async getGCodeFile(filePath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/file?path=${encodeURIComponent(filePath)}`);
     if (!response.ok) throw new Error('Failed to get G-code file');
     return await response.json();
   }
 
-  async loadGCodeFile(filename) {
-    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}/load`, {
+  async loadGCodeFile(filePath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/load`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath })
     });
     if (!response.ok) throw new Error('Failed to load G-code file');
     return await response.json();
   }
 
-  async deleteGCodeFile(filename) {
-    const response = await fetch(`${this.baseUrl}/api/gcode-files/${encodeURIComponent(filename)}`, {
-      method: 'DELETE'
+  async deleteGCodeFile(filePath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/file/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath })
     });
     if (!response.ok) throw new Error('Failed to delete G-code file');
+    return await response.json();
+  }
+
+  async createFolder(folderPath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/folders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath })
+    });
+    if (!response.ok) throw new Error('Failed to create folder');
+    return await response.json();
+  }
+
+  async deleteFolder(folderPath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/folders/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath })
+    });
+    if (!response.ok) throw new Error('Failed to delete folder');
+    return await response.json();
+  }
+
+  async moveItem(sourcePath, destinationPath) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationPath })
+    });
+    if (!response.ok) throw new Error('Failed to move item');
+    return await response.json();
+  }
+
+  async renameItem(itemPath, newName) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: itemPath, newName })
+    });
+    if (!response.ok) throw new Error('Failed to rename item');
     return await response.json();
   }
 

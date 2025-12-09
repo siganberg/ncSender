@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
 import { pluginManager } from '../../core/plugin-manager.js';
-import { getUserDataDir } from '../../utils/paths.js';
+import { getUserDataDir, getSafePath, isValidName, getParentPath, generatePathId } from '../../utils/paths.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -40,6 +40,61 @@ function detectWorkspace(gcodeContent) {
   }
 
   return null;
+}
+
+const GCODE_EXTENSIONS = ['.gcode', '.nc', '.tap', '.txt'];
+
+function isGCodeFile(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  return GCODE_EXTENSIONS.includes(ext);
+}
+
+async function buildFileTree(dir, basePath = '') {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const items = [];
+
+  for (const entry of entries) {
+    const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+    const fullPath = path.join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      items.push({
+        id: generatePathId(relativePath),
+        name: entry.name,
+        type: 'folder',
+        path: relativePath,
+        children: await buildFileTree(fullPath, relativePath)
+      });
+    } else if (isGCodeFile(entry.name)) {
+      const stats = await fs.stat(fullPath);
+      items.push({
+        id: generatePathId(relativePath),
+        name: entry.name,
+        type: 'file',
+        path: relativePath,
+        size: stats.size,
+        uploadedAt: stats.mtime.toISOString()
+      });
+    }
+  }
+
+  return items.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+async function deleteRecursive(dirPath) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      await deleteRecursive(fullPath);
+    } else {
+      await fs.unlink(fullPath);
+    }
+  }
+  await fs.rmdir(dirPath);
 }
 
 export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
@@ -135,35 +190,133 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     }
   });
 
-  // List G-code files with metadata
+  // List G-code files with metadata (returns tree structure)
   router.get('/', async (req, res) => {
     try {
-      const files = await fs.readdir(filesDir);
-      const gcodeFiles = files.filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        return ['.gcode', '.nc', '.tap', '.txt'].includes(ext);
-      });
-
-      // Get file stats for each file
-      const filesWithMetadata = await Promise.all(
-        gcodeFiles.map(async (filename) => {
-          const filePath = path.join(filesDir, filename);
-          const stats = await fs.stat(filePath);
-          return {
-            name: filename,
-            size: stats.size,
-            uploadedAt: stats.mtime.toISOString()
-          };
-        })
-      );
-
-      // Sort by most recent first
-      filesWithMetadata.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-
-      res.json({ files: filesWithMetadata });
+      const tree = await buildFileTree(filesDir);
+      res.json({ tree });
     } catch (error) {
       log('Error listing G-code files:', error);
       res.status(500).json({ error: 'Failed to list files' });
+    }
+  });
+
+  // Create folder
+  router.post('/folders', async (req, res) => {
+    try {
+      const { path: folderPath } = req.body;
+
+      if (!folderPath) {
+        return res.status(400).json({ error: 'Folder path is required' });
+      }
+
+      const safePath = getSafePath(filesDir, folderPath);
+      await fs.mkdir(safePath, { recursive: true });
+
+      log('Created folder:', folderPath);
+      res.json({ success: true, path: folderPath });
+    } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error creating folder:', error);
+      res.status(500).json({ error: 'Failed to create folder' });
+    }
+  });
+
+  // Delete folder (recursive) - using POST with body for path support
+  router.post('/folders/delete', async (req, res) => {
+    try {
+      const { path: folderPath } = req.body;
+
+      if (!folderPath) {
+        return res.status(400).json({ error: 'Folder path is required' });
+      }
+
+      const safePath = getSafePath(filesDir, folderPath);
+      const stats = await fs.stat(safePath);
+
+      if (!stats.isDirectory()) {
+        return res.status(400).json({ error: 'Path is not a folder' });
+      }
+
+      await deleteRecursive(safePath);
+
+      log('Deleted folder:', folderPath);
+      res.json({ success: true, path: folderPath });
+    } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error deleting folder:', error);
+      res.status(500).json({ error: 'Failed to delete folder' });
+    }
+  });
+
+  // Move file or folder
+  router.post('/move', async (req, res) => {
+    try {
+      const { sourcePath, destinationPath } = req.body;
+
+      if (!sourcePath || !destinationPath) {
+        return res.status(400).json({ error: 'Source and destination paths are required' });
+      }
+
+      const safeSource = getSafePath(filesDir, sourcePath);
+      const safeDestination = getSafePath(filesDir, destinationPath);
+
+      // Ensure parent directory of destination exists
+      const destParent = path.dirname(safeDestination);
+      await fs.mkdir(destParent, { recursive: true });
+
+      await fs.rename(safeSource, safeDestination);
+
+      log('Moved:', sourcePath, '->', destinationPath);
+      res.json({ success: true, newPath: destinationPath });
+    } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error moving item:', error);
+      res.status(500).json({ error: 'Failed to move item' });
+    }
+  });
+
+  // Rename file or folder
+  router.post('/rename', async (req, res) => {
+    try {
+      const { path: itemPath, newName } = req.body;
+
+      if (!itemPath || !newName) {
+        return res.status(400).json({ error: 'Path and new name are required' });
+      }
+
+      if (!isValidName(newName)) {
+        return res.status(400).json({ error: 'Invalid name' });
+      }
+
+      const safePath = getSafePath(filesDir, itemPath);
+      const parentDir = path.dirname(safePath);
+      const newPath = path.join(parentDir, newName);
+
+      // Verify new path is still safe
+      const resolvedBase = path.resolve(filesDir);
+      const resolvedNew = path.resolve(newPath);
+      if (!resolvedNew.startsWith(resolvedBase + path.sep)) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+
+      await fs.rename(safePath, newPath);
+
+      const relativeNewPath = path.relative(filesDir, newPath);
+      log('Renamed:', itemPath, '->', relativeNewPath);
+      res.json({ success: true, newPath: relativeNewPath });
+    } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error renaming item:', error);
+      res.status(500).json({ error: 'Failed to rename item' });
     }
   });
 
@@ -181,30 +334,39 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     }
   });
 
-  // Get specific G-code file
-  router.get('/:filename', async (req, res) => {
+  // Get specific G-code file (supports nested paths via query param)
+  router.get('/file', async (req, res) => {
     try {
-      const filename = decodeURIComponent(req.params.filename);
-      const filePath = path.join(filesDir, filename);
-      const content = await fs.readFile(filePath, 'utf8');
-      res.json({ filename, content });
+      const relativePath = req.query.path;
+      if (!relativePath) {
+        return res.status(400).json({ error: 'Path is required' });
+      }
+      const safePath = getSafePath(filesDir, relativePath);
+      const content = await fs.readFile(safePath, 'utf8');
+      res.json({ filename: relativePath, content });
     } catch (error) {
-      log('Error reading G-code file:', req.params.filename, error);
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      log('Error reading G-code file:', req.query.path, error);
       res.status(404).json({ error: 'File not found' });
     }
   });
 
-  // Load specific G-code file (load into viewer)
-  router.post('/:filename/load', async (req, res) => {
+  // Load specific G-code file (supports nested paths via body)
+  router.post('/load', async (req, res) => {
     try {
-      const filename = req.params.filename;
-      const filePath = path.join(filesDir, filename);
-      let content = await fs.readFile(filePath, 'utf8');
+      const relativePath = req.body.path;
+      if (!relativePath) {
+        return res.status(400).json({ error: 'Path is required' });
+      }
+      const safePath = getSafePath(filesDir, relativePath);
+      let content = await fs.readFile(safePath, 'utf8');
 
       // Process through post-processor plugins (onGcodeProgramLoad event)
       const context = {
-        filename: filename,
-        filePath: filePath,
+        filename: relativePath,
+        filePath: safePath,
         sourceId: 'load'
       };
 
@@ -216,17 +378,14 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         }
       } catch (error) {
         log('Error processing G-code through plugins:', error);
-        // Continue with original content if plugin processing fails
       }
 
-      // Always cache G-code to disk (whether processed or not) to avoid memory issues with large files
       await ensureCacheDir();
       await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
       log('Cached G-code to:', CACHE_FILE_PATH);
 
-      // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
-        filename: filename,  // Original filename for display and API
+        filename: relativePath,
         currentLine: 0,
         totalLines: content.split('\n').length,
         status: null,
@@ -239,57 +398,59 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         runtimeSec: null
       };
 
-      // Save to settings for persistence
-      saveSettings({ lastLoadedFile: filename });
+      saveSettings({ lastLoadedFile: relativePath });
 
-      // Detect workspace from G-code content
       const detectedWorkspace = detectWorkspace(content);
-
-      // Get file stats for metadata
       const stats = await fs.stat(CACHE_FILE_PATH);
 
-      // Broadcast G-code metadata to all connected clients (not full content)
       const gcodeMessage = {
-        filename: filename,
+        filename: relativePath,
         totalLines: content.split('\n').length,
         size: stats.size,
         detectedWorkspace: detectedWorkspace,
         timestamp: new Date().toISOString()
       };
       broadcast('gcode-updated', gcodeMessage);
-
-      // Broadcast server state update for button logic
       broadcast('server-state-updated', serverState);
 
-      log('Broadcasting gcode-updated and server-state-updated for file:', filename);
+      log('Broadcasting gcode-updated and server-state-updated for file:', relativePath);
 
       res.json({
         success: true,
-        filename: filename,
+        filename: relativePath,
         message: 'File loaded and clients notified'
       });
     } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
       log('Error loading G-code file:', error);
       res.status(404).json({ error: 'File not found' });
     }
   });
 
-  // Delete specific G-code file
-  router.delete('/:filename', async (req, res) => {
+  // Delete specific G-code file (supports nested paths via body)
+  router.post('/file/delete', async (req, res) => {
     try {
-      const filename = req.params.filename;
-      const filePath = path.join(filesDir, filename);
+      const relativePath = req.body.path;
+      if (!relativePath) {
+        return res.status(400).json({ error: 'Path is required' });
+      }
+      const safePath = getSafePath(filesDir, relativePath);
 
-      await fs.unlink(filePath);
+      await fs.unlink(safePath);
 
-      log('Deleted G-code file:', filename);
+      log('Deleted G-code file:', relativePath);
 
       res.json({
         success: true,
-        filename: filename,
+        filename: relativePath,
         message: 'File deleted successfully'
       });
     } catch (error) {
+      if (error.message.includes('traversal') || error.message.includes('outside')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
       log('Error deleting G-code file:', error);
       res.status(404).json({ error: 'File not found' });
     }
