@@ -895,9 +895,11 @@ const goToZeroXY = async () => {
     return;
   }
   try {
+    // First raise Z to machine zero for safety, then move XY to work zero
+    const command = 'G53 G0 Z0\nG90 G0 X0 Y0';
     await api.sendCommandViaWebSocket({
-      command: 'G90 G0 X0 Y0',
-      displayCommand: 'G90 G0 X0 Y0'
+      command,
+      displayCommand: command
     });
   } catch (error) {
     console.error('Failed to move XY to zero:', error);
