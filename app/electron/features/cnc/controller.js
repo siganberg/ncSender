@@ -27,6 +27,7 @@ const WATCHED_STATUS_FIELDS = [
   'mistCoolant',      // Mist coolant state
   'feedrateOverride', // Feed override changes
   'rapidOverride',    // Rapid override changes
+  'activeProbe',      // Active probe input (grblHAL P: field)
 ];
 
 export class CNCController extends EventEmitter {
@@ -84,6 +85,8 @@ export class CNCController extends EventEmitter {
         this.connectionStatus = 'connected';
         this.emitConnectionStatus('connected', true);
 
+        // Note: $I is handled by firmware initialization (firmware/routes.js)
+
         // Request initial G-code modes to get workspace and tool number
         this.sendCommand('$G', { meta: { sourceId: 'system' } }).catch(() => {
           // Ignore errors during initial setup
@@ -106,6 +109,10 @@ export class CNCController extends EventEmitter {
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.startsWith('[PARAM:') && trimmedData.endsWith(']')) {
       this.parseParam(trimmedData);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
+    } else if (trimmedData.startsWith('[NEWOPT:') && trimmedData.endsWith(']')) {
+      this.parseNewOpt(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -141,6 +148,9 @@ export class CNCController extends EventEmitter {
       // Capture greeting message if it starts with "GrblHal" (case-insensitive)
       if (trimmedData.toLowerCase().startsWith('grblhal')) {
         this.greetingMessage = trimmedData;
+
+        // Request full status report (0x87) after greeting to get all fields including P:
+        this.writeToConnection('\x87', { rawCommand: '0x87', isRealTime: true });
       }
 
       // Detect tool change completion message from tool-changer plugins
@@ -306,6 +316,9 @@ export class CNCController extends EventEmitter {
       } else if (key === 'Pn') {
         // Pin state: P=Probe, X/Y/Z=Limit switches, etc.
         newStatus.Pn = value || '';
+      } else if (key === 'P') {
+        // Active probe input (grblHAL enhanced I/O monitoring)
+        newStatus.activeProbe = parseInt(value, 10);
       } else if (key === 'WCS') {
         // Workspace coordinate system (G54, G55, etc.)
         newStatus.WCS = value;
@@ -343,7 +356,7 @@ export class CNCController extends EventEmitter {
     let hasChanges = false;
     delete newStatus.FS;
 
-    const relevantFields = ['status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'WCS', 'workspace'];
+    const relevantFields = ['activeProbe','status', 'MPos', 'WCO', 'feedRate', 'spindleRpmTarget', 'spindleRpmActual', 'feedrateOverride', 'rapidOverride', 'spindleOverride', 'tool', 'toolLengthSet', 'homed', 'Pn', 'Bf', 'Ln', 'spindleActive', 'floodCoolant', 'mistCoolant', 'WCS', 'workspace'];
 
     for (const field of relevantFields) {
       if (newStatus[field] !== this.lastStatus[field]) {
@@ -426,6 +439,21 @@ export class CNCController extends EventEmitter {
     }
   }
 
+  parseNewOpt(data) {
+    // Example: [NEWOPT:ENUMS,RT+,HOME,PROBES=3,ES,REBOOT,EXPR,TC,SED,RTC,ETH,FTP,mDNS,FS,SD]
+    const content = data.substring(8, data.length - 1); // Remove [NEWOPT: and ]
+    const options = content.split(',');
+
+    // Look for PROBES=N pattern (default to 0 if not present)
+    const probesOption = options.find(opt => opt.startsWith('PROBES='));
+    const probeCount = probesOption ? parseInt(probesOption.substring(7)) : 0;
+
+    if (this.lastStatus.probeCount !== probeCount) {
+      log('Probe count detected:', probeCount);
+      this.lastStatus.probeCount = probeCount;
+      this.emit('status-report', { ...this.lastStatus });
+    }
+  }
 
   startPolling() {
     if (this.statusPollInterval) return;
@@ -529,13 +557,14 @@ export class CNCController extends EventEmitter {
     this.greetingMessage = null;
     this.emitConnectionStatus('verifying', false);
 
-    // Send soft-reset FIRST before any other commands (required for grblHAL and FluidNC)
-    log('Sending soft-reset to CNC controller as first command upon connection...');
+
+    // Send soft-reset (required for grblHAL and FluidNC)
+    //log('Sending soft-reset to CNC controller...');
     this.sendCommand('\x18', { meta: { sourceId: 'system' } }).catch(() => {
-      // Ignore errors during the initial soft-reset
+       //Ignore errors during the initial soft-reset
     });
 
-    // Kick off status polling after soft-reset
+    // Kick off status polling
     this.startPolling();
   }
 
