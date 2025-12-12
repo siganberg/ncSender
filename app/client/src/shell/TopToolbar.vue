@@ -134,15 +134,32 @@
                 </svg>
               </div>
               <div class="pin-item">
-                <span class="pin-name">Probe/TLS</span>
+                <span class="pin-name">Probe</span>
                 <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('P') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('P') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
+                  <path :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
+                  <path :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
                   <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
                   <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('P') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('P') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('P') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
+                  <path :fill="isProbeTriggered ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
+                  <rect :fill="isProbeTriggered ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
+                  <rect :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
+                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
+                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
+                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
+                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
+                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
+                </svg>
+              </div>
+              <div class="pin-item">
+                <span class="pin-name">TLS</span>
+                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
+                  <path :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
+                  <path :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
+                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
+                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
+                  <path :fill="isTLSTriggered ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
+                  <rect :fill="isTLSTriggered ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
+                  <rect :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
                   <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
                   <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
                   <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
@@ -316,6 +333,30 @@ const getPinState = (pinKey: string): boolean => {
 const hasAnyPinTriggered = computed(() => {
   const pnString = store.status.Pn || '';
   return pnString.length > 0;
+});
+
+// Probe pin state: Red when Pn:P AND (probeCount = 0 OR activeProbe = 0)
+const isProbeTriggered = computed(() => {
+  const pnString = store.status.Pn || '';
+  const hasP = pnString.includes('P');
+  if (!hasP) return false;
+  const probeCount = store.status.probeCount ?? 0;
+  const activeProbe = store.status.activeProbe;
+  // If probeCount = 0, shared pin - both show same state
+  // If probeCount > 0, only red when activeProbe = 0
+  return probeCount === 0 || activeProbe === 0;
+});
+
+// TLS pin state: Red when Pn:P AND (probeCount = 0 OR activeProbe = 1)
+const isTLSTriggered = computed(() => {
+  const pnString = store.status.Pn || '';
+  const hasP = pnString.includes('P');
+  if (!hasP) return false;
+  const probeCount = store.status.probeCount ?? 0;
+  const activeProbe = store.status.activeProbe;
+  // If probeCount = 0, shared pin - both show same state
+  // If probeCount > 0, only red when activeProbe = 1
+  return probeCount === 0 || activeProbe === 1;
 });
 
 const handleMachineInfoBlur = (event: FocusEvent) => {

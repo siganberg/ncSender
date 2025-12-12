@@ -93,7 +93,9 @@ const status = reactive({
   floodCoolant: false,
   mistCoolant: false,
   spindleActive: false,
-  Pn: ''
+  Pn: '',
+  probeCount: 0,
+  activeProbe: null as number | null
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -237,6 +239,16 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).Pn === 'string') {
     status.Pn = (report as any).Pn;
+  }
+
+  if (typeof (report as any).probeCount === 'number') {
+    status.probeCount = (report as any).probeCount;
+  }
+
+  if (typeof (report as any).activeProbe === 'number') {
+    status.activeProbe = (report as any).activeProbe;
+  } else if ((report as any).activeProbe === undefined || (report as any).activeProbe === null) {
+    status.activeProbe = null;
   }
 
   if (typeof report.homed === 'boolean') {
