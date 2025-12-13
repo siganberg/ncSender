@@ -512,21 +512,41 @@ const getOffCommand = (onCommand: string): string => {
 
 const enabledIOSwitches = computed(() => {
   const enabled: Record<string, any> = {};
-  // Define order to match Settings table: Flood, Mist
-  const switchOrder = ['flood', 'mist'];
+  const config = ioSwitchesConfig.value;
 
-  for (const key of switchOrder) {
-    const config = ioSwitchesConfig.value[key];
-    if (config && (config as any).enabled) {
-      const onCommand = (config as any).on;
-      enabled[key] = {
-        label: key.charAt(0).toUpperCase() + key.slice(1),
-        on: onCommand,
-        off: getOffCommand(onCommand)
-      };
-      // Initialize state if not exists
-      if (!(key in ioSwitchStates)) {
-        ioSwitchStates[key] = false;
+  // Support new auxOutputs array format
+  if (Array.isArray(config)) {
+    for (const output of config) {
+      if (output && output.enabled) {
+        const key = output.id || output.name?.toLowerCase().replace(/\s+/g, '-') || `aux-${Math.random()}`;
+        enabled[key] = {
+          label: output.name || `Output`,
+          on: output.on,
+          off: getOffCommand(output.on)
+        };
+        // Initialize state if not exists
+        if (!(key in ioSwitchStates)) {
+          ioSwitchStates[key] = false;
+        }
+      }
+    }
+  } else {
+    // Legacy ioSwitches object format
+    const switchOrder = ['flood', 'mist'];
+    for (const key of switchOrder) {
+      const switchConfig = config[key];
+      if (switchConfig && switchConfig.enabled) {
+        const onCommand = switchConfig.on;
+        const defaultLabel = key.charAt(0).toUpperCase() + key.slice(1);
+        enabled[key] = {
+          label: switchConfig.name || defaultLabel,
+          on: onCommand,
+          off: getOffCommand(onCommand)
+        };
+        // Initialize state if not exists
+        if (!(key in ioSwitchStates)) {
+          ioSwitchStates[key] = false;
+        }
       }
     }
   }
@@ -2407,24 +2427,46 @@ onMounted(async () => {
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
     }
-    // Load I/O Switches configuration with defaults
-    ioSwitchesConfig.value = settings.ioSwitches || {
-      flood: { enabled: true, on: 'M8' },
-      mist: { enabled: true, on: 'M7' }
-    };
+    // Load I/O Switches configuration with defaults (support new auxOutputs or legacy ioSwitches)
+    if (settings.auxOutputs && Array.isArray(settings.auxOutputs)) {
+      ioSwitchesConfig.value = settings.auxOutputs;
+    } else if (settings.ioSwitches) {
+      ioSwitchesConfig.value = settings.ioSwitches;
+    } else {
+      ioSwitchesConfig.value = [
+        { id: 'flood', enabled: true, name: 'Flood', on: 'M8' },
+        { id: 'mist', enabled: true, name: 'Mist', on: 'M7' }
+      ];
+    }
   }
 
   // Initialize I/O switch states from machine status
-  for (const [switchKey, config] of Object.entries(ioSwitchesConfig.value)) {
-    if (!(config as any).enabled) continue;
-
-    // Initialize flood and mist from status report coolant fields
-    if (switchKey === 'flood') {
-      ioSwitchStates.flood = appStore.status.floodCoolant ?? false;
-    } else if (switchKey === 'mist') {
-      ioSwitchStates.mist = appStore.status.mistCoolant ?? false;
+  const initSwitchStates = () => {
+    const config = ioSwitchesConfig.value;
+    if (Array.isArray(config)) {
+      for (const output of config) {
+        if (!output.enabled) continue;
+        const key = output.id;
+        if (key === 'flood') {
+          ioSwitchStates[key] = appStore.status.floodCoolant ?? false;
+        } else if (key === 'mist') {
+          ioSwitchStates[key] = appStore.status.mistCoolant ?? false;
+        } else {
+          ioSwitchStates[key] = false;
+        }
+      }
+    } else {
+      for (const [switchKey, switchConfig] of Object.entries(config)) {
+        if (!(switchConfig as any).enabled) continue;
+        if (switchKey === 'flood') {
+          ioSwitchStates.flood = appStore.status.floodCoolant ?? false;
+        } else if (switchKey === 'mist') {
+          ioSwitchStates.mist = appStore.status.mistCoolant ?? false;
+        }
+      }
     }
-  }
+  };
+  initSwitchStates();
 
   // Wait for next tick to ensure all watchers have fired with isInitialLoad=true
   await nextTick();
@@ -2455,8 +2497,10 @@ onMounted(async () => {
     if (changedSettings.tool?.probe !== undefined) {
       showProbeTool.value = changedSettings.tool.probe;
     }
-    // Update I/O Switches config when settings change
-    if (changedSettings.ioSwitches !== undefined) {
+    // Update I/O Switches config when settings change (support new auxOutputs or legacy ioSwitches)
+    if (changedSettings.auxOutputs !== undefined) {
+      ioSwitchesConfig.value = changedSettings.auxOutputs;
+    } else if (changedSettings.ioSwitches !== undefined) {
       ioSwitchesConfig.value = changedSettings.ioSwitches;
     }
     // Future settings can be added here
@@ -2464,23 +2508,42 @@ onMounted(async () => {
   });
 
   // Watch for settings store changes (for reactive updates from Settings dialog)
+  // Support new auxOutputs array or legacy ioSwitches object
+  watch(() => settingsStore.data?.auxOutputs, (newAuxOutputs) => {
+    if (newAuxOutputs) {
+      ioSwitchesConfig.value = newAuxOutputs;
+    }
+  }, { deep: true });
   watch(() => settingsStore.data?.ioSwitches, (newIOSwitches) => {
-    if (newIOSwitches) {
+    // Only use legacy format if auxOutputs is not present
+    if (newIOSwitches && !settingsStore.data?.auxOutputs) {
       ioSwitchesConfig.value = newIOSwitches;
     }
   }, { deep: true });
 
   // Watch for flood coolant status changes and sync with flood switch
   watch(() => appStore.status.floodCoolant, (newValue) => {
-    if ('flood' in ioSwitchStates && ioSwitchesConfig.value.flood?.enabled) {
-      ioSwitchStates.flood = newValue ?? false;
+    if ('flood' in ioSwitchStates) {
+      const config = ioSwitchesConfig.value;
+      const isEnabled = Array.isArray(config)
+        ? config.some(o => o.id === 'flood' && o.enabled)
+        : config.flood?.enabled;
+      if (isEnabled) {
+        ioSwitchStates.flood = newValue ?? false;
+      }
     }
   });
 
   // Watch for mist coolant status changes and sync with mist switch
   watch(() => appStore.status.mistCoolant, (newValue) => {
-    if ('mist' in ioSwitchStates && ioSwitchesConfig.value.mist?.enabled) {
-      ioSwitchStates.mist = newValue ?? false;
+    if ('mist' in ioSwitchStates) {
+      const config = ioSwitchesConfig.value;
+      const isEnabled = Array.isArray(config)
+        ? config.some(o => o.id === 'mist' && o.enabled)
+        : config.mist?.enabled;
+      if (isEnabled) {
+        ioSwitchStates.mist = newValue ?? false;
+      }
     }
   });
 

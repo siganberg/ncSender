@@ -253,33 +253,85 @@
           </div>
 
           <div class="settings-section">
-            <h3 class="section-title">I/O Switches</h3>
+            <h3 class="section-title">Auxiliary Outputs</h3>
             <div class="io-switches-table-container">
               <table class="io-switches-table">
+                <colgroup>
+                  <col class="col-enabled">
+                  <col class="col-name">
+                  <col class="col-on">
+                  <col class="col-off">
+                  <col class="col-actions">
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Enabled</th>
-                    <th>Switch</th>
+                    <th>Name</th>
+                    <th>On</th>
+                    <th>Off</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <!-- Flood -->
-                  <tr>
+                  <tr v-for="(output, index) in auxOutputs" :key="output.id">
                     <td>
-                      <ToggleSwitch v-model="ioSwitches.flood.enabled" />
+                      <ToggleSwitch v-model="output.enabled" @update:modelValue="saveAuxOutputs" />
                     </td>
-                    <td class="switch-name">Flood</td>
-                  </tr>
-
-                  <!-- Mist -->
-                  <tr>
-                    <td>
-                      <ToggleSwitch v-model="ioSwitches.mist.enabled" />
-                    </td>
-                    <td class="switch-name">Mist</td>
+                    <template v-if="editingAuxIndex === index">
+                      <td>
+                        <input type="text" v-model="auxEditState.name" class="aux-inline-input" placeholder="Name" />
+                      </td>
+                      <td>
+                        <select v-model="auxEditState.on" class="aux-inline-select">
+                          <option v-for="cmd in availableOnCommands" :key="cmd.value" :value="cmd.value">{{ cmd.label }}</option>
+                        </select>
+                      </td>
+                      <td class="command-cell">{{ getOffCommand(auxEditState.on) }}</td>
+                      <td>
+                        <div class="aux-actions-cell">
+                          <button class="aux-btn-save" @click="saveAuxEdit" title="Save">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          </button>
+                          <button class="aux-btn-cancel" @click="cancelAuxEdit" title="Cancel">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                          </button>
+                          <button class="aux-btn-delete" @click="deleteAuxOutput(index)" title="Delete">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </template>
+                    <template v-else>
+                      <td>{{ output.name }}</td>
+                      <td class="command-cell">{{ output.on }}</td>
+                      <td class="command-cell">{{ getOffCommand(output.on) }}</td>
+                      <td>
+                        <button class="switch-edit-btn" @click="startAuxEdit(index)" title="Edit">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </template>
                   </tr>
                 </tbody>
               </table>
+              <button class="aux-add-btn" @click="addAuxOutput">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add Output
+              </button>
             </div>
           </div>
 
@@ -1014,17 +1066,118 @@ const getOffCommand = (onCommand: string): string => {
   return '';
 };
 
-// I/O Switches settings
-const ioSwitches = reactive({
-  flood: {
-    enabled: initialSettings?.ioSwitches?.flood?.enabled ?? true,
-    on: initialSettings?.ioSwitches?.flood?.on || 'M8'
-  },
-  mist: {
-    enabled: initialSettings?.ioSwitches?.mist?.enabled ?? true,
-    on: initialSettings?.ioSwitches?.mist?.on || 'M7'
+// Auxiliary Outputs settings (formerly I/O Switches)
+// Convert old format to new array format for backward compatibility
+const loadAuxOutputs = () => {
+  const saved = initialSettings?.auxOutputs;
+  if (Array.isArray(saved) && saved.length > 0) {
+    return saved.map((item, index) => ({
+      id: item.id || `aux-${index}`,
+      enabled: item.enabled ?? true,
+      name: item.name || `Output ${index + 1}`,
+      on: item.on || 'M8'
+    }));
   }
+  // Migrate from old ioSwitches format
+  const oldFormat = initialSettings?.ioSwitches;
+  if (oldFormat) {
+    const outputs = [];
+    if (oldFormat.flood) {
+      outputs.push({
+        id: 'flood',
+        enabled: oldFormat.flood.enabled ?? true,
+        name: oldFormat.flood.name || 'Flood',
+        on: oldFormat.flood.on || 'M8'
+      });
+    }
+    if (oldFormat.mist) {
+      outputs.push({
+        id: 'mist',
+        enabled: oldFormat.mist.enabled ?? true,
+        name: oldFormat.mist.name || 'Mist',
+        on: oldFormat.mist.on || 'M7'
+      });
+    }
+    if (outputs.length > 0) return outputs;
+  }
+  // Default outputs
+  return [
+    { id: 'flood', enabled: true, name: 'Flood', on: 'M8' },
+    { id: 'mist', enabled: true, name: 'Mist', on: 'M7' }
+  ];
+};
+
+const auxOutputs = reactive(loadAuxOutputs());
+
+// Auxiliary Output inline edit state
+const editingAuxIndex = ref<number | null>(null);
+const auxEditState = reactive({
+  name: '',
+  on: ''
 });
+
+const availableOnCommands = computed(() => {
+  const commands = [
+    { value: 'M8', label: 'M8' },
+    { value: 'M7', label: 'M7' }
+  ];
+  const outputPins = store.status.outputPins || 0;
+  for (let i = 0; i < outputPins; i++) {
+    commands.push({ value: `M64 P${i}`, label: `M64 P${i}` });
+  }
+  return commands;
+});
+
+const startAuxEdit = (index: number) => {
+  editingAuxIndex.value = index;
+  auxEditState.name = auxOutputs[index].name;
+  auxEditState.on = auxOutputs[index].on;
+};
+
+const cancelAuxEdit = () => {
+  editingAuxIndex.value = null;
+};
+
+const saveAuxOutputs = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    auxOutputs: auxOutputs.map(o => ({
+      id: o.id,
+      enabled: o.enabled,
+      name: o.name,
+      on: o.on
+    }))
+  });
+};
+
+const saveAuxEdit = async () => {
+  const index = editingAuxIndex.value;
+  if (index === null) return;
+
+  auxOutputs[index].name = auxEditState.name.trim() || `Output ${index + 1}`;
+  auxOutputs[index].on = auxEditState.on;
+
+  await saveAuxOutputs();
+  editingAuxIndex.value = null;
+};
+
+const addAuxOutput = async () => {
+  const newId = `aux-${Date.now()}`;
+  auxOutputs.push({
+    id: newId,
+    enabled: true,
+    name: `Output ${auxOutputs.length + 1}`,
+    on: 'M8'
+  });
+  await saveAuxOutputs();
+  // Start editing the new output
+  startAuxEdit(auxOutputs.length - 1);
+};
+
+const deleteAuxOutput = async (index: number) => {
+  auxOutputs.splice(index, 1);
+  await saveAuxOutputs();
+};
 
 // Firmware settings
 const firmwareData = ref(null);
@@ -1893,17 +2046,6 @@ watch(() => consoleSettings.debugLogging, async (newValue) => {
   });
 });
 
-// Watch I/O Switches changes
-watch(ioSwitches, async (newValue) => {
-  const { updateSettings } = await import('./lib/settings-store.js');
-  await updateSettings({
-    ioSwitches: {
-      flood: { enabled: newValue.flood.enabled, on: newValue.flood.on },
-      mist: { enabled: newValue.mist.enabled, on: newValue.mist.on }
-    }
-  });
-}, { deep: true });
-
 // Set units preference
 const setUnits = async (units) => {
   pendingUnitsChange.value = units;
@@ -2436,14 +2578,15 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   border-color: var(--color-border);
 }
 
-/* I/O Switches Table */
+/* Auxiliary Outputs Table */
 .io-switches-table-container {
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .io-switches-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .io-switches-table thead th {
@@ -2468,41 +2611,153 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   background: var(--color-surface-muted);
 }
 
-.io-switches-table td {
-  padding: var(--gap-md);
+.io-switches-table td,
+.io-switches-table th {
+  padding: var(--gap-sm) var(--gap-md);
   vertical-align: middle;
 }
 
-.io-switches-table td:first-child {
-  width: 80px;
+/* Column widths using colgroup in template */
+.io-switches-table .col-enabled { width: 60px; }
+.io-switches-table .col-name { width: auto; }
+.io-switches-table .col-on { width: 160px; }
+.io-switches-table .col-off { width: 160px; }
+.io-switches-table .col-actions { width: 180px; }
+
+.io-switches-table th:nth-child(1),
+.io-switches-table td:nth-child(1) {
   text-align: center;
 }
 
-.io-switches-table td:nth-child(2) {
-  width: auto;
+.io-switches-table td.command-cell {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
-.io-switches-table td.switch-name {
-  font-weight: 500;
+.switch-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+
+.switch-edit-btn:hover {
+  opacity: 1;
+  color: var(--color-accent);
+  background: var(--color-surface-muted);
+}
+
+/* Auxiliary Output Inline Edit */
+.aux-inline-input,
+.aux-inline-select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.aux-inline-select {
+  font-family: monospace;
+  cursor: pointer;
+}
+
+.aux-inline-input:hover,
+.aux-inline-select:hover {
+  border-color: var(--color-accent);
+}
+
+.aux-inline-input:focus,
+.aux-inline-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.aux-actions-cell {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.aux-btn-save,
+.aux-btn-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.aux-btn-save {
+  background: var(--color-accent);
+  color: white;
+}
+
+.aux-btn-save:hover {
+  opacity: 0.9;
+  box-shadow: 0 0 0 3px rgba(26, 188, 156, 0.1);
+}
+
+.aux-btn-cancel {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.aux-btn-cancel:hover {
+  border-color: var(--color-accent);
   color: var(--color-text-primary);
 }
 
-.io-switches-table td:nth-child(3) {
-  width: 200px;
-}
-
-.io-switches-table td:nth-child(4) {
-  width: 150px;
-}
-
-.io-switches-table select {
-  width: 100%;
-}
-
-.io-switches-table .off-command-label {
+.aux-btn-delete {
+  background: transparent;
   color: var(--color-text-secondary);
-  font-family: monospace;
+  border: 1px solid var(--color-border);
+}
+
+.aux-btn-delete:hover {
+  border-color: #dc3545;
+  color: #dc3545;
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.aux-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--gap-md);
+  padding: 8px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.aux-add-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: rgba(26, 188, 156, 0.05);
 }
 
 .setting-value {

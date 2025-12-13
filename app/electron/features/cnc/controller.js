@@ -85,8 +85,6 @@ export class CNCController extends EventEmitter {
         this.connectionStatus = 'connected';
         this.emitConnectionStatus('connected', true);
 
-        // Note: $I is handled by firmware initialization (firmware/routes.js)
-
         // Request initial G-code modes to get workspace and tool number
         this.sendCommand('$G', { meta: { sourceId: 'system' } }).catch(() => {
           // Ignore errors during initial setup
@@ -94,6 +92,11 @@ export class CNCController extends EventEmitter {
 
         // Request tool length offset status
         this.sendCommand('$#=_tool_offset', { meta: { sourceId: 'system' } }).catch(() => {
+          // Ignore errors during initial setup
+        });
+
+        // Request system info to get AUX IO pin counts (also handled by firmware/routes.js for UI)
+        this.sendCommand('$I', { meta: { sourceId: 'system' } }).catch(() => {
           // Ignore errors during initial setup
         });
 
@@ -113,6 +116,10 @@ export class CNCController extends EventEmitter {
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.startsWith('[NEWOPT:') && trimmedData.endsWith(']')) {
       this.parseNewOpt(trimmedData);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
+    } else if (trimmedData.startsWith('[AUX IO:') && trimmedData.endsWith(']')) {
+      this.parseAuxIO(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -451,6 +458,31 @@ export class CNCController extends EventEmitter {
     if (this.lastStatus.probeCount !== probeCount) {
       log('Probe count detected:', probeCount);
       this.lastStatus.probeCount = probeCount;
+      this.emit('status-report', { ...this.lastStatus });
+    }
+  }
+
+  parseAuxIO(data) {
+    // Example: [AUX IO:6,9,1,0]
+    // Format: [AUX IO:digital_in,digital_out,analog_in,analog_out]
+    const content = data.substring(8, data.length - 1); // Remove [AUX IO: and ]
+    const parts = content.split(',').map(Number);
+
+    const inputPins = parts[0] || 0;   // Digital inputs
+    const outputPins = parts[1] || 0;  // Digital outputs
+
+    let changed = false;
+    if (this.lastStatus.inputPins !== inputPins) {
+      this.lastStatus.inputPins = inputPins;
+      changed = true;
+    }
+    if (this.lastStatus.outputPins !== outputPins) {
+      this.lastStatus.outputPins = outputPins;
+      changed = true;
+    }
+
+    if (changed) {
+      log('AUX IO detected - inputs:', inputPins, 'outputs:', outputPins);
       this.emit('status-report', { ...this.lastStatus });
     }
   }

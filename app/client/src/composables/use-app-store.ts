@@ -95,7 +95,9 @@ const status = reactive({
   spindleActive: false,
   Pn: '',
   probeCount: 0,
-  activeProbe: null as number | null
+  activeProbe: null as number | null,
+  inputPins: 0,
+  outputPins: 0
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -249,6 +251,14 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
     status.activeProbe = (report as any).activeProbe;
   } else if ((report as any).activeProbe === undefined || (report as any).activeProbe === null) {
     status.activeProbe = null;
+  }
+
+  if (typeof (report as any).inputPins === 'number') {
+    status.inputPins = (report as any).inputPins;
+  }
+
+  if (typeof (report as any).outputPins === 'number') {
+    status.outputPins = (report as any).outputPins;
   }
 
   if (typeof report.homed === 'boolean') {
