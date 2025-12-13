@@ -100,6 +100,11 @@ export class CNCController extends EventEmitter {
           // Ignore errors during initial setup
         });
 
+        // Request pin states to get initial output pin states
+        this.sendCommand('$pinstate', { meta: { sourceId: 'system' } }).catch(() => {
+          // Ignore errors during initial setup
+        });
+
         // Publish the first status report so clients receive an immediate connection indicator
         this.emit('data', trimmedData, null);
       }
@@ -120,6 +125,10 @@ export class CNCController extends EventEmitter {
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.startsWith('[AUX IO:') && trimmedData.endsWith(']')) {
       this.parseAuxIO(trimmedData);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      this.emit('data', trimmedData, sourceId);
+    } else if (trimmedData.startsWith('[PINSTATE:DOUT|') && trimmedData.endsWith(']')) {
+      this.parsePinState(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
       this.emit('data', trimmedData, sourceId);
     } else if (trimmedData.toLowerCase().startsWith('error:')) {
@@ -519,6 +528,42 @@ export class CNCController extends EventEmitter {
 
     if (changed) {
       log('AUX IO detected - inputs:', inputPins, 'outputs:', outputPins);
+      this.emit('status-report', { ...this.lastStatus });
+    }
+  }
+
+  parsePinState(data) {
+    // Example: [PINSTATE:DOUT|P0 <- Flood enable (M8)|0|N|I|1]
+    // Format: [PINSTATE:DOUT|<name>|<pin_number>|<flags>|<flags>|<value>]
+    // We need to extract pin ID (e.g., P0, P1) from name and value (last pipe)
+    const content = data.substring(15, data.length - 1); // Remove [PINSTATE:DOUT| and ]
+    const parts = content.split('|');
+
+    if (parts.length < 2) return;
+
+    const name = parts[0];
+    const value = parseInt(parts[parts.length - 1], 10);
+
+    // Extract pin number from name (e.g., "P0 <- Flood enable (M8)" -> 0, "P1" -> 1)
+    const pinMatch = name.match(/^P(\d+)/);
+    if (!pinMatch) return;
+
+    const pinNumber = parseInt(pinMatch[1], 10);
+    const isOn = value === 1;
+
+    if (!this.lastStatus.outputPinsState) {
+      this.lastStatus.outputPinsState = [];
+    }
+
+    const currentlyOn = this.lastStatus.outputPinsState.includes(pinNumber);
+
+    if (isOn && !currentlyOn) {
+      this.lastStatus.outputPinsState = [...this.lastStatus.outputPinsState, pinNumber].sort((a, b) => a - b);
+      log('Pin state P' + pinNumber + ' is ON');
+      this.emit('status-report', { ...this.lastStatus });
+    } else if (!isOn && currentlyOn) {
+      this.lastStatus.outputPinsState = this.lastStatus.outputPinsState.filter(p => p !== pinNumber);
+      log('Pin state P' + pinNumber + ' is OFF');
       this.emit('status-report', { ...this.lastStatus });
     }
   }
