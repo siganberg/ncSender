@@ -97,7 +97,8 @@ const status = reactive({
   probeCount: 0,
   activeProbe: null as number | null,
   inputPins: 0,
-  outputPins: 0
+  outputPins: 0,
+  outputPinsState: [] as number[]
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -259,6 +260,10 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).outputPins === 'number') {
     status.outputPins = (report as any).outputPins;
+  }
+
+  if (Array.isArray((report as any).outputPinsState)) {
+    status.outputPinsState = (report as any).outputPinsState;
   }
 
   if (typeof report.homed === 'boolean') {

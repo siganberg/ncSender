@@ -39,7 +39,7 @@ export class CNCController extends EventEmitter {
     this.connectionStatus = 'disconnected';
     this.connectionType = null;
     this.statusPollInterval = null;
-    this.lastStatus = {};
+    this.lastStatus = { outputPinsState: [] };
     this.rawData = '';
     this.connectionAttempt = null; // Track ongoing connection attempts
     this.isConnecting = false; // Track connection state
@@ -209,6 +209,42 @@ export class CNCController extends EventEmitter {
 
     if (cmd.rawCommand && cmd.rawCommand.toLowerCase() === '$x') {
       this.emit('unlock');
+    }
+
+    // Track M64/M65 output pin state changes
+    this.updateOutputPinState(cmd.rawCommand);
+  }
+
+  updateOutputPinState(command) {
+    if (!command) return;
+
+    const upperCommand = command.toUpperCase();
+
+    // M64 Pn - turn ON output pin n
+    const m64Match = upperCommand.match(/M64\s*P(\d+)/);
+    if (m64Match) {
+      const pinNumber = parseInt(m64Match[1], 10);
+      if (!this.lastStatus.outputPinsState) {
+        this.lastStatus.outputPinsState = [];
+      }
+      if (!this.lastStatus.outputPinsState.includes(pinNumber)) {
+        this.lastStatus.outputPinsState = [...this.lastStatus.outputPinsState, pinNumber].sort((a, b) => a - b);
+        log('Output pin', pinNumber, 'turned ON. Active pins:', this.lastStatus.outputPinsState);
+        this.emit('status-report', { ...this.lastStatus });
+      }
+      return;
+    }
+
+    // M65 Pn - turn OFF output pin n
+    const m65Match = upperCommand.match(/M65\s*P(\d+)/);
+    if (m65Match) {
+      const pinNumber = parseInt(m65Match[1], 10);
+      if (this.lastStatus.outputPinsState && this.lastStatus.outputPinsState.includes(pinNumber)) {
+        this.lastStatus.outputPinsState = this.lastStatus.outputPinsState.filter(p => p !== pinNumber);
+        log('Output pin', pinNumber, 'turned OFF. Active pins:', this.lastStatus.outputPinsState);
+        this.emit('status-report', { ...this.lastStatus });
+      }
+      return;
     }
   }
 

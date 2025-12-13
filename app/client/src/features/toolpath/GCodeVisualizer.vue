@@ -510,6 +510,16 @@ const getOffCommand = (onCommand: string): string => {
   return '';
 };
 
+// Helper to extract pin number from M64 Pn command
+const getM64PinNumber = (onCommand: string): number | null => {
+  if (!onCommand) return null;
+  const m64Match = onCommand.toUpperCase().match(/M64\s*P(\d+)/);
+  if (m64Match) {
+    return parseInt(m64Match[1], 10);
+  }
+  return null;
+};
+
 const enabledIOSwitches = computed(() => {
   const enabled: Record<string, any> = {};
   const config = ioSwitchesConfig.value;
@@ -2443,25 +2453,39 @@ onMounted(async () => {
   // Initialize I/O switch states from machine status
   const initSwitchStates = () => {
     const config = ioSwitchesConfig.value;
+    const activePins = appStore.status.outputPinsState || [];
     if (Array.isArray(config)) {
       for (const output of config) {
         if (!output.enabled) continue;
         const key = output.id;
-        if (key === 'flood') {
+        const onCmd = output.on;
+        if (onCmd === 'M8') {
           ioSwitchStates[key] = appStore.status.floodCoolant ?? false;
-        } else if (key === 'mist') {
+        } else if (onCmd === 'M7') {
           ioSwitchStates[key] = appStore.status.mistCoolant ?? false;
         } else {
-          ioSwitchStates[key] = false;
+          // Check M64 Pn commands against outputPinsState
+          const pinNumber = getM64PinNumber(onCmd);
+          if (pinNumber !== null) {
+            ioSwitchStates[key] = activePins.includes(pinNumber);
+          } else {
+            ioSwitchStates[key] = false;
+          }
         }
       }
     } else {
       for (const [switchKey, switchConfig] of Object.entries(config)) {
         if (!(switchConfig as any).enabled) continue;
-        if (switchKey === 'flood') {
-          ioSwitchStates.flood = appStore.status.floodCoolant ?? false;
-        } else if (switchKey === 'mist') {
-          ioSwitchStates.mist = appStore.status.mistCoolant ?? false;
+        const onCmd = (switchConfig as any).on;
+        if (onCmd === 'M8') {
+          ioSwitchStates[switchKey] = appStore.status.floodCoolant ?? false;
+        } else if (onCmd === 'M7') {
+          ioSwitchStates[switchKey] = appStore.status.mistCoolant ?? false;
+        } else {
+          const pinNumber = getM64PinNumber(onCmd);
+          if (pinNumber !== null) {
+            ioSwitchStates[switchKey] = activePins.includes(pinNumber);
+          }
         }
       }
     }
@@ -2546,6 +2570,29 @@ onMounted(async () => {
       }
     }
   });
+
+  // Watch for output pins state changes and sync with M64 Pn switches
+  watch(() => appStore.status.outputPinsState, (activePins) => {
+    const config = ioSwitchesConfig.value;
+    const pins = activePins || [];
+    if (Array.isArray(config)) {
+      for (const output of config) {
+        if (!output.enabled) continue;
+        const pinNumber = getM64PinNumber(output.on);
+        if (pinNumber !== null) {
+          ioSwitchStates[output.id] = pins.includes(pinNumber);
+        }
+      }
+    } else {
+      for (const [switchKey, switchConfig] of Object.entries(config)) {
+        if (!(switchConfig as any).enabled) continue;
+        const pinNumber = getM64PinNumber((switchConfig as any).on);
+        if (pinNumber !== null) {
+          ioSwitchStates[switchKey] = pins.includes(pinNumber);
+        }
+      }
+    }
+  }, { deep: true });
 
   // Listen for tools updates via WebSocket
   api.on('tools-updated', () => {
