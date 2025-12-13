@@ -1,4 +1,6 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Separated TLS and Probe functionality for better control and clarity
+### ✨ New Features
+- Added auxiliary output control for additional hardware integration
+- Added real-time tracking of output pin states
+- Pin state now reads and displays initial status on startup
