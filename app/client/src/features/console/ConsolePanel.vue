@@ -173,11 +173,11 @@
     </div>
 
     <!-- G-Code Modal Dialog -->
-    <div v-if="showGcodeModal" class="modal-overlay" @click.self="showGcodeModal = false">
+    <div v-if="showGcodeModal" class="modal-overlay" @click.self="closeGcodeModal">
       <div class="modal-dialog">
         <div class="modal-header">
           <h3>{{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines</h3>
-          <button class="modal-close" @click="showGcodeModal = false" title="Close">
+          <button class="modal-close" @click="closeGcodeModal" title="Close">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
               <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
             </svg>
@@ -236,7 +236,7 @@
               language="gcode"
               :theme="monacoTheme"
               :options="monacoViewerOptions"
-              @mount="handleMonacoViewerMount"
+              @editorDidMount="handleMonacoViewerMount"
               class="monaco-editor-container"
             />
           </div>
@@ -246,7 +246,7 @@
               language="gcode"
               :theme="monacoTheme"
               :options="monacoEditorOptions"
-              @mount="handleMonacoEditorMount"
+              @editorDidMount="handleMonacoEditorMount"
               @change="onGcodeEdit"
               class="monaco-editor-container"
             />
@@ -447,6 +447,19 @@
         </div>
       </div>
     </div>
+
+    <!-- Discard Changes Confirmation Dialog -->
+    <Dialog v-if="showDiscardDialog" @close="handleDiscardCancel" :show-header="false" size="small" :z-index="10002">
+      <ConfirmPanel
+        title="Discard Changes"
+        message="You have unsaved changes. Are you sure you want to discard them?"
+        confirm-text="Discard"
+        cancel-text="Cancel"
+        variant="danger"
+        @confirm="handleDiscardConfirm"
+        @cancel="handleDiscardCancel"
+      />
+    </Dialog>
   </section>
 </template>
 
@@ -461,7 +474,10 @@ import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtu
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 import MacroPanel from '../macro/MacroPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
+import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
+import Dialog from '@/components/Dialog.vue';
+import ConfirmPanel from '@/components/ConfirmPanel.vue';
 
 const store = useConsoleStore();
 
@@ -513,6 +529,8 @@ const currentSearchIndex = ref(0);
 const isEditMode = ref(false);
 const editableGcode = ref('');
 const hasUnsavedChanges = ref(false);
+const showDiscardDialog = ref(false);
+const discardCallback = ref<(() => void) | null>(null);
 const autoScrollModal = ref(true);
 const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const lineNumbersRef = ref<HTMLDivElement | null>(null);
@@ -539,6 +557,8 @@ const monacoViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = 
   glyphMargin: false,
   lineDecorationsWidth: 16,
   lineNumbersMinChars: 8,
+  largeFileOptimizations: false,
+  maxTokenizationLineLength: 5000,
   scrollbar: {
     vertical: 'visible',
     horizontal: 'visible',
@@ -561,6 +581,8 @@ const monacoEditorOptions: Monaco.editor.IStandaloneEditorConstructionOptions = 
   glyphMargin: false,
   lineDecorationsWidth: 16,
   lineNumbersMinChars: 8,
+  largeFileOptimizations: false,
+  maxTokenizationLineLength: 5000,
   scrollbar: {
     vertical: 'visible',
     horizontal: 'visible',
@@ -577,7 +599,101 @@ const viewableGcode = computed(() => {
 
 // Computed property for Monaco theme based on app theme
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'vs' : 'vs-dark');
+const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+
+// Register G-code language and themes
+function registerGcodeLanguage() {
+  // Register the G-code language
+  monaco.languages.register({ id: 'gcode' });
+
+  // Define G-code syntax highlighting
+  monaco.languages.setMonarchTokensProvider('gcode', {
+    tokenizer: {
+      root: [
+        // Comments - parentheses style
+        [/\(.*?\)/, 'comment'],
+        // Comments - semicolon style
+        [/;.*$/, 'comment'],
+        // Rapid motion G0/G00
+        [/\b[Gg]0*(?=\s|$|[A-Za-z])/, 'gcode-rapid'],
+        // Linear/Arc motion G1/G2/G3
+        [/\b[Gg][1-3]\b/, 'gcode-cutting'],
+        // Other G commands
+        [/\b[Gg]\d+\.?\d*/, 'gcode-g'],
+        // M commands
+        [/\b[Mm]\d+/, 'gcode-m'],
+        // Tool number
+        [/\b[Tt]\d+/, 'gcode-tool'],
+        // Spindle speed
+        [/\b[Ss]\d+\.?\d*/, 'gcode-spindle'],
+        // Feed rate
+        [/\b[Ff]\d+\.?\d*/, 'gcode-feed'],
+        // Coordinates X Y Z
+        [/\b[Xx]-?\d+\.?\d*/, 'gcode-coord-x'],
+        [/\b[Yy]-?\d+\.?\d*/, 'gcode-coord-y'],
+        [/\b[Zz]-?\d+\.?\d*/, 'gcode-coord-z'],
+        // Other axes A B C I J K
+        [/\b[AaBbCcIiJjKk]-?\d+\.?\d*/, 'gcode-coord-other'],
+        // Line numbers
+        [/\b[Nn]\d+/, 'gcode-line-number'],
+        // Numbers
+        [/-?\d+\.?\d*/, 'number'],
+      ]
+    }
+  });
+
+  // Define dark theme for G-code
+  monaco.editor.defineTheme('gcode-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+      { token: 'gcode-rapid', foreground: 'FF8C00', fontStyle: 'bold' },  // Orange for rapid
+      { token: 'gcode-cutting', foreground: '569CD6', fontStyle: 'bold' }, // Blue for cutting
+      { token: 'gcode-g', foreground: 'C586C0' },  // Purple for other G codes
+      { token: 'gcode-m', foreground: 'DCDCAA' },  // Yellow for M codes
+      { token: 'gcode-tool', foreground: '4EC9B0' },  // Teal for tools
+      { token: 'gcode-spindle', foreground: 'CE9178' },  // Orange-brown for spindle
+      { token: 'gcode-feed', foreground: 'B5CEA8' },  // Light green for feed
+      { token: 'gcode-coord-x', foreground: 'F14C4C' },  // Red for X
+      { token: 'gcode-coord-y', foreground: '4EC9B0' },  // Teal for Y
+      { token: 'gcode-coord-z', foreground: '569CD6' },  // Blue for Z
+      { token: 'gcode-coord-other', foreground: '9CDCFE' },  // Light blue for other axes
+      { token: 'gcode-line-number', foreground: '858585' },  // Gray for line numbers
+      { token: 'number', foreground: 'B5CEA8' },
+    ],
+    colors: {}
+  });
+
+  // Define light theme for G-code
+  monaco.editor.defineTheme('gcode-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+      { token: 'gcode-rapid', foreground: 'E67E22', fontStyle: 'bold' },  // Orange for rapid
+      { token: 'gcode-cutting', foreground: '2E86C1', fontStyle: 'bold' }, // Blue for cutting
+      { token: 'gcode-g', foreground: 'AF00DB' },  // Purple for other G codes
+      { token: 'gcode-m', foreground: '795E26' },  // Brown for M codes
+      { token: 'gcode-tool', foreground: '267F99' },  // Teal for tools
+      { token: 'gcode-spindle', foreground: 'A31515' },  // Red-brown for spindle
+      { token: 'gcode-feed', foreground: '098658' },  // Green for feed
+      { token: 'gcode-coord-x', foreground: 'C72828' },  // Red for X
+      { token: 'gcode-coord-y', foreground: '267F99' },  // Teal for Y
+      { token: 'gcode-coord-z', foreground: '2E86C1' },  // Blue for Z
+      { token: 'gcode-coord-other', foreground: '0070C1' },  // Blue for other axes
+      { token: 'gcode-line-number', foreground: '999999' },  // Gray for line numbers
+      { token: 'number', foreground: '098658' },
+    ],
+    colors: {
+      'editor.background': '#f8f8f8',
+      'editorGutter.background': '#f8f8f8',
+    }
+  });
+}
+
+// Register G-code language immediately
+registerGcodeLanguage();
 
 // Watch for theme changes
 const themeObserver = new MutationObserver(() => {
@@ -1466,6 +1582,17 @@ function onSearchInput() {
 }
 
 async function scrollToModalLine(lineIndex: number) {
+  // Use Monaco Editor for view mode
+  const editor = monacoViewerRef.value;
+  if (editor) {
+    // Monaco uses 1-based line numbers
+    const lineNumber = lineIndex + 1;
+    editor.revealLineInCenter(lineNumber);
+    editor.setPosition({ lineNumber, column: 1 });
+    return;
+  }
+
+  // Fallback for old RecycleScroller-based code
   const el = modalGcodeOutput.value;
   if (!el || totalLines.value === 0) return;
 
@@ -1578,9 +1705,11 @@ async function toggleEditMode() {
     hasUnsavedChanges.value = false;
   } else {
     if (hasUnsavedChanges.value) {
-      if (!confirm('You have unsaved changes. Are you sure you want to discard them?')) {
-        return;
-      }
+      promptDiscardChanges(() => {
+        isEditMode.value = false;
+        hasUnsavedChanges.value = false;
+      });
+      return;
     }
     isEditMode.value = false;
     hasUnsavedChanges.value = false;
@@ -1597,11 +1726,48 @@ function syncLineNumbersScroll() {
   }
 }
 
+function promptDiscardChanges(onConfirm: () => void) {
+  discardCallback.value = onConfirm;
+  showDiscardDialog.value = true;
+}
+
+function handleDiscardConfirm() {
+  showDiscardDialog.value = false;
+  if (discardCallback.value) {
+    discardCallback.value();
+    discardCallback.value = null;
+  }
+}
+
+function handleDiscardCancel() {
+  showDiscardDialog.value = false;
+  discardCallback.value = null;
+}
+
+function closeGcodeModal() {
+  if (isEditMode.value && hasUnsavedChanges.value) {
+    promptDiscardChanges(() => {
+      isEditMode.value = false;
+      hasUnsavedChanges.value = false;
+      editableGcode.value = '';
+      showGcodeModal.value = false;
+    });
+    return;
+  }
+  isEditMode.value = false;
+  hasUnsavedChanges.value = false;
+  editableGcode.value = '';
+  showGcodeModal.value = false;
+}
+
 function cancelEdit() {
   if (hasUnsavedChanges.value) {
-    if (!confirm('You have unsaved changes. Are you sure you want to discard them?')) {
-      return;
-    }
+    promptDiscardChanges(() => {
+      isEditMode.value = false;
+      hasUnsavedChanges.value = false;
+      editableGcode.value = '';
+    });
+    return;
   }
   isEditMode.value = false;
   hasUnsavedChanges.value = false;

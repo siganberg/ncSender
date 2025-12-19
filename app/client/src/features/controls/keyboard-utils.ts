@@ -122,6 +122,6 @@ export function isEditableElement(target: EventTarget | null): boolean {
   if (!target || !(target instanceof HTMLElement)) {
     return false;
   }
-  const editableSelectors = 'input, textarea, [contenteditable="true"], [contenteditable=""]';
+  const editableSelectors = 'input, textarea, [contenteditable="true"], [contenteditable=""], .monaco-editor';
   return target.matches(editableSelectors) || Boolean(target.closest(editableSelectors));
 }

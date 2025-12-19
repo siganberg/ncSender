@@ -37,7 +37,7 @@ export async function createApp(options = {}) {
   const port = options.port ?? process.env.PORT ?? configuredServerPort;
 
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '100mb' }));
   app.use(cors());
 
   const server = createHttpServer(app);
