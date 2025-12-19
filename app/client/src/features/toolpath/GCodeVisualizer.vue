@@ -2668,16 +2668,19 @@ onMounted(async () => {
   // Check if there's already G-code loaded (for page reloads)
   // The WebSocket sends gcode-updated on connection, but there's a race condition
   // where the visualizer might mount before the event arrives. Load from IDB if available.
+  // Only load from cache if the server has a job loaded - otherwise clear the visualizer
   try {
-    const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
-    const gcodeData = await getGCodeFromIDB();
-    if (gcodeData?.content) {
-      console.log('[GCodeVisualizer] Loading existing G-code from IndexedDB on mount');
-      await handleGCodeUpdate({
-        filename: gcodeData.filename,
-        content: gcodeData.content,
-        timestamp: new Date().toISOString()
-      });
+    if (props.jobLoaded?.filename) {
+      const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
+      const gcodeData = await getGCodeFromIDB();
+      if (gcodeData?.content) {
+        console.log('[GCodeVisualizer] Loading existing G-code from IndexedDB on mount');
+        await handleGCodeUpdate({
+          filename: gcodeData.filename,
+          content: gcodeData.content,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
   } catch (error) {
     console.log('[GCodeVisualizer] No existing G-code to load on mount (this is normal for first load)');
