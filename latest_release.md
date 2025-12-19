@@ -1,4 +1,4 @@
 ## What's Changed
 
-### ✨ New Features
-- Added ability to start G-code execution from a specific line number
+### 🐛 Bug Fixes
+- Fixed file renaming in File Manager not working correctly
