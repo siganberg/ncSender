@@ -458,7 +458,7 @@ import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../p
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
-import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 import MacroPanel from '../macro/MacroPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
@@ -488,7 +488,6 @@ const autoScrollGcode = ref(true);
 const consoleOutput = ref<HTMLElement | null>(null);
 const scrollerRef = ref<any>(null);
 const gcodeOutput = ref<HTMLElement | null>(null);
-const gcodeScrollerRef = ref<any>(null);
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const currentInput = ref('');
@@ -504,7 +503,6 @@ const tabs = [
 // G-Code Modal state
 const showGcodeModal = ref(false);
 const modalGcodeOutput = ref<HTMLElement | null>(null);
-const modalGcodeScrollerRef = ref<any>(null);
 const searchQuery = ref('');
 
 // Terminal Modal state
@@ -854,10 +852,7 @@ const gcodeLoadingProgress = ref(0);
 const gcodeLoadingMessage = ref('');
 const executingTool = ref<string | null>(null);
 
-// G-code viewer state (virtualized via RecycleScroller)
-const lineHeight = ref(18); // height of a .gcode-line (no gap)
-const rowHeight = computed(() => lineHeight.value); // fixed per-row height
-const overscan = 1000; // Very large buffer for ultra-smooth fast scrolling (VS Code style)
+// G-code viewer state
 const totalLines = computed(() => {
   const count = store.gcodeLineCount?.value ?? 0;
   if (count > 0) return count;
@@ -878,14 +873,11 @@ const completedUpTo = computed(() => {
 });
 const isProgramRunning = computed(() => (store.jobLoaded.value?.status === 'running'));
 
-// Minimal line cache for IDB mode
-const gcodeCache = reactive<{ [key: number]: string }>({});
-
-// Cache for split lines to avoid repeated splitting during virtual scroll
+// Cache for split lines to avoid repeated splitting
 let cachedSplitLines: string[] | null = null;
 let cachedContentRef: string | null = null;
 
-const memLines = computed(() => {
+const gcodeLines = computed(() => {
   const content = store.gcodeContent.value;
   if (!content) {
     cachedSplitLines = null;
@@ -906,72 +898,9 @@ const memLines = computed(() => {
   return arr;
 });
 
-const gcodeItems = computed(() => Array.from({ length: totalLines.value }, (_, i) => ({ index: i })));
-
 function getGcodeText(index: number) {
-  const mem = memLines.value;
-  if (mem) return mem[index] ?? '';
-  const cached = gcodeCache[index];
-  return cached ?? '';
-}
-
-// Classify a G-code line for coloring (rapid vs cutting)
-function classifyGcode(line: string): 'rapid' | 'cutting' | null {
-  if (!line) return null;
-  const upper = line.toUpperCase();
-  // Strip comments: ( ... ) and ; ...
-  const noParen = upper.replace(/\([^)]*\)/g, '');
-  const code = noParen.split(';')[0] || '';
-  if (!code.trim()) return null;
-  // Detect motion words
-  const isG0 = /\bG0+(?:\.0+)?\b/.test(code);
-  const isG1 = /\bG1+(?:\.0+)?\b/.test(code);
-  const isG2 = /\bG2+(?:\.0+)?\b/.test(code);
-  const isG3 = /\bG3+(?:\.0+)?\b/.test(code);
-  if (isG0) return 'rapid';
-  if (isG1 || isG2 || isG3) return 'cutting';
-  // Default to 'cutting' when no explicit motion matches
-  return 'cutting';
-}
-
-// Memoize classification results to reduce recalculations
-const classificationCache = reactive<{ [key: number]: 'rapid' | 'cutting' | null }>({});
-
-function isCurrentLine(index: number) {
-  const currentLine = completedUpTo.value;
-  return isProgramRunning.value && currentLine > 0 && (index + 1 === currentLine);
-}
-
-function getGcodeLineClasses(index: number) {
-  // Use throttled completedUpTo to reduce re-renders
-  const completed = (index + 1 <= throttledCompletedUpTo.value);
-  const base: Record<string, boolean> = { 'gcode-line--completed': completed };
-
-  // Use cached classification if available
-  let kind = classificationCache[index];
-  if (kind === undefined) {
-    const text = getGcodeText(index);
-    if (text) {
-      kind = classifyGcode(text);
-      classificationCache[index] = kind;
-    } else {
-      kind = null;
-    }
-  }
-
-  if (kind === 'rapid') base['gcode-line--rapid'] = true;
-  if (kind === 'cutting') base['gcode-line--cutting'] = true;
-  return base;
-}
-
-async function fillGcodeCache(startIndex: number, endIndex: number) {
-  if (!isIDBEnabled() || memLines.value) return;
-  try {
-    const endLine = Math.min(totalLines.value, endIndex);
-    if (endLine <= startIndex) return;
-    const rows = await getLinesRangeFromIDB(startIndex + 1, endLine);
-    rows.forEach((text, i) => { gcodeCache[startIndex + i] = text; });
-  } catch {}
+  const lines = gcodeLines.value;
+  return lines ? lines[index] ?? '' : '';
 }
 
 async function scrollToLineCentered(lineNumber: number) {
@@ -1064,8 +993,6 @@ watch(isProgramRunning, async (running) => {
     } else if (sourceId === 'job' || !sourceId) {
       if (activeTab.value !== 'gcode-preview') {
         activeTab.value = 'gcode-preview';
-        await nextTick();
-        measureLineHeight();
       }
     }
 
@@ -1078,19 +1005,6 @@ watch(isProgramRunning, async (running) => {
     updateMainViewerDecoration();
   }
 });
-
-function measureLineHeight() {
-  const el = gcodeOutput.value;
-  if (!el) return;
-  const temp = document.createElement('div');
-  temp.className = 'gcode-line';
-  temp.style.visibility = 'hidden';
-  temp.innerHTML = '<span class="line-number">Line 1:</span><span class="line-content">X0 Y0</span>';
-  el.appendChild(temp);
-  const h = temp.getBoundingClientRect().height;
-  el.removeChild(temp);
-  if (h && h > 0) lineHeight.value = Math.round(h); // snap to whole px to avoid drift
-}
 
 onMounted(() => {
   // Listen for G-code loading events
@@ -1118,17 +1032,6 @@ onMounted(() => {
   });
 
   nextTick(() => {
-    measureLineHeight();
-    // Warm up cache for initial visible window
-    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (!memLines.value) {
-      if (root && (root as HTMLElement).clientHeight) {
-        onGcodeScroll();
-      } else {
-        // Prefetch first chunk to avoid empty lines before any scroll
-        fillGcodeCache(0, Math.max(overscan, 200));
-      }
-    }
     if (isProgramRunning.value && autoScrollGcode.value) {
       scrollToLineCentered(completedUpTo.value);
     }
@@ -1136,24 +1039,6 @@ onMounted(() => {
 });
 
 watch(totalLines, async (newVal, oldVal) => {
-  await nextTick();
-  const el = gcodeOutput.value;
-  if (el) el.scrollTop = 0;
-
-  // Clear classification cache when new file is loaded
-  if (newVal !== oldVal) {
-    Object.keys(classificationCache).forEach(key => delete classificationCache[parseInt(key)]);
-  }
-
-  if (!memLines.value) {
-    const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root && (root as HTMLElement).clientHeight) {
-      onGcodeScroll();
-    } else {
-      fillGcodeCache(0, Math.max(overscan, 200));
-    }
-  }
-
   // Auto-switch to G-Code Preview tab when new file is loaded
   if (newVal > 0 && newVal !== oldVal) {
     activeTab.value = 'gcode-preview';
@@ -1161,12 +1046,7 @@ watch(totalLines, async (newVal, oldVal) => {
 });
 
 watch(activeTab, async (tab) => {
-  if (tab === 'gcode-preview') {
-    await nextTick();
-    measureLineHeight();
-    // Warm up cache for initial window
-    onGcodeScroll();
-  } else if (tab === 'terminal') {
+  if (tab === 'terminal') {
     await nextTick();
     measureTerminalRowHeight();
     if (autoScroll.value && scrollerRef.value) {
@@ -1174,27 +1054,6 @@ watch(activeTab, async (tab) => {
     }
   }
 });
-
-// rAF scroll handler to reduce jank
-let scrolling = false;
-function onGcodeScroll() {
-  if (scrolling) return;
-  scrolling = true;
-  requestAnimationFrame(() => {
-    scrolling = false;
-    // Prefetch IDB window to keep text cache warm
-    if (!memLines.value) {
-      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-      if (!root) return;
-      const vh = (root as HTMLElement).clientHeight || 0;
-      const scrollTop = (root as HTMLElement).scrollTop || 0;
-      const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-      const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
-      const end = Math.min(totalLines.value, start + visibleCount);
-      fillGcodeCache(start, end);
-    }
-  });
-}
 
 // Reset cross-out and scroll to top when user closes Job Progress panel (status changes to null)
 watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
@@ -1204,13 +1063,9 @@ watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
     throttledCompletedUpTo.value = 0;
     pendingCompletedUpTo = 0;
 
+    // Scroll Monaco editor to top
     await nextTick();
-    if (gcodeScrollerRef.value?.scrollToPosition) {
-      gcodeScrollerRef.value.scrollToPosition(0);
-    } else {
-      const root = (gcodeScrollerRef.value && gcodeScrollerRef.value.$el) || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-      if (root) (root as HTMLElement).scrollTop = 0;
-    }
+    monacoMainViewerRef.value?.revealLine(1);
   }
 
   // Reset gate when a new job starts
@@ -1592,13 +1447,6 @@ watch(showTerminalModal, async (isOpen) => {
 });
 
 // G-Code Modal Functions
-const filteredGcodeItems = computed(() => {
-  if (!searchQuery.value) {
-    return gcodeItems.value;
-  }
-  return gcodeItems.value.filter(item => searchResults.value.includes(item.index));
-});
-
 const searchResultText = computed(() => {
   if (!searchQuery.value) return '';
   if (searchResults.value.length === 0) return 'No matches';
@@ -1630,45 +1478,13 @@ function onSearchInput() {
   }
 }
 
-async function scrollToModalLine(lineIndex: number) {
-  // Use Monaco Editor for view mode
+function scrollToModalLine(lineIndex: number) {
   const editor = monacoViewerRef.value;
   if (editor) {
     // Monaco uses 1-based line numbers
     const lineNumber = lineIndex + 1;
     editor.revealLineInCenter(lineNumber);
     editor.setPosition({ lineNumber, column: 1 });
-    return;
-  }
-
-  // Fallback for old RecycleScroller-based code
-  const el = modalGcodeOutput.value;
-  if (!el || totalLines.value === 0) return;
-
-  const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineIndex));
-  const vh = el.clientHeight || 0;
-  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
-  const desired = targetIndex * rowHeight.value - centerOffset;
-  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
-  const clamped = Math.max(0, Math.min(maxScroll, desired));
-
-  // Pre-warm cache before scrolling to reduce flickering
-  if (!memLines.value) {
-    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-    const start = Math.max(0, targetIndex - Math.floor(visibleCount / 2));
-    const end = Math.min(totalLines.value, start + visibleCount);
-    await fillGcodeCache(start, end);
-  }
-
-  if (modalGcodeScrollerRef.value?.scrollToPosition) {
-    modalGcodeScrollerRef.value.scrollToPosition(clamped);
-  } else if (modalGcodeScrollerRef.value?.scrollToItem) {
-    modalGcodeScrollerRef.value.scrollToItem(targetIndex);
-    const root = modalGcodeScrollerRef.value?.$el || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
-  } else {
-    const root = modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
   }
 }
 
@@ -1690,61 +1506,11 @@ function clearSearch() {
   currentSearchIndex.value = 0;
 }
 
-function highlightSearchMatch(text: string): string {
-  if (!searchQuery.value) return text;
-  const query = searchQuery.value;
-  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-  return text.replace(regex, '<mark>$1</mark>');
-}
-
-function getModalGcodeLineClasses(index: number) {
-  // Use throttled completedUpTo to reduce re-renders
-  const completed = (index + 1 <= throttledCompletedUpTo.value);
-  const base: Record<string, boolean> = { 'gcode-line--completed': completed };
-
-  // Use cached classification if available
-  let kind = classificationCache[index];
-  if (kind === undefined) {
-    const text = getGcodeText(index);
-    if (text) {
-      kind = classifyGcode(text);
-      classificationCache[index] = kind;
-    } else {
-      kind = null;
-    }
-  }
-
-  if (kind === 'rapid') base['gcode-line--rapid'] = true;
-  if (kind === 'cutting') base['gcode-line--cutting'] = true;
-
-  if (searchResults.value.includes(index)) {
-    base['gcode-line--search-match'] = true;
-    if (searchResults.value[currentSearchIndex.value] === index) {
-      base['gcode-line--current-match'] = true;
-    }
-  }
-
-  return base;
-}
-
-function onModalGcodeScroll() {
-  if (!memLines.value) {
-    const root = (modalGcodeScrollerRef.value && modalGcodeScrollerRef.value.$el) || modalGcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (!root) return;
-    const vh = (root as HTMLElement).clientHeight || 0;
-    const scrollTop = (root as HTMLElement).scrollTop || 0;
-    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-    const start = Math.max(0, Math.floor(scrollTop / rowHeight.value) - Math.floor(overscan / 2));
-    const end = Math.min(totalLines.value, start + visibleCount);
-    fillGcodeCache(start, end);
-  }
-}
-
 async function toggleEditMode() {
   if (!isEditMode.value) {
     // Load full content from memory or IDB
-    if (memLines.value) {
-      editableGcode.value = memLines.value.join('\n');
+    if (gcodeLines.value) {
+      editableGcode.value = gcodeLines.value.join('\n');
     } else {
       // Load from IDB
       const lines = await getLinesRangeFromIDB(1, totalLines.value);
@@ -2361,107 +2127,6 @@ h2 {
   border-radius: 0;
 }
 
-.gcode-scroller {
-  height: 100%;
-  overflow: auto;
-}
-
-.gcode-spacer {
-  width: 1px;
-  height: 0;
-  opacity: 0;
-}
-
-.gcode-items {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  will-change: transform;
-}
-
-/* Ensure all descendants remain selectable, except line numbers */
-.gcode-content * {
-  -webkit-user-select: text !important;
-  -moz-user-select: text !important;
-  -ms-user-select: text !important;
-  user-select: text !important;
-}
-
-.gcode-line {
-  display: flex;
-  gap: var(--gap-sm);
-  padding: 0;
-  cursor: text;
-  position: relative;
-  -webkit-user-select: text !important;
-  -moz-user-select: text !important;
-  -ms-user-select: text !important;
-  user-select: text !important;
-}
-
-.gcode-line--completed .line-content {
-  color: #555555 !important; /* Gray out completed lines (comments, empty lines, etc.) */
-}
-
-/* Color lines to match visualizer colors */
-.gcode-line--rapid .line-content {
-  color: #00ff66 !important; /* match visualizer rapid */
-}
-
-.gcode-line--cutting .line-content {
-  color: #3e85c7 !important; /* same as visualizer cutting */
-}
-
-/* Completed lines: gray them like visualizer */
-.gcode-line--completed.gcode-line--rapid .line-content {
-  color: #333333 !important;
-}
-.gcode-line--completed.gcode-line--cutting .line-content {
-  color: #444444 !important;
-}
-
-.line-number {
-  color: #666;
-  min-width: 60px;
-  flex-shrink: 0;
-  text-align: right;
-  padding-right: 12px;
-  margin-right: 12px;
-  border-right: 1px solid var(--color-border);
-  background: #1a1a1a;
-  font-family: 'JetBrains Mono', monospace;
-  pointer-events: none;
-  -webkit-user-select: none !important;
-  -moz-user-select: none !important;
-  -ms-user-select: none !important;
-  user-select: none !important;
-}
-
-.current-line-arrow {
-  position: absolute;
-  left: 72px;
-  color: #ffff00;
-  font-size: 14px;
-  pointer-events: none;
-  -webkit-user-select: none !important;
-  -moz-user-select: none !important;
-  -ms-user-select: none !important;
-  user-select: none !important;
-}
-
-.line-content {
-  color: #bdc3c7;
-  flex: 1;
-  padding-left: 4px;
-  cursor: text;
-  white-space: pre;
-  -webkit-user-select: text !important;
-  -moz-user-select: text !important;
-  -ms-user-select: text !important;
-  user-select: text !important;
-}
-
 /* Tools Tab */
 .tools-tab {
   min-height: 200px;
@@ -2921,15 +2586,6 @@ body.theme-light .monaco-editor-container :deep(.monaco-current-line-glyph) {
   transform: translateY(-1px);
 }
 
-/* Search Match Highlighting */
-.gcode-line--search-match {
-  background: rgba(255, 255, 0, 0.1);
-}
-
-.gcode-line--current-match {
-  background: rgba(255, 165, 0, 0.2);
-}
-
 .line-content :deep(mark) {
   background: yellow;
   color: black;
@@ -3221,16 +2877,6 @@ body.theme-light .line-number {
   color: #888 !important;
   border-color: var(--color-border) !important;
 }
-
-body.theme-light .current-line-arrow {
-  color: #E67E22 !important;
-}
-
-/* Preserve motion coloring in light theme */
-body.theme-light .gcode-line--rapid .line-content { color: #E67E22 !important; }
-body.theme-light .gcode-line--cutting .line-content { color: #3e85c7 !important; }
-body.theme-light .gcode-line--completed.gcode-line--rapid .line-content { color: #333333 !important; }
-body.theme-light .gcode-line--completed.gcode-line--cutting .line-content { color: #444444 !important; }
 
 /* Enable text selection in terminal modal - global override */
 .terminal-modal-viewer,
