@@ -1,8 +1,6 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Upgraded G-Code Preview to use Monaco editor for better syntax highlighting and performance
-- Added visual indicator to G-Code Preview
-
 ### 🐛 Bug Fixes
-- Fixed search functionality in G-Code Preview
+- Fixed an issue where commented M6 tool change codes were still being executed
+- Fixed bugs in the G-code editor
+- Fixed missing completed segments when refreshing the page
