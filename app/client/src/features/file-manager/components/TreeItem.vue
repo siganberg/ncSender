@@ -58,7 +58,7 @@
         class="tree-item__name-input"
         v-model="editName"
         @blur="finishRename"
-        @keydown.enter="finishRename"
+        @keydown.enter="($event.target as HTMLInputElement).blur()"
         @keydown.escape="cancelRename"
         @click.stop
       />
@@ -131,7 +131,7 @@
         @load="$emit('load', $event)"
         @delete="$emit('delete', $event)"
         @rename-start="$emit('rename-start', $event)"
-        @rename-end="$emit('rename-end', $event.node, $event.newName)"
+        @rename-end="$emit('rename-end', $event)"
         @drag-start="$emit('drag-start', $event)"
         @drag-over="$emit('drag-over', $event)"
         @drag-leave="$emit('drag-leave')"
