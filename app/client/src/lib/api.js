@@ -793,6 +793,48 @@ class NCClient {
     return response.json();
   }
 
+  async analyzeGCodeLine(lineNumber) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/analyze-line`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lineNumber })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to analyze G-code line' }));
+      throw new Error(error.error || 'Failed to analyze G-code line');
+    }
+
+    return response.json();
+  }
+
+  async startGCodeJobFromLine(filename, startLine, options = {}) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/start-from-line`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename,
+        startLine,
+        skipToolCheck: options.skipToolCheck || false,
+        spindleDelaySec: options.spindleDelaySec || 0,
+        approachHeight: options.approachHeight || 10,
+        plungeFeedRate: options.plungeFeedRate || 500
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      const error = new Error(data.error || 'Failed to start G-code job from line');
+      error.toolMismatch = data.toolMismatch;
+      error.expectedTool = data.expectedTool;
+      error.currentTool = data.currentTool;
+      throw error;
+    }
+
+    return data;
+  }
+
   // Firmware settings methods
   async getFirmwareSettings(forceRefresh = false) {
     const url = forceRefresh

@@ -18,7 +18,9 @@ export class JobProgressEstimator {
     this._shouldCountCallback = shouldCountCallback || null; // Callback to check if we should count
   }
 
-  async startWithContent(gcodeText) {
+  async startWithContent(gcodeText, options = {}) {
+    const { startLine = 1 } = options;
+
     // Refresh pre-analyzer with machine profile (firmware.json cached)
     try {
       const profile = await readMachineProfileFromCache();
@@ -46,9 +48,18 @@ export class JobProgressEstimator {
     for (let i = 0; i < this._perLineSec.length; i++) {
       this._prefixSec[i + 1] = this._prefixSec[i] + (Number(this._perLineSec[i]) || 0);
     }
-    this._currentLine = 0;
+
+    // If starting from a specific line, adjust the estimate
+    this._startLine = startLine;
+    let skippedTimeSec = 0;
+    if (startLine > 1 && startLine <= this._prefixSec.length) {
+      // Use prefix sum to get time for lines 1 to startLine-1
+      skippedTimeSec = this._prefixSec[startLine - 1] || 0;
+    }
+
+    this._currentLine = startLine > 1 ? startLine - 1 : 0;
     this._active = true;
-    this._originalEstimatedSec = this._totalSec; // Store original estimate
+    this._originalEstimatedSec = this._totalSec - skippedTimeSec; // Adjusted estimate
     this._actualElapsedSec = 0; // Reset actual elapsed time
     this._startTimer();
     if (this.telemetry?.start) this.telemetry.start();

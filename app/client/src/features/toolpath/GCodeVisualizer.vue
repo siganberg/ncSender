@@ -312,6 +312,18 @@
           <svg class="btn-icon"><use href="#emoji-stop"></use></svg>
           Stop
         </button>
+        <button
+          class="control-btn control-btn--start-from-line"
+          :disabled="!canStartFromLine"
+          @click="openStartFromLineDialog()"
+          title="Start from specific line"
+        >
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 12h16M4 18h7" />
+            <path d="M15 15l4 4m0-4l-4 4" />
+          </svg>
+          From Line
+        </button>
       </div>
 
       <!-- Probe button - bottom right -->
@@ -335,6 +347,16 @@
     :show="showFileManager"
     @close="showFileManager = false"
   />
+
+  <!-- Start from Line Dialog -->
+  <StartFromLineDialog
+    :show="showStartFromLineDialog"
+    :filename="props.jobLoaded?.filename || ''"
+    :total-lines="props.jobLoaded?.totalLines || 0"
+    :initial-line="startFromLineInitial"
+    @close="showStartFromLineDialog = false"
+    @started="handleStartFromLineSuccess"
+  />
 </template>
 
 <script setup lang="ts">
@@ -351,6 +373,7 @@ import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeDialog from '../probe/ProbeDialog.vue';
 import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
+import StartFromLineDialog from './StartFromLineDialog.vue';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
@@ -487,6 +510,8 @@ const autoFitMode = ref(false); // Auto-fit mode - off by default
 const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
+const showStartFromLineDialog = ref(false);
+const startFromLineInitial = ref(1);
 
 // Helper to get pin state from Pn string
 const getPinState = (pinKey: string): boolean => {
@@ -1483,6 +1508,24 @@ const handleStop = async () => {
     console.error('Error stopping job:', error);
   }
 };
+
+const openStartFromLineDialog = (lineNumber = 1) => {
+  startFromLineInitial.value = lineNumber;
+  showStartFromLineDialog.value = true;
+};
+
+const handleStartFromLineSuccess = (data: { line: number }) => {
+  console.log('Started job from line:', data.line);
+};
+
+const canStartFromLine = computed(() => {
+  return props.jobLoaded?.filename &&
+         props.jobLoaded?.totalLines > 0 &&
+         store.isConnected.value &&
+         store.isHomed.value &&
+         !isJobRunning.value &&
+         !store.isProbing.value;
+});
 
 const getGridBounds = () => {
   const { minX, maxX, minY, maxY } = computeGridBoundsFrom(props.workOffset);
@@ -3619,6 +3662,16 @@ body.theme-light .dot--rapid {
 
 .control-btn--danger:hover {
   box-shadow: 0 6px 16px -6px rgba(255, 107, 107, 0.6);
+}
+
+.control-btn--start-from-line {
+  background: linear-gradient(135deg, #8b5cf6, rgba(139, 92, 246, 0.8));
+  color: white;
+  box-shadow: 0 4px 12px -4px rgba(139, 92, 246, 0.5);
+}
+
+.control-btn--start-from-line:hover {
+  box-shadow: 0 6px 16px -6px rgba(139, 92, 246, 0.6);
 }
 
 .control-btn:disabled {

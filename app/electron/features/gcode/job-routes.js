@@ -7,6 +7,7 @@ import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
 import { getUserDataDir } from '../../utils/paths.js';
+import { GCodeStateAnalyzer, generateResumeSequence, compareToolState } from './gcode-state-analyzer.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -131,6 +132,167 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
     }
   });
 
+  router.post('/analyze-line', async (req, res) => {
+    try {
+      const { lineNumber } = req.body;
+
+      if (!Number.isFinite(lineNumber) || lineNumber < 1) {
+        return res.status(400).json({ error: 'Valid line number is required' });
+      }
+
+      const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+
+      try {
+        await fs.access(cachePath);
+      } catch {
+        return res.status(404).json({ error: 'No G-code file loaded' });
+      }
+
+      const content = await fs.readFile(cachePath, 'utf8');
+      const totalLines = content.split('\n').length;
+
+      if (lineNumber > totalLines) {
+        return res.status(400).json({ error: `Line ${lineNumber} exceeds file length (${totalLines} lines)` });
+      }
+
+      const analyzer = new GCodeStateAnalyzer();
+      const { state } = analyzer.analyzeToLine(content, lineNumber);
+
+      const currentTool = serverState.machineState?.tool ?? null;
+      const toolComparison = compareToolState(state.tool, currentTool);
+
+      const warnings = [];
+
+      if (!serverState.machineState?.homed) {
+        warnings.push('Machine is not homed');
+      }
+
+      if (toolComparison.mismatch) {
+        warnings.push(toolComparison.message);
+      }
+
+      res.json({
+        state,
+        lineNumber,
+        totalLines,
+        toolMismatch: toolComparison.mismatch,
+        expectedTool: state.tool,
+        currentTool,
+        warnings
+      });
+    } catch (error) {
+      log('Error analyzing G-code line:', error);
+      res.status(500).json({ error: 'Failed to analyze G-code line' });
+    }
+  });
+
+  router.post('/start-from-line', async (req, res) => {
+    try {
+      const {
+        filename,
+        startLine,
+        skipToolCheck = false,
+        spindleDelaySec = 0,
+        approachHeight = 10,
+        plungeFeedRate = 500
+      } = req.body;
+
+      if (!filename) {
+        return res.status(400).json({ error: 'Filename is required' });
+      }
+
+      if (!Number.isFinite(startLine) || startLine < 1) {
+        return res.status(400).json({ error: 'Valid start line number is required' });
+      }
+
+      const filePath = path.join(filesDir, filename);
+
+      try {
+        await fs.access(filePath);
+      } catch {
+        return res.status(404).json({ error: 'G-code file not found' });
+      }
+
+      if (!serverState.machineState?.connected) {
+        return res.status(400).json({ error: 'CNC controller not connected' });
+      }
+
+      const machineStatus = serverState.machineState?.status?.toLowerCase();
+      if (machineStatus !== 'idle') {
+        return res.status(400).json({ error: `Cannot start job. Machine state is: ${machineStatus}` });
+      }
+
+      if (!serverState.machineState?.homed) {
+        return res.status(400).json({ error: 'Machine must be homed before starting from a specific line' });
+      }
+
+      const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+      const content = await fs.readFile(cachePath, 'utf8');
+      const totalLines = content.split('\n').length;
+
+      if (startLine > totalLines) {
+        return res.status(400).json({ error: `Line ${startLine} exceeds file length (${totalLines} lines)` });
+      }
+
+      const analyzer = new GCodeStateAnalyzer();
+      const { state } = analyzer.analyzeToLine(content, startLine);
+
+      const currentTool = serverState.machineState?.tool ?? null;
+      const toolComparison = compareToolState(state.tool, currentTool);
+
+      if (toolComparison.mismatch && !skipToolCheck) {
+        return res.status(400).json({
+          error: 'Tool mismatch',
+          toolMismatch: true,
+          expectedTool: state.tool,
+          currentTool,
+          message: toolComparison.message
+        });
+      }
+
+      const resumeSequence = generateResumeSequence(state, {
+        spindleDelaySec,
+        approachHeight,
+        plungeFeedRate
+      });
+
+      if (serverState.jobLoaded) {
+        serverState.jobLoaded.jobStartTime = new Date().toISOString();
+        serverState.jobLoaded.jobEndTime = null;
+        serverState.jobLoaded.jobPauseAt = null;
+        serverState.jobLoaded.jobPausedTotalSec = 0;
+        serverState.jobLoaded.status = 'running';
+        serverState.jobLoaded.currentLine = startLine;
+        broadcast('server-state-updated', serverState);
+      }
+
+      const displayFilename = serverState.jobLoaded?.filename || filename;
+
+      log('Starting job from line:', startLine, 'with resume sequence');
+
+      // Fire and forget - don't await, let job run in background
+      jobManager.startJob(cachePath, displayFilename, actualCNCController, broadcast, commandProcessor, {
+        serverState,
+        startLine,
+        resumeSequence
+      }).catch(error => {
+        log('Error during job execution from line:', error);
+      });
+
+      log('G-code job started from line:', startLine);
+      res.json({
+        success: true,
+        message: `G-code job started from line ${startLine}`,
+        filename,
+        startLine,
+        resumeSequence
+      });
+    } catch (error) {
+      log('Error starting G-code job from line:', error);
+      const errorMessage = error.message || 'Failed to start G-code job from line';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
 
   return router;
 }
@@ -153,6 +315,8 @@ export class GCodeJobProcessor {
     this.sourceId = options.sourceId || 'job';
     this.eventBus = pluginEventBus;
     this.serverState = options.serverState || null;
+    this.startLine = options.startLine || 1;
+    this.resumeSequence = options.resumeSequence || [];
   }
 
   getExecutingLine() {
@@ -185,7 +349,7 @@ export class GCodeJobProcessor {
         }
 
         if (this.progressProvider?.startWithContent) {
-          await this.progressProvider.startWithContent(content);
+          await this.progressProvider.startWithContent(content, { startLine: this.startLine });
         }
       } catch {}
     }
@@ -201,7 +365,7 @@ export class GCodeJobProcessor {
     this.isRunning = true;
     this.isPaused = false;
     this.isStopped = false;
-    this.currentLineNumber = 0;
+    this.currentLineNumber = this.startLine > 1 ? this.startLine - 1 : 0;
 
     // Note: onBeforeJobStart event is now emitted at file load time (in routes.js)
     // This ensures the visualizer shows the processed G-code and avoids double processing
@@ -209,7 +373,47 @@ export class GCodeJobProcessor {
       this.gcodeContent = content;
     }
 
+    // Execute resume sequence if starting from a line other than 1
+    if (this.startLine > 1 && this.resumeSequence.length > 0) {
+      await this.executeResumeSequence();
+    }
+
     await this.processLinesStream();
+  }
+
+  async executeResumeSequence() {
+    log('Executing resume sequence for start from line:', this.startLine);
+
+    for (const command of this.resumeSequence) {
+      if (this.isStopped) {
+        break;
+      }
+
+      const cleanCommand = command.trim();
+      if (!cleanCommand || cleanCommand.startsWith(';')) {
+        continue;
+      }
+
+      try {
+        const commandId = `resume-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        await this.cncController.sendCommand(cleanCommand, {
+          commandId,
+          displayCommand: `[Resume] ${cleanCommand}`,
+          meta: {
+            resumeSequence: true,
+            sourceId: this.sourceId
+          }
+        });
+      } catch (error) {
+        log('Error executing resume sequence command:', cleanCommand, error);
+        this.isStopped = true;
+        this.isRunning = false;
+        throw error;
+      }
+    }
+
+    log('Resume sequence completed');
   }
 
   pause() {
@@ -282,7 +486,16 @@ export class GCodeJobProcessor {
         lineStream = rl;
       }
 
+      let fileLineNumber = 0;
+
       for await (const originalLine of lineStream) {
+        fileLineNumber++;
+
+        // Skip lines before startLine when starting from a specific line
+        if (fileLineNumber < this.startLine) {
+          continue;
+        }
+
         while (this.isPaused && !this.isStopped) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -291,7 +504,7 @@ export class GCodeJobProcessor {
           break;
         }
 
-        this.currentLineNumber++;
+        this.currentLineNumber = fileLineNumber;
 
         let cleanLine = originalLine.trim();
 
