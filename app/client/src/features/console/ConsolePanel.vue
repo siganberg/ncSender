@@ -544,7 +544,7 @@ const monacoMainViewerOptions: Monaco.editor.IStandaloneEditorConstructionOption
   folding: false,
   glyphMargin: true,
   lineDecorationsWidth: 12,
-  lineNumbersMinChars: 6,
+  lineNumbersMinChars: 3,
   largeFileOptimizations: false,
   maxTokenizationLineLength: 5000,
   scrollbar: {
@@ -572,7 +572,7 @@ const monacoViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = 
   folding: false,
   glyphMargin: true,
   lineDecorationsWidth: 16,
-  lineNumbersMinChars: 8,
+  lineNumbersMinChars: 3,
   largeFileOptimizations: false,
   maxTokenizationLineLength: 5000,
   scrollbar: {
@@ -596,7 +596,7 @@ const monacoEditorOptions: Monaco.editor.IStandaloneEditorConstructionOptions = 
   folding: false,
   glyphMargin: false,
   lineDecorationsWidth: 16,
-  lineNumbersMinChars: 8,
+  lineNumbersMinChars: 3,
   largeFileOptimizations: false,
   maxTokenizationLineLength: 5000,
   scrollbar: {
@@ -2491,11 +2491,6 @@ h2 {
 
 body.theme-light .monaco-editor-container :deep(.monaco-editor .margin-view-overlays) {
   border-right: 1px solid #e0e0e0;
-}
-
-/* Monaco content left padding */
-.monaco-editor-container :deep(.monaco-editor .view-lines) {
-  padding-left: 12px !important;
 }
 
 /* Monaco unified background - light theme */
