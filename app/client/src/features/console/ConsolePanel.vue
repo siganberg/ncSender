@@ -231,43 +231,25 @@
         </div>
         <div class="modal-content">
           <div v-if="!isEditMode" class="gcode-modal-viewer" ref="modalGcodeOutput">
-            <RecycleScroller
-              class="gcode-scroller"
-              :items="filteredGcodeItems"
-              :item-size="rowHeight"
-              key-field="index"
-              :buffer="overscan"
-              ref="modalGcodeScrollerRef"
-              @scroll="onModalGcodeScroll"
-            >
-              <template #default="{ item }">
-                <div
-                  v-memo="[getGcodeText(item.index), isCurrentLine(item.index), throttledCompletedUpTo, searchQuery]"
-                  class="gcode-line"
-                  :class="getModalGcodeLineClasses(item.index)"
-                  :style="{ height: rowHeight + 'px' }"
-                >
-                  <span class="line-number">{{ item.index + 1 }}</span>
-                  <span v-if="isCurrentLine(item.index)" class="current-line-arrow">▶</span>
-                  <span class="line-content" v-html="highlightSearchMatch(getGcodeText(item.index))"></span>
-                </div>
-              </template>
-            </RecycleScroller>
+            <CodeEditor
+              :value="viewableGcode"
+              language="gcode"
+              :theme="monacoTheme"
+              :options="monacoViewerOptions"
+              @mount="handleMonacoViewerMount"
+              class="monaco-editor-container"
+            />
           </div>
           <div v-else class="gcode-editor-container">
-            <div class="editor-wrapper">
-              <div class="line-numbers" ref="lineNumbersRef">
-                <div v-for="n in editorLineCount" :key="n" class="line-num">{{ n }}</div>
-              </div>
-              <textarea
-                v-model="editableGcode"
-                class="gcode-editor"
-                spellcheck="false"
-                @input="onGcodeEdit"
-                @scroll="syncLineNumbersScroll"
-                ref="editorTextareaRef"
-              ></textarea>
-            </div>
+            <CodeEditor
+              v-model:value="editableGcode"
+              language="gcode"
+              :theme="monacoTheme"
+              :options="monacoEditorOptions"
+              @mount="handleMonacoEditorMount"
+              @change="onGcodeEdit"
+              class="monaco-editor-container"
+            />
             <div class="editor-actions">
               <button @click="cancelEdit" class="cancel-button">Cancel</button>
               <button @click="commitEdit" class="commit-button">Commit Changes</button>
@@ -469,7 +451,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive, shallowRef } from 'vue';
 import { api } from './api';
 import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../plugins/api';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
@@ -478,6 +460,8 @@ import { useConsoleStore } from './store';
 import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 import MacroPanel from '../macro/MacroPanel.vue';
+import { CodeEditor } from 'monaco-editor-vue3';
+import type * as Monaco from 'monaco-editor';
 
 const store = useConsoleStore();
 
@@ -532,6 +516,122 @@ const hasUnsavedChanges = ref(false);
 const autoScrollModal = ref(true);
 const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const lineNumbersRef = ref<HTMLDivElement | null>(null);
+
+// Monaco Editor refs
+const monacoViewerRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+const monacoEditorRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+const currentLineDecorations = ref<string[]>([]);
+
+// Monaco Editor options for read-only viewer
+const monacoViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
+  readOnly: true,
+  minimap: { enabled: false },
+  lineNumbers: 'on',
+  scrollBeyondLastLine: false,
+  wordWrap: 'off',
+  automaticLayout: true,
+  fontSize: 14,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  renderLineHighlight: 'none',
+  selectionHighlight: false,
+  occurrencesHighlight: 'off',
+  folding: false,
+  glyphMargin: false,
+  lineDecorationsWidth: 16,
+  lineNumbersMinChars: 8,
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'visible',
+    useShadows: false,
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10
+  }
+};
+
+// Monaco Editor options for editing
+const monacoEditorOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
+  minimap: { enabled: false },
+  lineNumbers: 'on',
+  scrollBeyondLastLine: false,
+  wordWrap: 'off',
+  automaticLayout: true,
+  fontSize: 14,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  folding: false,
+  glyphMargin: false,
+  lineDecorationsWidth: 16,
+  lineNumbersMinChars: 8,
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'visible',
+    useShadows: false,
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10
+  }
+};
+
+// Computed property for viewer gcode content
+const viewableGcode = computed(() => {
+  return store.gcodeContent.value || '';
+});
+
+// Computed property for Monaco theme based on app theme
+const isLightTheme = ref(document.body.classList.contains('theme-light'));
+const monacoTheme = computed(() => isLightTheme.value ? 'vs' : 'vs-dark');
+
+// Watch for theme changes
+const themeObserver = new MutationObserver(() => {
+  isLightTheme.value = document.body.classList.contains('theme-light');
+});
+
+onMounted(() => {
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+});
+
+onBeforeUnmount(() => {
+  themeObserver.disconnect();
+});
+
+// Handle Monaco viewer mount
+function handleMonacoViewerMount(editor: Monaco.editor.IStandaloneCodeEditor) {
+  monacoViewerRef.value = editor;
+  updateCurrentLineDecoration();
+}
+
+// Handle Monaco editor mount
+function handleMonacoEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
+  monacoEditorRef.value = editor;
+}
+
+// Update current line decoration in viewer
+function updateCurrentLineDecoration() {
+  const editor = monacoViewerRef.value;
+  if (!editor || !isProgramRunning.value) {
+    if (editor && currentLineDecorations.value.length > 0) {
+      currentLineDecorations.value = editor.deltaDecorations(currentLineDecorations.value, []);
+    }
+    return;
+  }
+
+  const currentLine = completedUpTo.value;
+  if (currentLine > 0) {
+    currentLineDecorations.value = editor.deltaDecorations(currentLineDecorations.value, [
+      {
+        range: { startLineNumber: currentLine, startColumn: 1, endLineNumber: currentLine, endColumn: 1 },
+        options: {
+          isWholeLine: true,
+          className: 'monaco-current-line',
+          glyphMarginClassName: 'monaco-current-line-glyph'
+        }
+      }
+    ]);
+
+    // Auto-scroll to current line if enabled
+    if (autoScrollModal.value) {
+      editor.revealLineInCenter(currentLine);
+    }
+  }
+}
 
 const editorLineCount = computed(() => {
   return editableGcode.value.split('\n').length;
@@ -756,6 +856,8 @@ watch(completedUpTo, (val) => {
       completedThrottleTimer = null;
       // Use the latest pending value, not the stale closure value
       throttledCompletedUpTo.value = pendingCompletedUpTo;
+      // Update Monaco current line decoration
+      updateCurrentLineDecoration();
     }, 200);
   }
 
@@ -806,6 +908,9 @@ watch(isProgramRunning, async (running) => {
     if (autoScrollGcode.value && activeTab.value === 'gcode-preview') {
       scrollToLineCentered(completedUpTo.value);
     }
+  } else {
+    // Clear Monaco current line decoration when program stops
+    updateCurrentLineDecoration();
   }
 });
 
@@ -2463,73 +2568,67 @@ h2 {
 }
 
 .gcode-modal-viewer {
-  background: #141414;
-  padding: var(--gap-xs);
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.9rem;
-  cursor: text;
-  -webkit-user-select: text !important;
-  -moz-user-select: text !important;
-  -ms-user-select: text !important;
-  user-select: text !important;
 }
 
 .gcode-editor-container {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
-.editor-wrapper {
+.monaco-editor-container {
   flex: 1;
-  display: flex;
-  overflow: hidden;
-  background: #141414;
+  min-height: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-medium);
+  overflow: hidden;
 }
 
-.line-numbers {
-  background: #1a1a1a;
-  color: #666;
-  padding: 16px 8px 16px 12px;
-  text-align: right;
-  user-select: none;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  overflow-y: hidden;
-  border-right: 1px solid var(--color-border);
-  min-width: 60px;
+.gcode-editor-container .monaco-editor-container {
+  flex: 1 1 0;
 }
 
-.line-num {
-  line-height: 1.5;
-  white-space: pre;
+/* Monaco separator */
+.monaco-editor-container :deep(.monaco-editor .margin-view-overlays) {
+  border-right: 1px solid #3a3a3a;
 }
 
-.gcode-editor {
-  flex: 1;
-  width: 100%;
-  background: #141414;
-  color: #bdc3c7;
-  border: none;
-  padding: 16px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  resize: none;
-  outline: none;
-  tab-size: 2;
-  overflow-y: auto;
+body.theme-light .monaco-editor-container :deep(.monaco-editor .margin-view-overlays) {
+  border-right: 1px solid #e0e0e0;
 }
 
-.gcode-editor:focus {
-  outline: none;
+/* Monaco content left padding */
+.monaco-editor-container :deep(.monaco-editor .view-lines) {
+  padding-left: 12px !important;
+}
+
+/* Monaco unified background - light theme */
+body.theme-light .monaco-editor-container :deep(.monaco-editor),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .margin),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .margin-view-overlays),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .monaco-editor-background),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .inputarea.ime-input),
+body.theme-light .monaco-editor-container :deep(.view-overlays),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .lines-content),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .glyph-margin),
+body.theme-light .monaco-editor-container :deep(.monaco-editor .line-numbers) {
+  background: #f8f8f8 !important;
+}
+
+body.theme-light .monaco-editor-container :deep(.monaco-editor .line-numbers) {
+  color: #999 !important;
+}
+
+/* Monaco current line highlight */
+.monaco-current-line {
+  background: rgba(255, 204, 0, 0.15) !important;
+  border-left: 3px solid #ffcc00 !important;
 }
 
 .editor-actions {

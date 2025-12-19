@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "lodash": "^4.17.21",
+    "monaco-editor": "^0.55.1",
+    "monaco-editor-vue3": "^1.0.5",
     "three": "^0.146.0",
     "vue": "^3.4.21",
     "vue-virtual-scroller": "^2.0.0-beta.8"
