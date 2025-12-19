@@ -1336,10 +1336,11 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     // Check if we have a last executed line (from server state on page load)
     // and mark all lines up to that point as completed
     // Check both lastExecutedLine (reactive state) and props.jobLoaded (server state on page-reload)
+    // Include 'running' status - user may have refreshed page while job was running
     const jobStatus = props.jobLoaded?.status;
     const propsCurrentLine = props.jobLoaded?.currentLine ?? 0;
     const lineToRestore = Math.max(lastExecutedLine.value,
-      (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') ? propsCurrentLine : 0
+      (jobStatus === 'running' || jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') ? propsCurrentLine : 0
     );
 
     if (lineToRestore > 0) {
@@ -2646,11 +2647,14 @@ onMounted(async () => {
     const status = state.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined;
 
     // Restore lastExecutedLine from server state on initial load (for page reloads)
+    // This handles the case when user refreshes page while job is running/paused/stopped/completed
+    let didRestoreThisUpdate = false;
     if (!hasRestoredInitialState && state.jobLoaded && gcodeVisualizer) {
       const currentLine = state.jobLoaded.currentLine;
-      if (status && (status === 'stopped' || status === 'paused' || status === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+      // Include 'running' status - user may have refreshed page while job was running
+      if (status && typeof currentLine === 'number' && currentLine > 0) {
         lastExecutedLine.value = currentLine;
-        console.log(`[GCodeVisualizer] Restored lastExecutedLine from server: ${currentLine}`);
+        console.log(`[GCodeVisualizer] Restored lastExecutedLine from server: ${currentLine} (status: ${status})`);
         // Re-apply completed segments up to the restored line
         for (let i = 1; i <= currentLine; i++) {
           if (!markedLines.has(i)) {
@@ -2658,12 +2662,14 @@ onMounted(async () => {
             markedLines.add(i);
           }
         }
+        didRestoreThisUpdate = true;
       }
       hasRestoredInitialState = true;
     }
 
-    // If a run is starting, reset completed markers so we start fresh
-    if (status === 'running' && prevJobStatus !== 'running') {
+    // If a run is starting (not a page reload restore), reset completed markers so we start fresh
+    // Skip reset if we just restored initial state - that means it's a page reload, not a new run
+    if (status === 'running' && prevJobStatus !== 'running' && !didRestoreThisUpdate) {
       lastExecutedLine.value = 0;
       if (gcodeVisualizer) {
         gcodeVisualizer.resetCompletedLines();
