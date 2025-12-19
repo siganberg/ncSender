@@ -120,7 +120,7 @@
     </div>
 
     <!-- G-Code Preview Tab -->
-    <div v-if="activeTab === 'gcode-preview'" class="tab-content">
+    <div v-show="activeTab === 'gcode-preview'" class="tab-content">
       <div v-if="!totalLines" class="placeholder-content">
         <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
       </div>
@@ -144,26 +144,14 @@
               <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
             </svg>
           </button>
-          <RecycleScroller
-            class="gcode-scroller"
-            :items="gcodeItems"
-            :item-size="rowHeight"
-            key-field="index"
-            :buffer="overscan"
-            ref="gcodeScrollerRef"
-            @scroll="onGcodeScroll"
-          >
-            <template #default="{ item }">
-              <div
-                class="gcode-line"
-                :class="getGcodeLineClasses(item.index)"
-                :style="{ height: rowHeight + 'px' }"
-              >
-                <span class="line-number">{{ item.index + 1 }}</span>
-                <span v-if="isCurrentLine(item.index)" class="current-line-arrow">▶</span>
-                <span class="line-content">{{ getGcodeText(item.index) }}</span>
-              </div>
-            </template>          </RecycleScroller>
+          <CodeEditor
+            :value="viewableGcode"
+            language="gcode"
+            :theme="monacoTheme"
+            :options="monacoMainViewerOptions"
+            @editorDidMount="handleMonacoMainViewerMount"
+            class="monaco-editor-container monaco-main-viewer"
+          />
         </div>
         <div class="gcode-footer">
           {{ store.gcodeFilename.value || 'Untitled' }} — {{ totalLines }} lines
@@ -537,10 +525,40 @@ const lineNumbersRef = ref<HTMLDivElement | null>(null);
 
 // Monaco Editor refs
 const monacoViewerRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+const monacoMainViewerRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 const monacoEditorRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 const currentLineDecorations = ref<string[]>([]);
+const mainViewerLineDecorations = ref<string[]>([]);
 
-// Monaco Editor options for read-only viewer
+// Monaco Editor options for main G-Code preview (smaller view)
+const monacoMainViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
+  readOnly: true,
+  minimap: { enabled: false },
+  lineNumbers: 'on',
+  scrollBeyondLastLine: false,
+  wordWrap: 'off',
+  automaticLayout: true,
+  fontSize: 13,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  renderLineHighlight: 'none',
+  selectionHighlight: false,
+  occurrencesHighlight: 'off',
+  folding: false,
+  glyphMargin: true,
+  lineDecorationsWidth: 12,
+  lineNumbersMinChars: 6,
+  largeFileOptimizations: false,
+  maxTokenizationLineLength: 5000,
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'visible',
+    useShadows: false,
+    verticalScrollbarSize: 8,
+    horizontalScrollbarSize: 8
+  }
+};
+
+// Monaco Editor options for modal read-only viewer
 const monacoViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
   readOnly: true,
   minimap: { enabled: false },
@@ -719,7 +737,46 @@ function handleMonacoEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   monacoEditorRef.value = editor;
 }
 
-// Update current line decoration in viewer
+// Handle Monaco main viewer mount
+function handleMonacoMainViewerMount(editor: Monaco.editor.IStandaloneCodeEditor) {
+  monacoMainViewerRef.value = editor;
+  updateMainViewerDecoration();
+}
+
+// Helper to apply decorations to a Monaco editor
+function applyLineDecorations(
+  editor: Monaco.editor.IStandaloneCodeEditor,
+  existingDecorations: string[],
+  currentLine: number
+): string[] {
+  const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
+
+  // Gray out completed lines (all lines before current)
+  if (currentLine > 1) {
+    decorations.push({
+      range: { startLineNumber: 1, startColumn: 1, endLineNumber: currentLine - 1, endColumn: 1 },
+      options: {
+        isWholeLine: true,
+        className: 'monaco-completed-line'
+      }
+    });
+  }
+
+  // Current line with arrow indicator
+  decorations.push({
+    range: { startLineNumber: currentLine, startColumn: 1, endLineNumber: currentLine, endColumn: 1 },
+    options: {
+      isWholeLine: true,
+      className: 'monaco-current-line',
+      glyphMarginClassName: 'monaco-current-line-glyph',
+      linesDecorationsClassName: 'monaco-current-line-arrow'
+    }
+  });
+
+  return editor.deltaDecorations(existingDecorations, decorations);
+}
+
+// Update current line decoration in modal viewer
 function updateCurrentLineDecoration() {
   const editor = monacoViewerRef.value;
   if (!editor || !isProgramRunning.value) {
@@ -731,34 +788,31 @@ function updateCurrentLineDecoration() {
 
   const currentLine = completedUpTo.value;
   if (currentLine > 0) {
-    const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
-
-    // Gray out completed lines (all lines before current)
-    if (currentLine > 1) {
-      decorations.push({
-        range: { startLineNumber: 1, startColumn: 1, endLineNumber: currentLine - 1, endColumn: 1 },
-        options: {
-          isWholeLine: true,
-          className: 'monaco-completed-line'
-        }
-      });
-    }
-
-    // Current line with arrow indicator
-    decorations.push({
-      range: { startLineNumber: currentLine, startColumn: 1, endLineNumber: currentLine, endColumn: 1 },
-      options: {
-        isWholeLine: true,
-        className: 'monaco-current-line',
-        glyphMarginClassName: 'monaco-current-line-glyph',
-        linesDecorationsClassName: 'monaco-current-line-arrow'
-      }
-    });
-
-    currentLineDecorations.value = editor.deltaDecorations(currentLineDecorations.value, decorations);
+    currentLineDecorations.value = applyLineDecorations(editor, currentLineDecorations.value, currentLine);
 
     // Auto-scroll to current line if enabled
     if (autoScrollModal.value) {
+      editor.revealLineInCenter(currentLine);
+    }
+  }
+}
+
+// Update current line decoration in main viewer
+function updateMainViewerDecoration() {
+  const editor = monacoMainViewerRef.value;
+  if (!editor || !isProgramRunning.value) {
+    if (editor && mainViewerLineDecorations.value.length > 0) {
+      mainViewerLineDecorations.value = editor.deltaDecorations(mainViewerLineDecorations.value, []);
+    }
+    return;
+  }
+
+  const currentLine = completedUpTo.value;
+  if (currentLine > 0) {
+    mainViewerLineDecorations.value = applyLineDecorations(editor, mainViewerLineDecorations.value, currentLine);
+
+    // Auto-scroll to current line if enabled
+    if (autoScrollGcode.value) {
       editor.revealLineInCenter(currentLine);
     }
   }
@@ -921,33 +975,11 @@ async function fillGcodeCache(startIndex: number, endIndex: number) {
 }
 
 async function scrollToLineCentered(lineNumber: number) {
-  const el = gcodeOutput.value;
-  if (!el || !lineNumber || totalLines.value === 0) return;
-  const targetIndex = Math.max(0, Math.min(totalLines.value - 1, lineNumber - 1));
-  const vh = el.clientHeight || 0;
-  const centerOffset = Math.max(0, (vh - rowHeight.value) / 2);
-  const desired = targetIndex * rowHeight.value - centerOffset;
-  const maxScroll = Math.max(0, totalLines.value * rowHeight.value - vh);
-  const clamped = Math.max(0, Math.min(maxScroll, desired));
-
-  // Pre-warm cache before scrolling to reduce flickering
-  if (!memLines.value) {
-    const visibleCount = Math.ceil(vh / rowHeight.value) + overscan;
-    const start = Math.max(0, targetIndex - Math.floor(visibleCount / 2));
-    const end = Math.min(totalLines.value, start + visibleCount);
-    await fillGcodeCache(start, end);
-  }
-
-  if (gcodeScrollerRef.value?.scrollToPosition) {
-    gcodeScrollerRef.value.scrollToPosition(clamped);
-  } else if (gcodeScrollerRef.value?.scrollToItem) {
-    gcodeScrollerRef.value.scrollToItem(targetIndex);
-    // Adjust closer to center via direct scrollTop tweak
-    const root = gcodeScrollerRef.value?.$el || gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
-  } else {
-    const root = gcodeOutput.value?.querySelector('.vue-recycle-scroller');
-    if (root) root.scrollTop = clamped;
+  // Use Monaco Editor for main viewer
+  const editor = monacoMainViewerRef.value;
+  if (editor && lineNumber > 0) {
+    editor.revealLineInCenter(lineNumber);
+    return;
   }
 }
 
@@ -987,8 +1019,9 @@ watch(completedUpTo, (val) => {
       completedThrottleTimer = null;
       // Use the latest pending value, not the stale closure value
       throttledCompletedUpTo.value = pendingCompletedUpTo;
-      // Update Monaco current line decoration
+      // Update Monaco decorations for both viewers
       updateCurrentLineDecoration();
+      updateMainViewerDecoration();
     }, 200);
   }
 
@@ -1040,8 +1073,9 @@ watch(isProgramRunning, async (running) => {
       scrollToLineCentered(completedUpTo.value);
     }
   } else {
-    // Clear Monaco current line decoration when program stops
+    // Clear Monaco decorations when program stops
     updateCurrentLineDecoration();
+    updateMainViewerDecoration();
   }
 });
 
@@ -2306,7 +2340,7 @@ h2 {
   border-radius: var(--radius-small);
   position: relative;
   flex: 1;
-  overflow: hidden; /* RecycleScroller handles scroll */
+  overflow: hidden;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.85rem;
   cursor: text;
@@ -2315,6 +2349,16 @@ h2 {
   -ms-user-select: text !important;
   user-select: text !important;
   contain: content;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Main G-Code Preview Monaco Editor */
+.gcode-content .monaco-main-viewer {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
 }
 
 .gcode-scroller {
