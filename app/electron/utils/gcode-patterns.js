@@ -25,6 +25,35 @@
 const M6_PATTERN = /(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|(?=[^0-9T])|$)|(?:^|[^A-Z])T0*(\d+)\s*M0*6(?:[^0-9]|$)/i;
 
 /**
+ * Check if a G-code line is a comment
+ *
+ * G-code comment formats:
+ * - Semicolon comments: ; M6 T1 (entire line after ; is a comment)
+ * - Parenthetical comments: (M6 T1) (entire line wrapped in parentheses)
+ *
+ * @param {string} command - The G-code command to check
+ * @returns {boolean} True if the line is a comment
+ */
+function isGcodeComment(command) {
+  const trimmed = command.trim();
+
+  // Strip optional N-number prefix (e.g., "N16 ;M6 T3" -> ";M6 T3")
+  const withoutLineNumber = trimmed.replace(/^N\d+\s*/i, '');
+
+  // Semicolon comment - entire line is a comment
+  if (withoutLineNumber.startsWith(';')) {
+    return true;
+  }
+
+  // Parenthetical comment - entire line wrapped in parentheses
+  if (withoutLineNumber.startsWith('(') && withoutLineNumber.endsWith(')')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parse M6 tool change command and extract tool number
  *
  * @param {string} command - The G-code command to parse
@@ -35,9 +64,16 @@ const M6_PATTERN = /(?:^|[^A-Z])M0*6(?:\s*T0*(\d+)|(?=[^0-9T])|$)|(?:^|[^A-Z])T0
  * parseM6Command('T2M6')   // { toolNumber: 2, matched: true }
  * parseM6Command('M6')     // { toolNumber: null, matched: true }
  * parseM6Command('M60')    // null
+ * parseM6Command('; M6 T1') // null (commented)
+ * parseM6Command('(M6 T1)') // null (commented)
  */
 export function parseM6Command(command) {
   if (!command || typeof command !== 'string') {
+    return null;
+  }
+
+  // Skip commented lines
+  if (isGcodeComment(command)) {
     return null;
   }
 
@@ -67,13 +103,11 @@ export function parseM6Command(command) {
  * @example
  * isM6Command('M6 T2')  // true
  * isM6Command('M60')    // false
+ * isM6Command('; M6 T1') // false (commented)
  */
 export function isM6Command(command) {
-  if (!command || typeof command !== 'string') {
-    return false;
-  }
-
-  return M6_PATTERN.test(command.trim().toUpperCase());
+  const parsed = parseM6Command(command);
+  return parsed?.matched === true;
 }
 
 /**
