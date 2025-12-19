@@ -274,8 +274,8 @@
               class="monaco-editor-container"
             />
             <div class="editor-actions">
-              <button @click="discardChanges" class="cancel-button" :disabled="!hasUnsavedChanges">Discard</button>
-              <button @click="commitEdit" class="commit-button" :disabled="!hasUnsavedChanges">Commit Changes</button>
+              <button @click="discardChanges" class="cancel-button">Discard</button>
+              <button @click="commitEdit" class="commit-button">Commit Changes</button>
             </div>
           </div>
         </div>
@@ -548,12 +548,7 @@ const spindleRPM = ref(10000);
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const editableGcode = ref('');
-const originalGcode = ref('');
-
-// Computed: check if content differs from original
-const hasUnsavedChanges = computed(() => {
-  return editableGcode.value !== originalGcode.value;
-});
+const hasUnsavedChanges = ref(false);
 const showDiscardDialog = ref(false);
 const discardCallback = ref<(() => void) | null>(null);
 const autoScrollModal = ref(true);
@@ -1025,7 +1020,7 @@ watch(isProgramRunning, async (running) => {
     // If modal is open with unsaved changes when job starts, discard silently
     if (showGcodeModal.value && hasUnsavedChanges.value) {
       editableGcode.value = '';
-      originalGcode.value = '';
+      hasUnsavedChanges.value = false;
     }
 
     const sourceId = store.jobLoaded.value?.sourceId;
@@ -1484,8 +1479,8 @@ watch(showGcodeModal, async (isOpen) => {
         const lines = await getLinesRangeFromIDB(1, totalLines.value);
         content = lines.join('\n');
       }
-      originalGcode.value = content;
       editableGcode.value = content;
+      hasUnsavedChanges.value = false;
     }
     // Reset find state
     findQuery.value = '';
@@ -1500,7 +1495,7 @@ watch(showGcodeModal, async (isOpen) => {
     }
     // Clear editable content
     editableGcode.value = '';
-    originalGcode.value = '';
+    hasUnsavedChanges.value = false;
   }
 });
 
@@ -1725,21 +1720,24 @@ function closeGcodeModal() {
   if (hasUnsavedChanges.value) {
     promptDiscardChanges(() => {
       editableGcode.value = '';
-      originalGcode.value = '';
+      hasUnsavedChanges.value = false;
       showGcodeModal.value = false;
     });
     return;
   }
   editableGcode.value = '';
-  originalGcode.value = '';
+  hasUnsavedChanges.value = false;
   showGcodeModal.value = false;
 }
 
 function discardChanges() {
   if (hasUnsavedChanges.value) {
     promptDiscardChanges(() => {
-      // Reset to original content
-      editableGcode.value = originalGcode.value;
+      // Reload original content
+      if (gcodeLines.value) {
+        editableGcode.value = gcodeLines.value.join('\n');
+      }
+      hasUnsavedChanges.value = false;
     });
     return;
   }
@@ -1753,8 +1751,7 @@ async function commitEdit() {
     await api.saveGCodeFile(filename, editableGcode.value);
     await api.loadGCodeFile(filename);
 
-    // Update original to match current (no more unsaved changes)
-    originalGcode.value = editableGcode.value;
+    hasUnsavedChanges.value = false;
   } catch (error) {
     console.error('Failed to save G-code changes:', error);
     alert('Failed to save G-code changes. Please try again.');
