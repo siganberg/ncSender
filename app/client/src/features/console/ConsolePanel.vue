@@ -554,7 +554,7 @@ const monacoViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = 
   selectionHighlight: false,
   occurrencesHighlight: 'off',
   folding: false,
-  glyphMargin: false,
+  glyphMargin: true,
   lineDecorationsWidth: 16,
   lineNumbersMinChars: 8,
   largeFileOptimizations: false,
@@ -731,16 +731,31 @@ function updateCurrentLineDecoration() {
 
   const currentLine = completedUpTo.value;
   if (currentLine > 0) {
-    currentLineDecorations.value = editor.deltaDecorations(currentLineDecorations.value, [
-      {
-        range: { startLineNumber: currentLine, startColumn: 1, endLineNumber: currentLine, endColumn: 1 },
+    const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
+
+    // Gray out completed lines (all lines before current)
+    if (currentLine > 1) {
+      decorations.push({
+        range: { startLineNumber: 1, startColumn: 1, endLineNumber: currentLine - 1, endColumn: 1 },
         options: {
           isWholeLine: true,
-          className: 'monaco-current-line',
-          glyphMarginClassName: 'monaco-current-line-glyph'
+          className: 'monaco-completed-line'
         }
+      });
+    }
+
+    // Current line with arrow indicator
+    decorations.push({
+      range: { startLineNumber: currentLine, startColumn: 1, endLineNumber: currentLine, endColumn: 1 },
+      options: {
+        isWholeLine: true,
+        className: 'monaco-current-line',
+        glyphMarginClassName: 'monaco-current-line-glyph',
+        linesDecorationsClassName: 'monaco-current-line-arrow'
       }
-    ]);
+    });
+
+    currentLineDecorations.value = editor.deltaDecorations(currentLineDecorations.value, decorations);
 
     // Auto-scroll to current line if enabled
     if (autoScrollModal.value) {
@@ -2791,10 +2806,37 @@ body.theme-light .monaco-editor-container :deep(.monaco-editor .line-numbers) {
   color: #999 !important;
 }
 
+/* Monaco completed lines - grayed out */
+.monaco-editor-container :deep(.monaco-completed-line) {
+  opacity: 0.4;
+}
+
 /* Monaco current line highlight */
-.monaco-current-line {
+.monaco-editor-container :deep(.monaco-current-line) {
   background: rgba(255, 204, 0, 0.15) !important;
-  border-left: 3px solid #ffcc00 !important;
+}
+
+/* Monaco current line arrow indicator in line decorations */
+.monaco-editor-container :deep(.monaco-current-line-arrow) {
+  background: #ffcc00;
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+/* Monaco glyph margin arrow */
+.monaco-editor-container :deep(.monaco-current-line-glyph) {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23ffcc00' d='M4 2l8 6-8 6V2z'/%3E%3C/svg%3E") center center no-repeat;
+  background-size: 12px 12px;
+}
+
+/* Light theme adjustments */
+body.theme-light .monaco-editor-container :deep(.monaco-current-line-arrow) {
+  background: #e6a800;
+}
+
+body.theme-light .monaco-editor-container :deep(.monaco-current-line-glyph) {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23e6a800' d='M4 2l8 6-8 6V2z'/%3E%3C/svg%3E") center center no-repeat;
+  background-size: 12px 12px;
 }
 
 .editor-actions {
