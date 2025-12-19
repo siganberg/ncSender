@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Enhanced G-Code Editor with Find & Replace functionality for easier code navigation and editing
+### ✨ New Features
+- Added ability to start G-code execution from a specific line number
