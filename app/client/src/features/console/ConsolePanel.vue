@@ -172,53 +172,88 @@
           </button>
         </div>
         <div class="modal-toolbar">
-          <div v-if="!isEditMode" class="search-box">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
-            </svg>
-            <input
-              type="text"
-              v-model="searchQuery"
-              placeholder="Search G-code..."
-              @input="onSearchInput"
-              class="search-input"
-            />
-            <span v-if="searchQuery" class="search-results">{{ searchResultText }}</span>
-            <div class="search-nav" v-if="searchResults.length > 0">
-              <button @click="goToPreviousSearchResult" title="Previous match" :disabled="searchResults.length === 0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+          <!-- Find & Replace -->
+          <div class="find-replace-container">
+            <div class="find-row">
+              <input
+                type="text"
+                v-model="findQuery"
+                placeholder="Find"
+                @input="onFindInput"
+                @keydown.enter.prevent="goToNextFind"
+                @keydown.shift.enter.prevent="goToPreviousFind"
+                class="find-input"
+              />
+              <button
+                @click="findCaseSensitive = !findCaseSensitive; onFindInput()"
+                :class="['find-option-btn', { active: findCaseSensitive }]"
+                title="Match Case (Alt+C)"
+              >Aa</button>
+              <button
+                @click="findWholeWord = !findWholeWord; onFindInput()"
+                :class="['find-option-btn', { active: findWholeWord }]"
+                title="Match Whole Word (Alt+W)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M1 3.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm12-8a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zM4.5 6h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1zm0 3h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1z"/>
+                </svg>
+              </button>
+              <button
+                @click="findUseRegex = !findUseRegex; onFindInput()"
+                :class="['find-option-btn', { active: findUseRegex }]"
+                title="Use Regular Expression (Alt+R)"
+              >.*</button>
+              <span class="find-results">{{ findResultText }}</span>
+              <button @click="goToPreviousFind" :disabled="findMatches.length === 0" class="find-nav-btn" title="Previous Match (Shift+Enter)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
                   <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
                 </svg>
               </button>
-              <button @click="goToNextSearchResult" title="Next match" :disabled="searchResults.length === 0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+              <button @click="goToNextFind" :disabled="findMatches.length === 0" class="find-nav-btn" title="Next Match (Enter)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
                   <path fill-rule="evenodd" d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1z"/>
                 </svg>
               </button>
+              <button v-if="findQuery" @click="clearFind" class="find-clear-btn" title="Clear">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+                </svg>
+              </button>
             </div>
-            <button v-if="searchQuery" @click="clearSearch" class="clear-search" title="Clear search">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
-              </svg>
-            </button>
+            <div v-if="!isProgramRunning" class="replace-row">
+              <input
+                type="text"
+                v-model="replaceQuery"
+                placeholder="Replace"
+                @keydown.enter.prevent="replaceNext"
+                class="find-input"
+              />
+              <button @click="replaceNext" :disabled="findMatches.length === 0" class="replace-btn" title="Replace (Enter)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10z"/>
+                </svg>
+              </button>
+              <button @click="replaceAll" :disabled="findMatches.length === 0" class="replace-btn" title="Replace All">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10z"/>
+                  <path d="M2 6a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm6 0a2 2 0 1 1 4 0 2 2 0 0 1-4 0z"/>
+                </svg>
+              </button>
+            </div>
           </div>
+          <!-- Modal Actions -->
           <div class="modal-actions">
-            <div v-if="!isEditMode && isProgramRunning" class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
+            <div v-if="isProgramRunning" class="auto-scroll-toggle" @click="autoScrollModal = !autoScrollModal" :class="{ active: autoScrollModal }">
               <span class="toggle-label">Auto-Scroll</span>
               <div class="toggle-switch">
                 <div class="toggle-handle"></div>
               </div>
             </div>
-            <button v-if="!isEditMode && !isProgramRunning" @click="toggleEditMode" class="edit-toggle" :class="{ active: isEditMode }">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
-              </svg>
-              {{ isEditMode ? 'View Mode' : 'Edit Mode' }}
-            </button>
           </div>
         </div>
         <div class="modal-content">
-          <div v-if="!isEditMode" class="gcode-modal-viewer" ref="modalGcodeOutput">
+          <!-- Read-only viewer when job is running -->
+          <div v-if="isProgramRunning" class="gcode-modal-viewer" ref="modalGcodeOutput">
             <CodeEditor
               :value="viewableGcode"
               language="gcode"
@@ -228,6 +263,7 @@
               class="monaco-editor-container"
             />
           </div>
+          <!-- Editable editor when job is not running -->
           <div v-else class="gcode-editor-container">
             <CodeEditor
               v-model:value="editableGcode"
@@ -235,12 +271,11 @@
               :theme="monacoTheme"
               :options="monacoEditorOptions"
               @editorDidMount="handleMonacoEditorMount"
-              @change="onGcodeEdit"
               class="monaco-editor-container"
             />
             <div class="editor-actions">
-              <button @click="cancelEdit" class="cancel-button">Cancel</button>
-              <button @click="commitEdit" class="commit-button">Commit Changes</button>
+              <button @click="discardChanges" class="cancel-button" :disabled="!hasUnsavedChanges">Discard</button>
+              <button @click="commitEdit" class="commit-button" :disabled="!hasUnsavedChanges">Commit Changes</button>
             </div>
           </div>
         </div>
@@ -512,14 +547,25 @@ const autoScrollTerminalModal = ref(true);
 const spindleRPM = ref(10000);
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
-const isEditMode = ref(false);
 const editableGcode = ref('');
-const hasUnsavedChanges = ref(false);
+const originalGcode = ref('');
+
+// Computed: check if content differs from original
+const hasUnsavedChanges = computed(() => {
+  return editableGcode.value !== originalGcode.value;
+});
 const showDiscardDialog = ref(false);
 const discardCallback = ref<(() => void) | null>(null);
 const autoScrollModal = ref(true);
-const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const lineNumbersRef = ref<HTMLDivElement | null>(null);
+
+// Find & Replace state
+const findQuery = ref('');
+const replaceQuery = ref('');
+const findCaseSensitive = ref(false);
+const findWholeWord = ref(false);
+const findUseRegex = ref(false);
+const findMatches = ref<Monaco.editor.FindMatch[]>([]);
+const currentFindIndex = ref(0);
 
 // Monaco Editor refs
 const monacoViewerRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -967,8 +1013,8 @@ watch(completedUpTo, (val) => {
     if (!showGcodeModal.value && activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
       scrollToLineCentered(lineToScroll);
     }
-    // Auto-scroll modal if open and auto-scroll enabled
-    if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value && !isEditMode.value) {
+    // Auto-scroll modal if open and auto-scroll enabled (only when running, viewer is shown)
+    if (showGcodeModal.value && autoScrollModal.value && isProgramRunning.value) {
       scrollToModalLine(lineToScroll);
     }
   }, 300);
@@ -976,9 +1022,10 @@ watch(completedUpTo, (val) => {
 
 watch(isProgramRunning, async (running) => {
   if (running) {
-    // Exit edit mode when job starts
-    if (isEditMode.value) {
-      isEditMode.value = false;
+    // If modal is open with unsaved changes when job starts, discard silently
+    if (showGcodeModal.value && hasUnsavedChanges.value) {
+      editableGcode.value = '';
+      originalGcode.value = '';
     }
 
     const sourceId = store.jobLoaded.value?.sourceId;
@@ -1425,14 +1472,35 @@ watch(activeTab, (newTab) => {
   }
 });
 
-// Watch modal open/close to sync main view
+// Watch modal open/close to sync main view and load editable content
 watch(showGcodeModal, async (isOpen) => {
-  if (!isOpen) {
+  if (isOpen) {
+    // Modal opened - load editable content if not running
+    if (!isProgramRunning.value) {
+      let content = '';
+      if (gcodeLines.value) {
+        content = gcodeLines.value.join('\n');
+      } else {
+        const lines = await getLinesRangeFromIDB(1, totalLines.value);
+        content = lines.join('\n');
+      }
+      originalGcode.value = content;
+      editableGcode.value = content;
+    }
+    // Reset find state
+    findQuery.value = '';
+    replaceQuery.value = '';
+    findMatches.value = [];
+    currentFindIndex.value = 0;
+  } else {
     // Modal closed - sync main view to current position if program is running
     await nextTick();
     if (activeTab.value === 'gcode-preview' && autoScrollGcode.value && isProgramRunning.value) {
       scrollToLineCentered(completedUpTo.value);
     }
+    // Clear editable content
+    editableGcode.value = '';
+    originalGcode.value = '';
   }
 });
 
@@ -1506,33 +1574,127 @@ function clearSearch() {
   currentSearchIndex.value = 0;
 }
 
-async function toggleEditMode() {
-  if (!isEditMode.value) {
-    // Load full content from memory or IDB
-    if (gcodeLines.value) {
-      editableGcode.value = gcodeLines.value.join('\n');
-    } else {
-      // Load from IDB
-      const lines = await getLinesRangeFromIDB(1, totalLines.value);
-      editableGcode.value = lines.join('\n');
+// Find & Replace computed
+const findResultText = computed(() => {
+  if (!findQuery.value) return '';
+  if (findMatches.value.length === 0) return 'No results';
+  return `${currentFindIndex.value + 1} of ${findMatches.value.length}`;
+});
+
+// Find & Replace functions
+function onFindInput() {
+  performFind();
+}
+
+function performFind() {
+  const editor = monacoEditorRef.value || monacoViewerRef.value;
+  if (!editor || !findQuery.value) {
+    findMatches.value = [];
+    currentFindIndex.value = 0;
+    return;
+  }
+
+  const model = editor.getModel();
+  if (!model) return;
+
+  try {
+    let searchString = findQuery.value;
+
+    // Build search options
+    const matches = model.findMatches(
+      searchString,
+      true, // searchOnlyEditableRange
+      findUseRegex.value, // isRegex
+      findCaseSensitive.value, // matchCase
+      findWholeWord.value ? 'true' : null, // wordSeparators (null = no whole word matching)
+      true // captureMatches
+    );
+
+    findMatches.value = matches;
+    currentFindIndex.value = 0;
+
+    if (matches.length > 0) {
+      highlightCurrentMatch(editor);
     }
-    isEditMode.value = true;
-    hasUnsavedChanges.value = false;
-  } else {
-    if (hasUnsavedChanges.value) {
-      promptDiscardChanges(() => {
-        isEditMode.value = false;
-        hasUnsavedChanges.value = false;
-      });
-      return;
-    }
-    isEditMode.value = false;
-    hasUnsavedChanges.value = false;
+  } catch (e) {
+    // Invalid regex or other error
+    findMatches.value = [];
+    currentFindIndex.value = 0;
   }
 }
 
-function onGcodeEdit() {
-  hasUnsavedChanges.value = true;
+function highlightCurrentMatch(editor: Monaco.editor.IStandaloneCodeEditor) {
+  if (findMatches.value.length === 0) return;
+
+  const match = findMatches.value[currentFindIndex.value];
+  if (match) {
+    editor.setSelection(match.range);
+    editor.revealLineInCenter(match.range.startLineNumber);
+  }
+}
+
+function goToNextFind() {
+  const editor = monacoEditorRef.value || monacoViewerRef.value;
+  if (!editor || findMatches.value.length === 0) return;
+
+  currentFindIndex.value = (currentFindIndex.value + 1) % findMatches.value.length;
+  highlightCurrentMatch(editor);
+}
+
+function goToPreviousFind() {
+  const editor = monacoEditorRef.value || monacoViewerRef.value;
+  if (!editor || findMatches.value.length === 0) return;
+
+  currentFindIndex.value = (currentFindIndex.value - 1 + findMatches.value.length) % findMatches.value.length;
+  highlightCurrentMatch(editor);
+}
+
+function clearFind() {
+  findQuery.value = '';
+  replaceQuery.value = '';
+  findMatches.value = [];
+  currentFindIndex.value = 0;
+}
+
+function replaceNext() {
+  const editor = monacoEditorRef.value;
+  if (!editor || findMatches.value.length === 0) return;
+
+  const match = findMatches.value[currentFindIndex.value];
+  if (!match) return;
+
+  // Get replacement text (handle regex capture groups if needed)
+  let replacement = replaceQuery.value;
+
+  editor.executeEdits('replace', [{
+    range: match.range,
+    text: replacement
+  }]);
+
+  // Re-run find to update matches
+  performFind();
+}
+
+function replaceAll() {
+  const editor = monacoEditorRef.value;
+  if (!editor || findMatches.value.length === 0) return;
+
+  const model = editor.getModel();
+  if (!model) return;
+
+  // Replace all matches from end to start to preserve positions
+  const edits = [...findMatches.value]
+    .reverse()
+    .map(match => ({
+      range: match.range,
+      text: replaceQuery.value
+    }));
+
+  editor.executeEdits('replace-all', edits);
+
+  // Clear find state
+  findMatches.value = [];
+  currentFindIndex.value = 0;
 }
 
 function syncLineNumbersScroll() {
@@ -1560,33 +1722,27 @@ function handleDiscardCancel() {
 }
 
 function closeGcodeModal() {
-  if (isEditMode.value && hasUnsavedChanges.value) {
+  if (hasUnsavedChanges.value) {
     promptDiscardChanges(() => {
-      isEditMode.value = false;
-      hasUnsavedChanges.value = false;
       editableGcode.value = '';
+      originalGcode.value = '';
       showGcodeModal.value = false;
     });
     return;
   }
-  isEditMode.value = false;
-  hasUnsavedChanges.value = false;
   editableGcode.value = '';
+  originalGcode.value = '';
   showGcodeModal.value = false;
 }
 
-function cancelEdit() {
+function discardChanges() {
   if (hasUnsavedChanges.value) {
     promptDiscardChanges(() => {
-      isEditMode.value = false;
-      hasUnsavedChanges.value = false;
-      editableGcode.value = '';
+      // Reset to original content
+      editableGcode.value = originalGcode.value;
     });
     return;
   }
-  isEditMode.value = false;
-  hasUnsavedChanges.value = false;
-  editableGcode.value = '';
 }
 
 async function commitEdit() {
@@ -1597,9 +1753,8 @@ async function commitEdit() {
     await api.saveGCodeFile(filename, editableGcode.value);
     await api.loadGCodeFile(filename);
 
-    hasUnsavedChanges.value = false;
-    isEditMode.value = false;
-    editableGcode.value = '';
+    // Update original to match current (no more unsaved changes)
+    originalGcode.value = editableGcode.value;
   } catch (error) {
     console.error('Failed to save G-code changes:', error);
     alert('Failed to save G-code changes. Please try again.');
@@ -2333,8 +2488,159 @@ h2 {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
+/* Find & Replace Container */
+.find-replace-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 400px;
+}
+
+.find-row,
+.replace-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.find-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.find-input:focus {
+  border-color: var(--color-accent);
+}
+
+.find-input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.find-option-btn {
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.find-option-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.find-option-btn.active {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+.find-option-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.find-results {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  padding: 0 8px;
+  min-width: 70px;
+}
+
+.find-nav-btn {
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  height: 32px;
+  width: 32px;
+}
+
+.find-nav-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.find-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.find-clear-btn {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.find-clear-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.replace-btn {
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  height: 32px;
+}
+
+.replace-btn:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+}
+
+.replace-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.replace-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Legacy search box - kept for compatibility */
 .search-box {
   flex: 1;
   min-width: 300px;
