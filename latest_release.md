@@ -1,6 +1,8 @@
 ## What's Changed
 
-### ✨ New Features
-- Added auxiliary output control for additional hardware integration
-- Added real-time tracking of output pin states
-- Pin state now reads and displays initial status on startup
+### 🔧 Improvements
+- Upgraded G-Code Preview to use Monaco editor for better syntax highlighting and performance
+- Added visual indicator to G-Code Preview
+
+### 🐛 Bug Fixes
+- Fixed search functionality in G-Code Preview
