@@ -1,6 +1,6 @@
-// Simple G-code pre-analyzer to produce a static plan of durations per line.
-// This is intentionally approximate (feed-only, no accel). It is designed to be
-// easily swappable or upgraded to a trapezoidal/jerk profile model later.
+// G-code pre-analyzer to produce a static plan of durations per line.
+// Uses a velocity continuity model that considers entry/exit velocities between moves
+// to better approximate real CNC controller behavior with look-ahead planning.
 
 const MM_PER_MIN_TO_MM_PER_SEC = 1 / 60;
 
@@ -10,7 +10,8 @@ export class GCodePreAnalyzer {
       rapidMmPerMin: options.rapidMmPerMin ?? 6000, // fallback scalar rapid
       defaultFeedMmPerMin: options.defaultFeedMmPerMin ?? 1000,
       vmaxMmPerMin: options.vmaxMmPerMin || null,   // {x,y,z} per-axis max rate (mm/min)
-      accelMmPerSec2: options.accelMmPerSec2 || null // {x,y,z} per-axis accel (mm/s^2)
+      accelMmPerSec2: options.accelMmPerSec2 || null, // {x,y,z} per-axis accel (mm/s^2)
+      junctionDeviationMm: options.junctionDeviationMm ?? 0.01 // junction deviation for cornering
     };
   }
 
@@ -29,6 +30,7 @@ export class GCodePreAnalyzer {
     let perLineUnit = new Array(lines.length).fill({ x: 0, y: 0, z: 0 });
     let perLineVtarget = new Array(lines.length).fill(0);
     let perLineAccel = new Array(lines.length).fill(0);
+    let perLineDist = new Array(lines.length).fill(0);
     let totalSec = 0;
     let totalDist = 0;
 
@@ -174,6 +176,11 @@ export class GCodePreAnalyzer {
         const uy = Math.abs(dy) / dist;
         const uz = Math.abs(dz) / dist;
 
+        // Store unit vector for linear moves (arcs are already handled above)
+        if ((isG0 || isG1) && !perLineUnit[i].x && !perLineUnit[i].y && !perLineUnit[i].z) {
+          perLineUnit[i] = { x: dx / dist, y: dy / dist, z: dz / dist };
+        }
+
         // Effective max vector speed from per-axis limits (mm/s)
         const vmax = this.defaults.vmaxMmPerMin;
         let v_eff_max = Infinity;
@@ -230,42 +237,140 @@ export class GCodePreAnalyzer {
 
       perLineSec[i] = sec;
       perLineType[i] = moveType;
-      totalSec += sec;
+      perLineDist[i] = dist;
       totalDist += dist;
       lastPos = target;
     }
 
-    // Junction deviation cornering heuristic
-    try {
-      const jd = Number(this.defaults?.junctionDeviationMm);
-      if (Number.isFinite(jd) && jd > 0) {
-        for (let i = 1; i < perLineSec.length - 1; i++) {
-          // angle between directions of segment i and i+1
-          const v1 = perLineUnit[i] || { x: 0, y: 0, z: 0 };
-          const v2 = perLineUnit[i + 1] || { x: 0, y: 0, z: 0 };
-          const dot = (v1.x * v2.x + v1.y * v2.y + v1.z * v2.z);
-          const dotClamped = Math.max(-1, Math.min(1, dot));
-          const theta = Math.acos(dotClamped);
-          if (!Number.isFinite(theta) || theta < 1e-6) continue;
-          const a_eff = perLineAccel[i] || perLineAccel[i + 1] || 0;
-          const v_prev = perLineVtarget[i] || 0;
-          const v_next = perLineVtarget[i + 1] || 0;
-          if (!(a_eff > 0 && v_prev > 0 && v_next > 0)) continue;
-          const tanHalf = Math.tan(theta / 2);
-          const vj = Math.sqrt(Math.max(0, a_eff * jd * tanHalf));
-          const vmaxCorner = Math.min(v_prev, v_next);
-          const vcorner = Math.min(vj, vmaxCorner);
-          if (vcorner < vmaxCorner) {
-            const t1 = (v_prev - vcorner) / a_eff;
-            const t2 = (v_next - vcorner) / a_eff;
-            const penalty = Math.max(0, t1) + Math.max(0, t2);
-            perLineSec[i + 1] += penalty;
-            totalSec += penalty;
-          }
-        }
+    // Two-pass velocity continuity model (similar to real CNC look-ahead planners)
+    // Pass 1: Calculate junction velocities between consecutive MOTION lines
+    // Non-motion lines (comments, M-codes) don't affect motion continuity
+    const jd = Number(this.defaults?.junctionDeviationMm) || 0.01;
+    const junctionVelocities = new Array(perLineSec.length + 1).fill(0);
+
+    // Build list of motion line indices for efficient lookup
+    const motionLineIndices = [];
+    for (let i = 0; i < perLineSec.length; i++) {
+      if (perLineDist[i] > 0 && perLineVtarget[i] > 0) {
+        motionLineIndices.push(i);
       }
-    } catch {}
+    }
+
+    // Calculate junction velocities between consecutive motion lines
+    for (let mi = 0; mi < motionLineIndices.length; mi++) {
+      const i = motionLineIndices[mi];
+      const nextMotionIdx = motionLineIndices[mi + 1];
+
+      // If no next motion line, must stop at end
+      if (nextMotionIdx === undefined) {
+        junctionVelocities[i + 1] = 0;
+        continue;
+      }
+
+      const v1 = perLineUnit[i] || { x: 0, y: 0, z: 0 };
+      const v2 = perLineUnit[nextMotionIdx] || { x: 0, y: 0, z: 0 };
+
+      // If either has no direction, maintain reasonable velocity
+      if ((v1.x === 0 && v1.y === 0 && v1.z === 0) || (v2.x === 0 && v2.y === 0 && v2.z === 0)) {
+        junctionVelocities[i + 1] = Math.min(perLineVtarget[i] || 0, perLineVtarget[nextMotionIdx] || 0) * 0.5;
+        continue;
+      }
+
+      const dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+      const dotClamped = Math.max(-1, Math.min(1, dot));
+      const theta = Math.acos(dotClamped);
+
+      // For small angles (< ~11 degrees), maintain full velocity - controller blends these
+      if (!Number.isFinite(theta) || theta < 0.2) {
+        junctionVelocities[i + 1] = Math.min(perLineVtarget[i] || 0, perLineVtarget[nextMotionIdx] || 0);
+        continue;
+      }
+
+      // Junction deviation formula with grblHAL-style calculation
+      const a_eff = Math.min(perLineAccel[i] || 500, perLineAccel[nextMotionIdx] || 500);
+
+      // Use sin(theta/2) approximation with 4x effective jd for modern controller behavior
+      const sinHalf = Math.sin(theta / 2);
+      const effectiveJd = jd * 4; // Modern controllers are more aggressive than classic grbl
+      const vj = sinHalf < 0.95
+        ? Math.sqrt(Math.max(0, a_eff * effectiveJd * sinHalf / Math.max(0.05, 1 - sinHalf)))
+        : Math.min(perLineVtarget[i] || 0, perLineVtarget[nextMotionIdx] || 0) * 0.1;
+
+      const vmaxCorner = Math.min(perLineVtarget[i] || 0, perLineVtarget[nextMotionIdx] || 0);
+      junctionVelocities[i + 1] = Math.min(vj, vmaxCorner);
+    }
+
+    // Pass 2: Backward pass to ensure we can decelerate to junction velocities
+    for (let i = perLineSec.length - 1; i >= 0; i--) {
+      const dist = perLineDist[i] || 0;
+      const a_eff = perLineAccel[i] || 500;
+      const exitV = junctionVelocities[i + 1] || 0;
+
+      if (dist > 0 && a_eff > 0) {
+        // Max entry velocity to be able to decelerate to exitV
+        const maxEntryV = Math.sqrt(exitV * exitV + 2 * a_eff * dist);
+        junctionVelocities[i] = Math.min(junctionVelocities[i] || Infinity, maxEntryV, perLineVtarget[i] || 0);
+      }
+    }
+
+    // Pass 3: Forward pass to calculate actual timing with velocity continuity
+    // Also propagate actual achieved exit velocities forward
+    totalSec = 0;
+    let actualExitVelocity = 0;
+    for (let i = 0; i < perLineSec.length; i++) {
+      const dist = perLineDist[i] || 0;
+      if (dist <= 0) continue;
+
+      const a_eff = perLineAccel[i] || 500;
+      const v_target = perLineVtarget[i] || 0;
+      // Entry velocity is the max of: previous exit velocity, or calculated junction velocity
+      const v_entry = Math.min(Math.max(actualExitVelocity, junctionVelocities[i] || 0), v_target);
+      const v_exit = junctionVelocities[i + 1] || 0;
+
+      if (v_target <= 0 || a_eff <= 0) {
+        // Fallback to simple calculation
+        const v = v_target > 0 ? v_target : (this.defaults.defaultFeedMmPerMin * MM_PER_MIN_TO_MM_PER_SEC);
+        perLineSec[i] = dist / v;
+        actualExitVelocity = v;
+      } else {
+        // Calculate time for trapezoidal profile with entry/exit velocities
+        perLineSec[i] = this._calcTrapezoidTime(dist, v_entry, v_exit, v_target, a_eff);
+        // Track actual exit velocity for next segment
+        actualExitVelocity = v_exit;
+      }
+
+      totalSec += perLineSec[i];
+    }
 
     return { totalSec, perLineSec, totalDist, perLineType };
+  }
+
+  // Calculate time for trapezoidal motion profile
+  _calcTrapezoidTime(dist, v_entry, v_exit, v_cruise, accel) {
+    if (dist <= 0) return 0;
+    if (accel <= 0) return dist / Math.max(v_cruise, 0.001);
+
+    // Distance needed to accelerate from v_entry to v_cruise
+    const d_accel = (v_cruise * v_cruise - v_entry * v_entry) / (2 * accel);
+    // Distance needed to decelerate from v_cruise to v_exit
+    const d_decel = (v_cruise * v_cruise - v_exit * v_exit) / (2 * accel);
+
+    if (d_accel + d_decel <= dist) {
+      // Full trapezoidal profile: accel + cruise + decel
+      const t_accel = (v_cruise - v_entry) / accel;
+      const t_decel = (v_cruise - v_exit) / accel;
+      const d_cruise = dist - d_accel - d_decel;
+      const t_cruise = d_cruise / v_cruise;
+      return Math.max(0, t_accel) + Math.max(0, t_cruise) + Math.max(0, t_decel);
+    } else {
+      // Triangle profile: can't reach cruise speed
+      // Find peak velocity: v_peak^2 = v_entry^2 + 2*a*d1 = v_exit^2 + 2*a*d2
+      // where d1 + d2 = dist
+      const v_peak_sq = (2 * accel * dist + v_entry * v_entry + v_exit * v_exit) / 2;
+      const v_peak = Math.sqrt(Math.max(0, v_peak_sq));
+      const t_accel = (v_peak - v_entry) / accel;
+      const t_decel = (v_peak - v_exit) / accel;
+      return Math.max(0, t_accel) + Math.max(0, t_decel);
+    }
   }
 }

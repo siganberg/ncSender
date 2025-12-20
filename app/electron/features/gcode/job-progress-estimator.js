@@ -31,7 +31,8 @@ export class JobProgressEstimator {
         ),
         defaultFeedMmPerMin: 1000,
         vmaxMmPerMin: profile.vmaxMmPerMin || null,
-        accelMmPerSec2: profile.accelMmPerSec2 || null
+        accelMmPerSec2: profile.accelMmPerSec2 || null,
+        junctionDeviationMm: profile.junctionDeviationMm || 0.01
       });
     } catch {}
 
