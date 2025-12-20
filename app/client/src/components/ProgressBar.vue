@@ -1,5 +1,23 @@
 <template>
-  <div v-if="shouldShow" class="progress-card" role="group" aria-label="Job progress">
+  <!-- Pre-run info: show estimate before job starts -->
+  <div v-if="showPreRun" class="progress-card pre-run" role="group" aria-label="Job info">
+    <div class="header">
+      <span class="title">Job Info</span>
+      <span class="status-pill ready">Ready</span>
+    </div>
+    <div class="meta pre-run-meta">
+      <div class="meta-item">
+        <span class="label">Est. Time</span>
+        <span class="value">{{ estimateDisplay }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="label">Lines</span>
+        <span class="value">{{ totalLines?.toLocaleString() || '0' }}</span>
+      </div>
+    </div>
+  </div>
+  <!-- Running/finished progress bar -->
+  <div v-else-if="shouldShow" class="progress-card" role="group" aria-label="Job progress">
     <div class="header">
       <span class="title">Job Progress</span>
       <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
@@ -51,7 +69,19 @@ const runtimeSecFromServer = computed(() => store.serverState?.jobLoaded?.runtim
 const totalLines = computed(() => store.serverState?.jobLoaded?.totalLines as number | undefined);
 const currentLine = computed(() => store.serverState?.jobLoaded?.currentLine as number | undefined);
 const hasLoadedFile = computed(() => !!store.serverState?.jobLoaded?.filename);
-const statusRaw = computed(() => store.serverState?.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | undefined);
+const statusRaw = computed(() => store.serverState?.jobLoaded?.status as 'running' | 'paused' | 'stopped' | 'completed' | null | undefined);
+const estimatedSec = computed(() => store.serverState?.jobLoaded?.estimatedSec as number | undefined);
+
+// Show pre-run info when file is loaded but not yet started (status is null)
+const showPreRun = computed(() => {
+  return hasLoadedFile.value && statusRaw.value === null && estimatedSec.value !== undefined;
+});
+
+const estimateDisplay = computed(() => {
+  const sec = estimatedSec.value;
+  if (!sec || sec <= 0) return '--:--';
+  return formatTime(sec);
+});
 const statusLabel = computed(() => {
   const s = statusRaw.value;
   if (s === 'running') return 'Running';
@@ -165,7 +195,6 @@ async function handleClose() {
 
 .header { display: flex; align-items: baseline; justify-content: space-between; }
 .title { font-weight: 600; color: var(--color-text-primary); }
-.percent { font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
 .bar-wrap { position: relative; }
 .percent-overlay { position: absolute; left: 50%; transform: translateX(-50%); top: calc(100% + 2px); font-variant-numeric: tabular-nums; color: var(--color-text-secondary); pointer-events: none; }
 .status-pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
@@ -173,6 +202,7 @@ async function handleClose() {
 .status-pill.paused { background: rgba(241, 196, 15, 0.25); color: #f1c40f; }
 .status-pill.stopped { background: rgba(149, 165, 166, 0.25); color: #95a5a6; }
 .status-pill.completed { background: rgba(46, 204, 113, 0.2); color: #2ecc71; font-weight: 600; }
+.status-pill.ready { background: rgba(52, 152, 219, 0.2); color: #3498db; }
 .spacer { flex: 1; }
 .close-btn { border: 1px solid var(--color-border); background: var(--color-surface-muted); color: var(--color-text-primary); cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
 .close-btn:hover { color: var(--color-text-primary); }
@@ -198,6 +228,8 @@ async function handleClose() {
 @keyframes flow { 0% { transform: translateX(-20%); } 100% { transform: translateX(20%); } }
 
 .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
+.pre-run { max-width: 200px; margin: 0 auto; }
+.pre-run-meta { display: flex; justify-content: space-between; gap: 24px; }
 .meta-item:first-child { justify-self: start; text-align: left; }
 .meta-item:nth-child(2) { justify-self: center; text-align: center; }
 .meta-item:last-child { justify-self: end; text-align: right; }

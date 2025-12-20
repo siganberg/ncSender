@@ -5,6 +5,8 @@ import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
 import { pluginManager } from '../../core/plugin-manager.js';
 import { getUserDataDir, getSafePath, isValidName, getParentPath, generatePathId } from '../../utils/paths.js';
+import { GCodePreAnalyzer } from './gcode-preanalyzer.js';
+import { readMachineProfileFromCache } from '../firmware/machine-profile.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -47,6 +49,28 @@ const GCODE_EXTENSIONS = ['.gcode', '.nc', '.tap', '.txt'];
 function isGCodeFile(filename) {
   const ext = path.extname(filename).toLowerCase();
   return GCODE_EXTENSIONS.includes(ext);
+}
+
+// Calculate estimated run time for G-code content
+async function calculateEstimate(content) {
+  try {
+    const profile = await readMachineProfileFromCache();
+    const analyzer = new GCodePreAnalyzer({
+      rapidMmPerMin: Math.min(
+        ...(Object.values(profile.vmaxMmPerMin || {}).map(Number).filter(Number.isFinite)),
+        6000
+      ),
+      defaultFeedMmPerMin: 1000,
+      vmaxMmPerMin: profile.vmaxMmPerMin || null,
+      accelMmPerSec2: profile.accelMmPerSec2 || null,
+      junctionDeviationMm: profile.junctionDeviationMm || 0.01
+    });
+    const plan = analyzer.parse(content);
+    return Math.round(plan.totalSec || 0);
+  } catch (error) {
+    log('Failed to calculate estimate:', error);
+    return null;
+  }
 }
 
 async function buildFileTree(dir, basePath = '') {
@@ -140,6 +164,12 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
       log('Cached G-code to:', CACHE_FILE_PATH);
 
+      // Calculate estimated run time
+      const estimatedSec = await calculateEstimate(content);
+      if (estimatedSec) {
+        log('Estimated run time:', Math.floor(estimatedSec / 60), 'min', estimatedSec % 60, 'sec');
+      }
+
       // Update server state - set jobLoaded with null status (file loaded but not started)
       serverState.jobLoaded = {
         filename: originalName,  // Original filename for display and API
@@ -152,7 +182,8 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         jobPausedTotalSec: 0,
         remainingSec: null,
         progressPercent: null,
-        runtimeSec: null
+        runtimeSec: null,
+        estimatedSec
       };
 
       // Save to settings for persistence
@@ -384,6 +415,12 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
       await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
       log('Cached G-code to:', CACHE_FILE_PATH);
 
+      // Calculate estimated run time
+      const estimatedSec = await calculateEstimate(content);
+      if (estimatedSec) {
+        log('Estimated run time:', Math.floor(estimatedSec / 60), 'min', estimatedSec % 60, 'sec');
+      }
+
       serverState.jobLoaded = {
         filename: relativePath,
         currentLine: 0,
@@ -395,7 +432,8 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         jobPausedTotalSec: 0,
         remainingSec: null,
         progressPercent: null,
-        runtimeSec: null
+        runtimeSec: null,
+        estimatedSec
       };
 
       saveSettings({ lastLoadedFile: relativePath });
