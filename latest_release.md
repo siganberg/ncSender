@@ -1,4 +1,7 @@
 ## What's Changed
 
+### 🔧 Improvements
+- Enhanced job time estimates for better accuracy
+
 ### 🐛 Bug Fixes
-- Fixed file renaming in File Manager not working correctly
+- Fixed issue where old G-code program would sometimes remain in visualizer after being cleared from server
