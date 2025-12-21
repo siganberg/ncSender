@@ -3616,7 +3616,7 @@ body.theme-light .dot--rapid {
 .control-btn {
   border: none;
   border-radius: var(--radius-medium);
-  padding: 16px 28px;
+  padding: 18px 22px;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
@@ -3626,6 +3626,7 @@ body.theme-light .dot--rapid {
   gap: 6px;
   min-width: 110px;
   justify-content: center;
+  white-space: nowrap;
 }
 
 .control-btn:hover {
