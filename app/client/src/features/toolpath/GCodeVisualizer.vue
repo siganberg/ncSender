@@ -269,8 +269,8 @@
         <span>Alert: {{ alarmMessage }}</span>
       </div>
 
-      <!-- Out of bounds warning -->
-      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning">
+      <!-- Out of bounds warning (only show when job is running, not in pre-run state) -->
+      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning && !showPreRunState">
         <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
           <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
@@ -280,7 +280,7 @@
 
       <!-- Progress bar above controls -->
       <div class="progress-bar-container">
-        <ProgressBar />
+        <ProgressBar :warning-message="showPreRunState && showOutOfBoundsWarning ? outOfBoundsMessage : undefined" />
       </div>
 
       <!-- Control buttons - bottom center -->
@@ -589,6 +589,10 @@ const enabledIOSwitches = computed(() => {
 });
 const lastExecutedLine = ref<number>(0); // Track the last executed line number
 const showOutOfBoundsWarning = ref(false); // Show warning if G-code exceeds boundaries
+const showPreRunState = computed(() => {
+  // Pre-run state: file loaded but job not yet started (status is null)
+  return !!props.jobLoaded?.filename && props.jobLoaded?.status === null;
+});
 const toolInventory = ref<Record<number, any> | null>(null); // Tool inventory data from plugin
 const showToolInfo = ref<number | null>(null); // Currently displayed tool info popup
 const outOfBoundsAxes = ref<string[]>([]);

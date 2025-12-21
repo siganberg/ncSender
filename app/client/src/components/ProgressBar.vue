@@ -1,9 +1,9 @@
 <template>
   <!-- Pre-run info: show estimate before job starts -->
-  <div v-if="showPreRun" class="progress-card pre-run" role="group" aria-label="Job info">
+  <div v-if="showPreRun" class="progress-card pre-run" :class="{ 'has-warning': warningMessage }" role="group" aria-label="Job info">
     <div class="header">
       <span class="title">Job Info</span>
-      <span class="status-pill ready">Ready</span>
+      <span class="status-pill" :class="warningMessage ? 'warning' : 'ready'">{{ warningMessage ? 'Warning' : 'Ready' }}</span>
     </div>
     <div class="meta pre-run-meta">
       <div class="meta-item">
@@ -14,6 +14,13 @@
         <span class="label">Lines</span>
         <span class="value">{{ totalLines?.toLocaleString() || '0' }}</span>
       </div>
+    </div>
+    <div v-if="warningMessage" class="warning-row">
+      <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24">
+        <path d="M12 2L2 20h20L12 2z" fill="currentColor" opacity="0.9"/>
+        <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#1a1a1a"/>
+      </svg>
+      <span class="warning-text">{{ warningMessage }}</span>
     </div>
   </div>
   <!-- Running/finished progress bar -->
@@ -63,6 +70,10 @@
 import { computed } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { api } from '@/lib/api.js';
+
+const props = defineProps<{
+  warningMessage?: string;
+}>();
 
 const store = useAppStore();
 const runtimeSecFromServer = computed(() => store.serverState?.jobLoaded?.runtimeSec as number | undefined);
@@ -203,6 +214,7 @@ async function handleClose() {
 .status-pill.stopped { background: rgba(149, 165, 166, 0.25); color: #95a5a6; }
 .status-pill.completed { background: rgba(46, 204, 113, 0.2); color: #2ecc71; font-weight: 600; }
 .status-pill.ready { background: rgba(52, 152, 219, 0.2); color: #3498db; }
+.status-pill.warning { background: rgba(255, 107, 107, 0.25); color: #ff6b6b; }
 .spacer { flex: 1; }
 .close-btn { border: 1px solid var(--color-border); background: var(--color-surface-muted); color: var(--color-text-primary); cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
 .close-btn:hover { color: var(--color-text-primary); }
@@ -229,6 +241,13 @@ async function handleClose() {
 
 .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
 .pre-run { max-width: 200px; margin: 0 auto; }
+.pre-run.has-warning { max-width: fit-content; border: 2px solid #b84444; animation: warningPulse 2s ease-in-out infinite; }
+@keyframes warningPulse {
+  0%, 50%, 100% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6); }
+  25%, 75% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(220, 53, 69, 0.9); }
+}
+.warning-row { display: flex; align-items: center; justify-content: center; gap: 6px; color: #ff8888; font-size: 0.9rem; font-weight: 500; white-space: nowrap; }
+.warning-icon { flex-shrink: 0; }
 .pre-run-meta { display: flex; justify-content: space-between; gap: 24px; }
 .meta-item:first-child { justify-self: start; text-align: left; }
 .meta-item:nth-child(2) { justify-self: center; text-align: center; }
