@@ -56,6 +56,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libudev-dev \
+            libusb-1.0-0-dev
+
       - name: Install Dependencies
         run: |
           npm ci
@@ -139,7 +146,9 @@ jobs:
             ruby \
             ruby-dev \
             rubygems \
-            build-essential
+            build-essential \
+            libudev-dev \
+            libusb-1.0-0-dev
           sudo gem install --no-document fpm
 
       - name: Install Dependencies
