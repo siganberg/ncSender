@@ -150,7 +150,8 @@ export async function createApp(options = {}) {
     maxHistorySize: context.MAX_HISTORY_SIZE,
     filesDir,
     upload,
-    commandProcessor: commandProcessorWrapper
+    commandProcessor: commandProcessorWrapper,
+    autoConnector
   });
 
   const { teardown: teardownCncEvents } = registerCncEventHandlers({

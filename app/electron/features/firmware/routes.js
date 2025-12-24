@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getUserDataDir } from '../../utils/paths.js';
 import { FIRMWARE_DATA_TYPES, DATA_TYPE_NAMES } from '../../constants/firmware-types.js';
+import { SerialPort } from 'serialport';
+import FirmwareFlasher from './flashing/DFUFlasher.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -537,7 +539,7 @@ async function tryReadFirmwareFile() {
   return JSON.parse(data);
 }
 
-export function createFirmwareRoutes(cncController) {
+export function createFirmwareRoutes(cncController, broadcast, autoConnector) {
   const router = express.Router();
 
   // GET /api/firmware - Return cached firmware settings from firmware.json (no controller calls)
@@ -579,6 +581,221 @@ export function createFirmwareRoutes(cncController) {
   });
 
   // No per-setting route; clients should read all from GET /api/firmware
+
+  // POST /api/firmware/flash - Flash firmware via DFU or Serial
+  router.post('/flash', async (req, res) => {
+    const { hex, port, isDFU } = req.body;
+
+    if (!hex) {
+      return res.status(400).json({ error: 'HEX file content is required' });
+    }
+
+    if (!port) {
+      return res.status(400).json({ error: 'Port is required' });
+    }
+
+    const useDFU = isDFU || port === 'SLB_DFU';
+
+    try {
+      // For serial flashing, we need to disconnect and stop auto-reconnect
+      if (!useDFU) {
+        log('Stopping auto-connector and disconnecting controller for serial flash...');
+        if (broadcast) {
+          broadcast('flash:message', { type: 'info', content: 'Preparing to flash - stopping connections...' });
+        }
+
+        // Inhibit and stop auto-reconnect to prevent interference
+        if (autoConnector) {
+          autoConnector.inhibit(); // Prevent event handlers from restarting
+          await autoConnector.stop();
+          log('Auto-connector stopped and inhibited');
+        }
+
+        // Disconnect if currently connected
+        const connection = cncController?.connection;
+        const isConnected = cncController?.isConnected;
+        log(`Controller state: isConnected=${isConnected}, hasConnection=${!!connection}, connectionType=${connection?.constructor?.name}`);
+
+        if (connection || isConnected) {
+          log('Disconnecting CNC controller...');
+
+          // First call disconnect to stop polling and clean up state
+          cncController.disconnect();
+          log('Controller disconnect called');
+
+          // Wait for the port to fully close
+          if (connection && connection.isOpen) {
+            log('Waiting for port to close...');
+            await new Promise((resolve) => {
+              const checkClosed = setInterval(() => {
+                if (!connection.isOpen) {
+                  clearInterval(checkClosed);
+                  log('Port closed');
+                  resolve();
+                }
+              }, 100);
+
+              // Timeout after 3 seconds
+              setTimeout(() => {
+                clearInterval(checkClosed);
+                log('Port close timeout');
+                resolve();
+              }, 3000);
+            });
+          }
+
+          // Wait for OS to fully release the port
+          log('Waiting for OS to release port...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          log('Port release wait complete');
+        }
+
+        if (broadcast) {
+          broadcast('flash:message', { type: 'info', content: 'Controller disconnected, starting flash...' });
+        }
+      }
+
+      // If not already in DFU mode, send $DFU command to trigger it
+      if (!useDFU) {
+        log(`Sending $DFU command to ${port} to trigger DFU bootloader mode...`);
+        if (broadcast) {
+          broadcast('flash:message', { type: 'info', content: `Sending $DFU command to ${port}...` });
+        }
+
+        try {
+          // Open serial port and send $DFU command
+          const serialPort = new SerialPort({ path: port, baudRate: 115200 });
+
+          await new Promise((resolve, reject) => {
+            serialPort.on('open', () => {
+              log('Serial port opened for $DFU command');
+              // Send $DFU command with newline
+              serialPort.write('$DFU\n', (err) => {
+                if (err) {
+                  reject(new Error(`Failed to send $DFU command: ${err.message}`));
+                  return;
+                }
+                log('$DFU command sent');
+
+                // Wait a moment for command to be processed, then close port
+                setTimeout(() => {
+                  serialPort.close((closeErr) => {
+                    if (closeErr) {
+                      log('Warning: error closing serial port:', closeErr.message);
+                    }
+                    resolve();
+                  });
+                }, 500);
+              });
+            });
+
+            serialPort.on('error', (err) => {
+              reject(new Error(`Serial port error: ${err.message}`));
+            });
+          });
+
+          // Wait for device to reboot into DFU mode
+          log('Waiting for device to reboot into DFU mode...');
+          if (broadcast) {
+            broadcast('flash:message', { type: 'info', content: 'Waiting for device to enter DFU mode (2 seconds)...' });
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+        } catch (serialError) {
+          log('Failed to send $DFU command:', serialError);
+          if (broadcast) {
+            broadcast('flash:error', { error: `Failed to trigger DFU mode: ${serialError.message}` });
+          }
+
+          // Restart auto-connector on failure
+          if (autoConnector) {
+            autoConnector.uninhibit();
+            autoConnector.start();
+          }
+
+          return res.status(500).json({ error: `Failed to trigger DFU mode: ${serialError.message}` });
+        }
+      }
+
+      // Now flash via DFU (either device was already in DFU or we just triggered it)
+      log('Starting DFU firmware flash...');
+      if (broadcast) {
+        broadcast('flash:message', { type: 'info', content: 'Starting DFU flash...' });
+      }
+
+      const flasher = new FirmwareFlasher({ hex });
+
+      // Set up event handlers to broadcast progress
+      flasher.on('info', (message) => {
+        log('Flash info:', message);
+        if (broadcast) {
+          broadcast('flash:message', { type: 'info', content: message });
+        }
+      });
+
+      flasher.on('progress', (value, total) => {
+        if (broadcast) {
+          broadcast('flash:progress', { value, total });
+        }
+      });
+
+      flasher.on('error', (error) => {
+        log('Flash error:', error);
+        if (broadcast) {
+          broadcast('flash:error', { error });
+        }
+      });
+
+      flasher.on('end', () => {
+        log('Flash completed successfully');
+        if (broadcast) {
+          broadcast('flash:end', {});
+        }
+      });
+
+      // Function to restart auto-connector after flashing
+      const restartAutoConnector = () => {
+        if (!useDFU && autoConnector) {
+          log('Restarting auto-connector after flash...');
+          // Delay to allow device to reboot
+          setTimeout(() => {
+            autoConnector.uninhibit(); // Allow auto-connect to work again
+            autoConnector.start();
+            log('Auto-connector uninhibited and restarted');
+            if (broadcast) {
+              broadcast('flash:message', { type: 'info', content: 'Auto-reconnect enabled. Device will reconnect shortly.' });
+            }
+          }, 3000);
+        }
+      };
+
+      // Start flashing in background (don't block the response)
+      flasher.flash()
+        .then(() => {
+          restartAutoConnector();
+        })
+        .catch((err) => {
+          log('Flash process error:', err);
+          if (broadcast) {
+            broadcast('flash:error', { error: err.message });
+          }
+          // Still restart auto-connector on error
+          restartAutoConnector();
+        });
+
+      res.json({ success: true, message: 'Flash process started', mode: useDFU ? 'DFU' : 'Serial' });
+    } catch (error) {
+      log('Failed to start flash process:', error);
+
+      // Restart auto-connector if we stopped it
+      if (!useDFU && autoConnector) {
+        autoConnector.uninhibit();
+        autoConnector.start();
+      }
+
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   return router;
 }

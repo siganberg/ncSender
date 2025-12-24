@@ -1,5 +1,5 @@
 // Lightweight IndexedDB wrapper for storing and retrieving large G-code files
-// Stores G-code as a single blob for maximum performance (like gSender)
+// Stores G-code as a single blob for maximum performance
 
 const DB_NAME = 'ncSender';
 const DB_VERSION = 2; // Incremented to trigger schema change
@@ -80,7 +80,7 @@ export async function saveGCodeToIDB(filename, content) {
   cachedLines = null;
   cachedTimestamp = null;
 
-  // Store as single object (like gSender)
+  // Store as single object for efficient retrieval
   return new Promise((resolve, reject) => {
     const tx = db.transaction([GCODE_STORE], 'readwrite');
     const store = tx.objectStore(GCODE_STORE);

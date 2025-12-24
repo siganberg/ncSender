@@ -5,6 +5,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export function createAutoConnector({ cncController, log }) {
   let active = false;
   let loopPromise;
+  let inhibited = false; // When true, start() is ignored (used during firmware flashing)
 
   const runLoop = async () => {
     let previousSettings = null;
@@ -98,6 +99,10 @@ export function createAutoConnector({ cncController, log }) {
   };
 
   const start = () => {
+    if (inhibited) {
+      log('Auto-connector start ignored (inhibited for firmware flashing)');
+      return;
+    }
     if (active) return;
     active = true;
     loopPromise = runLoop().catch((error) => {
@@ -119,7 +124,18 @@ export function createAutoConnector({ cncController, log }) {
     loopPromise = undefined;
   };
 
-  const isActive = () => active;
+  const inhibit = () => {
+    inhibited = true;
+    log('Auto-connector inhibited');
+  };
 
-  return { start, stop, isActive };
+  const uninhibit = () => {
+    inhibited = false;
+    log('Auto-connector uninhibited');
+  };
+
+  const isActive = () => active;
+  const isInhibited = () => inhibited;
+
+  return { start, stop, inhibit, uninhibit, isActive, isInhibited };
 }

@@ -29,7 +29,8 @@ export function mountHttp({
   maxHistorySize,
   filesDir,
   upload,
-  commandProcessor
+  commandProcessor,
+  autoConnector
 }) {
   app.use('/api', (req, _res, next) => {
     log(`API ${req.method} ${req.path}`, req.body && Object.keys(req.body).length > 0 ? req.body : '');
@@ -44,7 +45,7 @@ export function mountHttp({
   app.use('/api/gcode-files', createGCodeRoutes(filesDir, upload, serverState, broadcast));
   app.use('/api/gcode-preview', createGCodePreviewRoutes(serverState, broadcast));
   app.use('/api/gcode-job', createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, commandProcessor));
-  app.use('/api/firmware', createFirmwareRoutes(cncController));
+  app.use('/api/firmware', createFirmwareRoutes(cncController, broadcast, autoConnector));
   app.use('/api/probe', createProbeRoutes(cncController, serverState, broadcast));
   app.use('/api', createMacroRoutes(cncController, commandProcessor));
   app.use('/api', createToolRoutes(cncController, serverState, commandProcessor));

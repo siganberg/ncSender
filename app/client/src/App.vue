@@ -400,6 +400,9 @@
               <button @click="exportFirmwareSettings" class="import-export-button">
                 Export
               </button>
+              <button @click="openFirmwareFlasher" class="flash-firmware-button">
+                Flash Firmware
+              </button>
               <button
                 @click="submitFirmwareChanges"
                 class="submit-changes-button"
@@ -793,6 +796,117 @@
     :closable="pluginModalClosable"
     @close="showPluginModal = false"
   />
+
+  <!-- Firmware Flasher Dialog -->
+  <Dialog v-if="showFirmwareFlasher" @close="closeFirmwareFlasher" :show-header="true" size="small" height="680px">
+    <template #header>
+      <h2 class="dialog-title">Flash Firmware</h2>
+    </template>
+    <div class="firmware-flasher-container">
+      <div class="flash-warning-box">
+        <strong>Warning</strong>
+        <p>This will disconnect your machine and flash new firmware. Make sure you have the correct firmware file for your controller.</p>
+      </div>
+
+      <div class="flash-form-group">
+        <div class="flash-label-row">
+          <label class="flash-label">Device Port</label>
+          <button class="flash-refresh-btn" @click="fetchFlashPorts" :disabled="firmwareFlashState.isFlashing" title="Refresh ports">
+            ↻
+          </button>
+        </div>
+        <select v-model="firmwareFlashState.selectedPort" class="flash-select" :disabled="firmwareFlashState.isFlashing">
+          <option value="">Select a port...</option>
+          <optgroup label="USB Serial Ports">
+            <option v-for="port in firmwareFlashPorts" :key="port.path" :value="port.path">
+              {{ port.path }}{{ port.manufacturer ? ` (${port.manufacturer})` : '' }}
+            </option>
+          </optgroup>
+          <optgroup label="DFU Mode (Alternative)">
+            <option value="SLB_DFU">SLB_DFU (DFU Mode Device)</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="flash-form-group">
+        <label class="flash-label">Firmware File (.hex)</label>
+        <div class="flash-file-wrapper">
+          <input
+            type="file"
+            accept=".hex"
+            @change="handleHexFileSelect"
+            class="flash-file-input-hidden"
+            ref="hexFileInputRef"
+            :disabled="firmwareFlashState.isFlashing"
+          />
+          <button
+            type="button"
+            class="flash-file-btn"
+            @click="($refs.hexFileInputRef as HTMLInputElement)?.click()"
+            :disabled="firmwareFlashState.isFlashing"
+          >
+            Choose File
+          </button>
+          <span class="flash-file-name">{{ firmwareFlashState.hexFileName || 'No file selected' }}</span>
+        </div>
+      </div>
+
+      <div class="flash-progress-container">
+        <div class="flash-progress-header">
+          <span>Progress</span>
+          <span
+            class="flash-status-badge"
+            :class="{
+              'flashing': firmwareFlashState.status === 'flashing',
+              'success': firmwareFlashState.status === 'success',
+              'error': firmwareFlashState.status === 'error'
+            }"
+          >
+            {{ firmwareFlashState.status === 'flashing' ? 'Flashing...' : firmwareFlashState.status === 'success' ? 'Complete' : firmwareFlashState.status === 'error' ? 'Error' : 'Idle' }}
+          </span>
+        </div>
+        <div class="flash-progress-bar">
+          <div
+            class="flash-progress-fill"
+            :class="{ 'success': firmwareFlashState.status === 'success', 'error': firmwareFlashState.status === 'error' }"
+            :style="{ width: (firmwareFlashState.total > 0 ? (firmwareFlashState.progress / firmwareFlashState.total * 100) : 0) + '%' }"
+          ></div>
+        </div>
+        <div class="flash-progress-text">
+          {{ firmwareFlashState.total > 0 ? Math.round(firmwareFlashState.progress / firmwareFlashState.total * 100) : 0 }}%
+        </div>
+      </div>
+
+      <div class="flash-form-group">
+        <div class="flash-label-row">
+          <label class="flash-label">Messages</label>
+          <button class="flash-copy-btn" @click="copyFlashMessages" title="Copy messages">
+            Copy
+          </button>
+        </div>
+        <div class="flash-messages" ref="flashMessagesRef">
+          <div
+            v-for="(msg, index) in firmwareFlashState.messages"
+            :key="index"
+            :class="['flash-message', msg.type]"
+          >
+            [{{ msg.time }}] {{ msg.text }}
+          </div>
+        </div>
+      </div>
+
+      <div class="flash-button-row">
+        <button class="flash-btn-secondary" @click="closeFirmwareFlasher">Cancel</button>
+        <button
+          class="flash-btn-primary"
+          @click="startFirmwareFlash"
+          :disabled="firmwareFlashState.isFlashing || !firmwareFlashState.selectedPort || !firmwareFlashState.hexContent"
+        >
+          {{ firmwareFlashState.isFlashing ? 'Flashing...' : 'Flash Firmware' }}
+        </button>
+      </div>
+    </div>
+  </Dialog>
   </template>
 </template>
 
@@ -879,6 +993,169 @@ const showUpdateDialog = ref(false);
 const showPluginModal = ref(false);
 const pluginModalContent = ref('');
 const pluginModalClosable = ref(true);
+
+// Firmware flasher dialog state
+const showFirmwareFlasher = ref(false);
+const firmwareFlashPorts = ref<Array<{ path: string; manufacturer?: string }>>([]);
+const flashMessagesRef = ref<HTMLElement | null>(null);
+const firmwareFlashState = ref({
+  isFlashing: false,
+  progress: 0,
+  total: 0,
+  status: 'idle', // idle, flashing, success, error
+  messages: [] as Array<{ type: string; text: string; time: string }>,
+  hexContent: null as string | null,
+  hexFileName: '',
+  selectedPort: ''
+});
+
+const fetchFlashPorts = async () => {
+  try {
+    const response = await fetch('/api/serial-ports');
+    if (response.ok) {
+      const data = await response.json();
+      // Filter out debug serial ports
+      const filtered = (data || []).filter((port: { path: string; manufacturer?: string }) => {
+        const pathLower = port.path.toLowerCase();
+        const manufacturerLower = (port.manufacturer || '').toLowerCase();
+        // Exclude debug ports (common patterns: cu.debug, tty.debug, CMSIS-DAP, etc.)
+        return !pathLower.includes('debug') && !manufacturerLower.includes('debug') && !manufacturerLower.includes('cmsis');
+      });
+      firmwareFlashPorts.value = filtered;
+
+      // Auto-select if only one port available
+      if (filtered.length === 1 && !firmwareFlashState.value.selectedPort) {
+        firmwareFlashState.value.selectedPort = filtered[0].path;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch serial ports:', error);
+  }
+};
+
+const openFirmwareFlasher = async () => {
+  firmwareFlashState.value = {
+    isFlashing: false,
+    progress: 0,
+    total: 0,
+    status: 'idle',
+    messages: [{ type: 'info', text: 'Ready to flash firmware...', time: new Date().toLocaleTimeString() }],
+    hexContent: null,
+    hexFileName: '',
+    selectedPort: ''
+  };
+  showFirmwareFlasher.value = true;
+  await fetchFlashPorts();
+};
+
+const closeFirmwareFlasher = () => {
+  if (firmwareFlashState.value.isFlashing) {
+    if (!confirm('Flashing is in progress. Are you sure you want to close?')) {
+      return;
+    }
+  }
+  showFirmwareFlasher.value = false;
+};
+
+const addFlashMessage = (type: string, text: string) => {
+  firmwareFlashState.value.messages.push({
+    type,
+    text,
+    time: new Date().toLocaleTimeString()
+  });
+  // Auto-scroll to bottom
+  nextTick(() => {
+    if (flashMessagesRef.value) {
+      flashMessagesRef.value.scrollTop = flashMessagesRef.value.scrollHeight;
+    }
+  });
+};
+
+const handleHexFileSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) {
+    firmwareFlashState.value.hexContent = null;
+    firmwareFlashState.value.hexFileName = '';
+    return;
+  }
+
+  if (!file.name.endsWith('.hex')) {
+    addFlashMessage('error', 'Please select a .hex file');
+    target.value = '';
+    firmwareFlashState.value.hexFileName = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    firmwareFlashState.value.hexContent = e.target?.result as string;
+    firmwareFlashState.value.hexFileName = file.name;
+    addFlashMessage('info', `File loaded: ${file.name}`);
+  };
+  reader.readAsText(file);
+};
+
+const startFirmwareFlash = async () => {
+  const { selectedPort, hexContent } = firmwareFlashState.value;
+
+  if (!selectedPort) {
+    addFlashMessage('error', 'Please select a port');
+    return;
+  }
+
+  if (!hexContent) {
+    addFlashMessage('error', 'Please select a firmware file');
+    return;
+  }
+
+  firmwareFlashState.value.isFlashing = true;
+  firmwareFlashState.value.status = 'flashing';
+  addFlashMessage('info', 'Starting firmware flash...');
+
+  try {
+    const response = await fetch('/api/firmware/flash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        port: selectedPort,
+        hex: hexContent,
+        isDFU: selectedPort === 'SLB_DFU'
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || error.error || 'Flash failed');
+    }
+
+    addFlashMessage('info', 'Flash command sent, waiting for response...');
+  } catch (error: any) {
+    firmwareFlashState.value.isFlashing = false;
+    firmwareFlashState.value.status = 'error';
+    addFlashMessage('error', `Flash error: ${error.message}`);
+  }
+};
+
+const copyFlashMessages = async () => {
+  const messages = firmwareFlashState.value.messages
+    .map(msg => `[${msg.time}] [${msg.type.toUpperCase()}] ${msg.text}`)
+    .join('\n');
+
+  try {
+    await navigator.clipboard.writeText(messages);
+    addFlashMessage('info', 'Messages copied to clipboard');
+  } catch (error) {
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = messages;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    addFlashMessage('info', 'Messages copied to clipboard');
+  }
+};
 
 const openUpdateDialog = () => {
   if (!updateState.supported) {
@@ -1323,6 +1600,29 @@ onMounted(() => {
     if (data.command === '$NCSENDER_CLEAR_MSG' && data.status === 'success') {
       showPluginModal.value = false;
     }
+  });
+
+  // Listen for firmware flash events
+  api.on('flash:progress', (data: { value: number; total: number }) => {
+    firmwareFlashState.value.progress = data.value;
+    firmwareFlashState.value.total = data.total;
+  });
+
+  api.on('flash:message', (data: { type: string; content: string }) => {
+    addFlashMessage(data.type?.toLowerCase() || 'info', data.content);
+  });
+
+  api.on('flash:end', () => {
+    firmwareFlashState.value.isFlashing = false;
+    firmwareFlashState.value.status = 'success';
+    firmwareFlashState.value.progress = firmwareFlashState.value.total;
+    addFlashMessage('success', 'Firmware flash completed! Please reconnect your device.');
+  });
+
+  api.on('flash:error', (data: { error: string }) => {
+    firmwareFlashState.value.isFlashing = false;
+    firmwareFlashState.value.status = 'error';
+    addFlashMessage('error', `Flash error: ${data.error || 'Unknown error'}`);
   });
 
   // Check if there's a persisted modal in settings and restore it
@@ -3476,6 +3776,24 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   background: var(--color-border);
 }
 
+.flash-firmware-button {
+  padding: var(--gap-sm) var(--gap-md);
+  background: linear-gradient(135deg, #e67e22, #d35400);
+  border: none;
+  border-radius: var(--radius-small);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flash-firmware-button:hover {
+  background: linear-gradient(135deg, #d35400, #c0392b);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.3);
+}
+
 .submit-changes-button {
   padding: var(--gap-sm) var(--gap-lg);
   background: var(--color-accent);
@@ -3891,5 +4209,289 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   max-height: 400px;
   overflow-y: auto;
   color: var(--color-text-secondary);
+}
+
+/* Firmware Flasher Dialog Styles */
+.firmware-flasher-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.flash-warning-box {
+  padding: 12px;
+  background: rgba(237, 137, 54, 0.1);
+  border: 1px solid rgba(237, 137, 54, 0.3);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #ed8936;
+}
+
+.flash-warning-box strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.flash-warning-box p {
+  margin: 0;
+}
+
+.flash-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flash-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flash-refresh-btn {
+  padding: 4px 8px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flash-refresh-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.flash-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flash-copy-btn {
+  padding: 4px 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flash-copy-btn:hover {
+  background: var(--color-surface);
+}
+
+.flash-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.flash-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.flash-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.flash-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flash-file-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+}
+
+.flash-file-input-hidden {
+  display: none;
+}
+
+.flash-file-btn {
+  padding: 6px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.flash-file-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #3a3a3a);
+  border-color: var(--color-accent);
+}
+
+.flash-file-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flash-file-name {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flash-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flash-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flash-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(160, 174, 192, 0.2);
+  color: #a0aec0;
+}
+
+.flash-status-badge.flashing {
+  background: rgba(74, 144, 226, 0.2);
+  color: #4a90e2;
+}
+
+.flash-status-badge.success {
+  background: rgba(56, 161, 105, 0.2);
+  color: #38a169;
+}
+
+.flash-status-badge.error {
+  background: rgba(229, 62, 62, 0.2);
+  color: #e53e3e;
+}
+
+.flash-progress-bar {
+  height: 8px;
+  background: var(--color-surface-muted);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.flash-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a90e2, #63b3ed);
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+.flash-progress-fill.success {
+  background: linear-gradient(90deg, #38a169, #68d391);
+}
+
+.flash-progress-fill.error {
+  background: linear-gradient(90deg, #e53e3e, #fc8181);
+}
+
+.flash-progress-text {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.flash-messages {
+  height: 120px;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--color-surface-muted);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  user-select: text;
+  cursor: text;
+  flex-shrink: 0;
+}
+
+.flash-message {
+  margin-bottom: 2px;
+}
+
+.flash-message.info {
+  color: #63b3ed;
+}
+
+.flash-message.error {
+  color: #fc8181;
+}
+
+.flash-message.success {
+  color: #68d391;
+}
+
+.flash-button-row {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.flash-btn-primary,
+.flash-btn-secondary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flash-btn-primary {
+  background: linear-gradient(135deg, #4a90e2, #357abd);
+  color: white;
+}
+
+.flash-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+}
+
+.flash-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flash-btn-secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.flash-btn-secondary:hover:not(:disabled) {
+  background: var(--color-surface);
 }
 </style>

@@ -37,8 +37,10 @@
     "electron-updater": "^6.6.2",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "nrf-intel-hex": "^1.4.0",
     "p-queue": "^9.0.0",
     "serialport": "^12.0.0",
+    "usb": "^2.14.0",
     "ws": "^8.14.2"
   },
   "devDependencies": {
