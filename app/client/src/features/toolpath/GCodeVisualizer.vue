@@ -1513,8 +1513,10 @@ const handleStop = async () => {
   }
 };
 
-const openStartFromLineDialog = (lineNumber = 1) => {
-  startFromLineInitial.value = lineNumber;
+const openStartFromLineDialog = (lineNumber?: number) => {
+  // Use provided lineNumber, or jobLoaded.currentLine from server state, or default to 1
+  const suggestedLine = lineNumber ?? (props.jobLoaded?.currentLine || 0);
+  startFromLineInitial.value = suggestedLine > 0 ? suggestedLine : 1;
   showStartFromLineDialog.value = true;
 };
 
