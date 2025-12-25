@@ -13,6 +13,9 @@ export function useConsoleStore() {
     gcodeContent: app.gcodeContent,
     gcodeFilename: app.gcodeFilename,
     gcodeLineCount: app.gcodeLineCount,
+    selectedGCodeLines: app.selectedGCodeLines,
+    setSelectedGCodeLines: app.setSelectedGCodeLines,
+    clearSelectedGCodeLines: app.clearSelectedGCodeLines,
     jobLoaded,
     // History helpers (delegate to API): return unsubscribe for convenience
     onHistoryAppended: (callback: (event: any) => void) => api.onCommandHistoryAppended(callback),

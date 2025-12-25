@@ -569,6 +569,12 @@ const monacoEditorRef = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(n
 const currentLineDecorations = ref<string[]>([]);
 const mainViewerLineDecorations = ref<string[]>([]);
 
+// G-Code line selection state for visualizer highlighting
+const selectionStart = ref<number | null>(null);
+const selectionEnd = ref<number | null>(null);
+const isDragging = ref(false);
+const selectedLineDecorations = ref<string[]>([]);
+
 // Monaco Editor options for main G-Code preview (smaller view)
 const monacoMainViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
   readOnly: true,
@@ -780,6 +786,164 @@ function handleMonacoEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
 function handleMonacoMainViewerMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   monacoMainViewerRef.value = editor;
   updateMainViewerDecoration();
+  setupGutterSelectionHandler(editor);
+}
+
+// Update selection decorations in Monaco editor
+function updateSelectionDecorations(editor: Monaco.editor.IStandaloneCodeEditor) {
+  if (!selectionStart.value || !selectionEnd.value) {
+    // Clear selection decorations
+    selectedLineDecorations.value = editor.deltaDecorations(selectedLineDecorations.value, []);
+    return;
+  }
+
+  const start = Math.min(selectionStart.value, selectionEnd.value);
+  const end = Math.max(selectionStart.value, selectionEnd.value);
+
+  const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
+  for (let line = start; line <= end; line++) {
+    decorations.push({
+      range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
+      options: {
+        isWholeLine: true,
+        className: 'monaco-selected-gcode-line',
+        glyphMarginClassName: 'monaco-selected-gcode-glyph'
+      }
+    });
+  }
+
+  selectedLineDecorations.value = editor.deltaDecorations(selectedLineDecorations.value, decorations);
+}
+
+// Update store with selected lines
+function updateSelectedLinesInStore() {
+  if (!selectionStart.value || !selectionEnd.value) {
+    store.clearSelectedGCodeLines();
+    return;
+  }
+
+  const start = Math.min(selectionStart.value, selectionEnd.value);
+  const end = Math.max(selectionStart.value, selectionEnd.value);
+  const lines = new Set<number>();
+  for (let i = start; i <= end; i++) {
+    lines.add(i);
+  }
+  store.setSelectedGCodeLines(lines);
+}
+
+// Get line number from Y coordinate
+function getLineNumberFromY(editor: Monaco.editor.IStandaloneCodeEditor, clientY: number): number | null {
+  const editorDom = editor.getDomNode();
+  if (!editorDom) return null;
+
+  const rect = editorDom.getBoundingClientRect();
+  const relativeY = clientY - rect.top;
+
+  const scrollTop = editor.getScrollTop();
+  const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
+
+  const lineNumber = Math.floor((relativeY + scrollTop) / lineHeight) + 1;
+  const model = editor.getModel();
+  if (!model) return null;
+
+  return Math.max(1, Math.min(lineNumber, model.getLineCount()));
+}
+
+// Setup gutter selection handler for mouse and touch
+function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor) {
+  let currentEditor = editor;
+
+  // Handler for mouse move during drag
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging.value) return;
+
+    const lineNumber = getLineNumberFromY(currentEditor, e.clientY);
+    if (lineNumber && lineNumber !== selectionEnd.value) {
+      selectionEnd.value = lineNumber;
+      updateSelectionDecorations(currentEditor);
+      updateSelectedLinesInStore();
+    }
+  };
+
+  // Handler for mouse up
+  const handleMouseUp = () => {
+    if (isDragging.value) {
+      isDragging.value = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    }
+  };
+
+  // Mouse down - start selection
+  editor.onMouseDown((e: Monaco.editor.IEditorMouseEvent) => {
+    // Only handle clicks on line number gutter
+    if (e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS) {
+      // Click elsewhere clears selection
+      if (selectionStart.value !== null) {
+        selectionStart.value = null;
+        selectionEnd.value = null;
+        isDragging.value = false;
+        updateSelectionDecorations(editor);
+        updateSelectedLinesInStore();
+      }
+      return;
+    }
+
+    const lineNumber = e.target.position?.lineNumber;
+    if (!lineNumber) return;
+
+    isDragging.value = true;
+    selectionStart.value = lineNumber;
+    selectionEnd.value = lineNumber;
+    updateSelectionDecorations(editor);
+    updateSelectedLinesInStore();
+
+    // Add document-level listeners for drag
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  });
+
+  // Touch support - add event listeners to gutter element
+  const editorDom = editor.getDomNode();
+  if (editorDom) {
+    const gutterElement = editorDom.querySelector('.margin-view-overlays');
+    if (gutterElement) {
+      gutterElement.addEventListener('touchstart', (e: Event) => {
+        const touchEvent = e as TouchEvent;
+        if (touchEvent.touches.length !== 1) return;
+
+        const touch = touchEvent.touches[0];
+        const lineNumber = getLineNumberFromY(editor, touch.clientY);
+        if (!lineNumber) return;
+
+        isDragging.value = true;
+        selectionStart.value = lineNumber;
+        selectionEnd.value = lineNumber;
+        updateSelectionDecorations(editor);
+        updateSelectedLinesInStore();
+        e.preventDefault();
+      }, { passive: false });
+
+      gutterElement.addEventListener('touchmove', (e: Event) => {
+        if (!isDragging.value) return;
+        const touchEvent = e as TouchEvent;
+        if (touchEvent.touches.length !== 1) return;
+
+        const touch = touchEvent.touches[0];
+        const lineNumber = getLineNumberFromY(editor, touch.clientY);
+        if (lineNumber) {
+          selectionEnd.value = lineNumber;
+          updateSelectionDecorations(editor);
+          updateSelectedLinesInStore();
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      gutterElement.addEventListener('touchend', () => {
+        isDragging.value = false;
+      });
+    }
+  }
 }
 
 // Helper to apply decorations to a Monaco editor
@@ -2844,6 +3008,32 @@ body.theme-light .monaco-editor-container :deep(.monaco-current-line-arrow) {
 body.theme-light .monaco-editor-container :deep(.monaco-current-line-glyph) {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23e6a800' d='M4 2l8 6-8 6V2z'/%3E%3C/svg%3E") center center no-repeat;
   background-size: 12px 12px;
+}
+
+/* Make line numbers clickable cursor */
+.monaco-editor-container :deep(.line-numbers) {
+  cursor: pointer;
+}
+
+/* Selected G-code line highlighting (for visualizer sync) */
+.monaco-editor-container :deep(.monaco-selected-gcode-line) {
+  background: rgba(255, 102, 0, 0.25) !important;
+}
+
+.monaco-editor-container :deep(.monaco-selected-gcode-glyph) {
+  background: #ff6600;
+  width: 4px !important;
+  margin-left: 2px;
+  border-radius: 2px;
+}
+
+/* Light theme adjustments for selected lines */
+body.theme-light .monaco-editor-container :deep(.monaco-selected-gcode-line) {
+  background: rgba(255, 102, 0, 0.2) !important;
+}
+
+body.theme-light .monaco-editor-container :deep(.monaco-selected-gcode-glyph) {
+  background: #e65100;
 }
 
 .editor-actions {

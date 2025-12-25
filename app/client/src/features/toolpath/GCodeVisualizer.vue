@@ -1317,7 +1317,10 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     // Reset completed lines before rendering new G-code
     if (gcodeVisualizer) {
       gcodeVisualizer.resetCompletedLines();
+      gcodeVisualizer.clearSelectedLines();
     }
+    // Clear selected lines in store when new file loads
+    appStore.clearSelectedGCodeLines();
 
     // Set grid bounds for out-of-bounds detection
     const gridBounds = computeGridBoundsFrom(props.workOffset);
@@ -2855,6 +2858,13 @@ watch(
   },
   { immediate: true }
 );
+
+// Watch for selected lines changes from G-Code Preview
+watch(() => [...appStore.selectedGCodeLines.value], (newLines) => {
+  if (gcodeVisualizer) {
+    gcodeVisualizer.highlightSelectedLines(newLines);
+  }
+}, { deep: true });
 
 </script>
 

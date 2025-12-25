@@ -130,6 +130,9 @@ const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for c
 const gcodeFilename = ref<string>('');
 const gcodeLineCount = ref<number>(0);
 
+// Selected G-code lines for highlighting in visualizer
+const selectedGCodeLines = ref<Set<number>>(new Set());
+
 // Jog config (shared UI state for current jog settings)
 const jogConfig = reactive({
   stepSize: 1,
@@ -858,6 +861,7 @@ export function useAppStore() {
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
+      selectedGCodeLines: readonly(selectedGCodeLines),
       jogConfig,  // Writable - shared jog settings
 
     // Computed properties
@@ -885,6 +889,15 @@ export function useAppStore() {
       gcodeContent.value = '';
       gcodeFilename.value = '';
       gcodeLineCount.value = 0;
+      selectedGCodeLines.value = new Set();
+    },
+
+    setSelectedGCodeLines: (lines: Set<number>) => {
+      selectedGCodeLines.value = lines;
+    },
+
+    clearSelectedGCodeLines: () => {
+      selectedGCodeLines.value = new Set();
     },
 
     setLastAlarmCode: async (code: number | string | undefined) => {

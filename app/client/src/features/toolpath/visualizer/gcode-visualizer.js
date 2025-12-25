@@ -13,7 +13,8 @@ class GCodeVisualizer {
             cutting: 0x3e85c7,  // Cutting moves - Light Blue (fallback)
             completedRapid: 0x333333,  // Completed rapid - Dark Gray
             completedCutting: 0x444444,  // Completed cutting - Dark Gray
-            outOfBounds: 0xcc5555  // Out of bounds - Muted Red
+            outOfBounds: 0xcc5555,  // Out of bounds - Muted Red
+            selected: 0xff6600  // Selected lines - Orange (works on both themes)
         };
 
         // Tool-based colors (generated dynamically)
@@ -36,6 +37,7 @@ class GCodeVisualizer {
         this.lineMoveType = new Map();  // lineNumber -> 'rapid' | 'cutting'
         this.lineToolNumber = new Map(); // lineNumber -> tool number (for cutting moves)
         this.completedLines = new Set();
+        this.selectedLines = new Set(); // Track currently selected lines for highlighting
 
         // Track which axes have any out-of-bounds vertices
         this._outOfBoundsAxes = new Set(); // subset of ['X','Y','Z']
@@ -551,6 +553,61 @@ class GCodeVisualizer {
 
         line.geometry.attributes.color.needsUpdate = true;
         this.completedLines.clear();
+    }
+
+    highlightSelectedLines(lineNumbers) {
+        const line = this.pathLines[0];
+        if (!line || !line.geometry.attributes.color) return;
+
+        const colors = line.geometry.attributes.color.array;
+        const selectedColor = new THREE.Color(this.moveColors.selected);
+
+        // Restore previously selected lines to original colors
+        this.selectedLines.forEach(lineNumber => {
+            // Skip if line is completed (completed takes precedence)
+            if (this.completedLines.has(lineNumber)) return;
+
+            const range = this.lineNumberMap.get(lineNumber);
+            if (!range) return;
+            const { startVertexIdx, endVertexIdx } = range;
+
+            // Restore original color
+            const originalColor = this.getLineColor(lineNumber);
+            for (let i = startVertexIdx; i < endVertexIdx; i++) {
+                colors[i * 3] = originalColor.r;
+                colors[i * 3 + 1] = originalColor.g;
+                colors[i * 3 + 2] = originalColor.b;
+            }
+        });
+
+        // Clear old selection
+        this.selectedLines.clear();
+
+        // Apply new selection colors
+        lineNumbers.forEach(lineNumber => {
+            // Skip completed lines (they should stay grayed out)
+            if (this.completedLines.has(lineNumber)) return;
+
+            const range = this.lineNumberMap.get(lineNumber);
+            if (!range) return;
+
+            const { startVertexIdx, endVertexIdx } = range;
+
+            // Apply selection color
+            for (let i = startVertexIdx; i < endVertexIdx; i++) {
+                colors[i * 3] = selectedColor.r;
+                colors[i * 3 + 1] = selectedColor.g;
+                colors[i * 3 + 2] = selectedColor.b;
+            }
+
+            this.selectedLines.add(lineNumber);
+        });
+
+        line.geometry.attributes.color.needsUpdate = true;
+    }
+
+    clearSelectedLines() {
+        this.highlightSelectedLines([]);
     }
 
     updateOutOfBoundsColors() {
