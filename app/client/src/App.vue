@@ -239,6 +239,21 @@
                 </div>
                 <ToggleSwitch v-model="consoleSettings.debugLogging" />
               </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Stop Deceleration Delay</label>
+                  <div class="settings-note">
+                    Time to wait after Feed Hold before Soft Reset when stopping a job. Allows machine to decelerate smoothly.
+                  </div>
+                </div>
+                <select class="setting-select" v-model="pauseBeforeStop" @change="savePauseBeforeStop">
+                  <option :value="0">None (Immediate)</option>
+                  <option :value="250">Short (250ms)</option>
+                  <option :value="500">Medium (500ms)</option>
+                  <option :value="1000">Long (1s)</option>
+                  <option :value="2000">Extra Long (2s)</option>
+                </select>
+              </div>
               <div class="setting-item">
                 <label class="setting-label">Accent / Gradient Color</label>
                 <div class="color-controls">
@@ -1331,6 +1346,9 @@ const consoleSettings = reactive({
   debugLogging: initialSettings?.debugLogging ?? false
 });
 
+// Stop deceleration delay (pause before soft reset)
+const pauseBeforeStop = ref(initialSettings?.pauseBeforeStop ?? 500);
+
 // Helper function to compute OFF command based on ON command
 const getOffCommand = (onCommand: string): string => {
   if (!onCommand) return '';
@@ -2334,6 +2352,14 @@ const saveHomeLocation = async () => {
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     homeLocation: homeLocation.value
+  });
+};
+
+// Save pause before stop setting
+const savePauseBeforeStop = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    pauseBeforeStop: Number(pauseBeforeStop.value)
   });
 };
 

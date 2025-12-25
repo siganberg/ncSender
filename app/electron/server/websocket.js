@@ -7,7 +7,8 @@ import { parseM6Command, isM6Command } from '../utils/gcode-patterns.js';
 import { getUserDataDir } from '../utils/paths.js';
 
 const WS_READY_STATE_OPEN = 1;
-const realtimeJobCommands = new Set(['!', '~', '\\x18']);
+const SOFT_RESET = String.fromCharCode(0x18);
+const realtimeJobCommands = new Set(['!', '~', SOFT_RESET]);
 
 const sanitizeForJson = (value) => JSON.parse(JSON.stringify(value, (key, item) => {
   if (typeof item === 'object' && item !== null) {
@@ -308,7 +309,44 @@ export function createWebSocketLayer({
     }
 
     try {
-      if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
+      // Handle soft reset with optional deceleration delay
+      if (commandValue === SOFT_RESET && jobManager.hasActiveJob()) {
+        const jobStatus = jobManager.getJobStatus();
+        const isActiveMotion = jobStatus && (jobStatus.status === 'running' || jobStatus.status === 'paused');
+
+        if (isActiveMotion) {
+          const rawSetting = getSetting('pauseBeforeStop', DEFAULT_SETTINGS.pauseBeforeStop);
+          let pauseBeforeStop = Number(rawSetting);
+          if (!Number.isFinite(pauseBeforeStop) || pauseBeforeStop < 0) {
+            pauseBeforeStop = DEFAULT_SETTINGS.pauseBeforeStop;
+          }
+
+          if (pauseBeforeStop > 0) {
+            // Send feed hold first to allow deceleration
+            log(`Sending feed hold before soft reset (delay: ${pauseBeforeStop}ms)`);
+            try {
+              await cncController.sendCommand('!', {
+                displayCommand: '! (Feed Hold)',
+                meta: { jobControl: true, sourceId: 'client' }
+              });
+              jobManager.pause();
+            } catch (err) {
+              log('Failed to send feed hold:', err?.message || err);
+            }
+
+            // Wait for deceleration
+            await new Promise(resolve => setTimeout(resolve, pauseBeforeStop));
+          }
+        }
+
+        // Now send the soft reset
+        try {
+          jobManager.stop();
+          log('Job stopped via WebSocket command');
+        } catch (jobError) {
+          log('Job processor error (WebSocket stop):', jobError.message);
+        }
+      } else if (realtimeJobCommands.has(commandValue) && jobManager.hasActiveJob()) {
         try {
           if (commandValue === '!') {
             jobManager.pause();
@@ -316,9 +354,6 @@ export function createWebSocketLayer({
           } else if (commandValue === '~') {
             jobManager.resume();
             log('Job resumed via WebSocket command');
-          } else if (commandValue === '\\x18') {
-            jobManager.stop();
-            log('Job stopped via WebSocket command');
           }
         } catch (jobError) {
           log('Job processor error (WebSocket command):', jobError.message);
