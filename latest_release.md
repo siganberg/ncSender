@@ -1,7 +1,5 @@
 ## What's Changed
 
-### ✨ New Features
-- Added firmware flashing capability
-
 ### 🐛 Bug Fixes
-- Fixed Linux x64 build issues
+- Fixed abrupt stop issue and resolved Alarm 3 errors during operation
+- Fixed Start Line number suggestion to correctly show where the last line was stopped
