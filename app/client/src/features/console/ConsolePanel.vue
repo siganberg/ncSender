@@ -787,6 +787,16 @@ function handleMonacoMainViewerMount(editor: Monaco.editor.IStandaloneCodeEditor
   monacoMainViewerRef.value = editor;
   updateMainViewerDecoration();
   setupGutterSelectionHandler(editor);
+
+  // Add Ctrl+G keybinding for "Go to Line"
+  editor.addAction({
+    id: 'go-to-line',
+    label: 'Go to Line',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
+    run: (ed) => {
+      ed.trigger('keyboard', 'editor.action.gotoLine', null);
+    }
+  });
 }
 
 // Update selection decorations in Monaco editor
@@ -901,6 +911,18 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
     // Add document-level listeners for drag
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+  });
+
+  // Double-click on gutter to open Start From Line dialog
+  editor.onMouseDown((e: Monaco.editor.IEditorMouseEvent) => {
+    if (e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS) return;
+    if (e.event.detail !== 2) return; // Only handle double-click (detail === 2)
+
+    const lineNumber = e.target.position?.lineNumber;
+    if (!lineNumber) return;
+
+    // Request to open Start From Line dialog with this line number
+    store.requestStartFromLine(lineNumber);
   });
 
   // Touch support - add event listeners to gutter element

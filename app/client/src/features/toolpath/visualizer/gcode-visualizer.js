@@ -1,6 +1,9 @@
 // Moved into toolpath feature (verticalization).
 import * as THREE from 'three';
 import { ArcCurve } from 'three';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
 class GCodeVisualizer {
     constructor() {
@@ -38,6 +41,7 @@ class GCodeVisualizer {
         this.lineToolNumber = new Map(); // lineNumber -> tool number (for cutting moves)
         this.completedLines = new Set();
         this.selectedLines = new Set(); // Track currently selected lines for highlighting
+        this.highlightLine = null; // Separate line object for selection glow effect
 
         // Track which axes have any out-of-bounds vertices
         this._outOfBoundsAxes = new Set(); // subset of ['X','Y','Z']
@@ -131,6 +135,14 @@ class GCodeVisualizer {
         this.lineNumberMap.clear();
         this.lineToolNumber.clear();
         this.completedLines.clear();
+        // Clean up highlight line
+        if (this.highlightLine) {
+            this.group.remove(this.highlightLine);
+            this.highlightLine.geometry.dispose();
+            this.highlightLine.material.dispose();
+            this.highlightLine = null;
+        }
+        this.selectedLines.clear();
     }
 
     setGridBounds(gridBounds) {
@@ -556,58 +568,84 @@ class GCodeVisualizer {
     }
 
     highlightSelectedLines(lineNumbers) {
-        const line = this.pathLines[0];
-        if (!line || !line.geometry.attributes.color) return;
+        const mainLine = this.pathLines[0];
+        if (!mainLine || !mainLine.geometry.attributes.position) return;
 
-        const colors = line.geometry.attributes.color.array;
-        const selectedColor = new THREE.Color(this.moveColors.selected);
+        // Remove existing highlight line
+        if (this.highlightLine) {
+            this.group.remove(this.highlightLine);
+            this.highlightLine.geometry.dispose();
+            this.highlightLine.material.dispose();
+            this.highlightLine = null;
+        }
 
-        // Restore previously selected lines to original colors
-        this.selectedLines.forEach(lineNumber => {
-            // Skip if line is completed (completed takes precedence)
-            if (this.completedLines.has(lineNumber)) return;
-
-            const range = this.lineNumberMap.get(lineNumber);
-            if (!range) return;
-            const { startVertexIdx, endVertexIdx } = range;
-
-            // Restore original color
-            const originalColor = this.getLineColor(lineNumber);
-            for (let i = startVertexIdx; i < endVertexIdx; i++) {
-                colors[i * 3] = originalColor.r;
-                colors[i * 3 + 1] = originalColor.g;
-                colors[i * 3 + 2] = originalColor.b;
-            }
-        });
-
-        // Clear old selection
+        // Clear selection tracking
         this.selectedLines.clear();
 
-        // Apply new selection colors
-        lineNumbers.forEach(lineNumber => {
-            // Skip completed lines (they should stay grayed out)
-            if (this.completedLines.has(lineNumber)) return;
+        // Filter out completed lines and collect valid line numbers
+        const validLineNumbers = lineNumbers.filter(ln => {
+            if (this.completedLines.has(ln)) return false;
+            if (!this.lineNumberMap.has(ln)) return false;
+            return true;
+        });
 
+        if (validLineNumbers.length === 0) return;
+
+        // Extract vertices for selected lines
+        const mainPositions = mainLine.geometry.attributes.position.array;
+        const highlightVertices = [];
+
+        validLineNumbers.forEach(lineNumber => {
             const range = this.lineNumberMap.get(lineNumber);
             if (!range) return;
 
             const { startVertexIdx, endVertexIdx } = range;
-
-            // Apply selection color
             for (let i = startVertexIdx; i < endVertexIdx; i++) {
-                colors[i * 3] = selectedColor.r;
-                colors[i * 3 + 1] = selectedColor.g;
-                colors[i * 3 + 2] = selectedColor.b;
+                highlightVertices.push(
+                    mainPositions[i * 3],
+                    mainPositions[i * 3 + 1],
+                    mainPositions[i * 3 + 2]
+                );
             }
 
             this.selectedLines.add(lineNumber);
         });
 
-        line.geometry.attributes.color.needsUpdate = true;
+        if (highlightVertices.length < 2) return;
+
+        // Create thick line using Line2
+        const lineGeometry = new LineGeometry();
+        lineGeometry.setPositions(highlightVertices);
+
+        // Purple color material with thick line width
+        const lineMaterial = new LineMaterial({
+            color: 0xcc00ff,  // Bright purple - visible on both themes
+            linewidth: 4,     // Thick line (in pixels)
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+            worldUnits: false  // Use screen pixels for line width
+        });
+
+        // Set resolution for LineMaterial (required)
+        lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+
+        // Create and add highlight line
+        this.highlightLine = new Line2(lineGeometry, lineMaterial);
+        this.highlightLine.name = 'selection-highlight';
+        this.highlightLine.renderOrder = 1000; // Render on top
+        this.highlightLine.computeLineDistances();
+        this.group.add(this.highlightLine);
     }
 
     clearSelectedLines() {
-        this.highlightSelectedLines([]);
+        if (this.highlightLine) {
+            this.group.remove(this.highlightLine);
+            this.highlightLine.geometry.dispose();
+            this.highlightLine.material.dispose();
+            this.highlightLine = null;
+        }
+        this.selectedLines.clear();
     }
 
     updateOutOfBoundsColors() {

@@ -2866,6 +2866,14 @@ watch(() => [...appStore.selectedGCodeLines.value], (newLines) => {
   }
 }, { deep: true });
 
+// Watch for Start From Line requests from G-Code Preview (double-click on line number)
+watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
+  if (lineNumber !== null && lineNumber > 0) {
+    openStartFromLineDialog(lineNumber);
+    appStore.clearStartFromLineRequest();
+  }
+});
+
 </script>
 
 <style scoped>

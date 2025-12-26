@@ -133,6 +133,9 @@ const gcodeLineCount = ref<number>(0);
 // Selected G-code lines for highlighting in visualizer
 const selectedGCodeLines = ref<Set<number>>(new Set());
 
+// Request to open Start From Line dialog (set by ConsolePanel, watched by GCodeVisualizer)
+const startFromLineRequest = ref<number | null>(null);
+
 // Jog config (shared UI state for current jog settings)
 const jogConfig = reactive({
   stepSize: 1,
@@ -862,6 +865,7 @@ export function useAppStore() {
       gcodeFilename: readonly(gcodeFilename),
       gcodeLineCount: readonly(gcodeLineCount),
       selectedGCodeLines: readonly(selectedGCodeLines),
+      startFromLineRequest: readonly(startFromLineRequest),
       jogConfig,  // Writable - shared jog settings
 
     // Computed properties
@@ -898,6 +902,14 @@ export function useAppStore() {
 
     clearSelectedGCodeLines: () => {
       selectedGCodeLines.value = new Set();
+    },
+
+    requestStartFromLine: (lineNumber: number) => {
+      startFromLineRequest.value = lineNumber;
+    },
+
+    clearStartFromLineRequest: () => {
+      startFromLineRequest.value = null;
     },
 
     setLastAlarmCode: async (code: number | string | undefined) => {
