@@ -656,6 +656,7 @@ let camera: THREE.OrthographicCamera;
 let renderer: THREE.WebGLRenderer;
 let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
+let raycaster: THREE.Raycaster;
 let animationId: number;
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
@@ -925,6 +926,10 @@ const initThreeJS = () => {
     gcodeVisualizer.setRapidColor(0xE67E22); // orange for light theme
   }
 
+  // Raycaster for segment click detection
+  raycaster = new THREE.Raycaster();
+  raycaster.params.Line = { threshold: 5 }; // Increase click tolerance for lines
+
   const initialBounds = computeGridBoundsFrom(props.workOffset);
   gcodeVisualizer.setGridBounds(initialBounds);
 
@@ -964,6 +969,7 @@ const setupControls = () => {
   element.addEventListener('mousemove', onMouseMove);
   element.addEventListener('mouseup', onMouseUp);
   element.addEventListener('wheel', onWheel, { passive: false });
+  element.addEventListener('click', onCanvasClick);
 
   // Touch events for mobile
   element.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -971,9 +977,71 @@ const setupControls = () => {
   element.addEventListener('touchend', onTouchEnd);
 };
 
+// Track mouse movement to distinguish click from drag
+let mouseDownPosition = { x: 0, y: 0 };
+let mouseMoved = false;
+
+// Track touch for double-tap detection
+let lastTapTime = 0;
+let lastTapPosition = { x: 0, y: 0 };
+
+// Handle click on canvas to select toolpath segment
+const onCanvasClick = (event: MouseEvent) => {
+  // Only process if mouse didn't move much (not a drag)
+  const dx = event.clientX - mouseDownPosition.x;
+  const dy = event.clientY - mouseDownPosition.y;
+  if (Math.abs(dx) > 5 || Math.abs(dy) > 5) return;
+
+  // Only handle left clicks
+  if (event.button !== 0) return;
+
+  // Check if we have a toolpath to click on
+  if (!gcodeVisualizer || !raycaster || !camera || !renderer) return;
+  const toolpathLine = gcodeVisualizer.getToolpathLine();
+  if (!toolpathLine) return;
+
+  // Calculate normalized device coordinates
+  const rect = renderer.domElement.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+
+  // Set up raycaster
+  raycaster.setFromCamera(mouse, camera);
+
+  // Check for intersections with the toolpath
+  const intersects = raycaster.intersectObject(toolpathLine, false);
+
+  if (intersects.length > 0) {
+    const intersection = intersects[0];
+    // Get the vertex index from the intersection
+    const faceIndex = intersection.faceIndex;
+    const index = intersection.index;
+
+    // Find the line number from the vertex index
+    const lineNumber = gcodeVisualizer.getLineNumberFromVertexIndex(index ?? faceIndex ?? 0);
+
+    if (lineNumber) {
+      // Check for double-click to open Start From Line dialog
+      if (event.detail === 2) {
+        openStartFromLineDialog(lineNumber);
+      } else {
+        // Single click - update selected lines in store
+        const lines = new Set<number>([lineNumber]);
+        appStore.setSelectedGCodeLines(lines);
+      }
+    }
+  } else {
+    // Clicked empty space - clear selection
+    appStore.clearSelectedGCodeLines();
+  }
+};
+
 const onMouseDown = (event: MouseEvent) => {
   isDragging = true;
   previousMousePosition = { x: event.clientX, y: event.clientY };
+  mouseDownPosition = { x: event.clientX, y: event.clientY };
 
   // Only allow rotation in 3D view, not in top or side views
   const isOrthographicView = props.view === 'top' || props.view === 'front';
@@ -1101,9 +1169,12 @@ const onWheel = (event: WheelEvent) => {
 let lastTouchDistance = 0;
 let lastTwoFingerCenter = { x: 0, y: 0 };
 
+let touchStartPosition = { x: 0, y: 0 };
+
 const onTouchStart = (event: TouchEvent) => {
   if (event.touches.length === 1) {
     const touch = event.touches[0];
+    touchStartPosition = { x: touch.clientX, y: touch.clientY };
     onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
   } else if (event.touches.length === 2) {
     // Two fingers - setup for rotation
@@ -1184,7 +1255,61 @@ const onTouchMove = (event: TouchEvent) => {
   }
 };
 
-const onTouchEnd = () => {
+const onTouchEnd = (event: TouchEvent) => {
+  // Check if this was a tap (no significant movement)
+  const dx = touchStartPosition.x - mouseDownPosition.x;
+  const dy = touchStartPosition.y - mouseDownPosition.y;
+  const wasTap = Math.abs(dx) < 10 && Math.abs(dy) < 10;
+
+  if (wasTap && gcodeVisualizer && raycaster && camera && renderer) {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTime;
+    const distFromLastTap = Math.sqrt(
+      Math.pow(touchStartPosition.x - lastTapPosition.x, 2) +
+      Math.pow(touchStartPosition.y - lastTapPosition.y, 2)
+    );
+
+    // Check if it's a double-tap (within 300ms and 30px of last tap)
+    const isDoubleTap = timeSinceLastTap < 300 && distFromLastTap < 30;
+
+    // Raycast to find clicked segment
+    const toolpathLine = gcodeVisualizer.getToolpathLine();
+    if (toolpathLine) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((touchStartPosition.x - rect.left) / rect.width) * 2 - 1,
+        -((touchStartPosition.y - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(toolpathLine, false);
+
+      if (intersects.length > 0) {
+        const intersection = intersects[0];
+        const index = intersection.index;
+        const lineNumber = gcodeVisualizer.getLineNumberFromVertexIndex(index ?? 0);
+
+        if (lineNumber) {
+          if (isDoubleTap) {
+            // Double-tap - open Start From Line dialog
+            openStartFromLineDialog(lineNumber);
+          } else {
+            // Single tap - select the line
+            const lines = new Set<number>([lineNumber]);
+            appStore.setSelectedGCodeLines(lines);
+          }
+        }
+      } else if (!isDoubleTap) {
+        // Tapped empty space - clear selection
+        appStore.clearSelectedGCodeLines();
+      }
+    }
+
+    // Update last tap tracking
+    lastTapTime = now;
+    lastTapPosition = { ...touchStartPosition };
+  }
+
   onMouseUp();
   lastTouchDistance = 0;
 };

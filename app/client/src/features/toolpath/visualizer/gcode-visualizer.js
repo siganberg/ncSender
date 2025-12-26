@@ -648,6 +648,21 @@ class GCodeVisualizer {
         this.selectedLines.clear();
     }
 
+    // Find line number from vertex index (for click detection)
+    getLineNumberFromVertexIndex(vertexIndex) {
+        for (const [lineNumber, range] of this.lineNumberMap.entries()) {
+            if (vertexIndex >= range.startVertexIdx && vertexIndex < range.endVertexIdx) {
+                return lineNumber;
+            }
+        }
+        return null;
+    }
+
+    // Get the main toolpath line object for raycasting
+    getToolpathLine() {
+        return this.pathLines[0] || null;
+    }
+
     updateOutOfBoundsColors() {
         try {
             const line = this.pathLines[0];

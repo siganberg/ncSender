@@ -1304,6 +1304,40 @@ watch(() => store.jobLoaded.value?.status, async (val, oldVal) => {
   }
 });
 
+// Watch for selected lines changes from visualizer (segment click)
+// and sync the Monaco editor selection + scroll
+watch(() => store.selectedGCodeLines.value, (selectedLines) => {
+  const editor = monacoMainViewerRef.value;
+  if (!editor) return;
+
+  // Check if selection was changed from visualizer (not from gutter click)
+  // by checking if the local selectionStart matches the store
+  const storeHasSelection = selectedLines.size > 0;
+  const localHasSelection = selectionStart.value !== null;
+
+  if (storeHasSelection) {
+    const lines = Array.from(selectedLines).sort((a, b) => a - b);
+    const firstLine = lines[0];
+    const lastLine = lines[lines.length - 1];
+
+    // Only update local state if it doesn't match (i.e., change came from visualizer)
+    if (!localHasSelection || selectionStart.value !== firstLine || selectionEnd.value !== lastLine) {
+      selectionStart.value = firstLine;
+      selectionEnd.value = lastLine;
+      updateSelectionDecorations(editor);
+
+      // Scroll to center the selection
+      const middleLine = Math.floor((firstLine + lastLine) / 2);
+      editor.revealLineInCenter(middleLine);
+    }
+  } else if (!storeHasSelection && localHasSelection) {
+    // Selection was cleared from visualizer
+    selectionStart.value = null;
+    selectionEnd.value = null;
+    updateSelectionDecorations(editor);
+  }
+}, { deep: true });
+
 const copyAllTerminalContent = async () => {
   try {
     const allLines = terminalLines.value
