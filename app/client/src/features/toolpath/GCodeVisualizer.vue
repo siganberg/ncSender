@@ -656,7 +656,6 @@ let camera: THREE.OrthographicCamera;
 let renderer: THREE.WebGLRenderer;
 let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
-let raycaster: THREE.Raycaster;
 let animationId: number;
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
@@ -925,10 +924,6 @@ const initThreeJS = () => {
   if (props.theme === 'light') {
     gcodeVisualizer.setRapidColor(0xE67E22); // orange for light theme
   }
-
-  // Raycaster for segment click detection
-  raycaster = new THREE.Raycaster();
-  raycaster.params.Line = { threshold: 5 }; // Increase click tolerance for lines
 
   const initialBounds = computeGridBoundsFrom(props.workOffset);
   gcodeVisualizer.setGridBounds(initialBounds);
@@ -1246,7 +1241,7 @@ const onTouchEnd = (event: TouchEvent) => {
   const dy = touchStartPosition.y - mouseDownPosition.y;
   const wasTap = Math.abs(dx) < 10 && Math.abs(dy) < 10;
 
-  if (wasTap && gcodeVisualizer && raycaster && camera && renderer) {
+  if (wasTap && gcodeVisualizer && camera && renderer) {
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTime;
     const distFromLastTap = Math.sqrt(

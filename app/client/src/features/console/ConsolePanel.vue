@@ -1322,6 +1322,11 @@ watch(() => store.selectedGCodeLines.value, (selectedLines) => {
 
     // Only update local state if it doesn't match (i.e., change came from visualizer)
     if (!localHasSelection || selectionStart.value !== firstLine || selectionEnd.value !== lastLine) {
+      // Switch to G-Code Preview tab if not already active
+      if (activeTab.value !== 'gcode-preview') {
+        activeTab.value = 'gcode-preview';
+      }
+
       selectionStart.value = firstLine;
       selectionEnd.value = lastLine;
       updateSelectionDecorations(editor);
