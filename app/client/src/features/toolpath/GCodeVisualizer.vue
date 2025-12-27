@@ -2694,28 +2694,40 @@ onMounted(async () => {
     }
   }, { deep: true });
 
-  // Watch for flood coolant status changes and sync with flood switch
+  // Watch for flood coolant status changes and sync ALL outputs mapped to M8
   watch(() => appStore.status.floodCoolant, (newValue) => {
-    if ('flood' in ioSwitchStates) {
-      const config = ioSwitchesConfig.value;
-      const isEnabled = Array.isArray(config)
-        ? config.some(o => o.id === 'flood' && o.enabled)
-        : config.flood?.enabled;
-      if (isEnabled) {
-        ioSwitchStates.flood = newValue ?? false;
+    const config = ioSwitchesConfig.value;
+    const state = newValue ?? false;
+    if (Array.isArray(config)) {
+      for (const output of config) {
+        if (output.enabled && output.on === 'M8') {
+          ioSwitchStates[output.id] = state;
+        }
+      }
+    } else {
+      for (const [switchKey, switchConfig] of Object.entries(config)) {
+        if ((switchConfig as any).enabled && (switchConfig as any).on === 'M8') {
+          ioSwitchStates[switchKey] = state;
+        }
       }
     }
   });
 
-  // Watch for mist coolant status changes and sync with mist switch
+  // Watch for mist coolant status changes and sync ALL outputs mapped to M7
   watch(() => appStore.status.mistCoolant, (newValue) => {
-    if ('mist' in ioSwitchStates) {
-      const config = ioSwitchesConfig.value;
-      const isEnabled = Array.isArray(config)
-        ? config.some(o => o.id === 'mist' && o.enabled)
-        : config.mist?.enabled;
-      if (isEnabled) {
-        ioSwitchStates.mist = newValue ?? false;
+    const config = ioSwitchesConfig.value;
+    const state = newValue ?? false;
+    if (Array.isArray(config)) {
+      for (const output of config) {
+        if (output.enabled && output.on === 'M7') {
+          ioSwitchStates[output.id] = state;
+        }
+      }
+    } else {
+      for (const [switchKey, switchConfig] of Object.entries(config)) {
+        if ((switchConfig as any).enabled && (switchConfig as any).on === 'M7') {
+          ioSwitchStates[switchKey] = state;
+        }
       }
     }
   });
