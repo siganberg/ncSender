@@ -1716,6 +1716,13 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   camera.right = frustumWidth / 2;
   camera.top = frustumHeight / 2;
   camera.bottom = -frustumHeight / 2;
+
+  // Update near/far clipping planes based on scene size to prevent clipping
+  // For orthographic cameras, use a large range to encompass grid, toolpath, and spindle model
+  const maxSceneSize = Math.max(sizeX, sizeY, sizeZ, 500); // At least 500 units for grid + spindle
+  camera.near = -maxSceneSize * 10;  // Allow objects "behind" camera in orthographic view
+  camera.far = maxSceneSize * 10;    // Allow objects far in front (spindle extends above)
+
   camera.updateProjectionMatrix();
 
   // Update pointer scale after changing frustum
