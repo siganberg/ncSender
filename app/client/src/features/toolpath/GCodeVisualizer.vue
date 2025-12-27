@@ -1425,7 +1425,6 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
   try {
     // If no content provided, show loading and wait for gcode-content-ready event (new metadata-only flow)
     if (!data.content) {
-      console.log('[GCodeVisualizer] Metadata received, waiting for content download to complete');
       isLoading.value = true;
       loadingMessage.value = 'Downloading G-code...';
       loadingProgress.value = 0;
@@ -1508,7 +1507,6 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
       gcodeVisualizer.markLinesCompleted(completedLines);
       // Also update markedLines to keep track
       completedLines.forEach(ln => markedLines.add(ln));
-      console.log(`[GCodeVisualizer] Restored ${lineToRestore} completed lines in visualizer`);
     }
 
     // Update axis labels based on G-code bounds
@@ -1648,8 +1646,8 @@ const openStartFromLineDialog = (lineNumber?: number) => {
   showStartFromLineDialog.value = true;
 };
 
-const handleStartFromLineSuccess = (data: { line: number }) => {
-  console.log('Started job from line:', data.line);
+const handleStartFromLineSuccess = (_data: { line: number }) => {
+  // Job started successfully - no action needed here
 };
 
 const canStartFromLine = computed(() => {
@@ -2808,7 +2806,6 @@ onMounted(async () => {
       const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
       const gcodeData = await getGCodeFromIDB();
       if (gcodeData?.content) {
-        console.log('[GCodeVisualizer] Loading existing G-code from IndexedDB on mount');
         await handleGCodeUpdate({
           filename: gcodeData.filename,
           content: gcodeData.content,
@@ -2816,8 +2813,8 @@ onMounted(async () => {
         });
       }
     }
-  } catch (error) {
-    console.log('[GCodeVisualizer] No existing G-code to load on mount (this is normal for first load)');
+  } catch {
+    // No existing G-code to load on mount (this is normal for first load)
   }
 
   // Listen for server state updates to track job progress
@@ -2834,7 +2831,6 @@ onMounted(async () => {
       // Include 'running' status - user may have refreshed page while job was running
       if (status && typeof currentLine === 'number' && currentLine > 0) {
         lastExecutedLine.value = currentLine;
-        console.log(`[GCodeVisualizer] Restored lastExecutedLine from server: ${currentLine} (status: ${status})`);
         // Re-apply completed segments up to the restored line
         for (let i = 1; i <= currentLine; i++) {
           if (!markedLines.has(i)) {
