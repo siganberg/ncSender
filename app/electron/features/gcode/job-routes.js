@@ -156,7 +156,10 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       const analyzer = new GCodeStateAnalyzer();
-      const { state } = analyzer.analyzeToLine(content, lineNumber);
+      // Analyze to lineNumber - 1 to get state BEFORE the start line
+      // This ensures the resume sequence sets up the machine correctly for the start line to execute
+      const targetLine = Math.max(1, lineNumber - 1);
+      const { state } = analyzer.analyzeToLine(content, targetLine);
 
       const currentTool = serverState.machineState?.tool ?? null;
       const toolComparison = compareToolState(state.tool, currentTool);
@@ -171,6 +174,13 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         warnings.push(toolComparison.message);
       }
 
+      // Generate resume sequence preview (with default options for preview)
+      const resumeSequence = generateResumeSequence(state, {
+        spindleDelaySec: 0,
+        approachHeight: 10,
+        plungeFeedRate: 500
+      });
+
       res.json({
         state,
         lineNumber,
@@ -178,7 +188,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         toolMismatch: toolComparison.mismatch,
         expectedTool: state.tool,
         currentTool,
-        warnings
+        warnings,
+        resumeSequence
       });
     } catch (error) {
       log('Error analyzing G-code line:', error);
@@ -235,7 +246,10 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       const analyzer = new GCodeStateAnalyzer();
-      const { state } = analyzer.analyzeToLine(content, startLine);
+      // Analyze to startLine - 1 to get state BEFORE the start line
+      // This ensures the resume sequence sets up the machine correctly for the start line to execute
+      const targetLine = Math.max(1, startLine - 1);
+      const { state } = analyzer.analyzeToLine(content, targetLine);
 
       const currentTool = serverState.machineState?.tool ?? null;
       const toolComparison = compareToolState(state.tool, currentTool);

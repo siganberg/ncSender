@@ -33,7 +33,16 @@ export function mountHttp({
   autoConnector
 }) {
   app.use('/api', (req, _res, next) => {
-    log(`API ${req.method} ${req.path}`, req.body && Object.keys(req.body).length > 0 ? req.body : '');
+    let logBody = '';
+    if (req.body && Object.keys(req.body).length > 0) {
+      // Filter out large fields like 'content' to avoid huge log entries
+      const { content, ...rest } = req.body;
+      if (content) {
+        rest._content = `[${content.length} chars]`;
+      }
+      logBody = Object.keys(rest).length > 0 ? rest : '';
+    }
+    log(`API ${req.method} ${req.path}`, logBody);
     next();
   });
 

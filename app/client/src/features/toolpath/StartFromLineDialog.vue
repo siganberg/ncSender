@@ -11,7 +11,7 @@
         </svg>
         <div class="warning-text">
           <strong>Proceed with caution</strong>
-          <p>Starting from a specific line bypasses earlier setup commands. Verify tool, workpiece position, and machine state before proceeding.</p>
+          <p>Starting from a specific line bypasses earlier setup commands. Verify tool, workpiece position, and machine state before proceeding. Review the Resume Sequence below to see what commands will be sent.</p>
         </div>
       </div>
 
@@ -74,7 +74,7 @@
                 <span class="state-value">{{ spindleDisplay }}</span>
               </div>
               <div class="state-item">
-                <span class="state-label">Coolant</span>
+                <span class="state-label">Coolant/Aux</span>
                 <span class="state-value">{{ coolantDisplay }}</span>
               </div>
               <div class="state-item">
@@ -84,6 +84,38 @@
               <div class="state-item">
                 <span class="state-label">Units</span>
                 <span class="state-value">{{ analyzedState?.units === 'G20' ? 'Inch' : 'MM' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="resumeSequence.length > 0" class="resume-sequence-section">
+            <button
+              class="resume-sequence-toggle"
+              @click="showResumeSequence = !showResumeSequence"
+              type="button"
+            >
+              <svg
+                class="toggle-icon"
+                :class="{ 'toggle-icon--open': showResumeSequence }"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+              <span>Resume Sequence ({{ resumeSequence.length }} commands)</span>
+            </button>
+            <div v-if="showResumeSequence" class="resume-sequence-editor">
+              <CodeEditor
+                :value="resumeSequenceContent"
+                language="gcode"
+                :theme="monacoTheme"
+                :options="resumeSequenceEditorOptions"
+                :height="resumeEditorHeight"
+              />
+              <div class="sequence-note">
+                These commands will be sent before starting at line {{ selectedLine }}
               </div>
             </div>
           </div>
@@ -132,8 +164,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Dialog from '@/components/Dialog.vue';
+import { CodeEditor } from 'monaco-editor-vue3';
 import { api } from '@/lib/api';
 
 const props = defineProps({
@@ -169,6 +202,53 @@ const analyzedState = ref(null);
 const toolMismatch = ref(false);
 const expectedTool = ref(null);
 const currentTool = ref(null);
+const resumeSequence = ref([]);
+const showResumeSequence = ref(false);
+
+// Theme detection for Monaco
+const isLightTheme = ref(document.body.classList.contains('theme-light'));
+const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+
+let themeObserver = null;
+
+// Monaco editor options for resume sequence preview
+const resumeSequenceEditorOptions = {
+  readOnly: true,
+  minimap: { enabled: false },
+  lineNumbers: 'on',
+  scrollBeyondLastLine: false,
+  wordWrap: 'off',
+  automaticLayout: true,
+  fontSize: 12,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  renderLineHighlight: 'none',
+  selectionHighlight: false,
+  occurrencesHighlight: 'off',
+  folding: false,
+  glyphMargin: false,
+  lineDecorationsWidth: 16,
+  lineNumbersMinChars: 2,
+  scrollbar: {
+    vertical: 'auto',
+    horizontal: 'hidden',
+    useShadows: false,
+    verticalScrollbarSize: 6
+  }
+};
+
+// Computed content for Monaco editor
+const resumeSequenceContent = computed(() => {
+  return resumeSequence.value.join('\n');
+});
+
+// Dynamic height based on number of commands
+const resumeEditorHeight = computed(() => {
+  const lineCount = resumeSequence.value.length;
+  const lineHeight = 18;
+  const minHeight = 60;
+  const maxHeight = 180;
+  return Math.min(maxHeight, Math.max(minHeight, lineCount * lineHeight + 10)) + 'px';
+});
 
 const spindleDisplay = computed(() => {
   if (!analyzedState.value) return 'Off';
@@ -184,6 +264,14 @@ const coolantDisplay = computed(() => {
   const parts = [];
   if (state.coolantFlood) parts.push('Flood');
   if (state.coolantMist) parts.push('Mist');
+  // Add auxiliary outputs (M64)
+  if (state.auxOutputs) {
+    for (const [key, isOn] of Object.entries(state.auxOutputs)) {
+      if (isOn && key.startsWith('P')) {
+        parts.push(`M64 ${key}`);
+      }
+    }
+  }
   return parts.length > 0 ? parts.join(' + ') : 'Off';
 });
 
@@ -219,6 +307,7 @@ async function analyzeState() {
     toolMismatch.value = result.toolMismatch;
     expectedTool.value = result.expectedTool;
     currentTool.value = result.currentTool;
+    resumeSequence.value = result.resumeSequence || [];
   } catch (error) {
     errorMessage.value = error.message || 'Failed to analyze G-code';
   } finally {
@@ -304,6 +393,23 @@ watch(() => props.show, (newVal) => {
 onMounted(() => {
   if (props.show) {
     analyzeState();
+  }
+
+  // Watch for theme changes
+  themeObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.attributeName === 'class') {
+        isLightTheme.value = document.body.classList.contains('theme-light');
+      }
+    }
+  });
+  themeObserver.observe(document.body, { attributes: true });
+});
+
+onUnmounted(() => {
+  if (themeObserver) {
+    themeObserver.disconnect();
+    themeObserver = null;
   }
 });
 </script>
@@ -567,5 +673,52 @@ onMounted(() => {
 
 .btn-warning:hover:not(:disabled) {
   background: rgba(251, 191, 36, 0.3);
+}
+
+.resume-sequence-section {
+  margin-top: var(--gap-sm);
+}
+
+.resume-sequence-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: var(--gap-xs) 0;
+  transition: color 0.15s ease;
+}
+
+.resume-sequence-toggle:hover {
+  color: var(--color-text);
+}
+
+.toggle-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease;
+}
+
+.toggle-icon--open {
+  transform: rotate(90deg);
+}
+
+.resume-sequence-editor {
+  margin-top: var(--gap-xs);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sequence-note {
+  padding: var(--gap-xs) var(--gap-sm);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  background: var(--color-surface-secondary, rgba(0,0,0,0.1));
+  border-top: 1px solid var(--color-border);
 }
 </style>

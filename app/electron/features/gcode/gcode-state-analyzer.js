@@ -18,7 +18,8 @@ export class GCodeStateAnalyzer {
       coolantFlood: false,
       coolantMist: false,
       wcs: 'G54',
-      position: { x: 0, y: 0, z: 0 }
+      position: { x: 0, y: 0, z: 0 },
+      auxOutputs: {} // Track M64/M65 outputs: { P0: true, P1: false, ... }
     };
     this.analyzedUpToLine = 0;
   }
@@ -80,7 +81,7 @@ export class GCodeStateAnalyzer {
         this.processGCode(gVal);
       } else if (letter === 'M') {
         const mVal = Math.round(value);
-        this.processMCode(mVal, line);
+        this.processMCode(mVal, line, words);
       } else if (letter === 'T') {
         const toolNum = Math.round(value);
         if (toolNum >= 0) {
@@ -122,7 +123,7 @@ export class GCodeStateAnalyzer {
     }
   }
 
-  processMCode(mVal, line) {
+  processMCode(mVal, line, words) {
     if (mVal === 3) {
       this.state.spindleState = 'M3';
     } else if (mVal === 4) {
@@ -141,6 +142,18 @@ export class GCodeStateAnalyzer {
     } else if (mVal === 9) {
       this.state.coolantFlood = false;
       this.state.coolantMist = false;
+    } else if (mVal === 64) {
+      // M64 P# - Turn on auxiliary output
+      if (Number.isFinite(words.P)) {
+        const outputNum = Math.round(words.P);
+        this.state.auxOutputs[`P${outputNum}`] = true;
+      }
+    } else if (mVal === 65) {
+      // M65 P# - Turn off auxiliary output
+      if (Number.isFinite(words.P)) {
+        const outputNum = Math.round(words.P);
+        this.state.auxOutputs[`P${outputNum}`] = false;
+      }
     }
   }
 
@@ -211,6 +224,15 @@ export function generateResumeSequence(targetState, options = {}) {
   }
   if (targetState.coolantMist) {
     commands.push('M7');
+  }
+
+  // Turn on auxiliary outputs (M64 P#)
+  if (targetState.auxOutputs) {
+    for (const [key, isOn] of Object.entries(targetState.auxOutputs)) {
+      if (isOn && key.startsWith('P')) {
+        commands.push(`M64 ${key}`);
+      }
+    }
   }
 
   if (Number.isFinite(pos.z)) {
