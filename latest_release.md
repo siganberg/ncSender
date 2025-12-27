@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed auxiliary output state not updating correctly
+### 🔧 Improvements
+- Enhanced Start From Line feature for better control when resuming jobs
