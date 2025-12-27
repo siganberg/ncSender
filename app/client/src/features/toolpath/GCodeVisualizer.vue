@@ -996,41 +996,26 @@ const onCanvasClick = (event: MouseEvent) => {
   if (event.button !== 0) return;
 
   // Check if we have a toolpath to click on
-  if (!gcodeVisualizer || !raycaster || !camera || !renderer) return;
-  const toolpathLine = gcodeVisualizer.getToolpathLine();
-  if (!toolpathLine) return;
+  if (!gcodeVisualizer || !camera || !renderer) return;
 
-  // Calculate normalized device coordinates
+  // Use screen-space detection for accurate clicking on overlapping segments
   const rect = renderer.domElement.getBoundingClientRect();
-  const mouse = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+
+  // Find the closest segment to the click point in screen space
+  const lineNumber = gcodeVisualizer.getLineNumberFromScreenPoint(
+    screenX, screenY, camera, rect.width, rect.height, 15
   );
 
-  // Set up raycaster
-  raycaster.setFromCamera(mouse, camera);
-
-  // Check for intersections with the toolpath
-  const intersects = raycaster.intersectObject(toolpathLine, false);
-
-  if (intersects.length > 0) {
-    const intersection = intersects[0];
-    // Get the vertex index from the intersection
-    const faceIndex = intersection.faceIndex;
-    const index = intersection.index;
-
-    // Find the line number from the vertex index
-    const lineNumber = gcodeVisualizer.getLineNumberFromVertexIndex(index ?? faceIndex ?? 0);
-
-    if (lineNumber) {
-      // Check for double-click to open Start From Line dialog
-      if (event.detail === 2) {
-        openStartFromLineDialog(lineNumber);
-      } else {
-        // Single click - update selected lines in store
-        const lines = new Set<number>([lineNumber]);
-        appStore.setSelectedGCodeLines(lines);
-      }
+  if (lineNumber) {
+    // Check for double-click to open Start From Line dialog
+    if (event.detail === 2) {
+      openStartFromLineDialog(lineNumber);
+    } else {
+      // Single click - update selected lines in store
+      const lines = new Set<number>([lineNumber]);
+      appStore.setSelectedGCodeLines(lines);
     }
   } else {
     // Clicked empty space - clear selection
@@ -1272,32 +1257,25 @@ const onTouchEnd = (event: TouchEvent) => {
     // Check if it's a double-tap (within 300ms and 30px of last tap)
     const isDoubleTap = timeSinceLastTap < 300 && distFromLastTap < 30;
 
-    // Raycast to find clicked segment
-    const toolpathLine = gcodeVisualizer.getToolpathLine();
-    if (toolpathLine) {
+    // Use screen-space detection for accurate tapping on overlapping segments
+    if (gcodeVisualizer && camera && renderer) {
       const rect = renderer.domElement.getBoundingClientRect();
-      const mouse = new THREE.Vector2(
-        ((touchStartPosition.x - rect.left) / rect.width) * 2 - 1,
-        -((touchStartPosition.y - rect.top) / rect.height) * 2 + 1
+      const screenX = touchStartPosition.x - rect.left;
+      const screenY = touchStartPosition.y - rect.top;
+
+      // Find the closest segment to the tap point in screen space
+      const lineNumber = gcodeVisualizer.getLineNumberFromScreenPoint(
+        screenX, screenY, camera, rect.width, rect.height, 20
       );
 
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(toolpathLine, false);
-
-      if (intersects.length > 0) {
-        const intersection = intersects[0];
-        const index = intersection.index;
-        const lineNumber = gcodeVisualizer.getLineNumberFromVertexIndex(index ?? 0);
-
-        if (lineNumber) {
-          if (isDoubleTap) {
-            // Double-tap - open Start From Line dialog
-            openStartFromLineDialog(lineNumber);
-          } else {
-            // Single tap - select the line
-            const lines = new Set<number>([lineNumber]);
-            appStore.setSelectedGCodeLines(lines);
-          }
+      if (lineNumber) {
+        if (isDoubleTap) {
+          // Double-tap - open Start From Line dialog
+          openStartFromLineDialog(lineNumber);
+        } else {
+          // Single tap - select the line
+          const lines = new Set<number>([lineNumber]);
+          appStore.setSelectedGCodeLines(lines);
         }
       } else if (!isDoubleTap) {
         // Tapped empty space - clear selection

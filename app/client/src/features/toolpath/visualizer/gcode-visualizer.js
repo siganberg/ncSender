@@ -219,8 +219,8 @@ class GCodeVisualizer {
             const cleanLine = line.split(';')[0].trim().toUpperCase();
             if (!cleanLine) return;
 
-            // Track vertex index for this (source) line
-            frames.push(vertices.length / 3);
+            // Track vertex index and actual line number for this (source) line
+            frames.push({ lineNumber, vertexIdx: vertices.length / 3 });
 
             // Skip G53 moves (machine coordinates) - cannot visualize in workpiece coordinates
             if (cleanLine.includes('G53')) {
@@ -433,12 +433,13 @@ class GCodeVisualizer {
         this.group.add(line);
 
         // Store frames for line number tracking (compute end indices for quick access)
+        // frames is an array of { lineNumber, vertexIdx } objects
         this.frames = frames;
         this.lineNumberMap.clear();
-        for (let ln = 1; ln <= frames.length; ln++) {
-            const startVertexIdx = frames[ln - 1];
-            const endVertexIdx = ln < frames.length ? frames[ln] : geometry.attributes.position.count;
-            this.lineNumberMap.set(ln, { startVertexIdx, endVertexIdx });
+        for (let i = 0; i < frames.length; i++) {
+            const { lineNumber, vertexIdx: startVertexIdx } = frames[i];
+            const endVertexIdx = i < frames.length - 1 ? frames[i + 1].vertexIdx : geometry.attributes.position.count;
+            this.lineNumberMap.set(lineNumber, { startVertexIdx, endVertexIdx });
         }
 
         // Calculate bounds
@@ -656,6 +657,160 @@ class GCodeVisualizer {
             }
         }
         return null;
+    }
+
+    // Find line number from 3D point (more accurate for overlapping segments)
+    getLineNumberFromPoint(point, tolerance = 2) {
+        const line = this.pathLines[0];
+        if (!line) return null;
+
+        const positions = line.geometry.attributes.position.array;
+        let closestLineNumber = null;
+        let closestDistance = Infinity;
+
+        // Check each line segment
+        for (const [lineNumber, range] of this.lineNumberMap.entries()) {
+            const { startVertexIdx, endVertexIdx } = range;
+
+            // Skip lines with no vertices
+            if (startVertexIdx >= endVertexIdx) continue;
+
+            // Check distance to each segment in this line
+            for (let i = startVertexIdx; i < endVertexIdx - 1; i++) {
+                const x1 = positions[i * 3];
+                const y1 = positions[i * 3 + 1];
+                const z1 = positions[i * 3 + 2];
+                const x2 = positions[(i + 1) * 3];
+                const y2 = positions[(i + 1) * 3 + 1];
+                const z2 = positions[(i + 1) * 3 + 2];
+
+                // Calculate distance from point to line segment
+                const dist = this._pointToSegmentDistance(
+                    point.x, point.y, point.z,
+                    x1, y1, z1,
+                    x2, y2, z2
+                );
+
+                if (dist < closestDistance && dist < tolerance) {
+                    closestDistance = dist;
+                    closestLineNumber = lineNumber;
+                }
+            }
+        }
+
+        return closestLineNumber;
+    }
+
+    // Find line number from screen coordinates (most accurate for visual click detection)
+    // camera and renderer are required to project 3D to 2D
+    getLineNumberFromScreenPoint(screenX, screenY, camera, rendererWidth, rendererHeight, tolerance = 10) {
+        const line = this.pathLines[0];
+        if (!line) return null;
+
+        const positions = line.geometry.attributes.position.array;
+        let closestLineNumber = null;
+        let closestDistance = Infinity;
+        let closestDepth = Infinity;
+
+        const tempVec = new THREE.Vector3();
+
+        // Project a 3D point to normalized screen coordinates (-1 to 1)
+        const projectToScreen = (x, y, z) => {
+            tempVec.set(x, y, z);
+            tempVec.project(camera);
+            return {
+                x: (tempVec.x + 1) / 2 * rendererWidth,
+                y: (-tempVec.y + 1) / 2 * rendererHeight,
+                z: tempVec.z // depth for sorting
+            };
+        };
+
+        // Check each line segment
+        for (const [lineNumber, range] of this.lineNumberMap.entries()) {
+            const { startVertexIdx, endVertexIdx } = range;
+
+            // Skip lines with no vertices
+            if (startVertexIdx >= endVertexIdx) continue;
+
+            // Check distance to each segment in this line
+            for (let i = startVertexIdx; i < endVertexIdx - 1; i++) {
+                const p1 = projectToScreen(
+                    positions[i * 3],
+                    positions[i * 3 + 1],
+                    positions[i * 3 + 2]
+                );
+                const p2 = projectToScreen(
+                    positions[(i + 1) * 3],
+                    positions[(i + 1) * 3 + 1],
+                    positions[(i + 1) * 3 + 2]
+                );
+
+                // Calculate 2D distance from click to line segment
+                const dist = this._pointToSegmentDistance2D(screenX, screenY, p1.x, p1.y, p2.x, p2.y);
+
+                // Use depth (z) as tiebreaker - smaller z is closer to camera
+                const segmentDepth = Math.min(p1.z, p2.z);
+
+                if (dist < tolerance) {
+                    // If same distance (within epsilon), prefer closer to camera
+                    if (dist < closestDistance - 0.5 ||
+                        (Math.abs(dist - closestDistance) < 0.5 && segmentDepth < closestDepth)) {
+                        closestDistance = dist;
+                        closestDepth = segmentDepth;
+                        closestLineNumber = lineNumber;
+                    }
+                }
+            }
+        }
+
+        return closestLineNumber;
+    }
+
+    // Calculate distance from point to line segment in 2D
+    _pointToSegmentDistance2D(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (lengthSq === 0) {
+            return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+        }
+
+        let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+
+        const closestX = x1 + t * dx;
+        const closestY = y1 + t * dy;
+
+        return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+    }
+
+    // Calculate distance from point to line segment in 3D
+    _pointToSegmentDistance(px, py, pz, x1, y1, z1, x2, y2, z2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const dz = z2 - z1;
+        const lengthSq = dx * dx + dy * dy + dz * dz;
+
+        if (lengthSq === 0) {
+            // Segment is a point
+            return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2 + (pz - z1) ** 2);
+        }
+
+        // Project point onto line, clamped to segment
+        let t = ((px - x1) * dx + (py - y1) * dy + (pz - z1) * dz) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+
+        // Closest point on segment
+        const closestX = x1 + t * dx;
+        const closestY = y1 + t * dy;
+        const closestZ = z1 + t * dz;
+
+        return Math.sqrt(
+            (px - closestX) ** 2 +
+            (py - closestY) ** 2 +
+            (pz - closestZ) ** 2
+        );
     }
 
     // Get the main toolpath line object for raycasting
