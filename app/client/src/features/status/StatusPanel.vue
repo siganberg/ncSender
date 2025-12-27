@@ -520,8 +520,8 @@ h2, h3 {
 }
 
 .axis-link {
-  width: 96px;
-  min-width: 96px;
+  width: 70px;
+  min-width: 70px;
   border-radius: 8px;
   background: var(--color-surface-muted);
   display: flex;
@@ -535,8 +535,8 @@ h2, h3 {
   align-self: center;
   height: 68%;
   min-height: 28px;
-  margin-left: -20px;  /* overlap X side more */
-  margin-right: -20px; /* overlap Y side more */
+  margin-left: -5px;  /* overlap X side more */
+  margin-right: -5px; /* overlap Y side more */
   margin-top: -2px;
   margin-bottom: -2px;
   z-index: 2; /* above X/Y cards */
