@@ -2,8 +2,8 @@
   <section class="card status-card" :class="{ 'card-disabled': cardDisabled }">
     <div class="status-hint">Press and hold an axis card to zero it at the current position</div>
     <div class="coords">
-      <!-- Group X and Y with a border and a join indicator -->
-      <div class="axis-group xy-group">
+      <!-- All axes in one row: X | XY | Y | Z -->
+      <div class="axis-row">
         <!-- X Card -->
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
@@ -53,26 +53,22 @@
             <div class="machine-coord">{{ formatCoordinate(machineValues.y, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
-      </div>
 
-      <!-- Other axes (e.g., Z) -->
-      <div class="axis-grid">
+        <!-- Z Card -->
         <div
-          v-for="axis in remainingAxes"
-          :key="axis"
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
-          @mousedown="startLongPress(axis, $event)"
-          @mouseup="endLongPress(axis)"
-          @mouseleave="cancelLongPress(axis)"
-          @touchstart.prevent="startLongPress(axis, $event)"
-          @touchend="endLongPress(axis)"
-          @touchcancel="cancelLongPress(axis)"
+          @mousedown="startLongPress('z', $event)"
+          @mouseup="endLongPress('z')"
+          @mouseleave="cancelLongPress('z')"
+          @touchstart.prevent="startLongPress('z', $event)"
+          @touchend="endLongPress('z')"
+          @touchcancel="cancelLongPress('z')"
         >
-          <div class="press-progress" :style="{ width: `${(pressState[axis]?.progress || 0)}%` }"></div>
-          <span class="axis-label">{{ axis.toUpperCase() }}</span>
+          <div class="press-progress" :style="{ width: `${pressState['z']?.progress || 0}%` }"></div>
+          <span class="axis-label">Z</span>
           <div class="coord-values">
-            <div class="work-coord">{{ formatCoordinate(axisValues[axis], appStore.unitsPreference.value) }}</div>
-            <div class="machine-coord">{{ formatCoordinate(machineValues[axis], appStore.unitsPreference.value) }}</div>
+            <div class="work-coord">{{ formatCoordinate(axisValues.z, appStore.unitsPreference.value) }}</div>
+            <div class="machine-coord">{{ formatCoordinate(machineValues.z, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
       </div>
@@ -163,13 +159,6 @@ const props = defineProps<{
   };
 }>();
 
-// Filter out the A axis from work coordinates
-const filteredWorkCoords = computed(() => {
-  const coords = { ...props.status.workCoords } as Record<string, number>;
-  delete (coords as any).a;
-  return coords;
-});
-
 const axisValues = computed(() => ({
   x: Number(props.status.workCoords.x ?? 0),
   y: Number(props.status.workCoords.y ?? 0),
@@ -181,9 +170,6 @@ const machineValues = computed(() => ({
   y: Number(props.status.machineCoords.y ?? 0),
   z: Number(props.status.machineCoords.z ?? 0)
 }) as Record<string, number>);
-
-const remainingAxes = computed(() => Object.keys(filteredWorkCoords.value)
-  .filter(a => a !== 'x' && a !== 'y'));
 
 // Override percentages (100% = normal speed)
 const feedOverride = ref(100);
@@ -463,7 +449,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   height: fit-content;
 }
 
@@ -493,31 +479,23 @@ h2, h3 {
   gap: 4px;
 }
 
-.axis-grid {
+.axis-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--gap-sm);
-}
-
-@media (max-width: 959px) {
-  /* Reduce axis card minimum width on portrait to fit better */
-  .axis-grid {
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-    gap: 6px;
-  }
-  .axis-group.xy-group { margin-bottom: 2px; }
-  .axis-link { width: 80px; min-width: 80px; }
-}
-
-.axis-group.xy-group {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr auto 1fr 1fr;
   align-items: stretch;
-  gap: 0; /* let X and Y close together behind XY */
+  gap: 0;
   border: none;
   border-radius: var(--radius-small);
   padding: 2px;
-  margin-bottom: 4px;
+}
+
+/* Z card needs left margin to separate from XY group */
+.axis-row > .axis-display:last-child {
+  margin-left: var(--gap-xs);
+}
+
+@media (max-width: 959px) {
+  .axis-link { width: 70px; min-width: 70px; }
 }
 
 .axis-display {
@@ -566,8 +544,8 @@ h2, h3 {
 }
 
 /* Slightly tuck X and Y under the XY tape for a tighter join */
-.axis-group.xy-group > .axis-display:first-child { margin-right: -20px; }
-.axis-group.xy-group > .axis-display:last-child { margin-left: -20px; }
+.axis-row > .axis-display:first-child { margin-right: -20px; }
+.axis-row > .axis-display:nth-child(3) { margin-left: -28px; }
 
 .axis-link .link-label {
   position: relative;
@@ -633,12 +611,13 @@ h2, h3 {
 
 .metrics {
   display: flex;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
 }
 
 .metric-control {
   flex: 1;
   padding: 8px 12px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface-muted);
   display: flex;
