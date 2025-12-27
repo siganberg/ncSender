@@ -1,5 +1,6 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed abrupt stop issue and resolved Alarm 3 errors during operation
-- Fixed Start Line number suggestion to correctly show where the last line was stopped
+### ✨ New Features
+- Added segment selection with click and double-click support
+- Added segment highlighting when interacting with G-code visualization
+- Added multi-layer support for G-code visualization
