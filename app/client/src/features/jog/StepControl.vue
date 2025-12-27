@@ -1,14 +1,38 @@
 <template>
   <div class="step-control">
     <span class="step-label">Step</span>
-    <button
-      v-for="value in stepOptions"
+    <div
+      v-for="(value, index) in stepOptions"
       :key="value"
-      :class="['chip', { active: value === currentStep }]"
-      @click="$emit('update:step', value)"
+      class="step-btn-wrapper"
     >
-      {{ formatStepSizeDisplay(value) }}
-    </button>
+      <button
+        :class="['chip', { active: isStepInCategory(currentStep, index) }]"
+        @click="handleStepClick(value)"
+        @mousedown="startLongPress(index, $event)"
+        @mouseup="endLongPress"
+        @mouseleave="cancelLongPress"
+        @touchstart.prevent="startLongPress(index, $event)"
+        @touchend="endLongPress"
+        @touchcancel="cancelLongPress"
+      >
+        {{ formatStepSizeDisplay(currentStep, index) }}
+      </button>
+      <div
+        v-if="openDropdown === index"
+        :class="['step-dropdown', `step-dropdown--${dropdownPosition}`]"
+        @click.stop
+      >
+        <button
+          v-for="opt in getExpandedOptions(index)"
+          :key="opt"
+          :class="['dropdown-option', { active: isOptionActive(opt, currentStep) }]"
+          @click="selectStep(opt)"
+        >
+          {{ formatStepSizeDisplay(opt, index) }}
+        </button>
+      </div>
+    </div>
     <span class="feed-rate-label">Feed</span>
     <select
       class="feed-rate-select"
@@ -24,10 +48,12 @@
       </option>
     </select>
   </div>
+  <!-- Backdrop to close dropdown when clicking outside -->
+  <div v-if="openDropdown !== null" class="dropdown-backdrop" @click="closeDropdown"></div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
@@ -50,6 +76,103 @@ const emit = defineEmits<{
   (e: 'update:feedRate', value: number): void;
 }>();
 
+// Long press state
+const LONG_PRESS_MS = 500;
+const openDropdown = ref<number | null>(null);
+const dropdownPosition = ref<'top' | 'bottom'>('bottom');
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
+let pressStartTime = 0;
+let currentButtonEl: HTMLElement | null = null;
+
+// Expanded options for each step category (in mm)
+const expandedOptionsMap: Record<number, number[]> = {
+  0: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
+  1: [1, 2, 3, 4, 5, 6, 7, 8, 9],                                   // Medium steps
+  2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
+};
+
+// Helper to compare floating point numbers (round to 3 decimal places)
+const approxEqual = (a: number, b: number): boolean => {
+  const roundedA = Math.round(a * 1000) / 1000;
+  const roundedB = Math.round(b * 1000) / 1000;
+  return roundedA === roundedB;
+};
+
+// Check if current step belongs to a category
+const isStepInCategory = (step: number, categoryIndex: number): boolean => {
+  const options = expandedOptionsMap[categoryIndex];
+  return options?.some(opt => approxEqual(opt, step)) ?? false;
+};
+
+// Check if a specific option matches current step
+const isOptionActive = (opt: number, currentStep: number): boolean => {
+  return approxEqual(opt, currentStep);
+};
+
+// Get expanded options for a category
+const getExpandedOptions = (categoryIndex: number): number[] => {
+  return expandedOptionsMap[categoryIndex] ?? [];
+};
+
+// Long press handlers
+const startLongPress = (index: number, event: Event) => {
+  pressStartTime = Date.now();
+  currentButtonEl = (event.target as HTMLElement).closest('.chip');
+
+  pressTimer = setTimeout(() => {
+    // Calculate position based on available space
+    if (currentButtonEl) {
+      const rect = currentButtonEl.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const dropdownHeight = 260; // approximate max height
+
+      // Prefer bottom, but use top if not enough space below
+      dropdownPosition.value = spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove ? 'bottom' : 'top';
+    }
+
+    // If current step is not in this category, switch to the base step for this group
+    if (!isStepInCategory(props.currentStep, index)) {
+      emit('update:step', props.stepOptions[index]);
+    }
+
+    openDropdown.value = index;
+    pressTimer = null;
+  }, LONG_PRESS_MS);
+};
+
+const endLongPress = () => {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+};
+
+const cancelLongPress = () => {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+};
+
+const closeDropdown = () => {
+  openDropdown.value = null;
+};
+
+// Handle regular click (only if not a long press)
+const handleStepClick = (value: number) => {
+  const elapsed = Date.now() - pressStartTime;
+  if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
+    emit('update:step', value);
+  }
+};
+
+// Select step from dropdown
+const selectStep = (value: number) => {
+  emit('update:step', value);
+  closeDropdown();
+};
+
 // Default feed rate options per step size index (0=small, 1=medium, 2=large)
 const defaultFeedRateOptionsByIndex = [
   [300, 400, 500, 700, 1000],      // Small step (0.1mm or 0.001in)
@@ -64,6 +187,13 @@ const feedRateOptionsMap = computed(() => props.feedRateOptions ?? {
 });
 
 const getCurrentFeedRateOptions = (): number[] => {
+  // Find which category the current step belongs to
+  for (const [catIndex, options] of Object.entries(expandedOptionsMap)) {
+    if (options.some(opt => approxEqual(opt, props.currentStep))) {
+      return defaultFeedRateOptionsByIndex[Number(catIndex)] ?? [500, 1000, 3000, 5000];
+    }
+  }
+
   // Try to find by step value first (for compatibility with JogPanel)
   if (feedRateOptionsMap.value[props.currentStep]) {
     return feedRateOptionsMap.value[props.currentStep];
@@ -71,7 +201,7 @@ const getCurrentFeedRateOptions = (): number[] => {
 
   // Fall back to using step index (for Probe with imperial units)
   if (props.stepOptions && Array.isArray(props.stepOptions)) {
-    const stepIndex = props.stepOptions.indexOf(props.currentStep);
+    const stepIndex = props.stepOptions.findIndex(opt => approxEqual(opt, props.currentStep));
     if (stepIndex >= 0 && stepIndex < defaultFeedRateOptionsByIndex.length) {
       return defaultFeedRateOptionsByIndex[stepIndex];
     }
@@ -81,8 +211,10 @@ const getCurrentFeedRateOptions = (): number[] => {
   return [500, 1000, 3000, 5000];
 };
 
-const formatStepSizeDisplay = (mmValue: number): string => {
-  return formatStepSize(mmValue, appStore.unitsPreference.value);
+// Format step size - show current value if in this category, otherwise show base value
+const formatStepSizeDisplay = (value: number, categoryIndex: number): string => {
+  const displayValue = isStepInCategory(value, categoryIndex) ? value : props.stepOptions[categoryIndex];
+  return formatStepSize(displayValue, appStore.unitsPreference.value);
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {
@@ -96,6 +228,22 @@ const handleFeedRateChange = (event: Event) => {
     emit('update:feedRate', newRate);
   }
 };
+
+// Close dropdown on escape key
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && openDropdown.value !== null) {
+    closeDropdown();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown);
+  if (pressTimer) clearTimeout(pressTimer);
+});
 </script>
 
 <style scoped>
@@ -103,6 +251,10 @@ const handleFeedRateChange = (event: Event) => {
   display: flex;
   align-items: center;
   gap: var(--gap-xs);
+}
+
+.step-btn-wrapper {
+  position: relative;
 }
 
 .chip {
@@ -119,6 +271,8 @@ const handleFeedRateChange = (event: Event) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .chip.active {
@@ -130,6 +284,60 @@ const handleFeedRateChange = (event: Event) => {
 .feed-rate-label {
   font-size: 0.85rem;
   color: var(--color-text-primary);
+}
+
+.step-dropdown {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-elevated);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1000;
+  min-width: 60px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.step-dropdown--bottom {
+  top: calc(100% + 4px);
+}
+
+.step-dropdown--top {
+  bottom: calc(100% + 4px);
+}
+
+.dropdown-option {
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: center;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.dropdown-option:hover {
+  background: var(--color-surface-muted);
+}
+
+.dropdown-option.active {
+  background: var(--gradient-accent);
+  color: #fff;
+}
+
+.dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
 }
 
 .feed-rate-select {

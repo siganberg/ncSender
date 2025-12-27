@@ -298,12 +298,30 @@ const feedRateDefaults = computed(() => props.jogConfig.feedRateDefaults ?? {
   10: 8000
 });
 
+// Step categories for expanded step options
+const stepCategories = [
+  { base: 0.1, steps: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] },
+  { base: 1, steps: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+  { base: 10, steps: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300] }
+];
+
+// Find the base step value for a given step (which category it belongs to)
+const getBaseStepForValue = (stepValue: number): number => {
+  for (const category of stepCategories) {
+    if (category.steps.some(s => Math.abs(s - stepValue) < 0.0001)) {
+      return category.base;
+    }
+  }
+  return stepValue; // Return as-is if not found in any category
+};
+
 const resolveFeedRate = (): number => {
   const provided = Number(props.jogConfig.feedRate);
   if (Number.isFinite(provided) && provided > 0) {
     return provided;
   }
-  const defaultRate = feedRateDefaults.value[props.jogConfig.stepSize];
+  const baseStep = getBaseStepForValue(props.jogConfig.stepSize);
+  const defaultRate = feedRateDefaults.value[baseStep];
   return defaultRate ?? 500;
 };
 
@@ -417,7 +435,8 @@ emit('update:feedRate', initialFeed);
 
 // Watch for step size changes and auto-select default feed rate
 watch(() => props.jogConfig.stepSize, (newStepSize) => {
-  const defaultRate = feedRateDefaults.value[newStepSize] ?? 500;
+  const baseStep = getBaseStepForValue(newStepSize);
+  const defaultRate = feedRateDefaults.value[baseStep] ?? 500;
   feedRate.value = defaultRate;
   emit('update:feedRate', feedRate.value);
 });
