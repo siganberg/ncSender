@@ -1150,14 +1150,21 @@ let lastTouchDistance = 0;
 let lastTwoFingerCenter = { x: 0, y: 0 };
 
 let touchStartPosition = { x: 0, y: 0 };
+let wasMultiTouchGesture = false; // Track if multi-touch gesture occurred
 
 const onTouchStart = (event: TouchEvent) => {
   if (event.touches.length === 1) {
-    const touch = event.touches[0];
-    touchStartPosition = { x: touch.clientX, y: touch.clientY };
-    onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
+    // Only start single-finger tracking if no multi-touch gesture is active
+    if (!wasMultiTouchGesture) {
+      const touch = event.touches[0];
+      touchStartPosition = { x: touch.clientX, y: touch.clientY };
+      onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
+    }
   } else if (event.touches.length === 2) {
-    // Two fingers - setup for rotation
+    // Two fingers - setup for rotation/pinch
+    // Mark as multi-touch gesture to prevent tap detection on release
+    wasMultiTouchGesture = true;
+
     isDragging = true;
     const isOrthographicView = props.view === 'top' || props.view === 'front';
     isRotating = !isOrthographicView; // Rotation only in 3D view
@@ -1176,6 +1183,10 @@ const onTouchStart = (event: TouchEvent) => {
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
     lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+
+    // Clear tap tracking since this is a multi-touch gesture
+    lastTapTime = 0;
+    lastTapPosition = { x: 0, y: 0 };
   }
 };
 
@@ -1236,6 +1247,24 @@ const onTouchMove = (event: TouchEvent) => {
 };
 
 const onTouchEnd = (event: TouchEvent) => {
+  // Reset multi-touch flag when all fingers are lifted
+  if (event.touches.length === 0) {
+    const wasMultiTouch = wasMultiTouchGesture;
+    wasMultiTouchGesture = false;
+
+    // Skip tap detection if this was a multi-touch gesture (pinch/zoom/rotate)
+    if (wasMultiTouch) {
+      onMouseUp();
+      lastTouchDistance = 0;
+      return;
+    }
+  } else {
+    // Still have fingers down, don't process tap yet
+    onMouseUp();
+    lastTouchDistance = 0;
+    return;
+  }
+
   // Check if this was a tap (no significant movement)
   const dx = touchStartPosition.x - mouseDownPosition.x;
   const dy = touchStartPosition.y - mouseDownPosition.y;
