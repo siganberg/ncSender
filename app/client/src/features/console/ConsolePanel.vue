@@ -933,11 +933,25 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
       // Double-tap detection state
       let lastTapTime = 0;
       let lastTapLine: number | null = null;
+      let multiTouchActive = false;
       const DOUBLE_TAP_DELAY = 300; // ms
 
       gutterElement.addEventListener('touchstart', (e: Event) => {
         const touchEvent = e as TouchEvent;
-        if (touchEvent.touches.length !== 1) return;
+
+        // Multi-touch detected - cancel any double-tap detection and mark as multi-touch
+        if (touchEvent.touches.length > 1) {
+          multiTouchActive = true;
+          lastTapTime = 0;
+          lastTapLine = null;
+          isDragging.value = false;
+          return;
+        }
+
+        // If multi-touch was just active, ignore this single touch (finger lifting from pinch/zoom)
+        if (multiTouchActive) {
+          return;
+        }
 
         const touch = touchEvent.touches[0];
         const lineNumber = getLineNumberFromY(editor, touch.clientY);
@@ -970,7 +984,15 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
       gutterElement.addEventListener('touchmove', (e: Event) => {
         if (!isDragging.value) return;
         const touchEvent = e as TouchEvent;
-        if (touchEvent.touches.length !== 1) return;
+
+        // Multi-touch during move - cancel selection
+        if (touchEvent.touches.length > 1) {
+          multiTouchActive = true;
+          lastTapTime = 0;
+          lastTapLine = null;
+          isDragging.value = false;
+          return;
+        }
 
         // If user moves finger, cancel double-tap detection
         lastTapTime = 0;
@@ -986,7 +1008,14 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
         e.preventDefault();
       }, { passive: false });
 
-      gutterElement.addEventListener('touchend', () => {
+      gutterElement.addEventListener('touchend', (e: Event) => {
+        const touchEvent = e as TouchEvent;
+
+        // Reset multi-touch flag when all fingers are lifted
+        if (touchEvent.touches.length === 0) {
+          multiTouchActive = false;
+        }
+
         isDragging.value = false;
       });
     }
