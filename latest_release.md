@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed double tap on touch screen not working in the G-Code Preview
+- Fixed multi touch screen incorrectly triggering Start From Line feature
