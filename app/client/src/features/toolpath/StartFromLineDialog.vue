@@ -120,24 +120,17 @@
             </div>
           </div>
 
-          <div v-if="toolMismatch" class="tool-mismatch-warning">
-            <div class="mismatch-header">
-              <svg class="mismatch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <div v-if="willPerformToolChange" class="tool-change-info">
+            <div class="info-header">
+              <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4m0-4h.01" />
               </svg>
-              <span>Tool Mismatch Detected</span>
+              <span>Tool Change Required</span>
             </div>
-            <p class="mismatch-text">
-              Program expects <strong>T{{ expectedTool }}</strong>, machine has <strong>T{{ currentTool ?? 'None' }}</strong>
+            <p class="info-text">
+              Machine has <strong>T{{ currentTool ?? 'None' }}</strong>, will change to <strong>T{{ expectedTool }}</strong> before starting.
             </p>
-            <div class="mismatch-actions">
-              <button class="btn btn-secondary" @click="handleChangeTool" :disabled="isStarting">
-                Change Tool
-              </button>
-              <button class="btn btn-warning" @click="handleProceedAnyway" :disabled="isStarting">
-                Proceed Anyway
-              </button>
-            </div>
           </div>
         </div>
 
@@ -196,10 +189,9 @@ const spindleDelaySec = ref(0);
 const isLoading = ref(false);
 const isStarting = ref(false);
 const errorMessage = ref('');
-const skipToolCheck = ref(false);
 
 const analyzedState = ref(null);
-const toolMismatch = ref(false);
+const willPerformToolChange = ref(false);
 const expectedTool = ref(null);
 const currentTool = ref(null);
 const resumeSequence = ref([]);
@@ -280,8 +272,7 @@ const canStart = computed(() => {
          !isLoading.value &&
          !errorMessage.value &&
          selectedLine.value >= 1 &&
-         selectedLine.value <= props.totalLines &&
-         (!toolMismatch.value || skipToolCheck.value);
+         selectedLine.value <= props.totalLines;
 });
 
 function formatNumber(val) {
@@ -298,13 +289,12 @@ async function analyzeState() {
   isLoading.value = true;
   errorMessage.value = '';
   analyzedState.value = null;
-  toolMismatch.value = false;
-  skipToolCheck.value = false;
+  willPerformToolChange.value = false;
 
   try {
     const result = await api.analyzeGCodeLine(selectedLine.value);
     analyzedState.value = result.state;
-    toolMismatch.value = result.toolMismatch;
+    willPerformToolChange.value = result.willPerformToolChange || false;
     expectedTool.value = result.expectedTool;
     currentTool.value = result.currentTool;
     resumeSequence.value = result.resumeSequence || [];
@@ -335,15 +325,6 @@ function clampSpindleDelay() {
   spindleDelaySec.value = value;
 }
 
-function handleChangeTool() {
-  emit('close');
-  api.triggerToolChange(expectedTool.value);
-}
-
-function handleProceedAnyway() {
-  skipToolCheck.value = true;
-}
-
 async function handleConfirm() {
   if (!canStart.value) return;
 
@@ -352,7 +333,6 @@ async function handleConfirm() {
 
   try {
     await api.startGCodeJobFromLine(props.filename, selectedLine.value, {
-      skipToolCheck: skipToolCheck.value,
       spindleDelaySec: spindleDelaySec.value,
       approachHeight: 10,
       plungeFeedRate: 500
@@ -361,11 +341,6 @@ async function handleConfirm() {
     emit('started', { line: selectedLine.value });
     emit('close');
   } catch (error) {
-    if (error.toolMismatch) {
-      toolMismatch.value = true;
-      expectedTool.value = error.expectedTool;
-      currentTool.value = error.currentTool;
-    }
     errorMessage.value = error.message || 'Failed to start job';
   } finally {
     isStarting.value = false;
@@ -580,36 +555,31 @@ onUnmounted(() => {
   color: var(--color-text);
 }
 
-.tool-mismatch-warning {
+.tool-change-info {
   margin-top: var(--gap-md);
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
   border-radius: 8px;
   padding: var(--gap-sm);
 }
 
-.mismatch-header {
+.info-header {
   display: flex;
   align-items: center;
   gap: var(--gap-xs);
-  color: var(--color-danger, #ef4444);
+  color: var(--color-accent, #3b82f6);
   font-weight: 600;
   margin-bottom: var(--gap-xs);
 }
 
-.mismatch-icon {
+.info-icon {
   width: 20px;
   height: 20px;
 }
 
-.mismatch-text {
-  margin: 0 0 var(--gap-sm) 0;
+.info-text {
+  margin: 0;
   font-size: 0.875rem;
-}
-
-.mismatch-actions {
-  display: flex;
-  gap: var(--gap-sm);
 }
 
 .error-message {

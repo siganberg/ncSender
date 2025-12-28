@@ -135,6 +135,10 @@ export class GCodeStateAnalyzer {
       if (parsed && parsed.matched && parsed.toolNumber !== null) {
         this.state.tool = parsed.toolNumber;
       }
+      // Reset position and spindle on tool change - old values are invalid for new tool
+      this.state.position.z = null;
+      this.state.spindleState = 'M5';  // Spindle should be off during tool change
+      this.state.spindleSpeed = 0;
     } else if (mVal === 7) {
       this.state.coolantMist = true;
     } else if (mVal === 8) {
@@ -176,16 +180,35 @@ export function generateResumeSequence(targetState, options = {}) {
   const {
     spindleDelaySec = 0,
     approachHeight = 10,
-    plungeFeedRate = 500
+    plungeFeedRate = 500,
+    isStartingAtToolChange = false,
+    expectedTool = null,
+    currentTool = null
   } = options;
 
   const commands = [];
-  const pos = targetState.position;
 
   commands.push(`; Resume sequence for starting from line`);
 
   // Retract to machine Z0 first (safest position)
   commands.push('G53 G0 Z0');
+
+  // If tool mismatch, insert M6 to change to the expected tool
+  const needsToolChange = expectedTool !== null && currentTool !== null && expectedTool !== currentTool;
+  if (needsToolChange) {
+    commands.push(`; Tool change: T${currentTool} -> T${expectedTool}`);
+    commands.push(`M6 T${expectedTool}`);
+  }
+
+  // If starting at a tool change, use minimal preamble - just safe Z retract (and optional tool change above)
+  // The M6 and subsequent lines will handle all setup (spindle, coolant, positioning)
+  if (isStartingAtToolChange) {
+    commands.push('; Starting at tool change - minimal preamble');
+    commands.push('; End resume sequence');
+    return commands;
+  }
+
+  const pos = targetState.position;
 
   // Set modal states
   if (targetState.units) {
@@ -204,8 +227,11 @@ export function generateResumeSequence(targetState, options = {}) {
     commands.push(targetState.wcs);
   }
 
-  // Rapid to XY position (now in work coordinates after WCS is set)
-  if (Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+  // Check if we have valid position context (Z is null after tool change)
+  const hasValidPositionContext = pos.z !== null && Number.isFinite(pos.z);
+
+  // Rapid to XY position only if we have valid context (not after tool change)
+  if (hasValidPositionContext && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
     commands.push(`G0 X${pos.x} Y${pos.y}`);
   }
 
@@ -235,10 +261,14 @@ export function generateResumeSequence(targetState, options = {}) {
     }
   }
 
-  if (Number.isFinite(pos.z)) {
+  // Only do Z positioning if we have valid position context (not after tool change)
+  if (hasValidPositionContext) {
     const approachZ = pos.z + approachHeight;
     commands.push(`G0 Z${approachZ}`);
     commands.push(`G1 Z${pos.z} F${plungeFeedRate}`);
+  } else {
+    // No XY/Z positioning - tool change detected, let the G-code handle positioning
+    commands.push('; XY/Z positioning skipped - starting near tool change');
   }
 
   if (targetState.feedRate > 0) {

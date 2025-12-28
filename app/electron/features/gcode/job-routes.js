@@ -8,6 +8,7 @@ import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
 import { getUserDataDir } from '../../utils/paths.js';
 import { GCodeStateAnalyzer, generateResumeSequence, compareToolState } from './gcode-state-analyzer.js';
+import { parseM6Command } from '../../utils/gcode-patterns.js';
 
 const log = (...args) => {
   console.log(`[${new Date().toISOString()}]`, ...args);
@@ -161,8 +162,17 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       const targetLine = Math.max(1, lineNumber - 1);
       const { state } = analyzer.analyzeToLine(content, targetLine);
 
+      // Check if the selected start line is a tool change (M6)
+      const lines = content.split('\n');
+      const startLineContent = lines[lineNumber - 1] || '';
+      const startLineToolChange = parseM6Command(startLineContent);
+      const isStartingAtToolChange = startLineToolChange?.matched && startLineToolChange?.toolNumber !== null;
+
+      // If starting at a tool change, use that tool for comparison (not the previous tool)
+      const expectedTool = isStartingAtToolChange ? startLineToolChange.toolNumber : state.tool;
+
       const currentTool = serverState.machineState?.tool ?? null;
-      const toolComparison = compareToolState(state.tool, currentTool);
+      const toolComparison = compareToolState(expectedTool, currentTool);
 
       const warnings = [];
 
@@ -170,26 +180,35 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         warnings.push('Machine is not homed');
       }
 
-      if (toolComparison.mismatch) {
+      // Don't warn about tool mismatch if we're starting at a tool change line
+      if (toolComparison.mismatch && !isStartingAtToolChange) {
         warnings.push(toolComparison.message);
       }
+
+      // Check if tool change will be needed (mismatch and not already starting at tool change)
+      const willPerformToolChange = toolComparison.mismatch && !isStartingAtToolChange;
 
       // Generate resume sequence preview (with default options for preview)
       const resumeSequence = generateResumeSequence(state, {
         spindleDelaySec: 0,
         approachHeight: 10,
-        plungeFeedRate: 500
+        plungeFeedRate: 500,
+        isStartingAtToolChange,
+        expectedTool: willPerformToolChange ? expectedTool : null,
+        currentTool: willPerformToolChange ? currentTool : null
       });
 
       res.json({
         state,
         lineNumber,
         totalLines,
-        toolMismatch: toolComparison.mismatch,
-        expectedTool: state.tool,
+        toolMismatch: false,  // No longer a blocking mismatch - we handle it in preamble
+        willPerformToolChange,
+        expectedTool,
         currentTool,
         warnings,
-        resumeSequence
+        resumeSequence,
+        isStartingAtToolChange
       });
     } catch (error) {
       log('Error analyzing G-code line:', error);
@@ -251,23 +270,28 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       const targetLine = Math.max(1, startLine - 1);
       const { state } = analyzer.analyzeToLine(content, targetLine);
 
-      const currentTool = serverState.machineState?.tool ?? null;
-      const toolComparison = compareToolState(state.tool, currentTool);
+      // Check if the selected start line is a tool change (M6)
+      const lines = content.split('\n');
+      const startLineContent = lines[startLine - 1] || '';
+      const startLineToolChange = parseM6Command(startLineContent);
+      const isStartingAtToolChange = startLineToolChange?.matched && startLineToolChange?.toolNumber !== null;
 
-      if (toolComparison.mismatch && !skipToolCheck) {
-        return res.status(400).json({
-          error: 'Tool mismatch',
-          toolMismatch: true,
-          expectedTool: state.tool,
-          currentTool,
-          message: toolComparison.message
-        });
-      }
+      // If starting at a tool change, use that tool for comparison (not the previous tool)
+      const expectedTool = isStartingAtToolChange ? startLineToolChange.toolNumber : state.tool;
+
+      const currentTool = serverState.machineState?.tool ?? null;
+      const toolComparison = compareToolState(expectedTool, currentTool);
+
+      // Check if tool change will be needed (mismatch and not already starting at tool change)
+      const willPerformToolChange = toolComparison.mismatch && !isStartingAtToolChange;
 
       const resumeSequence = generateResumeSequence(state, {
         spindleDelaySec,
         approachHeight,
-        plungeFeedRate
+        plungeFeedRate,
+        isStartingAtToolChange,
+        expectedTool: willPerformToolChange ? expectedTool : null,
+        currentTool: willPerformToolChange ? currentTool : null
       });
 
       if (serverState.jobLoaded) {
@@ -398,6 +422,8 @@ export class GCodeJobProcessor {
   async executeResumeSequence() {
     log('Executing resume sequence for start from line:', this.startLine);
 
+    let resumeLineNumber = 0;
+
     for (const command of this.resumeSequence) {
       if (this.isStopped) {
         break;
@@ -408,17 +434,60 @@ export class GCodeJobProcessor {
         continue;
       }
 
+      resumeLineNumber++;
+
       try {
         const commandId = `resume-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-        await this.cncController.sendCommand(cleanCommand, {
+        // Build context for plugins/command processor
+        const lineContext = {
+          lineNumber: 0, // Resume sequence is "line 0" (before actual job)
+          filename: this.filename,
+          sourceId: this.sourceId,
+          isResumeSequence: true
+        };
+
+        // Allow plugins to process/modify the command
+        let processedCommand = await this.eventBus.emitChain('onBeforeGcodeLine', cleanCommand, lineContext);
+
+        // Process through command processor (handles M6, macros, etc.)
+        const pluginContext = {
+          sourceId: this.sourceId,
           commandId,
-          displayCommand: `[Resume] ${cleanCommand}`,
+          lineNumber: 0,
           meta: {
+            lineNumber: 0,
             resumeSequence: true,
+            resumeLineNumber,
+            job: { filename: this.filename },
             sourceId: this.sourceId
-          }
-        });
+          },
+          machineState: this.cncController.lastStatus
+        };
+
+        const result = await this.commandProcessor.instance.process(processedCommand, pluginContext);
+
+        // Check if command was skipped (e.g., same-tool M6)
+        if (!result.shouldContinue) {
+          log('Resume sequence command skipped:', cleanCommand);
+          continue;
+        }
+
+        // Send all resulting commands
+        for (const cmd of result.commands) {
+          const uniqueCommandId = cmd.commandId || `${commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+          await this.cncController.sendCommand(cmd.command, {
+            commandId: uniqueCommandId,
+            displayCommand: `[Resume] ${cmd.displayCommand || cleanCommand}`,
+            meta: {
+              resumeSequence: true,
+              resumeLineNumber,
+              sourceId: this.sourceId,
+              ...(cmd.meta || {})
+            }
+          });
+        }
       } catch (error) {
         log('Error executing resume sequence command:', cleanCommand, error);
         this.isStopped = true;
