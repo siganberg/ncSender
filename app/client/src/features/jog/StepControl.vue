@@ -13,7 +13,7 @@
         @mouseup="endLongPress"
         @mouseleave="cancelLongPress"
         @touchstart.prevent="startLongPress(index, $event)"
-        @touchend="endLongPress"
+        @touchend.prevent="handleTouchEnd(value)"
         @touchcancel="cancelLongPress"
       >
         {{ formatStepSizeDisplay(currentStep, index) }}
@@ -22,12 +22,14 @@
         v-if="openDropdown === index"
         :class="['step-dropdown', `step-dropdown--${dropdownPosition}`]"
         @click.stop
+        @touchstart.stop
       >
         <button
           v-for="opt in getExpandedOptions(index)"
           :key="opt"
           :class="['dropdown-option', { active: isOptionActive(opt, currentStep) }]"
           @click="selectStep(opt)"
+          @touchend.prevent="selectStep(opt)"
         >
           {{ formatStepSizeDisplay(opt, index) }}
         </button>
@@ -49,7 +51,12 @@
     </select>
   </div>
   <!-- Backdrop to close dropdown when clicking outside -->
-  <div v-if="openDropdown !== null" class="dropdown-backdrop" @click="closeDropdown"></div>
+  <div
+    v-if="openDropdown !== null"
+    class="dropdown-backdrop"
+    @click="closeDropdown"
+    @touchend.prevent="closeDropdown"
+  ></div>
 </template>
 
 <script setup lang="ts">
@@ -145,6 +152,19 @@ const endLongPress = () => {
   if (pressTimer) {
     clearTimeout(pressTimer);
     pressTimer = null;
+  }
+};
+
+// Handle touch end - combines endLongPress + click logic for touch devices
+const handleTouchEnd = (value: number) => {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  // If it was a short tap (not long press) and dropdown isn't open, select the step
+  const elapsed = Date.now() - pressStartTime;
+  if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
+    emit('update:step', value);
   }
 };
 
