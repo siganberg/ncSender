@@ -930,6 +930,11 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
   if (editorDom) {
     const gutterElement = editorDom.querySelector('.margin-view-overlays');
     if (gutterElement) {
+      // Double-tap detection state
+      let lastTapTime = 0;
+      let lastTapLine: number | null = null;
+      const DOUBLE_TAP_DELAY = 300; // ms
+
       gutterElement.addEventListener('touchstart', (e: Event) => {
         const touchEvent = e as TouchEvent;
         if (touchEvent.touches.length !== 1) return;
@@ -937,6 +942,22 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
         const touch = touchEvent.touches[0];
         const lineNumber = getLineNumberFromY(editor, touch.clientY);
         if (!lineNumber) return;
+
+        const now = Date.now();
+
+        // Check for double-tap on same line
+        if (now - lastTapTime < DOUBLE_TAP_DELAY && lastTapLine === lineNumber) {
+          // Double-tap detected - open Start From Line dialog
+          store.requestStartFromLine(lineNumber);
+          lastTapTime = 0;
+          lastTapLine = null;
+          e.preventDefault();
+          return;
+        }
+
+        // Record this tap for potential double-tap
+        lastTapTime = now;
+        lastTapLine = lineNumber;
 
         isDragging.value = true;
         selectionStart.value = lineNumber;
@@ -950,6 +971,10 @@ function setupGutterSelectionHandler(editor: Monaco.editor.IStandaloneCodeEditor
         if (!isDragging.value) return;
         const touchEvent = e as TouchEvent;
         if (touchEvent.touches.length !== 1) return;
+
+        // If user moves finger, cancel double-tap detection
+        lastTapTime = 0;
+        lastTapLine = null;
 
         const touch = touchEvent.touches[0];
         const lineNumber = getLineNumberFromY(editor, touch.clientY);
