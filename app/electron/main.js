@@ -3,6 +3,9 @@ import path from 'node:path';
 import url from 'node:url';
 import { createServer } from './server.js';
 import { initializeUpdateManager, scheduleInitialUpdateCheck } from './update-manager.js';
+import { createLogger, closeLogger } from './core/logger.js';
+
+const { log, error: logError, warn: logWarn } = createLogger('Main');
 
 const isDev = process.env.NODE_ENV === 'development';
 const isKiosk = process.argv.includes('--kiosk');
@@ -16,13 +19,13 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   try {
-    console.log('Starting embedded server...');
+    log('Starting embedded server...');
     server = await createServer();
-    console.log(`Server running on http://localhost:${server.port}`);
-    console.log(`Remote access available at http://[your-ip]:${server.port}`);
+    log(`Server running on http://localhost:${server.port}`);
+    log(`Remote access available at http://[your-ip]:${server.port}`);
     return server.port;
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logError('Failed to start server:', error);
     throw error;
   }
 }
@@ -57,7 +60,7 @@ async function createWindow() {
         mainWindow.maximize();
         mainWindow.show();
       } catch (e) {
-        console.warn('Maximize failed:', e);
+        logWarn('Maximize failed:', e);
         const primaryDisplay = screen.getPrimaryDisplay();
         const { x, y, width, height } = primaryDisplay.workArea;
         mainWindow.setBounds({ x, y, width, height });
@@ -73,13 +76,13 @@ async function createWindow() {
 
   try {
     await mainWindow.loadURL(appUrl);
-    console.log(`Electron app loaded: ${appUrl}`);
+    log(`Electron app loaded: ${appUrl}`);
 
     // if (isDev) {
     //   mainWindow.webContents.openDevTools({ mode: 'detach' });
     // }
   } catch (error) {
-    console.error('Failed to load app URL:', error);
+    logError('Failed to load app URL:', error);
     // Fallback to loading a basic error page
     mainWindow.loadURL('data:text/html,<h1>Server starting...</h1><p>Please wait...</p>');
   }
@@ -114,13 +117,13 @@ async function createWindow() {
 
 app.whenReady().then(() => {
   if (isServerOnly) {
-    console.log('Running in server-only mode (headless)');
+    log('Running in server-only mode (headless)');
     startServer().then((port) => {
-      console.log(`Server is running on http://localhost:${port}`);
-      console.log('Access the UI from any browser on your network');
-      console.log('Press Ctrl+C to stop the server');
+      log(`Server is running on http://localhost:${port}`);
+      log('Access the UI from any browser on your network');
+      log('Press Ctrl+C to stop the server');
     }).catch((error) => {
-      console.error('Failed to start server:', error);
+      logError('Failed to start server:', error);
       app.quit();
     });
   } else {
@@ -147,7 +150,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   if (server && server.close) {
-    console.log('Shutting down embedded server...');
+    log('Shutting down embedded server...');
     server.close();
   }
 });

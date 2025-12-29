@@ -6,6 +6,9 @@ import { fetchAndSaveAlarmCodes } from '../features/alarms/routes.js';
 import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
 import { grblAlarms } from '../features/cnc/grbl-alarms.js';
+import { createLogger } from '../core/logger.js';
+
+const { log, error: logError } = createLogger('CncEvents');
 
 function getUserDataDir() {
   const platform = os.platform();
@@ -43,7 +46,6 @@ export function registerCncEventHandlers({
   jobManager,
   context,
   broadcast,
-  log,
   autoConnector,
   firmwareFilePath
 }) {

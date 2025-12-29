@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { readSettings, saveSettings, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('Settings');
 
 const VALID_CONNECTION_TYPES = ['usb', 'ethernet'];
 

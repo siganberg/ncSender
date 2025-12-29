@@ -14,10 +14,12 @@ import { createMacroRoutes } from '../features/macro/routes.js';
 import { createToolRoutes } from '../features/tool/routes.js';
 import { createToolsRoutes } from '../features/tools/routes.js';
 import { createPluginRoutes } from '../features/plugins/routes.js';
+import { createLogger } from '../core/logger.js';
+
+const { log, error: logError } = createLogger('HTTP');
 
 export function mountHttp({
   app,
-  log,
   clientDistPath,
   port,
   serverState,

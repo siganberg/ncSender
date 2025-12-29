@@ -7,10 +7,9 @@ import { pluginManager } from '../../core/plugin-manager.js';
 import { getUserDataDir, getSafePath, isValidName, getParentPath, generatePathId } from '../../utils/paths.js';
 import { GCodePreAnalyzer } from './gcode-preanalyzer.js';
 import { readMachineProfileFromCache } from '../firmware/machine-profile.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('GCode');
 
 // Cache directory for G-code file (single file, always overwritten)
 const PROCESSED_CACHE_DIR = path.join(getUserDataDir(), 'gcode-cache');

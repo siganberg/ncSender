@@ -3,10 +3,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getUserDataDir } from '../../utils/paths.js';
 import { readSettings, saveSettings } from '../../core/settings-manager.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('MacroStorage');
 
 const DEFAULT_MACROS = [
   {

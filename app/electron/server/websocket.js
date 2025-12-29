@@ -5,6 +5,9 @@ import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
 import { pluginManager } from '../core/plugin-manager.js';
 import { parseM6Command, isM6Command } from '../utils/gcode-patterns.js';
 import { getUserDataDir } from '../utils/paths.js';
+import { createLogger } from '../core/logger.js';
+
+const { log, error: logError } = createLogger('WebSocket');
 
 const WS_READY_STATE_OPEN = 1;
 const SOFT_RESET = String.fromCharCode(0x18);
@@ -179,7 +182,6 @@ export function createWebSocketLayer({
   jobManager,
   jogManager,
   context,
-  log,
   commandProcessor
 }) {
   const {

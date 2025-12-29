@@ -8,10 +8,9 @@ import {
   bulkUpdateTools
 } from './tools-storage.js';
 import { validateTool } from './tools-validation.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('Tools');
 
 export function createToolsRoutes(broadcast) {
   const router = express.Router();

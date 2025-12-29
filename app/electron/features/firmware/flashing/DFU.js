@@ -6,8 +6,9 @@
  */
 
 import { findByIds, WebUSBDevice } from 'usb';
+import { createLogger } from '../../../core/logger.js';
 
-const log = (...args) => console.log(`[${new Date().toISOString()}] [DFU]`, ...args);
+const { log, error: logError } = createLogger('DFU');
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 

@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { createLogger } from './logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('Settings');
 
 const DEFAULT_SETTINGS = {
   pauseBeforeStop: 500,

@@ -1,10 +1,9 @@
 import * as probe3D from './probing-3d-probe.js';
 import * as probeStandardBlock from './probing-standard-block.js';
 import * as probeAutozero from './probing-autozero-touch.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [PROBING-UTILS]`, ...args);
-};
+const { log, error: logError } = createLogger('ProbingUtils');
 
 const CORNER_VALUES = new Set(['TopRight', 'TopLeft', 'BottomRight', 'BottomLeft']);
 const X_SIDE_VALUES = new Set(['Left', 'Right']);

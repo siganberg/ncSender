@@ -6,13 +6,12 @@ import { getUserDataDir } from '../../utils/paths.js';
 import { FIRMWARE_DATA_TYPES, DATA_TYPE_NAMES } from '../../constants/firmware-types.js';
 import { SerialPort } from 'serialport';
 import FirmwareFlasher from './flashing/DFUFlasher.js';
+import { createLogger } from '../../core/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('Firmware');
 
 // Path to firmware.json storage (same location as settings.json)
 const FIRMWARE_FILE_PATH = path.join(getUserDataDir(), 'firmware.json');

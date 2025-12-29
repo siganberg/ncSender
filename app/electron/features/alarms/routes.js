@@ -2,10 +2,9 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('Alarms');
 
 function getUserDataDir() {
   const platform = os.platform();

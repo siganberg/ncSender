@@ -5,6 +5,9 @@ import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
+import { createLogger } from './core/logger.js';
+
+const { log, error: logError, warn: logWarn } = createLogger('UpdateManager');
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } = require('electron-updater');
@@ -168,7 +171,7 @@ class UpdateManager {
       try {
         autoUpdater.setFeedURL({ url: this.feedUrl });
       } catch (error) {
-        console.error('Failed to set custom feed URL:', error);
+        logError('Failed to set custom feed URL:', error);
       }
     }
 
@@ -197,7 +200,7 @@ class UpdateManager {
 
     autoUpdater.on('error', (error) => {
       const message = error?.message || 'Unknown updater error';
-      console.error('Auto updater error:', error);
+      logError('Auto updater error:', error);
       this.sendToRenderer('updates:error', {
         message,
         stack: error?.stack ?? null,
@@ -278,7 +281,7 @@ class UpdateManager {
         autoUpdater.quitAndInstall(false, true);
         return { ok: true };
       } catch (error) {
-        console.error('Failed to install update:', error);
+        logError('Failed to install update:', error);
         this.sendToRenderer('updates:error', {
           message: error?.message ?? 'Failed to install update',
           channel: UPDATE_CHANNELS.STABLE
@@ -294,7 +297,7 @@ class UpdateManager {
       await autoUpdater.checkForUpdates();
       return { ok: true };
     } catch (error) {
-      console.error('Failed to check for updates:', error);
+      logError('Failed to check for updates:', error);
       this.sendToRenderer('updates:error', {
         message: error?.message ?? 'Failed to check for updates',
         channel: UPDATE_CHANNELS.STABLE
@@ -311,7 +314,7 @@ class UpdateManager {
       await autoUpdater.downloadUpdate();
       return { ok: true };
     } catch (error) {
-      console.error('Failed to download update:', error);
+      logError('Failed to download update:', error);
       this.sendToRenderer('updates:error', {
         message: error?.message ?? 'Failed to download update',
         channel: UPDATE_CHANNELS.STABLE
@@ -321,7 +324,7 @@ class UpdateManager {
   }
 
   setupDevHandlers() {
-    console.log('[UpdateManager] Running in development update mode');
+    log('Running in development update mode');
   }
 
   async fetchLatestRelease() {
@@ -387,7 +390,7 @@ class UpdateManager {
       });
       return { ok: true, latest: null };
     } catch (error) {
-      console.error('Dev update check failed:', error);
+      logError('Dev update check failed:', error);
       this.sendToRenderer('updates:error', {
         message: error?.message ?? 'Failed to query GitHub releases',
         channel: UPDATE_CHANNELS.DEV
@@ -485,7 +488,7 @@ class UpdateManager {
 
       return { ok: true, downloadPath };
     } catch (error) {
-      console.error('Dev download failed:', error);
+      logError('Dev download failed:', error);
       this.sendToRenderer('updates:error', {
         message: error?.message ?? 'Failed to download update',
         channel: UPDATE_CHANNELS.DEV
@@ -502,7 +505,7 @@ class UpdateManager {
     try {
       this.mainWindow.webContents.send(channel, payload);
     } catch (error) {
-      console.error(`Failed to send ${channel} to renderer:`, error);
+      logError(`Failed to send ${channel} to renderer:`, error);
     }
   }
 }

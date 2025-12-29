@@ -18,6 +18,9 @@ import { mountHttp } from './server/http.js';
 import { pluginManager } from './core/plugin-manager.js';
 import { CommandProcessor } from './core/command-processor.js';
 import { readFile } from 'node:fs/promises';
+import { createLogger } from './core/logger.js';
+
+const { log, error: logError } = createLogger('App');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,10 +29,6 @@ const __dirname = path.dirname(__filename);
 const packageJson = JSON.parse(
   await readFile(path.join(__dirname, '../package.json'), 'utf-8')
 );
-
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
 
 export async function createApp(options = {}) {
   const connectionSettings = getSetting('connection');
@@ -46,9 +45,9 @@ export async function createApp(options = {}) {
   context.updateSenderStatus();
 
   const cncController = new CNCController();
-  const jogManager = new JogSessionManager({ cncController, log });
+  const jogManager = new JogSessionManager({ cncController });
 
-  const autoConnector = createAutoConnector({ cncController, log });
+  const autoConnector = createAutoConnector({ cncController });
 
   // Create a wrapper object that will hold commandProcessor reference
   // This allows WebSocket layer to access it after initialization
@@ -60,7 +59,6 @@ export async function createApp(options = {}) {
     jobManager,
     jogManager,
     context,
-    log,
     commandProcessor: commandProcessorWrapper
   });
 
@@ -138,7 +136,6 @@ export async function createApp(options = {}) {
 
   mountHttp({
     app,
-    log,
     clientDistPath,
     port,
     serverState: context.serverState,
@@ -159,7 +156,6 @@ export async function createApp(options = {}) {
     jobManager,
     context,
     broadcast,
-    log,
     autoConnector,
     firmwareFilePath
   });

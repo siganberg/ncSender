@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'node:url';
+import { createLogger } from '../../core/logger.js';
 
 // Get app version from package.json
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,9 +15,7 @@ const packageJsonPath = path.join(__dirname, '../../..', 'package.json');
 const packageJson = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
 const APP_VERSION = packageJson.version;
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [PLUGIN ROUTES]`, ...args);
-};
+const { log, error: logError } = createLogger('Plugins');
 
 const uploadTempDir = path.join(os.tmpdir(), 'ncsender-plugins');
 if (!fsSync.existsSync(uploadTempDir)) {

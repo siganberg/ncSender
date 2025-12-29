@@ -3,10 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { saveSettings } from '../../core/settings-manager.js';
 import { getUserDataDir } from '../../utils/paths.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('GCodePreview');
 
 export function createGCodePreviewRoutes(serverState, broadcast) {
   const router = Router();

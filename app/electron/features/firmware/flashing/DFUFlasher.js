@@ -11,8 +11,9 @@
 import USBDFUDevice, { DFU_STATE, DFU_STATUS, DFUSE_CMD } from './DFU.js';
 import hexParser from 'nrf-intel-hex';
 import { EventEmitter } from 'events';
+import { createLogger } from '../../../core/logger.js';
 
-const log = (...args) => console.log(`[${new Date().toISOString()}] [Flasher]`, ...args);
+const { log, error: logError } = createLogger('DFUFlasher');
 
 const CHUNK_SIZE = 2048; // Bytes per transfer
 

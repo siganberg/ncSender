@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { createLogger } from './logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [PLUGIN EVENT BUS]`, ...args);
-};
+const { log, error: logError } = createLogger('PluginEventBus');
 
 class PluginEventBus extends EventEmitter {
   constructor() {

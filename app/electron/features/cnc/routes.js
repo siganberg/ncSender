@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { jobManager } from '../gcode/job-manager.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('CNC');
 
 export function createCNCRoutes(cncController, broadcast, commandProcessor) {
   const router = Router();

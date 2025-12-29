@@ -1,9 +1,9 @@
+import { createLogger } from '../../core/logger.js';
+
 export const REALTIME_JOG_CANCEL = String.fromCharCode(0x85);
 const WS_READY_STATE_OPEN = 1;
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('JogManager');
 
 // Dead-man switch for continuous jogging
 // Automatically sends jog cancel if heartbeat is not received within timeout
@@ -55,13 +55,12 @@ export class JogWatchdog {
 }
 
 export class JogSessionManager {
-  constructor({ cncController, log: logger = console.log } = {}) {
+  constructor({ cncController } = {}) {
     if (!cncController || typeof cncController.sendCommand !== 'function') {
       throw new Error('JogSessionManager requires a CNC controller with sendCommand method');
     }
 
     this.cncController = cncController;
-    this.log = logger;
     this.sessionsById = new Map();
     this.sessionsBySocket = new Map();
   }
@@ -73,7 +72,7 @@ export class JogSessionManager {
         const asString = typeof rawMessage === 'string' ? rawMessage : rawMessage?.toString();
         parsed = JSON.parse(asString);
       } catch (error) {
-        this.log('Ignoring invalid WebSocket payload (not JSON)', error?.message || error);
+        log('Ignoring invalid WebSocket payload (not JSON)', error?.message || error);
         this.sendSafe(ws, {
           type: 'jog:error',
           data: { message: 'Invalid jog payload. Expecting JSON structure.' }
@@ -97,7 +96,7 @@ export class JogSessionManager {
         await this.executeStep(ws, data);
         break;
       default:
-        this.log('Received unsupported jog message type:', type);
+        log('Received unsupported jog message type:', type);
         break;
     }
   }
@@ -145,7 +144,7 @@ export class JogSessionManager {
       });
     } catch (error) {
       const message = error?.message || 'Failed to start jog command';
-      this.log('Jog start failed', `jogId=${jogId}`, message);
+      log('Jog start failed', `jogId=${jogId}`, message);
       this.sendSafe(ws, {
         type: 'jog:start-failed',
         data: { jogId, message }
@@ -164,7 +163,7 @@ export class JogSessionManager {
     this.sessionsById.set(jogId, session);
     sessionSet.add(jogId);
 
-    this.log('Jog started', `jogId=${jogId}`);
+    log('Jog started', `jogId=${jogId}`);
 
     this.sendSafe(ws, {
       type: 'jog:started',
@@ -236,10 +235,10 @@ export class JogSessionManager {
         }
       });
     } catch (error) {
-      this.log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
+      log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
     }
 
-    this.log('Jog stopped', `jogId=${session.jogId}`, `reason=${reason}`);
+    log('Jog stopped', `jogId=${session.jogId}`, `reason=${reason}`);
 
     if (notifyClient) {
       this.sendSafe(session.ws, {
@@ -292,7 +291,7 @@ export class JogSessionManager {
         }
       });
     } catch (error) {
-      this.log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
+      log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
     }
   }
 
@@ -302,7 +301,7 @@ export class JogSessionManager {
         ws.send(JSON.stringify(payload));
       }
     } catch (error) {
-      this.log('Failed to send WebSocket payload', error?.message || error);
+      log('Failed to send WebSocket payload', error?.message || error);
     }
   }
 }

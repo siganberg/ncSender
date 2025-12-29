@@ -4,10 +4,9 @@ import { pluginEventBus } from './plugin-event-bus.js';
 import { readSettings, saveSettings } from './settings-manager.js';
 import { getUserDataDir } from '../utils/paths.js';
 import { parseM6Command } from '../utils/gcode-patterns.js';
+import { createLogger } from './logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [PLUGIN MANAGER]`, ...args);
-};
+const { log, error: logError, warn: logWarn } = createLogger('PluginManager');
 
 // Categories that only allow one plugin to be enabled at a time
 const EXCLUSIVE_CATEGORIES = new Set(['tool-changer']);
@@ -243,7 +242,8 @@ class PluginManager {
       manifest,
 
       log: (...args) => {
-        console.log(`[${new Date().toISOString()}] [PLUGIN:${pluginId}]`, ...args);
+        const pluginLogger = createLogger(`PLUGIN:${pluginId}`);
+        pluginLogger.log(...args);
       },
 
       registerEventHandler: (eventName, handler) => {

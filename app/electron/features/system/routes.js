@@ -1,8 +1,7 @@
 import { Router } from 'express';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('System');
 
 export function createSystemRoutes(serverState, cncController, ensureSenderStatus = () => {}) {
   const router = Router();

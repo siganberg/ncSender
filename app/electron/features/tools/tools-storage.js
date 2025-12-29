@@ -1,10 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getUserDataDir } from '../../utils/paths.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('ToolsStorage');
 
 const TOOLS_FILE_PATH = path.join(getUserDataDir(), 'tools.json');
 

@@ -1,10 +1,9 @@
 import { GCodeJobProcessor } from './job-routes.js';
 import { GrblHalTelemetryProvider } from '../cnc/telemetry-provider.js';
 import { JobProgressEstimator } from './job-progress-estimator.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [JOB MANAGER]`, ...args);
-};
+const { log, error: logError } = createLogger('JobManager');
 
 class JobProcessorManager {
   constructor() {

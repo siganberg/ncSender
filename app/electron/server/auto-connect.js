@@ -1,8 +1,11 @@
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
+import { createLogger } from '../core/logger.js';
+
+const { log, error: logError } = createLogger('AutoConnect');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createAutoConnector({ cncController, log }) {
+export function createAutoConnector({ cncController }) {
   let active = false;
   let loopPromise;
   let inhibited = false; // When true, start() is ignored (used during firmware flashing)

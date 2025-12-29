@@ -9,10 +9,9 @@ import { pluginEventBus } from '../../core/plugin-event-bus.js';
 import { getUserDataDir } from '../../utils/paths.js';
 import { GCodeStateAnalyzer, generateResumeSequence, compareToolState } from './gcode-state-analyzer.js';
 import { parseM6Command } from '../../utils/gcode-patterns.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('GCodeJob');
 
 export function createGCodeJobRoutes(filesDir, cncController, serverState, broadcast, commandProcessor) {
   const router = Router();

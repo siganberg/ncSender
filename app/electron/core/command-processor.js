@@ -1,9 +1,8 @@
 import { checkSameToolChange, parseM6Command } from '../utils/gcode-patterns.js';
 import { getSetting } from './settings-manager.js';
+import { createLogger } from './logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [CommandProcessor]`, ...args);
-};
+const { log, error: logError } = createLogger('CommandProcessor');
 
 /**
  * Centralized command processor

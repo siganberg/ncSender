@@ -7,10 +7,9 @@ import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('CNCController');
 
 const MAX_QUEUE_SIZE = 200;
 
@@ -313,7 +312,7 @@ export class CNCController extends EventEmitter {
     try {
       newStatus = JSON.parse(JSON.stringify(this.lastStatus || {}));
     } catch (error) {
-      console.warn('Error cloning lastStatus, starting fresh:', error.message);
+      log('Error cloning lastStatus, starting fresh:', error.message);
       newStatus = {};
     }
 
@@ -435,10 +434,7 @@ export class CNCController extends EventEmitter {
       // Log all changes from this status report together
       if (changes.length > 0) {
         log('[STATUS REPORT]');
-        console.log({
-          changes,
-          reportRaw: data
-        });
+        log({ changes, reportRaw: data });
       }
 
       this.lastStatus = newStatus;
@@ -576,7 +572,7 @@ export class CNCController extends EventEmitter {
         try {
           this.sendCommand('?', { meta: { sourceId: 'system' } });
         } catch (error) {
-          console.warn('Status polling failed, stopping polling:', error.message);
+          log('Status polling failed, stopping polling:', error.message);
           this.stopPolling();
         }
       }

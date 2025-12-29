@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { generateProbeCode, validateProbeOptions } from './probing-utils.js';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}] [PROBE]`, ...args);
-};
+const { log, error: logError } = createLogger('Probe');
 
 export function createProbeRoutes(cncController, serverState, broadcast) {
   const router = Router();

@@ -3,10 +3,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { createLogger } from '../../core/logger.js';
 
-const log = (...args) => {
-  console.log(`[${new Date().toISOString()}]`, ...args);
-};
+const { log, error: logError } = createLogger('CommandHistory');
 
 // Get the user data directory path
 function getUserDataDir() {
