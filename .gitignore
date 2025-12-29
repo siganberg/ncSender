@@ -13,7 +13,7 @@ app/dist/
 **/dist-ssr/
 
 # Logs and reports
-logs/
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
