@@ -1,5 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed false triggering of double click when using 2 finger gesture
-- Fixed multi touch screen incorrectly triggering Star From Line
+### ✨ New Features
+- Added server logging to file for easier troubleshooting and diagnostics
