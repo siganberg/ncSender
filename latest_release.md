@@ -1,4 +1,8 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added server logging to file for easier troubleshooting and diagnostics
+- Added server logs to file for easier troubleshooting
+
+### 🐛 Bug Fixes
+- Fixed color palette issue with higher tool numbers
+- Fixed LogsTab not being tracked properly
