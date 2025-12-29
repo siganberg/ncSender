@@ -333,25 +333,25 @@ onUnmounted(() => {
 }
 
 .dropdown-option {
-  border: none;
-  background: transparent;
-  color: var(--color-text-primary);
-  padding: 6px 12px;
-  border-radius: var(--radius-small);
+  border: none !important;
+  background: transparent !important;
+  color: var(--color-text-primary) !important;
+  padding: 6px 12px !important;
+  border-radius: var(--radius-small) !important;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.85rem !important;
   text-align: center;
   transition: background 0.15s ease;
   white-space: nowrap;
 }
 
 .dropdown-option:hover {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted) !important;
 }
 
 .dropdown-option.active {
-  background: var(--gradient-accent);
-  color: #fff;
+  background: var(--gradient-accent) !important;
+  color: #fff !important;
 }
 
 .dropdown-backdrop {
