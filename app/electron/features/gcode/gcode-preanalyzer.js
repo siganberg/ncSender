@@ -1,3 +1,20 @@
+/*
+ * This file is part of ncSender.
+ *
+ * ncSender is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ncSender is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 // G-code pre-analyzer to produce a static plan of durations per line.
 // Uses a velocity continuity model that considers entry/exit velocities between moves
 // to better approximate real CNC controller behavior with look-ahead planning.
