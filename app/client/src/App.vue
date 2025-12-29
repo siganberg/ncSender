@@ -379,6 +379,11 @@
           <PluginsTab />
         </div>
 
+        <!-- Logs Tab -->
+        <div v-if="activeTab === 'logs'" class="tab-panel tab-panel--logs">
+          <LogsTab />
+        </div>
+
         <!-- Firmware Tab -->
         <div v-if="activeTab === 'firmware'" class="tab-panel tab-panel--firmware">
           <!-- Loading State -->
@@ -947,6 +952,7 @@ import { useUpdateCenter } from './composables/use-update-center';
 import ControlsTab from './features/controls/ControlsTab.vue';
 import PluginsTab from './features/plugins/PluginsTab.vue';
 import ToolsTab from './features/tools/ToolsTab.vue';
+import LogsTab from './features/logs/LogsTab.vue';
 import { keyBindingStore } from './features/controls';
 import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 
@@ -1262,7 +1268,8 @@ const settingsTabs = [
   { id: 'tools', label: 'Tool Library', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.5 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5M10.329 1.671a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 1 1-.707.707L10.329 2.378a.5.5 0 0 1 0-.707M14.5 7a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zM3.5 9a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5z"/></svg>' },
   { id: 'keyboard', label: 'Controls', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>' },
   { id: 'firmware', label: 'Firmware', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.496 8a4.5 4.5 0 0 1-1.703 3.526L9.497 8.5l2.959-1.11q.04.3.04.61"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-1 0a7 7 0 1 0-13.202 3.249l1.988-1.657a4.5 4.5 0 0 1 7.537-4.623L7.497 6.5l1 2.5 1.333 3.11c-.56.251-1.18.39-1.833.39a4.5 4.5 0 0 1-1.592-.29L4.747 14.2A7 7 0 0 0 15 8m-8.295.139a.25.25 0 0 0-.288-.376l-1.5.5.159.474.808-.27-.595.894a.25.25 0 0 0 .287.376l.808-.27-.595.894a.25.25 0 0 0 .287.376l1.5-.5-.159-.474-.808.27.596-.894a.25.25 0 0 0-.288-.376l-.808.27z"/></svg>' },
-  { id: 'plugins', label: 'Plugins', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.545 6.714 4.11 8H3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1.110l.436 1.286A1 1 0 0 0 5.494 13h.557a1 1 0 0 0 .948-.714L7.435 11h1.130l.436 1.286A1 1 0 0 0 9.949 13h.557a1 1 0 0 0 .948-.714L11.89 11H13a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1.11l-.436-1.286A1 1 0 0 0 10.506 6h-.557a1 1 0 0 0-.948.714L8.565 8H7.435L7 6.714A1 1 0 0 0 6.052 6h-.557a1 1 0 0 0-.948.714M6.724 9.5 6.27 11h-.48L5.335 9.5h1.389m3.553 0h1.389l-.455 1.5h-.479zm-5 1L4.822 9H3.5v1.5zm9 0V9h-1.323l-.455 1.5z"/></svg>' }
+  { id: 'plugins', label: 'Plugins', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.545 6.714 4.11 8H3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1.110l.436 1.286A1 1 0 0 0 5.494 13h.557a1 1 0 0 0 .948-.714L7.435 11h1.130l.436 1.286A1 1 0 0 0 9.949 13h.557a1 1 0 0 0 .948-.714L11.89 11H13a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1.11l-.436-1.286A1 1 0 0 0 10.506 6h-.557a1 1 0 0 0-.948.714L8.565 8H7.435L7 6.714A1 1 0 0 0 6.052 6h-.557a1 1 0 0 0-.948.714M6.724 9.5 6.27 11h-.48L5.335 9.5h1.389m3.553 0h1.389l-.455 1.5h-.479zm-5 1L4.822 9H3.5v1.5zm9 0V9h-1.323l-.455 1.5z"/></svg>' },
+  { id: 'logs', label: 'Logs', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/><path d="M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' }
 ];
 
 
@@ -3738,7 +3745,8 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .tab-panel--keyboard,
 .tab-panel--plugins,
 .tab-panel--firmware,
-.tab-panel--tools {
+.tab-panel--tools,
+.tab-panel--logs {
   padding: 0;
   gap: 0;
   overflow: hidden;
