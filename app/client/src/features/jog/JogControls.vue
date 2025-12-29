@@ -39,7 +39,11 @@
           @touchstart="handleJogStart('X', -1, $event)"
           @touchend="handleJogEnd('X', -1, $event)"
         >X-</button>
-        <button class="jog-center" @click="handleCenterClick" aria-label="Soft Reset"></button>
+        <button class="jog-center" @click="handleCenterClick" aria-label="Soft Reset" title="Stop / Soft Reset">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="stop-icon">
+            <rect x="6" y="6" width="12" height="12" rx="1" />
+          </svg>
+        </button>
         <button
           :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X-1') }]"
           aria-label="Jog X positive"
@@ -441,10 +445,11 @@ onBeforeUnmount(() => {
   opacity: 0.5;
 }
 
-/* Allow center button to be clickable and fully visible when disabled */
+/* Stop button is ALWAYS enabled - even when jog is disabled (for emergency stop/unlock) */
 .jog-disabled .jog-center {
-  pointer-events: auto;
-  opacity: 1;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
 }
 
 .jog-grid {
@@ -513,7 +518,6 @@ onBeforeUnmount(() => {
   -webkit-touch-callout: default;
   touch-action: manipulation;
   padding: unset !important;
-
 }
 
 .jog-btn:hover {
@@ -545,33 +549,37 @@ onBeforeUnmount(() => {
 .jog-center {
   width: 100%;
   height: 100%;
-  border: 2px solid #ff6b6b !important;
-  border-radius: 50% !important;
-  background: var(--color-surface) !important;
-  position: relative;
+  border: 1px solid #dc2626 !important;
+  border-radius: var(--radius-small) !important;
+  background: #dc2626 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  color: white !important;
+  font-size: 1rem;
+  font-weight: 600;
+  user-select: none;
+  -webkit-touch-callout: default;
+  touch-action: manipulation;
+  padding: unset !important;
 }
 
 .jog-center:hover {
-  background: rgba(255, 107, 107, 0.1);
-  border-color: #ff4444;
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
 }
 
 .jog-center:active {
-  background: rgba(255, 107, 107, 0.2);
-  transform: scale(0.95);
+  background: #991b1b !important;
+  border-color: #991b1b !important;
+  transform: scale(0.98);
 }
 
-.jog-center::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 6px;
-  height: 6px;
-  background: #ff6b6b;
-  border-radius: 50%;
+.jog-center .stop-icon {
+  width: 20px;
+  height: 20px;
+  color: white;
 }
 </style>
