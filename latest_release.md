@@ -1,8 +1,9 @@
 ## What's Changed
 
-### ✨ New Features
-- Added server logs to file for easier troubleshooting
-
 ### 🐛 Bug Fixes
-- Fixed color palette issue with higher tool numbers
-- Fixed LogsTab not being tracked properly
+- Fixed step control UI issue on the plugin
+- Fixed missing control on the Tool Library
+
+### 🔧 Improvements
+- Made the center jog control more obvious of its use
+- Added license type information
