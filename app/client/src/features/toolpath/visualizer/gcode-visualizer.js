@@ -198,10 +198,14 @@ class GCodeVisualizer {
             }
         });
 
-        // Generate colors for each tool
+        // Generate colors for each tool based on its position in the program (not the tool number)
+        // This ensures tools T42, T51, T87 get distinct colors (1st, 2nd, 3rd palette colors)
+        // instead of similar colors based on their high tool numbers
         const sortedTools = Array.from(toolsInProgram).sort((a, b) => a - b);
         sortedTools.forEach((toolNum, index) => {
-            const color = this.generateToolColor(toolNum, sortedTools.length);
+            // Use index+1 as the "virtual tool number" for color selection
+            // This maps the first tool in the program to palette[0], second to palette[1], etc.
+            const color = this.generateToolColor(index + 1, sortedTools.length);
             this.toolColors.set(toolNum, color);
             this.toolsUsed.add(toolNum);
             // Initialize visibility to true (shown by default)
