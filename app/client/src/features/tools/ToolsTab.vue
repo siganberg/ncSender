@@ -56,7 +56,7 @@
     </div>
 
         <!-- Footer with tool count and controls -->
-        <div v-if="filteredTools.length > 0" class="tools-footer">
+        <div class="tools-footer">
           <div class="tools-footer-content">
             <div class="tools-footer-row">
               <div class="tool-settings">
@@ -1265,6 +1265,8 @@ onMounted(async () => {
   text-align: center;
   padding: 40px 20px;
   color: var(--color-text-secondary);
+  flex: 1;
+  min-height: 0;
 }
 
 .empty-state-text {
