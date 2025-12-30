@@ -291,7 +291,7 @@
               class="monaco-editor-container"
             />
             <div class="editor-actions">
-              <button @click="discardChanges" class="cancel-button">Discard</button>
+              <button @click="hasUnsavedChanges ? discardChanges() : closeGcodeModal()" class="cancel-button">{{ hasUnsavedChanges ? 'Discard' : 'Close' }}</button>
               <button @click="commitEdit" class="commit-button">Commit Changes</button>
             </div>
           </div>
@@ -566,6 +566,7 @@ const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const editableGcode = ref('');
 const hasUnsavedChanges = ref(false);
+const isRevertingContent = ref(false);
 const showDiscardDialog = ref(false);
 const discardCallback = ref<(() => void) | null>(null);
 const autoScrollModal = ref(true);
@@ -791,15 +792,43 @@ onBeforeUnmount(() => {
   themeObserver.disconnect();
 });
 
-// Handle Monaco viewer mount
+// Handle Monaco viewer mount (modal/detached view)
 function handleMonacoViewerMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   monacoViewerRef.value = editor;
   updateCurrentLineDecoration();
+  setupGutterSelectionHandler(editor);
+
+  // Add Ctrl+G keybinding for "Go to Line" (same as main viewer)
+  editor.addAction({
+    id: 'go-to-line',
+    label: 'Go to Line',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
+    run: (ed) => {
+      ed.trigger('keyboard', 'editor.action.gotoLine', null);
+    }
+  });
 }
 
-// Handle Monaco editor mount
+// Handle Monaco editor mount (editable editor in modal)
 function handleMonacoEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   monacoEditorRef.value = editor;
+
+  // Track changes to mark as unsaved (ignore programmatic reverts)
+  editor.onDidChangeModelContent(() => {
+    if (!isRevertingContent.value) {
+      hasUnsavedChanges.value = true;
+    }
+  });
+
+  // Add Ctrl+G keybinding for "Go to Line"
+  editor.addAction({
+    id: 'go-to-line',
+    label: 'Go to Line',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
+    run: (ed) => {
+      ed.trigger('keyboard', 'editor.action.gotoLine', null);
+    }
+  });
 }
 
 // Handle Monaco main viewer mount
@@ -2032,11 +2061,16 @@ function closeGcodeModal() {
 function discardChanges() {
   if (hasUnsavedChanges.value) {
     promptDiscardChanges(() => {
-      // Reload original content
+      // Reload original content (flag prevents change listener from re-setting hasUnsavedChanges)
+      isRevertingContent.value = true;
       if (gcodeLines.value) {
         editableGcode.value = gcodeLines.value.join('\n');
       }
-      hasUnsavedChanges.value = false;
+      // Reset after Vue updates and Monaco processes the change
+      nextTick(() => {
+        hasUnsavedChanges.value = false;
+        isRevertingContent.value = false;
+      });
     });
     return;
   }
