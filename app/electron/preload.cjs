@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld('ncSender', {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('updates:downloaded', listener);
       return () => ipcRenderer.removeListener('updates:downloaded', listener);
+    },
+    onInstalling: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('updates:installing', listener);
+      return () => ipcRenderer.removeListener('updates:installing', listener);
     }
   }
 });

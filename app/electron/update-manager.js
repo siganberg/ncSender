@@ -245,9 +245,15 @@ class UpdateManager {
       }));
 
       if (this.installOnComplete && !this.disableInstall) {
+        // Send installing event to show progress in UI before quit
+        this.sendToRenderer('updates:installing', {
+          channel: UPDATE_CHANNELS.STABLE,
+          version: normalizeVersion(info?.version ?? info?.tagName ?? info?.tag_name)
+        });
+        // Give UI time to update before quitting
         setTimeout(() => {
           autoUpdater.quitAndInstall(false, true);
-        }, 500);
+        }, 1000);
       }
     });
   }
@@ -295,7 +301,15 @@ class UpdateManager {
       }
 
       try {
-        autoUpdater.quitAndInstall(false, true);
+        // Send installing event to show progress in UI before quit
+        this.sendToRenderer('updates:installing', {
+          channel: UPDATE_CHANNELS.STABLE,
+          version: normalizeVersion(this.latestInfo?.version ?? this.latestInfo?.tagName ?? this.latestInfo?.tag_name)
+        });
+        // Give UI time to update before quitting
+        setTimeout(() => {
+          autoUpdater.quitAndInstall(false, true);
+        }, 1000);
         return { ok: true };
       } catch (error) {
         logError('Failed to install update:', error);

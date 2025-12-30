@@ -25,6 +25,7 @@ const state = reactive({
   isChecking: false,
   isAvailable: false,
   isDownloading: false,
+  isInstalling: false,
   downloaded: false,
   latestVersion: null as string | null,
   releaseName: null as string | null,
@@ -46,6 +47,7 @@ let retryTimer: ReturnType<typeof setInterval> | null = null;
 
 const resetDownloadState = () => {
   state.isDownloading = false;
+  state.isInstalling = false;
   state.downloadPercent = 0;
   state.downloadPath = null;
   state.downloaded = false;
@@ -140,6 +142,13 @@ const initListeners = () => {
     state.releaseNotes = payload?.releaseNotes ?? state.releaseNotes;
     state.autoInstallRequested = Boolean(payload?.autoInstallRequested);
     state.releaseUrl = payload?.sourceUrl ?? state.releaseUrl;
+  });
+
+  register(updates.onInstalling, () => {
+    state.isInstalling = true;
+    state.isDownloading = false;
+    state.statusMessage = 'Installing update… The application will restart shortly.';
+    state.error = null;
   });
 };
 

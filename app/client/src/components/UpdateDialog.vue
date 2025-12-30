@@ -43,7 +43,10 @@
         </div>
       </section>
 
-      <section class="update-dialog__status" :class="{ 'update-dialog__status--error': Boolean(props.state.error) }">
+      <section class="update-dialog__status" :class="{
+        'update-dialog__status--error': Boolean(props.state.error),
+        'update-dialog__status--installing': props.state.isInstalling
+      }">
         <div class="status-text">
           <span>{{ statusText }}</span>
           <span v-if="props.state.error" class="status-text__error">{{ props.state.error }}</span>
@@ -54,7 +57,11 @@
           </div>
           <div class="progress-label">{{ downloadPercentText }}</div>
         </div>
-        <div v-if="props.state.downloadPath" class="download-path">
+        <div v-if="props.state.isInstalling" class="status-installing">
+          <div class="installing-spinner"></div>
+          <span class="installing-text">Installing update and restarting application…</span>
+        </div>
+        <div v-if="props.state.downloadPath && !props.state.isInstalling" class="download-path">
           Downloaded to <code>{{ props.state.downloadPath }}</code>
         </div>
       </section>
@@ -72,28 +79,28 @@
           <button
             class="btn btn-ghost"
             @click="emit('check')"
-            :disabled="props.state.isChecking || props.state.isDownloading"
+            :disabled="props.state.isChecking || props.state.isDownloading || props.state.isInstalling"
           >
             <span v-if="props.state.isChecking" class="spinner"></span>
             <span>Check Again</span>
           </button>
         </div>
         <div class="actions-right">
-          <button class="btn btn-secondary" @click="emit('close')">Close</button>
+          <button class="btn btn-secondary" @click="emit('close')" :disabled="props.state.isInstalling">Close</button>
           <template v-if="props.state.canInstall">
             <button
               class="btn btn-primary"
               @click="emit('download-install')"
-              :disabled="!props.state.isAvailable || props.state.isChecking || props.state.isDownloading"
+              :disabled="!props.state.isAvailable || props.state.isChecking || props.state.isDownloading || props.state.isInstalling"
             >
-              <span v-if="props.state.isDownloading" class="spinner"></span>
-              <span>{{ props.state.isDownloading ? 'Downloading…' : 'Download & Install' }}</span>
+              <span v-if="props.state.isDownloading || props.state.isInstalling" class="spinner"></span>
+              <span>{{ props.state.isInstalling ? 'Installing…' : (props.state.isDownloading ? 'Downloading…' : 'Download & Install') }}</span>
             </button>
             <button
               class="btn btn-ghost"
               v-if="props.state.releaseUrl"
               @click="openGitHubRelease"
-              :disabled="props.state.isChecking"
+              :disabled="props.state.isChecking || props.state.isInstalling"
             >
               Release Page
             </button>
@@ -102,7 +109,7 @@
             v-else
             class="btn btn-primary"
             @click="openGitHubRelease"
-            :disabled="!props.state.isAvailable || !props.state.releaseUrl || props.state.isChecking"
+            :disabled="!props.state.isAvailable || !props.state.releaseUrl || props.state.isChecking || props.state.isInstalling"
           >
             <span>Download Update</span>
           </button>
@@ -128,6 +135,7 @@ interface UpdateDialogState {
   isAvailable: boolean;
   isChecking: boolean;
   isDownloading: boolean;
+  isInstalling: boolean;
   downloadPercent: number;
   downloadPath: string | null;
   canInstall: boolean;
@@ -309,6 +317,11 @@ const openGitHubRelease = () => {
   border-color: rgba(255, 107, 107, 0.35);
 }
 
+.update-dialog__status--installing {
+  background: rgba(79, 147, 255, 0.1);
+  border-color: rgba(79, 147, 255, 0.4);
+}
+
 .status-text {
   display: flex;
   flex-direction: column;
@@ -360,6 +373,42 @@ const openGitHubRelease = () => {
   padding: 2px 6px;
   border-radius: 6px;
   font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+
+.status-installing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.installing-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(79, 147, 255, 0.2);
+  border-top-color: rgba(79, 147, 255, 1);
+  border-radius: 50%;
+  animation: installing-spin 1s linear infinite;
+}
+
+@keyframes installing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.installing-text {
+  font-weight: 500;
+  color: rgba(79, 147, 255, 1);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: installing-spin 0.8s linear infinite;
 }
 
 .update-dialog__notes {
