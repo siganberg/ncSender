@@ -88,7 +88,7 @@
           </div>
         </div>
         <div class="editor-form">
-          <div class="form-group">
+          <div class="form-group-inline">
             <label>Name</label>
             <input
               type="text"
@@ -97,23 +97,25 @@
               class="form-input"
             />
           </div>
-          <div class="form-group">
+          <div class="form-group-inline">
             <label>Description</label>
-            <textarea
+            <input
+              type="text"
               v-model="formData.description"
               placeholder="Optional description"
-              class="form-textarea"
-              rows="2"
-            ></textarea>
+              class="form-input"
+            />
           </div>
-          <div class="form-group">
+          <div class="form-group commands-group">
             <label>Commands</label>
-            <textarea
-              v-model="formData.commands"
-              placeholder="G-code commands (one per line)"
-              class="form-textarea commands-textarea"
-              rows="15"
-            ></textarea>
+            <div class="commands-editor">
+              <CodeEditor
+                v-model:value="formData.commands"
+                language="gcode"
+                :theme="monacoTheme"
+                :options="editorOptions"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -135,12 +137,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useMacroStore } from './store';
 import { api as macroApi } from './api';
 import type { Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import { CodeEditor } from 'monaco-editor-vue3';
 
 const props = defineProps<{
   connected?: boolean;
@@ -155,6 +158,37 @@ const formData = ref({
   name: '',
   description: '',
   commands: ''
+});
+
+// Monaco editor setup
+const isLightTheme = ref(document.body.classList.contains('theme-light'));
+const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+
+const editorOptions = {
+  minimap: { enabled: false },
+  lineNumbers: 'on' as const,
+  scrollBeyondLastLine: false,
+  wordWrap: 'on' as const,
+  automaticLayout: true,
+  fontSize: 12,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  renderLineHighlight: 'none' as const,
+  folding: false,
+  glyphMargin: false,
+  lineDecorationsWidth: 8,
+  lineNumbersMinChars: 2,
+  stickyScroll: { enabled: false },
+  scrollbar: {
+    vertical: 'auto' as const,
+    horizontal: 'hidden' as const,
+    useShadows: false,
+    verticalScrollbarSize: 6
+  }
+};
+
+// Watch for theme changes
+const themeObserver = new MutationObserver(() => {
+  isLightTheme.value = document.body.classList.contains('theme-light');
 });
 
 const filteredMacros = computed(() => {
@@ -289,6 +323,11 @@ watch(selectedMacroId, (newId) => {
 
 onMounted(() => {
   macroStore.loadMacros();
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+});
+
+onUnmounted(() => {
+  themeObserver.disconnect();
 });
 </script>
 
@@ -526,16 +565,35 @@ onMounted(() => {
 
 .editor-form {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
+  min-height: 0;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.form-group-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.form-group-inline label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  min-width: 80px;
+}
+
+.form-group-inline .form-input {
+  flex: 1;
 }
 
 .form-group label {
@@ -568,10 +626,19 @@ onMounted(() => {
   font-family: var(--font-family);
 }
 
-.commands-textarea {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85rem;
-  line-height: 1.5;
+.commands-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.commands-editor {
+  flex: 1;
+  min-height: 200px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  overflow: hidden;
 }
 
 .empty-state {

@@ -775,6 +775,9 @@ function registerGcodeLanguage() {
 // Register G-code language immediately
 registerGcodeLanguage();
 
+// Expose Monaco globally for plugins to use
+(window as unknown as { monaco: typeof monaco }).monaco = monaco;
+
 // Watch for theme changes
 const themeObserver = new MutationObserver(() => {
   isLightTheme.value = document.body.classList.contains('theme-light');
