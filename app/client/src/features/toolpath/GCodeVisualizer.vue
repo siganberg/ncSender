@@ -32,6 +32,15 @@
         </div>
       </div>
 
+      <!-- Split View Labels Overlay -->
+      <div v-if="view === 'split'" class="split-view-labels">
+        <div class="split-label split-label--top">Top</div>
+        <div class="split-label split-label--side">Side</div>
+        <div class="split-label split-label--3d">3D</div>
+        <div class="split-divider split-divider--vertical"></div>
+        <div class="split-divider split-divider--horizontal"></div>
+      </div>
+
       <!-- Top floating toolbar -->
       <div class="floating-toolbar floating-toolbar--top">
         <div class="view-buttons" role="group" aria-label="Change viewport">
@@ -408,14 +417,15 @@ type MachineOrientation = {
 const presets = [
   { id: 'top', label: 'Top' },
   { id: 'front', label: 'Side' },
-  { id: 'iso', label: '3D' }
+  { id: 'iso', label: '3D' },
+  { id: 'split', label: 'Split' }
 ] as const;
 
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
 
 const props = withDefaults(defineProps<{
-  view: 'top' | 'front' | 'iso';
+  view: 'top' | 'front' | 'iso' | 'split';
   theme: 'light' | 'dark';
   senderStatus?: string;
   machineState?: { isToolChanging?: boolean };
@@ -449,7 +459,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  (e: 'change-view', value: 'top' | 'front' | 'iso'): void;
+  (e: 'change-view', value: 'top' | 'front' | 'iso' | 'split'): void;
 }>();
 
 const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLowerCase());
@@ -679,8 +689,24 @@ let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
+let splitSideGridGroup: THREE.Group | null = null; // XZ grid for split view's side viewport
+let splitSideAxisLabels: THREE.Group | null = null; // Axis labels without Y for split view's side viewport
 let axesGroup: THREE.Group;
 let homeIndicatorGroup: THREE.Group | null = null;
+
+// Split view cameras
+let splitTopCamera: THREE.OrthographicCamera;
+let splitFrontCamera: THREE.OrthographicCamera;
+let splitIsoCamera: THREE.OrthographicCamera;
+
+// Split view camera targets (for independent pan)
+let splitTopCameraTarget = new THREE.Vector3(0, 0, 0);
+let splitFrontCameraTarget = new THREE.Vector3(0, 0, 0);
+let splitIsoCameraTarget = new THREE.Vector3(0, 0, 0);
+
+// Track which split viewport is active during interaction
+type SplitViewport = 'top' | 'front' | 'iso' | null;
+let activeSplitViewport: SplitViewport = null;
 
 const defaultOrientation: MachineOrientation = {
   xHome: 'min',
@@ -751,9 +777,15 @@ const applyBoundsAndWarnings = (bounds: ReturnType<typeof computeGridBoundsFrom>
   outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 };
 
-const rebuildGrid = (workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' = props.view) => {
+const rebuildGrid = (workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' | 'split' = props.view) => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
+  }
+
+  // Remove split side grid if it exists
+  if (scene && splitSideGridGroup) {
+    scene.remove(splitSideGridGroup);
+    splitSideGridGroup = null;
   }
 
   if (viewType === 'front') {
@@ -778,12 +810,30 @@ const rebuildGrid = (workOffset = props.workOffset, viewType: 'top' | 'front' | 
     scene.add(gridGroup);
   }
 
+  // For split view, also create the side view grid (XZ plane)
+  if (viewType === 'split') {
+    splitSideGridGroup = createSideViewGrid({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeZ: resolveZTravel(props.zMaxTravel),
+      workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+    if (scene) {
+      scene.add(splitSideGridGroup);
+    }
+  }
+
   const bounds = computeGridBoundsFrom(workOffset);
   applyBoundsAndWarnings(bounds);
   refreshHomeIndicator();
 
   if (!autoFitMode.value) {
-    fitCameraToBounds(getGridBounds());
+    if (props.view === 'split') {
+      updateSplitViewCameras();
+    } else {
+      fitCameraToBounds(getGridBounds());
+    }
   }
 
   return bounds;
@@ -963,11 +1013,66 @@ const initThreeJS = () => {
   // Add mouse/touch controls
   setupControls();
 
+  // Initialize split view cameras
+  initSplitViewCameras();
+
   // Start animation loop
   animate();
 
   // Align renderer with layout as soon as dimensions are available
   handleResize();
+};
+
+const initSplitViewCameras = () => {
+  if (!canvas.value) return;
+
+  const measuredWidth = canvas.value.clientWidth;
+  const measuredHeight = canvas.value.clientHeight;
+  const safeWidth = measuredWidth > 0 ? measuredWidth : 1;
+  const safeHeight = measuredHeight > 0 ? measuredHeight : 1;
+
+  // Top camera for split view (top-left quadrant)
+  const topAspect = (safeWidth / 2) / (safeHeight / 2);
+  const frustumSize = 200;
+  splitTopCamera = new THREE.OrthographicCamera(
+    (-frustumSize * topAspect) / 2,
+    (frustumSize * topAspect) / 2,
+    frustumSize / 2,
+    -frustumSize / 2,
+    0.1,
+    10000
+  );
+  splitTopCamera.position.set(0, 0, 100);
+  splitTopCamera.up.set(0, 1, 0);
+  splitTopCamera.lookAt(0, 0, 0);
+
+  // Front/Side camera for split view (top-right quadrant)
+  const frontAspect = (safeWidth / 2) / (safeHeight / 2);
+  splitFrontCamera = new THREE.OrthographicCamera(
+    (-frustumSize * frontAspect) / 2,
+    (frustumSize * frontAspect) / 2,
+    frustumSize / 2,
+    -frustumSize / 2,
+    0.1,
+    10000
+  );
+  splitFrontCamera.position.set(0, -100, 0);
+  splitFrontCamera.up.set(0, 0, 1);
+  splitFrontCamera.lookAt(0, 0, 0);
+
+  // Iso/3D camera for split view (bottom half - 2x width)
+  const isoAspect = safeWidth / (safeHeight / 2);
+  splitIsoCamera = new THREE.OrthographicCamera(
+    (-frustumSize * isoAspect) / 2,
+    (frustumSize * isoAspect) / 2,
+    frustumSize / 2,
+    -frustumSize / 2,
+    0.1,
+    10000
+  );
+  splitIsoCamera.position.set(100, -100, 100);
+  splitIsoCamera.up.set(0, 0, 1);
+  splitIsoCamera.lookAt(0, 0, 0);
 };
 
 
@@ -1035,22 +1140,81 @@ const onCanvasClick = (event: MouseEvent) => {
   }
 };
 
+// Detect which split viewport the mouse is in
+const getSplitViewportAtPoint = (clientX: number, clientY: number): SplitViewport => {
+  if (!canvas.value || props.view !== 'split') return null;
+
+  const rect = canvas.value.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const halfWidth = rect.width / 2;
+  const halfHeight = rect.height / 2;
+
+  // Top row
+  if (y < halfHeight) {
+    if (x < halfWidth) {
+      return 'top'; // Top-left
+    } else {
+      return 'front'; // Top-right
+    }
+  } else {
+    // Bottom row (full width = iso/3D)
+    return 'iso';
+  }
+};
+
+// Get the camera and target for a split viewport
+const getSplitCameraAndTarget = (viewport: SplitViewport): { camera: THREE.OrthographicCamera | null; target: THREE.Vector3 | null } => {
+  switch (viewport) {
+    case 'top':
+      return { camera: splitTopCamera, target: splitTopCameraTarget };
+    case 'front':
+      return { camera: splitFrontCamera, target: splitFrontCameraTarget };
+    case 'iso':
+      return { camera: splitIsoCamera, target: splitIsoCameraTarget };
+    default:
+      return { camera: null, target: null };
+  }
+};
+
 const onMouseDown = (event: MouseEvent) => {
   isDragging = true;
   previousMousePosition = { x: event.clientX, y: event.clientY };
   mouseDownPosition = { x: event.clientX, y: event.clientY };
 
+  // Detect which split viewport we're in
+  if (props.view === 'split') {
+    activeSplitViewport = getSplitViewportAtPoint(event.clientX, event.clientY);
+  } else {
+    activeSplitViewport = null;
+  }
+
   // Only allow rotation in 3D view, not in top or side views
-  const isOrthographicView = props.view === 'top' || props.view === 'front';
+  const isOrthographicView = props.view === 'top' || props.view === 'front' ||
+    (props.view === 'split' && activeSplitViewport !== 'iso');
   isPanning = event.button === 0; // Left click for panning in all views
   isRotating = event.button === 2 && !isOrthographicView; // Right click for rotation (3D only)
 };
 
 const onMouseMove = (event: MouseEvent) => {
-  if (!isDragging || !camera) return;
+  if (!isDragging) return;
 
   const deltaX = event.clientX - previousMousePosition.x;
   const deltaY = event.clientY - previousMousePosition.y;
+
+  // Determine which camera and target to use
+  let activeCamera: THREE.OrthographicCamera | null = camera;
+  let activeTarget: THREE.Vector3 = cameraTarget;
+
+  if (props.view === 'split' && activeSplitViewport) {
+    const { camera: splitCam, target: splitTarget } = getSplitCameraAndTarget(activeSplitViewport);
+    if (splitCam && splitTarget) {
+      activeCamera = splitCam;
+      activeTarget = splitTarget;
+    }
+  }
+
+  if (!activeCamera) return;
 
   if (isRotating) {
     // Onshape-style trackball rotation
@@ -1061,7 +1225,7 @@ const onMouseMove = (event: MouseEvent) => {
     const right = new THREE.Vector3();
     const up = new THREE.Vector3(0, 0, 1); // Always use world Z-up for vertical rotation
 
-    right.setFromMatrixColumn(camera.matrix, 0); // Camera's right vector
+    right.setFromMatrixColumn(activeCamera.matrix, 0); // Camera's right vector
     right.z = 0; // Project onto XY plane to keep rotation around Z-axis
     right.normalize();
 
@@ -1078,33 +1242,33 @@ const onMouseMove = (event: MouseEvent) => {
     combinedRotation.multiplyQuaternions(horizontalRotation, verticalRotation);
 
     // Apply rotation to camera position around the target
-    const offset = camera.position.clone().sub(cameraTarget);
+    const offset = activeCamera.position.clone().sub(activeTarget);
     offset.applyQuaternion(combinedRotation);
-    camera.position.copy(cameraTarget).add(offset);
+    activeCamera.position.copy(activeTarget).add(offset);
 
-    camera.up.set(0, 0, 1); // Maintain Z-up orientation
-    camera.lookAt(cameraTarget);
+    activeCamera.up.set(0, 0, 1); // Maintain Z-up orientation
+    activeCamera.lookAt(activeTarget);
   } else if (isPanning) {
     // Pan camera by moving both position and target
     // For orthographic camera, base speed on frustum size instead of distance
-    const frustumWidth = camera.right - camera.left;
+    const frustumWidth = activeCamera.right - activeCamera.left;
     const panSpeed = frustumWidth * 0.0005; // Reduced from 0.001 to 0.0005 for slower panning
 
     // Calculate pan vectors based on camera orientation
     const right = new THREE.Vector3();
     const up = new THREE.Vector3();
 
-    right.setFromMatrixColumn(camera.matrix, 0); // Get camera's right vector
-    up.setFromMatrixColumn(camera.matrix, 1);    // Get camera's up vector
+    right.setFromMatrixColumn(activeCamera.matrix, 0); // Get camera's right vector
+    up.setFromMatrixColumn(activeCamera.matrix, 1);    // Get camera's up vector
 
     // Apply panning
     const panDelta = new THREE.Vector3()
       .addScaledVector(right, -deltaX * panSpeed)
       .addScaledVector(up, deltaY * panSpeed);
 
-    camera.position.add(panDelta);
-    cameraTarget.add(panDelta);
-    camera.lookAt(cameraTarget);
+    activeCamera.position.add(panDelta);
+    activeTarget.add(panDelta);
+    activeCamera.lookAt(activeTarget);
   }
 
   previousMousePosition = { x: event.clientX, y: event.clientY };
@@ -1114,52 +1278,75 @@ const onMouseUp = () => {
   isDragging = false;
   isRotating = false;
   isPanning = false;
+  activeSplitViewport = null;
 };
 
-const updatePointerScale = () => {
-  if (!camera || !cuttingPointer) return;
+const updatePointerScale = (targetCamera?: THREE.OrthographicCamera) => {
+  if (!cuttingPointer) return;
 
-  const frustumWidth = camera.right - camera.left;
+  const cam = targetCamera || camera;
+  if (!cam) return;
+
+  const frustumWidth = cam.right - cam.left;
   let scale = frustumWidth * 0.01; // 1% of visible width
 
-  const maxScale = 5; // Maximum scale limit for pointer
-  scale = Math.min(scale, maxScale);
+  const minScale = 0.5; // Minimum scale limit for pointer (when zoomed in)
+  const maxScale = 5;   // Maximum scale limit for pointer (when zoomed out)
+  scale = Math.max(minScale, Math.min(scale, maxScale));
 
   cuttingPointer.scale.set(scale, scale, scale);
 };
 
 const onWheel = (event: WheelEvent) => {
   event.preventDefault();
-  if (!camera) return;
+
+  // Determine which camera to zoom
+  let activeCamera: THREE.OrthographicCamera | null = camera;
+
+  if (props.view === 'split') {
+    const viewport = getSplitViewportAtPoint(event.clientX, event.clientY);
+    if (viewport) {
+      const { camera: splitCam } = getSplitCameraAndTarget(viewport);
+      if (splitCam) {
+        activeCamera = splitCam;
+      }
+    }
+  }
+
+  if (!activeCamera) return;
 
   // For orthographic camera, zoom by adjusting the frustum size
   const zoomFactor = event.deltaY > 0 ? 1.1 : 0.9;
 
-  camera.left *= zoomFactor;
-  camera.right *= zoomFactor;
-  camera.top *= zoomFactor;
-  camera.bottom *= zoomFactor;
+  activeCamera.left *= zoomFactor;
+  activeCamera.right *= zoomFactor;
+  activeCamera.top *= zoomFactor;
+  activeCamera.bottom *= zoomFactor;
 
   // Limit zoom range
-  const frustumWidth = camera.right - camera.left;
+  const frustumWidth = activeCamera.right - activeCamera.left;
   if (frustumWidth < 1) {
     // Prevent zooming in too far
     const scale = 1 / frustumWidth;
-    camera.left *= scale;
-    camera.right *= scale;
-    camera.top *= scale;
-    camera.bottom *= scale;
+    activeCamera.left *= scale;
+    activeCamera.right *= scale;
+    activeCamera.top *= scale;
+    activeCamera.bottom *= scale;
   } else if (frustumWidth > 2000) {
     // Prevent zooming out too far
     const scale = 2000 / frustumWidth;
-    camera.left *= scale;
-    camera.right *= scale;
-    camera.top *= scale;
-    camera.bottom *= scale;
+    activeCamera.left *= scale;
+    activeCamera.right *= scale;
+    activeCamera.top *= scale;
+    activeCamera.bottom *= scale;
   }
 
-  camera.updateProjectionMatrix();
-  updatePointerScale();
+  activeCamera.updateProjectionMatrix();
+  // In split view, pointer scale is updated per-viewport in render loop
+  // For single view, update immediately
+  if (props.view !== 'split') {
+    updatePointerScale();
+  }
 };
 
 // Touch events with two-finger panning support
@@ -1182,18 +1369,26 @@ const onTouchStart = (event: TouchEvent) => {
     // Mark as multi-touch gesture to prevent tap detection on release
     wasMultiTouchGesture = true;
 
-    isDragging = true;
-    const isOrthographicView = props.view === 'top' || props.view === 'front';
-    isRotating = !isOrthographicView; // Rotation only in 3D view
-    isPanning = false;
-
     const touch1 = event.touches[0];
     const touch2 = event.touches[1];
 
-    lastTwoFingerCenter = {
-      x: (touch1.clientX + touch2.clientX) / 2,
-      y: (touch1.clientY + touch2.clientY) / 2
-    };
+    // Detect split viewport based on center of touch
+    const centerX = (touch1.clientX + touch2.clientX) / 2;
+    const centerY = (touch1.clientY + touch2.clientY) / 2;
+
+    if (props.view === 'split') {
+      activeSplitViewport = getSplitViewportAtPoint(centerX, centerY);
+    } else {
+      activeSplitViewport = null;
+    }
+
+    isDragging = true;
+    const isOrthographicView = props.view === 'top' || props.view === 'front' ||
+      (props.view === 'split' && activeSplitViewport !== 'iso');
+    isRotating = !isOrthographicView; // Rotation only in 3D view
+    isPanning = false;
+
+    lastTwoFingerCenter = { x: centerX, y: centerY };
     previousMousePosition = lastTwoFingerCenter;
 
     // Store distance for pinch zoom
@@ -1225,6 +1420,17 @@ const onTouchMove = (event: TouchEvent) => {
     // Pan based on center movement
     onMouseMove({ clientX: newCenter.x, clientY: newCenter.y } as MouseEvent);
 
+    // Determine which camera to use for pinch zoom
+    let activeCamera: THREE.OrthographicCamera | null = camera;
+    if (props.view === 'split' && activeSplitViewport) {
+      const { camera: splitCam } = getSplitCameraAndTarget(activeSplitViewport);
+      if (splitCam) {
+        activeCamera = splitCam;
+      }
+    }
+
+    if (!activeCamera) return;
+
     // Handle pinch zoom
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
@@ -1233,28 +1439,28 @@ const onTouchMove = (event: TouchEvent) => {
     if (lastTouchDistance > 0) {
       const zoomFactor = lastTouchDistance / distance;
 
-      camera.left *= zoomFactor;
-      camera.right *= zoomFactor;
-      camera.top *= zoomFactor;
-      camera.bottom *= zoomFactor;
+      activeCamera.left *= zoomFactor;
+      activeCamera.right *= zoomFactor;
+      activeCamera.top *= zoomFactor;
+      activeCamera.bottom *= zoomFactor;
 
       // Limit zoom range
-      const frustumWidth = camera.right - camera.left;
+      const frustumWidth = activeCamera.right - activeCamera.left;
       if (frustumWidth < 1) {
         const scale = 1 / frustumWidth;
-        camera.left *= scale;
-        camera.right *= scale;
-        camera.top *= scale;
-        camera.bottom *= scale;
+        activeCamera.left *= scale;
+        activeCamera.right *= scale;
+        activeCamera.top *= scale;
+        activeCamera.bottom *= scale;
       } else if (frustumWidth > 2000) {
         const scale = 2000 / frustumWidth;
-        camera.left *= scale;
-        camera.right *= scale;
-        camera.top *= scale;
-        camera.bottom *= scale;
+        activeCamera.left *= scale;
+        activeCamera.right *= scale;
+        activeCamera.top *= scale;
+        activeCamera.bottom *= scale;
       }
 
-      camera.updateProjectionMatrix();
+      activeCamera.updateProjectionMatrix();
       updatePointerScale();
     }
 
@@ -1369,8 +1575,10 @@ const animate = () => {
         gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
       }
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+      if (splitSideAxisLabels) splitSideAxisLabels.position.set(offset.x, offset.y, offset.z);
       if (homeIndicatorGroup) {
         const basePosition = computeMachineOriginPosition();
         homeIndicatorGroup.position.set(
@@ -1381,11 +1589,33 @@ const animate = () => {
       }
 
       // Update camera target to origin but maintain camera position relative to it
-      if (camera && cameraTarget.x !== 0 || cameraTarget.y !== 0 || cameraTarget.z !== 0) {
+      if (camera && (cameraTarget.x !== 0 || cameraTarget.y !== 0 || cameraTarget.z !== 0)) {
         const cameraOffset = camera.position.clone().sub(cameraTarget);
         cameraTarget.set(0, 0, 0);
         camera.position.copy(cameraTarget).add(cameraOffset);
         camera.lookAt(cameraTarget);
+      }
+
+      // Also update split view camera targets to origin
+      if (props.view === 'split') {
+        if (splitTopCamera && (splitTopCameraTarget.x !== 0 || splitTopCameraTarget.y !== 0 || splitTopCameraTarget.z !== 0)) {
+          const offset = splitTopCamera.position.clone().sub(splitTopCameraTarget);
+          splitTopCameraTarget.set(0, 0, 0);
+          splitTopCamera.position.copy(splitTopCameraTarget).add(offset);
+          splitTopCamera.lookAt(splitTopCameraTarget);
+        }
+        if (splitFrontCamera && (splitFrontCameraTarget.x !== 0 || splitFrontCameraTarget.y !== 0 || splitFrontCameraTarget.z !== 0)) {
+          const offset = splitFrontCamera.position.clone().sub(splitFrontCameraTarget);
+          splitFrontCameraTarget.set(0, 0, 0);
+          splitFrontCamera.position.copy(splitFrontCameraTarget).add(offset);
+          splitFrontCamera.lookAt(splitFrontCameraTarget);
+        }
+        if (splitIsoCamera && (splitIsoCameraTarget.x !== 0 || splitIsoCameraTarget.y !== 0 || splitIsoCameraTarget.z !== 0)) {
+          const offset = splitIsoCamera.position.clone().sub(splitIsoCameraTarget);
+          splitIsoCameraTarget.set(0, 0, 0);
+          splitIsoCamera.position.copy(splitIsoCameraTarget).add(offset);
+          splitIsoCamera.lookAt(splitIsoCameraTarget);
+        }
       }
     } else {
       // Normal mode: spindle follows position
@@ -1413,7 +1643,57 @@ const animate = () => {
   }
 
   if (renderer && scene && camera) {
-    renderer.render(scene, camera);
+    const width = renderer.domElement.width;
+    const height = renderer.domElement.height;
+
+    if (props.view === 'split' && splitTopCamera && splitFrontCamera && splitIsoCamera) {
+      // Split view rendering with scissor test
+      const halfWidth = Math.floor(width / 2);
+      const halfHeight = Math.floor(height / 2);
+
+      renderer.setScissorTest(true);
+
+      // Top-left: Top view (XY grid, axis labels with Y)
+      if (gridGroup) gridGroup.visible = true;
+      if (splitSideGridGroup) splitSideGridGroup.visible = false;
+      if (axisLabelsGroup) axisLabelsGroup.visible = true;
+      if (splitSideAxisLabels) splitSideAxisLabels.visible = false;
+      updatePointerScale(splitTopCamera);
+      renderer.setViewport(0, halfHeight, halfWidth, halfHeight);
+      renderer.setScissor(0, halfHeight, halfWidth, halfHeight);
+      renderer.render(scene, splitTopCamera);
+
+      // Top-right: Side view (XZ grid, axis labels without Y)
+      if (gridGroup) gridGroup.visible = false;
+      if (splitSideGridGroup) splitSideGridGroup.visible = true;
+      if (axisLabelsGroup) axisLabelsGroup.visible = false;
+      if (splitSideAxisLabels) splitSideAxisLabels.visible = true;
+      updatePointerScale(splitFrontCamera);
+      renderer.setViewport(halfWidth, halfHeight, halfWidth, halfHeight);
+      renderer.setScissor(halfWidth, halfHeight, halfWidth, halfHeight);
+      renderer.render(scene, splitFrontCamera);
+
+      // Bottom: 3D view (XY grid, axis labels with Y)
+      if (gridGroup) gridGroup.visible = true;
+      if (splitSideGridGroup) splitSideGridGroup.visible = false;
+      if (axisLabelsGroup) axisLabelsGroup.visible = true;
+      if (splitSideAxisLabels) splitSideAxisLabels.visible = false;
+      updatePointerScale(splitIsoCamera);
+      renderer.setViewport(0, 0, width, halfHeight);
+      renderer.setScissor(0, 0, width, halfHeight);
+      renderer.render(scene, splitIsoCamera);
+
+      renderer.setScissorTest(false);
+    } else {
+      // Single view rendering - reset viewport to full size
+      // Ensure main elements are visible and split-specific elements are hidden
+      if (gridGroup) gridGroup.visible = true;
+      if (splitSideGridGroup) splitSideGridGroup.visible = false;
+      if (axisLabelsGroup) axisLabelsGroup.visible = true;
+      if (splitSideAxisLabels) splitSideAxisLabels.visible = false;
+      renderer.setViewport(0, 0, width, height);
+      renderer.render(scene, camera);
+    }
   }
 };
 
@@ -1497,7 +1777,10 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     if (gcodeBounds && gcodeBounds.size.length() > 0) {
       currentGCodeBounds = gcodeBounds; // Store bounds for later use
       // Fit to current view (honors user's selection / default)
-      if (autoFitMode.value) {
+      if (props.view === 'split') {
+        // Update split view cameras when G-code is loaded
+        updateSplitViewCameras();
+      } else if (autoFitMode.value) {
         fitCameraToBounds(gcodeBounds);
       }
     }
@@ -1702,7 +1985,7 @@ const getGridBounds = () => {
   return bounds;
 };
 
-const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
+const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'split') => {
   if (!bounds || !camera) return;
 
   // Use current view type if not specified
@@ -1810,7 +2093,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso') => {
   camera.lookAt(cameraTarget);
 };
 
-const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso') => {
+const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split') => {
   // Save view preference to settings
   try {
     await updateSettings({ defaultGcodeView: viewType });
@@ -1832,10 +2115,15 @@ const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso') => {
   emit('change-view', viewType);
 
   // Always fit to view when clicking a view button
-  if (autoFitMode.value && currentGCodeBounds) {
-    fitCameraToBounds(currentGCodeBounds, viewType);
+  if (viewType === 'split') {
+    // For split view, update all split cameras to fit bounds
+    updateSplitViewCameras();
   } else {
-    fitCameraToBounds(getGridBounds(), viewType);
+    if (autoFitMode.value && currentGCodeBounds) {
+      fitCameraToBounds(currentGCodeBounds, viewType);
+    } else {
+      fitCameraToBounds(getGridBounds(), viewType);
+    }
   }
 };
 
@@ -1871,11 +2159,101 @@ const handleResize = () => {
   renderer.setSize(width, height);
   renderer.setPixelRatio(window.devicePixelRatio);
 
+  // Update split view cameras if they exist
+  updateSplitViewCameras();
+
   updatePointerScale();
 };
 
+const updateSplitViewCameras = () => {
+  if (!canvas.value || !splitTopCamera || !splitFrontCamera || !splitIsoCamera) return;
+
+  const width = canvas.value.clientWidth;
+  const height = canvas.value.clientHeight;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+
+  // Get bounds to fit - respect autoFitMode setting
+  const bounds = (autoFitMode.value && currentGCodeBounds) ? currentGCodeBounds : getGridBounds();
+  if (!bounds) return;
+
+  const padding = 1.1;
+  const sizeX = bounds.size.x * padding;
+  const sizeY = bounds.size.y * padding;
+  const sizeZ = bounds.size.z * padding;
+
+  // Top camera (top-left quadrant)
+  const topAspect = halfWidth / halfHeight;
+  let topFrustumWidth, topFrustumHeight;
+  if (sizeX / topAspect > sizeY) {
+    topFrustumWidth = sizeX;
+    topFrustumHeight = sizeX / topAspect;
+  } else {
+    topFrustumHeight = sizeY;
+    topFrustumWidth = sizeY * topAspect;
+  }
+  splitTopCamera.left = -topFrustumWidth / 2;
+  splitTopCamera.right = topFrustumWidth / 2;
+  splitTopCamera.top = topFrustumHeight / 2;
+  splitTopCamera.bottom = -topFrustumHeight / 2;
+  const topDistance = Math.max(sizeX, sizeY, sizeZ) * 2.2;
+  splitTopCameraTarget.copy(bounds.center);
+  splitTopCamera.position.set(bounds.center.x, bounds.center.y, bounds.center.z + topDistance);
+  splitTopCamera.up.set(0, 1, 0);
+  splitTopCamera.lookAt(splitTopCameraTarget);
+  splitTopCamera.updateProjectionMatrix();
+
+  // Front camera (top-right quadrant)
+  const frontAspect = halfWidth / halfHeight;
+  let frontFrustumWidth, frontFrustumHeight;
+  if (sizeX / frontAspect > sizeZ) {
+    frontFrustumWidth = sizeX;
+    frontFrustumHeight = sizeX / frontAspect;
+  } else {
+    frontFrustumHeight = sizeZ;
+    frontFrustumWidth = sizeZ * frontAspect;
+  }
+  splitFrontCamera.left = -frontFrustumWidth / 2;
+  splitFrontCamera.right = frontFrustumWidth / 2;
+  splitFrontCamera.top = frontFrustumHeight / 2;
+  splitFrontCamera.bottom = -frontFrustumHeight / 2;
+  const frontDistance = Math.max(sizeX, sizeY, sizeZ) * 2.2;
+  splitFrontCameraTarget.copy(bounds.center);
+  splitFrontCamera.position.set(bounds.center.x, bounds.center.y - frontDistance, bounds.center.z);
+  splitFrontCamera.up.set(0, 0, 1);
+  splitFrontCamera.lookAt(splitFrontCameraTarget);
+  splitFrontCamera.updateProjectionMatrix();
+
+  // Iso camera (bottom half - full width)
+  const isoAspect = width / halfHeight;
+  const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY);
+  const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7);
+  let isoFrustumWidth, isoFrustumHeight;
+  if (projectedWidth / isoAspect > projectedHeight) {
+    isoFrustumWidth = projectedWidth;
+    isoFrustumHeight = projectedWidth / isoAspect;
+  } else {
+    isoFrustumHeight = projectedHeight;
+    isoFrustumWidth = projectedHeight * isoAspect;
+  }
+  splitIsoCamera.left = -isoFrustumWidth / 2;
+  splitIsoCamera.right = isoFrustumWidth / 2;
+  splitIsoCamera.top = isoFrustumHeight / 2;
+  splitIsoCamera.bottom = -isoFrustumHeight / 2;
+  const isoDistance = Math.max(sizeX, sizeY, sizeZ) * 2.2;
+  splitIsoCameraTarget.set(bounds.center.x, bounds.center.y, bounds.center.z - bounds.size.z * 0.2);
+  splitIsoCamera.position.set(
+    bounds.center.x + isoDistance * 0.7,
+    bounds.center.y - isoDistance * 0.7,
+    bounds.center.z + isoDistance * 0.7
+  );
+  splitIsoCamera.up.set(0, 0, 1);
+  splitIsoCamera.lookAt(splitIsoCameraTarget);
+  splitIsoCamera.updateProjectionMatrix();
+};
+
 // View presets with Z-up orientation
-const setCameraView = (viewType: 'top' | 'front' | 'iso') => {
+const setCameraView = (viewType: 'top' | 'front' | 'iso' | 'split') => {
   if (!camera) return;
 
   const distance = camera.position.distanceTo(cameraTarget);
@@ -1924,20 +2302,42 @@ const updatePointerOpacity = () => {
 
 // Watch for view changes
 watch(() => props.view, (newView) => {
-  setCameraView(newView);
-  // Rebuild grid for the new view (top/3D uses XY grid, side uses XZ grid)
-  rebuildGrid(props.workOffset, newView);
-  // Rebuild axis labels (hide Y in side view)
-  if (scene && axisLabelsGroup) {
-    scene.remove(axisLabelsGroup);
-    axisLabelsGroup = createDynamicAxisLabels(currentGCodeBounds, newView);
-    scene.add(axisLabelsGroup);
-  }
-  // Auto fit to view when changing views with the specific view type
-  if (autoFitMode.value && currentGCodeBounds) {
-    fitCameraToBounds(currentGCodeBounds, newView);
+  if (newView === 'split') {
+    // For split view, create both XY and XZ grids
+    rebuildGrid(props.workOffset, 'split');
+    updateSplitViewCameras();
+    // Create axis labels for Top/3D (with Y) and Side (without Y)
+    if (scene) {
+      if (axisLabelsGroup) scene.remove(axisLabelsGroup);
+      if (splitSideAxisLabels) scene.remove(splitSideAxisLabels);
+      // Main axis labels (with Y) for Top and 3D viewports
+      axisLabelsGroup = createDynamicAxisLabels(currentGCodeBounds, 'top');
+      scene.add(axisLabelsGroup);
+      // Side axis labels (without Y) for Side viewport
+      splitSideAxisLabels = createDynamicAxisLabels(currentGCodeBounds, 'front');
+      scene.add(splitSideAxisLabels);
+    }
   } else {
-    fitCameraToBounds(getGridBounds(), newView);
+    // Clean up split-specific elements
+    if (scene && splitSideAxisLabels) {
+      scene.remove(splitSideAxisLabels);
+      splitSideAxisLabels = null;
+    }
+    setCameraView(newView);
+    // Rebuild grid for the new view (top/3D uses XY grid, side uses XZ grid)
+    rebuildGrid(props.workOffset, newView);
+    // Rebuild axis labels (hide Y in side view)
+    if (scene && axisLabelsGroup) {
+      scene.remove(axisLabelsGroup);
+      axisLabelsGroup = createDynamicAxisLabels(currentGCodeBounds, newView);
+      scene.add(axisLabelsGroup);
+    }
+    // Auto fit to view when changing views with the specific view type
+    if (autoFitMode.value && currentGCodeBounds) {
+      fitCameraToBounds(currentGCodeBounds, newView);
+    } else {
+      fitCameraToBounds(getGridBounds(), newView);
+    }
   }
   // Update pointer opacity
   updatePointerOpacity();
@@ -2028,7 +2428,11 @@ watch(() => props.zMaxTravel, () => {
   const bounds = computeGridBoundsFrom(props.workOffset);
   applyBoundsAndWarnings(bounds);
   if (!autoFitMode.value) {
-    fitCameraToBounds(getGridBounds());
+    if (props.view === 'split') {
+      updateSplitViewCameras();
+    } else {
+      fitCameraToBounds(getGridBounds());
+    }
   }
 });
 
@@ -2050,10 +2454,15 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
   }
 
   // Update camera view
-  if (isAutoFit && currentGCodeBounds) {
-    fitCameraToBounds(currentGCodeBounds);
+  if (props.view === 'split') {
+    // For split view, update all split cameras
+    updateSplitViewCameras();
   } else {
-    fitCameraToBounds(getGridBounds());
+    if (isAutoFit && currentGCodeBounds) {
+      fitCameraToBounds(currentGCodeBounds);
+    } else {
+      fitCameraToBounds(getGridBounds());
+    }
   }
 });
 
@@ -2080,8 +2489,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       };
       gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(offset.x, offset.y, offset.z);
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
+      if (splitSideAxisLabels) splitSideAxisLabels.position.set(offset.x, offset.y, offset.z);
       if (homeIndicatorGroup) {
         const basePosition = computeMachineOriginPosition();
         homeIndicatorGroup.position.set(
@@ -2104,14 +2515,38 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       camera.position.copy(cameraTarget).add(cameraOffset);
       camera.lookAt(cameraTarget);
     }
+
+    // Also update split view camera targets to origin
+    if (props.view === 'split') {
+      if (splitTopCamera) {
+        const offset = splitTopCamera.position.clone().sub(splitTopCameraTarget);
+        splitTopCameraTarget.set(0, 0, 0);
+        splitTopCamera.position.copy(splitTopCameraTarget).add(offset);
+        splitTopCamera.lookAt(splitTopCameraTarget);
+      }
+      if (splitFrontCamera) {
+        const offset = splitFrontCamera.position.clone().sub(splitFrontCameraTarget);
+        splitFrontCameraTarget.set(0, 0, 0);
+        splitFrontCamera.position.copy(splitFrontCameraTarget).add(offset);
+        splitFrontCamera.lookAt(splitFrontCameraTarget);
+      }
+      if (splitIsoCamera) {
+        const offset = splitIsoCamera.position.clone().sub(splitIsoCameraTarget);
+        splitIsoCameraTarget.set(0, 0, 0);
+        splitIsoCamera.position.copy(splitIsoCameraTarget).add(offset);
+        splitIsoCamera.lookAt(splitIsoCameraTarget);
+      }
+    }
   } else {
     // Normal mode - reset all positions
     if (gcodeVisualizer && gcodeVisualizer.group) {
       gcodeVisualizer.group.position.set(0, 0, 0);
     }
     if (gridGroup) gridGroup.position.set(0, 0, 0);
+    if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
     if (axesGroup) axesGroup.position.set(0, 0, 0);
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);
+    if (splitSideAxisLabels) splitSideAxisLabels.position.set(0, 0, 0);
     if (homeIndicatorGroup) {
       const basePosition = computeMachineOriginPosition();
       homeIndicatorGroup.position.copy(basePosition);
@@ -2120,7 +2555,19 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     // Respect Auto-Fit setting when exiting spindle view mode
     // Important: recompute bounds after resetting transforms so we don't use
     // stale, offset bounds captured while in spindle view.
-    if (autoFitMode.value) {
+    if (props.view === 'split') {
+      // Update split cameras when exiting spindle view
+      if (gcodeVisualizer && gcodeVisualizer.group) {
+        const box = new THREE.Box3().setFromObject(gcodeVisualizer.group);
+        currentGCodeBounds = {
+          min: box.min,
+          max: box.max,
+          center: box.getCenter(new THREE.Vector3()),
+          size: box.getSize(new THREE.Vector3())
+        };
+      }
+      updateSplitViewCameras();
+    } else if (autoFitMode.value) {
       if (gcodeVisualizer && gcodeVisualizer.group) {
         const box = new THREE.Box3().setFromObject(gcodeVisualizer.group);
         const freshBounds = {
@@ -2923,14 +3370,18 @@ onMounted(async () => {
 
   // Initialize camera to the provided view (honors defaultGcodeView)
   setTimeout(() => {
-    setCameraView(props.view);
     // No need to emit here; parent already owns the state
 
     // Ensure initial framing even when Auto-Fit is OFF and no G-code is loaded
-    if (autoFitMode.value && currentGCodeBounds) {
-      fitCameraToBounds(currentGCodeBounds, props.view);
+    if (props.view === 'split') {
+      updateSplitViewCameras();
     } else {
-      fitCameraToBounds(getGridBounds(), props.view);
+      setCameraView(props.view);
+      if (autoFitMode.value && currentGCodeBounds) {
+        fitCameraToBounds(currentGCodeBounds, props.view);
+      } else {
+        fitCameraToBounds(getGridBounds(), props.view);
+      }
     }
 
   }, 100);
@@ -4034,5 +4485,72 @@ body.theme-light .dot--rapid {
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* Split View Styles */
+.split-view-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.split-label {
+  position: absolute;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}
+
+.split-label--top {
+  top: 8px;
+  left: 8px;
+}
+
+.split-label--side {
+  top: 8px;
+  left: calc(50% + 8px);
+}
+
+.split-label--3d {
+  top: calc(50% + 8px);
+  left: 8px;
+}
+
+.split-divider {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.split-divider--vertical {
+  left: 50%;
+  top: 0;
+  bottom: 50%;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.split-divider--horizontal {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+/* Light theme split view adjustments */
+:global(.theme-light) .split-label {
+  background: rgba(255, 255, 255, 0.85);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+:global(.theme-light) .split-divider {
+  background: rgba(0, 0, 0, 0.15);
 }
 </style>

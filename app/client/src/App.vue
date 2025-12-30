@@ -1018,8 +1018,8 @@ initDebugLogger();
 // LOCAL UI STATE (not synchronized across clients)
 const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
 const workspace = ref(initialSettings?.workspace || 'G54');
-const viewport = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'top');
-const defaultView = ref<'top' | 'front' | 'iso'>(initialSettings?.defaultGcodeView || 'top');
+const viewport = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
+const defaultView = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
 const showWorkspaceMismatchDialog = ref(false);
