@@ -967,6 +967,7 @@ const initThreeJS = () => {
       units: appStore.unitsPreference.value
     });
   } else {
+    // For 'top', 'iso', and 'split' views, use XY grid as the main grid
     gridGroup = createGridLines({
       gridSizeX: resolveGridSize(props.gridSizeX),
       gridSizeY: resolveGridSize(props.gridSizeY),
@@ -977,12 +978,30 @@ const initThreeJS = () => {
   }
   scene.add(gridGroup);
 
+  // For split view, also create the XZ grid for the side viewport
+  if (props.view === 'split') {
+    splitSideGridGroup = createSideViewGrid({
+      gridSizeX: resolveGridSize(props.gridSizeX),
+      gridSizeZ: resolveZTravel(props.zMaxTravel),
+      workOffset: props.workOffset,
+      orientation: resolvedOrientation.value,
+      units: appStore.unitsPreference.value
+    });
+    scene.add(splitSideGridGroup);
+  }
+
   axesGroup = createCoordinateAxes(50);
   scene.add(axesGroup);
 
   // Add initial axis labels
-  axisLabelsGroup = createDynamicAxisLabels(null, props.view);
+  axisLabelsGroup = createDynamicAxisLabels(null, props.view === 'split' ? 'top' : props.view);
   scene.add(axisLabelsGroup);
+
+  // For split view, also create axis labels without Y for the side viewport
+  if (props.view === 'split') {
+    splitSideAxisLabels = createDynamicAxisLabels(null, 'front');
+    scene.add(splitSideAxisLabels);
+  }
 
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
