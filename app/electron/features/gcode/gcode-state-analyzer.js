@@ -36,7 +36,7 @@ export class GCodeStateAnalyzer {
       coolantMist: false,
       wcs: 'G54',
       position: { x: 0, y: 0, z: 0 },
-      auxOutputs: {} // Track M64/M65 outputs: { P0: true, P1: false, ... }
+      auxOutputs: {}
     };
     this.analyzedUpToLine = 0;
   }
@@ -152,9 +152,8 @@ export class GCodeStateAnalyzer {
       if (parsed && parsed.matched && parsed.toolNumber !== null) {
         this.state.tool = parsed.toolNumber;
       }
-      // Reset position and spindle on tool change - old values are invalid for new tool
       this.state.position.z = null;
-      this.state.spindleState = 'M5';  // Spindle should be off during tool change
+      this.state.spindleState = 'M5';
       this.state.spindleSpeed = 0;
     } else if (mVal === 7) {
       this.state.coolantMist = true;
@@ -164,13 +163,11 @@ export class GCodeStateAnalyzer {
       this.state.coolantFlood = false;
       this.state.coolantMist = false;
     } else if (mVal === 64) {
-      // M64 P# - Turn on auxiliary output
       if (Number.isFinite(words.P)) {
         const outputNum = Math.round(words.P);
         this.state.auxOutputs[`P${outputNum}`] = true;
       }
     } else if (mVal === 65) {
-      // M65 P# - Turn off auxiliary output
       if (Number.isFinite(words.P)) {
         const outputNum = Math.round(words.P);
         this.state.auxOutputs[`P${outputNum}`] = false;
@@ -207,18 +204,14 @@ export function generateResumeSequence(targetState, options = {}) {
 
   commands.push(`; Resume sequence for starting from line`);
 
-  // Retract to machine Z0 first (safest position)
   commands.push('G53 G0 Z0');
 
-  // If tool mismatch, insert M6 to change to the expected tool
   const needsToolChange = expectedTool !== null && currentTool !== null && expectedTool !== currentTool;
   if (needsToolChange) {
     commands.push(`; Tool change: T${currentTool} -> T${expectedTool}`);
     commands.push(`M6 T${expectedTool}`);
   }
 
-  // If starting at a tool change, use minimal preamble - just safe Z retract (and optional tool change above)
-  // The M6 and subsequent lines will handle all setup (spindle, coolant, positioning)
   if (isStartingAtToolChange) {
     commands.push('; Starting at tool change - minimal preamble');
     commands.push('; End resume sequence');
@@ -227,7 +220,6 @@ export function generateResumeSequence(targetState, options = {}) {
 
   const pos = targetState.position;
 
-  // Set modal states
   if (targetState.units) {
     commands.push(targetState.units);
   }
@@ -244,10 +236,8 @@ export function generateResumeSequence(targetState, options = {}) {
     commands.push(targetState.wcs);
   }
 
-  // Check if we have valid position context (Z is null after tool change)
   const hasValidPositionContext = pos.z !== null && Number.isFinite(pos.z);
 
-  // Rapid to XY position only if we have valid context (not after tool change)
   if (hasValidPositionContext && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
     commands.push(`G0 X${pos.x} Y${pos.y}`);
   }
@@ -269,7 +259,6 @@ export function generateResumeSequence(targetState, options = {}) {
     commands.push('M7');
   }
 
-  // Turn on auxiliary outputs (M64 P#)
   if (targetState.auxOutputs) {
     for (const [key, isOn] of Object.entries(targetState.auxOutputs)) {
       if (isOn && key.startsWith('P')) {
@@ -278,13 +267,11 @@ export function generateResumeSequence(targetState, options = {}) {
     }
   }
 
-  // Only do Z positioning if we have valid position context (not after tool change)
   if (hasValidPositionContext) {
     const approachZ = pos.z + approachHeight;
     commands.push(`G0 Z${approachZ}`);
     commands.push(`G1 Z${pos.z} F${plungeFeedRate}`);
   } else {
-    // No XY/Z positioning - tool change detected, let the G-code handle positioning
     commands.push('; XY/Z positioning skipped - starting near tool change');
   }
 
@@ -316,4 +303,74 @@ export function compareToolState(expectedTool, currentTool) {
   }
 
   return { mismatch: false, message: 'Tool matches' };
+}
+
+// Helper to check if a line is an arc continuation (has arc params but no G-code)
+export function isArcContinuation(line) {
+  if (!line || typeof line !== 'string') {
+    return false;
+  }
+
+  const clean = line.trim();
+  if (!clean || clean.startsWith(';')) {
+    return false;
+  }
+
+  // Check if line has a G-code - if so, it's not a continuation
+  const hasGCode = /\bG\d+/i.test(clean);
+  if (hasGCode) {
+    return false;
+  }
+
+  // Check if line has arc parameters (I, J, K, or R with a number)
+  const hasArcParams = /\b[IJKR][+-]?\d/i.test(clean);
+  return hasArcParams;
+}
+
+// Find the start of an arc sequence by searching backwards
+// Returns the adjusted line number or the original if no adjustment needed
+export function findArcStart(lines, selectedLine) {
+  // selectedLine is 1-based
+  const lineIndex = selectedLine - 1;
+
+  if (lineIndex < 0 || lineIndex >= lines.length) {
+    return { adjustedLine: selectedLine, wasAdjusted: false };
+  }
+
+  const selectedContent = lines[lineIndex]?.trim() || '';
+
+  // Check if selected line is an arc continuation
+  if (!isArcContinuation(selectedContent)) {
+    return { adjustedLine: selectedLine, wasAdjusted: false };
+  }
+
+  // Search backwards to find the line with G2 or G3
+  for (let i = lineIndex - 1; i >= 0; i--) {
+    const line = lines[i]?.trim() || '';
+
+    // Skip empty lines and comments
+    if (!line || line.startsWith(';')) {
+      continue;
+    }
+
+    // Check if this line has G2 or G3
+    const hasG2G3 = /\bG[23]\b/i.test(line);
+    if (hasG2G3) {
+      return {
+        adjustedLine: i + 1, // Convert back to 1-based
+        wasAdjusted: true,
+        originalLine: selectedLine,
+        reason: 'Cannot start from middle of arc - adjusted to arc start'
+      };
+    }
+
+    // If we hit a different G-code (G0, G1, etc.), stop searching
+    const hasOtherGCode = /\bG\d+/i.test(line);
+    if (hasOtherGCode) {
+      break;
+    }
+  }
+
+  // Couldn't find arc start - return original (will likely error, but that's expected)
+  return { adjustedLine: selectedLine, wasAdjusted: false };
 }

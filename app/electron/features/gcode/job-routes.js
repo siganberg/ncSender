@@ -24,7 +24,7 @@ import { jobManager } from './job-manager.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
 import { getUserDataDir } from '../../utils/paths.js';
-import { GCodeStateAnalyzer, generateResumeSequence, compareToolState } from './gcode-state-analyzer.js';
+import { GCodeStateAnalyzer, generateResumeSequence, compareToolState, findArcStart } from './gcode-state-analyzer.js';
 import { parseM6Command } from '../../utils/gcode-patterns.js';
 import { createLogger } from '../../core/logger.js';
 
@@ -166,21 +166,25 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       const content = await fs.readFile(cachePath, 'utf8');
-      const totalLines = content.split('\n').length;
+      const lines = content.split('\n');
+      const totalLines = lines.length;
 
       if (lineNumber > totalLines) {
         return res.status(400).json({ error: `Line ${lineNumber} exceeds file length (${totalLines} lines)` });
       }
 
+      // Check if selected line is in the middle of an arc and adjust if needed
+      const arcAdjustment = findArcStart(lines, lineNumber);
+      const effectiveLineNumber = arcAdjustment.adjustedLine;
+
       const analyzer = new GCodeStateAnalyzer();
-      // Analyze to lineNumber - 1 to get state BEFORE the start line
+      // Analyze to effectiveLineNumber - 1 to get state BEFORE the start line
       // This ensures the resume sequence sets up the machine correctly for the start line to execute
-      const targetLine = Math.max(1, lineNumber - 1);
+      const targetLine = Math.max(1, effectiveLineNumber - 1);
       const { state } = analyzer.analyzeToLine(content, targetLine);
 
       // Check if the selected start line is a tool change (M6)
-      const lines = content.split('\n');
-      const startLineContent = lines[lineNumber - 1] || '';
+      const startLineContent = lines[effectiveLineNumber - 1] || '';
       const startLineToolChange = parseM6Command(startLineContent);
       const isStartingAtToolChange = startLineToolChange?.matched && startLineToolChange?.toolNumber !== null;
 
@@ -196,10 +200,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         warnings.push('Machine is not homed');
       }
 
-      // Don't warn about tool mismatch if we're starting at a tool change line
-      if (toolComparison.mismatch && !isStartingAtToolChange) {
-        warnings.push(toolComparison.message);
-      }
+      // Tool mismatch is shown in the "Tool Change Required" info box, not in warnings
 
       // Check if tool change will be needed (mismatch and not already starting at tool change)
       const willPerformToolChange = toolComparison.mismatch && !isStartingAtToolChange;
@@ -214,9 +215,16 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         currentTool: willPerformToolChange ? currentTool : null
       });
 
+      // Add arc adjustment warning if line was adjusted
+      if (arcAdjustment.wasAdjusted) {
+        warnings.push(`Line <strong>${lineNumber}</strong> is in the middle of an arc. Adjusted to line <strong>${effectiveLineNumber}</strong> instead (arc start).`);
+      }
+
       res.json({
         state,
-        lineNumber,
+        lineNumber: effectiveLineNumber,
+        originalLineNumber: arcAdjustment.wasAdjusted ? lineNumber : null,
+        lineAdjusted: arcAdjustment.wasAdjusted,
         totalLines,
         toolMismatch: false,  // No longer a blocking mismatch - we handle it in preamble
         willPerformToolChange,
@@ -274,21 +282,29 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
 
       const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
       const content = await fs.readFile(cachePath, 'utf8');
-      const totalLines = content.split('\n').length;
+      const lines = content.split('\n');
+      const totalLines = lines.length;
 
       if (startLine > totalLines) {
         return res.status(400).json({ error: `Line ${startLine} exceeds file length (${totalLines} lines)` });
       }
 
+      // Check if selected line is in the middle of an arc and adjust if needed
+      const arcAdjustment = findArcStart(lines, startLine);
+      const effectiveStartLine = arcAdjustment.adjustedLine;
+
+      if (arcAdjustment.wasAdjusted) {
+        log(`Line ${startLine} is arc continuation, adjusted to arc start at line ${effectiveStartLine}`);
+      }
+
       const analyzer = new GCodeStateAnalyzer();
-      // Analyze to startLine - 1 to get state BEFORE the start line
+      // Analyze to effectiveStartLine - 1 to get state BEFORE the start line
       // This ensures the resume sequence sets up the machine correctly for the start line to execute
-      const targetLine = Math.max(1, startLine - 1);
+      const targetLine = Math.max(1, effectiveStartLine - 1);
       const { state } = analyzer.analyzeToLine(content, targetLine);
 
       // Check if the selected start line is a tool change (M6)
-      const lines = content.split('\n');
-      const startLineContent = lines[startLine - 1] || '';
+      const startLineContent = lines[effectiveStartLine - 1] || '';
       const startLineToolChange = parseM6Command(startLineContent);
       const isStartingAtToolChange = startLineToolChange?.matched && startLineToolChange?.toolNumber !== null;
 
@@ -316,29 +332,33 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         serverState.jobLoaded.jobPauseAt = null;
         serverState.jobLoaded.jobPausedTotalSec = 0;
         serverState.jobLoaded.status = 'running';
-        serverState.jobLoaded.currentLine = startLine;
+        serverState.jobLoaded.currentLine = effectiveStartLine;
         broadcast('server-state-updated', serverState);
       }
 
       const displayFilename = serverState.jobLoaded?.filename || filename;
 
-      log('Starting job from line:', startLine, 'with resume sequence');
+      log('Starting job from line:', effectiveStartLine, 'with resume sequence');
 
       // Fire and forget - don't await, let job run in background
       jobManager.startJob(cachePath, displayFilename, actualCNCController, broadcast, commandProcessor, {
         serverState,
-        startLine,
+        startLine: effectiveStartLine,
         resumeSequence
       }).catch(error => {
         log('Error during job execution from line:', error);
       });
 
-      log('G-code job started from line:', startLine);
+      log('G-code job started from line:', effectiveStartLine);
       res.json({
         success: true,
-        message: `G-code job started from line ${startLine}`,
+        message: arcAdjustment.wasAdjusted
+          ? `G-code job started from line ${effectiveStartLine} (adjusted from ${startLine} - arc start)`
+          : `G-code job started from line ${effectiveStartLine}`,
         filename,
-        startLine,
+        startLine: effectiveStartLine,
+        originalStartLine: arcAdjustment.wasAdjusted ? startLine : null,
+        lineAdjusted: arcAdjustment.wasAdjusted,
         resumeSequence
       });
     } catch (error) {

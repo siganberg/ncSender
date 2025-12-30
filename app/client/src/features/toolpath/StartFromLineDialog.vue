@@ -22,9 +22,9 @@
         <h2>Start from Line</h2>
       </div>
 
-      <div class="warning-banner">
-        <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <div class="warning-banner" :style="warningStyle">
+        <svg class="warning-icon" viewBox="0 0 24 24" fill="currentColor" :style="infoIconStyle">
+          <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
         </svg>
         <div class="warning-text">
           <strong>Proceed with caution</strong>
@@ -32,11 +32,20 @@
         </div>
       </div>
 
+      <div v-if="warnings.length > 0" class="warnings-list">
+        <div v-for="(warning, index) in warnings" :key="index" class="warning-item" :style="warningItemStyle">
+          <svg class="warning-item-icon" viewBox="0 0 24 24" fill="currentColor" :style="infoIconStyle">
+            <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+          </svg>
+          <span v-html="warning"></span>
+        </div>
+      </div>
+
       <div class="dialog-content">
-        <div class="input-row">
-          <div class="input-group">
-            <label class="input-label">Start Line</label>
-            <div class="line-input-row">
+        <div class="input-container" :style="stateSummaryStyle">
+          <div class="input-row">
+            <div class="input-group input-group--inline">
+              <label class="input-label">Start Line</label>
               <input
                 type="number"
                 v-model.number="selectedLine"
@@ -51,10 +60,8 @@
               />
               <span class="line-total">of {{ totalLines }}</span>
             </div>
-          </div>
-          <div class="input-group">
-            <label class="input-label">Spindle Delay</label>
-            <div class="spindle-delay-row">
+            <div class="input-group input-group--inline">
+              <label class="input-label">Spindle Delay</label>
               <input
                 type="number"
                 v-model.number="spindleDelaySec"
@@ -71,7 +78,7 @@
         </div>
 
         <div class="state-container" :class="{ 'state-container--loading': isLoading }">
-          <div class="state-summary">
+          <div class="state-summary" :style="stateSummaryStyle">
             <h3>Machine State at Line {{ selectedLine }}</h3>
             <div class="state-grid">
               <div class="state-item">
@@ -212,11 +219,34 @@ const willPerformToolChange = ref(false);
 const expectedTool = ref(null);
 const currentTool = ref(null);
 const resumeSequence = ref([]);
-const showResumeSequence = ref(false);
+const showResumeSequence = ref(true);
+const warnings = ref([]);
+const lineWasAdjusted = ref(false);
 
 // Theme detection for Monaco
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
 const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+
+// Info banner styles - sky blue for both themes
+const warningStyle = computed(() => ({
+  background: isLightTheme.value ? 'rgba(14, 165, 233, 0.1)' : 'rgba(56, 189, 248, 0.15)',
+  borderColor: isLightTheme.value ? 'rgba(14, 165, 233, 0.3)' : 'rgba(56, 189, 248, 0.4)',
+  color: isLightTheme.value ? '#0284c7' : '#38bdf8'
+}));
+
+const warningItemStyle = computed(() => ({
+  background: isLightTheme.value ? 'rgba(14, 165, 233, 0.1)' : 'rgba(56, 189, 248, 0.1)',
+  borderColor: isLightTheme.value ? 'rgba(14, 165, 233, 0.3)' : 'rgba(56, 189, 248, 0.3)',
+  color: isLightTheme.value ? '#0284c7' : '#38bdf8'
+}));
+
+const infoIconStyle = computed(() => ({
+  color: isLightTheme.value ? '#0284c7' : '#ffffff'
+}));
+
+const stateSummaryStyle = computed(() => isLightTheme.value ? {
+  background: 'rgba(0, 0, 0, 0.03)'
+} : {});
 
 let themeObserver = null;
 
@@ -307,14 +337,24 @@ async function analyzeState() {
   errorMessage.value = '';
   analyzedState.value = null;
   willPerformToolChange.value = false;
+  warnings.value = [];
+  lineWasAdjusted.value = false;
 
   try {
     const result = await api.analyzeGCodeLine(selectedLine.value);
+
+    // Handle line adjustment (e.g., when selected line is in middle of arc)
+    if (result.lineAdjusted && result.lineNumber !== selectedLine.value) {
+      selectedLine.value = result.lineNumber;
+      lineWasAdjusted.value = true;
+    }
+
     analyzedState.value = result.state;
     willPerformToolChange.value = result.willPerformToolChange || false;
     expectedTool.value = result.expectedTool;
     currentTool.value = result.currentTool;
     resumeSequence.value = result.resumeSequence || [];
+    warnings.value = result.warnings || [];
   } catch (error) {
     errorMessage.value = error.message || 'Failed to analyze G-code';
   } finally {
@@ -429,6 +469,7 @@ onUnmounted(() => {
   border: 1px solid rgba(251, 191, 36, 0.4);
   border-radius: 8px;
   color: var(--color-warning, #fbbf24);
+  margin-bottom: calc(-1 * var(--gap-sm));
 }
 
 .warning-icon {
@@ -451,7 +492,7 @@ onUnmounted(() => {
 .dialog-content {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
+  gap: var(--gap-xs);
 }
 
 .input-row {
@@ -474,16 +515,33 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+.input-container {
+  background: var(--color-surface-secondary, rgba(255,255,255,0.05));
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 12px 6px 12px;
+}
+
 .input-group {
   display: flex;
   flex-direction: column;
   gap: var(--gap-xs);
 }
 
+.input-group--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.input-group--inline .input-label {
+  flex: 1;
+}
+
 .input-label {
   font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text-secondary);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .line-input-row,
@@ -502,6 +560,7 @@ onUnmounted(() => {
   color: var(--color-text);
   font-size: 1rem;
   width: 100px;
+  text-align: right;
 }
 
 .line-total,
@@ -539,6 +598,7 @@ onUnmounted(() => {
 
 .state-summary {
   background: var(--color-surface-secondary, rgba(255,255,255,0.05));
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: var(--gap-sm);
 }
@@ -570,6 +630,31 @@ onUnmounted(() => {
 .state-value {
   font-family: var(--font-mono);
   color: var(--color-text);
+}
+
+.warnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  margin-bottom: calc(-1 * var(--gap-sm));
+}
+
+.warning-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: var(--gap-sm);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--color-warning, #fbbf24);
+}
+
+.warning-item-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .tool-change-info {
@@ -609,7 +694,7 @@ onUnmounted(() => {
 
 .dialog-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--gap-sm);
   padding-top: var(--gap-sm);
   border-top: 1px solid var(--color-border);
