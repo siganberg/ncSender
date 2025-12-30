@@ -292,7 +292,7 @@
             />
             <div class="editor-actions">
               <button @click="hasUnsavedChanges ? discardChanges() : closeGcodeModal()" class="cancel-button">{{ hasUnsavedChanges ? 'Discard' : 'Close' }}</button>
-              <button @click="commitEdit" class="commit-button">Commit Changes</button>
+              <button @click="commitEdit" class="commit-button" :disabled="!hasUnsavedChanges">Commit Changes</button>
             </div>
           </div>
         </div>
@@ -2070,6 +2070,10 @@ function discardChanges() {
       nextTick(() => {
         hasUnsavedChanges.value = false;
         isRevertingContent.value = false;
+        // Re-run find if there's an active search query
+        if (findQuery.value) {
+          performFind();
+        }
       });
     });
     return;
@@ -3238,9 +3242,15 @@ body.theme-light .monaco-editor-container :deep(.monaco-selected-gcode-glyph) {
   color: white;
 }
 
-.commit-button:hover {
+.commit-button:hover:not(:disabled) {
   opacity: 0.9;
   transform: translateY(-1px);
+}
+
+.commit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .line-content :deep(mark) {
