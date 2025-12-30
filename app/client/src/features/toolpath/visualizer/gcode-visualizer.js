@@ -666,9 +666,15 @@ class GCodeVisualizer {
 
         const tempVec = new THREE.Vector3();
 
+        // Ensure group's world matrix is up to date (needed for Spindle View mode offset)
+        this.group.updateMatrixWorld(true);
+
         // Project a 3D point to normalized screen coordinates (-1 to 1)
+        // Apply group's world transform to account for Spindle View mode offset
         const projectToScreen = (x, y, z) => {
             tempVec.set(x, y, z);
+            // Transform from local to world coordinates
+            tempVec.applyMatrix4(this.group.matrixWorld);
             tempVec.project(camera);
             return {
                 x: (tempVec.x + 1) / 2 * rendererWidth,
