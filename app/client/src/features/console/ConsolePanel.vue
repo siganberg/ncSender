@@ -607,7 +607,8 @@ const mainViewerLineDecorations = ref<string[]>([]);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 const isDragging = ref(false);
-const selectedLineDecorations = ref<string[]>([]);
+// Track decorations separately for each editor (Monaco decoration IDs are editor-specific)
+const editorDecorationsMap = new WeakMap<Monaco.editor.IStandaloneCodeEditor, string[]>();
 
 // Monaco Editor options for main G-Code preview (smaller view)
 const monacoMainViewerOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {
@@ -870,9 +871,12 @@ function handleMonacoMainViewerMount(editor: Monaco.editor.IStandaloneCodeEditor
 
 // Update selection decorations in Monaco editor
 function updateSelectionDecorations(editor: Monaco.editor.IStandaloneCodeEditor) {
+  const existingDecorations = editorDecorationsMap.get(editor) || [];
+
   if (!selectionStart.value || !selectionEnd.value) {
     // Clear selection decorations
-    selectedLineDecorations.value = editor.deltaDecorations(selectedLineDecorations.value, []);
+    const newDecorations = editor.deltaDecorations(existingDecorations, []);
+    editorDecorationsMap.set(editor, newDecorations);
     return;
   }
 
@@ -891,13 +895,28 @@ function updateSelectionDecorations(editor: Monaco.editor.IStandaloneCodeEditor)
     });
   }
 
-  selectedLineDecorations.value = editor.deltaDecorations(selectedLineDecorations.value, decorations);
+  const newDecorations = editor.deltaDecorations(existingDecorations, decorations);
+  editorDecorationsMap.set(editor, newDecorations);
 }
 
-// Update store with selected lines
+// Update selection decorations on all active editors
+function updateAllSelectionDecorations() {
+  if (monacoMainViewerRef.value) {
+    updateSelectionDecorations(monacoMainViewerRef.value);
+  }
+  if (monacoViewerRef.value) {
+    updateSelectionDecorations(monacoViewerRef.value);
+  }
+  if (monacoEditorRef.value) {
+    updateSelectionDecorations(monacoEditorRef.value);
+  }
+}
+
+// Update store with selected lines and sync decorations to all editors
 function updateSelectedLinesInStore() {
   if (!selectionStart.value || !selectionEnd.value) {
     store.clearSelectedGCodeLines();
+    updateAllSelectionDecorations();
     return;
   }
 
@@ -908,6 +927,8 @@ function updateSelectedLinesInStore() {
     lines.add(i);
   }
   store.setSelectedGCodeLines(lines);
+  // Update decorations on all editors (ensures main viewer updates when selection is from modal)
+  updateAllSelectionDecorations();
 }
 
 // Get line number from Y coordinate
@@ -1846,6 +1867,13 @@ watch(showGcodeModal, async (isOpen) => {
     originalGcode.value = '';
     editableGcode.value = '';
     hasUnsavedChanges.value = false;
+    // Sync decorations to main viewer when modal closes (selection persists for visualizer)
+    if (monacoMainViewerRef.value && selectionStart.value !== null && selectionEnd.value !== null) {
+      updateSelectionDecorations(monacoMainViewerRef.value);
+      // Scroll to center of selection
+      const middleLine = Math.floor((selectionStart.value + selectionEnd.value) / 2);
+      monacoMainViewerRef.value.revealLineInCenter(middleLine);
+    }
   }
 });
 
