@@ -1134,14 +1134,51 @@ const onCanvasClick = (event: MouseEvent) => {
   // Check if we have a toolpath to click on
   if (!gcodeVisualizer || !camera || !renderer) return;
 
-  // Use screen-space detection for accurate clicking on overlapping segments
   const rect = renderer.domElement.getBoundingClientRect();
-  const screenX = event.clientX - rect.left;
-  const screenY = event.clientY - rect.top;
+  const clickX = event.clientX - rect.left;
+  const clickY = event.clientY - rect.top;
+
+  let activeCamera: THREE.OrthographicCamera = camera;
+  let viewportX = clickX;
+  let viewportY = clickY;
+  let viewportWidth = rect.width;
+  let viewportHeight = rect.height;
+
+  // In split view, determine which viewport was clicked and use appropriate camera
+  if (props.view === 'split' && splitTopCamera && splitFrontCamera && splitIsoCamera) {
+    const halfWidth = rect.width / 2;
+    const halfHeight = rect.height / 2;
+
+    if (clickY < halfHeight) {
+      // Top row
+      if (clickX < halfWidth) {
+        // Top-left: Top view
+        activeCamera = splitTopCamera;
+        viewportX = clickX;
+        viewportY = clickY;
+        viewportWidth = halfWidth;
+        viewportHeight = halfHeight;
+      } else {
+        // Top-right: Side view
+        activeCamera = splitFrontCamera;
+        viewportX = clickX - halfWidth;
+        viewportY = clickY;
+        viewportWidth = halfWidth;
+        viewportHeight = halfHeight;
+      }
+    } else {
+      // Bottom: 3D view
+      activeCamera = splitIsoCamera;
+      viewportX = clickX;
+      viewportY = clickY - halfHeight;
+      viewportWidth = rect.width;
+      viewportHeight = halfHeight;
+    }
+  }
 
   // Find the closest segment to the click point in screen space
   const lineNumber = gcodeVisualizer.getLineNumberFromScreenPoint(
-    screenX, screenY, camera, rect.width, rect.height, 15
+    viewportX, viewportY, activeCamera, viewportWidth, viewportHeight, 15
   );
 
   if (lineNumber) {
@@ -1526,12 +1563,50 @@ const onTouchEnd = (event: TouchEvent) => {
     // Use screen-space detection for accurate tapping on overlapping segments
     if (gcodeVisualizer && camera && renderer) {
       const rect = renderer.domElement.getBoundingClientRect();
-      const screenX = touchStartPosition.x - rect.left;
-      const screenY = touchStartPosition.y - rect.top;
+      const tapX = touchStartPosition.x - rect.left;
+      const tapY = touchStartPosition.y - rect.top;
+
+      let activeCamera: THREE.OrthographicCamera = camera;
+      let viewportX = tapX;
+      let viewportY = tapY;
+      let viewportWidth = rect.width;
+      let viewportHeight = rect.height;
+
+      // In split view, determine which viewport was tapped and use appropriate camera
+      if (props.view === 'split' && splitTopCamera && splitFrontCamera && splitIsoCamera) {
+        const halfWidth = rect.width / 2;
+        const halfHeight = rect.height / 2;
+
+        if (tapY < halfHeight) {
+          // Top row
+          if (tapX < halfWidth) {
+            // Top-left: Top view
+            activeCamera = splitTopCamera;
+            viewportX = tapX;
+            viewportY = tapY;
+            viewportWidth = halfWidth;
+            viewportHeight = halfHeight;
+          } else {
+            // Top-right: Side view
+            activeCamera = splitFrontCamera;
+            viewportX = tapX - halfWidth;
+            viewportY = tapY;
+            viewportWidth = halfWidth;
+            viewportHeight = halfHeight;
+          }
+        } else {
+          // Bottom: 3D view
+          activeCamera = splitIsoCamera;
+          viewportX = tapX;
+          viewportY = tapY - halfHeight;
+          viewportWidth = rect.width;
+          viewportHeight = halfHeight;
+        }
+      }
 
       // Find the closest segment to the tap point in screen space
       const lineNumber = gcodeVisualizer.getLineNumberFromScreenPoint(
-        screenX, screenY, camera, rect.width, rect.height, 20
+        viewportX, viewportY, activeCamera, viewportWidth, viewportHeight, 20
       );
 
       if (lineNumber) {
@@ -4529,7 +4604,7 @@ body.theme-light .dot--rapid {
 
 .split-label--top {
   top: 8px;
-  left: 8px;
+  right: calc(50% + 8px);
 }
 
 .split-label--side {
@@ -4539,7 +4614,8 @@ body.theme-light .dot--rapid {
 
 .split-label--3d {
   top: calc(50% + 8px);
-  left: 8px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .split-divider {
