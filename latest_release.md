@@ -1,4 +1,5 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Enhanced in-app update experience for smoother application updates
+### 🐛 Bug Fixes
+- Fixed segment selection being offset when Spindle View is enabled
+- Fixed various stability issues and bugs
