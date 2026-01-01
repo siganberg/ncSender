@@ -1,5 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed UI display issues
-- Restored modal states when starting from tool change line
+### ✨ New Features
+- Added TLS Offset support in Tool Library for enhanced tool management
