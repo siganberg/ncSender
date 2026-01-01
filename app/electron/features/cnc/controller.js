@@ -586,12 +586,10 @@ export class CNCController extends EventEmitter {
     this.statusPollInterval = setInterval(() => {
       // Send status requests while connected or verifying controller readiness
       if (this.connection && (this.isConnected || this.isVerifyingConnection)) {
-        try {
-          this.sendCommand('?', { meta: { sourceId: 'system' } });
-        } catch (error) {
+        this.sendCommand('?', { meta: { sourceId: 'system' } }).catch((error) => {
           log('Status polling failed, stopping polling:', error.message);
           this.stopPolling();
-        }
+        });
       }
     }, 50);
   }
