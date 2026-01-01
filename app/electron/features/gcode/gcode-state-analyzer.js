@@ -213,7 +213,24 @@ export function generateResumeSequence(targetState, options = {}) {
   }
 
   if (isStartingAtToolChange) {
-    commands.push('; Starting at tool change - minimal preamble');
+    commands.push('; Starting at tool change - restoring modal states');
+
+    if (targetState.units) {
+      commands.push(targetState.units);
+    }
+
+    if (targetState.positioningMode) {
+      commands.push(targetState.positioningMode);
+    }
+
+    if (targetState.plane) {
+      commands.push(targetState.plane);
+    }
+
+    if (targetState.wcs) {
+      commands.push(targetState.wcs);
+    }
+
     commands.push('; End resume sequence');
     return commands;
   }
