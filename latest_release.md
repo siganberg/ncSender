@@ -1,5 +1,5 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed segment selection being offset when Spindle View is enabled
-- Fixed various stability issues and bugs
+- Fixed UI display issues
+- Restored modal states when starting from tool change line
