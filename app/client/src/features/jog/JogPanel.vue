@@ -46,7 +46,7 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': needsHoming, 'long-press-triggered': homePress.triggered }]"
             :disabled="isHoming"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
@@ -69,21 +69,21 @@
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
               :disabled="isHoming"
               @click="goHomeAxis('X')"
             >
               HX
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
               :disabled="isHoming"
               @click="goHomeAxis('Y')"
             >
               HY
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
               :disabled="isHoming"
               @click="goHomeAxis('Z')"
             >
@@ -483,11 +483,15 @@ const handleFeedRateUpdate = (newRate: number) => {
 // Disable the entire panel only when disconnected or explicitly disabled
 const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
-// Disable motion controls when disconnected, explicitly disabled, not homed, or probing
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value || store.isProbing.value);
+// Disable motion controls when disconnected, explicitly disabled, homing required, or probing
+// Note: We check senderStatus for 'homing-required' instead of !isHomed because firmware may not require homing
+const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.senderStatus.value === 'homing-required' || store.isProbing.value);
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
+
+// Computed to check if homing is needed (not homed AND firmware requires homing)
+const needsHoming = computed(() => store.senderStatus.value === 'homing-required');
 
 const goHome = async () => {
   try {

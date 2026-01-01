@@ -118,7 +118,9 @@ export function createServerContext() {
       return 'tool-changing';
     }
 
-    if (machineStatus === 'idle' && homed === false) {
+    // Only require homing if firmware says so ($22 bit 0 and bit 2 are set)
+    const homingRequired = serverState.machineState?.homingRequired !== false;
+    if (machineStatus === 'idle' && homed === false && homingRequired) {
       return 'homing-required';
     }
 

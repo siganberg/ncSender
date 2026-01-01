@@ -75,3 +75,44 @@ export function isNumericType(dataType) {
 export function isBitfieldType(dataType) {
   return dataType === FIRMWARE_DATA_TYPES.BITFIELD;
 }
+
+/**
+ * Check if a specific bit is set in a bitfield value
+ * @param {string|number} value - The bitfield value
+ * @param {number} bitIndex - The bit index to check (0-based)
+ * @returns {boolean} True if the bit is set
+ */
+export function isBitSet(value, bitIndex) {
+  const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
+  if (!Number.isFinite(numValue)) return false;
+  return ((numValue >> bitIndex) & 1) === 1;
+}
+
+/**
+ * Check if homing is required based on $22 (Homing cycle) setting
+ * $22 is a bitmask where:
+ *   Bit 0 (1): Enable homing cycle
+ *   Bit 1 (2): Enable single axis commands
+ *   Bit 2 (4): Homing on startup required
+ *   Bit 3 (8): Set machine origin to 0
+ *
+ * Homing should only be enforced when BOTH:
+ *   - Bit 0 is set (homing cycle enabled)
+ *   - Bit 2 is set (homing on startup required)
+ *
+ * @param {object} firmwareSettings - The firmware settings object
+ * @returns {boolean} True if homing is required by firmware
+ */
+export function isHomingRequiredByFirmware(firmwareSettings) {
+  const setting22 = firmwareSettings?.['22'];
+  if (!setting22 || setting22.value === undefined) {
+    // If $22 doesn't exist, default to requiring homing (safe default)
+    return true;
+  }
+
+  const value = setting22.value;
+  const homingEnabled = isBitSet(value, 0);           // Bit 0: Enable
+  const homingOnStartupRequired = isBitSet(value, 2); // Bit 2: Homing on startup required
+
+  return homingEnabled && homingOnStartupRequired;
+}

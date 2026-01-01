@@ -24,6 +24,7 @@ import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
 import { grblAlarms } from '../features/cnc/grbl-alarms.js';
 import { createLogger } from '../core/logger.js';
+import { isHomingRequiredByFirmware } from '../constants/firmware-types.js';
 
 const { log, error: logError } = createLogger('CncEvents');
 
@@ -89,6 +90,18 @@ export function registerCncEventHandlers({
           log('Initializing firmware after controller connection...');
           await initializeFirmwareOnConnection(cncController);
           log('Firmware initialization complete');
+
+          // Check if homing is required based on firmware $22 setting
+          try {
+            const firmwareData = JSON.parse(await fs.readFile(firmwareFilePath, 'utf8'));
+            const homingRequired = isHomingRequiredByFirmware(firmwareData.settings);
+            serverState.machineState.homingRequired = homingRequired;
+            log(`Homing required by firmware: ${homingRequired}`);
+          } catch (error) {
+            // Default to requiring homing if we can't read firmware settings
+            serverState.machineState.homingRequired = true;
+            log('Could not determine homing requirement, defaulting to required');
+          }
         } catch (error) {
           log('Failed to initialize firmware on connection:', error?.message || error);
         }
@@ -153,6 +166,14 @@ export function registerCncEventHandlers({
       if (valueChanged && firmwareData.settings[id]?.halDetails?.[7] === '1') {
         const restartMessage = `(Setting $${id} changed - Controller restart required for changes to take effect)`;
         broadcast('cnc-data', restartMessage);
+      }
+
+      // Re-check homing requirement if $22 changed
+      if (id === '22' && valueChanged) {
+        const homingRequired = isHomingRequiredByFirmware(firmwareData.settings);
+        serverState.machineState.homingRequired = homingRequired;
+        log(`$22 changed - Homing required by firmware: ${homingRequired}`);
+        broadcast('server-state-updated', serverState);
       }
     } catch (error) {
       log('Failed to update firmware.json from command-ack:', error?.message || error);
