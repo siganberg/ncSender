@@ -1737,8 +1737,10 @@ const animate = () => {
   }
 
   if (renderer && scene && camera) {
-    const width = renderer.domElement.width;
-    const height = renderer.domElement.height;
+    // Use CSS pixels (clientWidth/clientHeight) not device pixels (width/height)
+    // THREE.js setViewport/setScissor expect CSS pixels when setPixelRatio is used
+    const width = renderer.domElement.clientWidth;
+    const height = renderer.domElement.clientHeight;
 
     if (props.view === 'split' && splitTopCamera && splitFrontCamera && splitIsoCamera) {
       // Split view rendering with scissor test
