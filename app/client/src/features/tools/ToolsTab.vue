@@ -181,6 +181,30 @@
             >
           </div>
 
+          <!-- TLS X/Y Offsets -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <input
+                type="number"
+                class="form-input"
+                v-model.number="toolForm.offsets.x"
+                step="any"
+                :placeholder="tloPlaceholder"
+              >
+            </div>
+            <div class="form-group">
+              <label class="form-label">TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <input
+                type="number"
+                class="form-input"
+                v-model.number="toolForm.offsets.y"
+                step="any"
+                :placeholder="tloPlaceholder"
+              >
+            </div>
+          </div>
+
           <!-- Notes -->
           <div class="form-group">
             <label class="form-label">Notes</label>
@@ -341,6 +365,8 @@ interface Tool {
   diameter: number;
   offsets: {
     tlo: number;
+    x: number;
+    y: number;
   };
   metadata: {
     notes: string;
@@ -428,7 +454,9 @@ const defaultToolForm = () => ({
   type: 'flat',
   diameter: 0,
   offsets: {
-    tlo: 0
+    tlo: 0,
+    x: 0,
+    y: 0
   },
   metadata: {
     notes: '',
@@ -618,6 +646,8 @@ const editTool = (tool: Tool) => {
   if (units === 'imperial') {
     toolCopy.diameter = parseFloat((toolCopy.diameter / 25.4).toFixed(4));
     toolCopy.offsets.tlo = parseFloat((toolCopy.offsets.tlo / 25.4).toFixed(4));
+    toolCopy.offsets.x = parseFloat(((toolCopy.offsets.x || 0) / 25.4).toFixed(4));
+    toolCopy.offsets.y = parseFloat(((toolCopy.offsets.y || 0) / 25.4).toFixed(4));
   }
 
   toolForm.value = toolCopy;
@@ -662,6 +692,8 @@ const saveTool = async () => {
     if (units === 'imperial') {
       toolData.diameter = toolData.diameter * 25.4;
       toolData.offsets.tlo = toolData.offsets.tlo * 25.4;
+      toolData.offsets.x = (toolData.offsets.x || 0) * 25.4;
+      toolData.offsets.y = (toolData.offsets.y || 0) * 25.4;
     }
 
     console.log('Saving tool data:', JSON.stringify(toolData));
@@ -1329,6 +1361,16 @@ onMounted(async () => {
 }
 
 .form-group {
+  margin-bottom: 16px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-row .form-group {
   margin-bottom: 16px;
 }
 

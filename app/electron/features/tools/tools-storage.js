@@ -54,7 +54,9 @@ export const createDefaultTool = (id, toolNumber = null) => ({
   type: 'flat',
   diameter: 0,
   offsets: {
-    tlo: 0.0
+    tlo: 0.0,
+    x: 0.0,
+    y: 0.0
   },
   metadata: {
     notes: '',
