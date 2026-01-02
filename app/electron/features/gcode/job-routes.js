@@ -196,9 +196,11 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
 
       const warnings = [];
 
-      // Only warn about homing if firmware requires it
-      const homingRequired = serverState.machineState?.homingRequired !== false;
-      if (!serverState.machineState?.homed && homingRequired) {
+      // Only warn about homing if firmware requires it ($22 bit 0 and bit 2)
+      const homeCycle = serverState.machineState?.homeCycle ?? 7;
+      const homingEnabled = (homeCycle & 1) === 1;
+      const homingStartupRequired = (homeCycle & 4) === 4;
+      if (!serverState.machineState?.homed && homingEnabled && homingStartupRequired) {
         warnings.push('Machine is not homed');
       }
 
@@ -279,8 +281,10 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       }
 
       // Only require homing if firmware says so ($22 bit 0 and bit 2 are set)
-      const homingRequiredForStart = serverState.machineState?.homingRequired !== false;
-      if (!serverState.machineState?.homed && homingRequiredForStart) {
+      const homeCycleForStart = serverState.machineState?.homeCycle ?? 7;
+      const homingEnabledForStart = (homeCycleForStart & 1) === 1;
+      const homingStartupRequiredForStart = (homeCycleForStart & 4) === 4;
+      if (!serverState.machineState?.homed && homingEnabledForStart && homingStartupRequiredForStart) {
         return res.status(400).json({ error: 'Machine must be homed before starting from a specific line' });
       }
 

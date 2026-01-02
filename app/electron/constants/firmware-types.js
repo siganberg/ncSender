@@ -89,12 +89,28 @@ export function isBitSet(value, bitIndex) {
 }
 
 /**
- * Check if homing is required based on $22 (Homing cycle) setting
+ * Check if homing cycle is enabled based on $22 (Homing cycle) setting
  * $22 is a bitmask where:
  *   Bit 0 (1): Enable homing cycle
  *   Bit 1 (2): Enable single axis commands
  *   Bit 2 (4): Homing on startup required
  *   Bit 3 (8): Set machine origin to 0
+ *
+ * @param {object} firmwareSettings - The firmware settings object
+ * @returns {boolean} True if homing cycle is enabled (bit 0 set)
+ */
+export function isHomingEnabledByFirmware(firmwareSettings) {
+  const setting22 = firmwareSettings?.['22'];
+  if (!setting22 || setting22.value === undefined) {
+    // If $22 doesn't exist, default to enabled (safe default)
+    return true;
+  }
+
+  return isBitSet(setting22.value, 0); // Bit 0: Enable homing cycle
+}
+
+/**
+ * Check if homing is required on startup based on $22 (Homing cycle) setting
  *
  * Homing should only be enforced when BOTH:
  *   - Bit 0 is set (homing cycle enabled)

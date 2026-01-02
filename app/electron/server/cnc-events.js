@@ -24,7 +24,6 @@ import { initializeFirmwareOnConnection } from '../features/firmware/routes.js';
 import { pluginManager } from '../core/plugin-manager.js';
 import { grblAlarms } from '../features/cnc/grbl-alarms.js';
 import { createLogger } from '../core/logger.js';
-import { isHomingRequiredByFirmware } from '../constants/firmware-types.js';
 
 const { log, error: logError } = createLogger('CncEvents');
 
@@ -91,16 +90,17 @@ export function registerCncEventHandlers({
           await initializeFirmwareOnConnection(cncController);
           log('Firmware initialization complete');
 
-          // Check if homing is required based on firmware $22 setting
+          // Get $22 (homing cycle) setting value for client
           try {
             const firmwareData = JSON.parse(await fs.readFile(firmwareFilePath, 'utf8'));
-            const homingRequired = isHomingRequiredByFirmware(firmwareData.settings);
-            serverState.machineState.homingRequired = homingRequired;
-            log(`Homing required by firmware: ${homingRequired}`);
+            const setting22 = firmwareData.settings?.['22'];
+            // Store raw value, default to 7 (enabled + single axis + startup required) if not found
+            serverState.machineState.homeCycle = setting22?.value !== undefined ? parseInt(setting22.value, 10) : 7;
+            log(`Home cycle ($22): ${serverState.machineState.homeCycle}`);
           } catch (error) {
-            // Default to requiring homing if we can't read firmware settings
-            serverState.machineState.homingRequired = true;
-            log('Could not determine homing requirement, defaulting to required');
+            // Default to 7 (homing enabled + startup required) if we can't read firmware settings
+            serverState.machineState.homeCycle = 7;
+            log('Could not read $22 setting, defaulting homeCycle to 7');
           }
         } catch (error) {
           log('Failed to initialize firmware on connection:', error?.message || error);
@@ -168,11 +168,10 @@ export function registerCncEventHandlers({
         broadcast('cnc-data', restartMessage);
       }
 
-      // Re-check homing requirement if $22 changed
+      // Update homeCycle if $22 changed
       if (id === '22' && valueChanged) {
-        const homingRequired = isHomingRequiredByFirmware(firmwareData.settings);
-        serverState.machineState.homingRequired = homingRequired;
-        log(`$22 changed - Homing required by firmware: ${homingRequired}`);
+        serverState.machineState.homeCycle = parseInt(newValue, 10);
+        log(`$22 changed - homeCycle: ${serverState.machineState.homeCycle}`);
         broadcast('server-state-updated', serverState);
       }
     } catch (error) {

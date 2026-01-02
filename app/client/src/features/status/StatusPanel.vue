@@ -158,7 +158,12 @@ const { isJobRunning } = appStore;
 
 // Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-const cardDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value);
+const cardDisabled = computed(() => {
+  if (!store.isConnected.value || isHoming.value || store.isProbing.value) return true;
+  // Only require homing if homing is enabled in firmware ($22 bit 0)
+  if (store.homingEnabled.value && !store.isHomed.value) return true;
+  return false;
+});
 const axisControlsDisabled = computed(() => cardDisabled.value || isJobRunning.value);
 
 const props = defineProps<{
@@ -326,7 +331,7 @@ const ensureAxisState = (axis: AxisKey) => {
 let activeAxis: string | null = null;
 
 const startLongPress = (axis: AxisKey, _evt: Event) => {
-  if (axisControlsDisabled.value || !store.isHomed.value) {
+  if (axisControlsDisabled.value) {
     return;
   }
   const state = ensureAxisState(axis);

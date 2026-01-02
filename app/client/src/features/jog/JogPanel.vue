@@ -47,7 +47,7 @@
           <button
             v-if="!homeSplit"
             :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': needsHoming, 'long-press-triggered': homePress.triggered }]"
-            :disabled="isHoming"
+            :disabled="homeButtonDisabled"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
@@ -70,21 +70,21 @@
           <div v-if="homeSplit" class="home-split">
             <button
               :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
-              :disabled="isHoming"
+              :disabled="homeButtonDisabled"
               @click="goHomeAxis('X')"
             >
               HX
             </button>
             <button
               :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
-              :disabled="isHoming"
+              :disabled="homeButtonDisabled"
               @click="goHomeAxis('Y')"
             >
               HY
             </button>
             <button
               :class="['control', 'home-split-btn', { 'needs-homing': needsHoming }]"
-              :disabled="isHoming"
+              :disabled="homeButtonDisabled"
               @click="goHomeAxis('Z')"
             >
               HZ
@@ -93,8 +93,8 @@
         </Transition>
       </div>
 
-      <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
-      <div class="position-controls-group" :class="{ 'motion-disabled': motionControlsDisabled }">
+      <!-- Position controls group (X0/Y0/Z0, Corners, Park) - uses G53 which requires homing -->
+      <div class="position-controls-group" :class="{ 'motion-disabled': positionControlsDisabled }">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column" ref="axisZeroGroupRef">
           <div class="axis-zero-xy-container">
@@ -483,15 +483,44 @@ const handleFeedRateUpdate = (newRate: number) => {
 // Disable the entire panel only when disconnected or explicitly disabled
 const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
-// Disable motion controls when disconnected, explicitly disabled, homing required, or probing
+// Disable motion controls (jog buttons) when disconnected, explicitly disabled, homing required, alarm, or probing
 // Note: We check senderStatus for 'homing-required' instead of !isHomed because firmware may not require homing
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.senderStatus.value === 'homing-required' || store.isProbing.value);
+// Alarm is included here because you can't jog during alarm, but Home button remains enabled to fix alarms
+const motionControlsDisabled = computed(() => {
+  if (!store.isConnected.value || props.isDisabled || store.isProbing.value) return true;
+  const status = (store.senderStatus.value || '').toLowerCase();
+  return status === 'homing-required' || status === 'alarm';
+});
+
+// Disable position controls (XY0, corners, park) that use G53 - requires homing/limit switches
+const positionControlsDisabled = computed(() => {
+  if (motionControlsDisabled.value) return true;
+  if (!store.homingEnabled.value) return true; // G53 commands require homing/limit switches
+  return false;
+});
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
 
-// Computed to check if homing is needed (not homed AND firmware requires homing)
-const needsHoming = computed(() => store.senderStatus.value === 'homing-required');
+// Computed to check if homing is needed - glow Home button when:
+// 1. Homing is enabled ($22 bit 0 = 1)
+// 2. AND senderStatus is 'homing-required' or 'alarm'
+const needsHoming = computed(() => {
+  if (!store.homingEnabled.value) return false; // Never glow if homing is disabled
+  const status = (store.senderStatus.value || '').toLowerCase();
+  return status === 'homing-required' || status === 'alarm';
+});
+
+// Home button should be disabled when:
+// 1. Homing is disabled in firmware ($22 bit 0 = 0)
+// 2. Already homing (avoid double homing)
+// 3. Job is running (don't interrupt with $H)
+// Note: We don't disable when disconnected or in alarm - Home is needed to fix alarms
+const homeButtonDisabled = computed(() => {
+  if (!store.homingEnabled.value) return true; // $22 bit 0 not set
+  const status = (store.senderStatus.value || '').toLowerCase();
+  return status === 'homing' || status === 'running';
+});
 
 const goHome = async () => {
   try {
@@ -1089,19 +1118,34 @@ const goToCorner = async (corner: CornerType) => {
   opacity: 0.6;
 }
 
-.controls-disabled .jog-layout,
-.controls-disabled .home-group {
+.controls-disabled .jog-layout {
   pointer-events: none;
 }
 
+/* Home button should always be clickable (except during homing) since it's needed to fix alarms */
+.controls-disabled .home-group {
+  pointer-events: auto;
+  opacity: 1;
+}
+
 .controls-disabled input,
-.controls-disabled button {
+.controls-disabled button:not(.home-button):not(.home-split-btn) {
   cursor: not-allowed !important;
 }
 /* Disable motion controls when not homed */
 .motion-disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* Ensure home buttons are always clickable (they're needed to fix alarms/homing-required state) */
+.home-group {
+  pointer-events: auto !important;
+}
+
+.home-button,
+.home-split-btn {
+  pointer-events: auto !important;
 }
 
 .card {

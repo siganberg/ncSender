@@ -22,11 +22,18 @@ import { useAppStore } from '../../composables/use-app-store';
 export function useJogStore() {
   const app = useAppStore();
 
+  // $22 home cycle bitmask: bit 0 = enabled, bit 1 = single axis, bit 2 = startup required, bit 3 = set origin
+  // Note: homeCycle is on serverState.machineState (the object), not status.machineState (the string)
+  const homeCycle = computed(() => app.serverState.machineState?.homeCycle ?? 7);
+  const homingEnabled = computed(() => (homeCycle.value & 1) === 1);
+
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
     isProbing: app.isProbing,
-    machineState: computed(() => app.status.machineState),
-    senderStatus: app.senderStatus
+    machineState: computed(() => app.serverState.machineState),
+    senderStatus: app.senderStatus,
+    homeCycle,
+    homingEnabled
   };
 }

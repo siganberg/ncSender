@@ -119,8 +119,11 @@ export function createServerContext() {
     }
 
     // Only require homing if firmware says so ($22 bit 0 and bit 2 are set)
-    const homingRequired = serverState.machineState?.homingRequired !== false;
-    if (machineStatus === 'idle' && homed === false && homingRequired) {
+    // homeCycle is the raw $22 value: bit 0 = enabled, bit 2 = startup required
+    const homeCycle = serverState.machineState?.homeCycle ?? 7; // Default to 7 (enabled + startup required)
+    const homingEnabled = (homeCycle & 1) === 1;        // Bit 0
+    const homingStartupRequired = (homeCycle & 4) === 4; // Bit 2
+    if (machineStatus === 'idle' && homed === false && homingEnabled && homingStartupRequired) {
       return 'homing-required';
     }
 

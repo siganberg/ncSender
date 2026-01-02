@@ -22,12 +22,18 @@ import { useAppStore } from '../../composables/use-app-store';
 export function useStatusStore() {
   const app = useAppStore();
 
+  // $22 home cycle bitmask: bit 0 = enabled, bit 1 = single axis, bit 2 = startup required, bit 3 = set origin
+  const homeCycle = computed(() => app.serverState.machineState?.homeCycle ?? 7);
+  const homingEnabled = computed(() => (homeCycle.value & 1) === 1);
+
   // Narrow interface: expose only the bits StatusPanel consumes.
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
     isProbing: app.isProbing,
     machineState: computed(() => app.status.machineState),
-    senderStatus: app.senderStatus
+    senderStatus: app.senderStatus,
+    homeCycle,
+    homingEnabled
   };
 }

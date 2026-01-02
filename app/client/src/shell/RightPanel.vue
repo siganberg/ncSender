@@ -89,7 +89,9 @@ const isJogDisabled = computed(() => {
   if (props.jobLoaded?.status === 'running') return true;
 
   const status = normalizedSenderStatus.value;
-  return status === 'homing' || status === 'probing' || status === 'tool-changing' || status === 'alarm';
+  // Note: 'alarm' is NOT included here - Home button must be clickable to fix alarms
+  // Motion controls are disabled in alarm state via motionControlsDisabled in JogPanel
+  return status === 'homing' || status === 'probing' || status === 'tool-changing';
 });
 </script>
 
