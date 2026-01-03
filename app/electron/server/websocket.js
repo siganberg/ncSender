@@ -95,6 +95,7 @@ const describeCommand = (command) => {
     [String.fromCharCode(0x9B)]: '0x9B (Spindle Speed Override -10%)',
     [String.fromCharCode(0x9C)]: '0x9C (Spindle Speed Override +1%)',
     [String.fromCharCode(0x9D)]: '0x9D (Spindle Speed Override -1%)',
+    [String.fromCharCode(0x87)]: '0x87 (Status Report)',
     [String.fromCharCode(0x85)]: '0x85 (Jog Cancel)',
     [String.fromCharCode(0x84)]: '0x84 (Safety Door)',
     [String.fromCharCode(0x18)]: '0x18 (Soft Reset)',
