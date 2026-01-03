@@ -77,6 +77,9 @@ export class CNCController extends EventEmitter {
 
     // Track last logged values for watched fields
     this.lastLoggedValues = {};
+
+    // Track pending full status report request from client (0x87)
+    this.pendingFullStatusRequest = null;
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -127,6 +130,14 @@ export class CNCController extends EventEmitter {
 
       this.rawData = trimmedData;
       this.parseStatusReport(trimmedData);
+
+      // If this is a response to a client's full status request (0x87), log and emit it
+      if (this.pendingFullStatusRequest) {
+        const { sourceId } = this.pendingFullStatusRequest;
+        log('Full status report response:', trimmedData);
+        this.emit('data', trimmedData, sourceId);
+        this.pendingFullStatusRequest = null;
+      }
     } else if (trimmedData.startsWith('[GC:') && trimmedData.endsWith(']')) {
       this.parseGCodeModes(trimmedData);
       const sourceId = this.activeCommand?.meta?.sourceId || null;
@@ -1102,6 +1113,15 @@ export class CNCController extends EventEmitter {
     const isJogCancel = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x85;
     if (isJogCancel) {
       this.jogWatchdog.clear();
+    }
+
+    // Check if this is a full status report request (0x87) from client
+    const isFullStatusRequest = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x87;
+    if (isFullStatusRequest && normalizedMeta?.sourceId !== 'system') {
+      this.pendingFullStatusRequest = {
+        commandId: resolvedCommandId,
+        sourceId: normalizedMeta?.sourceId || null
+      };
     }
 
     let commandToSend;

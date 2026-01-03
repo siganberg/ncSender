@@ -33,12 +33,15 @@ export function createCNCRoutes(cncController, broadcast, commandProcessor) {
 
     const trimmed = rawCommand.trim();
 
-    const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(trimmed);
+    // Accept both \xHH and 0xHH formats for hex byte commands
+    const hexMatch = /^(?:\\x|0x)([0-9a-fA-F]{2})$/i.exec(trimmed);
     if (hexMatch) {
       const charCode = parseInt(hexMatch[1], 16);
+      // Normalize display to 0xHH format
+      const displayHex = `0x${hexMatch[1].toUpperCase()}`;
       return {
         command: String.fromCharCode(charCode),
-        displayCommand: trimmed
+        displayCommand: displayHex
       };
     }
 

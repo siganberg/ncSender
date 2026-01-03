@@ -597,7 +597,7 @@ class NCClient {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             command: REALTIME_JOG_CANCEL,
-            displayCommand: '\\x85 (Emergency Jog Cancel - WebSocket Disconnected)',
+            displayCommand: '0x85 (Emergency Jog Cancel - WebSocket Disconnected)',
             meta: { emergencyStop: true }
           })
         }).catch((error) => {
