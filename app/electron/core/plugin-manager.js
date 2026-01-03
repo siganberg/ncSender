@@ -60,7 +60,7 @@ class PluginManager {
     this.executionContextStack = new Map();
   }
 
-  async initialize({ cncController, broadcast, sendWsMessage } = {}) {
+  async initialize({ cncController, broadcast, sendWsMessage, serverState } = {}) {
     if (this.initialized) {
       log('Plugin manager already initialized');
       return;
@@ -69,6 +69,7 @@ class PluginManager {
     this.cncController = cncController;
     this.broadcast = broadcast;
     this.sendWsMessage = sendWsMessage;
+    this.serverState = serverState;
 
     // Register handler to intercept cnc-data and detect plugin messages
     // This must be registered BEFORE plugins are loaded so it runs first
@@ -291,6 +292,10 @@ class PluginManager {
           return null;
         }
         return this.cncController.getLastStatus() || null;
+      },
+
+      getServerState: () => {
+        return this.serverState || null;
       },
 
       showDialog: (title, content, options = {}) => {

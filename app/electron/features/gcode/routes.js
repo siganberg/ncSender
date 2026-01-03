@@ -237,6 +237,76 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
     }
   });
 
+  // Load G-code temporarily (cache only, no file save)
+  // Used by plugins like Replicator to load generated code without polluting file manager
+  router.post('/load-temp', async (req, res) => {
+    try {
+      const { content, filename, sourceFile } = req.body;
+
+      if (!content || !filename) {
+        return res.status(400).json({ error: 'Content and filename are required' });
+      }
+
+      // Write to cache only (not to gcode-files directory)
+      await ensureCacheDir();
+      await fs.writeFile(CACHE_FILE_PATH, content, 'utf8');
+      log('Loaded temporary G-code to cache:', filename);
+
+      // Calculate estimated run time
+      const estimatedSec = await calculateEstimate(content);
+
+      // Update server state
+      serverState.jobLoaded = {
+        filename: filename,
+        sourceFile: sourceFile || null,  // Track original source for plugins
+        currentLine: 0,
+        totalLines: content.split('\n').length,
+        status: null,
+        jobStartTime: null,
+        jobEndTime: null,
+        jobPauseAt: null,
+        jobPausedTotalSec: 0,
+        remainingSec: null,
+        progressPercent: null,
+        runtimeSec: null,
+        estimatedSec,
+        isTemporary: true  // Mark as temporary/generated
+      };
+
+      // Don't save to lastLoadedFile settings (keep original)
+
+      // Detect workspace from G-code content
+      const detectedWorkspace = detectWorkspace(content);
+
+      // Get file stats for metadata
+      const stats = await fs.stat(CACHE_FILE_PATH);
+
+      // Broadcast updates
+      broadcast('gcode-updated', {
+        filename: filename,
+        sourceFile: sourceFile || null,
+        totalLines: content.split('\n').length,
+        size: stats.size,
+        detectedWorkspace: detectedWorkspace,
+        timestamp: new Date().toISOString(),
+        isTemporary: true
+      });
+      broadcast('server-state-updated', serverState);
+
+      log('Temporary G-code loaded:', filename, sourceFile ? `(source: ${sourceFile})` : '');
+
+      res.json({
+        success: true,
+        filename: filename,
+        sourceFile: sourceFile || null,
+        message: 'Temporary G-code loaded'
+      });
+    } catch (error) {
+      log('Error loading temporary G-code:', error);
+      res.status(500).json({ error: 'Failed to load temporary G-code' });
+    }
+  });
+
   // List G-code files with metadata (returns tree structure)
   router.get('/', async (req, res) => {
     try {

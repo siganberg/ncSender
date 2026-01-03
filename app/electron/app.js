@@ -185,7 +185,7 @@ export async function createApp(options = {}) {
       log(`WebSocket: ws://localhost:${port}`);
 
       try {
-        await pluginManager.initialize({ cncController, broadcast, sendWsMessage });
+        await pluginManager.initialize({ cncController, broadcast, sendWsMessage, serverState: context.serverState });
         log('Plugin manager initialized successfully');
       } catch (error) {
         log('Failed to initialize plugin manager:', error);
