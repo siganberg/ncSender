@@ -1,4 +1,7 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added TLS Offset support in Tool Library for enhanced tool management
+- Added support for plugins that require machine information
+
+### 🐛 Bug Fixes
+- Fixed unhandled exceptions that could cause the server to terminate unexpectedly
