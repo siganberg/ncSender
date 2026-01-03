@@ -383,6 +383,39 @@
     @close="showStartFromLineDialog = false"
     @started="handleStartFromLineSuccess"
   />
+
+  <!-- TLR Warning Dialog -->
+  <Dialog v-if="showTlrWarningDialog" @close="showTlrWarningDialog = false" size="small">
+    <ConfirmPanel
+      title="Tool Length Reference Not Set"
+      :show-confirm="true"
+      :show-cancel="true"
+      confirm-text="Continue Anyway"
+      cancel-text="Cancel"
+      variant="danger"
+      @confirm="showTlrWarningDialog = false; showProbeDialog = true"
+      @cancel="showTlrWarningDialog = false"
+    >
+      <div class="tlr-warning-content">
+        <p class="tlr-warning-text">
+          <strong>Warning:</strong> Setting Z0 (material height) without establishing a Tool Length Reference (TLR) may cause unpredictable Z offsets during tool changes.
+        </p>
+        <p v-if="currentTool && currentTool > 0" class="tlr-warning-text">
+          <strong>Recommended:</strong> Perform TLS (Tool Length Sensing) first to establish the TLR.
+        </p>
+        <p v-else class="tlr-warning-text">
+          <strong>Recommended:</strong> Load a tool first, then perform TLS (Tool Length Sensing) to establish the TLR.
+        </p>
+        <button
+          v-if="currentTool && currentTool > 0"
+          class="tlr-tls-button"
+          @click="handleTlsFromWarning"
+        >
+          Run TLS
+        </button>
+      </div>
+    </ConfirmPanel>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -538,6 +571,7 @@ const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
 const showStartFromLineDialog = ref(false);
+const showTlrWarningDialog = ref(false);
 const startFromLineInitial = ref(1);
 
 // Helper to get pin state from Pn string
@@ -1998,7 +2032,18 @@ const getToolColor = (toolNumber: number): string => {
 
 // Probe dialog
 const openProbeDialog = () => {
+  // Safety check: If TLS is enabled but TLR is not set, warn user
+  if (showTlsTool.value && !props.toolLengthSet) {
+    showTlrWarningDialog.value = true;
+    return;
+  }
   showProbeDialog.value = true;
+};
+
+// Handle TLS from warning dialog
+const handleTlsFromWarning = async () => {
+  showTlrWarningDialog.value = false;
+  await api.sendCommandViaWebSocket({ command: '$TLS' });
 };
 
 // Control button handlers
@@ -4545,6 +4590,37 @@ body.theme-light .dot--rapid {
 .confirm-dialog__btn--danger:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+/* TLR Warning Dialog */
+.tlr-warning-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+.tlr-warning-text {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.tlr-tls-button {
+  margin-top: var(--gap-xs);
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.tlr-tls-button:hover {
+  opacity: 0.85;
 }
 
 /* Tool Expansion */

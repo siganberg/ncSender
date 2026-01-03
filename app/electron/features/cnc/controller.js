@@ -249,6 +249,15 @@ export class CNCController extends EventEmitter {
 
     // Track M64/M65 output pin state changes
     this.updateOutputPinState(cmd.rawCommand);
+
+    // G49 cancels tool length compensation - reset toolLengthSet
+    if (cmd.rawCommand && /G49/i.test(cmd.rawCommand)) {
+      if (this.lastStatus.toolLengthSet !== false) {
+        log('G49 detected - tool length compensation canceled');
+        this.lastStatus.toolLengthSet = false;
+        this.emit('status-report', { ...this.lastStatus });
+      }
+    }
   }
 
   updateOutputPinState(command) {
