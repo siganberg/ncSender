@@ -262,7 +262,10 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         return res.status(400).json({ error: 'Valid start line number is required' });
       }
 
-      const filePath = path.join(filesDir, filename);
+      // For temporary files (e.g., from Replicator plugin), check cache instead of gcode-files
+      const isTemporary = serverState.jobLoaded?.isTemporary === true;
+      const tempCachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+      const filePath = isTemporary ? tempCachePath : path.join(filesDir, filename);
 
       try {
         await fs.access(filePath);

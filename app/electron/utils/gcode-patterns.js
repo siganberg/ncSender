@@ -162,3 +162,86 @@ export function checkSameToolChange(command, currentTool) {
     matched: true
   };
 }
+
+/**
+ * Pattern to match M3/M4 spindle start commands
+ *
+ * Matches (case-insensitive):
+ * - M3, M03, M4, M04 (standalone)
+ * - M3 S1000, M03 S1000 (with speed after)
+ * - S1000 M3, S1000 M03 (with speed before)
+ * - M3S1000, S1000M3 (no spaces)
+ * - N100 M3 S1000 (with line numbers)
+ *
+ * Does NOT match:
+ * - M30, M31, M40, M41 (other M-codes)
+ * - ; M3 S1000 (commented lines)
+ * - (M3 S1000) (commented lines)
+ */
+const SPINDLE_START_PATTERN = /(?:^|[^A-Z0-9])M0*[34](?:[^0-9]|$)/i;
+
+/**
+ * Pattern to match M5 spindle stop commands
+ *
+ * Matches (case-insensitive):
+ * - M5, M05 (standalone)
+ * - N100 M5 (with line numbers)
+ *
+ * Does NOT match:
+ * - M50, M51, M500 (other M-codes)
+ * - ; M5 (commented lines)
+ * - (M5) (commented lines)
+ */
+const SPINDLE_STOP_PATTERN = /(?:^|[^A-Z0-9])M0*5(?:[^0-9]|$)/i;
+
+/**
+ * Check if a command is an M3/M4 spindle start command
+ *
+ * @param {string} command - The G-code command to check
+ * @returns {boolean} True if command contains M3 or M4, false otherwise
+ *
+ * @example
+ * isSpindleStartCommand('M3 S1000')   // true
+ * isSpindleStartCommand('S1000 M3')   // true
+ * isSpindleStartCommand('M3S1000')    // true
+ * isSpindleStartCommand('N100 M3')    // true
+ * isSpindleStartCommand('M4 S500')    // true
+ * isSpindleStartCommand('M30')        // false
+ * isSpindleStartCommand('; M3 S1000') // false (commented)
+ */
+export function isSpindleStartCommand(command) {
+  if (!command || typeof command !== 'string') {
+    return false;
+  }
+
+  if (isGcodeComment(command)) {
+    return false;
+  }
+
+  return SPINDLE_START_PATTERN.test(command.trim().toUpperCase());
+}
+
+/**
+ * Check if a command is an M5 spindle stop command
+ *
+ * @param {string} command - The G-code command to check
+ * @returns {boolean} True if command contains M5, false otherwise
+ *
+ * @example
+ * isSpindleStopCommand('M5')      // true
+ * isSpindleStopCommand('M05')     // true
+ * isSpindleStopCommand('N100 M5') // true
+ * isSpindleStopCommand('M50')     // false
+ * isSpindleStopCommand('; M5')    // false (commented)
+ */
+export function isSpindleStopCommand(command) {
+  if (!command || typeof command !== 'string') {
+    return false;
+  }
+
+  if (isGcodeComment(command)) {
+    return false;
+  }
+
+  return SPINDLE_STOP_PATTERN.test(command.trim().toUpperCase());
+}
