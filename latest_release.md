@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed various application issues and improved stability
+### 🔧 Improvements
+- Updated G-code pattern library for better file parsing and recognition
