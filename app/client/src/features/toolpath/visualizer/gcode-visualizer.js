@@ -226,6 +226,11 @@ class GCodeVisualizer {
             // Track vertex index and actual line number for this (source) line
             frames.push({ lineNumber, vertexIdx: vertices.length / 3 });
 
+            // Skip comment lines (parentheses comments may contain X/Y/Z values that aren't moves)
+            if (cleanLine.startsWith('(')) {
+                return;
+            }
+
             // Skip G53 moves (machine coordinates) - cannot visualize in workpiece coordinates
             if (cleanLine.includes('G53')) {
                 return;
@@ -328,12 +333,17 @@ class GCodeVisualizer {
 
                     const points = arcCurve.getPoints(30);
 
-                    // Add arc as connected points
-                    for (let i = 0; i < points.length; i++) {
-                        const point = points[i];
-                        const z = currentPos.z + (newPos.z - currentPos.z) * (i / (points.length - 1));
+                    // Add arc as connected line segment pairs for THREE.LineSegments
+                    for (let i = 0; i < points.length - 1; i++) {
+                        const point1 = points[i];
+                        const point2 = points[i + 1];
+                        const z1 = currentPos.z + (newPos.z - currentPos.z) * (i / (points.length - 1));
+                        const z2 = currentPos.z + (newPos.z - currentPos.z) * ((i + 1) / (points.length - 1));
 
-                        vertices.push(point.x, point.y, z);
+                        // Push as pair for LineSegments
+                        vertices.push(point1.x, point1.y, z1);
+                        vertices.push(point2.x, point2.y, z2);
+                        colors.push(color.r, color.g, color.b);
                         colors.push(color.r, color.g, color.b);
                     }
                 } else {
