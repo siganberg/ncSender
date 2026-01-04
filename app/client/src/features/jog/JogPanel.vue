@@ -63,6 +63,7 @@
                 <path fill="currentColor" d="M457.122,225.438L394.6,173.476V56.989c0-2.663-0.856-4.853-2.574-6.567c-1.704-1.712-3.894-2.568-6.563-2.568h-54.816c-2.666,0-4.855,0.856-6.57,2.568c-1.711,1.714-2.566,3.905-2.566,6.567v55.673l-69.662-58.245c-6.084-4.949-13.318-7.423-21.694-7.423c-8.375,0-15.608,2.474-21.698,7.423L3.172,225.438c-1.903,1.52-2.946,3.566-3.14,6.136c-0.193,2.568,0.472,4.811,1.997,6.713l17.701,21.128c1.525,1.712,3.521,2.759,5.996,3.142c2.285,0.192,4.57-0.476,6.855-1.998L230.149,95.817l197.57,164.741c1.526,1.328,3.521,1.991,5.996,1.991h0.858c2.471-0.376,4.463-1.43,5.996-3.138l17.703-21.125c1.522-1.906,2.189-4.145,1.991-6.716C460.068,229.007,459.021,226.961,457.122,225.438z"/>
               </svg>
               <span>Home</span>
+              <span class="hold-hint">Hold</span>
             </div>
           </button>
         </Transition>
@@ -114,6 +115,7 @@
               >
                 <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.XY.progress || 0}%` }"></div>
                 XY0
+                <span class="hold-hint">Hold</span>
               </button>
             </Transition>
 
@@ -131,6 +133,7 @@
                 >
                   <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.X.progress || 0}%` }"></div>
                   X0
+                  <span class="hold-hint">Hold</span>
                 </button>
                 <button
                   :class="['control', 'axis-zero-btn', { 'long-press-triggered': axisZeroPress.Y.triggered, 'blink-border': axisZeroPress.Y.blinking }]"
@@ -144,6 +147,7 @@
                 >
                   <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Y.progress || 0}%` }"></div>
                   Y0
+                  <span class="hold-hint">Hold</span>
                 </button>
               </div>
             </Transition>
@@ -161,6 +165,7 @@
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${axisZeroPress.Z.progress || 0}%` }"></div>
             Z0
+            <span class="hold-hint">Hold</span>
           </button>
         </div>
 
@@ -181,6 +186,7 @@
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16 6H8V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
+              <span class="hold-hint">Hold</span>
             </button>
             <button
               :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.topRight.triggered, 'blink-border': cornerPress.topRight.blinking }]"
@@ -196,6 +202,7 @@
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 6H16V14" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
+              <span class="hold-hint">Hold</span>
             </button>
             <button
               :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.bottomLeft.triggered, 'blink-border': cornerPress.bottomLeft.blinking }]"
@@ -211,6 +218,7 @@
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16 18H8V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
+              <span class="hold-hint">Hold</span>
             </button>
             <button
               :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.bottomRight.triggered, 'blink-border': cornerPress.bottomRight.blinking }]"
@@ -226,6 +234,7 @@
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 18H16V10" stroke="currentColor" stroke-width="3" stroke-linecap="square"/>
               </svg>
+              <span class="hold-hint">Hold</span>
             </button>
           </div>
           <button
@@ -240,6 +249,7 @@
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${parkPress.progress || 0}%` }"></div>
             Park
+            <span class="hold-hint">Hold</span>
           </button>
         </div>
       </div>
@@ -1202,6 +1212,24 @@ h2 {
   pointer-events: none;
 }
 
+/* Hold indicator hint for long-press buttons */
+.hold-hint {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  opacity: 0.7;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* Larger hold hint for bigger buttons */
+.corner-btn .hold-hint,
+.park-btn-wide .hold-hint,
+.axis-zero-btn .hold-hint {
+  font-size: 0.7rem;
+}
+
 .home-group {
   flex: 1; /* Home button adapts to available space */
   min-width: 60px; /* Minimum width cap */
@@ -1234,8 +1262,10 @@ h2 {
   font-size: 1.1rem;
   font-weight: 800;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0;
   position: relative;
   overflow: hidden;
 }
