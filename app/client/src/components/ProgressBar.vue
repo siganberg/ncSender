@@ -33,11 +33,11 @@
       </div>
     </div>
     <div v-if="warningMessage" class="warning-row">
-      <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24">
+      <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24">
         <path d="M12 2L2 20h20L12 2z" fill="currentColor" opacity="0.9"/>
         <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#1a1a1a"/>
       </svg>
-      <span class="warning-text">{{ warningMessage }}</span>
+      <span class="warning-text">{{ warningMessage.replace(/^Warning:\s*/i, '') }}</span>
     </div>
   </div>
   <!-- Running/finished progress bar -->
@@ -257,15 +257,17 @@ async function handleClose() {
 @keyframes flow { 0% { transform: translateX(-20%); } 100% { transform: translateX(20%); } }
 
 .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
-.pre-run { max-width: 200px; margin: 0 auto; }
-.pre-run.has-warning { max-width: fit-content; border: 2px solid #b84444; animation: warningPulse 2s ease-in-out infinite; }
+.pre-run { max-width: 180px; margin: 0 auto; }
+.pre-run.has-warning { max-width: 260px; border: 2px solid #b84444; animation: warningPulse 2s ease-in-out infinite; }
 @keyframes warningPulse {
   0%, 50%, 100% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6); }
   25%, 75% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(220, 53, 69, 0.9); }
 }
-.warning-row { display: flex; align-items: center; justify-content: center; gap: 6px; color: #ff8888; font-size: 0.9rem; font-weight: 500; white-space: nowrap; }
+.warning-row { display: flex; align-items: flex-start; gap: 6px; color: #ff8888; font-size: 0.85rem; font-weight: 500; line-height: 1.3; }
+.warning-text { word-break: break-word; }
 .warning-icon { flex-shrink: 0; }
 .pre-run-meta { display: flex; justify-content: space-between; gap: 24px; }
+.pre-run.has-warning .pre-run-meta { justify-content: center; gap: 32px; }
 .meta-item:first-child { justify-self: start; text-align: left; }
 .meta-item:nth-child(2) { justify-self: center; text-align: center; }
 .meta-item:last-child { justify-self: end; text-align: right; }
