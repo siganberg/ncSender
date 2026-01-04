@@ -1,5 +1,8 @@
 ## What's Changed
 
+### ✨ New Features
+- Added TLS Z Offset setting to reduce distance of slow seek movements
+- Added last modified date display on the File Manager
+
 ### 🔧 Improvements
-- Added HOLD indicator for long press buttons to provide visual feedback
-- Home button now requires long press to prevent accidental activation
+- Cosmetic UI improvements
