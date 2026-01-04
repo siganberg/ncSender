@@ -46,8 +46,9 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
             :disabled="isHoming"
+            title="Home All (Hold to home, Double-tap to split)"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
             @mouseleave="cancelHomePress()"
@@ -500,15 +501,31 @@ const goHome = async () => {
 };
 
 
-// --- Home split (HX/HY/HZ) via long press ---
+// --- Home button: long press to home, double-tap to split into HX/HY/HZ ---
 const homeSplit = ref(false);
 const homeGroupRef = ref<HTMLElement | null>(null);
 const LONG_PRESS_MS_HOME = 1000;
 const DELAY_BEFORE_VISUAL_MS = 150;
-const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean }>({ start: 0, progress: 0, active: false, triggered: false });
+const DOUBLE_CLICK_THRESHOLD_MS_HOME = 400;
+const homePress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; blinking: boolean; touchUsed: boolean }>({ start: 0, progress: 0, active: false, triggered: false, blinking: false, touchUsed: false });
 let homeActive = false;
+let lastHomeClickTime = 0;
+
+const handleHomeDoubleClick = () => {
+  const now = performance.now();
+  if (now - lastHomeClickTime < DOUBLE_CLICK_THRESHOLD_MS_HOME) {
+    // Double-click detected - expand to HX/HY/HZ
+    homeSplit.value = true;
+    lastHomeClickTime = 0; // Reset to prevent triple-click issues
+  } else {
+    // First click - record time
+    lastHomeClickTime = now;
+  }
+};
 
 const startHomePress = (_evt?: Event) => {
+  const isTouch = _evt?.type === 'touchstart';
+
   if (_evt) {
     _evt.preventDefault();
   }
@@ -519,6 +536,7 @@ const startHomePress = (_evt?: Event) => {
   homePress.progress = 0;
   homePress.active = true;
   homePress.triggered = false;
+  homePress.touchUsed = isTouch;
   homeActive = true;
 
   const tick = () => {
@@ -536,7 +554,7 @@ const startHomePress = (_evt?: Event) => {
 
     if (elapsed >= LONG_PRESS_MS_HOME && !homePress.triggered) {
       homePress.triggered = true;
-      homeSplit.value = true; // Split into HX/HY/HZ on long press
+      goHome(); // Execute home command on long press
       homePress.progress = 0;
       homePress.active = false;
       homeActive = false;
@@ -552,18 +570,31 @@ const startHomePress = (_evt?: Event) => {
 const endHomePress = () => {
   if (homePress.raf) cancelAnimationFrame(homePress.raf);
   homePress.raf = undefined;
-  homePress.active = false;
-  homeActive = false;
-  homePress.progress = 0;
 
-  // If long press wasn't triggered, execute home command
-  if (!homePress.triggered) {
-    goHome();
+  // If not triggered (incomplete press), handle tap/double-tap
+  if (!homePress.triggered && homePress.active) {
+    homePress.active = false;
+    homePress.progress = 0;
+    homeActive = false;
+
+    // Handle double-tap to expand into HX/HY/HZ
+    handleHomeDoubleClick();
+
+    // Show blink feedback for incomplete press
+    homePress.blinking = true;
+    setTimeout(() => {
+      homePress.blinking = false;
+    }, 400);
+  } else {
+    homePress.active = false;
+    homePress.progress = 0;
+    homeActive = false;
   }
 
   // Reset triggered after delay
   setTimeout(() => {
     homePress.triggered = false;
+    homePress.touchUsed = false;
   }, 100);
 };
 
@@ -574,6 +605,7 @@ const cancelHomePress = () => {
   homeActive = false;
   homePress.progress = 0;
   homePress.triggered = false;
+  homePress.touchUsed = false;
 };
 
 // Click outside to collapse back to single Home or XY0
