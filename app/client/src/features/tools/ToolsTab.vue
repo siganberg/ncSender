@@ -110,120 +110,132 @@
     <div v-if="showToolForm" class="modal-overlay" @click.self="closeToolForm">
       <div class="modal-content">
         <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
-        <form @submit.prevent="saveTool">
-          <!-- Tool Number -->
-          <div class="form-group">
-            <label class="form-label">Tool Number (T#)</label>
-            <select class="form-select" v-model="toolForm.toolNumber">
-              <option :value="null">None (Not in magazine)</option>
-              <option
-                v-for="num in maxToolCount"
-                :key="num"
-                :value="num"
-              >
-                T{{ num }}{{ getToolNumberInfo(num) }}
-              </option>
-            </select>
-          </div>
-
-          <!-- Tool Name -->
-          <div class="form-group">
-            <label class="form-label required">Tool Name / Description</label>
-            <input
-              type="text"
-              class="form-input"
-              v-model="toolForm.name"
-              placeholder="e.g., 1/4in Flat Endmill"
-              required
-            >
-            <div v-if="formErrors.name" class="form-error">{{ formErrors.name }}</div>
-          </div>
-
-          <!-- Tool Type -->
-          <div class="form-group">
-            <label class="form-label required">Tool Type</label>
-            <select class="form-select" v-model="toolForm.type" required>
-              <option value="flat">Flat End Mill</option>
-              <option value="ball">Ball End Mill</option>
-              <option value="v-bit">V-Bit</option>
-              <option value="drill">Drill</option>
-              <option value="chamfer">Chamfer</option>
-              <option value="surfacing">Surfacing</option>
-              <option value="thread-mill">Thread Mill</option>
-              <option value="probe">Probe</option>
-            </select>
-          </div>
-
-          <!-- Diameter -->
-          <div class="form-group">
-            <label class="form-label required">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
-            <input
-              type="number"
-              class="form-input"
-              v-model.number="toolForm.diameter"
-              min="0.0001"
-              step="any"
-              :placeholder="diameterPlaceholder"
-              required
-            >
-            <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
-          </div>
-
-          <!-- TLO -->
-          <div class="form-group">
-            <label class="form-label">Tool Length Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
-            <input
-              type="number"
-              class="form-input"
-              v-model.number="toolForm.offsets.tlo"
-              step="any"
-              :placeholder="tloPlaceholder"
-            >
-          </div>
-
-          <!-- TLS X/Y Offsets -->
-          <div class="form-row">
+        <form @submit.prevent="saveTool" class="modal-form">
+          <div class="modal-body">
+            <!-- Tool Number -->
             <div class="form-group">
-              <label class="form-label">TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <label class="form-label">Tool Number (T#)</label>
+              <select class="form-select" v-model="toolForm.toolNumber">
+                <option :value="null">None (Not in magazine)</option>
+                <option
+                  v-for="num in maxToolCount"
+                  :key="num"
+                  :value="num"
+                >
+                  T{{ num }}{{ getToolNumberInfo(num) }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Tool Name -->
+            <div class="form-group">
+              <label class="form-label required">Tool Name / Description</label>
               <input
-                type="number"
+                type="text"
                 class="form-input"
-                v-model.number="toolForm.offsets.x"
-                step="any"
-                :placeholder="tloPlaceholder"
+                v-model="toolForm.name"
+                placeholder="e.g., 1/4in Flat Endmill"
+                required
+              >
+              <div v-if="formErrors.name" class="form-error">{{ formErrors.name }}</div>
+            </div>
+
+            <!-- Tool Type -->
+            <div class="form-group">
+              <label class="form-label required">Tool Type</label>
+              <select class="form-select" v-model="toolForm.type" required>
+                <option value="flat">Flat End Mill</option>
+                <option value="ball">Ball End Mill</option>
+                <option value="v-bit">V-Bit</option>
+                <option value="drill">Drill</option>
+                <option value="chamfer">Chamfer</option>
+                <option value="surfacing">Surfacing</option>
+                <option value="thread-mill">Thread Mill</option>
+                <option value="probe">Probe</option>
+              </select>
+            </div>
+
+            <!-- Diameter and TLO -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label required">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  v-model.number="toolForm.diameter"
+                  min="0.0001"
+                  step="any"
+                  :placeholder="diameterPlaceholder"
+                  required
+                >
+                <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  v-model.number="toolForm.offsets.tlo"
+                  step="any"
+                  :placeholder="tloPlaceholder"
+                >
+              </div>
+            </div>
+
+            <!-- TLS X/Y/Z Offsets -->
+            <div class="form-row form-row-3">
+              <div class="form-group">
+                <label class="form-label">TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  v-model.number="toolForm.offsets.x"
+                  step="any"
+                  :placeholder="tloPlaceholder"
+                >
+              </div>
+              <div class="form-group">
+                <label class="form-label">TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  v-model.number="toolForm.offsets.y"
+                  step="any"
+                  :placeholder="tloPlaceholder"
+                >
+              </div>
+              <div class="form-group">
+                <label class="form-label">TLS Z Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  v-model.number="toolForm.offsets.z"
+                  step="any"
+                  :placeholder="tloPlaceholder"
+                >
+              </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <textarea
+                class="form-textarea"
+                v-model="toolForm.metadata.notes"
+                placeholder="Any additional information about this tool..."
+              ></textarea>
+            </div>
+
+            <!-- SKU -->
+            <div class="form-group">
+              <label class="form-label">SKU / Part Number</label>
+              <input
+                type="text"
+                class="form-input"
+                v-model="toolForm.metadata.sku"
+                placeholder="e.g., MANUFACTURER-12345"
               >
             </div>
-            <div class="form-group">
-              <label class="form-label">TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
-              <input
-                type="number"
-                class="form-input"
-                v-model.number="toolForm.offsets.y"
-                step="any"
-                :placeholder="tloPlaceholder"
-              >
-            </div>
-          </div>
-
-          <!-- Notes -->
-          <div class="form-group">
-            <label class="form-label">Notes</label>
-            <textarea
-              class="form-textarea"
-              v-model="toolForm.metadata.notes"
-              placeholder="Any additional information about this tool..."
-            ></textarea>
-          </div>
-
-          <!-- SKU -->
-          <div class="form-group">
-            <label class="form-label">SKU / Part Number</label>
-            <input
-              type="text"
-              class="form-input"
-              v-model="toolForm.metadata.sku"
-              placeholder="e.g., MANUFACTURER-12345"
-            >
           </div>
 
           <!-- Footer -->
@@ -367,6 +379,7 @@ interface Tool {
     tlo: number;
     x: number;
     y: number;
+    z: number;
   };
   metadata: {
     notes: string;
@@ -456,7 +469,8 @@ const defaultToolForm = () => ({
   offsets: {
     tlo: 0,
     x: 0,
-    y: 0
+    y: 0,
+    z: 0
   },
   metadata: {
     notes: '',
@@ -648,6 +662,7 @@ const editTool = (tool: Tool) => {
     toolCopy.offsets.tlo = parseFloat((toolCopy.offsets.tlo / 25.4).toFixed(4));
     toolCopy.offsets.x = parseFloat(((toolCopy.offsets.x || 0) / 25.4).toFixed(4));
     toolCopy.offsets.y = parseFloat(((toolCopy.offsets.y || 0) / 25.4).toFixed(4));
+    toolCopy.offsets.z = parseFloat(((toolCopy.offsets.z || 0) / 25.4).toFixed(4));
   }
 
   toolForm.value = toolCopy;
@@ -694,6 +709,7 @@ const saveTool = async () => {
       toolData.offsets.tlo = toolData.offsets.tlo * 25.4;
       toolData.offsets.x = (toolData.offsets.x || 0) * 25.4;
       toolData.offsets.y = (toolData.offsets.y || 0) * 25.4;
+      toolData.offsets.z = (toolData.offsets.z || 0) * 25.4;
     }
 
     console.log('Saving tool data:', JSON.stringify(toolData));
@@ -1345,19 +1361,33 @@ onMounted(async () => {
 .modal-content {
   background: var(--color-surface);
   border-radius: var(--radius-medium);
-  padding: 24px;
   max-width: 500px;
   width: 90%;
   max-height: 80vh;
-  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px;
 }
 
 .modal-header {
   font-size: 1.3rem;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 20px;
+  padding: 24px 24px 16px;
+  flex-shrink: 0;
 }
 
 .form-group {
@@ -1368,6 +1398,10 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+.form-row-3 {
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 .form-row .form-group {
@@ -1424,8 +1458,8 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
-  padding-top: 16px;
+  padding: 16px 24px 24px;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 </style>
