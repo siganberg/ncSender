@@ -85,7 +85,7 @@
 
       <!-- Meta (size/date for files) -->
       <span v-if="node.type === 'file' && !isRenaming" class="tree-item__meta">
-        {{ formatFileSize(node.size) }}
+        {{ formatFileSize(node.size) }} · {{ formatDate((node as FileNode).uploadedAt) }}
       </span>
 
       <!-- Actions -->
@@ -233,6 +233,24 @@ const formatFileSize = (bytes: number): string => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+const formatDate = (isoString: string): string => {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (isYesterday) {
+    return 'Yesterday';
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+  }
 };
 
 const handleClick = () => {
