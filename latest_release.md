@@ -1,5 +1,5 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed phantom lines appearing in the G-code visualizer
-- Resolved visualizer rendering issues
+### 🔧 Improvements
+- Added HOLD indicator for long press buttons to provide visual feedback
+- Home button now requires long press to prevent accidental activation
