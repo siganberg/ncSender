@@ -336,9 +336,10 @@ export function rotateGCode(
   const result: string[] = [];
   const totalLines = lines.length;
 
-  // Track current position for lines that don't specify all coordinates
-  let currentX = 0;
-  let currentY = 0;
+  // Track ORIGINAL position for lines that don't specify all coordinates
+  // This must be the original (pre-rotation) position to correctly handle implicit coords
+  let originalX = 0;
+  let originalY = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -352,14 +353,14 @@ export function rotateGCode(
       continue;
     }
 
-    const { transformed, newX, newY } = rotateLineWithPosition(
-      line, degrees, centerX, centerY, currentX, currentY
+    const { transformed, endX, endY } = rotateLineWithPosition(
+      line, degrees, centerX, centerY, originalX, originalY
     );
     result.push(transformed);
 
-    // Update current position
-    if (newX !== null) currentX = newX;
-    if (newY !== null) currentY = newY;
+    // Update original position tracking (using ORIGINAL coordinates, not rotated)
+    if (endX !== null) originalX = endX;
+    if (endY !== null) originalY = endY;
   }
 
   options?.onProgress?.(100);
@@ -369,31 +370,35 @@ export function rotateGCode(
 /**
  * Rotate a single line with position tracking.
  * Uses the current position for missing coordinates instead of center.
- * Returns the transformed line and the new X/Y positions after this move.
+ * Returns the transformed line and the ORIGINAL X/Y endpoint for position tracking.
  */
 function rotateLineWithPosition(
   line: string,
   degrees: 90 | -90 | 180,
   centerX: number,
   centerY: number,
-  currentX: number,
-  currentY: number
-): { transformed: string; newX: number | null; newY: number | null } {
+  originalX: number,
+  originalY: number
+): { transformed: string; endX: number | null; endY: number | null } {
   const x = parseCoord(line, 'X');
   const y = parseCoord(line, 'Y');
   const i = parseCoord(line, 'I');
   const j = parseCoord(line, 'J');
 
   let result = line;
-  let finalX: number | null = null;
-  let finalY: number | null = null;
+  // Track the ORIGINAL endpoint (not rotated) for position tracking
+  let endX: number | null = null;
+  let endY: number | null = null;
 
   // Transform X, Y coordinates
-  // Key fix: Use currentX/currentY for missing coordinates, not centerX/centerY
   if (x !== null || y !== null) {
-    // For missing coordinates, use current position (where machine already is)
-    const actualX = x ?? currentX;
-    const actualY = y ?? currentY;
+    // For missing coordinates, use current ORIGINAL position
+    const actualX = x ?? originalX;
+    const actualY = y ?? originalY;
+
+    // Track original endpoint for next line's implicit coordinate handling
+    endX = actualX;
+    endY = actualY;
 
     // Calculate position relative to toolpath center for rotation
     const relX = actualX - centerX;
@@ -429,9 +434,6 @@ function rotateLineWithPosition(
       // Y was implicit - we need to add it since the rotated position is different
       result = addCoord(result, 'Y', rotatedY);
     }
-
-    finalX = rotatedX;
-    finalY = rotatedY;
   }
 
   // Transform I, J for arcs (same rotation, no center offset since they're relative)
@@ -464,7 +466,7 @@ function rotateLineWithPosition(
     result = addCoord(result, 'J', newJ);
   }
 
-  return { transformed: result, newX: finalX, newY: finalY };
+  return { transformed: result, endX, endY };
 }
 
 /**

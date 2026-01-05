@@ -2003,23 +2003,12 @@ const applyTransform = async (
     const currentFilename = props.jobLoaded?.filename || 'transformed.nc';
     const originalSourceFile = props.jobLoaded?.sourceFile || currentFilename;
 
-    // Download G-code content
-    // For offset: always use original file to avoid compounding offsets
-    // For rotate/mirror: use current (potentially already transformed) content
+    // Download current G-code content (may already be transformed)
+    // All transforms apply to current state so they can be chained
     loadingMessage.value = 'Downloading G-code...';
-    let content: string;
-
-    if (type === 'offset' && originalSourceFile) {
-      // Fetch original source file for offset
-      const fileData = await api.getGCodeFile(originalSourceFile);
-      content = fileData.content;
-      loadingProgress.value = 30;
-    } else {
-      // Use current cached content for other transforms
-      content = await api.downloadGCodeFile((progress) => {
-        loadingProgress.value = Math.round(progress.percent * 0.3);
-      });
-    }
+    const content = await api.downloadGCodeFile((progress) => {
+      loadingProgress.value = Math.round(progress.percent * 0.3);
+    });
 
     // Apply transformation
     loadingMessage.value = 'Transforming toolpath...';

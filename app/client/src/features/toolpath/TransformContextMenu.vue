@@ -13,11 +13,11 @@
       @click.stop
     >
       <div class="menu-section">
-        <div class="menu-item disabled" title="Coming soon">
+        <div class="menu-item" @click="handleRotateCW">
           <span class="menu-icon">↻</span>
           <span class="menu-label">Rotate 90° CW</span>
         </div>
-        <div class="menu-item disabled" title="Coming soon">
+        <div class="menu-item" @click="handleRotateCCW">
           <span class="menu-icon">↺</span>
           <span class="menu-label">Rotate 90° CCW</span>
         </div>
