@@ -80,7 +80,7 @@
                 :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
               >
                 <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
-                <span class="message">{{ item.message }}</span>
+                <span class="message" v-html="highlightGcode(item)"></span>
               </article>
             </DynamicScrollerItem>
           </template>
@@ -445,7 +445,7 @@
                     :class="['console-line', `console-line--${item.level}`, `console-line--${item.type}`]"
                   >
                     <span class="timestamp">{{ item.timestamp }}{{ item.type === 'command' || item.type === 'response' ? ' - ' : ' ' }}<span v-html="getStatusIcon(item)"></span></span>
-                    <span class="message">{{ item.message }}</span>
+                    <span class="message" v-html="highlightGcode(item)"></span>
                   </article>
                 </DynamicScrollerItem>
               </template>
@@ -1736,6 +1736,31 @@ const getStatusIcon = (line) => {
   return '';
 };
 
+// Escape HTML to prevent XSS
+const escapeHtml = (text: string): string => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+
+// Highlight G-code syntax in terminal messages
+const highlightGcode = (item: { message: string; type: string }): string => {
+  // Only highlight command type messages
+  if (item.type !== 'command') {
+    return escapeHtml(item.message);
+  }
+
+  let html = escapeHtml(item.message);
+
+  // Highlight parentheses-style comments: (...)
+  html = html.replace(/(\([^)]*\))/g, '<span class="gcode-comment">$1</span>');
+
+  // Highlight semicolon-style comments: ; to end of line
+  html = html.replace(/(;[^<]*)/g, '<span class="gcode-comment">$1</span>');
+
+  return html;
+};
+
 watch(autoScroll, (newValue) => {
   if (newValue) {
     nextTick(() => {
@@ -2464,10 +2489,6 @@ h2 {
   user-select: text !important;
 }
 
-.console-line--error {
-  color: #ff6b6b;
-}
-
 .console-line--response {
 
 }
@@ -2512,6 +2533,16 @@ h2 {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
   user-select: text !important;
+}
+
+/* G-code syntax highlighting */
+.message :deep(.gcode-comment) {
+  color: #6A9955;
+  font-style: italic;
+}
+
+.light-theme .message :deep(.gcode-comment) {
+  color: #008000;
 }
 
 .empty-state {
