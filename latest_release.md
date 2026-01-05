@@ -1,9 +1,9 @@
-## What's Changed
+⚠️ **Beta Release** - This version is for testing purposes only.
+
+## What's New in This Beta
 
 ### ✨ New Features
-- Added mirror transformation for G-code files
-- Added rotate transformation for G-code files
-- Added move transformation for G-code files
+- Added beta release channel for early access to new features
 
-### 🐛 Bug Fixes
-- Fixed mirror transformation behavior
+---
+*Please report any issues on [GitHub Issues](https://github.com/siganberg/ncSender/issues)*
