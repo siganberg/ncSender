@@ -1999,11 +1999,27 @@ const applyTransform = async (
   loadingProgress.value = 0;
 
   try {
-    // Download current G-code content
+    // Get source file info
+    const currentFilename = props.jobLoaded?.filename || 'transformed.nc';
+    const originalSourceFile = props.jobLoaded?.sourceFile || currentFilename;
+
+    // Download G-code content
+    // For offset: always use original file to avoid compounding offsets
+    // For rotate/mirror: use current (potentially already transformed) content
     loadingMessage.value = 'Downloading G-code...';
-    const content = await api.downloadGCodeFile((progress) => {
-      loadingProgress.value = Math.round(progress.percent * 0.3);
-    });
+    let content: string;
+
+    if (type === 'offset' && originalSourceFile) {
+      // Fetch original source file for offset
+      const fileData = await api.getGCodeFile(originalSourceFile);
+      content = fileData.content;
+      loadingProgress.value = 30;
+    } else {
+      // Use current cached content for other transforms
+      content = await api.downloadGCodeFile((progress) => {
+        loadingProgress.value = Math.round(progress.percent * 0.3);
+      });
+    }
 
     // Apply transformation
     loadingMessage.value = 'Transforming toolpath...';
@@ -2023,12 +2039,9 @@ const applyTransform = async (
       throw new Error('Invalid transform parameters');
     }
 
-    // Get current filename and create a transformed filename
-    const currentFilename = props.jobLoaded?.filename || 'transformed.nc';
-    // Preserve the original source file through multiple transforms
-    const originalSourceFile = props.jobLoaded?.sourceFile || currentFilename;
-    const baseName = currentFilename.replace(/\.[^.]+$/, '');
-    const ext = currentFilename.match(/\.[^.]+$/)?.[0] || '.nc';
+    // Create a transformed filename
+    const baseName = originalSourceFile.replace(/\.[^.]+$/, '');
+    const ext = originalSourceFile.match(/\.[^.]+$/)?.[0] || '.nc';
     const transformedFilename = `${baseName}_${type}${ext}`;
 
     // Load the transformed G-code

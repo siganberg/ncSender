@@ -16,8 +16,9 @@
         </p>
 
         <div class="input-row">
-          <div class="input-group">
-            <label class="input-label">X Offset</label>
+          <label class="input-label">X Offset</label>
+          <div class="input-with-buttons">
+            <button class="adjust-btn" @click="adjustX(-10)" title="Decrease by 10">-10</button>
             <input
               type="number"
               v-model.number="offsetX"
@@ -26,9 +27,14 @@
               ref="xInput"
               @keydown.enter="handleApply"
             />
+            <button class="adjust-btn" @click="adjustX(10)" title="Increase by 10">+10</button>
           </div>
-          <div class="input-group">
-            <label class="input-label">Y Offset</label>
+        </div>
+
+        <div class="input-row">
+          <label class="input-label">Y Offset</label>
+          <div class="input-with-buttons">
+            <button class="adjust-btn" @click="adjustY(-10)" title="Decrease by 10">-10</button>
             <input
               type="number"
               v-model.number="offsetY"
@@ -36,14 +42,8 @@
               class="offset-input"
               @keydown.enter="handleApply"
             />
+            <button class="adjust-btn" @click="adjustY(10)" title="Increase by 10">+10</button>
           </div>
-        </div>
-
-        <div class="quick-actions">
-          <button class="quick-btn" @click="setPreset(-10, 0)" title="Move left 10">← 10</button>
-          <button class="quick-btn" @click="setPreset(10, 0)" title="Move right 10">10 →</button>
-          <button class="quick-btn" @click="setPreset(0, 10)" title="Move up 10">↑ 10</button>
-          <button class="quick-btn" @click="setPreset(0, -10)" title="Move down 10">10 ↓</button>
         </div>
       </div>
 
@@ -85,9 +85,12 @@ const isValid = computed(() => {
          !isNaN(offsetX.value) && !isNaN(offsetY.value);
 });
 
-function setPreset(x: number, y: number) {
-  offsetX.value = x;
-  offsetY.value = y;
+function adjustX(amount: number) {
+  offsetX.value = Math.round((offsetX.value + amount) * 1000) / 1000;
+}
+
+function adjustY(amount: number) {
+  offsetY.value = Math.round((offsetY.value + amount) * 1000) / 1000;
 }
 
 function handleApply() {
@@ -119,18 +122,22 @@ watch(() => props.show, (newVal) => {
 </script>
 
 <style scoped>
+:deep(.dialog--small) {
+  max-width: 280px;
+}
+
 .offset-dialog {
   display: flex;
   flex-direction: column;
   gap: var(--gap-md);
   padding: var(--gap-md);
-  min-width: 320px;
 }
 
 .dialog-header h2 {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  text-align: center;
 }
 
 .dialog-content {
@@ -143,15 +150,10 @@ watch(() => props.show, (newVal) => {
   margin: 0;
   font-size: 0.875rem;
   color: var(--color-text-secondary);
+  text-align: center;
 }
 
 .input-row {
-  display: flex;
-  gap: var(--gap-md);
-}
-
-.input-group {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--gap-xs);
@@ -161,46 +163,53 @@ watch(() => props.show, (newVal) => {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text);
+  text-align: center;
+}
+
+.input-with-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.adjust-btn {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-primary, #3b82f6);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 42px;
+}
+
+.adjust-btn:hover {
+  background: var(--color-primary-hover, #2563eb);
+}
+
+.adjust-btn:active {
+  transform: scale(0.95);
 }
 
 .offset-input {
-  padding: 10px 12px;
+  flex: 1;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 1rem;
-  text-align: right;
+  font-size: 0.9rem;
+  text-align: center;
   font-family: var(--font-mono);
+  min-width: 70px;
 }
 
 .offset-input:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.quick-actions {
-  display: flex;
-  gap: var(--gap-xs);
-  justify-content: center;
-}
-
-.quick-btn {
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface-secondary, rgba(255,255,255,0.05));
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.quick-btn:hover {
-  background: var(--color-surface-hover, rgba(255,255,255,0.1));
-  color: var(--color-text);
-  border-color: var(--color-primary);
 }
 
 .dialog-actions {
@@ -212,9 +221,9 @@ watch(() => props.show, (newVal) => {
 }
 
 .btn {
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   border: none;
