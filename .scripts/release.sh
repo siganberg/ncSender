@@ -2,12 +2,12 @@
 
 set -e
 
-# Get the latest tag from all branches
-LATEST_TAG=$(git tag --sort=-version:refname | head -1)
+# Get the latest STABLE tag (exclude beta tags)
+LATEST_TAG=$(git tag --sort=-version:refname | grep -v '\-beta' | head -1)
 if [ -z "$LATEST_TAG" ]; then
     LATEST_TAG="v0.0.0"
 fi
-echo "Latest tag: $LATEST_TAG"
+echo "Latest stable tag: $LATEST_TAG"
 
 # Extract version number (remove 'v' prefix)
 VERSION=${LATEST_TAG#v}
