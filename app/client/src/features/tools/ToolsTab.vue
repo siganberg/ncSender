@@ -43,11 +43,66 @@
         <table class="tools-table">
         <thead>
           <tr>
-            <th class="col-tool-number">Tool #</th>
-            <th class="col-description">Description</th>
-            <th class="col-type">Type</th>
-            <th class="col-diameter">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
-            <th class="col-tlo">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
+            <th class="col-tool-number">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'toolNumber' }"
+                @click="toggleSort('toolNumber')"
+              >
+                <span>Tool #</span>
+                <svg v-if="sortBy === 'toolNumber'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-description">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'name' }"
+                @click="toggleSort('name')"
+              >
+                <span>Description</span>
+                <svg v-if="sortBy === 'name'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-type">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'type' }"
+                @click="toggleSort('type')"
+              >
+                <span>Type</span>
+                <svg v-if="sortBy === 'type'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-diameter">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'diameter' }"
+                @click="toggleSort('diameter')"
+              >
+                <span>Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
+                <svg v-if="sortBy === 'diameter'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-tlo">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'tlo' }"
+                @click="toggleSort('tlo')"
+              >
+                <span>TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
+                <svg v-if="sortBy === 'tlo'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
             <th class="col-actions">Actions</th>
           </tr>
         </thead>
@@ -366,6 +421,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { api } from '../../lib/api.js';
+import { settingsStore, updateSettings } from '../../lib/settings-store.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
@@ -444,6 +500,12 @@ const editingTool = ref<Tool | null>(null);
 const importFileInput = ref<HTMLInputElement | null>(null);
 const formErrors = ref<Record<string, string>>({});
 
+// Sorting state
+type SortField = 'toolNumber' | 'name' | 'type' | 'diameter' | 'tlo';
+type SortOrder = 'asc' | 'desc';
+const sortBy = ref<SortField>('toolNumber');
+const sortOrder = ref<SortOrder>('asc');
+
 // Dialog state
 const showSaveErrorDialog = ref(false);
 const saveErrorMessage = ref('');
@@ -503,6 +565,22 @@ const defaultToolForm = () => ({
 
 const toolForm = ref(defaultToolForm());
 
+const toggleSort = async (field: SortField) => {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortBy.value = field;
+    sortOrder.value = 'asc';
+  }
+  // Persist sorting preferences
+  await updateSettings({
+    toolLibrary: {
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value
+    }
+  });
+};
+
 // Computed
 const filteredTools = computed(() => {
   let result = tools.value;
@@ -524,11 +602,25 @@ const filteredTools = computed(() => {
     });
   }
 
-  // Sort by T# ascending (tools without toolNumber go to end)
+  // Sort based on current sort settings
   result = [...result].sort((a, b) => {
-    const aVal = a.toolNumber !== null ? a.toolNumber : 9999;
-    const bVal = b.toolNumber !== null ? b.toolNumber : 9999;
-    return aVal - bVal;
+    let comparison = 0;
+    
+    if (sortBy.value === 'toolNumber') {
+      const aVal = a.toolNumber !== null && a.toolNumber !== undefined ? a.toolNumber : 9999;
+      const bVal = b.toolNumber !== null && b.toolNumber !== undefined ? b.toolNumber : 9999;
+      comparison = aVal - bVal;
+    } else if (sortBy.value === 'name') {
+      comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    } else if (sortBy.value === 'type') {
+      comparison = a.type.localeCompare(b.type, undefined, { sensitivity: 'base' });
+    } else if (sortBy.value === 'diameter') {
+      comparison = a.diameter - b.diameter;
+    } else if (sortBy.value === 'tlo') {
+      comparison = a.offsets.tlo - b.offsets.tlo;
+    }
+
+    return sortOrder.value === 'asc' ? comparison : -comparison;
   });
 
   return result;
@@ -970,6 +1062,15 @@ const confirmImportWithConflicts = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  // Load sorting preferences from settings
+  const toolLibrarySettings = (settingsStore.data as any)?.toolLibrary;
+  if (toolLibrarySettings?.sortBy) {
+    sortBy.value = toolLibrarySettings.sortBy;
+  }
+  if (toolLibrarySettings?.sortOrder) {
+    sortOrder.value = toolLibrarySettings.sortOrder;
+  }
+
   await loadTools();
   await loadToolsInfo();
 
@@ -1157,7 +1258,7 @@ onMounted(async () => {
 }
 
 .tools-table th {
-  padding: var(--gap-sm) var(--gap-md);
+  padding: 0;
   text-align: left;
   font-weight: 600;
   color: var(--color-text-primary);
@@ -1167,6 +1268,42 @@ onMounted(async () => {
 
 .tools-table th.col-actions {
   text-align: center;
+  padding: var(--gap-sm) var(--gap-md);
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: var(--gap-sm) var(--gap-md);
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-size: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.column-header:hover {
+  background: var(--color-border);
+}
+
+.column-header--active {
+  color: var(--color-accent);
+}
+
+.sort-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.sort-icon--desc {
+  transform: rotate(180deg);
 }
 
 .tools-table tbody tr:first-child td {
