@@ -431,30 +431,34 @@ const addResponseLine = (data: string) => {
 // Helper to update machine orientation from home location setting
 const updateMachineOrientationFromHomeLocation = (homeLocation: string) => {
   // Map homeLocation string to xHome, yHome, zHome values
-  // Assumes standard GRBL orientation where:
+  // Assumes standard CNC/GRBL orientation where:
   // - X+ is to the right, X- is to the left
-  // - Y+ is towards the front, Y- is towards the back
+  // - Y+ is away from operator (back), Y- is towards operator (front)
   // - Z+ is up, Z- is down (and home is typically at top, so zHome is 'max')
+  //
+  // In the visualizer's top-down view:
+  // - X+ goes right on screen
+  // - Y+ goes up on screen (representing "back" of machine)
 
   switch (homeLocation) {
     case 'back-left':
-      machineOrientation.xHome = 'min';  // Home at left (X-)
-      machineOrientation.yHome = 'max';  // Home at back (Y+)
+      machineOrientation.xHome = 'min';  // Home at left (X min)
+      machineOrientation.yHome = 'max';  // Home at back (Y max)
       machineOrientation.homeCorner = 'back-left';
       break;
     case 'back-right':
-      machineOrientation.xHome = 'max';  // Home at right (X+)
-      machineOrientation.yHome = 'max';  // Home at back (Y+)
+      machineOrientation.xHome = 'max';  // Home at right (X max)
+      machineOrientation.yHome = 'max';  // Home at back (Y max)
       machineOrientation.homeCorner = 'back-right';
       break;
     case 'front-left':
-      machineOrientation.xHome = 'min';  // Home at left (X-)
-      machineOrientation.yHome = 'min';  // Home at front (Y-)
+      machineOrientation.xHome = 'min';  // Home at left (X min)
+      machineOrientation.yHome = 'min';  // Home at front (Y min)
       machineOrientation.homeCorner = 'front-left';
       break;
     case 'front-right':
-      machineOrientation.xHome = 'max';  // Home at right (X+)
-      machineOrientation.yHome = 'min';  // Home at front (Y-)
+      machineOrientation.xHome = 'max';  // Home at right (X max)
+      machineOrientation.yHome = 'min';  // Home at front (Y min)
       machineOrientation.homeCorner = 'front-right';
       break;
     default:
