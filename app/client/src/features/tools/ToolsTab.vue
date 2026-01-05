@@ -27,8 +27,25 @@
           v-model="searchQuery"
           placeholder="Search tools by T#, name, or type..."
         >
-        <button class="import-export-button" @click="importTools">Import</button>
+        <!-- Show dropdown only if there are plugin importers -->
+        <div v-if="toolImporters.length > 0" class="import-dropdown" ref="importDropdownRef">
+          <button class="import-export-button" @click.stop="showImportMenu = !showImportMenu">Import</button>
+          <div v-if="showImportMenu" class="import-menu" @click.stop>
+            <button class="import-menu-item" @click="importTools">Import from ncSender (JSON)</button>
+            <button
+              v-for="importer in toolImporters"
+              :key="`${importer.pluginId}-${importer.name}`"
+              class="import-menu-item"
+              @click="importFromPlugin(importer)"
+            >
+              Import from {{ importer.name }}
+            </button>
+          </div>
+        </div>
+        <!-- Simple import button when no plugin importers -->
+        <button v-else class="import-export-button" @click="importTools">Import</button>
         <button class="import-export-button" @click="exportTools">Export</button>
+        <button v-if="tools.length > 0" class="import-export-button btn-danger-outline" @click="confirmDeleteAll">Delete All</button>
         <button class="btn btn-primary" @click="addNewTool">Add Tool</button>
       </div>
 
@@ -258,6 +275,13 @@
       style="display: none"
       @change="handleImport"
     >
+    <!-- Hidden file input for plugin imports -->
+    <input
+      ref="pluginImportFileInput"
+      type="file"
+      style="display: none"
+      @change="handlePluginImport"
+    >
 
     <!-- Save Error Dialog -->
     <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small">
@@ -360,11 +384,25 @@
         @cancel="cancelMagazineSizeChange"
       />
     </Dialog>
+
+    <!-- Delete All Confirmation Dialog -->
+    <Dialog v-if="showDeleteAllConfirmDialog" @close="showDeleteAllConfirmDialog = false" :show-header="false" size="small">
+      <ConfirmPanel
+        title="Delete All Tools"
+        :message="`Are you sure you want to delete all ${tools.length} tool${tools.length !== 1 ? 's' : ''}? This action cannot be undone.`"
+        :show-cancel="true"
+        confirm-text="Delete All"
+        cancel-text="Cancel"
+        variant="danger"
+        @confirm="deleteAllTools"
+        @cancel="showDeleteAllConfirmDialog = false"
+      />
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -442,7 +480,11 @@ const searchQuery = ref('');
 const showToolForm = ref(false);
 const editingTool = ref<Tool | null>(null);
 const importFileInput = ref<HTMLInputElement | null>(null);
+const pluginImportFileInput = ref<HTMLInputElement | null>(null);
 const formErrors = ref<Record<string, string>>({});
+const showImportMenu = ref(false);
+const toolImporters = ref<Array<{ pluginId: string; name: string; fileExtensions: string[] }>>([]);
+const importDropdownRef = ref<HTMLElement | null>(null);
 
 // Dialog state
 const showSaveErrorDialog = ref(false);
@@ -462,6 +504,7 @@ const importSuccessMessage = ref('');
 const showMagazineSizeConfirmDialog = ref(false);
 const pendingMagazineSize = ref<number | null>(null);
 const affectedToolsCount = ref(0);
+const showDeleteAllConfirmDialog = ref(false);
 
 // Tool form data
 const defaultToolForm = () => ({
@@ -625,6 +668,35 @@ const cancelMagazineSizeChange = () => {
   showMagazineSizeConfirmDialog.value = false;
   pendingMagazineSize.value = null;
   affectedToolsCount.value = 0;
+};
+
+const confirmDeleteAll = () => {
+  showDeleteAllConfirmDialog.value = true;
+};
+
+const deleteAllTools = async () => {
+  showDeleteAllConfirmDialog.value = false;
+
+  try {
+    // Save empty array
+    const response = await fetch(`${api.baseUrl}/api/tools`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([])
+    });
+
+    if (response.ok) {
+      await loadTools();
+    } else {
+      const error = await response.json();
+      deleteErrorMessage.value = 'Failed to delete all tools: ' + (error.error || 'Unknown error');
+      showDeleteErrorDialog.value = true;
+    }
+  } catch (error) {
+    console.error('Error deleting all tools:', error);
+    deleteErrorMessage.value = 'Failed to delete all tools';
+    showDeleteErrorDialog.value = true;
+  }
 };
 
 const formatType = (type: string) => {
@@ -935,12 +1007,26 @@ const handleImport = async (event: Event) => {
 const performImport = async (importedTools: Tool[]) => {
   // Merge tools
   const mergedTools = [...tools.value];
+  
+  // Find max existing ID
+  const maxId = mergedTools.length > 0 
+    ? Math.max(...mergedTools.map(t => t.id || 0))
+    : 0;
+  
+  let nextId = maxId + 1;
+  
   importedTools.forEach(importTool => {
     const existingIndex = mergedTools.findIndex(t => t.id === importTool.id);
     if (existingIndex >= 0) {
+      // Replace existing tool
       mergedTools[existingIndex] = importTool;
     } else {
-      mergedTools.push(importTool);
+      // Assign new ID if tool doesn't have a valid ID or ID is 0
+      const toolToAdd = { ...importTool };
+      if (!toolToAdd.id || toolToAdd.id === 0 || toolToAdd.id >= 100000) {
+        toolToAdd.id = nextId++;
+      }
+      mergedTools.push(toolToAdd);
     }
   });
 
@@ -957,7 +1043,18 @@ const performImport = async (importedTools: Tool[]) => {
     showImportSuccessDialog.value = true;
   } else {
     const error = await response.json();
-    importErrorMessage.value = 'Failed to import tools: ' + (error.error || 'Unknown error');
+    let errorMsg = error.error || 'Unknown error';
+    
+    // Include detailed validation errors if available
+    if (error.validationErrors && Array.isArray(error.validationErrors)) {
+      const details = error.validationErrors.map((ve: any) => {
+        const toolName = importedTools[ve.index]?.name || `Tool ${ve.index + 1}`;
+        return `${toolName}: ${ve.errors.join(', ')}`;
+      }).join('\n');
+      errorMsg += '\n\nDetails:\n' + details;
+    }
+    
+    importErrorMessage.value = 'Failed to import tools: ' + errorMsg;
     showImportErrorDialog.value = true;
   }
 };
@@ -968,21 +1065,137 @@ const confirmImportWithConflicts = async () => {
   importConflictTools.value = [];
 };
 
+// Load plugin tool importers
+const loadToolImporters = async () => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/plugins/tool-importers`);
+    if (response.ok) {
+      toolImporters.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to load tool importers:', error);
+  }
+};
+
+// Import from a specific plugin
+const importFromPlugin = (importer: { pluginId: string; name: string; fileExtensions: string[] }) => {
+  showImportMenu.value = false;
+  if (!pluginImportFileInput.value) return;
+
+  // Set accept attribute based on file extensions
+  const accept = importer.fileExtensions.map(ext => ext.startsWith('.') ? ext : `.${ext}`).join(',');
+  pluginImportFileInput.value.accept = accept;
+  pluginImportFileInput.value.setAttribute('data-plugin-id', importer.pluginId);
+  pluginImportFileInput.value.setAttribute('data-importer-name', importer.name);
+  pluginImportFileInput.value.click();
+};
+
+// Handle plugin import file selection
+const handlePluginImport = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
+
+  const pluginId = target.getAttribute('data-plugin-id');
+  const importerName = target.getAttribute('data-importer-name');
+
+  if (!pluginId || !importerName) {
+    importErrorMessage.value = 'Invalid import configuration';
+    showImportErrorDialog.value = true;
+    target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const fileContent = e.target?.result as string;
+
+      // Call plugin importer API
+      const response = await fetch(`${api.baseUrl}/api/plugins/tool-importers/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pluginId,
+          importerName,
+          fileContent,
+          fileName: file.name
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to import tools');
+      }
+
+      const result = await response.json();
+      const importedTools = result.tools;
+
+      if (!Array.isArray(importedTools) || importedTools.length === 0) {
+        importErrorMessage.value = 'No tools found in file';
+        showImportErrorDialog.value = true;
+        return;
+      }
+
+      // Check for conflicts
+      const conflicts = importedTools.filter(importTool =>
+        tools.value.some(existingTool => existingTool.id === importTool.id)
+      );
+
+      if (conflicts.length > 0) {
+        const conflictList = conflicts.map(t => `T${t.id}`).join(', ');
+        importConflictMessage.value = `The following tool IDs already exist: ${conflictList}\n\nDo you want to replace existing tools and import?`;
+        importConflictTools.value = importedTools;
+        showImportConflictDialog.value = true;
+        return;
+      }
+
+      // No conflicts, proceed with import
+      await performImport(importedTools);
+    } catch (error: any) {
+      let errorMsg = error?.message || 'Failed to import tools from plugin';
+      
+      // Add more context if available
+      if (error?.response) {
+        try {
+          const errorData = await error.response.json();
+          if (errorData.error) {
+            errorMsg = errorData.error;
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
+      }
+      
+      importErrorMessage.value = errorMsg;
+      showImportErrorDialog.value = true;
+      console.error('Plugin import error:', error);
+    }
+  };
+  reader.readAsText(file);
+
+  // Reset file input
+  target.value = '';
+};
+
 // Lifecycle
 onMounted(async () => {
   await loadTools();
-  await loadToolsInfo();
+  await loadToolImporters();
 
-  // Load max tool count from settings
-  try {
-    const response = await fetch(`${api.baseUrl}/api/settings`);
-    if (response.ok) {
-      const settings = await response.json();
-      maxToolCount.value = settings?.tool?.count || 1;
+  // Close import menu when clicking outside
+  const handleClickOutside = (event: MouseEvent) => {
+    if (importDropdownRef.value && !importDropdownRef.value.contains(event.target as Node)) {
+      showImportMenu.value = false;
     }
-  } catch (error) {
-    console.error('Error loading tool count setting:', error);
-  }
+  };
+
+  document.addEventListener('click', handleClickOutside);
+
+  // Cleanup on unmount
+  onBeforeUnmount(() => {
+    document.removeEventListener('click', handleClickOutside);
+  });
 });
 </script>
 
@@ -1087,6 +1300,63 @@ onMounted(async () => {
 
 .import-export-button:hover {
   background: var(--color-border);
+}
+
+.btn-danger-outline {
+  border: 1px solid var(--color-danger, #f87171);
+  color: var(--color-danger, #f87171);
+  background: transparent;
+}
+
+.btn-danger-outline:hover {
+  background: var(--color-danger, #f87171);
+  color: white;
+}
+
+.import-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.import-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 180px;
+  overflow: hidden;
+}
+
+.import-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--gap-sm) var(--gap-md);
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.import-menu-item:hover {
+  background: var(--color-surface-muted);
+}
+
+.import-menu-item:first-child {
+  border-top-left-radius: var(--radius-small);
+  border-top-right-radius: var(--radius-small);
+}
+
+.import-menu-item:last-child {
+  border-bottom-left-radius: var(--radius-small);
+  border-bottom-right-radius: var(--radius-small);
 }
 
 .tools-table-container {

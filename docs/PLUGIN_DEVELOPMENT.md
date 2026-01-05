@@ -109,6 +109,7 @@ ctx.setSettings(obj)  // Save plugin settings
 // UI Integration (Phase 3)
 ctx.showDialog(title, content, options)  // Show dialog to user
 ctx.registerToolMenu(label, callback)    // Add Tools menu item
+ctx.registerToolImporter(name, exts, fn) // Add tool library importer
 ctx.emitToClient(eventName, data)        // Emit custom events to clients
 
 // WebSocket Events (Phase 3)
@@ -130,6 +131,7 @@ Only one plugin of this category can be enabled at a time:
 Multiple plugins of these categories can be enabled simultaneously:
 
 - **post-processor** (priority 120-150): Transforms G-code files after loading, before execution
+- **tool-importer** (no priority): Import tool libraries from external formats (CAM software, spreadsheets, etc.)
 - **utility** (priority 0-50): General-purpose helper plugins
 - **gcode-generator** (priority 0-50): Generates G-code programmatically
 - **custom** (priority varies): User-defined category
@@ -370,6 +372,55 @@ export function onLoad(ctx) {
   });
 }
 ```
+
+### Tool Library Importers
+
+Add custom tool library importers to the Tools tab Import menu:
+
+```javascript
+export function onLoad(ctx) {
+  ctx.registerToolImporter(
+    'Fusion 360 (JSON)',      // Display name in import menu
+    ['.json'],                // Supported file extensions
+    importFusionTools         // Handler function
+  );
+}
+
+async function importFusionTools(fileContent, fileName) {
+  // Parse the file
+  const data = JSON.parse(fileContent);
+  
+  // Convert to ncSender tool format
+  const tools = data.tools.map(tool => ({
+    id: 0,                    // Temporary, will be reassigned
+    toolNumber: tool.slot || null,
+    name: tool.description,
+    type: 'flat',             // flat, ball, v-bit, drill, etc.
+    diameter: tool.diameter,  // In millimeters
+    offsets: {
+      tlo: tool.length || 0,
+      x: 0,
+      y: 0,
+      z: 0
+    },
+    metadata: {
+      notes: '',
+      image: '',
+      sku: ''
+    }
+  }));
+  
+  return tools;
+}
+```
+
+**Handler Requirements:**
+- Accepts `fileContent` (string) and `fileName` (string)
+- Returns array of tool objects in ncSender format
+- Throws descriptive errors for invalid files
+- Validates required fields (diameter > 0, name non-empty)
+
+See **TOOL_IMPORTER_DEVELOPMENT.md** for complete guide and best practices.
 
 ### WebSocket Event Subscriptions
 

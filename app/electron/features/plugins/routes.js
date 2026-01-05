@@ -261,6 +261,27 @@ export function createPluginRoutes({ getClientWebSocket, broadcast } = {}) {
     }
   });
 
+  router.get('/tool-importers', asyncHandler(async (req, res) => {
+    const importers = pluginManager.getToolImporters();
+    res.json(importers);
+  }));
+
+  router.post('/tool-importers/execute', asyncHandler(async (req, res) => {
+    const { pluginId, importerName, fileContent, fileName } = req.body;
+
+    if (!pluginId || !importerName || !fileContent) {
+      return res.status(400).json({ error: 'Missing required fields: pluginId, importerName, fileContent' });
+    }
+
+    try {
+      const tools = await pluginManager.executeToolImport(pluginId, importerName, fileContent, fileName);
+      res.json({ success: true, tools });
+    } catch (error) {
+      log('Error executing tool import:', error);
+      res.status(500).json({ error: error.message || 'Failed to execute tool import' });
+    }
+  }));
+
   router.get('/:pluginId/config-ui', async (req, res) => {
     try {
       const { pluginId } = req.params;

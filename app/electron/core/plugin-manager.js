@@ -57,6 +57,7 @@ class PluginManager {
     this.broadcast = null;
     this.toolMenuItems = [];
     this.configUIs = new Map();
+    this.toolImporters = [];
     this.executionContextStack = new Map();
   }
 
@@ -247,6 +248,12 @@ class PluginManager {
     this.toolMenuItems = this.toolMenuItems.filter(item => item.pluginId !== pluginId);
     log(`Removed tool menu items for plugin "${pluginId}"`);
 
+    // Remove tool importers registered by this plugin
+    if (this.toolImporters) {
+      this.toolImporters = this.toolImporters.filter(importer => importer.pluginId !== pluginId);
+      log(`Removed tool importers for plugin "${pluginId}"`);
+    }
+
     // Remove config UI registered by this plugin
     this.configUIs.delete(pluginId);
     log(`Removed config UI for plugin "${pluginId}"`);
@@ -371,6 +378,19 @@ class PluginManager {
           icon: options.icon || null // SVG string for custom icon
         });
         log(`Registered tool menu item: "${label}" for plugin ${pluginId}${options.clientOnly ? ' (client-only)' : ''}${options.icon ? ' (with custom icon)' : ''}`);
+      },
+
+      registerToolImporter: (name, fileExtensions, handler) => {
+        if (!this.toolImporters) {
+          this.toolImporters = [];
+        }
+        this.toolImporters.push({
+          pluginId,
+          name,
+          fileExtensions: Array.isArray(fileExtensions) ? fileExtensions : [fileExtensions],
+          handler
+        });
+        log(`Registered tool importer: "${name}" for plugin ${pluginId} (extensions: ${fileExtensions.join(', ')})`);
       },
 
       registerConfigUI: (htmlContent) => {
@@ -710,6 +730,28 @@ class PluginManager {
       clientOnly: !!item.clientOnly,
       icon: item.icon || null
     }));
+  }
+
+  getToolImporters() {
+    return this.toolImporters.map(importer => ({
+      pluginId: importer.pluginId,
+      name: importer.name,
+      fileExtensions: importer.fileExtensions
+    }));
+  }
+
+  async executeToolImport(pluginId, importerName, fileContent, fileName) {
+    const importer = this.toolImporters.find(
+      i => i.pluginId === pluginId && i.name === importerName
+    );
+
+    if (!importer) {
+      throw new Error(`Tool importer "${importerName}" not found for plugin "${pluginId}"`);
+    }
+
+    // Execute the handler with file content
+    const tools = await importer.handler(fileContent, fileName);
+    return tools;
   }
 
   async executeToolMenuItem(pluginId, label, executionContext = {}) {

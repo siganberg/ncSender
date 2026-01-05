@@ -345,6 +345,7 @@ async handleReorder() {
 
 #### Non-Exclusive Categories (multiple can be enabled)
 - `post-processor` - G-code file transformation (priority 120-150, runs before other plugins)
+- `tool-importer` - Tool library import from external formats (no priority - UI integration only)
 - `gcode-generator` - G-code generation tools
 - `utility` - Utility/helper plugins
 - `custom` - User-defined category
@@ -358,6 +359,7 @@ async handleReorder() {
   - **tool-changer**: 50-100
   - **utility**: 0-50
   - **gcode-generator**: 0-50
+  - **tool-importer**: No priority (UI integration only, no event handlers)
 - Default range for UI drag-n-drop: 100, 90, 80, 70... (descending by 10)
 - Plugins without priority get `0` (execute last)
 
