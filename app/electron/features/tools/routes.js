@@ -16,6 +16,7 @@
  */
 
 import express from 'express';
+import path from 'node:path';
 import {
   getAllTools,
   getToolById,
@@ -26,6 +27,7 @@ import {
 } from './tools-storage.js';
 import { validateTool } from './tools-validation.js';
 import { createLogger } from '../../core/logger.js';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const { log, error: logError } = createLogger('Tools');
 
@@ -42,6 +44,19 @@ export function createToolsRoutes(broadcast) {
     } catch (error) {
       log('Error getting tools:', error);
       res.status(500).json({ error: 'Failed to get tools' });
+    }
+  });
+
+  /**
+   * GET /api/tools/info - Get tools storage info
+   */
+  router.get('/tools/info', async (req, res) => {
+    try {
+      const storagePath = path.join(getUserDataDir(), 'tools.json');
+      res.json({ storagePath });
+    } catch (error) {
+      log('Error getting tools info:', error);
+      res.status(500).json({ error: 'Failed to get tools info' });
     }
   });
 

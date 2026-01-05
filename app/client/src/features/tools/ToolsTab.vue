@@ -101,6 +101,9 @@
             <div v-if="toolSourceName" class="settings-note">
               Controls are disabled because they are currently controlled by Plugin: {{ toolSourceName }}
             </div>
+            <div v-if="storagePath" class="tools-storage-info" :title="storagePath">
+              Storage: <em>{{ storagePath }}</em>
+            </div>
           </div>
         </div>
       </div>
@@ -434,6 +437,7 @@ const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperi
 
 // State
 const tools = ref<Tool[]>([]);
+const storagePath = ref('');
 const searchQuery = ref('');
 const showToolForm = ref(false);
 const editingTool = ref<Tool | null>(null);
@@ -541,6 +545,18 @@ const loadTools = async () => {
     }
   } catch (error) {
     console.error('Error loading tools:', error);
+  }
+};
+
+const loadToolsInfo = async () => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools/info`);
+    if (response.ok) {
+      const info = await response.json();
+      storagePath.value = info.storagePath || '';
+    }
+  } catch (error) {
+    console.error('Error loading tools info:', error);
   }
 };
 
@@ -955,6 +971,7 @@ const confirmImportWithConflicts = async () => {
 // Lifecycle
 onMounted(async () => {
   await loadTools();
+  await loadToolsInfo();
 
   // Load max tool count from settings
   try {
@@ -1255,6 +1272,15 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   font-style: italic;
   text-align: left;
+}
+
+.tools-storage-info {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4px;
 }
 
 .tool-count {

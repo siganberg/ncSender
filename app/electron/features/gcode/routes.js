@@ -311,7 +311,7 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
   router.get('/', async (req, res) => {
     try {
       const tree = await buildFileTree(filesDir);
-      res.json({ tree });
+      res.json({ tree, storagePath: filesDir });
     } catch (error) {
       log('Error listing G-code files:', error);
       res.status(500).json({ error: 'Failed to list files' });

@@ -83,9 +83,18 @@
         {{ node.name }}
       </span>
 
-      <!-- Meta (size/date for files) -->
-      <span v-if="node.type === 'file' && !isRenaming" class="tree-item__meta">
-        {{ formatFileSize(node.size) }} · {{ formatDate((node as FileNode).uploadedAt) }}
+      <!-- Size column -->
+      <span class="tree-item__size">
+        <template v-if="node.type === 'file' && !isRenaming">
+          {{ formatFileSize(node.size) }}
+        </template>
+      </span>
+
+      <!-- Date column -->
+      <span class="tree-item__date">
+        <template v-if="node.type === 'file' && !isRenaming">
+          {{ formatDate((node as FileNode).uploadedAt) }}
+        </template>
       </span>
 
       <!-- Actions -->
@@ -483,11 +492,22 @@ watch(isRenaming, (renaming) => {
   outline: none;
 }
 
-.tree-item__meta {
+.tree-item__size {
+  width: 80px;
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   flex-shrink: 0;
-  margin-right: 8px;
+  text-align: right;
+  padding-right: 12px;
+}
+
+.tree-item__date {
+  width: 140px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 12px;
 }
 
 .tree-item__actions {

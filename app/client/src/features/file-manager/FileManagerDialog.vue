@@ -101,7 +101,46 @@
           <p class="file-manager__empty-hint">Try a different search term</p>
         </div>
 
-        <div v-else class="file-tree">
+        <!-- Sticky column headers - outside file-tree for proper sticky behavior -->
+        <div v-if="filteredTree.length > 0" class="file-manager__columns">
+          <!-- Spacer for toggle button (24px) -->
+          <span class="file-manager__column-spacer"></span>
+          <!-- Spacer for icon (40px) -->
+          <span class="file-manager__column-icon-spacer"></span>
+          <button
+            class="file-manager__column file-manager__column--name"
+            :class="{ 'file-manager__column--active': sortBy === 'name' }"
+            @click="toggleSort('name')"
+          >
+            <span>Name</span>
+            <svg v-if="sortBy === 'name'" class="file-manager__sort-icon" :class="{ 'file-manager__sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </button>
+          <button
+            class="file-manager__column file-manager__column--size"
+            :class="{ 'file-manager__column--active': sortBy === 'size' }"
+            @click="toggleSort('size')"
+          >
+            <span>Size</span>
+            <svg v-if="sortBy === 'size'" class="file-manager__sort-icon" :class="{ 'file-manager__sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </button>
+          <button
+            class="file-manager__column file-manager__column--date"
+            :class="{ 'file-manager__column--active': sortBy === 'date' }"
+            @click="toggleSort('date')"
+          >
+            <span>Date Modified</span>
+            <svg v-if="sortBy === 'date'" class="file-manager__sort-icon" :class="{ 'file-manager__sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </button>
+          <div class="file-manager__column file-manager__column--actions"></div>
+        </div>
+
+        <div v-if="filteredTree.length > 0" class="file-tree">
           <template v-for="node in filteredTree" :key="node.id">
             <TreeItem
               :node="node"
@@ -123,6 +162,10 @@
             />
           </template>
         </div>
+      </div>
+
+      <div v-if="storagePath" class="file-manager__storage-info" :title="storagePath">
+        Storage: <em>{{ storagePath }}</em>
       </div>
 
       <div class="file-manager__footer">
@@ -202,11 +245,27 @@ const emit = defineEmits<{
 }>();
 
 const tree = ref<TreeNode[]>([]);
+const storagePath = ref('');
 const manuallyExpandedFolders = ref(new Set<string>());
 const searchExpandedFolders = ref(new Set<string>());
 const searchQuery = ref('');
 const loadingFile = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
+
+// Sorting state
+type SortField = 'name' | 'size' | 'date';
+type SortOrder = 'asc' | 'desc';
+const sortBy = ref<SortField>('name');
+const sortOrder = ref<SortOrder>('asc');
+
+const toggleSort = (field: SortField) => {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortBy.value = field;
+    sortOrder.value = field === 'name' ? 'asc' : 'desc'; // Default to desc for size/date
+  }
+};
 
 // Combined expanded folders: manual + search-based
 const expandedFolders = computed(() => {
@@ -253,44 +312,81 @@ const filteredFileCount = computed(() => {
   return countFiles(filteredTree.value);
 });
 
+// Sort nodes based on current sort settings
+const sortNodes = (nodes: TreeNode[]): TreeNode[] => {
+  const sorted = [...nodes].sort((a, b) => {
+    // Folders always come first
+    if (a.type !== b.type) {
+      return a.type === 'folder' ? -1 : 1;
+    }
+
+    let comparison = 0;
+    if (sortBy.value === 'name') {
+      comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    } else if (sortBy.value === 'size') {
+      const sizeA = a.type === 'file' ? a.size : 0;
+      const sizeB = b.type === 'file' ? b.size : 0;
+      comparison = sizeA - sizeB;
+    } else if (sortBy.value === 'date') {
+      const dateA = a.type === 'file' ? new Date(a.uploadedAt).getTime() : 0;
+      const dateB = b.type === 'file' ? new Date(b.uploadedAt).getTime() : 0;
+      comparison = dateA - dateB;
+    }
+
+    return sortOrder.value === 'asc' ? comparison : -comparison;
+  });
+
+  // Recursively sort folder children
+  return sorted.map(node => {
+    if (node.type === 'folder') {
+      return { ...node, children: sortNodes(node.children) };
+    }
+    return node;
+  });
+};
+
 const filteredTree = computed(() => {
+  let result: TreeNode[];
+
   if (!searchQuery.value) {
     searchExpandedFolders.value.clear();
-    return tree.value;
-  }
+    result = tree.value;
+  } else {
+    const query = searchQuery.value.toLowerCase().trim();
+    const autoExpand = new Set<string>();
 
-  const query = searchQuery.value.toLowerCase().trim();
-  const autoExpand = new Set<string>();
+    const filterNodes = (nodes: TreeNode[]): TreeNode[] => {
+      const filtered: TreeNode[] = [];
 
-  const filterNodes = (nodes: TreeNode[]): TreeNode[] => {
-    const result: TreeNode[] = [];
-
-    for (const node of nodes) {
-      if (node.type === 'file') {
-        if (node.name.toLowerCase().includes(query) || node.path.toLowerCase().includes(query)) {
-          result.push(node);
-        }
-      } else {
-        const filteredChildren = filterNodes(node.children);
-        if (filteredChildren.length > 0 || node.name.toLowerCase().includes(query)) {
-          result.push({
-            ...node,
-            children: filteredChildren
-          });
-          // Track folders to auto-expand for search results
-          if (filteredChildren.length > 0) {
-            autoExpand.add(node.id);
+      for (const node of nodes) {
+        if (node.type === 'file') {
+          if (node.name.toLowerCase().includes(query) || node.path.toLowerCase().includes(query)) {
+            filtered.push(node);
+          }
+        } else {
+          const filteredChildren = filterNodes(node.children);
+          if (filteredChildren.length > 0 || node.name.toLowerCase().includes(query)) {
+            filtered.push({
+              ...node,
+              children: filteredChildren
+            });
+            // Track folders to auto-expand for search results
+            if (filteredChildren.length > 0) {
+              autoExpand.add(node.id);
+            }
           }
         }
       }
-    }
 
-    return result;
-  };
+      return filtered;
+    };
 
-  const result = filterNodes(tree.value);
-  searchExpandedFolders.value = autoExpand;
-  return result;
+    result = filterNodes(tree.value);
+    searchExpandedFolders.value = autoExpand;
+  }
+
+  // Apply sorting
+  return sortNodes(result);
 });
 
 const deleteConfirmMessage = computed(() => {
@@ -492,6 +588,7 @@ const fetchTree = async () => {
   try {
     const data = await api.listGCodeFiles();
     tree.value = data.tree || [];
+    storagePath.value = data.storagePath || '';
   } catch (error) {
     console.error('Error fetching files:', error);
     tree.value = [];
@@ -675,6 +772,90 @@ watch(() => props.show, async (isOpen) => {
   transition: all 0.2s ease;
 }
 
+/* Column headers - direct child of scroll container for proper sticky */
+.file-manager__columns {
+  display: flex;
+  align-items: center;
+  gap: 12px; /* Same gap as tree item */
+  padding: 8px 16px 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Spacer to match tree item toggle */
+.file-manager__column-spacer {
+  width: 24px;
+  flex-shrink: 0;
+}
+
+/* Spacer to match tree item icon */
+.file-manager__column-icon-spacer {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.file-manager__column {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.file-manager__column:hover {
+  color: var(--color-text-primary);
+}
+
+.file-manager__column--active {
+  color: var(--color-text-primary);
+}
+
+.file-manager__column--name {
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.file-manager__column--size {
+  width: 80px;
+  justify-content: flex-end;
+  padding-right: 12px;
+  flex-shrink: 0;
+}
+
+.file-manager__column--date {
+  width: 140px;
+  justify-content: flex-end;
+  padding-right: 12px;
+  flex-shrink: 0;
+}
+
+.file-manager__column--actions {
+  /* Match tree item actions: 3 buttons (36px each) + 2 gaps (8px each) = 124px */
+  width: 124px;
+  flex-shrink: 0;
+}
+
+.file-manager__sort-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.file-manager__sort-icon--desc {
+  transform: rotate(180deg);
+}
+
 .file-manager__filter-clear:hover {
   background: var(--color-accent);
   color: white;
@@ -683,7 +864,7 @@ watch(() => props.show, async (isOpen) => {
 .file-manager__content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--gap-sm);
+  /* No padding - sticky header needs to be at true top */
   transition: background-color 0.2s ease;
 }
 
@@ -700,6 +881,7 @@ watch(() => props.show, async (isOpen) => {
   justify-content: center;
   height: 100%;
   min-height: 250px;
+  padding: 8px;
   color: var(--color-text-secondary);
 }
 
@@ -726,6 +908,17 @@ watch(() => props.show, async (isOpen) => {
 .file-tree {
   display: flex;
   flex-direction: column;
+  padding: 0 8px 8px 8px; /* Add padding for tree items */
+}
+
+.file-manager__storage-info {
+  padding: 8px 16px;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-top: 1px solid var(--color-border);
 }
 
 .file-manager__footer {
@@ -734,6 +927,7 @@ watch(() => props.show, async (isOpen) => {
   display: flex;
   justify-content: center;
   background: var(--color-surface);
+  border-radius: 0 0 16px 16px;
 }
 
 .file-manager__close-btn {
