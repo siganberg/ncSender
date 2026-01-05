@@ -1752,11 +1752,59 @@ const highlightGcode = (item: { message: string; type: string }): string => {
 
   let html = escapeHtml(item.message);
 
-  // Highlight parentheses-style comments: (...)
-  html = html.replace(/(\([^)]*\))/g, '<span class="gcode-comment">$1</span>');
+  // Extract and preserve comments first (replace with placeholders)
+  const comments: string[] = [];
+  html = html.replace(/(\([^)]*\))/g, (match) => {
+    comments.push(`<span class="gc-comment">${match}</span>`);
+    return `\x00COMMENT${comments.length - 1}\x00`;
+  });
+  html = html.replace(/(;[^<\x00]*)/g, (match) => {
+    comments.push(`<span class="gc-comment">${match}</span>`);
+    return `\x00COMMENT${comments.length - 1}\x00`;
+  });
 
-  // Highlight semicolon-style comments: ; to end of line
-  html = html.replace(/(;[^<]*)/g, '<span class="gcode-comment">$1</span>');
+  // G0 rapid motion (orange bold)
+  html = html.replace(/\b([Gg]0*)(?=\s|$|[A-Za-z])/g, '<span class="gc-rapid">$1</span>');
+
+  // G1/G2/G3 cutting motion (blue bold)
+  html = html.replace(/\b([Gg][1-3])\b/g, '<span class="gc-cutting">$1</span>');
+
+  // Other G codes (purple)
+  html = html.replace(/\b([Gg]\d+\.?\d*)/g, (match, p1) => {
+    // Skip if already wrapped
+    if (match.includes('gc-')) return match;
+    return `<span class="gc-g">${p1}</span>`;
+  });
+
+  // M codes (yellow)
+  html = html.replace(/\b([Mm]\d+)/g, '<span class="gc-m">$1</span>');
+
+  // Tool number (teal)
+  html = html.replace(/\b([Tt]\d+)/g, '<span class="gc-tool">$1</span>');
+
+  // Spindle speed (orange-brown)
+  html = html.replace(/\b([Ss]\d+\.?\d*)/g, '<span class="gc-spindle">$1</span>');
+
+  // Feed rate (light green)
+  html = html.replace(/\b([Ff]\d+\.?\d*)/g, '<span class="gc-feed">$1</span>');
+
+  // X coordinate (red)
+  html = html.replace(/\b([Xx]-?\d+\.?\d*)/g, '<span class="gc-x">$1</span>');
+
+  // Y coordinate (teal)
+  html = html.replace(/\b([Yy]-?\d+\.?\d*)/g, '<span class="gc-y">$1</span>');
+
+  // Z coordinate (blue)
+  html = html.replace(/\b([Zz]-?\d+\.?\d*)/g, '<span class="gc-z">$1</span>');
+
+  // Other axes A B C I J K (light blue)
+  html = html.replace(/\b([AaBbCcIiJjKk]-?\d+\.?\d*)/g, '<span class="gc-axis">$1</span>');
+
+  // Line numbers N (gray)
+  html = html.replace(/\b([Nn]\d+)/g, '<span class="gc-line">$1</span>');
+
+  // Restore comments
+  html = html.replace(/\x00COMMENT(\d+)\x00/g, (_, idx) => comments[parseInt(idx)]);
 
   return html;
 };
@@ -2535,15 +2583,35 @@ h2 {
   user-select: text !important;
 }
 
-/* G-code syntax highlighting */
-.message :deep(.gcode-comment) {
-  color: #6A9955;
-  font-style: italic;
-}
+/* G-code syntax highlighting - dark theme (default) */
+.message :deep(.gc-comment) { color: #6A9955; font-style: italic; }
+.message :deep(.gc-rapid) { color: #FF8C00; font-weight: bold; }
+.message :deep(.gc-cutting) { color: #569CD6; font-weight: bold; }
+.message :deep(.gc-g) { color: #C586C0; }
+.message :deep(.gc-m) { color: #DCDCAA; }
+.message :deep(.gc-tool) { color: #4EC9B0; }
+.message :deep(.gc-spindle) { color: #CE9178; }
+.message :deep(.gc-feed) { color: #B5CEA8; }
+.message :deep(.gc-x) { color: #F14C4C; }
+.message :deep(.gc-y) { color: #4EC9B0; }
+.message :deep(.gc-z) { color: #569CD6; }
+.message :deep(.gc-axis) { color: #9CDCFE; }
+.message :deep(.gc-line) { color: #858585; }
 
-.light-theme .message :deep(.gcode-comment) {
-  color: #008000;
-}
+/* G-code syntax highlighting - light theme */
+.light-theme .message :deep(.gc-comment) { color: #008000; font-style: italic; }
+.light-theme .message :deep(.gc-rapid) { color: #E67E22; font-weight: bold; }
+.light-theme .message :deep(.gc-cutting) { color: #2E86C1; font-weight: bold; }
+.light-theme .message :deep(.gc-g) { color: #AF00DB; }
+.light-theme .message :deep(.gc-m) { color: #795E26; }
+.light-theme .message :deep(.gc-tool) { color: #267F99; }
+.light-theme .message :deep(.gc-spindle) { color: #A31515; }
+.light-theme .message :deep(.gc-feed) { color: #098658; }
+.light-theme .message :deep(.gc-x) { color: #C72828; }
+.light-theme .message :deep(.gc-y) { color: #267F99; }
+.light-theme .message :deep(.gc-z) { color: #2E86C1; }
+.light-theme .message :deep(.gc-axis) { color: #0070C1; }
+.light-theme .message :deep(.gc-line) { color: #999999; }
 
 .empty-state {
   display: flex;
