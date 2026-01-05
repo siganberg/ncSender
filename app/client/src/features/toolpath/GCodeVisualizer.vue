@@ -21,13 +21,16 @@
     <div ref="canvas" class="viewport__canvas" @contextmenu="handleContextMenu">
       <!-- Loading Overlay -->
       <div v-if="isLoading" class="loading-overlay">
-        <div class="loading-content">
+        <div class="loading-content" :class="{ 'loading-content--error': loadingError }">
           <div class="loading-header">
             <span class="loading-message">{{ loadingMessage }}</span>
-            <div class="loading-percent">{{ loadingProgress }}%</div>
+            <div v-if="!loadingError" class="loading-percent">{{ loadingProgress }}%</div>
           </div>
           <div class="loading-bar-container">
             <div class="loading-bar" :style="{ width: `${loadingProgress}%` }"></div>
+          </div>
+          <div v-if="loadingError" class="loading-actions">
+            <button class="loading-close-btn" @click="closeLoadingError">Close</button>
           </div>
         </div>
       </div>
@@ -589,6 +592,7 @@ const hasFile = ref(false);
 const isLoading = ref(false);
 const loadingProgress = ref(0);
 const loadingMessage = ref('');
+const loadingError = ref(false);
 const showRapids = ref(true); // Default to shown
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
@@ -1875,6 +1879,10 @@ const handleFileLoad = async (event: Event) => {
   }
 
   isLoading.value = true;
+  loadingError.value = false;
+  loadingMessage.value = 'Uploading file...';
+  loadingProgress.value = 0;
+
   try {
     // Upload file to server
     const result = await api.uploadGCodeFile(file);
@@ -1886,8 +1894,15 @@ const handleFileLoad = async (event: Event) => {
     }
   } catch (error) {
     console.error('Error loading file:', error);
-  } finally {
-    isLoading.value = false;
+    // Show error to user with close button
+    const errorMessage = error instanceof Error ? error.message : 'Failed to upload file';
+    loadingMessage.value = errorMessage;
+    loadingError.value = true;
+    // Clear the file input so user can try again
+    if (fileInput.value) {
+      fileInput.value.value = '';
+    }
+    return;
   }
 };
 
@@ -2029,6 +2044,12 @@ const applyTransform = async (
     isTransforming.value = false;
     isLoading.value = false;
   }
+};
+
+const closeLoadingError = () => {
+  isLoading.value = false;
+  loadingError.value = false;
+  loadingMessage.value = '';
 };
 
 const handleGCodeUpdate = async (data: { filename: string; content?: string; timestamp: string }) => {
@@ -3830,6 +3851,40 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   padding: 24px 32px;
   min-width: 400px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.loading-content--error .loading-header {
+  justify-content: center;
+}
+
+.loading-content--error .loading-message {
+  font-size: 1.1rem;
+}
+
+.loading-content--error .loading-bar {
+  width: 100% !important;
+  background: rgba(239, 68, 68, 0.4);
+}
+
+.loading-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.loading-close-btn {
+  background: var(--color-primary, #3b82f6);
+  border: none;
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 8px 24px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.loading-close-btn:hover {
+  background: var(--color-primary-hover, #2563eb);
 }
 
 .loading-header {

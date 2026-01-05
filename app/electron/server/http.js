@@ -133,4 +133,31 @@ export function mountHttp({
       }
     });
   });
+
+  // Global error handler - catches Multer errors, route errors, etc.
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, _next) => {
+    // Log the error with full details including stack trace for debugging
+    logError(`${req.method} ${req.path}:`, err.message || err);
+    if (err.stack) {
+      logError('Stack trace:', err.stack);
+    }
+
+    // Determine appropriate status code
+    let statusCode = err.status || err.statusCode || 500;
+    let message = err.message || 'Internal server error';
+
+    // Handle Multer-specific errors
+    if (err.name === 'MulterError') {
+      statusCode = 400;
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        message = 'File too large. Maximum file size is 60MB.';
+      }
+    }
+
+    // Send error response if headers haven't been sent
+    if (!res.headersSent) {
+      res.status(statusCode).json({ error: message });
+    }
+  });
 }

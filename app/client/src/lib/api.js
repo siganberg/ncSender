@@ -335,7 +335,19 @@ class NCClient {
       method: 'POST',
       body: formData
     });
-    if (!response.ok) throw new Error('Failed to upload G-code file');
+    if (!response.ok) {
+      // Try to get error message from response
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload G-code file');
+      } catch (parseError) {
+        // If response isn't JSON, use generic message
+        if (parseError.message && !parseError.message.includes('Failed to upload')) {
+          throw parseError;
+        }
+        throw new Error('Failed to upload G-code file');
+      }
+    }
     return await response.json();
   }
 
