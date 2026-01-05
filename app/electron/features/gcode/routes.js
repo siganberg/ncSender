@@ -94,6 +94,9 @@ async function buildFileTree(dir, basePath = '') {
   const items = [];
 
   for (const entry of entries) {
+    // Skip hidden files and folders
+    if (entry.name.startsWith('.')) continue;
+
     const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
     const fullPath = path.join(dir, entry.name);
 

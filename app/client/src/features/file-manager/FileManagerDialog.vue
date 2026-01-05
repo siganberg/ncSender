@@ -211,6 +211,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue';
 import { api } from '../toolpath/api';
+import { settingsStore, updateSettings } from '../../lib/settings-store.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import TreeItem from './components/TreeItem.vue';
@@ -258,13 +259,20 @@ type SortOrder = 'asc' | 'desc';
 const sortBy = ref<SortField>('name');
 const sortOrder = ref<SortOrder>('asc');
 
-const toggleSort = (field: SortField) => {
+const toggleSort = async (field: SortField) => {
   if (sortBy.value === field) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
   } else {
     sortBy.value = field;
     sortOrder.value = field === 'name' ? 'asc' : 'desc'; // Default to desc for size/date
   }
+  // Persist sorting preferences
+  await updateSettings({
+    fileManager: {
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value
+    }
+  });
 };
 
 // Combined expanded folders: manual + search-based
@@ -598,6 +606,14 @@ const fetchTree = async () => {
 watch(() => props.show, async (isOpen) => {
   if (isOpen) {
     searchQuery.value = '';
+    // Load sorting preferences from settings
+    const fileManagerSettings = settingsStore.data?.fileManager;
+    if (fileManagerSettings?.sortBy) {
+      sortBy.value = fileManagerSettings.sortBy;
+    }
+    if (fileManagerSettings?.sortOrder) {
+      sortOrder.value = fileManagerSettings.sortOrder;
+    }
     await fetchTree();
   }
 });
