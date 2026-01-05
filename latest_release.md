@@ -1,9 +1,5 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added mirror transformation for G-code files
-- Added rotate transformation for G-code files
-- Added move transformation for G-code files
-
-### 🐛 Bug Fixes
-- Fixed mirror transformation behavior
+- Added G-code color comments support for enhanced visualization
+- Applied full color rendering to G-code display
