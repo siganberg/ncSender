@@ -967,17 +967,10 @@ const disposeHomeIndicator = () => {
 };
 
 const computeMachineOriginPosition = () => {
-  // Position home indicator at the correct corner based on homeCorner setting
-  // The home corner should be at the grid boundary where home is located
-  const bounds = computeGridBoundsFrom(props.workOffset);
-  const orientation = resolvedOrientation.value;
-
-  // xHome='min' means home is at minX, xHome='max' means home is at maxX
-  const homeX = orientation.xHome === 'min' ? bounds.minX : bounds.maxX;
-  // yHome='min' means home is at minY, yHome='max' means home is at maxY
-  const homeY = orientation.yHome === 'min' ? bounds.minY : bounds.maxY;
-
-  machineOriginPosition.set(homeX, homeY, 0);
+  const workOffset = props.workOffset || { x: 0, y: 0, z: 0 };
+  const xOffset = typeof workOffset.x === 'number' ? workOffset.x : 0;
+  const yOffset = typeof workOffset.y === 'number' ? workOffset.y : 0;
+  machineOriginPosition.set(-xOffset, -yOffset, 0);
   return machineOriginPosition;
 };
 
