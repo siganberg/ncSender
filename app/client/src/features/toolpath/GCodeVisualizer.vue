@@ -18,7 +18,7 @@
 <template>
   <section class="viewport">
     <!-- Full canvas with floating toolbars -->
-    <div ref="canvas" class="viewport__canvas">
+    <div ref="canvas" class="viewport__canvas" @contextmenu="handleContextMenu">
       <!-- Loading Overlay -->
       <div v-if="isLoading" class="loading-overlay">
         <div class="loading-content">
@@ -416,6 +416,30 @@
       </div>
     </ConfirmPanel>
   </Dialog>
+
+  <!-- Transform Context Menu (Top view only) -->
+  <TransformContextMenu
+    :visible="showTransformMenu"
+    :x="transformMenuX"
+    :y="transformMenuY"
+    :can-reset="canResetTransform"
+    :is-connected="storeIsConnected"
+    :world-x="worldCoordX"
+    :world-y="worldCoordY"
+    @rotate="handleTransformRotate"
+    @mirror="handleTransformMirror"
+    @offset="handleTransformOffset"
+    @reset="handleTransformReset"
+    @move-spindle="handleMoveSpindleHere"
+    @close="closeTransformMenu"
+  />
+
+  <!-- Offset Dialog -->
+  <OffsetDialog
+    :show="showOffsetDialog"
+    @apply="handleOffsetApply"
+    @close="showOffsetDialog = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -433,6 +457,9 @@ import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeDialog from '../probe/ProbeDialog.vue';
 import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
 import StartFromLineDialog from './StartFromLineDialog.vue';
+import TransformContextMenu from './TransformContextMenu.vue';
+import OffsetDialog from './OffsetDialog.vue';
+import { rotateGCode, mirrorGCode, offsetGCode } from './transform/gcode-transformer';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
@@ -462,7 +489,7 @@ const props = withDefaults(defineProps<{
   theme: 'light' | 'dark';
   senderStatus?: string;
   machineState?: { isToolChanging?: boolean };
-  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed' } | null;
+  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed'; sourceFile?: string; isTemporary?: boolean } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   workOffset?: { x: number; y: number; z: number; a: number };
   gridSizeX?: number;
@@ -573,6 +600,20 @@ const showProbeDialog = ref(false);
 const showStartFromLineDialog = ref(false);
 const showTlrWarningDialog = ref(false);
 const startFromLineInitial = ref(1);
+
+// Transform context menu and offset dialog state
+const showTransformMenu = ref(false);
+const transformMenuX = ref(0);
+const transformMenuY = ref(0);
+const worldCoordX = ref(0);
+const worldCoordY = ref(0);
+const showOffsetDialog = ref(false);
+const isTransforming = ref(false);
+
+// Can reset if the current file is temporary (has been transformed) and has a source file
+const canResetTransform = computed(() => {
+  return !!props.jobLoaded?.isTemporary && !!props.jobLoaded?.sourceFile;
+});
 
 // Helper to get pin state from Pn string
 const getPinState = (pinKey: string): boolean => {
@@ -1846,6 +1887,146 @@ const handleFileLoad = async (event: Event) => {
   } catch (error) {
     console.error('Error loading file:', error);
   } finally {
+    isLoading.value = false;
+  }
+};
+
+// Transform context menu handlers
+const handleContextMenu = (event: MouseEvent) => {
+  // Only show context menu in Top view, with a file loaded, and no job running
+  if (props.view !== 'top' || !hasFile.value || isJobRunning.value) return;
+
+  event.preventDefault();
+  transformMenuX.value = event.clientX;
+  transformMenuY.value = event.clientY;
+
+  // Calculate machine coordinates for "Move Spindle Here"
+  // The visualizer displays work coordinates, so add work offset to get machine coordinates
+  if (canvas.value && camera) {
+    const rect = canvas.value.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    const ndcX = (mouseX / rect.width) * 2 - 1;
+    const ndcY = -(mouseY / rect.height) * 2 + 1;
+    const vector = new THREE.Vector3(ndcX, ndcY, 0);
+    vector.unproject(camera);
+    // Convert work coords to machine coords: machine = work + offset
+    const machineX = vector.x + (props.workOffset?.x ?? 0);
+    const machineY = vector.y + (props.workOffset?.y ?? 0);
+    worldCoordX.value = Math.round(machineX * 1000) / 1000;
+    worldCoordY.value = Math.round(machineY * 1000) / 1000;
+  }
+
+  showTransformMenu.value = true;
+};
+
+const closeTransformMenu = () => {
+  showTransformMenu.value = false;
+};
+
+const handleTransformRotate = async (degrees: 90 | -90) => {
+  await applyTransform('rotate', { degrees });
+};
+
+const handleTransformMirror = async (axis: 'x' | 'y') => {
+  await applyTransform('mirror', { axis });
+};
+
+const handleTransformOffset = () => {
+  showOffsetDialog.value = true;
+};
+
+const handleOffsetApply = async (offsetX: number, offsetY: number) => {
+  showOffsetDialog.value = false;
+  await applyTransform('offset', { offsetX, offsetY });
+};
+
+const handleTransformReset = async () => {
+  const sourceFile = props.jobLoaded?.sourceFile;
+  if (!sourceFile) return;
+
+  isLoading.value = true;
+  loadingMessage.value = 'Resetting to original...';
+  loadingProgress.value = 0;
+
+  try {
+    await api.loadGCodeFile(sourceFile);
+    loadingProgress.value = 100;
+  } catch (error) {
+    console.error('Error resetting to original:', error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const handleMoveSpindleHere = async () => {
+  if (!storeIsConnected.value) return;
+
+  try {
+    // First move Z to machine Z0 for safe height (top of Z travel)
+    await api.sendCommand(`G53 G0 Z0`);
+    // Then rapid move to target XY in machine coordinates
+    await api.sendCommand(`G53 G0 X${worldCoordX.value} Y${worldCoordY.value}`);
+  } catch (error) {
+    console.error('Error moving spindle:', error);
+  }
+};
+
+const applyTransform = async (
+  type: 'rotate' | 'mirror' | 'offset',
+  params: { degrees?: 90 | -90; axis?: 'x' | 'y'; offsetX?: number; offsetY?: number }
+) => {
+  if (isTransforming.value || !hasFile.value) return;
+
+  isTransforming.value = true;
+  isLoading.value = true;
+  loadingMessage.value = 'Applying transformation...';
+  loadingProgress.value = 0;
+
+  try {
+    // Download current G-code content
+    loadingMessage.value = 'Downloading G-code...';
+    const content = await api.downloadGCodeFile((progress) => {
+      loadingProgress.value = Math.round(progress.percent * 0.3);
+    });
+
+    // Apply transformation
+    loadingMessage.value = 'Transforming toolpath...';
+    let transformed: string;
+
+    const progressCallback = (percent: number) => {
+      loadingProgress.value = 30 + Math.round(percent * 0.4);
+    };
+
+    if (type === 'rotate' && params.degrees !== undefined) {
+      transformed = rotateGCode(content, params.degrees, { onProgress: progressCallback });
+    } else if (type === 'mirror' && params.axis !== undefined) {
+      transformed = mirrorGCode(content, params.axis, { onProgress: progressCallback });
+    } else if (type === 'offset' && params.offsetX !== undefined && params.offsetY !== undefined) {
+      transformed = offsetGCode(content, params.offsetX, params.offsetY, { onProgress: progressCallback });
+    } else {
+      throw new Error('Invalid transform parameters');
+    }
+
+    // Get current filename and create a transformed filename
+    const currentFilename = props.jobLoaded?.filename || 'transformed.nc';
+    // Preserve the original source file through multiple transforms
+    const originalSourceFile = props.jobLoaded?.sourceFile || currentFilename;
+    const baseName = currentFilename.replace(/\.[^.]+$/, '');
+    const ext = currentFilename.match(/\.[^.]+$/)?.[0] || '.nc';
+    const transformedFilename = `${baseName}_${type}${ext}`;
+
+    // Load the transformed G-code
+    loadingMessage.value = 'Loading transformed G-code...';
+    loadingProgress.value = 70;
+
+    await api.loadTempGCode(transformed, transformedFilename, originalSourceFile);
+
+    loadingProgress.value = 100;
+  } catch (error) {
+    console.error('Error applying transform:', error);
+  } finally {
+    isTransforming.value = false;
     isLoading.value = false;
   }
 };

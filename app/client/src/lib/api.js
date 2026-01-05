@@ -448,6 +448,16 @@ class NCClient {
     return content;
   }
 
+  async loadTempGCode(content, filename, sourceFile = null) {
+    const response = await fetch(`${this.baseUrl}/api/gcode-files/load-temp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, filename, sourceFile })
+    });
+    if (!response.ok) throw new Error('Failed to load temporary G-code');
+    return await response.json();
+  }
+
   async clearGCode() {
     const response = await fetch(`${this.baseUrl}/api/gcode-preview/clear`, {
       method: 'POST',
