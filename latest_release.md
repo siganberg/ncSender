@@ -1,5 +1,9 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Added global HTTP error handler for better error management
-- Improved file upload error handling for more reliable file transfers
+### ✨ New Features
+- Added mirror transformation for G-code files
+- Added rotate transformation for G-code files
+- Added move transformation for G-code files
+
+### 🐛 Bug Fixes
+- Fixed mirror transformation behavior
