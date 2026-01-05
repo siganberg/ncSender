@@ -220,7 +220,7 @@ export class CommandProcessor {
 
   /**
    * Door state safety check
-   * When machine is in 'Door' state:
+   * When door is detected (status='Door' OR Pn contains 'D'):
    * - Block: G0 rapid moves, spindle commands (M3/M4/M5)
    * - Limit: All movement feed rates to 1000mm/min (including jog)
    *
@@ -232,9 +232,13 @@ export class CommandProcessor {
    */
   checkDoorStateSafety(command, commandId, meta, machineState) {
     const status = machineState?.status?.toLowerCase() || this.serverState?.machineState?.status?.toLowerCase();
+    const pn = machineState?.Pn || this.serverState?.machineState?.Pn || '';
 
-    // Only apply restrictions when in Door state
-    if (status !== 'door') {
+    // Check if door is active: status is 'door' OR Pn contains 'D'
+    const isDoorActive = status === 'door' || pn.includes('D');
+
+    // Only apply restrictions when door is active
+    if (!isDoorActive) {
       return null;
     }
 
