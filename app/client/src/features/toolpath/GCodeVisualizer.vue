@@ -533,6 +533,12 @@ const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
 const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
 const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
 
+// Check if door is open via Pn pin state (even if status is idle)
+const isDoorOpenViaPn = computed(() => {
+  const pnString = appStore.status.Pn || '';
+  return pnString.includes('D');
+});
+
 // TLS button should glow when a tool is loaded but tool length is not set
 const shouldTLSGlow = computed(() => {
   return (props.currentTool ?? 0) > 0 && !props.toolLengthSet;
@@ -546,18 +552,25 @@ const isMachineConnected = computed(() => {
 // Job control computed properties
 const isOnHold = computed(() => {
   const state = normalizedSenderStatus.value;
-  return state === 'hold' || state === 'door';
+  return state === 'hold';
 });
 
 const canStartOrResume = computed(() => {
   if (!isMachineConnected.value) return false;
+
+  // Don't allow start/resume when door is open (detected via Pn pin state or status)
+  if (isDoorOpenViaPn.value) return false;
+
   const state = normalizedSenderStatus.value;
+
+  // Don't allow start/resume when status is 'door'
+  if (state === 'door') return false;
 
   if (props.jobLoaded?.filename && state === 'idle') {
     return true;
   }
 
-  if (state === 'hold' || state === 'door') {
+  if (state === 'hold') {
     return true;
   }
 

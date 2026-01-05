@@ -239,12 +239,24 @@ export function registerCoreKeyboardActions(): void {
     if (!keyBindingStore.isActive.value) {
       return false;
     }
-    const { isConnected, serverState, senderStatus } = store;
-    const status = senderStatus.value;
-    const hasJob = Boolean(serverState.jobLoaded?.filename);
-    const isOnHold = status === 'hold' || status === 'door';
+    const { isConnected, serverState, senderStatus, status: machineStatus } = store;
 
-    return isConnected.value && hasJob && (status === 'idle' || isOnHold);
+    // Don't allow start/resume when door is open (detected via Pn pin state)
+    const pnString = machineStatus.Pn || '';
+    if (pnString.includes('D')) {
+      return false;
+    }
+
+    const status = senderStatus.value;
+
+    // Don't allow start/resume when status is 'door'
+    if (status === 'door') {
+      return false;
+    }
+
+    const hasJob = Boolean(serverState.jobLoaded?.filename);
+
+    return isConnected.value && hasJob && (status === 'idle' || status === 'hold');
   };
 
   const canPause = () => {

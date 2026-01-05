@@ -178,13 +178,14 @@ export function checkSameToolChange(command, currentTool) {
  * - ; M3 S1000 (commented lines)
  * - (M3 S1000) (commented lines)
  */
-const SPINDLE_START_PATTERN = /(?:^|[^A-Z0-9])M0*[34](?:[^0-9]|$)/i;
+const SPINDLE_START_PATTERN = /(?:^|[^A-Z])M0*[34](?:[^0-9]|$)/i;
 
 /**
  * Pattern to match M5 spindle stop commands
  *
  * Matches (case-insensitive):
  * - M5, M05 (standalone)
+ * - S1000M5 (after spindle speed)
  * - N100 M5 (with line numbers)
  *
  * Does NOT match:
@@ -192,7 +193,7 @@ const SPINDLE_START_PATTERN = /(?:^|[^A-Z0-9])M0*[34](?:[^0-9]|$)/i;
  * - ; M5 (commented lines)
  * - (M5) (commented lines)
  */
-const SPINDLE_STOP_PATTERN = /(?:^|[^A-Z0-9])M0*5(?:[^0-9]|$)/i;
+const SPINDLE_STOP_PATTERN = /(?:^|[^A-Z])M0*5(?:[^0-9]|$)/i;
 
 /**
  * Check if a command is an M3/M4 spindle start command

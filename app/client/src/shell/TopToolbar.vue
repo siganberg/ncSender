@@ -294,6 +294,20 @@ const emit = defineEmits<{
 
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
 
+// Check if door is open via Pn pin state (even if status is idle)
+const isDoorOpenViaPn = computed(() => {
+  const pnString = store.status.Pn || '';
+  return pnString.includes('D');
+});
+
+// Effective status that accounts for door detected via Pn
+const effectiveSenderStatus = computed(() => {
+  if (isDoorOpenViaPn.value && resolvedSenderStatus.value !== 'door') {
+    return 'door';
+  }
+  return resolvedSenderStatus.value;
+});
+
 const statusClass = computed(() => {
   const map = {
     running: 'run',
@@ -301,7 +315,7 @@ const statusClass = computed(() => {
     homing: 'home',
     'tool-changing': 'tool'
   } as Record<string, string>;
-  const status = resolvedSenderStatus.value;
+  const status = effectiveSenderStatus.value;
   return `state--${map[status] ?? status ?? 'unknown'}`;
 });
 
@@ -311,7 +325,7 @@ const isAlarmState = computed(() => {
 });
 
 const machineStateText = computed(() => {
-  switch (resolvedSenderStatus.value) {
+  switch (effectiveSenderStatus.value) {
     case 'setup-required': return 'Setup Required';
     case 'connecting': return 'Connecting...';
     case 'idle': return 'Idle';

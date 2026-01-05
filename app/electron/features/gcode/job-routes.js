@@ -68,6 +68,12 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         return res.status(400).json({ error: `Cannot start job. Machine state is: ${machineStatus}` });
       }
 
+      // Check if door is open (Pn contains 'D')
+      const pn = serverState.machineState?.Pn || '';
+      if (pn.includes('D')) {
+        return res.status(400).json({ error: 'Cannot start job. Safety door is open.' });
+      }
+
       // Compute ETA server-side (best-effort) before starting
       // Initialize timing for progress at job start
       if (serverState.jobLoaded) {

@@ -1726,7 +1726,7 @@ onBeforeUnmount(() => {
 const getStatusIcon = (line) => {
   if (line.status === 'success') {
     return '<svg class="emoji-icon"><use href="#emoji-success"></use></svg>';
-  } else if (line.status === 'error') {
+  } else if (line.status === 'error' || line.status === 'blocked') {
     return '<svg class="emoji-icon"><use href="#emoji-error"></use></svg>';
   } else if (line.status === 'pending') {
     return '<span class="spinner"></span>';
