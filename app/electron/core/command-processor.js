@@ -15,11 +15,14 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { checkSameToolChange, parseM6Command } from '../utils/gcode-patterns.js';
+import { checkSameToolChange, parseM6Command, isSpindleStartCommand, isSpindleStopCommand } from '../utils/gcode-patterns.js';
 import { getSetting } from './settings-manager.js';
 import { createLogger } from './logger.js';
 
 const { log, error: logError } = createLogger('CommandProcessor');
+
+// Maximum feed rate allowed in Door state (mm/min)
+const DOOR_STATE_MAX_FEED_RATE = 1000;
 
 /**
  * Centralized command processor
@@ -61,6 +64,12 @@ export class CommandProcessor {
       meta = {},
       machineState
     } = context;
+
+    // Door state safety check - restrict commands when machine is in Door state
+    const doorSafetyResult = this.checkDoorStateSafety(command, commandId, meta, machineState);
+    if (doorSafetyResult) {
+      return doorSafetyResult;
+    }
 
     // Handle $NCSENDER_CLEAR_MSG command - clear plugin message and notify all clients
     if (command.trim().toUpperCase() === '$NCSENDER_CLEAR_MSG') {
@@ -210,10 +219,159 @@ export class CommandProcessor {
   }
 
   /**
-   * Future: Add safety checks
+   * Door state safety check
+   * When machine is in 'Door' state:
+   * - Block: G0 rapid moves, spindle commands (M3/M4/M5)
+   * - Limit: All movement feed rates to 1000mm/min (including jog)
+   *
+   * @param {string} command - The command to check
+   * @param {string} commandId - Command ID for response
+   * @param {Object} meta - Command metadata
+   * @param {Object} machineState - Current machine state
+   * @returns {Object|null} Return result object if command should be blocked/modified, null to continue normal flow
    */
-  checkSafety() {
-    // TODO: Implement safety check logic (will use command, context)
-    return { safe: true };
+  checkDoorStateSafety(command, commandId, meta, machineState) {
+    const status = machineState?.status?.toLowerCase() || this.serverState?.machineState?.status?.toLowerCase();
+
+    // Only apply restrictions when in Door state
+    if (status !== 'door') {
+      return null;
+    }
+
+    const trimmedCommand = command.trim();
+    const upperCommand = trimmedCommand.toUpperCase();
+
+    // Allow real-time commands (single character control codes)
+    const realTimeCommands = ['!', '~', '?', '\x18', '\x84', '\x85', '\x87'];
+    if (trimmedCommand.length === 1) {
+      if (realTimeCommands.includes(trimmedCommand) || trimmedCommand.charCodeAt(0) >= 0x80) {
+        return null;
+      }
+    }
+
+    // Block G0 rapid movements
+    if (/\bG0*0\b/i.test(upperCommand) && !upperCommand.startsWith('$J=')) {
+      log(`Door state safety: Blocking G0 rapid move "${trimmedCommand}"`);
+      return this.createBlockedResult(commandId, trimmedCommand, meta, 'G0 rapid not allowed in Door state');
+    }
+
+    // Block spindle commands M3/M4/M5
+    if (isSpindleStartCommand(trimmedCommand) || isSpindleStopCommand(trimmedCommand)) {
+      log(`Door state safety: Blocking spindle command "${trimmedCommand}"`);
+      return this.createBlockedResult(commandId, trimmedCommand, meta, 'Spindle not allowed in Door state');
+    }
+
+    // Limit feed rate on jog commands ($J=)
+    if (/^\$J=/i.test(upperCommand)) {
+      const result = this.limitMovementFeedRate(trimmedCommand, DOOR_STATE_MAX_FEED_RATE);
+      if (result.wasLimited) {
+        log(`Door state: Jog feed rate limited to ${DOOR_STATE_MAX_FEED_RATE}mm/min`);
+        return this.createModifiedResult(commandId, result, meta);
+      }
+      return null;
+    }
+
+    // Limit feed rate on G1/G2/G3 movements
+    if (/\bG0*[123]\b/i.test(upperCommand)) {
+      const result = this.limitMovementFeedRate(trimmedCommand, DOOR_STATE_MAX_FEED_RATE);
+      if (result.wasLimited) {
+        log(`Door state: Movement feed rate limited to ${DOOR_STATE_MAX_FEED_RATE}mm/min`);
+        return this.createModifiedResult(commandId, result, meta);
+      }
+      return null;
+    }
+
+    // Allow all other commands
+    return null;
+  }
+
+  /**
+   * Create a result object for a blocked command
+   */
+  createBlockedResult(commandId, command, meta, reason) {
+    const blockedDisplay = `${command} (BLOCKED - ${reason})`;
+
+    // Broadcast to terminal
+    this.broadcast('cnc-command', {
+      id: commandId,
+      command: command,
+      displayCommand: blockedDisplay,
+      status: 'pending',
+      timestamp: new Date().toISOString(),
+      sourceId: meta.sourceId || 'client'
+    });
+
+    this.broadcast('cnc-command-result', {
+      id: commandId,
+      command: command,
+      displayCommand: blockedDisplay,
+      status: 'blocked',
+      timestamp: new Date().toISOString(),
+      sourceId: meta.sourceId || 'client'
+    });
+
+    return {
+      shouldContinue: false,
+      result: {
+        status: 'blocked',
+        id: commandId,
+        command: command,
+        displayCommand: blockedDisplay,
+        message: `Command blocked: ${reason}`,
+        timestamp: new Date().toISOString()
+      }
+    };
+  }
+
+  /**
+   * Create a result object for a modified command (feed rate limited)
+   */
+  createModifiedResult(_commandId, limitResult, _meta) {
+    const displayCommand = `${limitResult.command} (F${limitResult.originalFeedRate} -> F${DOOR_STATE_MAX_FEED_RATE}, Door safety)`;
+
+    return {
+      shouldContinue: true,
+      commands: [{
+        command: limitResult.command,
+        displayCommand: displayCommand,
+        isOriginal: true
+      }]
+    };
+  }
+
+  /**
+   * Limit movement command feed rate to a maximum value
+   * @param {string} command - The movement command
+   * @param {number} maxFeedRate - Maximum allowed feed rate in mm/min
+   * @returns {Object} { command, wasLimited, originalFeedRate }
+   */
+  limitMovementFeedRate(command, maxFeedRate) {
+    const feedMatch = command.match(/F([+-]?\d*\.?\d+)/i);
+
+    if (!feedMatch) {
+      // No feed rate specified - for jog commands add the limit
+      if (/^\$J=/i.test(command)) {
+        return {
+          command: command + ` F${maxFeedRate}`,
+          wasLimited: true,
+          originalFeedRate: 'unset'
+        };
+      }
+      return { command, wasLimited: false, originalFeedRate: null };
+    }
+
+    const currentFeedRate = parseFloat(feedMatch[1]);
+
+    if (currentFeedRate <= maxFeedRate) {
+      return { command, wasLimited: false, originalFeedRate: currentFeedRate };
+    }
+
+    // Replace feed rate with limited value
+    const limitedCommand = command.replace(/F([+-]?\d*\.?\d+)/i, `F${maxFeedRate}`);
+    return {
+      command: limitedCommand,
+      wasLimited: true,
+      originalFeedRate: Math.round(currentFeedRate)
+    };
   }
 }

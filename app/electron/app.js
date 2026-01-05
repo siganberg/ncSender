@@ -62,13 +62,17 @@ export async function createApp(options = {}) {
   context.updateSenderStatus();
 
   const cncController = new CNCController();
-  const jogManager = new JogSessionManager({ cncController });
-
-  const autoConnector = createAutoConnector({ cncController });
 
   // Create a wrapper object that will hold commandProcessor reference
-  // This allows WebSocket layer to access it after initialization
+  // This allows JogManager and WebSocket layer to access it after initialization
   const commandProcessorWrapper = { instance: null };
+
+  const jogManager = new JogSessionManager({
+    cncController,
+    commandProcessor: commandProcessorWrapper
+  });
+
+  const autoConnector = createAutoConnector({ cncController });
 
   const { wss, broadcast, sendWsMessage, getClientWebSocket, shutdown: shutdownWebSocket } = createWebSocketLayer({
     httpServer: server,

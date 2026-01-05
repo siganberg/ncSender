@@ -72,14 +72,20 @@ export class JogWatchdog {
 }
 
 export class JogSessionManager {
-  constructor({ cncController } = {}) {
+  constructor({ cncController, commandProcessor } = {}) {
     if (!cncController || typeof cncController.sendCommand !== 'function') {
       throw new Error('JogSessionManager requires a CNC controller with sendCommand method');
     }
 
     this.cncController = cncController;
+    // commandProcessor is a wrapper { instance: CommandProcessor } to allow late initialization
+    this.commandProcessorWrapper = commandProcessor;
     this.sessionsById = new Map();
     this.sessionsBySocket = new Map();
+  }
+
+  get commandProcessor() {
+    return this.commandProcessorWrapper?.instance;
   }
 
   async handleMessage(ws, rawMessage) {
@@ -151,14 +157,41 @@ export class JogSessionManager {
     this.sessionsBySocket.set(ws, sessionSet);
 
     try {
-      await this.cncController.sendCommand(command, {
-        commandId: jogId,
-        displayCommand: displayCommand || command,
-        meta: {
-          continuous: true,
-          sourceId: 'client'
+      // Route through CommandProcessor for safety checks and plugin interception
+      if (this.commandProcessor) {
+        const result = await this.commandProcessor.process(command, {
+          commandId: jogId,
+          meta: { continuous: true, sourceId: 'client' },
+          machineState: this.cncController.lastStatus
+        });
+
+        if (!result.shouldContinue) {
+          // Command was blocked or handled by CommandProcessor
+          const message = result.result?.message || 'Jog command blocked';
+          log('Jog start blocked by CommandProcessor', `jogId=${jogId}`, message);
+          this.sendSafe(ws, {
+            type: 'jog:start-failed',
+            data: { jogId, message }
+          });
+          return;
         }
-      });
+
+        // Send processed commands
+        for (const cmd of result.commands) {
+          await this.cncController.sendCommand(cmd.command, {
+            commandId: jogId,
+            displayCommand: cmd.displayCommand || cmd.command,
+            meta: { continuous: true, sourceId: 'client' }
+          });
+        }
+      } else {
+        // Fallback to direct controller call
+        await this.cncController.sendCommand(command, {
+          commandId: jogId,
+          displayCommand: displayCommand || command,
+          meta: { continuous: true, sourceId: 'client' }
+        });
+      }
     } catch (error) {
       const message = error?.message || 'Failed to start jog command';
       log('Jog start failed', `jogId=${jogId}`, message);
@@ -299,14 +332,36 @@ export class JogSessionManager {
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     try {
-      await this.cncController.sendCommand(command, {
-        commandId: resolvedCommandId,
-        displayCommand: displayCommand || command,
-        meta: {
-          jogStep: true,
-          sourceId: 'client'
+      // Route through CommandProcessor for safety checks and plugin interception
+      if (this.commandProcessor) {
+        const result = await this.commandProcessor.process(command, {
+          commandId: resolvedCommandId,
+          meta: { jogStep: true, sourceId: 'client' },
+          machineState: this.cncController.lastStatus
+        });
+
+        if (!result.shouldContinue) {
+          // Command was blocked - already logged/broadcast by CommandProcessor
+          log('Jog step blocked by CommandProcessor', `commandId=${resolvedCommandId}`);
+          return;
         }
-      });
+
+        // Send processed commands
+        for (const cmd of result.commands) {
+          await this.cncController.sendCommand(cmd.command, {
+            commandId: resolvedCommandId,
+            displayCommand: cmd.displayCommand || cmd.command,
+            meta: { jogStep: true, sourceId: 'client' }
+          });
+        }
+      } else {
+        // Fallback to direct controller call
+        await this.cncController.sendCommand(command, {
+          commandId: resolvedCommandId,
+          displayCommand: displayCommand || command,
+          meta: { jogStep: true, sourceId: 'client' }
+        });
+      }
     } catch (error) {
       log('Jog step send failed', `commandId=${resolvedCommandId}`, error?.message || error);
     }

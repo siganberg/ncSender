@@ -1082,6 +1082,7 @@ export class CNCController extends EventEmitter {
 
     // Same-tool detection moved to CommandProcessor (upstream)
     // Commands are pre-processed by CommandProcessor → Plugin Manager before reaching controller
+    // Door state safety check is also handled in CommandProcessor
     const finalCommand = cleanCommand;
 
     // Intercept user ? command - return cached status instead of sending to controller
@@ -1205,7 +1206,6 @@ export class CNCController extends EventEmitter {
     // Preserve case for GRBL variable syntax (% assignments and [] expressions)
     const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
     const normalizedCommand = hasVariableSyntax ? finalCommand : finalCommand.toUpperCase();
-    // Use provided displayCommand if available, otherwise use original case for display
     const display = displayCommand || finalCommand;
 
     // Skip tool change commands when tool.count is 0 or not configured

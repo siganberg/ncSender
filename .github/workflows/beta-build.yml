@@ -1,0 +1,352 @@
+name: Build Beta Release
+
+on:
+  push:
+    tags:
+      - 'v*-beta*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Beta version (e.g., 0.3.114-beta.1)'
+        required: true
+        type: string
+
+jobs:
+  macos:
+    name: macOS Builds
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
+
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
+
+      - name: Build Electron (x64 + arm64)
+        run: |
+          rm -rf dist-electron
+          npm run dist -- --mac --x64 --arm64 --publish never
+        working-directory: app
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: app/dist-electron/**
+
+  linux:
+    name: Linux Builds
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libudev-dev \
+            libusb-1.0-0-dev
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
+
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
+
+      - name: Build Electron (${{ matrix.arch }})
+        run: |
+          rm -rf dist-electron
+          npm run dist -- --linux --${{ matrix.arch }} --publish never
+        working-directory: app
+
+      - name: Upload Linux Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-artifacts
+          path: app/dist-electron/**
+
+  windows:
+    name: Windows Builds
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
+
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
+
+      - name: Build Electron (${{ matrix.arch }})
+        shell: pwsh
+        run: |
+          if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
+          npm run dist -- --win --${{ matrix.arch }} --publish never
+        working-directory: app
+
+      - name: Upload Windows Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-artifacts
+          path: app/dist-electron/**
+
+  linux-arm64:
+    name: Linux ARM64 Build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfuse2 \
+            rpm \
+            fakeroot \
+            ruby \
+            ruby-dev \
+            rubygems \
+            build-essential \
+            libudev-dev \
+            libusb-1.0-0-dev
+          sudo gem install --no-document fpm
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+        working-directory: app
+
+      - name: Build Client
+        run: npm run build:client
+        working-directory: app
+
+      - name: Build Electron (Linux ARM64)
+        run: |
+          rm -rf dist-electron
+          npm run dist -- --linux --arm64 --publish never
+        working-directory: app
+        env:
+          USE_SYSTEM_FPM: "true"
+
+      - name: List built artifacts
+        run: |
+          echo "Built Linux ARM64 artifacts:"
+          ls -lh app/dist-electron/
+
+      - name: Upload Linux ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-artifacts
+          path: app/dist-electron/**
+
+  release:
+    name: Create Beta Release
+    needs: [macos, linux, windows, linux-arm64]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for tag annotation)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="v${{ github.event.inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          TAG="${{ steps.version.outputs.tag }}"
+
+          echo "Downloaded artifacts structure:"
+          find artifacts -type f
+
+          # macOS assets (only DMG files)
+          if [ -d "artifacts/macos-artifacts" ]; then
+            for file in artifacts/macos-artifacts/*arm64*.dmg; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.dmg"
+              fi
+            done
+            for file in artifacts/macos-artifacts/*.dmg; do
+              if [ -f "$file" ] && [[ "$file" != *arm64* ]]; then
+                cp "$file" "release-assets/ncSender_${TAG}_macos_x64.dmg"
+              fi
+            done
+            # Beta channel manifest
+            for file in artifacts/macos-artifacts/latest-mac.yml; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/beta-mac.yml"
+              fi
+            done
+          fi
+
+          # Windows assets
+          if [ -d "artifacts/windows-x64-artifacts" ]; then
+            for file in artifacts/windows-x64-artifacts/*.exe; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.exe"
+              fi
+            done
+            for file in artifacts/windows-x64-artifacts/*.msi; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.msi"
+              fi
+            done
+            for file in artifacts/windows-x64-artifacts/*.zip; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.zip"
+              fi
+            done
+            # Beta channel manifest
+            for file in artifacts/windows-x64-artifacts/latest.yml; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/beta.yml"
+              fi
+            done
+          fi
+
+          VERSION="${TAG#v}"
+
+          # Linux x64 assets (.AppImage + .deb)
+          if [ -d "artifacts/linux-x64-artifacts" ]; then
+            for file in artifacts/linux-x64-artifacts/*.AppImage; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.AppImage"
+              fi
+            done
+            for file in artifacts/linux-x64-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_x64.deb"
+              fi
+            done
+          fi
+
+          # Linux ARM64 assets (.AppImage + .deb)
+          if [ -d "artifacts/linux-arm64-artifacts" ]; then
+            for file in artifacts/linux-arm64-artifacts/*.AppImage; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.AppImage"
+              fi
+            done
+            for file in artifacts/linux-arm64-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
+              fi
+            done
+          fi
+
+          # Beta channel manifests for Linux
+          if [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ]; then
+            cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/beta-linux.yml"
+          elif [ -f "artifacts/linux-x64-artifacts/latest-linux-x64.yml" ]; then
+            cp "artifacts/linux-x64-artifacts/latest-linux-x64.yml" "release-assets/beta-linux.yml"
+          fi
+
+          if [ -f "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" ]; then
+            cp "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" "release-assets/beta-linux-arm64.yml"
+          elif [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
+            cp "artifacts/linux-arm64-artifacts/latest-linux.yml" "release-assets/beta-linux-arm64.yml"
+          fi
+
+          # Rewrite Linux updater manifests to match renamed asset filenames
+          if [ -f "release-assets/beta-linux.yml" ]; then
+            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/beta-linux.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncSender-{version}.AppImage', f'ncSender_{tag}_linux_x64.AppImage'); text = text.replace(f'ncsender_{version}_amd64.deb', f'ncSender_{tag}_linux_x64.deb'); path.write_text(text)"
+          fi
+
+          if [ -f "release-assets/beta-linux-arm64.yml" ]; then
+            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/beta-linux-arm64.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncSender-{version}-arm64.AppImage', f'ncSender_{tag}_linux_arm64.AppImage'); text = text.replace(f'ncsender_{version}_arm64.deb', f'ncSender_{tag}_linux_arm64.deb'); path.write_text(text)"
+          fi
+
+          echo "Release assets to upload:"
+          ls -lh release-assets/
+
+      - name: Get release notes
+        id: release_notes
+        run: |
+          if [ -f "latest_release.md" ]; then
+            cp latest_release.md release-notes.md
+            echo "Release notes content:"
+            cat release-notes.md
+          else
+            TAG="${{ steps.version.outputs.tag }}"
+            echo "## Beta Release ${TAG}" > release-notes.md
+            echo "" >> release-notes.md
+            echo "This is a beta release for testing purposes." >> release-notes.md
+            echo "" >> release-notes.md
+            echo "**Warning:** Beta releases may contain bugs and are not recommended for production use." >> release-notes.md
+          fi
+
+      - name: Create Beta Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" \
+            --repo ${{ github.repository }} \
+            --title "Beta Release $TAG" \
+            --notes-file release-notes.md \
+            --prerelease \
+            release-assets/*
