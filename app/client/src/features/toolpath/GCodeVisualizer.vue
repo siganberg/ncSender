@@ -2307,6 +2307,9 @@ const handleStop = async () => {
 };
 
 const openStartFromLineDialog = (lineNumber?: number) => {
+  // Don't open dialog if start from line is not allowed (e.g., door open)
+  if (!canStartFromLine.value) return;
+
   // Use provided lineNumber, or jobLoaded.currentLine from server state, or default to 1
   const suggestedLine = lineNumber ?? (props.jobLoaded?.currentLine || 0);
   startFromLineInitial.value = suggestedLine > 0 ? suggestedLine : 1;
@@ -2318,6 +2321,11 @@ const handleStartFromLineSuccess = (_data: { line: number }) => {
 };
 
 const canStartFromLine = computed(() => {
+  // Don't allow start from line when door is open
+  if (isDoorOpenViaPn.value || normalizedSenderStatus.value === 'door') {
+    return false;
+  }
+
   return props.jobLoaded?.filename &&
          props.jobLoaded?.totalLines > 0 &&
          store.isConnected.value &&
