@@ -420,11 +420,12 @@
     </ConfirmPanel>
   </Dialog>
 
-  <!-- Transform Context Menu (Top view only) -->
+  <!-- Transform Context Menu (Top/Front view) -->
   <TransformContextMenu
     :visible="showTransformMenu"
     :x="transformMenuX"
     :y="transformMenuY"
+    :view="props.view"
     :has-file="hasFile"
     :can-reset="canResetTransform"
     :is-connected="storeIsConnected"
@@ -441,6 +442,7 @@
   <!-- Offset Dialog -->
   <OffsetDialog
     :show="showOffsetDialog"
+    :view="props.view"
     @apply="handleOffsetApply"
     @close="showOffsetDialog = false"
   />
@@ -1922,8 +1924,8 @@ const handleFileLoad = async (event: Event) => {
 
 // Transform context menu handlers
 const handleContextMenu = (event: MouseEvent) => {
-  // Only show context menu in Top view and no job running
-  if (props.view !== 'top' || isJobRunning.value) return;
+  // Only show context menu in Top/Front view and no job running
+  if ((props.view !== 'top' && props.view !== 'front') || isJobRunning.value) return;
 
   event.preventDefault();
   transformMenuX.value = event.clientX;
@@ -1965,9 +1967,9 @@ const handleTransformOffset = () => {
   showOffsetDialog.value = true;
 };
 
-const handleOffsetApply = async (offsetX: number, offsetY: number) => {
+const handleOffsetApply = async (offsetX: number, offsetY: number, offsetZ: number) => {
   showOffsetDialog.value = false;
-  await applyTransform('offset', { offsetX, offsetY });
+  await applyTransform('offset', { offsetX, offsetY, offsetZ });
 };
 
 const handleTransformReset = async () => {
@@ -2037,7 +2039,7 @@ const applyTransform = async (
     } else if (type === 'mirror' && params.axis !== undefined) {
       transformed = mirrorGCode(content, params.axis, { onProgress: progressCallback });
     } else if (type === 'offset' && params.offsetX !== undefined && params.offsetY !== undefined) {
-      transformed = offsetGCode(content, params.offsetX, params.offsetY, { onProgress: progressCallback });
+      transformed = offsetGCode(content, params.offsetX, params.offsetY, params.offsetZ ?? 0, { onProgress: progressCallback });
     } else {
       throw new Error('Invalid transform parameters');
     }

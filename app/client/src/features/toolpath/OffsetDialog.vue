@@ -12,37 +12,62 @@
 
       <div class="dialog-content">
         <p class="dialog-description">
-          Enter offset values to translate the toolpath. Positive X moves right, positive Y moves up.
+          <template v-if="isTopView">
+            Enter offset values to translate the toolpath. Positive X moves right, positive Y moves up.
+          </template>
+          <template v-else>
+            Enter Z offset to translate the toolpath vertically. Positive Z moves up.
+          </template>
         </p>
 
-        <div class="input-row">
-          <label class="input-label">X Offset</label>
-          <div class="input-with-buttons">
-            <button class="adjust-btn" @click="adjustX(-10)" title="Decrease by 10">-10</button>
-            <input
-              type="number"
-              v-model.number="offsetX"
-              step="0.1"
-              class="offset-input"
-              ref="xInput"
-              @keydown.enter="handleApply"
-            />
-            <button class="adjust-btn" @click="adjustX(10)" title="Increase by 10">+10</button>
+        <!-- X and Y inputs (Top view only) -->
+        <template v-if="isTopView">
+          <div class="input-row">
+            <label class="input-label">X Offset</label>
+            <div class="input-with-buttons">
+              <button class="adjust-btn" @click="adjustX(-10)" title="Decrease by 10">-10</button>
+              <input
+                type="number"
+                v-model.number="offsetX"
+                step="0.1"
+                class="offset-input"
+                ref="xInput"
+                @keydown.enter="handleApply"
+              />
+              <button class="adjust-btn" @click="adjustX(10)" title="Increase by 10">+10</button>
+            </div>
           </div>
-        </div>
 
-        <div class="input-row">
-          <label class="input-label">Y Offset</label>
+          <div class="input-row">
+            <label class="input-label">Y Offset</label>
+            <div class="input-with-buttons">
+              <button class="adjust-btn" @click="adjustY(-10)" title="Decrease by 10">-10</button>
+              <input
+                type="number"
+                v-model.number="offsetY"
+                step="0.1"
+                class="offset-input"
+                @keydown.enter="handleApply"
+              />
+              <button class="adjust-btn" @click="adjustY(10)" title="Increase by 10">+10</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Z input (Front/Side view only) -->
+        <div v-if="!isTopView" class="input-row">
+          <label class="input-label">Z Offset</label>
           <div class="input-with-buttons">
-            <button class="adjust-btn" @click="adjustY(-10)" title="Decrease by 10">-10</button>
+            <button class="adjust-btn" @click="adjustZ(-1)" title="Decrease by 1">-1</button>
             <input
               type="number"
-              v-model.number="offsetY"
+              v-model.number="offsetZ"
               step="0.1"
               class="offset-input"
+              ref="zInput"
               @keydown.enter="handleApply"
             />
-            <button class="adjust-btn" @click="adjustY(10)" title="Increase by 10">+10</button>
+            <button class="adjust-btn" @click="adjustZ(1)" title="Increase by 1">+1</button>
           </div>
         </div>
       </div>
@@ -69,20 +94,32 @@ import Dialog from '@/components/Dialog.vue';
 
 const props = defineProps<{
   show: boolean;
+  view?: string;
 }>();
 
+const isTopView = computed(() => props.view === 'top');
+const isFrontView = computed(() => props.view === 'front');
+
 const emit = defineEmits<{
-  (e: 'apply', offsetX: number, offsetY: number): void;
+  (e: 'apply', offsetX: number, offsetY: number, offsetZ: number): void;
   (e: 'close'): void;
 }>();
 
 const offsetX = ref(0);
 const offsetY = ref(0);
+const offsetZ = ref(0);
 const xInput = ref<HTMLInputElement | null>(null);
+const zInput = ref<HTMLInputElement | null>(null);
 
 const isValid = computed(() => {
-  return (offsetX.value !== 0 || offsetY.value !== 0) &&
-         !isNaN(offsetX.value) && !isNaN(offsetY.value);
+  if (isTopView.value) {
+    // Top view: check X and Y
+    return (offsetX.value !== 0 || offsetY.value !== 0) &&
+           !isNaN(offsetX.value) && !isNaN(offsetY.value);
+  } else {
+    // Front/Side view: check Z only
+    return offsetZ.value !== 0 && !isNaN(offsetZ.value);
+  }
 });
 
 function adjustX(amount: number) {
@@ -93,9 +130,13 @@ function adjustY(amount: number) {
   offsetY.value = Math.round((offsetY.value + amount) * 1000) / 1000;
 }
 
+function adjustZ(amount: number) {
+  offsetZ.value = Math.round((offsetZ.value + amount) * 1000) / 1000;
+}
+
 function handleApply() {
   if (!isValid.value) return;
-  emit('apply', offsetX.value, offsetY.value);
+  emit('apply', offsetX.value, offsetY.value, offsetZ.value);
   resetAndClose();
 }
 
@@ -106,6 +147,7 @@ function handleClose() {
 function resetAndClose() {
   offsetX.value = 0;
   offsetY.value = 0;
+  offsetZ.value = 0;
   emit('close');
 }
 
@@ -113,9 +155,15 @@ watch(() => props.show, (newVal) => {
   if (newVal) {
     offsetX.value = 0;
     offsetY.value = 0;
+    offsetZ.value = 0;
     nextTick(() => {
-      xInput.value?.focus();
-      xInput.value?.select();
+      if (isTopView.value) {
+        xInput.value?.focus();
+        xInput.value?.select();
+      } else {
+        zInput.value?.focus();
+        zInput.value?.select();
+      }
     });
   }
 });

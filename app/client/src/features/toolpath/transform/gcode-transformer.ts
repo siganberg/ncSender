@@ -540,12 +540,13 @@ function mirrorLine(line: string, axis: 'x' | 'y', centerX: number, centerY: num
 }
 
 /**
- * Offset/translate G-code by X and Y amounts.
+ * Offset/translate G-code by X, Y, and Z amounts.
  */
 export function offsetGCode(
   gcodeContent: string,
   offsetX: number,
   offsetY: number,
+  offsetZ: number = 0,
   options?: TransformOptions
 ): string {
   const lines = gcodeContent.split('\n');
@@ -571,31 +572,42 @@ export function offsetGCode(
       continue;
     }
 
-    // Skip lines without X or Y
-    if (!line.toUpperCase().includes('X') && !line.toUpperCase().includes('Y')) {
+    // Skip lines without X, Y, or Z
+    if (!line.toUpperCase().includes('X') && !line.toUpperCase().includes('Y') && !line.toUpperCase().includes('Z')) {
       result.push(line);
       continue;
     }
 
-    result.push(offsetLine(line, offsetX, offsetY));
+    result.push(offsetLine(line, offsetX, offsetY, offsetZ));
   }
 
   options?.onProgress?.(100);
   return result.join('\n');
 }
 
-function offsetLine(line: string, offsetX: number, offsetY: number): string {
+function offsetLine(line: string, offsetX: number, offsetY: number, offsetZ: number): string {
   let result = line;
 
-  result = result.replace(/X([+-]?\d*\.?\d+)/gi, (_match, value) => {
-    const newValue = parseFloat(value) + offsetX;
-    return 'X' + newValue.toFixed(3);
-  });
+  if (offsetX !== 0) {
+    result = result.replace(/X([+-]?\d*\.?\d+)/gi, (_match, value) => {
+      const newValue = parseFloat(value) + offsetX;
+      return 'X' + newValue.toFixed(3);
+    });
+  }
 
-  result = result.replace(/Y([+-]?\d*\.?\d+)/gi, (_match, value) => {
-    const newValue = parseFloat(value) + offsetY;
-    return 'Y' + newValue.toFixed(3);
-  });
+  if (offsetY !== 0) {
+    result = result.replace(/Y([+-]?\d*\.?\d+)/gi, (_match, value) => {
+      const newValue = parseFloat(value) + offsetY;
+      return 'Y' + newValue.toFixed(3);
+    });
+  }
+
+  if (offsetZ !== 0) {
+    result = result.replace(/Z([+-]?\d*\.?\d+)/gi, (_match, value) => {
+      const newValue = parseFloat(value) + offsetZ;
+      return 'Z' + newValue.toFixed(3);
+    });
+  }
 
   return result;
 }

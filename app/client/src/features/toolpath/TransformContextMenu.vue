@@ -12,32 +12,36 @@
       :style="menuStyle"
       @click.stop
     >
-      <div class="menu-section">
-        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCW()">
-          <span class="menu-icon">↻</span>
-          <span class="menu-label">Rotate 90° CW</span>
+      <!-- Rotate options (Top view only) -->
+      <template v-if="isTopView">
+        <div class="menu-section">
+          <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCW()">
+            <span class="menu-icon">↻</span>
+            <span class="menu-label">Rotate 90° CW</span>
+          </div>
+          <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCCW()">
+            <span class="menu-icon">↺</span>
+            <span class="menu-label">Rotate 90° CCW</span>
+          </div>
         </div>
-        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCCW()">
-          <span class="menu-icon">↺</span>
-          <span class="menu-label">Rotate 90° CCW</span>
+
+        <div class="menu-divider"></div>
+
+        <div class="menu-section">
+          <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorX()">
+            <span class="menu-icon">↔</span>
+            <span class="menu-label">Mirror X Axis</span>
+          </div>
+          <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorY()">
+            <span class="menu-icon">↕</span>
+            <span class="menu-label">Mirror Y Axis</span>
+          </div>
         </div>
-      </div>
 
-      <div class="menu-divider"></div>
+        <div class="menu-divider"></div>
+      </template>
 
-      <div class="menu-section">
-        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorX()">
-          <span class="menu-icon">↔</span>
-          <span class="menu-label">Mirror X Axis</span>
-        </div>
-        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorY()">
-          <span class="menu-icon">↕</span>
-          <span class="menu-label">Mirror Y Axis</span>
-        </div>
-      </div>
-
-      <div class="menu-divider"></div>
-
+      <!-- Move/Offset (Top and Front view) -->
       <div class="menu-section">
         <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleOffset()">
           <span class="menu-icon">⤡</span>
@@ -45,6 +49,7 @@
         </div>
       </div>
 
+      <!-- Reset (Both Top and Front view) -->
       <div v-if="canReset && hasFile" class="menu-divider"></div>
 
       <div v-if="canReset && hasFile" class="menu-section">
@@ -54,14 +59,17 @@
         </div>
       </div>
 
-      <div v-if="isConnected" class="menu-divider"></div>
+      <!-- Move Spindle (Top view only, when connected) -->
+      <template v-if="isTopView && isConnected">
+        <div class="menu-divider"></div>
 
-      <div v-if="isConnected" class="menu-section">
-        <div class="menu-item" @click="handleMoveSpindle">
-          <span class="menu-icon">⌖</span>
-          <span class="menu-label">Move Spindle Here (X{{ worldX }} Y{{ worldY }})</span>
+        <div class="menu-section">
+          <div class="menu-item" @click="handleMoveSpindle">
+            <span class="menu-icon">⌖</span>
+            <span class="menu-label">Move Spindle Here (X{{ worldX }} Y{{ worldY }})</span>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- Click-outside overlay -->
@@ -81,12 +89,15 @@ const props = defineProps<{
   visible: boolean;
   x: number;
   y: number;
+  view?: string;
   hasFile?: boolean;
   canReset?: boolean;
   isConnected?: boolean;
   worldX?: number;
   worldY?: number;
 }>();
+
+const isTopView = computed(() => props.view === 'top');
 
 const emit = defineEmits<{
   (e: 'rotate', degrees: 90 | -90): void;
