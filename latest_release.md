@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Column sorting preferences are now saved and restored between sessions
+### 📚 Documentation
+- Added instructions for removing macOS quarantine attribute during installation
