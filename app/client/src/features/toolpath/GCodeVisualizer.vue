@@ -425,6 +425,7 @@
     :visible="showTransformMenu"
     :x="transformMenuX"
     :y="transformMenuY"
+    :has-file="hasFile"
     :can-reset="canResetTransform"
     :is-connected="storeIsConnected"
     :world-x="worldCoordX"
@@ -1921,8 +1922,8 @@ const handleFileLoad = async (event: Event) => {
 
 // Transform context menu handlers
 const handleContextMenu = (event: MouseEvent) => {
-  // Only show context menu in Top view, with a file loaded, and no job running
-  if (props.view !== 'top' || !hasFile.value || isJobRunning.value) return;
+  // Only show context menu in Top view and no job running
+  if (props.view !== 'top' || isJobRunning.value) return;
 
   event.preventDefault();
   transformMenuX.value = event.clientX;

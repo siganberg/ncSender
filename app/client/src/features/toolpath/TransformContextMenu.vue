@@ -13,11 +13,11 @@
       @click.stop
     >
       <div class="menu-section">
-        <div class="menu-item" @click="handleRotateCW">
+        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCW()">
           <span class="menu-icon">↻</span>
           <span class="menu-label">Rotate 90° CW</span>
         </div>
-        <div class="menu-item" @click="handleRotateCCW">
+        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleRotateCCW()">
           <span class="menu-icon">↺</span>
           <span class="menu-label">Rotate 90° CCW</span>
         </div>
@@ -26,11 +26,11 @@
       <div class="menu-divider"></div>
 
       <div class="menu-section">
-        <div class="menu-item" @click="handleMirrorX">
+        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorX()">
           <span class="menu-icon">↔</span>
           <span class="menu-label">Mirror X Axis</span>
         </div>
-        <div class="menu-item" @click="handleMirrorY">
+        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleMirrorY()">
           <span class="menu-icon">↕</span>
           <span class="menu-label">Mirror Y Axis</span>
         </div>
@@ -39,15 +39,15 @@
       <div class="menu-divider"></div>
 
       <div class="menu-section">
-        <div class="menu-item" @click="handleOffset">
+        <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleOffset()">
           <span class="menu-icon">⤡</span>
           <span class="menu-label">Move/Offset...</span>
         </div>
       </div>
 
-      <div v-if="canReset" class="menu-divider"></div>
+      <div v-if="canReset && hasFile" class="menu-divider"></div>
 
-      <div v-if="canReset" class="menu-section">
+      <div v-if="canReset && hasFile" class="menu-section">
         <div class="menu-item" @click="handleReset">
           <span class="menu-icon">↩</span>
           <span class="menu-label">Reset to Original</span>
@@ -81,6 +81,7 @@ const props = defineProps<{
   visible: boolean;
   x: number;
   y: number;
+  hasFile?: boolean;
   canReset?: boolean;
   isConnected?: boolean;
   worldX?: number;
