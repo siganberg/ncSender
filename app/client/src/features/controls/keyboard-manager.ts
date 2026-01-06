@@ -37,6 +37,11 @@ interface ActiveJogState {
   direction?: 1 | -1;
   xDir?: 1 | -1;
   yDir?: 1 | -1;
+  // For diagonal jogs: track the original keys so we can transition back to single-axis
+  xEventCode?: string;
+  xCombo?: string;
+  yEventCode?: string;
+  yCombo?: string;
   combo: string;
   timerId: number | null;
   longPressTriggered: boolean;
@@ -268,6 +273,10 @@ class KeyboardManager {
           const diagonalState: ActiveJogState = {
             xDir: diagonalMeta.xDir,
             yDir: diagonalMeta.yDir,
+            xEventCode: xAction.eventCode,
+            xCombo: xAction.combo,
+            yEventCode: yAction.eventCode,
+            yCombo: yAction.combo,
             combo: `${xAction.combo}+${yAction.combo}`,
             timerId: null,
             longPressTriggered: false,
@@ -384,22 +393,68 @@ class KeyboardManager {
     for (const diagonalKey of diagonalKeys) {
       const state = this.jogStates.get(diagonalKey);
       if (state && !state.finished) {
+        // Determine which axis key is still held (the one NOT being released)
+        const releasedAxis = jogMeta.axis; // 'X' or 'Y'
+        const remainingAxis = releasedAxis === 'X' ? 'Y' : 'X';
+        const remainingEventCode = remainingAxis === 'X' ? state.xEventCode : state.yEventCode;
+        const remainingCombo = remainingAxis === 'X' ? state.xCombo : state.yCombo;
+        const remainingDirection = remainingAxis === 'X' ? state.xDir : state.yDir;
+
         state.cancelled = true;
+
+        const startRemainingAxisJog = () => {
+          // Start a new single-axis jog for the key that's still held
+          if (remainingEventCode && remainingCombo && remainingDirection !== undefined) {
+            const newState: ActiveJogState = {
+              axis: remainingAxis,
+              direction: remainingDirection,
+              combo: remainingCombo,
+              timerId: null,
+              longPressTriggered: false,
+              longPressActive: false,
+              cancelled: false,
+              session: null,
+              promise: null,
+              handledShortStep: false,
+              finished: false
+            };
+
+            this.jogStates.set(remainingEventCode, newState);
+
+            // Start continuous jog immediately since key is already being held
+            this.beginLongPress(remainingEventCode, newState);
+          }
+        };
 
         if (state.timerId !== null) {
           clearTimeout(state.timerId);
           state.timerId = null;
           this.runShortJog(diagonalKey, state);
+          startRemainingAxisJog();
           return;
         }
 
         if (!state.longPressTriggered) {
           this.cleanupJogState(diagonalKey, state);
+          startRemainingAxisJog();
           return;
         }
 
         if (state.longPressActive && state.session) {
-          this.stopContinuousJog(diagonalKey, state);
+          // Stop the diagonal jog, then start the single-axis jog
+          const session = state.session;
+          state.session = null;
+          state.longPressActive = false;
+
+          session
+            .stop('transition-to-single-axis')
+            .catch((error) => {
+              console.error('Failed to stop diagonal jog session:', error);
+            })
+            .finally(() => {
+              this.cleanupJogState(diagonalKey, state);
+              startRemainingAxisJog();
+            });
           return;
         }
 
@@ -408,6 +463,7 @@ class KeyboardManager {
         }
 
         this.cleanupJogState(diagonalKey, state);
+        startRemainingAxisJog();
       }
     }
   }
