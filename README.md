@@ -51,7 +51,11 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 
 Download a release from the [Releases page](https://github.com/siganberg/ncSender/releases) for your OS:
 
-- **macOS**: open the `.dmg`, drag ncSender to Applications. If Gatekeeper warns about an unknown developer, right‑click the app, choose Open, then Open again.
+- **macOS**: open the `.dmg`, drag ncSender to Applications. Since the app is not code-signed by Apple, you'll need to clear the quarantine attribute before running:
+  ```bash
+  xattr -c /Applications/ncSender.app
+  ```
+  Open Terminal (Applications → Utilities → Terminal), paste the command above, and press Enter. After that, you can open ncSender normally.
 - **Windows**: run the `.exe` and follow the prompts (you may see a SmartScreen warning for an unsigned app).
 - **Linux**: use the `.AppImage` or `.deb` (depending on your distro). Mark the AppImage as executable.
 - **Raspberry Pi**: use the ARM64 `.deb` or `.AppImage` package.
