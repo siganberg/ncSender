@@ -214,13 +214,6 @@ class KeyboardManager {
     }
 
     if (xAction && yAction) {
-      const existingXState = xAction.state;
-      const existingYState = yAction.state;
-
-      if ((existingXState && existingXState.longPressTriggered) || (existingYState && existingYState.longPressTriggered)) {
-        return false;
-      }
-
       const diagonalKey = `diagonal-${xAction.direction}-${yAction.direction}`;
 
       if (this.jogStates.has(diagonalKey)) {
@@ -237,6 +230,7 @@ class KeyboardManager {
         if (action && (!action.isEnabled || action.isEnabled())) {
           const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
 
+          // Cancel and cleanup existing X axis state
           if (xAction.eventCode !== eventCode) {
             const xState = this.jogStates.get(xAction.eventCode);
             if (xState && !xState.finished) {
@@ -246,9 +240,14 @@ class KeyboardManager {
                 clearTimeout(xState.timerId);
                 xState.timerId = null;
               }
-              this.cleanupJogState(xAction.eventCode, xState);
+              if (xState.longPressActive && xState.session) {
+                this.stopContinuousJog(xAction.eventCode, xState, 'transition-to-diagonal');
+              } else {
+                this.cleanupJogState(xAction.eventCode, xState);
+              }
             }
           }
+          // Cancel and cleanup existing Y axis state
           if (yAction.eventCode !== eventCode) {
             const yState = this.jogStates.get(yAction.eventCode);
             if (yState && !yState.finished) {
@@ -258,7 +257,11 @@ class KeyboardManager {
                 clearTimeout(yState.timerId);
                 yState.timerId = null;
               }
-              this.cleanupJogState(yAction.eventCode, yState);
+              if (yState.longPressActive && yState.session) {
+                this.stopContinuousJog(yAction.eventCode, yState, 'transition-to-diagonal');
+              } else {
+                this.cleanupJogState(yAction.eventCode, yState);
+              }
             }
           }
 
@@ -281,7 +284,7 @@ class KeyboardManager {
 
           diagonalState.timerId = window.setTimeout(() => {
             this.beginLongPress(diagonalKey, diagonalState);
-          }, LONG_PRESS_DELAY_MS);
+          }, JOG_LONG_PRESS_DELAY_MS);
 
           return true;
         }
