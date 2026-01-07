@@ -191,13 +191,18 @@ class GCodeVisualizer {
         this.toolOrder = [];
 
         // First pass: identify all tools used in the program in order of first appearance
+        // Only consider actual tool change commands (T followed by M6), not tool refs in comments
         lines.forEach(line => {
-            const cleanLine = line.split(';')[0].trim().toUpperCase();
-            const tMatch = cleanLine.match(/T(\d+)/);
-            if (tMatch) {
-                const toolNum = parseInt(tMatch[1]);
-                if (!this.toolOrder.includes(toolNum)) {
-                    this.toolOrder.push(toolNum);
+            // Strip parenthetical comments and semicolon comments
+            const cleanLine = line.replace(/\((?:[^)]*)\)/g, '').replace(/;.*$/, '').trim().toUpperCase();
+            // Only detect tools on M6 (tool change) lines to avoid false positives
+            if (/\bM0?6\b/.test(cleanLine)) {
+                const tMatch = cleanLine.match(/\bT(\d+)\b/);
+                if (tMatch) {
+                    const toolNum = parseInt(tMatch[1]);
+                    if (!this.toolOrder.includes(toolNum)) {
+                        this.toolOrder.push(toolNum);
+                    }
                 }
             }
         });
@@ -246,7 +251,7 @@ class GCodeVisualizer {
             const zMatch = cleanLine.match(/Z([-+]?\d*\.?\d+)/);
             const iMatch = cleanLine.match(/I([-+]?\d*\.?\d+)/);
             const jMatch = cleanLine.match(/J([-+]?\d*\.?\d+)/);
-            const tMatch = cleanLine.match(/T(\d+)/);
+            const tMatch = cleanLine.match(/\bT(\d+)\b/);
 
             // Track tool changes
             if (tMatch) {
