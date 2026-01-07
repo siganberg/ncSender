@@ -135,17 +135,16 @@ Looking to build, contribute, or extend ncSender? See `docs/DEVELOPER_GUIDE.md` 
 
 ## 📜 License
 
-ncSender is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+ncSender is available under a **dual license**:
 
-This means you are free to:
-- Use the software for any purpose
-- Study how the software works and modify it
-- Distribute copies of the software
-- Distribute modified versions of the software
+### Open Source License (GPL-3.0)
+For open source projects and personal use, ncSender is licensed under the [GNU General Public License v3.0](LICENSE-GPL-3.0).
 
-Under the condition that:
-- Any distributed copies or modifications must also be licensed under GPL-3.0
-- You must include the original copyright and license notices
-- Source code must be made available when distributing the software
+You are free to use, modify, and distribute this software under GPL-3.0 terms, provided that derivative works are also licensed under GPL-3.0 and source code is made available.
 
-See the [LICENSE](LICENSE) file for the full license text, or visit <https://www.gnu.org/licenses/gpl-3.0.html>.
+### Commercial License
+For commercial use, proprietary applications, or if you cannot comply with GPL-3.0 requirements, a commercial license is available.
+
+Contact: support@franciscreation.com
+
+See the [LICENSE](LICENSE) file for full details.
