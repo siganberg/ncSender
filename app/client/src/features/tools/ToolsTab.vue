@@ -109,8 +109,21 @@
         <tbody>
           <tr v-for="tool in filteredTools" :key="tool.id">
             <td class="col-tool-number">
-              <span v-if="tool.toolNumber !== null" class="tool-number-badge">T{{ tool.toolNumber }}</span>
-              <span v-else>-</span>
+              <select 
+                class="tool-number-select"
+                :class="{ 'tool-number-select-empty': tool.toolNumber === null }"
+                :value="tool.toolNumber" 
+                @change="updateToolNumber(tool, ($event.target as HTMLSelectElement).value)"
+              >
+                <option :value="null">-</option>
+                <option
+                  v-for="num in maxToolCount"
+                  :key="num"
+                  :value="num"
+                >
+                  T{{ num }}{{ getToolNumberInfoForTool(num, tool) }}
+                </option>
+              </select>
             </td>
             <td class="col-description">{{ tool.name }}</td>
             <td class="col-type">{{ formatType(tool.type) }}</td>
@@ -752,6 +765,124 @@ const getToolNumberInfo = (num: number) => {
   return '';
 };
 
+const getToolNumberInfoForTool = (num: number, tool: Tool) => {
+  // If this is the current tool number, don't show any info
+  if (tool.toolNumber === num) {
+    return '';
+  }
+
+  // Find if another tool is using this number
+  const assignedTool = tools.value.find(t => t.toolNumber === num && t.id !== tool.id);
+
+  if (assignedTool) {
+    return ` (Swap: ${assignedTool.name})`;
+  }
+
+  return '';
+};
+
+const updateToolNumber = async (tool: Tool, newValue: string | null) => {
+  // Convert newValue to number or null
+  const newToolNumber = newValue === 'null' || newValue === null ? null : parseInt(newValue as string);
+  const oldToolNumber = tool.toolNumber;
+
+  // If the value didn't change, do nothing
+  if (newToolNumber === oldToolNumber) {
+    return;
+  }
+
+  try {
+    // Find if another tool is using the target tool number
+    const conflictingTool = tools.value.find(t =>
+      t.toolNumber === newToolNumber &&
+      t.id !== tool.id
+    );
+
+    if (conflictingTool && newToolNumber !== null && newToolNumber !== undefined) {
+      // Swap operation needed
+      console.log('Swapping tools:', { current: tool.id, conflicting: conflictingTool.id });
+
+      // Step 1: Unassign the conflicting tool temporarily
+      const unassignResponse = await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...conflictingTool,
+          toolNumber: null
+        })
+      });
+
+      if (!unassignResponse.ok) {
+        const error = await unassignResponse.json();
+        console.log('Tool unassign error:', JSON.stringify(error));
+        saveErrorMessage.value = 'Failed to swap tool numbers';
+        showSaveErrorDialog.value = true;
+        return;
+      }
+
+      // Step 2: Update the current tool with the new number
+      const updateResponse = await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...tool,
+          toolNumber: newToolNumber
+        })
+      });
+
+      if (!updateResponse.ok) {
+        const error = await updateResponse.json();
+        console.log('Tool update error:', JSON.stringify(error));
+        saveErrorMessage.value = 'Failed to update tool number';
+        showSaveErrorDialog.value = true;
+        return;
+      }
+
+      // Step 3: If the original tool had a number, assign it to the conflicting tool (complete the swap)
+      if (oldToolNumber !== null && oldToolNumber !== undefined) {
+        const swapResponse = await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...conflictingTool,
+            toolNumber: oldToolNumber
+          })
+        });
+
+        if (!swapResponse.ok) {
+          console.log('Warning: Failed to complete swap by assigning old number to conflicting tool');
+          // Don't fail the whole operation if this step fails
+        }
+      }
+    } else {
+      // No swap needed, just update normally
+      const response = await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...tool,
+          toolNumber: newToolNumber
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.log('Tool update error:', JSON.stringify(error));
+        saveErrorMessage.value = 'Failed to update tool number';
+        showSaveErrorDialog.value = true;
+        return;
+      }
+    }
+
+    // Reload tools to reflect changes
+    await loadTools();
+  } catch (error) {
+    console.error('Error updating tool number:', error);
+    saveErrorMessage.value = 'Failed to update tool number';
+    showSaveErrorDialog.value = true;
+  }
+};
+
 const addNewTool = () => {
   editingTool.value = null;
   toolForm.value = defaultToolForm();
@@ -1337,8 +1468,8 @@ onMounted(async () => {
 }
 
 .col-tool-number {
-  width: 8%;
-  min-width: 60px;
+  width: 12%;
+  min-width: 120px;
   text-align: center;
 }
 
@@ -1351,6 +1482,45 @@ onMounted(async () => {
   color: var(--color-text-primary);
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+.tool-number-select {
+  width: 100%;
+  min-width: 100px;
+  padding: 6px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tool-number-select:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-accent);
+}
+
+.tool-number-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.tool-number-select-empty {
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.tool-number-select-empty:hover {
+  border-color: var(--color-text-secondary);
+}
+
+.tool-number-select-empty:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 .col-description {
