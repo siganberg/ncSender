@@ -23,6 +23,7 @@ class GCodeVisualizer {
         // Tool-based colors (generated dynamically)
         this.toolColors = new Map(); // toolNumber -> color hex
         this.toolsUsed = new Set(); // Set of tool numbers used in program
+        this.toolOrder = []; // Array of tool numbers in order of first appearance
         this.toolVisibility = new Map(); // toolNumber -> boolean (visible/hidden)
 
         // Grid boundaries (set via setGridBounds)
@@ -187,25 +188,27 @@ class GCodeVisualizer {
         this._outOfBoundsDirections.clear();
         this.toolsUsed.clear();
         this.toolColors.clear();
+        this.toolOrder = [];
 
-        // First pass: identify all tools used in the program
-        const toolsInProgram = new Set();
+        // First pass: identify all tools used in the program in order of first appearance
         lines.forEach(line => {
             const cleanLine = line.split(';')[0].trim().toUpperCase();
             const tMatch = cleanLine.match(/T(\d+)/);
             if (tMatch) {
-                toolsInProgram.add(parseInt(tMatch[1]));
+                const toolNum = parseInt(tMatch[1]);
+                if (!this.toolOrder.includes(toolNum)) {
+                    this.toolOrder.push(toolNum);
+                }
             }
         });
 
         // Generate colors for each tool based on its position in the program (not the tool number)
         // This ensures tools T42, T51, T87 get distinct colors (1st, 2nd, 3rd palette colors)
         // instead of similar colors based on their high tool numbers
-        const sortedTools = Array.from(toolsInProgram).sort((a, b) => a - b);
-        sortedTools.forEach((toolNum, index) => {
+        this.toolOrder.forEach((toolNum, index) => {
             // Use index+1 as the "virtual tool number" for color selection
             // This maps the first tool in the program to palette[0], second to palette[1], etc.
-            const color = this.generateToolColor(index + 1, sortedTools.length);
+            const color = this.generateToolColor(index + 1, this.toolOrder.length);
             this.toolColors.set(toolNum, color);
             this.toolsUsed.add(toolNum);
             // Initialize visibility to true (shown by default)
@@ -833,16 +836,13 @@ class GCodeVisualizer {
     }
 
     // Get all tools used in the program with their colors and visibility
+    // Returns tools in order of first appearance in the G-code
     getToolsInfo() {
-        const tools = [];
-        this.toolsUsed.forEach(toolNum => {
-            tools.push({
-                number: toolNum,
-                color: this.toolColors.get(toolNum),
-                visible: this.toolVisibility.get(toolNum) !== false
-            });
-        });
-        return tools.sort((a, b) => a.number - b.number);
+        return this.toolOrder.map(toolNum => ({
+            number: toolNum,
+            color: this.toolColors.get(toolNum),
+            visible: this.toolVisibility.get(toolNum) !== false
+        }));
     }
 
     // Toggle visibility for a specific tool
