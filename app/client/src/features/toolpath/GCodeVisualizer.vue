@@ -4519,9 +4519,9 @@ input:checked + .slider:before {
 }
 
 .dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
+  width: 22px;
+  height: 14px;
+  border-radius: 7px;
   display: inline-block;
   transition: all 0.15s ease;
 }
