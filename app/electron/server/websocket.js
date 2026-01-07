@@ -20,7 +20,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSetting, DEFAULT_SETTINGS } from '../core/settings-manager.js';
 import { pluginManager } from '../core/plugin-manager.js';
-import { parseM6Command, isM6Command } from '../utils/gcode-patterns.js';
+import { parseM6Command } from '../utils/gcode-patterns.js';
 import { getUserDataDir } from '../utils/paths.js';
 import { createLogger } from '../core/logger.js';
 
@@ -383,58 +383,6 @@ export function createWebSocketLayer({
         }
       }
 
-      // Helper to parse machine position
-      const parseMachinePosition = (machinePosition) => {
-        let x, y;
-        if (typeof machinePosition === 'string') {
-          const parts = machinePosition.split(',').map(p => parseFloat(p.trim()));
-          x = parts[0];
-          y = parts[1];
-        } else if (machinePosition && typeof machinePosition === 'object') {
-          x = machinePosition.x;
-          y = machinePosition.y;
-        }
-        return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
-      };
-
-      // Handle $TLS command - set tool changing flag and save return position
-      let tlsReturnPosition = null;
-      if (commandValue === '$TLS') {
-        log('$TLS command detected, setting isToolChanging flag');
-        serverState.machineState.isToolChanging = true;
-
-        const machinePosition = serverState.machineState?.MPos;
-        log('Current machine position:', JSON.stringify(machinePosition));
-
-        tlsReturnPosition = parseMachinePosition(machinePosition);
-
-        if (tlsReturnPosition) {
-          metaPayload.originalMachinePosition = tlsReturnPosition;
-          log('Saved TLS return position:', JSON.stringify(tlsReturnPosition));
-        } else {
-          log('No valid return position available');
-        }
-      }
-
-      // Handle M6 command - set tool changing flag and save return position
-      let m6ReturnPosition = null;
-      if (isM6Command(commandValue)) {
-        log('M6 command detected, setting isToolChanging flag');
-        serverState.machineState.isToolChanging = true;
-
-        const machinePosition = serverState.machineState?.MPos;
-        log('Current machine position:', JSON.stringify(machinePosition));
-
-        m6ReturnPosition = parseMachinePosition(machinePosition);
-
-        if (m6ReturnPosition) {
-          metaPayload.originalMachinePosition = m6ReturnPosition;
-          log('Saved M6 return position:', JSON.stringify(m6ReturnPosition));
-        } else {
-          log('No valid return position available');
-        }
-      }
-
       // Process command through Command Processor
       const pluginContext = {
         sourceId: metaPayload.sourceId || 'client',
@@ -450,41 +398,7 @@ export function createWebSocketLayer({
         return; // Early return - command already handled and broadcast
       }
 
-      let commands = result.commands;
-
-      // Add return-to-position command for $TLS
-      if (commandValue === '$TLS' && tlsReturnPosition) {
-        const xCommand = tlsReturnPosition.x.toFixed(3);
-        const yCommand = tlsReturnPosition.y.toFixed(3);
-        const returnCommand = `G53 G21 G0 X${xCommand} Y${yCommand}`;
-        log('Adding TLS return command:', returnCommand);
-        commands = [
-          ...commands,
-          {
-            command: returnCommand,
-            displayCommand: returnCommand,
-            meta: { ...metaPayload, sourceId: metaPayload.sourceId || 'tls' }
-          }
-        ];
-        log('Total commands to execute:', commands.length);
-      }
-
-      // Add return-to-position command for M6
-      if (isM6Command(commandValue) && m6ReturnPosition) {
-        const xCommand = m6ReturnPosition.x.toFixed(3);
-        const yCommand = m6ReturnPosition.y.toFixed(3);
-        const returnCommand = `G53 G21 G0 X${xCommand} Y${yCommand}`;
-        log('Adding M6 return command:', returnCommand);
-        commands = [
-          ...commands,
-          {
-            command: returnCommand,
-            displayCommand: returnCommand,
-            meta: { ...metaPayload, sourceId: metaPayload.sourceId || 'tool-change' }
-          }
-        ];
-        log('Total commands to execute:', commands.length);
-      }
+      const commands = result.commands;
 
       // Iterate through command array and send each to controller
       for (const cmd of commands) {

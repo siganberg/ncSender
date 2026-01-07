@@ -660,6 +660,13 @@ export class GCodeJobProcessor {
 
         const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+        // Check if this line is an M6 command and look ahead for next XY position
+        let nextXYPosition = null;
+        const m6Parse = parseM6Command(cleanedLine);
+        if (m6Parse?.matched && m6Parse.toolNumber !== null) {
+          nextXYPosition = this.findFirstXYAfterLine(this.currentLineNumber);
+        }
+
         try {
           // Process command through Plugin Manager
           const pluginContext = {
@@ -669,7 +676,8 @@ export class GCodeJobProcessor {
             meta: {
               lineNumber: this.currentLineNumber,
               job: { filename: this.filename },
-              sourceId: this.sourceId
+              sourceId: this.sourceId,
+              nextXYPosition
             },
             machineState: this.cncController.lastStatus
           };
@@ -688,13 +696,18 @@ export class GCodeJobProcessor {
           // Iterate through command array and send each to controller
           let lastResponse = null;
           for (const cmd of commands) {
-            const cmdDisplayCommand = cmd.displayCommand || cleanLine;
+            const cmdDisplayCommand = cmd.displayCommand ?? (cmd.isOriginal ? cleanLine : cmd.command);
             const cmdMeta = {
               lineNumber: this.currentLineNumber,
               job: { filename: this.filename },
-              sourceId: this.sourceId,
               ...(cmd.meta || {})
             };
+
+            // Only tag original G-code lines with 'job' sourceId (filtered from terminal)
+            // Plugin-generated commands should be visible in terminal during tool changes
+            if (cmd.isOriginal) {
+              cmdMeta.sourceId = this.sourceId;
+            }
 
             // Generate unique commandId for each command in the array
             const uniqueCommandId = cmd.commandId || `${commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -781,5 +794,58 @@ export class GCodeJobProcessor {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Find the first XY position after a given line number
+   * Looks for G0/G1 commands with X and/or Y coordinates
+   * @param {number} afterLine - Line number to start searching after
+   * @returns {Object|null} { x, y } or null if not found
+   */
+  findFirstXYAfterLine(afterLine) {
+    if (!this.gcodeContent) return null;
+
+    const lines = this.gcodeContent.split('\n');
+    let foundX = null;
+    let foundY = null;
+
+    for (let i = afterLine; i < lines.length; i++) {
+      const line = lines[i].trim().toUpperCase();
+
+      // Skip empty lines and comments
+      if (!line || line.startsWith(';') || (line.startsWith('(') && line.endsWith(')'))) {
+        continue;
+      }
+
+      // Look for X coordinate
+      if (foundX === null) {
+        const xMatch = line.match(/X([+-]?\d*\.?\d+)/);
+        if (xMatch) {
+          foundX = parseFloat(xMatch[1]);
+        }
+      }
+
+      // Look for Y coordinate
+      if (foundY === null) {
+        const yMatch = line.match(/Y([+-]?\d*\.?\d+)/);
+        if (yMatch) {
+          foundY = parseFloat(yMatch[1]);
+        }
+      }
+
+      // Once we have both X and Y, return
+      if (foundX !== null && foundY !== null) {
+        log(`Found first XY after line ${afterLine}: X${foundX} Y${foundY}`);
+        return { x: foundX, y: foundY };
+      }
+    }
+
+    // Return partial result if we found at least one coordinate
+    if (foundX !== null || foundY !== null) {
+      log(`Found partial XY after line ${afterLine}: X${foundX} Y${foundY}`);
+      return { x: foundX, y: foundY };
+    }
+
+    return null;
   }
 }

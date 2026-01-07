@@ -122,6 +122,61 @@ export class CommandProcessor {
     const currentTool = machineState?.tool ?? this.cncController.lastStatus?.tool ?? 0;
     const sameToolCheck = checkSameToolChange(command, currentTool);
 
+    // Helper to parse machine position
+    const parseMachinePosition = (mpos) => {
+      if (!mpos) return null;
+      let x, y;
+      if (typeof mpos === 'string') {
+        const parts = mpos.split(',');
+        x = parseFloat(parts[0]);
+        y = parseFloat(parts[1]);
+      } else if (typeof mpos === 'object') {
+        x = mpos.x;
+        y = mpos.y;
+      }
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    };
+
+    // Determine return position for M6 tool change
+    // Priority: 1) nextXYPosition from G-code (program execution), 2) MPos (manual invocation)
+    let m6ReturnPosition = null;
+    let m6UseWorkCoordinates = false;
+    if (isValidM6 && !sameToolCheck.isSameTool) {
+      // Check if job-routes passed the next XY position from G-code
+      const nextXY = meta?.nextXYPosition;
+      if (nextXY && (Number.isFinite(nextXY.x) || Number.isFinite(nextXY.y))) {
+        m6ReturnPosition = nextXY;
+        m6UseWorkCoordinates = true;
+        log(`Using next XY from G-code for M6 return: X${nextXY.x} Y${nextXY.y}`);
+      } else {
+        // Fall back to MPos for manual invocation
+        const mpos = machineState?.MPos || this.serverState?.machineState?.MPos;
+        m6ReturnPosition = parseMachinePosition(mpos);
+        if (m6ReturnPosition) {
+          log(`Saved M6 return position (MPos): X${m6ReturnPosition.x.toFixed(3)} Y${m6ReturnPosition.y.toFixed(3)}`);
+        }
+      }
+    }
+
+    // Save original position for return after $TLS
+    let tlsReturnPosition = null;
+    if (isTLSCommand) {
+      const mpos = machineState?.MPos || this.serverState?.machineState?.MPos;
+      tlsReturnPosition = parseMachinePosition(mpos);
+      if (tlsReturnPosition) {
+        log(`Saved TLS return position: X${tlsReturnPosition.x.toFixed(3)} Y${tlsReturnPosition.y.toFixed(3)}`);
+      }
+    }
+
+    // Set isToolChanging flag for $TLS commands
+    if (isTLSCommand) {
+      if (this.serverState.machineState.isToolChanging !== true) {
+        log('Setting isToolChanging -> true ($TLS)');
+        this.serverState.machineState.isToolChanging = true;
+        this.broadcast('server-state-updated', this.serverState);
+      }
+    }
+
     // Set isToolChanging flag only for valid M6 commands that are NOT same-tool changes
     if (isValidM6 && !sameToolCheck.isSameTool) {
       if (this.serverState.machineState.isToolChanging !== true) {
@@ -174,8 +229,27 @@ export class CommandProcessor {
     try {
       const commands = await this.pluginManager.processCommand(command, context);
 
-      // If this is a valid M6 command, insert (MSG, TOOL_CHANGE_COMPLETE) at the end
+      // If this is a valid M6 command, add return-to-position and TOOL_CHANGE_COMPLETE
       if (isValidM6 && !sameToolCheck.isSameTool) {
+        // Add return-to-position command before TOOL_CHANGE_COMPLETE
+        if (m6ReturnPosition) {
+          let returnCmd;
+          if (m6UseWorkCoordinates) {
+            // Use work coordinates (from G-code look-ahead) - G90 ensures absolute mode
+            const xPart = Number.isFinite(m6ReturnPosition.x) ? `X${m6ReturnPosition.x}` : '';
+            const yPart = Number.isFinite(m6ReturnPosition.y) ? `Y${m6ReturnPosition.y}` : '';
+            returnCmd = `G90 G0 ${xPart} ${yPart}`.trim();
+          } else {
+            // Use machine coordinates (MPos fallback for manual invocation)
+            returnCmd = `G53 G21 G0 X${m6ReturnPosition.x.toFixed(3)} Y${m6ReturnPosition.y.toFixed(3)}`;
+          }
+          log(`Adding M6 return command: ${returnCmd}`);
+          commands.push({
+            command: returnCmd,
+            displayCommand: returnCmd,
+            isOriginal: false
+          });
+        }
         commands.push({
           command: '(MSG, TOOL_CHANGE_COMPLETE)',
           displayCommand: null,
@@ -183,8 +257,18 @@ export class CommandProcessor {
         });
       }
 
-      // If this is a $TLS command, insert (MSG, TOOL_CHANGE_COMPLETE) at the end
+      // If this is a $TLS command, add return-to-position and TOOL_CHANGE_COMPLETE
       if (isTLSCommand) {
+        // Add return-to-position command before TOOL_CHANGE_COMPLETE
+        if (tlsReturnPosition) {
+          const returnCmd = `G53 G21 G0 X${tlsReturnPosition.x.toFixed(3)} Y${tlsReturnPosition.y.toFixed(3)}`;
+          log(`Adding TLS return command: ${returnCmd}`);
+          commands.push({
+            command: returnCmd,
+            displayCommand: returnCmd,
+            isOriginal: false
+          });
+        }
         commands.push({
           command: '(MSG, TOOL_CHANGE_COMPLETE)',
           displayCommand: null,
