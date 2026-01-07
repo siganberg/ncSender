@@ -1,5 +1,9 @@
 ## What's Changed
 
+### 🐛 Bug Fixes
+- Fixed incorrect T1 tool detection when comment words contained similar patterns (e.g., "pocket1")
+- Tool detection now properly skips comments and handles edge cases
+
 ### 🔧 Improvements
-- Improved context menu functionality
-- Added custom favicon for better browser tab identification
+- Fixed display order of Tool legends
+- Minor cosmetic improvements
