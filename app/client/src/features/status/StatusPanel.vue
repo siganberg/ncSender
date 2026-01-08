@@ -102,8 +102,8 @@
           <span class="override-label">{{ feedOverride }}%</span>
           <input
             type="range"
-            min="50"
-            max="150"
+            min="0"
+            max="200"
             step="10"
             v-model="feedOverride"
             @mousedown="userInteracting = true"
@@ -124,8 +124,8 @@
           <span class="override-label">{{ spindleOverride }}%</span>
           <input
             type="range"
-            min="50"
-            max="150"
+            min="0"
+            max="200"
             step="10"
             v-model="spindleOverride"
             @mousedown="userInteracting = true"
