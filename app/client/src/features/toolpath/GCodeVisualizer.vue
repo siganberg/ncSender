@@ -5051,6 +5051,8 @@ body.theme-light .dot--rapid {
   flex-direction: column;
   gap: var(--gap-md);
   padding: var(--gap-md);
+  width: 280px;
+  overflow: hidden;
 }
 
 .move-to-header h2 {
@@ -5069,7 +5071,7 @@ body.theme-light .dot--rapid {
 
 .move-to-content {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: var(--gap-sm);
 }
 
