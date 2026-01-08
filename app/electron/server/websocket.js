@@ -582,6 +582,9 @@ export function createWebSocketLayer({
           }
           break;
         }
+        case 'plugin-dialog-response':
+          pluginManager.getEventBus().emit('client:dialog-response', parsed.data);
+          break;
         default:
           log('Received unsupported WebSocket message type:', parsed.type);
           break;

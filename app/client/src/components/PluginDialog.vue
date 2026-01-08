@@ -43,6 +43,7 @@ import { api } from '@/lib/api';
 
 interface PluginDialogData {
   pluginId: string;
+  dialogId?: string;
   title: string;
   content: string;
   options: Record<string, any>;
@@ -106,7 +107,14 @@ const executeScripts = () => {
   });
 };
 
-const closeDialog = () => {
+const closeDialog = (response: any = null) => {
+  // Send response back to server if dialogId exists
+  if (dialogData.value.dialogId) {
+    api.sendWebSocketMessage('plugin-dialog-response', {
+      dialogId: dialogData.value.dialogId,
+      response
+    });
+  }
   show.value = false;
 };
 
@@ -121,7 +129,7 @@ const handlePostMessage = (event: MessageEvent) => {
 
   // Handle close dialog message
   if (event.data.type === 'close-plugin-dialog') {
-    closeDialog();
+    closeDialog(event.data.data);
     return;
   }
 
