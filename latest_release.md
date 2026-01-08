@@ -1,7 +1,7 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added smart return-to-position functionality for improved workflow
+- Feedrate and spindle RPM overrides now support a wider range from 0% to 200%
 
-### 📄 Licensing
-- Updated to dual licensing model (GPL v3 + Commercial options available)
+### 🔧 Improvements
+- UI adjustments for better user experience
