@@ -7,7 +7,7 @@
   <Dialog v-if="show" @close="handleClose" size="small" :close-on-backdrop-click="false">
     <div class="offset-dialog">
       <div class="dialog-header">
-        <h2>Move/Offset Toolpath</h2>
+        <h2>Offset Material</h2>
       </div>
 
       <div class="dialog-content">
@@ -171,7 +171,7 @@ watch(() => props.show, (newVal) => {
 
 <style scoped>
 :deep(.dialog--small) {
-  max-width: 280px;
+  max-width: 320px;
 }
 
 .offset-dialog {
@@ -183,7 +183,7 @@ watch(() => props.show, (newVal) => {
 
 .dialog-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
   text-align: center;
 }
@@ -208,8 +208,8 @@ watch(() => props.show, (newVal) => {
 }
 
 .input-label {
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--color-text);
   text-align: center;
 }
@@ -221,16 +221,16 @@ watch(() => props.show, (newVal) => {
 }
 
 .adjust-btn {
-  padding: 6px 10px;
+  padding: 10px 12px;
   border: none;
   border-radius: 6px;
   background: var(--color-primary, #3b82f6);
   color: white;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
-  min-width: 42px;
+  min-width: 48px;
 }
 
 .adjust-btn:hover {
@@ -243,12 +243,12 @@ watch(() => props.show, (newVal) => {
 
 .offset-input {
   flex: 1;
-  padding: 6px 8px;
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 0.9rem;
+  font-size: 1.1rem;
   text-align: center;
   font-family: var(--font-mono);
   min-width: 70px;
@@ -269,9 +269,9 @@ watch(() => props.show, (newVal) => {
 }
 
 .btn {
-  padding: 8px 16px;
+  padding: 10px 20px;
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   border: none;

@@ -45,7 +45,7 @@
       <div class="menu-section">
         <div class="menu-item" :class="{ disabled: !hasFile }" @click="hasFile && handleOffset()">
           <span class="menu-icon">⤡</span>
-          <span class="menu-label">Move/Offset...</span>
+          <span class="menu-label">Offset Material</span>
         </div>
       </div>
 
@@ -64,14 +64,9 @@
         <div class="menu-divider"></div>
 
         <div class="menu-section">
-          <!-- Coordinate header -->
-          <div class="menu-header">
-            <span class="axis-label">X=</span>{{ worldX }}<span class="coord-spacer"></span><span class="axis-label">Y=</span>{{ worldY }}
-          </div>
-
           <div class="menu-item" @click="handleMoveSpindle">
             <span class="menu-icon">⌖</span>
-            <span class="menu-label">Move Spindle Here</span>
+            <span class="menu-label">Move To</span>
           </div>
         </div>
       </template>
@@ -252,22 +247,5 @@ onUnmounted(() => {
   height: 1px;
   background: var(--color-border);
   margin: 4px 8px;
-}
-
-.menu-header {
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  text-align: center;
-  font-family: var(--font-mono);
-}
-
-.axis-label {
-  color: var(--color-accent);
-}
-
-.coord-spacer {
-  display: inline-block;
-  width: 12px;
 }
 </style>

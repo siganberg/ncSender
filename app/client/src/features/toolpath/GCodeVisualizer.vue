@@ -446,6 +446,50 @@
     @apply="handleOffsetApply"
     @close="showOffsetDialog = false"
   />
+
+  <!-- Move Spindle Dialog -->
+  <Dialog
+    v-if="showMoveSpindleDialog"
+    size="small"
+    :show-header="false"
+    :close-on-backdrop-click="false"
+    @close="showMoveSpindleDialog = false"
+  >
+    <div class="move-to-dialog">
+      <div class="move-to-header">
+        <h2>Move To</h2>
+      </div>
+      <p class="move-to-description">
+        Move spindle to specified machine coordinates. Z will move to safe height first.
+      </p>
+      <div class="move-to-content">
+        <div class="move-to-input-group">
+          <label class="move-to-label">X</label>
+          <input
+            type="number"
+            step="0.001"
+            class="move-to-input"
+            v-model.number="moveSpindleX"
+            @keydown.enter="executeMoveSpindle"
+          />
+        </div>
+        <div class="move-to-input-group">
+          <label class="move-to-label">Y</label>
+          <input
+            type="number"
+            step="0.001"
+            class="move-to-input"
+            v-model.number="moveSpindleY"
+            @keydown.enter="executeMoveSpindle"
+          />
+        </div>
+      </div>
+      <div class="move-to-actions">
+        <button class="move-to-btn move-to-btn-secondary" @click="showMoveSpindleDialog = false">Cancel</button>
+        <button class="move-to-btn move-to-btn-primary" @click="executeMoveSpindle">Move</button>
+      </div>
+    </div>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -628,6 +672,9 @@ const transformMenuY = ref(0);
 const worldCoordX = ref(0);
 const worldCoordY = ref(0);
 const showOffsetDialog = ref(false);
+const showMoveSpindleDialog = ref(false);
+const moveSpindleX = ref(0);
+const moveSpindleY = ref(0);
 const isTransforming = ref(false);
 
 // Can reset if the current file is temporary (has been transformed) and has a source file
@@ -1990,14 +2037,23 @@ const handleTransformReset = async () => {
   }
 };
 
-const handleMoveSpindleHere = async () => {
+const handleMoveSpindleHere = () => {
   if (!storeIsConnected.value) return;
+  moveSpindleX.value = parseFloat(worldCoordX.value.toFixed(3));
+  moveSpindleY.value = parseFloat(worldCoordY.value.toFixed(3));
+  showMoveSpindleDialog.value = true;
+};
+
+const executeMoveSpindle = async () => {
+  if (!storeIsConnected.value) return;
+
+  showMoveSpindleDialog.value = false;
 
   try {
     // First move Z to machine Z0 for safe height (top of Z travel)
     await api.sendCommand(`G53 G0 Z0`);
     // Then rapid move to target XY in machine coordinates
-    await api.sendCommand(`G53 G0 X${worldCoordX.value} Y${worldCoordY.value}`);
+    await api.sendCommand(`G53 G0 X${moveSpindleX.value} Y${moveSpindleY.value}`);
   } catch (error) {
     console.error('Error moving spindle:', error);
   }
@@ -4987,5 +5043,101 @@ body.theme-light .dot--rapid {
 
 :global(.theme-light) .split-divider {
   background: rgba(0, 0, 0, 0.15);
+}
+
+/* Move To Dialog */
+.move-to-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+}
+
+.move-to-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.move-to-description {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.move-to-content {
+  display: flex;
+  flex-direction: row;
+  gap: var(--gap-sm);
+}
+
+.move-to-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  flex: 1;
+}
+
+.move-to-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.move-to-input {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 1.1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+.move-to-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.move-to-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--gap-sm);
+  padding-top: var(--gap-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.move-to-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.move-to-btn-primary {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+
+.move-to-btn-primary:hover {
+  background: var(--color-primary-hover, #2563eb);
+}
+
+.move-to-btn-secondary {
+  background: var(--color-surface-secondary, rgba(255,255,255,0.1));
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.move-to-btn-secondary:hover {
+  background: var(--color-surface-hover, rgba(255,255,255,0.15));
 }
 </style>
