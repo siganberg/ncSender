@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🔧 Improvements
-- Renamed "Move/Offset" to "Offset Material" in the context menu for clearer terminology
+### 🐛 Bug Fixes
+- Fixed layout of the Move To window
