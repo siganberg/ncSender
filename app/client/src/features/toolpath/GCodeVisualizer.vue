@@ -4411,7 +4411,7 @@ input:checked + .slider:before {
 .viewport__canvas {
   flex: 1;
   position: relative;
-  border-radius: 8px;
+  border-radius: var(--radius-medium);
   border: 1px solid var(--color-border);
   background: repeating-linear-gradient(
     45deg,
@@ -4428,7 +4428,7 @@ input:checked + .slider:before {
 }
 
 .viewport__canvas canvas {
-  border-radius: 8px;
+  border-radius: var(--radius-medium);
   width: 100% !important;
   height: 100% !important;
 }
@@ -4550,9 +4550,9 @@ body.theme-light .dot--rapid {
 
 @media (max-width: 1279px) and (orientation: portrait) {
   .viewport {
-    height: 45vh;
+    height: 50vh;
     min-height: 300px;
-    max-height: 45vh;
+    max-height: 50vh;
   }
 }
 
@@ -4564,9 +4564,9 @@ body.theme-light .dot--rapid {
 
 @media (max-width: 959px) and (orientation: portrait) {
   .viewport {
-    height: 40vh;
+    height: 50vh;
     min-height: 280px;
-    max-height: 40vh;
+    max-height: 50vh;
   }
 }
 

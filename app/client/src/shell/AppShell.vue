@@ -43,11 +43,11 @@
 }
 
 .shell__top {
-  padding: var(--gap-sm) var(--gap-md) 0;
+  padding: var(--gap-sm) var(--gap-sm) 0;
 }
 
 .shell__main {
-  padding: 0 var(--gap-md);
+  padding: 0 var(--gap-sm);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gap-md);
@@ -58,14 +58,14 @@
 .shell__content {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(550px, 1fr);
-  gap: var(--gap-md);
+  gap: var(--gap-sm);
   height: 100%;
   min-height: 0; /* Allow shrinking */
   overflow: hidden;
 }
 
 .shell__utility {
-  padding: 0 var(--gap-md) var(--gap-sm);
+
 }
 
 @media (max-width: 1279px) {
