@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed layout of the Move To window
+### ✨ New Features
+- Added ability to set work offset without moving the spindle by double-clicking the XYZ axis cards
