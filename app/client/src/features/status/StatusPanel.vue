@@ -24,17 +24,29 @@
         <!-- X Card -->
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
-          @mousedown="startLongPress('x', $event)"
+          @mousedown="editingAxis !== 'x' && startLongPress('x', $event)"
           @mouseup="endLongPress('x')"
           @mouseleave="cancelLongPress('x')"
-          @touchstart.prevent="startLongPress('x', $event)"
+          @touchstart.prevent="editingAxis !== 'x' && startLongPress('x', $event)"
           @touchend="endLongPress('x')"
           @touchcancel="cancelLongPress('x')"
         >
           <div class="press-progress" :style="{ width: `${pressState['x']?.progress || 0}%` }"></div>
           <span class="axis-label">X</span>
           <div class="coord-values">
-            <div class="work-coord">{{ formatCoordinate(axisValues.x, appStore.unitsPreference.value) }}</div>
+            <div v-if="editingAxis === 'x'" class="work-coord-edit">
+              <input
+                ref="editInputRef"
+                type="number"
+                step="0.001"
+                v-model="editValue"
+                class="axis-edit-input"
+                @keydown="handleEditKeydown"
+                @blur="cancelEditAxis"
+              />
+              <button class="axis-edit-confirm" @mousedown.prevent="confirmEditAxis">✓</button>
+            </div>
+            <div v-else class="work-coord" @dblclick="startEditAxis('x')">{{ formatCoordinate(axisValues.x, appStore.unitsPreference.value) }}</div>
             <div class="machine-coord">{{ formatCoordinate(machineValues.x, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
@@ -56,17 +68,29 @@
         <!-- Y Card -->
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
-          @mousedown="startLongPress('y', $event)"
+          @mousedown="editingAxis !== 'y' && startLongPress('y', $event)"
           @mouseup="endLongPress('y')"
           @mouseleave="cancelLongPress('y')"
-          @touchstart.prevent="startLongPress('y', $event)"
+          @touchstart.prevent="editingAxis !== 'y' && startLongPress('y', $event)"
           @touchend="endLongPress('y')"
           @touchcancel="cancelLongPress('y')"
         >
           <div class="press-progress" :style="{ width: `${pressState['y']?.progress || 0}%` }"></div>
           <span class="axis-label">Y</span>
           <div class="coord-values">
-            <div class="work-coord">{{ formatCoordinate(axisValues.y, appStore.unitsPreference.value) }}</div>
+            <div v-if="editingAxis === 'y'" class="work-coord-edit">
+              <input
+                ref="editInputRef"
+                type="number"
+                step="0.001"
+                v-model="editValue"
+                class="axis-edit-input"
+                @keydown="handleEditKeydown"
+                @blur="cancelEditAxis"
+              />
+              <button class="axis-edit-confirm" @mousedown.prevent="confirmEditAxis">✓</button>
+            </div>
+            <div v-else class="work-coord" @dblclick="startEditAxis('y')">{{ formatCoordinate(axisValues.y, appStore.unitsPreference.value) }}</div>
             <div class="machine-coord">{{ formatCoordinate(machineValues.y, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
@@ -74,17 +98,29 @@
         <!-- Z Card -->
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
-          @mousedown="startLongPress('z', $event)"
+          @mousedown="editingAxis !== 'z' && startLongPress('z', $event)"
           @mouseup="endLongPress('z')"
           @mouseleave="cancelLongPress('z')"
-          @touchstart.prevent="startLongPress('z', $event)"
+          @touchstart.prevent="editingAxis !== 'z' && startLongPress('z', $event)"
           @touchend="endLongPress('z')"
           @touchcancel="cancelLongPress('z')"
         >
           <div class="press-progress" :style="{ width: `${pressState['z']?.progress || 0}%` }"></div>
           <span class="axis-label">Z</span>
           <div class="coord-values">
-            <div class="work-coord">{{ formatCoordinate(axisValues.z, appStore.unitsPreference.value) }}</div>
+            <div v-if="editingAxis === 'z'" class="work-coord-edit">
+              <input
+                ref="editInputRef"
+                type="number"
+                step="0.001"
+                v-model="editValue"
+                class="axis-edit-input"
+                @keydown="handleEditKeydown"
+                @blur="cancelEditAxis"
+              />
+              <button class="axis-edit-confirm" @mousedown.prevent="confirmEditAxis">✓</button>
+            </div>
+            <div v-else class="work-coord" @dblclick="startEditAxis('z')">{{ formatCoordinate(axisValues.z, appStore.unitsPreference.value) }}</div>
             <div class="machine-coord">{{ formatCoordinate(machineValues.z, appStore.unitsPreference.value) }}</div>
           </div>
         </div>
@@ -180,7 +216,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
-import { api, sendRealtime, REALTIME, zeroAxis, zeroXY } from './api';
+import { api, sendRealtime, REALTIME, zeroAxis, zeroXY, setAxisValue } from './api';
 import { useStatusStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import { formatCoordinate, formatFeedRate, getFeedRateUnitLabel } from '@/lib/units';
@@ -229,6 +265,44 @@ const machineValues = computed(() => ({
   y: Number(props.status.machineCoords.y ?? 0),
   z: Number(props.status.machineCoords.z ?? 0)
 }) as Record<string, number>);
+
+// Axis value editing state
+const editingAxis = ref<'x' | 'y' | 'z' | null>(null);
+const editValue = ref('');
+const editInputRef = ref<HTMLInputElement | null>(null);
+
+const startEditAxis = (axis: 'x' | 'y' | 'z') => {
+  if (axisControlsDisabled.value) return;
+  editingAxis.value = axis;
+  editValue.value = axisValues.value[axis].toFixed(3);
+  setTimeout(() => {
+    editInputRef.value?.focus();
+    editInputRef.value?.select();
+  }, 0);
+};
+
+const confirmEditAxis = async () => {
+  if (!editingAxis.value) return;
+  const value = parseFloat(editValue.value);
+  if (!isNaN(value)) {
+    const axis = editingAxis.value.toUpperCase() as 'X' | 'Y' | 'Z';
+    await setAxisValue(axis, value);
+  }
+  cancelEditAxis();
+};
+
+const cancelEditAxis = () => {
+  editingAxis.value = null;
+  editValue.value = '';
+};
+
+const handleEditKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter') {
+    confirmEditAxis();
+  } else if (e.key === 'Escape') {
+    cancelEditAxis();
+  }
+};
 
 // Override percentages (100% = normal speed)
 const feedOverride = ref(100);
@@ -662,6 +736,54 @@ h2, h3 {
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.1;
+  cursor: pointer;
+}
+
+.work-coord-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.axis-edit-input {
+  width: 80px;
+  padding: 4px 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  text-align: center;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.axis-edit-input::-webkit-inner-spin-button,
+.axis-edit-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.axis-edit-input:focus {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.axis-edit-confirm {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-primary, #3b82f6);
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.axis-edit-confirm:hover {
+  background: var(--color-primary-hover, #2563eb);
 }
 
 .machine-coord {

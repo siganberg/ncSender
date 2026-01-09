@@ -61,4 +61,10 @@ export function zeroAxis(axis: 'X'|'Y'|'Z'|'A') {
   return api.sendCommandViaWebSocket({ command: `G10 L20 ${a}0`, displayCommand: `G10 L20 ${a}0`, meta: { sourceId: 'client' } });
 }
 
+export function setAxisValue(axis: 'X'|'Y'|'Z'|'A', value: number) {
+  const a = String(axis).toUpperCase();
+  const cmd = `G10 L20 ${a}${value}`;
+  return api.sendCommandViaWebSocket({ command: cmd, displayCommand: cmd, meta: { sourceId: 'client' } });
+}
+
 export { api };
