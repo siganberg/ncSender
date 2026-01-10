@@ -22,7 +22,7 @@ export const zParkHeight = 4;
 
 export const getZProbeRoutine = (zOffset = 0) => {
   return [
-    '; Probe Z',
+    '(Probe Z)',
     `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-25 F200',
@@ -47,7 +47,7 @@ export const getXProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
   const moveAway = isLeft ? -4 : 4;
 
   return [
-    `; Probe X - ${selectedSide}`,
+    `(Probe X - ${selectedSide})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 X0',
     'G91 G21',
@@ -73,7 +73,7 @@ export const getYProbeRoutine = ({ selectedSide, toolDiameter = 6 }) => {
   const moveAway = isFront ? -4 : 4;
 
   return [
-    `; Probe Y - ${selectedSide}`,
+    `(Probe Y - ${selectedSide})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 Y0',
     'G91 G21',
@@ -109,7 +109,7 @@ export const getXYProbeRoutine = ({ selectedCorner, toolDiameter = 6, skipPrepMo
   const zRetract = zPlunge + zParkHeight;
 
   const code = [
-    `; Probe XY - ${selectedCorner}`,
+    `(Probe XY - ${selectedCorner})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21',
   ];
@@ -186,7 +186,7 @@ export const getCenterInnerRoutine = ({ xDimension, yDimension, toolDiameter = 2
   const safeRapidY = halfY - toolDiameter - safeDistane;
 
   const code = [
-    '; Probing Center - Inner',
+    '(Probing Center - Inner)',
     `#<return_units> = [20 + #<_metric>]`,
     `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,
@@ -271,7 +271,7 @@ export const getCenterOuterRoutine = ({ xDimension, yDimension, toolDiameter = 2
   }
 
   code.push(
-    '; Probing Center - Outer',
+    '(Probing Center - Outer)',
     `#<return_units> = [20 + #<_metric>]`,
     `#<X_SIZE> = ${xDimension} (Estimated X dimension, mm)`,
     `#<Y_SIZE> = ${yDimension} (Estimated Y dimension, mm)`,

@@ -22,7 +22,7 @@ export const zParkHeight = 4;
 
 export const getZProbeRoutine = (zThickness = 15) => {
   return [
-    '; Probe Z - Standard Block',
+    '(Probe Z - Standard Block)',
     `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-30 F200',
@@ -46,7 +46,7 @@ export const getXProbeRoutine = ({ selectedSide, xyThickness = 10, bitDiameter =
   const moveAway = isLeft ? -4 : 4;
 
   return [
-    `; Probe X - ${selectedSide} (Standard Block, ${bitDiameter}mm bit)`,
+    `(Probe X - ${selectedSide}, Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 X0',
     'G91 G21',
@@ -71,7 +71,7 @@ export const getYProbeRoutine = ({ selectedSide, xyThickness = 10, bitDiameter =
   const moveAway = isFront ? -4 : 4;
 
   return [
-    `; Probe Y - ${selectedSide} (Standard Block, ${bitDiameter}mm bit)`,
+    `(Probe Y - ${selectedSide}, Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G10 L20 Y0',
     'G91 G21',
@@ -104,7 +104,7 @@ export const getXYProbeRoutine = ({ selectedCorner, xyThickness = 10, bitDiamete
   const yMove = isBottom ? (xyThickness + bitDiameter + 5) : -(xyThickness + bitDiameter + 5);
 
   const code = [
-    `; Probe XY - ${selectedCorner} (Standard Block, ${bitDiameter}mm bit)`,
+    `(Probe XY - ${selectedCorner}, Standard Block, ${bitDiameter}mm bit)`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21',
   ];

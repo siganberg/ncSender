@@ -202,18 +202,18 @@ export function generateResumeSequence(targetState, options = {}) {
 
   const commands = [];
 
-  commands.push(`; Resume sequence for starting from line`);
+  commands.push(`(Resume sequence for starting from line)`);
 
   commands.push('G53 G0 Z0');
 
   const needsToolChange = expectedTool !== null && currentTool !== null && expectedTool !== currentTool;
   if (needsToolChange) {
-    commands.push(`; Tool change: T${currentTool} -> T${expectedTool}`);
+    commands.push(`(Tool change: T${currentTool} -> T${expectedTool})`);
     commands.push(`M6 T${expectedTool}`);
   }
 
   if (isStartingAtToolChange) {
-    commands.push('; Starting at tool change - restoring modal states');
+    commands.push('(Starting at tool change - restoring modal states)');
 
     if (targetState.units) {
       commands.push(targetState.units);
@@ -231,7 +231,7 @@ export function generateResumeSequence(targetState, options = {}) {
       commands.push(targetState.wcs);
     }
 
-    commands.push('; End resume sequence');
+    commands.push('(End resume sequence)');
     return commands;
   }
 
@@ -289,14 +289,14 @@ export function generateResumeSequence(targetState, options = {}) {
     commands.push(`G0 Z${approachZ}`);
     commands.push(`G1 Z${pos.z} F${plungeFeedRate}`);
   } else {
-    commands.push('; XY/Z positioning skipped - starting near tool change');
+    commands.push('(XY/Z positioning skipped - starting near tool change)');
   }
 
   if (targetState.feedRate > 0) {
     commands.push(`F${targetState.feedRate}`);
   }
 
-  commands.push('; End resume sequence');
+  commands.push('(End resume sequence)');
 
   return commands;
 }
