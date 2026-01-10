@@ -111,6 +111,7 @@ const initListeners = () => {
   register(updates.onError, (payload) => {
     state.isChecking = false;
     state.isDownloading = false;
+    state.isInstalling = false;
     state.statusMessage = 'Update error';
     state.error = payload?.message ?? 'Unknown update error';
   });
