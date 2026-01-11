@@ -59,6 +59,7 @@ class PluginManager {
     this.configUIs = new Map();
     this.executionContextStack = new Map();
     this.dialogResolvers = new Map();
+    this.pendingDialogs = new Map(); // Track pending dialogs for reconnecting clients
   }
 
   async initialize({ cncController, broadcast, sendWsMessage, serverState } = {}) {
@@ -120,7 +121,13 @@ class PluginManager {
         // Resolve the promise
         resolver(response);
         this.dialogResolvers.delete(dialogId);
+        this.pendingDialogs.delete(dialogId);
         log(`Resolved dialog ${dialogId} with response:`, response);
+
+        // Broadcast close to all clients (for multi-client sync)
+        if (this.broadcast) {
+          this.broadcast('plugin:close-dialog', { dialogId });
+        }
       } else {
         log(`Warning: No resolver found for dialog ${dialogId}`);
       }
@@ -334,13 +341,17 @@ class PluginManager {
 
           // Store promise resolver
           this.dialogResolvers.set(dialogId, resolve);
-          
+
+          // Store pending dialog for reconnecting clients
+          this.pendingDialogs.set(dialogId, payload);
+
           // Auto-cleanup after 5 minutes
           const timeoutId = setTimeout(() => {
             const resolver = this.dialogResolvers.get(dialogId);
             if (resolver) {
               resolver(null);
               this.dialogResolvers.delete(dialogId);
+              this.pendingDialogs.delete(dialogId);
             }
           }, 300000);
           
@@ -690,6 +701,10 @@ class PluginManager {
 
   getEventBus() {
     return this.eventBus;
+  }
+
+  getPendingDialogs() {
+    return Array.from(this.pendingDialogs.values());
   }
 
   async processCommand(command, context = {}) {
