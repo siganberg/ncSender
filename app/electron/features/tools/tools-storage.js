@@ -145,7 +145,19 @@ export async function getToolById(id) {
  */
 export async function addTool(toolData) {
   const tools = await loadTools();
-  const newId = generateToolId(tools);
+  
+  // Use provided ID if valid, otherwise generate a new one
+  let newId;
+  if (toolData.id && Number.isInteger(toolData.id) && toolData.id > 0) {
+    // Check if ID is already in use
+    const existingTool = tools.find(t => t.id === toolData.id);
+    if (existingTool) {
+      throw new Error(`Tool ID ${toolData.id} already exists`);
+    }
+    newId = toolData.id;
+  } else {
+    newId = generateToolId(tools);
+  }
 
   const newTool = createDefaultTool(newId, toolData.toolNumber);
   Object.assign(newTool, toolData);

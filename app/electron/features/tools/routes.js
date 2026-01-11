@@ -133,21 +133,48 @@ export function createToolsRoutes(broadcast) {
         return res.status(404).json({ error: 'Tool not found' });
       }
 
-      // Validate
-      const errors = validateTool(toolData, allTools, originalTool);
-      if (errors.length > 0) {
-        return res.status(400).json({ error: 'Validation failed', errors });
+      // Check if ID is being changed
+      const newId = toolData.id;
+      const isIdChanging = newId !== undefined && newId !== id;
+
+      if (isIdChanging) {
+        // If ID is changing, we need to delete the old tool and create a new one
+        // First validate the new tool data with the new ID
+        const errors = validateTool(toolData, allTools, null);
+        if (errors.length > 0) {
+          return res.status(400).json({ error: 'Validation failed', errors });
+        }
+
+        // Delete the old tool
+        await deleteTool(id);
+
+        // Create new tool with the new ID
+        const newTool = await addTool(toolData);
+
+        // Broadcast update
+        const updatedTools = await getAllTools();
+        broadcast('tools-updated', updatedTools);
+
+        log('Tool ID changed:', id, '->', newId);
+        res.json(newTool);
+      } else {
+        // Normal update - ID is not changing
+        // Validate
+        const errors = validateTool(toolData, allTools, originalTool);
+        if (errors.length > 0) {
+          return res.status(400).json({ error: 'Validation failed', errors });
+        }
+
+        // Update tool
+        const updatedTool = await updateTool(id, toolData);
+
+        // Broadcast update
+        const updatedTools = await getAllTools();
+        broadcast('tools-updated', updatedTools);
+
+        log('Tool updated:', id);
+        res.json(updatedTool);
       }
-
-      // Update tool
-      const updatedTool = await updateTool(id, toolData);
-
-      // Broadcast update
-      const updatedTools = await getAllTools();
-      broadcast('tools-updated', updatedTools);
-
-      log('Tool updated:', id);
-      res.json(updatedTool);
     } catch (error) {
       log('Error updating tool:', error);
       res.status(500).json({ error: 'Failed to update tool' });

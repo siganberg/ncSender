@@ -25,7 +25,7 @@
           type="text"
           class="tool-search"
           v-model="searchQuery"
-          placeholder="Search tools by T#, name, or type..."
+          placeholder="Search tools by ID, T#, name, or type..."
         >
         <button class="import-export-button" @click="importTools">Import</button>
         <button class="import-export-button" @click="exportTools">Export</button>
@@ -43,6 +43,18 @@
         <table class="tools-table">
         <thead>
           <tr>
+            <th class="col-tool-id">
+              <button
+                class="column-header"
+                :class="{ 'column-header--active': sortBy === 'id' }"
+                @click="toggleSort('id')"
+              >
+                <span>ID</span>
+                <svg v-if="sortBy === 'id'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
             <th class="col-tool-number">
               <button
                 class="column-header"
@@ -108,6 +120,7 @@
         </thead>
         <tbody>
           <tr v-for="tool in filteredTools" :key="tool.id">
+            <td class="col-tool-id">{{ tool.id }}</td>
             <td class="col-tool-number">
               <select 
                 class="tool-number-select"
@@ -183,19 +196,43 @@
         <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
         <form @submit.prevent="saveTool" class="modal-form">
           <div class="modal-body">
-            <!-- Tool Number -->
-            <div class="form-group">
-              <label class="form-label">Tool Number (T#)</label>
-              <select class="form-select" v-model="toolForm.toolNumber">
-                <option :value="null">None (Not in magazine)</option>
-                <option
-                  v-for="num in maxToolCount"
-                  :key="num"
-                  :value="num"
-                >
-                  T{{ num }}{{ getToolNumberInfo(num) }}
-                </option>
-              </select>
+            <!-- Tool ID and Tool Number -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label required">Tool ID</label>
+                <div class="form-input-wrapper">
+                  <input
+                    type="number"
+                    class="form-input"
+                    :class="{ 'form-input--error': formErrors.id }"
+                    v-model.number="toolForm.id"
+                    min="1"
+                    step="1"
+                    placeholder="Auto-generated if not specified"
+                    required
+                  >
+                  <span v-if="formErrors.id" class="form-error-tooltip">
+                    <svg class="form-error-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                    </svg>
+                    {{ formErrors.id }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Tool Number (T#)</label>
+                <select class="form-select" v-model="toolForm.toolNumber">
+                  <option :value="null">None (Not in magazine)</option>
+                  <option
+                    v-for="num in maxToolCount"
+                    :key="num"
+                    :value="num"
+                  >
+                    T{{ num }}{{ getToolNumberInfo(num) }}
+                  </option>
+                </select>
+              </div>
             </div>
 
             <!-- Tool Name -->
@@ -514,7 +551,7 @@ const importFileInput = ref<HTMLInputElement | null>(null);
 const formErrors = ref<Record<string, string>>({});
 
 // Sorting state
-type SortField = 'toolNumber' | 'name' | 'type' | 'diameter' | 'tlo';
+type SortField = 'id' | 'toolNumber' | 'name' | 'type' | 'diameter' | 'tlo';
 type SortOrder = 'asc' | 'desc';
 const sortBy = ref<SortField>('toolNumber');
 const sortOrder = ref<SortOrder>('asc');
@@ -610,6 +647,7 @@ const filteredTools = computed(() => {
       const searchTerm = query.startsWith('t') ? query.substring(1) : query;
 
       return toolNum.includes(searchTerm) ||
+        tool.id.toString().includes(query) ||
         tool.name.toLowerCase().includes(query) ||
         tool.type.toLowerCase().includes(query);
     });
@@ -619,7 +657,9 @@ const filteredTools = computed(() => {
   result = [...result].sort((a, b) => {
     let comparison = 0;
     
-    if (sortBy.value === 'toolNumber') {
+    if (sortBy.value === 'id') {
+      comparison = a.id - b.id;
+    } else if (sortBy.value === 'toolNumber') {
       const aVal = a.toolNumber !== null && a.toolNumber !== undefined ? a.toolNumber : 9999;
       const bVal = b.toolNumber !== null && b.toolNumber !== undefined ? b.toolNumber : 9999;
       comparison = aVal - bVal;
@@ -885,7 +925,14 @@ const updateToolNumber = async (tool: Tool, newValue: string | null) => {
 
 const addNewTool = () => {
   editingTool.value = null;
-  toolForm.value = defaultToolForm();
+  const form = defaultToolForm();
+  // Generate a new ID if not provided
+  if (tools.value.length > 0) {
+    form.id = Math.max(...tools.value.map(t => t.id)) + 1;
+  } else {
+    form.id = 1;
+  }
+  toolForm.value = form;
   formErrors.value = {};
   showToolForm.value = true;
 };
@@ -919,6 +966,22 @@ const closeToolForm = () => {
 const validateToolForm = () => {
   formErrors.value = {};
   let isValid = true;
+
+  // Validate Tool ID
+  if (!toolForm.value.id || !Number.isInteger(toolForm.value.id) || toolForm.value.id < 1) {
+    formErrors.value.id = 'Tool ID must be a positive integer';
+    isValid = false;
+  } else {
+    // Check for duplicate ID (excluding current tool if editing)
+    const duplicateTool = tools.value.find(t => 
+      t.id === toolForm.value.id && 
+      (!editingTool.value || t.id !== editingTool.value.id)
+    );
+    if (duplicateTool) {
+      formErrors.value.id = `Tool ID ${toolForm.value.id} is already in use`;
+      isValid = false;
+    }
+  }
 
   if (!toolForm.value.name || toolForm.value.name.trim() === '') {
     formErrors.value.name = 'Tool name is required';
@@ -1467,6 +1530,13 @@ onMounted(async () => {
   background: var(--color-border);
 }
 
+.col-tool-id {
+  width: 8%;
+  min-width: 80px;
+  text-align: center;
+  font-weight: 500;
+}
+
 .col-tool-number {
   width: 12%;
   min-width: 120px;
@@ -1524,7 +1594,7 @@ onMounted(async () => {
 }
 
 .col-description {
-  width: 32%;
+  width: 28%;
 }
 
 .col-type {
@@ -1700,6 +1770,8 @@ onMounted(async () => {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+  overflow: visible;
+  position: relative;
 }
 
 .modal-form {
@@ -1712,7 +1784,9 @@ onMounted(async () => {
 .modal-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: visible;
   padding: 0 24px;
+  position: relative;
 }
 
 .modal-header {
@@ -1781,10 +1855,64 @@ onMounted(async () => {
   min-height: 80px;
 }
 
+.form-input-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+.form-input--error {
+  border-color: #ff9800 !important;
+}
+
+.form-input--error:focus {
+  border-color: #ff9800 !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ff9800 20%, transparent);
+}
+
 .form-error {
   color: var(--color-error);
   font-size: 0.85rem;
   margin-top: 4px;
+}
+
+.form-error-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #ff9800;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 100000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-error-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  border: 5px solid transparent;
+  border-bottom-color: #ff9800;
+}
+
+.form-error-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.form-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  font-style: italic;
 }
 
 .modal-footer {
