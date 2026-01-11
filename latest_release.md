@@ -1,8 +1,8 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed formatting issue on terminal display
+### ✨ New Features
+- Added Discord server for community support and discussions
+- Added dialog response handling for event-triggered plugin dialogs
 
-### 🔧 Improvements
-- Made G-code comments consistent by using parentheses instead of semicolons
-- Removed LED cartoon image from the interface
+### 🐛 Bug Fixes
+- Fixed issue with retry installation
