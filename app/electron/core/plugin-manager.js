@@ -58,6 +58,8 @@ class PluginManager {
     this.toolMenuItems = [];
     this.configUIs = new Map();
     this.executionContextStack = new Map();
+    this.dialogResolvers = new Map();
+    this.pendingDialogs = new Map(); // Track pending dialogs for reconnecting clients
   }
 
   async initialize({ cncController, broadcast, sendWsMessage, serverState } = {}) {
@@ -101,6 +103,33 @@ class PluginManager {
             log('Failed to save plugin message to settings:', error);
           }
         }
+      }
+    });
+
+    // Register handler for dialog responses from clients
+    this.eventBus.on('client:dialog-response', (data) => {
+      const { dialogId, response } = data;
+      const resolver = this.dialogResolvers.get(dialogId);
+      if (resolver) {
+        // Clear timeout
+        const timeoutId = this.dialogResolvers.get(`${dialogId}_timeout`);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          this.dialogResolvers.delete(`${dialogId}_timeout`);
+        }
+        
+        // Resolve the promise
+        resolver(response);
+        this.dialogResolvers.delete(dialogId);
+        this.pendingDialogs.delete(dialogId);
+        log(`Resolved dialog ${dialogId} with response:`, response);
+
+        // Broadcast close to all clients (for multi-client sync)
+        if (this.broadcast) {
+          this.broadcast('plugin:close-dialog', { dialogId });
+        }
+      } else {
+        log(`Warning: No resolver found for dialog ${dialogId}`);
       }
     });
 
@@ -299,28 +328,51 @@ class PluginManager {
       },
 
       showDialog: (title, content, options = {}) => {
-        const payload = {
-          pluginId,
-          title,
-          content,
-          options
-        };
+        return new Promise((resolve) => {
+          const dialogId = `${pluginId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          const payload = {
+            pluginId,
+            dialogId,
+            title,
+            content,
+            options
+          };
 
-        const stack = this.executionContextStack.get(pluginId);
-        const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
-        const isClientOnly = activeContext?.clientOnly || false;
-        const executionWs = activeContext?.ws || null;
+          // Store promise resolver
+          this.dialogResolvers.set(dialogId, resolve);
 
-        // If tool is marked as clientOnly and we have a WebSocket client from execution context
-        if (isClientOnly && executionWs && this.sendWsMessage) {
-          this.sendWsMessage(executionWs, 'plugin:show-dialog', payload);
-        } else {
-          // Otherwise broadcast to all clients (default behavior)
-          if (!this.broadcast) {
-            throw new Error('Broadcast function not available');
+          // Store pending dialog for reconnecting clients
+          this.pendingDialogs.set(dialogId, payload);
+
+          // Auto-cleanup after 5 minutes
+          const timeoutId = setTimeout(() => {
+            const resolver = this.dialogResolvers.get(dialogId);
+            if (resolver) {
+              resolver(null);
+              this.dialogResolvers.delete(dialogId);
+              this.pendingDialogs.delete(dialogId);
+            }
+          }, 300000);
+          
+          this.dialogResolvers.set(`${dialogId}_timeout`, timeoutId);
+
+          const stack = this.executionContextStack.get(pluginId);
+          const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
+          const isClientOnly = activeContext?.clientOnly || false;
+          const executionWs = activeContext?.ws || null;
+
+          // If tool is marked as clientOnly and we have a WebSocket client from execution context
+          if (isClientOnly && executionWs && this.sendWsMessage) {
+            this.sendWsMessage(executionWs, 'plugin:show-dialog', payload);
+          } else {
+            // Otherwise broadcast to all clients (default behavior)
+            if (!this.broadcast) {
+              throw new Error('Broadcast function not available');
+            }
+            this.broadcast('plugin:show-dialog', payload);
           }
-          this.broadcast('plugin:show-dialog', payload);
-        }
+        });
       },
 
       showModal: (content, options = {}) => {
@@ -649,6 +701,10 @@ class PluginManager {
 
   getEventBus() {
     return this.eventBus;
+  }
+
+  getPendingDialogs() {
+    return Array.from(this.pendingDialogs.values());
   }
 
   async processCommand(command, context = {}) {

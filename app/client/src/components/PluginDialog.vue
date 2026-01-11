@@ -43,6 +43,7 @@ import { api } from '@/lib/api';
 
 interface PluginDialogData {
   pluginId: string;
+  dialogId?: string;
   title: string;
   content: string;
   options: Record<string, any>;
@@ -106,7 +107,14 @@ const executeScripts = () => {
   });
 };
 
-const closeDialog = () => {
+const closeDialog = (response: any = null) => {
+  // Send response back to server if dialogId exists
+  if (dialogData.value.dialogId) {
+    api.sendWebSocketMessage('plugin-dialog-response', {
+      dialogId: dialogData.value.dialogId,
+      response
+    });
+  }
   show.value = false;
 };
 
@@ -121,7 +129,7 @@ const handlePostMessage = (event: MessageEvent) => {
 
   // Handle close dialog message
   if (event.data.type === 'close-plugin-dialog') {
-    closeDialog();
+    closeDialog(event.data.data);
     return;
   }
 
@@ -140,6 +148,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 let serverStateUnsubscribe: (() => void) | null = null;
 let cncDataUnsubscribe: (() => void) | null = null;
+let closeDialogUnsubscribe: (() => void) | null = null;
 
 const forwardServerState = (state: any) => {
   if (!show.value) return;
@@ -161,6 +170,13 @@ const forwardCNCData = (data: any) => {
   }, '*');
 };
 
+const handleCloseDialog = (data: { dialogId: string }) => {
+  // Close dialog if it matches the current dialog (multi-client sync)
+  if (show.value && dialogData.value.dialogId === data.dialogId) {
+    show.value = false;
+  }
+};
+
 onMounted(() => {
   // Listen for plugin:show-dialog events from WebSocket
   unsubscribe = api.on('plugin:show-dialog', handlePluginDialog);
@@ -170,6 +186,9 @@ onMounted(() => {
 
   // Subscribe to cnc-data events and forward to plugin
   cncDataUnsubscribe = api.on('cnc-data', forwardCNCData);
+
+  // Listen for close-dialog events (multi-client sync)
+  closeDialogUnsubscribe = api.on('plugin:close-dialog', handleCloseDialog);
 
   // Listen for postMessage events from dialog iframe
   window.addEventListener('message', handlePostMessage);
@@ -185,6 +204,9 @@ onBeforeUnmount(() => {
   }
   if (cncDataUnsubscribe) {
     cncDataUnsubscribe();
+  }
+  if (closeDialogUnsubscribe) {
+    closeDialogUnsubscribe();
   }
   window.removeEventListener('message', handlePostMessage);
   window.removeEventListener('keydown', handleKeydown);

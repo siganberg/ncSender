@@ -107,7 +107,7 @@ ctx.getSettings()     // Get plugin settings
 ctx.setSettings(obj)  // Save plugin settings
 
 // UI Integration (Phase 3)
-ctx.showDialog(title, content, options)  // Show dialog to user
+await ctx.showDialog(title, content, options)  // Show dialog, returns Promise with user response
 ctx.registerToolMenu(label, callback)    // Add Tools menu item
 ctx.emitToClient(eventName, data)        // Emit custom events to clients
 
@@ -340,18 +340,40 @@ ctx.registerEventHandler('onAfterJobEnd', async (context) => {
 
 ### Show Dialogs
 
-Display dialogs to the user:
+Display dialogs to the user. Returns a Promise that resolves with the user's response:
 
 ```javascript
 export function onLoad(ctx) {
   ctx.registerToolMenu('Show Info', async () => {
-    ctx.showDialog('Plugin Info', `
+    await ctx.showDialog('Plugin Info', `
       <h2>My Plugin</h2>
       <p>This is a custom plugin dialog.</p>
     `);
   });
 }
 ```
+
+**Note:** Calling `showDialog()` without `await` is backward compatible—the dialog will still display, but you won't receive the user's response. Use `await` when you need to wait for user input.
+
+**Getting user responses:**
+
+```javascript
+export function onLoad(ctx) {
+  ctx.registerEventHandler('onBeforeJobStart', async (gcode, context) => {
+    const confirmed = await ctx.showDialog('Confirm Start', `
+      <button onclick="window.postMessage({type: 'close-plugin-dialog', data: true}, '*')">Start</button>
+      <button onclick="window.postMessage({type: 'close-plugin-dialog', data: false}, '*')">Cancel</button>
+    `);
+    
+    if (!confirmed) {
+      throw new Error('Job cancelled');
+    }
+    return gcode;
+  });
+}
+```
+
+**Note:** To send data back from the dialog, use `window.postMessage({type: 'close-plugin-dialog', data: yourData}, '*')` in your dialog's JavaScript.
 
 ### Tools Menu Integration
 
@@ -366,7 +388,7 @@ export function onLoad(ctx) {
     await ctx.sendGcode('G28', { displayCommand: 'Home All Axes' });
 
     // Show confirmation
-    ctx.showDialog('Success', 'Homing completed!');
+    await ctx.showDialog('Success', 'Homing completed!');
   });
 }
 ```

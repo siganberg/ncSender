@@ -582,6 +582,9 @@ export function createWebSocketLayer({
           }
           break;
         }
+        case 'plugin-dialog-response':
+          pluginManager.getEventBus().emit('client:dialog-response', parsed.data);
+          break;
         default:
           log('Received unsupported WebSocket message type:', parsed.type);
           break;
@@ -640,6 +643,16 @@ export function createWebSocketLayer({
       setTimeout(() => {
         sendWsMessage(ws, 'initial-greeting', serverState.greetingMessage);
       }, 100);
+    }
+
+    // Re-send any pending plugin dialogs to reconnecting clients (with delay for Vue to mount)
+    const pendingDialogs = pluginManager.getPendingDialogs();
+    if (pendingDialogs.length > 0) {
+      setTimeout(() => {
+        for (const dialog of pendingDialogs) {
+          sendWsMessage(ws, 'plugin:show-dialog', dialog);
+        }
+      }, 500);
     }
   });
 
