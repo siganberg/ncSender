@@ -141,7 +141,7 @@ const buildAxisProbeSequence = ({
 
 export const getZProbeRoutine = (selectedBitDiameter = 'Auto') => {
   return [
-    `; Probe Z - AutoZero Touch (${selectedBitDiameter})`,
+    `(Probe Z - AutoZero Touch, ${selectedBitDiameter})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G21 G91',
     'G38.2 Z-25 F200',
@@ -162,7 +162,7 @@ export const getXProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   const safeRapidDistance = computeSafeRapidDistance(spec.effectiveDiameter);
 
   const code = [
-    `; Probe X - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
+    `(Probe X - ${selectedSide}, AutoZero Touch - ${spec.displayDiameter})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];
@@ -192,7 +192,7 @@ export const getYProbeRoutine = ({ selectedSide, selectedBitDiameter = 'Auto', r
   const safeRapidDistance = computeSafeRapidDistance(spec.effectiveDiameter);
 
   const code = [
-    `; Probe Y - ${selectedSide} (AutoZero Touch - ${spec.displayDiameter})`,
+    `(Probe Y - ${selectedSide}, AutoZero Touch - ${spec.displayDiameter})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];
@@ -231,7 +231,7 @@ export const getXYProbeRoutine = (options = {}) => {
   const safeRapidDistance = computeSafeRapidDistance(spec.effectiveDiameter);
 
   const code = [
-    `; Probe XY - ${selectedCorner} (AutoZero Touch - ${spec.displayDiameter})`,
+    `(Probe XY - ${selectedCorner}, AutoZero Touch - ${spec.displayDiameter})`,
     `#<return_units> = [20 + #<_metric>]`,
     'G91 G21'
   ];

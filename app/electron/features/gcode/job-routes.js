@@ -736,7 +736,7 @@ export class GCodeJobProcessor {
       if (!this.isStopped) {
         log('Job processing completed, triggering callbacks');
 
-        const completionComment = `; Job completed: ${this.filename} (ncSender)`;
+        const completionComment = `(Job completed: ${this.filename}, ncSender)`;
 
         this.broadcast('cnc-command-result', {
           id: `job-${Date.now()}`,

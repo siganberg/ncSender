@@ -1738,9 +1738,10 @@ const getStatusIcon = (line) => {
 
 // Escape HTML to prevent XSS
 const escapeHtml = (text: string): string => {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&#60;')
+    .replace(/>/g, '&#62;');
 };
 
 // Highlight G-code syntax in terminal messages
@@ -1750,18 +1751,22 @@ const highlightGcode = (item: { message: string; type: string }): string => {
     return escapeHtml(item.message);
   }
 
-  let html = escapeHtml(item.message);
+  let text = item.message;
 
-  // Extract and preserve comments first (replace with placeholders)
+  // Extract comments from raw text BEFORE HTML escaping
+  // (to avoid matching semicolons in HTML entities like &lt;)
   const comments: string[] = [];
-  html = html.replace(/(\([^)]*\))/g, (match) => {
-    comments.push(`<span class="gc-comment">${match}</span>`);
+  text = text.replace(/(\([^)]*\))/g, (match) => {
+    comments.push(match);
     return `\x00COMMENT${comments.length - 1}\x00`;
   });
-  html = html.replace(/(;[^<\x00]*)/g, (match) => {
-    comments.push(`<span class="gc-comment">${match}</span>`);
+  text = text.replace(/(;.*)/g, (match) => {
+    comments.push(match);
     return `\x00COMMENT${comments.length - 1}\x00`;
   });
+
+  // Now escape HTML on the non-comment parts
+  let html = escapeHtml(text);
 
   // G0 rapid motion (orange bold)
   html = html.replace(/\b([Gg]0*)(?=\s|$|[A-Za-z])/g, '<span class="gc-rapid">$1</span>');
@@ -1803,8 +1808,10 @@ const highlightGcode = (item: { message: string; type: string }): string => {
   // Line numbers N (gray)
   html = html.replace(/\b([Nn]\d+)/g, '<span class="gc-line">$1</span>');
 
-  // Restore comments
-  html = html.replace(/\x00COMMENT(\d+)\x00/g, (_, idx) => comments[parseInt(idx)]);
+  // Restore comments (with HTML escaping and styling)
+  html = html.replace(/\x00COMMENT(\d+)\x00/g, (_, idx) => {
+    return `<span class="gc-comment">${escapeHtml(comments[parseInt(idx)])}</span>`;
+  });
 
   return html;
 };

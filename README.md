@@ -1,5 +1,11 @@
 > **IMPORTANT DISCLAIMER:** This is my personal project and has only been tested by me on my AltMill CNC. If you choose to run it, you do so entirely at your own risk. I am not responsible for any damage, malfunction, or personal injury that may result from the use or misuse of ncSender. Use it with caution and at your own discretion.
 
+## 💬 Join the Community
+
+[![Join Discord](https://img.shields.io/badge/Join_our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/qpKzpmYD)
+
+Get help, share tips, and stay updated on ncSender news.
+
 ## 💖 Support My Work
 
 If you enjoy **ncSender** and my other CNC / maker projects, consider supporting me!
@@ -124,7 +130,7 @@ These folders are created automatically and contain G‑code files and settings.
 Everything runs locally. ncSender does not send your files or machine data to remote servers.
 
 ## 💬 Need Help?
-This is a personal, for‑fun project that I’m actively iterating on. I’m not providing support at the moment, and I’m not accepting new issue submissions yet. Once things are more stable, I may start accepting GitHub Issues for bug reports and feature requests.
+This is a personal, for‑fun project that I'm actively iterating on. I'm not accepting new issue submissions yet. Once things are more stable, I may start accepting GitHub Issues for bug reports and feature requests.
 
 ## 👨‍💻 For Developers
 Looking to build, contribute, or extend ncSender? See `docs/DEVELOPER_GUIDE.md` for:

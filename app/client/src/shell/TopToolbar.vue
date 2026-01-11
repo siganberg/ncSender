@@ -55,25 +55,7 @@
         @blur="handleMachineInfoBlur"
         title="Machine Information"
       >
-        <svg width="36" height="36" viewBox="0 0 72 72">
-          <!-- CPU LED icon - inline for dynamic color control -->
-          <g>
-            <path :fill="hasAnyPinTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-            <path :fill="hasAnyPinTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-            <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-            <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-            <path :fill="hasAnyPinTriggered ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-            <rect :fill="hasAnyPinTriggered ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-            <rect :fill="hasAnyPinTriggered ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-          </g>
-          <g>
-            <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-            <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-            <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-            <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-            <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-          </g>
-        </svg>
+        <span :class="['pin-led', 'pin-led--large', { 'pin-led--active': hasAnyPinTriggered }]"></span>
       </button>
       <div v-if="showMachineInfo" class="machine-info-tooltip">
         <div class="machine-info-header">
@@ -84,122 +66,31 @@
             <div class="pins-grid">
               <div class="pin-item">
                 <span class="pin-name">X Limit</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('X') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('X') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('X') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('X') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('X') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': getPinState('X') }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">Y Limit</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('Y') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('Y') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('Y') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('Y') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('Y') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': getPinState('Y') }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">Z Limit</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('Z') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('Z') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('Z') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('Z') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('Z') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': getPinState('Z') }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">A Limit</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('A') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('A') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('A') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('A') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('A') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': getPinState('A') }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">Probe</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="isProbeTriggered ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="isProbeTriggered ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="isProbeTriggered ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': isProbeTriggered }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">TLS</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="isTLSTriggered ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="isTLSTriggered ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="isTLSTriggered ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': isTLSTriggered }]"></span>
               </div>
               <div class="pin-item">
                 <span class="pin-name">Door</span>
-                <svg class="pin-led-icon" width="32" height="32" viewBox="0 0 72 72">
-                  <path :fill="getPinState('D') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M31.3882,26.7177c0,0,9.2367-1.8188,8.4221-9.1964c-1.3538-12.261-1.4678-10.4237-1.4678-10.4237 l-5.5293,1.0104C32.8133,8.1081,35.9998,21.7018,31.3882,26.7177z"/>
-                  <path :fill="getPinState('D') ? '#ff6b6b' : '#5cb85c'" stroke="none" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="#d0cfce" stroke="none"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="#d0cfce" stroke="none"/>
-                  <path :fill="getPinState('D') ? '#cc0000' : '#449d44'" stroke="none" d="M34.5417,7.5625c0,0,15.3232,0.5495,15.9047,13.875c0.9664,22.1458,0.0665,18.9191,0.0665,18.9191 l-9.3254-0.19C41.1875,40.1667,42.6247,15.125,34.5417,7.5625z"/>
-                  <rect :fill="getPinState('D') ? '#cc0000' : '#449d44'" x="43.3333" y="40.7917" width="11.8333" height="3.0833" stroke="none"/>
-                  <rect :fill="getPinState('D') ? '#ff6b6b' : '#5cb85c'" x="16.3353" y="40.7917" width="26.998" height="3.0833" stroke="none"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M34.5417,7.0359c-8.1462,0-14.75,7.496-14.75,16.7427v16.388h29.5"/>
-                  <rect x="26.8333" y="44.5" width="4" height="22.095" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <rect x="41.3333" y="44.5" width="4" height="16.4792" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2"/>
-                  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" d="M35.2497,7.0359c8.1462,0,14.75,7.496,14.75,16.7427v7.388"/>
-                  <polygon fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2" points="16,44.5 45.5309,44.5 45.9063,44.5 56,44.5 56,40.1667 45.9063,40.1667 45.4999,40.1667 16,40.1667"/>
-                </svg>
+                <span :class="['pin-led', { 'pin-led--active': getPinState('D') }]"></span>
               </div>
             </div>
           </div>
@@ -695,6 +586,36 @@ const onWorkspaceChange = (e: Event) => {
 
 .pin-led-icon {
   flex-shrink: 0;
+}
+
+/* Glowing LED indicator */
+.pin-led {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #28a745;
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4);
+}
+
+.pin-led--large {
+  width: 18px;
+  height: 18px;
+}
+
+.pin-led--active {
+  background: #dc3545;
+  box-shadow: 0 0 10px rgba(220, 53, 69, 0.9), 0 0 20px rgba(220, 53, 69, 0.5);
+  animation: led-pulse-red 1.5s ease-in-out infinite;
+}
+
+@keyframes led-pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(220, 53, 69, 0.9), 0 0 20px rgba(220, 53, 69, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(220, 53, 69, 1), 0 0 28px rgba(220, 53, 69, 0.7);
+  }
 }
 
 .empty-state {
