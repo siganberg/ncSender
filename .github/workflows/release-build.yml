@@ -338,3 +338,27 @@ jobs:
             --title "Release ${{ github.ref_name }}" \
             --notes-file release-notes.md \
             release-assets/*
+
+      - name: Announce on Discord
+        if: success() && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
+          curl -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"🚀 ncSender ${{ github.ref_name }} Released!\",
+                \"description\": \"A new version of ncSender is now available.\",
+                \"url\": \"${RELEASE_URL}\",
+                \"color\": 1941124,
+                \"fields\": [
+                  {
+                    \"name\": \"Download\",
+                    \"value\": \"[View Release](${RELEASE_URL})\"
+                  }
+                ]
+              }]
+            }" \
+            "$DISCORD_WEBHOOK_URL"
