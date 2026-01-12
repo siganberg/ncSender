@@ -1161,8 +1161,9 @@ const initThreeJS = () => {
 
   refreshHomeIndicator();
 
-  // Set initial pointer scale
+  // Set initial pointer and labels scale
   updatePointerScale();
+  updateAxisLabelsScale();
 
   // Set initial pointer opacity after a delay (for async OBJ loading)
   setTimeout(() => {
@@ -1493,6 +1494,39 @@ const updatePointerScale = (targetCamera?: THREE.OrthographicCamera) => {
   cuttingPointer.scale.set(scale, scale, scale);
 };
 
+const updateAxisLabelsScale = (targetCamera?: THREE.OrthographicCamera) => {
+  const cam = targetCamera || camera;
+  if (!cam) return;
+
+  const frustumWidth = cam.right - cam.left;
+  let scale = frustumWidth * 0.005; // 0.5% of visible width
+
+  const minScale = 0.15; // Minimum scale limit (when zoomed in)
+  const maxScale = 1;    // Maximum scale limit - don't grow beyond original size
+  scale = Math.max(minScale, Math.min(scale, maxScale));
+
+  // Update axis labels scale
+  if (axisLabelsGroup) {
+    axisLabelsGroup.traverse((child: any) => {
+      if (child.isSprite) {
+        child.scale.set(30 * scale, 30 * scale, 1);
+      }
+    });
+  }
+  if (splitSideAxisLabels) {
+    splitSideAxisLabels.traverse((child: any) => {
+      if (child.isSprite) {
+        child.scale.set(30 * scale, 30 * scale, 1);
+      }
+    });
+  }
+
+  // Update home indicator scale
+  if (homeIndicatorGroup) {
+    homeIndicatorGroup.scale.set(scale, scale, scale);
+  }
+};
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault();
 
@@ -1542,6 +1576,7 @@ const onWheel = (event: WheelEvent) => {
   // For single view, update immediately
   if (props.view !== 'split') {
     updatePointerScale();
+    updateAxisLabelsScale();
   }
 };
 
@@ -1658,6 +1693,7 @@ const onTouchMove = (event: TouchEvent) => {
 
       activeCamera.updateProjectionMatrix();
       updatePointerScale();
+      updateAxisLabelsScale();
     }
 
     lastTouchDistance = distance;
@@ -1895,6 +1931,7 @@ const animate = () => {
       if (axisLabelsGroup) axisLabelsGroup.visible = true;
       if (splitSideAxisLabels) splitSideAxisLabels.visible = false;
       updatePointerScale(splitTopCamera);
+      updateAxisLabelsScale(splitTopCamera);
       renderer.setViewport(0, halfHeight, halfWidth, halfHeight);
       renderer.setScissor(0, halfHeight, halfWidth, halfHeight);
       renderer.render(scene, splitTopCamera);
@@ -1905,6 +1942,7 @@ const animate = () => {
       if (axisLabelsGroup) axisLabelsGroup.visible = false;
       if (splitSideAxisLabels) splitSideAxisLabels.visible = true;
       updatePointerScale(splitFrontCamera);
+      updateAxisLabelsScale(splitFrontCamera);
       renderer.setViewport(halfWidth, halfHeight, halfWidth, halfHeight);
       renderer.setScissor(halfWidth, halfHeight, halfWidth, halfHeight);
       renderer.render(scene, splitFrontCamera);
@@ -1915,6 +1953,7 @@ const animate = () => {
       if (axisLabelsGroup) axisLabelsGroup.visible = true;
       if (splitSideAxisLabels) splitSideAxisLabels.visible = false;
       updatePointerScale(splitIsoCamera);
+      updateAxisLabelsScale(splitIsoCamera);
       renderer.setViewport(0, 0, width, halfHeight);
       renderer.setScissor(0, 0, width, halfHeight);
       renderer.render(scene, splitIsoCamera);
@@ -2222,6 +2261,7 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     axisLabelsGroup = createDynamicAxisLabels(gcodeBounds, props.view);
     scene.add(axisLabelsGroup);
     updatePointerScale();
+    updateAxisLabelsScale();
 
     // Complete loading
     loadingProgress.value = 100;
@@ -2477,8 +2517,9 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
 
   camera.updateProjectionMatrix();
 
-  // Update pointer scale after changing frustum
+  // Update pointer and labels scale after changing frustum
   updatePointerScale();
+  updateAxisLabelsScale();
 
   // Update camera target and position
   // For 3D view, adjust the target to pan the view up for better centering
@@ -2586,6 +2627,7 @@ const handleResize = () => {
   updateSplitViewCameras();
 
   updatePointerScale();
+  updateAxisLabelsScale();
 };
 
 const updateSplitViewCameras = () => {
