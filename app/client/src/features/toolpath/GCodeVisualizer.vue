@@ -161,13 +161,11 @@
             @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
-            <span class="tools-legend__label">T{{ t }}</span>
-            <svg class="tools-legend__icon" width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect x="1" y="4" width="34" height="6" rx="2" class="bit-body"/>
-              <rect x="4" y="5" width="10" height="4" rx="1" class="bit-shank"/>
-            </svg>
+            <span v-if="showToolInfo !== t" class="tools-legend__label">Slot{{ t }}</span>
             <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
+              <span v-if="toolInventory[t].toolId" class="tool-id-label">#{{ toolInventory[t].toolId }}</span>
               <template v-if="toolInventory[t].diameter || toolInventory[t].type">
+                <span v-if="toolInventory[t].toolId && (toolInventory[t].diameter || toolInventory[t].type)"> - </span>
                 <span v-if="toolInventory[t].diameter">Ø{{ toolInventory[t].diameter.toFixed(3) }}mm</span>
                 <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
                 <span v-if="toolInventory[t].type">{{
@@ -176,7 +174,7 @@
                   }[toolInventory[t].type] || toolInventory[t].type
                 }}</span>
               </template>
-              <template v-else>{{ toolInventory[t].name }}</template>
+              <template v-else-if="!toolInventory[t].toolId">{{ toolInventory[t].name }}</template>
             </span>
           </div>
         </div>
@@ -4123,6 +4121,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   background: var(--color-surface-muted);
   padding: 10px 20px;
@@ -4204,9 +4203,10 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 
 .tools-legend__label {
   min-width: 32px;
-  text-align: right;
+  text-align: center;
   font-size: 1.2rem;
   font-weight: 500;
+  text-transform: uppercase;
 }
 
 .tools-legend__item.manual-tool,
@@ -4943,9 +4943,9 @@ body.theme-light .dot--rapid {
 
 /* Tool Expansion */
 .tools-legend__item.expanded {
-  min-width: 310px;
-  max-width: 310px;
-  justify-content: flex-end;
+  min-width: 240px;
+  max-width: 240px;
+  justify-content: center;
   overflow: visible;
 }
 

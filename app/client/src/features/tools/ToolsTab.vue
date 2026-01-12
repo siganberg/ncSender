@@ -25,7 +25,7 @@
           type="text"
           class="tool-search"
           v-model="searchQuery"
-          placeholder="Search tools by T#, name, or type..."
+          placeholder="Search tools by ID, name, or type..."
         >
         <button class="import-export-button" @click="importTools">Import</button>
         <button class="import-export-button" @click="exportTools">Export</button>
@@ -39,23 +39,61 @@
       </div>
 
       <!-- Tools table -->
-      <div v-else class="tools-table-container">
+      <div v-else ref="tableContainer" class="tools-table-container">
         <table class="tools-table">
         <thead>
           <tr>
-            <th class="col-tool-number">Tool #</th>
-            <th class="col-description">Description</th>
-            <th class="col-type">Type</th>
-            <th class="col-diameter">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
-            <th class="col-tlo">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</th>
+            <th class="col-tool-id">
+              <button class="sort-header" @click="toggleSort('toolId')">
+                <span>Tool ID</span>
+                <svg v-if="sortBy === 'toolId'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-description">
+              <button class="sort-header" @click="toggleSort('name')">
+                <span>Description</span>
+                <svg v-if="sortBy === 'name'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-type">
+              <button class="sort-header" @click="toggleSort('type')">
+                <span>Type</span>
+                <svg v-if="sortBy === 'type'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-diameter">
+              <button class="sort-header" @click="toggleSort('diameter')">
+                <span>Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
+                <svg v-if="sortBy === 'diameter'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
+            <th class="col-tlo">
+              <button class="sort-header" @click="toggleSort('tlo')">
+                <span>TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</span>
+                <svg v-if="sortBy === 'tlo'" class="sort-icon" :class="{ 'sort-icon--desc': sortOrder === 'desc' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+            </th>
             <th class="col-actions">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="tool in filteredTools" :key="tool.id">
-            <td class="col-tool-number">
-              <span v-if="tool.toolNumber !== null" class="tool-number-badge">T{{ tool.toolNumber }}</span>
-              <span v-else>-</span>
+          <tr v-for="tool in filteredTools" :key="tool.id" :data-tool-id="tool.id">
+            <td class="col-tool-id">
+              <div class="tool-id-cell tool-id-cell--clickable" @click.stop="openSlotSelector(tool, $event)">
+                <span class="tool-id-text">{{ tool.toolId }}</span>
+                <span v-if="tool.toolNumber !== null" class="tool-number-badge">Slot{{ tool.toolNumber }}</span>
+                <span v-else class="tool-slot-placeholder">No Slot</span>
+              </div>
             </td>
             <td class="col-description">{{ tool.name }}</td>
             <td class="col-type">{{ formatType(tool.type) }}</td>
@@ -71,6 +109,45 @@
         </tbody>
       </table>
     </div>
+
+        <!-- Slot Carousel Section -->
+        <div v-if="toolCount && toolCount > 0" class="slot-carousel-section">
+          <button
+            v-if="toolCount > visibleSlots"
+            class="slot-carousel-btn slot-carousel-btn--left"
+            @click="scrollSlotsLeft"
+            :disabled="slotScrollOffset === 0"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="slot-carousel-container">
+            <div
+              v-for="slotNum in visibleSlotRange"
+              :key="slotNum"
+              class="slot-box"
+              :class="{ 'slot-box--assigned': getToolForSlot(slotNum), 'slot-box--clickable': getToolForSlot(slotNum) }"
+              @click="scrollToToolInSlot(slotNum)"
+            >
+              <div class="slot-box-content">
+                <span v-if="getToolForSlot(slotNum)" class="slot-tool-id">#{{ getToolForSlot(slotNum).toolId }}</span>
+                <span v-else class="slot-empty">—</span>
+              </div>
+              <div class="slot-box-label">SLOT{{ slotNum }}</div>
+            </div>
+          </div>
+          <button
+            v-if="toolCount > visibleSlots"
+            class="slot-carousel-btn slot-carousel-btn--right"
+            @click="scrollSlotsRight"
+            :disabled="slotScrollOffset >= toolCount - visibleSlots"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
 
         <!-- Footer with tool count and controls -->
         <div class="tools-footer">
@@ -115,19 +192,35 @@
         <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
         <form @submit.prevent="saveTool" class="modal-form">
           <div class="modal-body">
-            <!-- Tool Number -->
-            <div class="form-group">
-              <label class="form-label">Tool Number (T#)</label>
-              <select class="form-select" v-model="toolForm.toolNumber">
-                <option :value="null">None (Not in magazine)</option>
-                <option
-                  v-for="num in maxToolCount"
-                  :key="num"
-                  :value="num"
+            <!-- Tool ID and Assigned To T# -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label required">Tool ID</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  :class="{ 'form-input--error': toolIdError }"
+                  v-model.number="toolForm.toolId"
+                  min="1"
+                  step="1"
+                  placeholder="e.g., 1, 2, 3..."
+                  required
                 >
-                  T{{ num }}{{ getToolNumberInfo(num) }}
-                </option>
-              </select>
+                <div v-if="toolIdError" class="form-error-inline">{{ toolIdError }}</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Assigned To Slot</label>
+                <select class="form-select" v-model="toolForm.toolNumber">
+                  <option :value="null">None (Not in magazine)</option>
+                  <option
+                    v-for="num in maxToolCount"
+                    :key="num"
+                    :value="num"
+                  >
+                    Slot{{ num }}{{ getToolNumberInfo(num) }}
+                  </option>
+                </select>
+              </div>
             </div>
 
             <!-- Tool Name -->
@@ -244,7 +337,7 @@
           <!-- Footer -->
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="closeToolForm">Cancel</button>
-            <button type="submit" class="btn btn-primary">{{ editingTool ? 'Save Changes' : 'Add Tool' }}</button>
+            <button type="submit" class="btn btn-primary" :disabled="hasFormErrors">{{ editingTool ? 'Save Changes' : 'Add Tool' }}</button>
           </div>
         </form>
       </div>
@@ -347,6 +440,40 @@
       />
     </Dialog>
 
+    <!-- Slot Selector Popup -->
+    <Teleport to="body">
+      <div v-if="showSlotSelector" class="slot-selector-overlay" @click="closeSlotSelector">
+        <div
+          class="slot-selector-popup"
+          :style="{ top: slotSelectorPosition.top + 'px', left: slotSelectorPosition.left + 'px' }"
+          @click.stop
+        >
+          <div class="slot-selector-header">Assign to Slot</div>
+          <div class="slot-selector-list">
+            <div
+              class="slot-selector-item"
+              :class="{ 'slot-selector-item--active': slotSelectorTool?.toolNumber === null }"
+              @click="selectSlot(null)"
+            >
+              None (Not in magazine)
+            </div>
+            <div
+              v-for="num in (toolCount || 0)"
+              :key="num"
+              class="slot-selector-item"
+              :class="{
+                'slot-selector-item--active': slotSelectorTool?.toolNumber === num,
+                'slot-selector-item--occupied': getToolForSlot(num) && getToolForSlot(num)?.id !== slotSelectorTool?.id
+              }"
+              @click="selectSlot(num)"
+            >
+              Slot{{ num }}{{ getSlotSelectorInfo(num) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Magazine Size Confirmation Dialog -->
     <Dialog v-if="showMagazineSizeConfirmDialog" @close="cancelMagazineSizeChange" :show-header="false" size="small">
       <ConfirmPanel
@@ -369,11 +496,12 @@ import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
-import { formatCoordinate, getDistanceUnitLabel, parseDistanceInput } from '@/lib/units';
+import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
 
 interface Tool {
   id: number;
+  toolId: number;
   toolNumber: number | null;
   name: string;
   type: string;
@@ -409,6 +537,9 @@ interface Tool {
   };
 }
 
+type SortField = 'toolId' | 'name' | 'type' | 'diameter' | 'tlo';
+type SortOrder = 'asc' | 'desc';
+
 const props = defineProps<{
   maxToolCount?: number;
   toolCount?: number;
@@ -431,7 +562,6 @@ const appStore = useAppStore();
 
 // Computed
 const maxToolCount = computed(() => props.maxToolCount || 1);
-const diameterStep = computed(() => appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001);
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
@@ -439,9 +569,12 @@ const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperi
 const tools = ref<Tool[]>([]);
 const storagePath = ref('');
 const searchQuery = ref('');
+const sortBy = ref<SortField>('toolId');
+const sortOrder = ref<SortOrder>('asc');
 const showToolForm = ref(false);
 const editingTool = ref<Tool | null>(null);
 const importFileInput = ref<HTMLInputElement | null>(null);
+const tableContainer = ref<HTMLElement | null>(null);
 const formErrors = ref<Record<string, string>>({});
 
 // Dialog state
@@ -461,11 +594,21 @@ const showImportSuccessDialog = ref(false);
 const importSuccessMessage = ref('');
 const showMagazineSizeConfirmDialog = ref(false);
 const pendingMagazineSize = ref<number | null>(null);
+
+// Slot carousel state
+const slotScrollOffset = ref(0);
+const visibleSlots = 18;
 const affectedToolsCount = ref(0);
+
+// Slot selector popup state
+const showSlotSelector = ref(false);
+const slotSelectorTool = ref<Tool | null>(null);
+const slotSelectorPosition = ref({ top: 0, left: 0 });
 
 // Tool form data
 const defaultToolForm = () => ({
   id: 0,
+  toolId: 0,
   toolNumber: null as number | null,
   name: '',
   type: 'flat',
@@ -511,28 +654,191 @@ const filteredTools = computed(() => {
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase().trim();
     result = result.filter(tool => {
-      const toolNum = tool.toolNumber !== null && tool.toolNumber !== undefined
-        ? tool.toolNumber.toString()
-        : '';
+      const toolIdStr = tool.toolId?.toString() || '';
 
-      // Handle "T7" format - strip the "T" prefix if present
-      const searchTerm = query.startsWith('t') ? query.substring(1) : query;
-
-      return toolNum.includes(searchTerm) ||
+      return toolIdStr.includes(query) ||
         tool.name.toLowerCase().includes(query) ||
         tool.type.toLowerCase().includes(query);
     });
   }
 
-  // Sort by T# ascending (tools without toolNumber go to end)
+  // Sort based on current sort settings
   result = [...result].sort((a, b) => {
-    const aVal = a.toolNumber !== null ? a.toolNumber : 9999;
-    const bVal = b.toolNumber !== null ? b.toolNumber : 9999;
-    return aVal - bVal;
+    let comparison = 0;
+
+    if (sortBy.value === 'toolId') {
+      comparison = a.toolId - b.toolId;
+    } else if (sortBy.value === 'name') {
+      comparison = a.name.localeCompare(b.name);
+    } else if (sortBy.value === 'type') {
+      comparison = a.type.localeCompare(b.type);
+    } else if (sortBy.value === 'diameter') {
+      comparison = a.diameter - b.diameter;
+    } else if (sortBy.value === 'tlo') {
+      comparison = a.offsets.tlo - b.offsets.tlo;
+    }
+
+    return sortOrder.value === 'asc' ? comparison : -comparison;
   });
 
   return result;
 });
+
+// Real-time Tool ID validation
+const toolIdError = computed(() => {
+  if (!toolForm.value.toolId || toolForm.value.toolId < 1) {
+    return 'Tool ID must be a positive number';
+  }
+
+  // Check for duplicate Tool ID (excluding current tool when editing)
+  const existingTool = tools.value.find(t =>
+    t.toolId === toolForm.value.toolId && t.id !== editingTool.value?.id
+  );
+  if (existingTool) {
+    return `Tool ID ${toolForm.value.toolId} is already in use`;
+  }
+
+  return null;
+});
+
+// Check if form has validation errors
+const hasFormErrors = computed(() => {
+  return !!toolIdError.value;
+});
+
+// Slot carousel computed
+const visibleSlotRange = computed(() => {
+  const count = props.toolCount || 0;
+  if (count === 0) return [];
+
+  const start = slotScrollOffset.value + 1;
+  const end = Math.min(slotScrollOffset.value + visibleSlots, count);
+  const range: number[] = [];
+  for (let i = start; i <= end; i++) {
+    range.push(i);
+  }
+  return range;
+});
+
+const getToolForSlot = (slotNum: number) => {
+  return tools.value.find(t => t.toolNumber === slotNum);
+};
+
+const scrollSlotsLeft = () => {
+  if (slotScrollOffset.value > 0) {
+    slotScrollOffset.value = Math.max(0, slotScrollOffset.value - 1);
+  }
+};
+
+const scrollSlotsRight = () => {
+  const count = props.toolCount || 0;
+  if (slotScrollOffset.value < count - visibleSlots) {
+    slotScrollOffset.value = Math.min(count - visibleSlots, slotScrollOffset.value + 1);
+  }
+};
+
+const scrollToToolInSlot = (slotNum: number) => {
+  const tool = getToolForSlot(slotNum);
+  if (!tool || !tableContainer.value) return;
+
+  const row = tableContainer.value.querySelector(`tr[data-tool-id="${tool.id}"]`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Brief highlight effect
+    row.classList.add('highlight-row');
+    setTimeout(() => row.classList.remove('highlight-row'), 1500);
+  }
+};
+
+const openSlotSelector = (tool: Tool, event: MouseEvent) => {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  slotSelectorPosition.value = {
+    top: rect.bottom + 4,
+    left: rect.left
+  };
+  slotSelectorTool.value = tool;
+  showSlotSelector.value = true;
+};
+
+const closeSlotSelector = () => {
+  showSlotSelector.value = false;
+  slotSelectorTool.value = null;
+};
+
+const getSlotSelectorInfo = (slotNum: number) => {
+  if (!slotSelectorTool.value) return '';
+
+  // If this is the current tool's slot, show "Current"
+  if (slotSelectorTool.value.toolNumber === slotNum) {
+    return ' (Current)';
+  }
+
+  // Find if another tool is using this slot
+  const assignedTool = tools.value.find(t => t.toolNumber === slotNum);
+  if (assignedTool) {
+    return ` (Swap with #${assignedTool.toolId})`;
+  }
+
+  return '';
+};
+
+const selectSlot = async (slotNum: number | null) => {
+  if (!slotSelectorTool.value) return;
+
+  const tool = slotSelectorTool.value;
+  const oldSlotNum = tool.toolNumber;
+
+  // If same slot, just close
+  if (slotNum === oldSlotNum) {
+    closeSlotSelector();
+    return;
+  }
+
+  try {
+    // Find if another tool is using the target slot
+    const conflictingTool = slotNum !== null
+      ? tools.value.find(t => t.toolNumber === slotNum && t.id !== tool.id)
+      : null;
+
+    if (conflictingTool) {
+      // Swap operation: first unassign the conflicting tool
+      await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...conflictingTool, toolNumber: null })
+      });
+
+      // Assign current tool to new slot
+      await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...tool, toolNumber: slotNum })
+      });
+
+      // Assign conflicting tool to old slot (complete the swap)
+      if (oldSlotNum !== null) {
+        await fetch(`${api.baseUrl}/api/tools/${conflictingTool.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...conflictingTool, toolNumber: oldSlotNum })
+        });
+      }
+    } else {
+      // Simple assignment, no swap needed
+      await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...tool, toolNumber: slotNum })
+      });
+    }
+
+    await loadTools();
+    closeSlotSelector();
+  } catch (error) {
+    console.error('Error updating slot:', error);
+  }
+};
 
 // Methods
 const loadTools = async () => {
@@ -641,6 +947,30 @@ const formatType = (type: string) => {
   return typeMap[type] || type;
 };
 
+const toggleSort = async (field: SortField) => {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortBy.value = field;
+    sortOrder.value = field === 'toolId' ? 'asc' : 'desc';
+  }
+
+  try {
+    await fetch(`${api.baseUrl}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolLibrary: {
+          sortBy: sortBy.value,
+          sortOrder: sortOrder.value
+        }
+      })
+    });
+  } catch (error) {
+    console.error('Error saving sort settings:', error);
+  }
+};
+
 const getToolNumberInfo = (num: number) => {
   // If editing a tool and this is the current tool number, don't show any info
   if (editingTool.value?.toolNumber === num) {
@@ -652,9 +982,10 @@ const getToolNumberInfo = (num: number) => {
 
   if (assignedTool) {
     // If editing, show "Swap with", if adding new, show "Already assigned to"
+    const toolInfo = `#${assignedTool.toolId} - ${assignedTool.name}`;
     return editingTool.value
-      ? ` (Swap with: ${assignedTool.name})`
-      : ` (Already assigned to: ${assignedTool.name})`;
+      ? ` (Swap with: ${toolInfo})`
+      : ` (Already assigned to: ${toolInfo})`;
   }
 
   return '';
@@ -663,6 +994,13 @@ const getToolNumberInfo = (num: number) => {
 const addNewTool = () => {
   editingTool.value = null;
   toolForm.value = defaultToolForm();
+
+  // Auto-populate with next available Tool ID
+  const maxToolId = tools.value.length > 0
+    ? Math.max(...tools.value.map(t => t.toolId || 0))
+    : 0;
+  toolForm.value.toolId = maxToolId + 1;
+
   formErrors.value = {};
   showToolForm.value = true;
 };
@@ -696,6 +1034,20 @@ const closeToolForm = () => {
 const validateToolForm = () => {
   formErrors.value = {};
   let isValid = true;
+
+  if (!toolForm.value.toolId || toolForm.value.toolId < 1) {
+    formErrors.value.toolId = 'Tool ID must be a positive number';
+    isValid = false;
+  } else {
+    // Check for duplicate Tool ID (excluding current tool when editing)
+    const existingTool = tools.value.find(t =>
+      t.toolId === toolForm.value.toolId && t.id !== editingTool.value?.id
+    );
+    if (existingTool) {
+      formErrors.value.toolId = `Tool ID ${toolForm.value.toolId} is already in use`;
+      isValid = false;
+    }
+  }
 
   if (!toolForm.value.name || toolForm.value.name.trim() === '') {
     formErrors.value.name = 'Tool name is required';
@@ -973,15 +1325,24 @@ onMounted(async () => {
   await loadTools();
   await loadToolsInfo();
 
-  // Load max tool count from settings
+  // Load settings (max tool count and sort preferences)
   try {
     const response = await fetch(`${api.baseUrl}/api/settings`);
     if (response.ok) {
       const settings = await response.json();
       maxToolCount.value = settings?.tool?.count || 1;
+
+      // Load tool library sort settings
+      const toolLibrarySettings = settings?.toolLibrary;
+      if (toolLibrarySettings?.sortBy) {
+        sortBy.value = toolLibrarySettings.sortBy;
+      }
+      if (toolLibrarySettings?.sortOrder) {
+        sortOrder.value = toolLibrarySettings.sortOrder;
+      }
     }
   } catch (error) {
-    console.error('Error loading tool count setting:', error);
+    console.error('Error loading settings:', error);
   }
 });
 </script>
@@ -1048,7 +1409,7 @@ onMounted(async () => {
   display: flex;
   gap: var(--gap-sm);
   align-items: center;
-  padding: var(--gap-md);
+  padding: var(--gap-sm);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -1169,6 +1530,36 @@ onMounted(async () => {
   text-align: center;
 }
 
+.sort-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.sort-header:hover {
+  color: var(--color-accent);
+}
+
+.sort-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.sort-icon--desc {
+  transform: rotate(180deg);
+}
+
 .tools-table tbody tr:first-child td {
   padding-top: var(--gap-md);
 }
@@ -1199,21 +1590,66 @@ onMounted(async () => {
   background: var(--color-border);
 }
 
-.col-tool-number {
-  width: 8%;
-  min-width: 60px;
+.tools-table tbody tr.highlight-row {
+  animation: highlight-fade 1.5s ease-out;
+}
+
+@keyframes highlight-fade {
+  0% {
+    background: var(--color-accent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.col-tool-id {
+  width: 10%;
+  min-width: 80px;
   text-align: center;
+}
+
+.tool-id-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-id-cell--clickable {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.tool-id-cell--clickable:hover {
+  background: var(--color-surface-muted);
+}
+
+.tool-slot-placeholder {
+  font-size: 0.65rem;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.tool-id-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .tool-number-badge {
   display: inline-block;
-  padding: 6px 16px;
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-small);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 0.85rem;
-  font-weight: 500;
+  padding: 2px 6px;
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 3px;
+  background: var(--color-warning, #f59e0b);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .col-description {
@@ -1244,7 +1680,7 @@ onMounted(async () => {
 }
 
 .tools-footer {
-  padding: var(--gap-md);
+  padding: var(--gap-sm);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   flex-shrink: 0;
@@ -1272,6 +1708,112 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   font-style: italic;
   text-align: left;
+}
+
+/* Slot Carousel Section */
+.slot-carousel-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.slot-carousel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 50px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.slot-carousel-btn:hover:not(:disabled) {
+  background: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.slot-carousel-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.slot-carousel-container {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.slot-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 50px;
+  height: 50px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.slot-box--assigned {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.slot-box--clickable {
+  cursor: pointer;
+}
+
+.slot-box--clickable:hover {
+  filter: brightness(1.1);
+}
+
+.slot-box-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  padding: 0 6px;
+}
+
+.slot-tool-id {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.slot-empty {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.slot-box-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  width: 100%;
+  text-align: center;
+  padding: 2px 0;
+  letter-spacing: 0.02em;
+}
+
+.slot-box--assigned .slot-box-label {
+  background: color-mix(in srgb, var(--color-accent) 80%, #000);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .tools-storage-info {
@@ -1480,6 +2022,42 @@ onMounted(async () => {
   margin-top: 4px;
 }
 
+.form-input--error {
+  border-color: #ff6b6b !important;
+}
+
+.form-input--error:focus {
+  border-color: #ff6b6b !important;
+}
+
+.form-group {
+  position: relative;
+}
+
+.form-error-inline {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #ff6b6b;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.form-error-inline::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  border: 5px solid transparent;
+  border-bottom-color: #ff6b6b;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -1487,5 +2065,67 @@ onMounted(async () => {
   padding: 16px 24px 24px;
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+/* Slot Selector Popup */
+.slot-selector-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99998;
+}
+
+.slot-selector-popup {
+  position: fixed;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 200px;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  z-index: 99999;
+}
+
+.slot-selector-header {
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.slot-selector-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.slot-selector-item {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.slot-selector-item:hover {
+  background: var(--color-surface-muted);
+}
+
+.slot-selector-item--active {
+  background: var(--color-accent);
+  color: white;
+}
+
+.slot-selector-item--active:hover {
+  background: var(--color-accent);
+}
+
+.slot-selector-item--occupied {
+  color: var(--color-warning, #f59e0b);
 }
 </style>

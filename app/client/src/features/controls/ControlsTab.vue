@@ -514,7 +514,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: var(--gap-sm);
   align-items: center;
-  padding: var(--gap-md);
+  padding: var(--gap-sm);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;

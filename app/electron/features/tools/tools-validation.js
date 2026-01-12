@@ -26,6 +26,20 @@
 export function validateTool(tool, allTools, originalTool = null) {
   const errors = [];
 
+  // Check toolId (required)
+  if (!tool.toolId || !Number.isInteger(tool.toolId) || tool.toolId < 1) {
+    errors.push('Tool ID must be a positive integer');
+  } else {
+    // Check for duplicate toolId (excluding current tool in edit mode)
+    const duplicateToolId = allTools.find(t =>
+      t.toolId === tool.toolId &&
+      t.id !== (originalTool ? originalTool.id : null)
+    );
+    if (duplicateToolId) {
+      errors.push(`Tool ID ${tool.toolId} already exists`);
+    }
+  }
+
   // Check tool number if provided
   if (tool.toolNumber !== null && tool.toolNumber !== undefined && tool.toolNumber !== '') {
     const toolNum = parseInt(tool.toolNumber);

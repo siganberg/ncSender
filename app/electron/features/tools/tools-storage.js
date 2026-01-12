@@ -30,25 +30,36 @@ export const generateToolId = (tools) => {
   return Math.max(...tools.map(t => t.id)) + 1;
 };
 
-// Helper: Migrate old data structure (id = toolNumber) to new structure (id + toolNumber)
+// Helper: Migrate old data structure (id = toolNumber) to new structure (id + toolNumber + toolId)
 export const migrateTools = (tools) => {
-  return tools.map(tool => {
-    // If tool already has the new structure, return as is
-    if (tool.hasOwnProperty('toolNumber')) {
-      return tool;
+  return tools.map((tool, index) => {
+    let migrated = tool;
+
+    // Migrate old structure: id becomes toolNumber
+    if (!tool.hasOwnProperty('toolNumber')) {
+      migrated = {
+        ...migrated,
+        toolNumber: tool.id,
+        id: tool.id // Keep same ID for migration
+      };
     }
-    // Migrate old structure: id becomes toolNumber, generate new internal id
-    return {
-      ...tool,
-      toolNumber: tool.id,
-      id: tool.id // Keep same ID for migration
-    };
+
+    // Add toolId if missing (use existing id or index + 1 as default)
+    if (!tool.hasOwnProperty('toolId')) {
+      migrated = {
+        ...migrated,
+        toolId: tool.id || (index + 1)
+      };
+    }
+
+    return migrated;
   });
 };
 
 // Helper: Create default tool object
-export const createDefaultTool = (id, toolNumber = null) => ({
+export const createDefaultTool = (id, toolId, toolNumber = null) => ({
   id: id,
+  toolId: toolId,
   toolNumber: toolNumber,
   name: '',
   type: 'flat',
@@ -147,7 +158,7 @@ export async function addTool(toolData) {
   const tools = await loadTools();
   const newId = generateToolId(tools);
 
-  const newTool = createDefaultTool(newId, toolData.toolNumber);
+  const newTool = createDefaultTool(newId, toolData.toolId, toolData.toolNumber);
   Object.assign(newTool, toolData);
   newTool.id = newId; // Ensure ID is set correctly
 
