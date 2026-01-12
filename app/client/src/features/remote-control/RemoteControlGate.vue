@@ -48,6 +48,7 @@
           <li>Open ncSender on the host computer</li>
           <li>Go to Settings</li>
           <li>Enable "Allow Remote Control"</li>
+          <li>Press Save</li>
         </ol>
       </div>
 
@@ -92,7 +93,7 @@ const openFileManager = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 9000;
   padding: 20px;
   box-sizing: border-box;
 }
@@ -213,7 +214,7 @@ const openFileManager = () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #1abc9c;
+  background: var(--gradient-accent);
   border: none;
   border-radius: 8px;
   padding: 14px 28px;
@@ -221,11 +222,12 @@ const openFileManager = () => {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s ease;
 }
 
 .file-manager-btn:hover {
-  background: #16a085;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
 }
 
 .btn-icon {

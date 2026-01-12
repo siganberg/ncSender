@@ -39,6 +39,21 @@
             </svg>
             New Folder
           </button>
+          <button class="file-manager__upload-btn" @click="triggerUpload" title="Upload File">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Upload
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept=".nc,.gcode,.ngc,.tap,.txt"
+            style="display: none"
+            @change="handleFileUpload"
+          />
           <div class="file-manager__search-wrapper">
             <svg class="file-manager__search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/>
@@ -150,6 +165,7 @@
               :renaming-id="renamingId"
               :drag-over-id="dragOverId"
               :drag-position="dragPosition"
+              :loading-disabled="loadingDisabled"
               @toggle="toggleFolder"
               @load="loadFile"
               @delete="confirmDeleteItem"
@@ -237,6 +253,7 @@ type TreeNode = FileNode | FolderNode;
 
 interface Props {
   show: boolean;
+  loadingDisabled?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -293,6 +310,29 @@ const showNewFolderDialog = ref(false);
 const newFolderName = ref('');
 const newFolderParentPath = ref('');
 const newFolderInput = ref<HTMLInputElement | null>(null);
+
+// Upload state
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const triggerUpload = () => {
+  fileInputRef.value?.click();
+};
+
+const handleFileUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    await api.uploadGCodeFile(file);
+    await fetchTree();
+  } catch (error) {
+    console.error('Error uploading file:', error);
+  } finally {
+    // Reset input so same file can be uploaded again
+    input.value = '';
+  }
+};
 
 // Drag state
 const draggedNode = ref<TreeNode | null>(null);
@@ -688,6 +728,32 @@ watch(() => props.show, async (isOpen) => {
 }
 
 .file-manager__new-folder-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.file-manager__upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.file-manager__upload-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.file-manager__upload-btn svg {
   width: 18px;
   height: 18px;
 }

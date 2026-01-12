@@ -248,18 +248,35 @@ export function getSetting(key, fallback) {
     return undefined;
   }
 
-  if (Object.prototype.hasOwnProperty.call(settings, key)) {
-    const value = settings[key];
-    if (value !== undefined) {
-      return value;
+  // Helper to get nested value by dot-notation path
+  const getNestedValue = (obj, path) => {
+    const parts = path.split('.');
+    let current = obj;
+    for (const part of parts) {
+      if (current === null || current === undefined || !Object.prototype.hasOwnProperty.call(current, part)) {
+        return undefined;
+      }
+      current = current[part];
     }
+    return current;
+  };
+
+  // Try to get value from settings (supports nested paths like 'remoteControl.enabled')
+  const value = getNestedValue(settings, key);
+  if (value !== undefined) {
+    return value;
   }
+
   if (fallback !== undefined) {
     return fallback;
   }
-  if (Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)) {
-    return DEFAULT_SETTINGS[key];
+
+  // Try to get from defaults
+  const defaultValue = getNestedValue(DEFAULT_SETTINGS, key);
+  if (defaultValue !== undefined) {
+    return defaultValue;
   }
+
   return undefined;
 }
 

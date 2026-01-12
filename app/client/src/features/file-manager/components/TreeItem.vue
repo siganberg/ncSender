@@ -100,7 +100,7 @@
       <!-- Actions -->
       <div class="tree-item__actions" v-if="!isRenaming">
         <button
-          v-if="node.type === 'file'"
+          v-if="node.type === 'file' && !loadingDisabled"
           class="tree-item__load-btn"
           @click.stop="$emit('load', node)"
           :disabled="isLoading"
@@ -153,6 +153,7 @@
         :renaming-id="renamingId"
         :drag-over-id="dragOverId"
         :drag-position="dragPosition"
+        :loading-disabled="loadingDisabled"
         @toggle="$emit('toggle', $event)"
         @load="$emit('load', $event)"
         @delete="$emit('delete', $event)"
@@ -204,6 +205,7 @@ const props = defineProps<{
   renamingId: string | null;
   dragOverId: string | null;
   dragPosition: 'before' | 'inside' | 'after' | null;
+  loadingDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -269,7 +271,7 @@ const handleClick = () => {
 };
 
 const handleDoubleClick = () => {
-  if (props.node.type === 'file') {
+  if (props.node.type === 'file' && !props.loadingDisabled) {
     emit('load', props.node as FileNode);
   }
 };
@@ -530,7 +532,7 @@ watch(isRenaming, (renaming) => {
   width: 36px;
   height: 36px;
   padding: 0;
-  background: var(--color-accent);
+  background: var(--gradient-accent);
   color: white;
   border: none;
   border-radius: var(--radius-small);
@@ -539,7 +541,8 @@ watch(isRenaming, (renaming) => {
 }
 
 .tree-item__load-btn:hover:not(:disabled) {
-  background: var(--color-accent-hover, #16a085);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.3);
 }
 
 .tree-item__load-btn:disabled {

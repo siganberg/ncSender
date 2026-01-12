@@ -27,6 +27,7 @@
   <FileManagerDialog
     v-if="!hasFullControl"
     :show="showGateFileManager"
+    :loading-disabled="true"
     @close="showGateFileManager = false"
   />
 
@@ -204,7 +205,7 @@
               <div class="setting-item-content">
                 <label class="setting-label">Remote Control Port</label>
                 <div class="settings-note">
-                  Note: Changes this require restarting the application to take effect.
+                  Note: Port changes require restarting the application to take effect.
                 </div>
               </div>
               <input
@@ -215,10 +216,23 @@
                 max="65535"
               >
             </div>
+            <div class="setting-item setting-item--with-note">
+              <div class="setting-item-content">
+                <label class="setting-label">Allow Remote Control</label>
+                <div class="settings-note">
+                  When enabled, remote browser clients can control the machine. When disabled, they can only manage files.
+                </div>
+              </div>
+              <ToggleSwitch v-model="connectionSettings.remoteControlEnabled" :disabled="!canControlRemoteAccess" />
+            </div>
             <div class="setting-item">
               <label class="setting-label"></label>
-              <button class="save-connection-button" @click="saveConnectionSettings">
-                Save
+              <button
+                class="save-connection-button"
+                :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
+                @click="saveConnectionSettings"
+              >
+                {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
               </button>
             </div>
           </div>
@@ -234,15 +248,6 @@
                   </div>
                 </div>
                 <ToggleSwitch v-model="useDoorAsPause" />
-              </div>
-              <div class="setting-item setting-item--with-note">
-                <div class="setting-item-content">
-                  <label class="setting-label">Allow Remote Control</label>
-                  <div class="settings-note">
-                    When enabled, remote browser clients can control the machine. When disabled, they can only manage files.
-                  </div>
-                </div>
-                <ToggleSwitch v-model="remoteControlEnabledSetting" :disabled="!canControlRemoteAccess" />
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
@@ -1363,9 +1368,6 @@ const toolSourceName = computed(() => {
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
-// Remote Control setting
-const remoteControlEnabledSetting = ref(initialSettings?.remoteControl?.enabled ?? false);
-
 // Home Location setting
 const homeLocation = ref(initialSettings?.homeLocation ?? 'back-left');
 
@@ -1383,8 +1385,10 @@ const connectionSettings = reactive({
   ipAddress: initialConnection?.ip || '192.168.5.1',
   port: initialConnection?.port ?? 23,
   serverPort: initialConnection?.serverPort ?? 8090,
-  usbPort: initialConnection?.usbPort || ''
+  usbPort: initialConnection?.usbPort || '',
+  remoteControlEnabled: initialSettings?.remoteControl?.enabled ?? false
 });
+const connectionSettingsSaved = ref(false);
 
 // Setup dialog connection settings (separate from main settings)
 const setupSettings = reactive({
@@ -2403,14 +2407,6 @@ watch(useDoorAsPause, async (newValue) => {
   });
 });
 
-// Watch remoteControlEnabledSetting and save changes
-watch(remoteControlEnabledSetting, async (newValue) => {
-  const { updateSettings } = await import('./lib/settings-store.js');
-  await updateSettings({
-    remoteControl: { enabled: newValue }
-  });
-});
-
 // Save home location changes
 const saveHomeLocation = async () => {
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2613,6 +2609,9 @@ const saveConnectionSettings = async () => {
         usbPort: connectionSettings.usbPort || '',
         baudRate: parseInt(connectionSettings.baudRate, 10) || 115200
       },
+      remoteControl: {
+        enabled: connectionSettings.remoteControlEnabled
+      },
       theme: theme.value,
       workspace: workspace.value,
       defaultGcodeView: defaultView.value,
@@ -2631,7 +2630,10 @@ const saveConnectionSettings = async () => {
 
     if (response.ok) {
       const result = await response.json();
-      showSettings.value = false;
+      connectionSettingsSaved.value = true;
+      setTimeout(() => {
+        connectionSettingsSaved.value = false;
+      }, 1500);
     } else {
       const error = await response.json();
       console.error('Failed to save settings:', error.error);
@@ -3414,6 +3416,11 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .save-connection-button:active {
   transform: translateY(0);
+}
+
+.save-connection-button--saved {
+  background: #27ae60;
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
 }
 
 .save-button {
