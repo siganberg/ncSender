@@ -33,23 +33,21 @@ export const generateToolId = (tools) => {
 // Helper: Migrate old data structure (id = toolNumber) to new structure (id + toolNumber + toolId)
 export const migrateTools = (tools) => {
   return tools.map((tool, index) => {
-    let migrated = tool;
+    let migrated = { ...tool };
 
     // Migrate old structure: id becomes toolNumber
     if (!tool.hasOwnProperty('toolNumber')) {
-      migrated = {
-        ...migrated,
-        toolNumber: tool.id,
-        id: tool.id // Keep same ID for migration
-      };
+      migrated.toolNumber = tool.id;
     }
 
     // Add toolId if missing (use existing id or index + 1 as default)
     if (!tool.hasOwnProperty('toolId')) {
-      migrated = {
-        ...migrated,
-        toolId: tool.id || (index + 1)
-      };
+      migrated.toolId = tool.id || (index + 1);
+    }
+
+    // Ensure id is set (use toolId if missing)
+    if (!tool.hasOwnProperty('id') || tool.id === undefined || tool.id === null) {
+      migrated.id = migrated.toolId;
     }
 
     return migrated;
