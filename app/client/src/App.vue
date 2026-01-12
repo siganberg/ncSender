@@ -16,9 +16,23 @@
 -->
 
 <template>
+  <!-- Remote Control Gate (shown when remote client has no control) -->
+  <RemoteControlGate
+    v-if="!hasFullControl"
+    :mobile="isMobileView"
+    @open-file-manager="showGateFileManager = true"
+  />
+
+  <!-- File Manager Dialog (accessible from Remote Control Gate) -->
+  <FileManagerDialog
+    v-if="!hasFullControl"
+    :show="showGateFileManager"
+    @close="showGateFileManager = false"
+  />
+
   <!-- Mobile View -->
   <MobileView
-    v-if="isMobileView"
+    v-else-if="isMobileView"
     :status="{ ...status, connected: isConnected }"
     :jog-config="jogConfig"
     @update:stepSize="jogConfig.stepSize = $event"
@@ -220,6 +234,15 @@
                   </div>
                 </div>
                 <ToggleSwitch v-model="useDoorAsPause" />
+              </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Allow Remote Control</label>
+                  <div class="settings-note">
+                    When enabled, remote browser clients can control the machine. When disabled, they can only manage files.
+                  </div>
+                </div>
+                <ToggleSwitch v-model="remoteControlEnabledSetting" :disabled="!canControlRemoteAccess" />
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
@@ -954,6 +977,8 @@ import TopToolbar from './shell/TopToolbar.vue';
 import GCodeVisualizer from './features/toolpath/GCodeVisualizer.vue';
 import RightPanel from './shell/RightPanel.vue';
 import MobileView from './features/mobile/MobileView.vue';
+import RemoteControlGate from './features/remote-control/RemoteControlGate.vue';
+import FileManagerDialog from './features/file-manager/FileManagerDialog.vue';
 import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
@@ -1026,6 +1051,7 @@ const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
+const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
 const showPluginModal = ref(false);
@@ -1236,9 +1262,12 @@ const handleDownloadUpdateOnly = async () => {
 };
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
-const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef } = store;
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef, hasFullControl, isLocalClient } = store;
 
 const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.senderStatus ?? 'connecting');
+
+// Can control remote access settings (Electron or local browser clients)
+const canControlRemoteAccess = computed(() => api.isElectron || isLocalClient.value);
 
 // Jog config (from app store - shared state)
 const { jogConfig } = store;
@@ -1333,6 +1362,9 @@ const toolSourceName = computed(() => {
 
 // Use Door as Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
+
+// Remote Control setting
+const remoteControlEnabledSetting = ref(initialSettings?.remoteControl?.enabled ?? false);
 
 // Home Location setting
 const homeLocation = ref(initialSettings?.homeLocation ?? 'back-left');
@@ -2368,6 +2400,14 @@ watch(useDoorAsPause, async (newValue) => {
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     useDoorAsPause: newValue
+  });
+});
+
+// Watch remoteControlEnabledSetting and save changes
+watch(remoteControlEnabledSetting, async (newValue) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    remoteControl: { enabled: newValue }
   });
 });
 

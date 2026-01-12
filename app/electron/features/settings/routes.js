@@ -191,6 +191,11 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
 
       broadcast('settings-changed', broadcastPayload);
 
+      // Broadcast remote control state change if that setting was updated
+      if (updates.remoteControl?.enabled !== undefined) {
+        broadcast('remote-control-state', { enabled: updates.remoteControl.enabled });
+      }
+
       res.json({
         success: true,
         message: 'Settings updated successfully',

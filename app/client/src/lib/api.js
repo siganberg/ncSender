@@ -15,6 +15,12 @@ class NCClient {
     this.lastServerState = null;
     this.messageStates = new Map(); // Track state for each message type
     this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
+    this.isLocalClient = false; // Whether client is on localhost
+    this.remoteControlEnabled = false; // Whether remote control is enabled on server
+  }
+
+  get isElectron() {
+    return typeof window !== 'undefined' && window.location.protocol === 'file:';
   }
 
 
@@ -582,8 +588,26 @@ class NCClient {
         // Handle client ID assignment
         if (message && message.type === 'client-id' && message.data?.clientId) {
           this.clientId = message.data.clientId;
-          debugLog('Client ID assigned:', this.clientId);
+          this.isLocalClient = message.data.isLocal === true;
+          this.remoteControlEnabled = message.data.remoteControlEnabled === true;
+          debugLog('Client ID assigned:', this.clientId, 'isLocal:', this.isLocalClient, 'remoteControlEnabled:', this.remoteControlEnabled);
           this.emit('client-id-assigned', this.clientId);
+          this.emit('remote-control-state', {
+            isLocal: this.isLocalClient,
+            enabled: this.remoteControlEnabled
+          });
+        }
+
+        // Handle remote control state changes (broadcast from settings update)
+        if (message && message.type === 'remote-control-state') {
+          if (typeof message.data?.enabled === 'boolean') {
+            this.remoteControlEnabled = message.data.enabled;
+          }
+          debugLog('Remote control state changed:', this.remoteControlEnabled);
+          // Only emit enabled change, don't override isLocal
+          this.emit('remote-control-state', {
+            enabled: this.remoteControlEnabled
+          });
         }
 
         if (message && message.type === 'server-state-updated' && message.data) {

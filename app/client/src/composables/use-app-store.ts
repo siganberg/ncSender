@@ -125,6 +125,8 @@ const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: num
 const websocketConnected = ref(false);
 const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
+const isLocalClient = ref<boolean | null>(null); // null = not yet determined
+const remoteControlEnabled = ref(false);
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
 // Grid size defaults - should be loaded from firmware settings $130/$131
@@ -208,6 +210,17 @@ const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' 
 const unitsPreference = computed<UnitsPreference>(() => {
   const settings = getSettings();
   return (settings?.unitsPreference as UnitsPreference) ?? 'metric';
+});
+const hasFullControl = computed(() => {
+  // Electron app always has full control
+  if (api.isElectron) return true;
+  // If client state not yet determined (WebSocket handshake pending), assume full control
+  // This prevents the gate from flashing before we know if client is local
+  if (isLocalClient.value === null) return true;
+  // Local browser always has full control
+  if (isLocalClient.value === true) return true;
+  // Remote browser depends on setting
+  return remoteControlEnabled.value;
 });
 
 // Helper function to apply status report updates
@@ -581,6 +594,25 @@ export function initializeStore() {
     websocketConnected.value = false;
   });
 
+  // Remote control state changes
+  api.on('remote-control-state', (data: { isLocal?: boolean; enabled?: boolean }) => {
+    debugLog('Remote control state updated:', data);
+    // Only update values that are present in the data
+    if (typeof data.isLocal === 'boolean') {
+      isLocalClient.value = data.isLocal;
+    }
+    if (typeof data.enabled === 'boolean') {
+      remoteControlEnabled.value = data.enabled;
+    }
+  });
+
+  // Check if we already have remote control state from api (in case we missed the event)
+  if (typeof api.isLocalClient === 'boolean') {
+    isLocalClient.value = api.isLocalClient;
+    remoteControlEnabled.value = api.remoteControlEnabled;
+    debugLog('Remote control state initialized from api:', { isLocal: api.isLocalClient, enabled: api.remoteControlEnabled });
+  }
+
   // CNC error events (including alarms)
   api.on('cnc-error', async (errorData) => {
     if (!errorData) return;
@@ -893,6 +925,8 @@ export function useAppStore() {
     isProbing,
     isJobRunning,
     unitsPreference,
+    hasFullControl,
+    isLocalClient: readonly(isLocalClient),
 
     // Actions
     clearConsole: () => {

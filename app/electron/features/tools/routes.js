@@ -28,8 +28,26 @@ import {
 import { validateTool } from './tools-validation.js';
 import { createLogger } from '../../core/logger.js';
 import { getUserDataDir } from '../../utils/paths.js';
+import { getSetting } from '../../core/settings-manager.js';
 
 const { log, error: logError } = createLogger('Tools');
+
+/**
+ * Sanitize toolNumber - set to null if it exceeds magazine size
+ */
+const sanitizeToolNumber = (toolData) => {
+  if (toolData.toolNumber === null || toolData.toolNumber === undefined) {
+    return toolData;
+  }
+
+  const magazineSize = getSetting('tool.count', 0);
+  if (toolData.toolNumber > magazineSize) {
+    log(`Tool number ${toolData.toolNumber} exceeds magazine size ${magazineSize}, setting to null`);
+    return { ...toolData, toolNumber: null };
+  }
+
+  return toolData;
+};
 
 export function createToolsRoutes(broadcast) {
   const router = express.Router();
@@ -87,7 +105,8 @@ export function createToolsRoutes(broadcast) {
    */
   router.post('/tools', async (req, res) => {
     try {
-      const toolData = req.body;
+      // Sanitize toolNumber if it exceeds magazine size
+      const toolData = sanitizeToolNumber(req.body);
 
       // Get all tools for validation
       const allTools = await getAllTools();
@@ -123,7 +142,8 @@ export function createToolsRoutes(broadcast) {
         return res.status(400).json({ error: 'Invalid tool ID' });
       }
 
-      const toolData = req.body;
+      // Sanitize toolNumber if it exceeds magazine size
+      const toolData = sanitizeToolNumber(req.body);
 
       // Get all tools and original tool for validation
       const allTools = await getAllTools();
@@ -186,11 +206,14 @@ export function createToolsRoutes(broadcast) {
    */
   router.put('/tools', async (req, res) => {
     try {
-      const tools = req.body;
+      const rawTools = req.body;
 
-      if (!Array.isArray(tools)) {
+      if (!Array.isArray(rawTools)) {
         return res.status(400).json({ error: 'Request body must be an array of tools' });
       }
+
+      // Sanitize toolNumber for all tools if it exceeds magazine size
+      const tools = rawTools.map(tool => sanitizeToolNumber(tool));
 
       // Validate all tools
       const validationErrors = [];

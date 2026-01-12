@@ -27,6 +27,11 @@ import { createLogger } from '../core/logger.js';
 const { log, error: logError } = createLogger('WebSocket');
 
 const WS_READY_STATE_OPEN = 1;
+
+const isLocalConnection = (req) => {
+  const ip = req?.socket?.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+};
 const SOFT_RESET = String.fromCharCode(0x18);
 const realtimeJobCommands = new Set(['!', '~', SOFT_RESET]);
 
@@ -503,17 +508,26 @@ export function createWebSocketLayer({
     }
   };
 
-  wss.on('connection', async (ws) => {
+  wss.on('connection', async (ws, req) => {
     // Generate unique client ID
     const clientId = `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     ws.clientId = clientId;
     clientIdToWsMap.set(clientId, ws);
 
-    log('Client connected with ID:', clientId);
+    const clientIp = req?.socket?.remoteAddress || 'unknown';
+    const isLocal = isLocalConnection(req);
+    ws.isLocal = isLocal;
+
+    log('Client connected with ID:', clientId, 'IP:', clientIp, isLocal ? '(local)' : '(remote)');
     clients.add(ws);
 
-    // Send client ID to the client
-    sendWsMessage(ws, 'client-id', { clientId });
+    // Send client ID with local/remote info and remote control setting
+    const remoteControlEnabled = getSetting('remoteControl.enabled', false);
+    sendWsMessage(ws, 'client-id', {
+      clientId,
+      isLocal,
+      remoteControlEnabled
+    });
 
     ws.on('message', (rawData) => {
       let parsed;
@@ -665,12 +679,18 @@ export function createWebSocketLayer({
     cncController.off?.('command-ack', broadcastCommandResult);
   };
 
+  const broadcastRemoteControlState = () => {
+    const enabled = getSetting('remoteControl.enabled', false);
+    broadcast('remote-control-state', { enabled });
+  };
+
   return {
     wss,
     broadcast,
     sendWsMessage,
     handleWebSocketCommand,
     getClientWebSocket: (clientId) => clientIdToWsMap.get(clientId),
+    broadcastRemoteControlState,
     shutdown
   };
 }

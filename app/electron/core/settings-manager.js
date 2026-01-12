@@ -95,7 +95,10 @@ const DEFAULT_SETTINGS = {
   plugins: {
     allowPriorityReordering: false
   },
-  useDoorAsPause : true
+  useDoorAsPause: true,
+  remoteControl: {
+    enabled: false
+  }
 };
 
 function getUserDataDir() {
