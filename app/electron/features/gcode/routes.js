@@ -202,7 +202,9 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         remainingSec: null,
         progressPercent: null,
         runtimeSec: null,
-        estimatedSec
+        estimatedSec,
+        isTemporary: false,  // Clear any previous transform state
+        sourceFile: null     // Clear any previous transform source
       };
 
       // Save to settings for persistence
@@ -522,7 +524,9 @@ export function createGCodeRoutes(filesDir, upload, serverState, broadcast) {
         remainingSec: null,
         progressPercent: null,
         runtimeSec: null,
-        estimatedSec
+        estimatedSec,
+        isTemporary: false,  // Clear any previous transform state
+        sourceFile: null     // Clear any previous transform source
       };
 
       saveSettings({ lastLoadedFile: relativePath });
