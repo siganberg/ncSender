@@ -216,7 +216,7 @@ const viewDisabled = computed(() =>
 
 const motionControlsDisabled = computed(() =>
   !store.isConnected.value ||
-  !store.isHomed.value ||
+  (store.homingCycle.value > 0 && !store.isHomed.value) ||
   isHoming.value ||
   store.isProbing.value ||
   (isJobRunning.value && senderStatus.value !== 'idle')
@@ -274,7 +274,7 @@ const ensureAxisState = (axis: AxisKey) => {
 };
 
 const startLongPress = (axis: AxisKey, _evt: Event) => {
-  if (axisControlsDisabled.value || !store.isHomed.value) return;
+  if (axisControlsDisabled.value) return;
 
   const state = ensureAxisState(axis);
   if (state.raf) cancelAnimationFrame(state.raf);

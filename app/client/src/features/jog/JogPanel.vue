@@ -46,8 +46,8 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
-            :disabled="isHoming"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
+            :disabled="homeDisabled"
             title="Home All (Hold to home, Double-tap to split)"
             @mousedown="startHomePress($event)"
             @mouseup="endHomePress()"
@@ -71,22 +71,22 @@
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
-              :disabled="isHoming"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :disabled="homeDisabled"
               @click="goHomeAxis('X')"
             >
               HX
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
-              :disabled="isHoming"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :disabled="homeDisabled"
               @click="goHomeAxis('Y')"
             >
               HY
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value }]"
-              :disabled="isHoming"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :disabled="homeDisabled"
               @click="goHomeAxis('Z')"
             >
               HZ
@@ -95,8 +95,8 @@
         </Transition>
       </div>
 
-      <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
-      <div class="position-controls-group" :class="{ 'motion-disabled': motionControlsDisabled }">
+      <!-- Position controls group (X0/Y0/Z0, Corners, Park) - uses rapidControlsDisabled for G0 moves -->
+      <div class="position-controls-group" :class="{ 'motion-disabled': rapidControlsDisabled }">
         <!-- Column of X0/Y0/Z0 separate from corner/park -->
         <div class="axis-zero-column" ref="axisZeroGroupRef">
           <div class="axis-zero-xy-container">
@@ -494,11 +494,18 @@ const handleFeedRateUpdate = (newRate: number) => {
 // Disable the entire panel only when disconnected or explicitly disabled
 const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
-// Disable motion controls when disconnected, explicitly disabled, not homed, or probing
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !store.isHomed.value || store.isProbing.value);
+// Disable motion controls when disconnected, explicitly disabled, or probing
+// Only require homing if homingCycle > 0
+const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || (store.homingCycle.value > 0 && !store.isHomed.value) || store.isProbing.value);
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
+
+// Computed to check if Home button should be disabled (homingCycle must be > 0)
+const homeDisabled = computed(() => isHoming.value || store.homingCycle.value === 0);
+
+// Computed to check if G0 rapid controls should be disabled (requires homingCycle > 0 AND homed)
+const rapidControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !(store.homingCycle.value > 0 && store.isHomed.value) || store.isProbing.value);
 
 const goHome = async () => {
   try {

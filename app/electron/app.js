@@ -61,6 +61,9 @@ export async function createApp(options = {}) {
   const context = createServerContext();
   context.updateSenderStatus();
 
+  const userDataDir = getUserDataDir();
+  const firmwareFilePath = path.join(userDataDir, 'firmware.json');
+
   const cncController = new CNCController();
 
   // Create a wrapper object that will hold commandProcessor reference
@@ -88,12 +91,11 @@ export async function createApp(options = {}) {
     cncController,
     pluginManager,
     broadcast,
-    serverState: context.serverState
+    serverState: context.serverState,
+    firmwareFilePath
   });
 
-  const userDataDir = getUserDataDir();
   const filesDir = path.join(userDataDir, 'gcode-files');
-  const firmwareFilePath = path.join(userDataDir, 'firmware.json');
 
   try {
     await fs.mkdir(filesDir, { recursive: true });

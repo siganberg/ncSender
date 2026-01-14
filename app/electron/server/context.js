@@ -26,7 +26,8 @@ export function createServerContext() {
     machineState: {
       connected: false,
       isToolChanging: false,
-      isProbing: false
+      isProbing: false,
+      homingCycle: null // From firmware $22 - null until read from controller
     },
     senderStatus: 'connecting',
     greetingMessage: null,
@@ -118,7 +119,9 @@ export function createServerContext() {
       return 'tool-changing';
     }
 
-    if (machineStatus === 'idle' && homed === false) {
+    // Only show homing-required if homing cycle is enabled ($22 > 0)
+    const homingCycle = serverState.machineState?.homingCycle;
+    if (machineStatus === 'idle' && homed === false && homingCycle > 0) {
       return 'homing-required';
     }
 

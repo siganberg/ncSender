@@ -311,7 +311,7 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || !store.isHomed.value || store.isProbing.value }">
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || (store.homingCycle.value > 0 && !store.isHomed.value) || store.isProbing.value }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -634,7 +634,7 @@ const canStop = computed(() => {
   return state === 'running' || state === 'hold' || state === 'door' || state === 'tool-changing';
 });
 
-const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value || store.homingCycle.value === 0 || !store.isHomed.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 
@@ -2416,10 +2416,13 @@ const canStartFromLine = computed(() => {
     return false;
   }
 
+  // Only require homing if homingCycle > 0
+  const homingRequired = store.homingCycle.value > 0 && !store.isHomed.value;
+
   return props.jobLoaded?.filename &&
          props.jobLoaded?.totalLines > 0 &&
          store.isConnected.value &&
-         store.isHomed.value &&
+         !homingRequired &&
          !isJobRunning.value &&
          !store.isProbing.value;
 });
