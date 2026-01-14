@@ -459,6 +459,19 @@
                 placeholder="Search Firmware Settings..."
                 class="firmware-search-input"
               />
+              <button
+                @click="refreshFirmwareData"
+                class="refresh-firmware-button"
+                :disabled="!status.connected || isFirmwareLoading"
+                title="Force refresh firmware settings from controller ($EG, $ES, $ESH, $$)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                Refresh
+              </button>
               <button @click="importFirmwareSettings" class="import-export-button">
                 Import
               </button>
@@ -1778,13 +1791,18 @@ const closeSettings = () => {
   showSettings.value = false;
 };
 
-const loadFirmwareData = async (forceRefresh = false) => {
+const loadFirmwareData = async ({ refresh = false, force = false } = {}) => {
   try {
+    // Clear data when force refreshing to show loading state
+    if (force) {
+      firmwareData.value = null;
+      firmwareChanges.value = {};
+    }
     isFirmwareLoading.value = true;
     firmwareError.value = null;
 
     // GET endpoint now handles everything: checks file, queries controller if needed
-    const data = await api.getFirmwareSettings(forceRefresh);
+    const data = await api.getFirmwareSettings({ refresh, force });
     firmwareData.value = data;
   } catch (error) {
     console.error('Error loading firmware data:', error);
@@ -1792,6 +1810,10 @@ const loadFirmwareData = async (forceRefresh = false) => {
   } finally {
     isFirmwareLoading.value = false;
   }
+};
+
+const refreshFirmwareData = () => {
+  loadFirmwareData({ force: true });
 };
 
 // Load firmware data when firmware tab is opened
@@ -3833,7 +3855,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .firmware-header {
   display: flex;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   align-items: center;
   padding: var(--gap-sm);
   background: var(--color-surface);
@@ -3872,6 +3894,29 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .clear-search-button:hover,
 .import-export-button:hover {
   background: var(--color-border);
+}
+
+.refresh-firmware-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--gap-sm) var(--gap-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-firmware-button:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.refresh-firmware-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .flash-firmware-button {

@@ -362,8 +362,12 @@ let isInitializing = false;
 /**
  * Check and initialize firmware structure on connection
  * Called when CNC controller connects
+ * @param {object} cncController - The CNC controller instance
+ * @param {boolean} force - Force full refresh, bypassing version check
  */
-export async function initializeFirmwareOnConnection(cncController) {
+export async function initializeFirmwareOnConnection(cncController, force = false) {
+  log(`initializeFirmwareOnConnection called with force=${force}`);
+
   if (!cncController || !cncController.isConnected) {
     log('Cannot initialize firmware: controller not connected');
     return;
@@ -375,6 +379,7 @@ export async function initializeFirmwareOnConnection(cncController) {
   }
 
   isInitializing = true;
+  log('Starting firmware initialization...');
 
   try {
     // Query $I to get firmware version
@@ -390,24 +395,28 @@ export async function initializeFirmwareOnConnection(cncController) {
     log('Firmware version:', currentVersion);
 
     // Check if firmware.json exists and version matches
-    let needsStructureUpdate = false;
-    try {
-      const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
-      const existingData = JSON.parse(data);
+    let needsStructureUpdate = force; // Force refresh bypasses version check
+    if (!force) {
+      try {
+        const data = await fs.readFile(FIRMWARE_FILE_PATH, 'utf8');
+        const existingData = JSON.parse(data);
 
-      if (existingData.firmwareVersion !== currentVersion) {
-        log(`Firmware version mismatch: ${existingData.firmwareVersion} -> ${currentVersion}`);
-        needsStructureUpdate = true;
-      } else {
-        log('Firmware version matches, skipping structure query');
+        if (existingData.firmwareVersion !== currentVersion) {
+          log(`Firmware version mismatch: ${existingData.firmwareVersion} -> ${currentVersion}`);
+          needsStructureUpdate = true;
+        } else {
+          log('Firmware version matches, skipping structure query');
+        }
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          log('firmware.json not found, initializing...');
+          needsStructureUpdate = true;
+        } else {
+          throw error;
+        }
       }
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        log('firmware.json not found, initializing...');
-        needsStructureUpdate = true;
-      } else {
-        throw error;
-      }
+    } else {
+      log('Force refresh requested, will re-query all firmware data');
     }
 
     // Query firmware structure if needed
@@ -561,11 +570,15 @@ export function createFirmwareRoutes(cncController, broadcast, autoConnector) {
   // GET /api/firmware - Return cached firmware settings from firmware.json (no controller calls)
   router.get('/', async (req, res) => {
     const shouldRefresh = parseBooleanQuery(req.query?.refresh);
+    const forceRefresh = parseBooleanQuery(req.query?.force);
     const canQueryController = Boolean(cncController?.isConnected);
 
-    if (shouldRefresh && canQueryController) {
+    log(`GET /api/firmware - refresh=${shouldRefresh}, force=${forceRefresh}, canQuery=${canQueryController}`);
+
+    if ((shouldRefresh || forceRefresh) && canQueryController) {
       try {
-        await initializeFirmwareOnConnection(cncController);
+        log('Calling initializeFirmwareOnConnection with force=' + forceRefresh);
+        await initializeFirmwareOnConnection(cncController, forceRefresh);
       } catch (error) {
         log('Failed to refresh firmware data via API request:', error?.message || error);
       }
