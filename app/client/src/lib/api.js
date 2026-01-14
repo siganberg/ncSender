@@ -882,9 +882,14 @@ class NCClient {
   }
 
   // Firmware settings methods
-  async getFirmwareSettings(forceRefresh = false) {
-    const url = forceRefresh
-      ? `${this.baseUrl}/api/firmware?refresh=true`
+  async getFirmwareSettings({ refresh = false, force = false } = {}) {
+    const params = new URLSearchParams();
+    if (refresh) params.set('refresh', 'true');
+    if (force) params.set('force', 'true');
+
+    const queryString = params.toString();
+    const url = queryString
+      ? `${this.baseUrl}/api/firmware?${queryString}`
       : `${this.baseUrl}/api/firmware`;
 
     const response = await fetch(url);
