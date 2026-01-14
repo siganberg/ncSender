@@ -919,11 +919,39 @@ watch(() => selectedStandardBlockBitDiameter.value, async (value) => {
   }
 });
 
+// Reset all transient state
+const resetTransientState = () => {
+  // Reset dropdown states
+  dropdownOpen.value = false;
+  standardBlockDropdownOpen.value = false;
+  newCustomDiameter.value = null;
+  newStandardBlockDiameter.value = null;
+
+  // Reset validation errors
+  errors.value = {
+    ballPointDiameter: '',
+    zPlunge: '',
+    zOffset: '',
+    zThickness: '',
+    xyThickness: '',
+    zProbeDistance: '',
+    rapidMovement: '',
+    xDimension: '',
+    yDimension: ''
+  };
+
+  // Reset connection test state
+  connectionTestPassed.value = false;
+};
+
 // Load settings when dialog opens
 watch(() => props.show, async (isShown) => {
   if (isShown) {
     isInitialLoad = true;
     settingsLoaded.value = false;
+
+    // Reset transient state first
+    resetTransientState();
 
     try {
       const settings = await api.getSettings();
@@ -1024,13 +1052,6 @@ watch(() => props.show, async (isShown) => {
 watch(() => props.probeActive, (isActive) => {
   if (requireConnectionTest.value && isActive && !connectionTestPassed.value) {
     connectionTestPassed.value = true;
-  }
-});
-
-// Reset connection test when dialog closes
-watch(() => props.show, (isShown) => {
-  if (!isShown) {
-    connectionTestPassed.value = false;
   }
 });
 
