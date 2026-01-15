@@ -1,5 +1,11 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed an issue where transform state was incorrectly persisting after loading a new file
-- Fixed an ID-related issue affecting component behavior
+- Fixed keyboard jogging getting stuck sometimes and unpredictable behavior when pressing multiple keys
+- Fixed jog movement getting stuck during operation
+- Fixed homing requirements now correctly ignored when Homing is not configured in firmware settings
+- Fixed probe dialog now properly resets state when opened
+
+### 🔧 Improvements
+- Reduced excessive logging from connection retries
+- Added force refresh capability for firmware data
