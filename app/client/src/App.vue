@@ -1007,6 +1007,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings } from './lib/settings-store.js';
+import { getPluginsFromInit } from './lib/init';
 import { useAppStore } from './composables/use-app-store';
 import { useUpdateCenter } from './composables/use-update-center';
 import ControlsTab from './features/controls/ControlsTab.vue';
@@ -2730,14 +2731,20 @@ onMounted(async () => {
   // Apply colors after settings are loaded
   applyColors();
 
-  // Fetch loaded plugins to get friendly names
-  try {
-    const response = await fetch('/api/plugins/loaded');
-    if (response.ok) {
-      loadedPlugins.value = await response.json();
+  // Use pre-loaded plugins if available
+  const plugins = getPluginsFromInit();
+  if (plugins && plugins.length > 0) {
+    loadedPlugins.value = plugins;
+  } else {
+    // Fallback to fetching from API
+    try {
+      const response = await fetch('/api/plugins/loaded');
+      if (response.ok) {
+        loadedPlugins.value = await response.json();
+      }
+    } catch (error) {
+      console.error('Failed to fetch loaded plugins:', error);
     }
-  } catch (error) {
-    console.error('Failed to fetch loaded plugins:', error);
   }
 
   // Mark initial theme load complete

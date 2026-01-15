@@ -18,7 +18,7 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
-import { loadSettings } from './lib/settings-store.js';
+import { loadInitData } from './lib/init';
 import { initializeKeyboardShortcuts } from './features/controls';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
 import { registerWebComponents } from './web-components';
@@ -47,17 +47,17 @@ document.addEventListener('selectstart', (e) => {
 
 // Async initialization
 (async () => {
-  // Load settings before mounting the app
-  await loadSettings();
+  // Load all init data before mounting the app (settings, macros, plugins, etc.)
+  const initData = await loadInitData();
 
   // Initialize centralized store and WebSocket event listeners
   initializeStore();
 
   // Initialize keyboard shortcuts after settings and store are ready
-  initializeKeyboardShortcuts();
+  initializeKeyboardShortcuts(initData);
 
   // Seed initial state from server
-  await seedInitialState();
+  await seedInitialState(initData);
 
   // Register web components for plugins
   registerWebComponents();

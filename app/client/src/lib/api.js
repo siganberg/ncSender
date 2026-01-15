@@ -967,6 +967,14 @@ class NCClient {
     }
     return response.json();
   }
+
+  async getInit() {
+    const response = await fetch(`${this.baseUrl}/api/init`);
+    if (!response.ok) {
+      throw new Error('Failed to get init data');
+    }
+    return response.json();
+  }
 }
 
 // Create singleton instance

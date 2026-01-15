@@ -497,6 +497,7 @@ import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
+import { getToolsFromInit } from '@/lib/init';
 import { useToolpathStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../../components/Dialog.vue';
@@ -3474,24 +3475,31 @@ watch(toolsScrollContainer, (container, oldContainer, onCleanup) => {
 
 // Load tool inventory from core tools API
 const loadToolInventory = async () => {
-  try {
-    const response = await fetch(`${api.baseUrl}/api/tools`);
-    if (response.ok) {
-      const tools = await response.json();
-      // Convert tools array to lookup map by toolNumber for quick access
-      if (Array.isArray(tools)) {
-        const inventory: Record<number, any> = {};
-        tools.forEach((tool: any) => {
-          if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
-            inventory[tool.toolNumber] = tool;
-          }
-        });
-        toolInventory.value = inventory;
+  // Use pre-loaded tools if available
+  let tools = getToolsFromInit();
+  if (!tools || tools.length === 0) {
+    // Fallback to fetching from API
+    try {
+      const response = await fetch(`${api.baseUrl}/api/tools`);
+      if (response.ok) {
+        tools = await response.json();
       }
+    } catch (err) {
+      // Error loading tools - gracefully degrade to basic tooltips
+      toolInventory.value = null;
+      return;
     }
-  } catch (err) {
-    // Error loading tools - gracefully degrade to basic tooltips
-    toolInventory.value = null;
+  }
+
+  // Convert tools array to lookup map by toolNumber for quick access
+  if (Array.isArray(tools)) {
+    const inventory: Record<number, any> = {};
+    tools.forEach((tool: any) => {
+      if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
+        inventory[tool.toolNumber] = tool;
+      }
+    });
+    toolInventory.value = inventory;
   }
 };
 

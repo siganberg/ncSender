@@ -115,6 +115,11 @@ export function useMacroStore() {
 
   const getMacroById = (id: string) => computed(() => macros.value.find(m => m.id === id));
 
+  const setMacros = (data: Macro[]) => {
+    macros.value = data;
+    syncMacroActions(data);
+  };
+
   return {
     macros: computed(() => macros.value),
     loading: computed(() => loading.value),
@@ -123,6 +128,7 @@ export function useMacroStore() {
     createMacro,
     updateMacro,
     deleteMacro,
-    getMacroById
+    getMacroById,
+    setMacros
   };
 }

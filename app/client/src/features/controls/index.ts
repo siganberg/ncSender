@@ -21,20 +21,28 @@ import { gamepadBindingStore } from './gamepad-binding-store';
 import { getKeyboardManager } from './keyboard-manager';
 import { getGamepadManager } from './gamepad-manager';
 import { useMacroStore } from '../macro/store';
+import type { InitData } from '@/lib/init';
 
-export function initializeKeyboardShortcuts(): void {
+export function initializeKeyboardShortcuts(initData?: InitData): void {
   keyBindingStore.bootstrap();
   gamepadBindingStore.bootstrap();
   registerCoreKeyboardActions();
   getKeyboardManager();
   getGamepadManager();
-  try {
+
+  // Load macros from pre-fetched init data if available
+  if (initData?.macros) {
     const macroStore = useMacroStore();
-    macroStore.loadMacros?.().catch(() => {
-      // Macro loading is non-critical for keyboard initialization
-    });
-  } catch (error) {
-    console.warn('Failed to pre-load macros for keyboard shortcuts:', error);
+    macroStore.setMacros(initData.macros);
+  } else {
+    try {
+      const macroStore = useMacroStore();
+      macroStore.loadMacros?.().catch(() => {
+        // Macro loading is non-critical for keyboard initialization
+      });
+    } catch (error) {
+      console.warn('Failed to pre-load macros for keyboard shortcuts:', error);
+    }
   }
 }
 

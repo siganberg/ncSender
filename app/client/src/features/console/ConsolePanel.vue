@@ -522,6 +522,7 @@ import { api } from './api';
 import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../plugins/api';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
+import { getCommandHistoryFromInit } from '@/lib/init';
 import { useConsoleStore } from './store';
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
@@ -1578,6 +1579,13 @@ const sendQuickCommand = async (command: string) => {
 };
 
 const loadCommandHistory = async () => {
+  // Use pre-loaded command history if available
+  const preloaded = getCommandHistoryFromInit();
+  if (preloaded && preloaded.length > 0) {
+    commandHistory.value = preloaded;
+    return;
+  }
+  // Fallback to fetching from API
   try {
     commandHistory.value = await api.getCommandHistory();
   } catch (error) {

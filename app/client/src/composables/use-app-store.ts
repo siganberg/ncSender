@@ -137,6 +137,8 @@ const gridSizeY = ref(DEFAULT_GRID_SIZE_MM);
 const zMaxTravel = ref<number | null>(DEFAULT_Z_TRAVEL_MM);
 const machineDimsLoaded = ref(false);
 let machineDimsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+let cachedFirmwareData: any = null;
+let machineDimsLoading = false;
 type AxisHome = 'min' | 'max';
 type HomeCorner = 'front-left' | 'front-right' | 'back-left' | 'back-right';
 const machineOrientation = reactive({
@@ -492,18 +494,20 @@ const tryLoadMachineDimensionsOnce = async () => {
     }
     return;
   }
-  if (machineDimsLoaded.value) {
+  if (machineDimsLoaded.value || machineDimsLoading) {
     return;
   }
 
+  machineDimsLoading = true;
   debugLog('[Store] Loading machine dimensions from firmware settings...');
   try {
-    // Read from cached firmware data served by the backend (no controller calls)
+    // Use cached firmware data from init if available, otherwise fetch
     // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
-    const firmware = await api.getFirmwareSettings(false).catch(() => null as any);
+    const firmware = cachedFirmwareData || await api.getFirmwareSettings(false).catch(() => null as any);
 
     if (!firmware || !firmware.settings) {
       debugWarn('[Store] Firmware settings not available');
+      machineDimsLoading = false;
       if (!machineDimsRetryTimeout) {
         machineDimsRetryTimeout = setTimeout(async () => {
           machineDimsRetryTimeout = null;
@@ -527,18 +531,20 @@ const tryLoadMachineDimensionsOnce = async () => {
       zMaxTravel.value = zVal;
     }
 
-    // Load home location from settings instead of auto-detecting from $3/$23
-    const settings = await api.getSettings().catch(() => null as any);
+    // Load home location from settings (already loaded via init)
+    const settings = getSettings();
     const homeLocationSetting = settings?.homeLocation || 'back-left';
     updateMachineOrientationFromHomeLocation(homeLocationSetting);
 
     machineDimsLoaded.value = true;
+    machineDimsLoading = false;
     debugLog(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
     if (machineDimsRetryTimeout) {
       clearTimeout(machineDimsRetryTimeout);
       machineDimsRetryTimeout = null;
     }
   } catch (e) {
+    machineDimsLoading = false;
     debugWarn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
     if (!machineDimsRetryTimeout) {
       machineDimsRetryTimeout = setTimeout(async () => {
@@ -807,7 +813,7 @@ export function initializeStore() {
 }
 
 // Seed initial state from server (for late-joining clients)
-export async function seedInitialState() {
+export async function seedInitialState(initData?: any) {
   debugLog('Seeding initial state from server...');
 
   // Set initial WebSocket state
@@ -817,9 +823,14 @@ export async function seedInitialState() {
     websocketConnected.value = false;
   }
 
+  // Cache firmware data from init if available
+  if (initData?.firmware) {
+    cachedFirmwareData = initData.firmware;
+  }
+
   // Seed UI from last known server state; if incomplete, fetch full server-state snapshot
   try {
-    let state = api.lastServerState;
+    let state = initData?.serverState || api.lastServerState;
     const needsFetch = !state || typeof state !== 'object' || state.jobLoaded === undefined || state.machineState === undefined;
     if (needsFetch) {
       try {
