@@ -25,7 +25,7 @@ const { log, error: logError } = createLogger('JogManager');
 // Dead-man switch for continuous jogging
 // Automatically sends jog cancel if heartbeat is not received within timeout
 export class JogWatchdog {
-  constructor({ timeoutMs = 750, onTimeout = null } = {}) {
+  constructor({ timeoutMs = 1500, onTimeout = null } = {}) {
     this.timeoutMs = timeoutMs;
     this.onTimeout = onTimeout;
     this.timer = null;

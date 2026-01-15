@@ -384,7 +384,7 @@ const handleJogDiagonalEnd = (xDirection: 1 | -1, yDirection: 1 | -1, event?: Ev
   }
 };
 
-const stopJog = () => {
+const stopJog = async () => {
   if (!activeJogId) {
     return;
   }
@@ -392,6 +392,14 @@ const stopJog = () => {
   const jogId = activeJogId;
   activeJogId = null;
   stopHeartbeat();
+
+  try {
+    await api.sendCommandViaWebSocket({
+      command: String.fromCharCode(0x85)
+    });
+  } catch (error) {
+    console.error('Failed to send immediate jog cancel:', error);
+  }
 
   jogStop(jogId).catch((error) => {
     console.error('Failed to stop jog session:', error);

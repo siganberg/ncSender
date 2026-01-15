@@ -106,6 +106,13 @@ function createContinuousSession(jogId: string, onStop: string): ContinuousJogSe
       stopped = true;
       clearInterval(heartbeatTimer);
       try {
+        await api.sendCommandViaWebSocket({
+          command: String.fromCharCode(0x85)
+        });
+      } catch (error) {
+        console.error('Failed to send immediate jog cancel:', error);
+      }
+      try {
         await jogStop(jogId, reason);
       } catch (error) {
         console.error(`Failed to stop ${onStop}:`, error);
