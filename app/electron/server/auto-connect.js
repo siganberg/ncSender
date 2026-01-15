@@ -27,6 +27,9 @@ export function createAutoConnector({ cncController }) {
   let loopPromise;
   let inhibited = false; // When true, start() is ignored (used during firmware flashing)
 
+  let lastReconnectLog = 0;
+  const reconnectLogThrottleMs = 30000;
+
   const runLoop = async () => {
     let previousSettings = null;
     let firstIteration = true;
@@ -100,19 +103,28 @@ export function createAutoConnector({ cncController }) {
       }
 
       if (!cncController.isConnected) {
+        const now = Date.now();
+        const shouldLog = now - lastReconnectLog > reconnectLogThrottleMs;
+
         if (cncController.connection || cncController.isConnecting) {
-          log('Disconnecting stale connection before retry...');
+          if (shouldLog) {
+            log('Disconnecting stale connection before retry...');
+          }
           cncController.disconnect();
         }
 
-        log('Attempting to connect...');
+        if (shouldLog) {
+          log('Attempting to connect...');
+          lastReconnectLog = now;
+        }
         try {
           await cncController.connectWithSettings(currentSettings);
           if (cncController.isConnected) {
             log('Auto-connect successful');
+            lastReconnectLog = 0;
           }
         } catch (error) {
-          log('Connection attempt failed, will retry in 1 second');
+          // Silent retry - errors are logged by controller with throttling
         }
       }
     }

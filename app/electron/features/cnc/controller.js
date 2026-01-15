@@ -80,6 +80,11 @@ export class CNCController extends EventEmitter {
 
     // Track pending full status report request from client (0x87)
     this.pendingFullStatusRequest = null;
+
+    // Track last connection error for throttling
+    this.lastConnectionErrorLog = 0;
+    this.lastDisconnectLog = 0;
+    this.connectionErrorThrottleMs = 30000; // Log connection errors max once per 30 seconds
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -695,6 +700,10 @@ export class CNCController extends EventEmitter {
   onConnectionEstablished(type) {
     log(`CNC controller connection opened via ${type}, verifying controller readiness...`);
 
+    // Reset throttle timers on successful connection
+    this.lastConnectionErrorLog = 0;
+    this.lastDisconnectLog = 0;
+
     // Don't mark as fully connected yet - wait for the first status report to confirm controller
     this.isVerifyingConnection = true;
     this.hasReceivedFirstStatus = false;
@@ -713,7 +722,11 @@ export class CNCController extends EventEmitter {
   }
 
   onConnectionClosed(type) {
-    log(`CNC controller disconnected (${type})`);
+    const now = Date.now();
+    if (now - this.lastDisconnectLog > this.connectionErrorThrottleMs) {
+      log(`CNC controller disconnected (${type})`);
+      this.lastDisconnectLog = now;
+    }
     this.isConnected = false;
     this.connectionStatus = 'disconnected';
     this.isVerifyingConnection = false;
@@ -807,7 +820,11 @@ export class CNCController extends EventEmitter {
         });
 
         this.connection.on('error', (error) => {
-          log('CNC controller ethernet connection error:', error);
+          const now = Date.now();
+          if (now - this.lastConnectionErrorLog > this.connectionErrorThrottleMs) {
+            log('CNC controller ethernet connection error:', error);
+            this.lastConnectionErrorLog = now;
+          }
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.handleConnectionError(error);
@@ -854,7 +871,11 @@ export class CNCController extends EventEmitter {
         });
 
         this.connection.on('error', (error) => {
-          log('CNC controller connection error:', error);
+          const now = Date.now();
+          if (now - this.lastConnectionErrorLog > this.connectionErrorThrottleMs) {
+            log('CNC controller connection error:', error);
+            this.lastConnectionErrorLog = now;
+          }
           this.isConnecting = false;
           this.connectionAttempt = null;
           this.handleConnectionError(error);

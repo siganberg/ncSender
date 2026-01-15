@@ -68,6 +68,9 @@ export function registerCncEventHandlers({
 }) {
   const { serverState, computeJobProgressFields } = context;
 
+  let lastConnectionLostLog = 0;
+  const connectionLostThrottleMs = 30000;
+
   const handleStatus = (data) => {
     const newOnlineStatus = data.status === 'connected' && data.isConnected;
     const statusChanged = serverState.machineState.connected !== newOnlineStatus;
@@ -111,7 +114,11 @@ export function registerCncEventHandlers({
     }
 
     if (data.status === 'disconnected' || data.status === 'cancelled') {
-      log('Connection lost, starting reconnection attempts...');
+      const now = Date.now();
+      if (now - lastConnectionLostLog > connectionLostThrottleMs) {
+        log('Connection lost, starting reconnection attempts...');
+        lastConnectionLostLog = now;
+      }
       autoConnector.start();
     }
 
