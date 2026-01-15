@@ -40,9 +40,14 @@ class GCodeVisualizer {
         this.lineNumberMap = new Map(); // lineNumber -> { startVertexIdx, endVertexIdx }
         this.lineMoveType = new Map();  // lineNumber -> 'rapid' | 'cutting'
         this.lineToolNumber = new Map(); // lineNumber -> tool number (for cutting moves)
+        this.lineSpindleSpeed = new Map(); // lineNumber -> S value (spindle speed/laser power)
         this.completedLines = new Set();
         this.selectedLines = new Set(); // Track currently selected lines for highlighting
         this.highlightLine = null; // Separate line object for selection glow effect
+
+        // Laser mode settings
+        this.laserMode = false;
+        this.laserColor = 0xff0000; // Red color for laser paths
 
         // Track which axes have any out-of-bounds vertices
         this._outOfBoundsAxes = new Set(); // subset of ['X','Y','Z']
@@ -175,13 +180,34 @@ class GCodeVisualizer {
         const lines = gcodeString.split('\n');
         const vertices = []; // Flat array of x,y,z coordinates
         const colors = []; // Flat array of r,g,b values
+        const opacities = []; // Flat array of opacity values (for laser mode)
         const frames = []; // Line number to vertex index mapping (start vertex)
+        
+        // Find max S value for normalization (if in laser mode)
+        let maxSValue = 1000; // Default max
+        if (this.laserMode) {
+            // First pass: find max S value
+            let tempMaxS = 0;
+            lines.forEach(line => {
+                const cleanLine = line.split(';')[0].trim().toUpperCase();
+                const sMatch = cleanLine.match(/S([-+]?\d*\.?\d+)/);
+                if (sMatch) {
+                    const sValue = parseFloat(sMatch[1]);
+                    if (!isNaN(sValue) && sValue > tempMaxS) {
+                        tempMaxS = sValue;
+                    }
+                }
+            });
+            maxSValue = tempMaxS > 0 ? tempMaxS : 1000;
+        }
 
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
         let unitScale = 1; // Track unit conversion: 1 for mm (G21), 25.4 for inches (G20)
+        let isIncremental = false; // Track coordinate mode: false = absolute (G90), true = incremental (G91)
         let hasOutOfBounds = false; // Track if any points are out of bounds
         let currentTool = null; // Track active tool number
+        let currentSpindleSpeed = 0; // Track current S value (spindle speed/laser power)
 
         // Reset tracking
         this._outOfBoundsAxes.clear();
@@ -189,6 +215,7 @@ class GCodeVisualizer {
         this.toolsUsed.clear();
         this.toolColors.clear();
         this.toolOrder = [];
+        this.lineSpindleSpeed.clear();
 
         // First pass: identify all tools used in the program in order of first appearance
         // Only consider actual tool change commands (T followed by M6), not tool refs in comments
@@ -252,10 +279,19 @@ class GCodeVisualizer {
             const iMatch = cleanLine.match(/I([-+]?\d*\.?\d+)/);
             const jMatch = cleanLine.match(/J([-+]?\d*\.?\d+)/);
             const tMatch = cleanLine.match(/\bT(\d+)\b/);
+            const sMatch = cleanLine.match(/S([-+]?\d*\.?\d+)/);
 
             // Track tool changes
             if (tMatch) {
                 currentTool = parseInt(tMatch[1]);
+            }
+
+            // Track spindle speed (S value) - used for laser power in laser mode
+            if (sMatch) {
+                const sValue = parseFloat(sMatch[1]);
+                if (!isNaN(sValue) && sValue >= 0) {
+                    currentSpindleSpeed = sValue;
+                }
             }
 
             if (gMatch) {
@@ -267,6 +303,12 @@ class GCodeVisualizer {
                     } else if (gCode === 21) {
                         unitScale = 1; // G21 = mm
                     }
+                    // Track coordinate mode (absolute vs incremental)
+                    if (gCode === 90) {
+                        isIncremental = false; // G90 = absolute coordinates
+                    } else if (gCode === 91) {
+                        isIncremental = true; // G91 = incremental coordinates
+                    }
                     // Track movement type
                     if ([0, 1, 2, 3].includes(gCode)) {
                         lastMoveType = gCode;
@@ -275,9 +317,18 @@ class GCodeVisualizer {
             }
 
             const newPos = { ...currentPos };
-            if (xMatch) newPos.x = parseFloat(xMatch[1]) * unitScale;
-            if (yMatch) newPos.y = parseFloat(yMatch[1]) * unitScale;
-            if (zMatch) newPos.z = parseFloat(zMatch[1]) * unitScale;
+            if (xMatch) {
+                const xValue = parseFloat(xMatch[1]) * unitScale;
+                newPos.x = isIncremental ? currentPos.x + xValue : xValue;
+            }
+            if (yMatch) {
+                const yValue = parseFloat(yMatch[1]) * unitScale;
+                newPos.y = isIncremental ? currentPos.y + yValue : yValue;
+            }
+            if (zMatch) {
+                const zValue = parseFloat(zMatch[1]) * unitScale;
+                newPos.z = isIncremental ? currentPos.z + zValue : zValue;
+            }
 
             const hasMovement = (
                 newPos.x !== currentPos.x ||
@@ -293,6 +344,8 @@ class GCodeVisualizer {
                 if (currentTool !== null) {
                     this.lineToolNumber.set(lineNumber, currentTool);
                 }
+                // Record spindle speed (S value) for this line - used for laser power
+                this.lineSpindleSpeed.set(lineNumber, currentSpindleSpeed);
 
                 // Check if move is out of bounds
                 const oob1 = this._axisOutOfBounds(currentPos.x, currentPos.y, currentPos.z);
@@ -305,9 +358,13 @@ class GCodeVisualizer {
                 if (oob1.z || oob2.z) this._outOfBoundsAxes.add('Z');
 
                 // Determine color based on tool (both rapid and cutting use same tool color)
+                // In laser mode, use laser color for cutting moves
                 let color;
                 if (isOutOfBounds) {
                     color = outOfBoundsColor;
+                } else if (this.laserMode && !isRapid) {
+                    // In laser mode, use laser color for cutting moves
+                    color = new THREE.Color(this.laserColor);
                 } else {
                     // Use tool-based color for all moves (rapid and cutting) if tool is known
                     if (currentTool !== null && this.toolColors.has(currentTool)) {
@@ -353,6 +410,11 @@ class GCodeVisualizer {
                         vertices.push(point2.x, point2.y, z2);
                         colors.push(color.r, color.g, color.b);
                         colors.push(color.r, color.g, color.b);
+                        
+                        // Calculate opacity for laser mode
+                        const opacity = this.laserMode ? this.calculateLaserOpacity(currentSpindleSpeed, maxSValue) : 1.0;
+                        opacities.push(opacity);
+                        opacities.push(opacity);
                     }
                 } else {
                     // Linear move - add as pair
@@ -361,13 +423,18 @@ class GCodeVisualizer {
 
                     colors.push(color.r, color.g, color.b);
                     colors.push(color.r, color.g, color.b);
+                    
+                    // Calculate opacity for laser mode
+                    const opacity = this.laserMode ? this.calculateLaserOpacity(currentSpindleSpeed, maxSValue) : 1.0;
+                    opacities.push(opacity);
+                    opacities.push(opacity);
                 }
 
                 currentPos = newPos;
             }
         });
 
-        return { vertices, colors, frames, hasOutOfBounds };
+        return { vertices, colors, opacities, frames, hasOutOfBounds };
     }
 
     render(gcodeString) {
@@ -383,7 +450,7 @@ class GCodeVisualizer {
         this.lineMoveType.clear();
         this.lineToolNumber.clear();
 
-        const { vertices, colors, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
+        const { vertices, colors, opacities, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
 
         // Store out of bounds status
         this.hasOutOfBounds = hasOutOfBounds;
@@ -394,15 +461,26 @@ class GCodeVisualizer {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        const hasOpacityData = opacities && opacities.length > 0 && opacities.length === vertices.length / 3;
+        if (hasOpacityData) {
+            geometry.setAttribute('opacity', new THREE.Float32BufferAttribute(opacities, 1));
+        } else {
+            // Create default opacity array (all 1.0) if not in laser mode
+            const defaultOpacities = new Array(vertices.length / 3).fill(1.0);
+            geometry.setAttribute('opacity', new THREE.Float32BufferAttribute(defaultOpacities, 1));
+        }
 
         // Custom shader material that can hide vertices by color
         const material = new THREE.ShaderMaterial({
             vertexShader: `
                 attribute vec3 color;
+                attribute float opacity;
                 varying vec3 vColor;
+                varying float vOpacity;
 
                 void main() {
                     vColor = color;
+                    vOpacity = opacity;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
@@ -412,8 +490,10 @@ class GCodeVisualizer {
                 uniform bool showRapid;
                 uniform bool showCutting;
                 uniform float opacity;
+                uniform bool useVertexOpacity;
 
                 varying vec3 vColor;
+                varying float vOpacity;
 
                 void main() {
                     // Discard hidden tools (black color = hidden)
@@ -433,7 +513,9 @@ class GCodeVisualizer {
                     if (isRapid && !showRapid) discard;
                     if (isCutting && !showCutting) discard;
 
-                    gl_FragColor = vec4(vColor, opacity);
+                    // Use per-vertex opacity if available (for laser mode), otherwise use uniform
+                    float finalOpacity = useVertexOpacity ? vOpacity * opacity : opacity;
+                    gl_FragColor = vec4(vColor, finalOpacity);
                 }
             `,
             uniforms: {
@@ -441,7 +523,8 @@ class GCodeVisualizer {
                 outOfBoundsColor: { value: new THREE.Color(this.moveColors.outOfBounds) },
                 showRapid: { value: this.showRapid },
                 showCutting: { value: this.showCutting },
-                opacity: { value: 0.9 }
+                opacity: { value: 0.9 },
+                useVertexOpacity: { value: this.laserMode && hasOpacityData }
             },
             transparent: true,
             depthTest: false
@@ -529,6 +612,25 @@ class GCodeVisualizer {
         });
         // Recompute colors for all vertices based on new palette
         this.updateOutOfBoundsColors();
+    }
+
+    setLaserMode(enabled) {
+        if (this.laserMode === enabled) return;
+        this.laserMode = enabled;
+        // Re-render if we have G-code loaded
+        if (this.currentGCode) {
+            this.render(this.currentGCode);
+        }
+    }
+
+    // Calculate opacity based on spindle speed (S value) for laser mode
+    // Higher S = higher opacity, S=0 = very low opacity (0.05)
+    calculateLaserOpacity(sValue, maxSValue = 1000) {
+        if (!this.laserMode) return 1.0;
+        if (sValue <= 0) return 0.05; // Very low opacity when laser is off
+        // Normalize S value to 0-1 range, then map to 0.1-1.0 opacity range
+        const normalized = Math.min(sValue / maxSValue, 1.0);
+        return 0.1 + (normalized * 0.9); // Range from 0.1 to 1.0
     }
 
     markLineCompleted(lineNumber) {
