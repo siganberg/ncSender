@@ -230,6 +230,74 @@ export const generateCuttingPointer = () => {
     return group;
 };
 
+export const generateLaserPointer = () => {
+    const group = new THREE.Group();
+    group.name = 'laser-pointer';
+
+    const laserColor = 0x00aaff; // Blue diode laser
+    const beamLength = 15;
+    const beamRadius = 0.15;
+    
+    // Main laser beam - solid blue core
+    const coreGeometry = new THREE.CylinderGeometry(beamRadius, beamRadius, beamLength, 16);
+    const coreMaterial = new THREE.MeshBasicMaterial({
+        color: laserColor
+    });
+    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+    core.rotation.x = Math.PI / 2;
+    core.position.set(0, 0, beamLength / 2);
+    core.renderOrder = 1000;
+    group.add(core);
+
+    // Glowing tip at Z=0 using sprite with radial gradient
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = 128;
+    glowCanvas.height = 128;
+    const ctx = glowCanvas.getContext('2d');
+    if (ctx) {
+        const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        gradient.addColorStop(0, 'rgba(0, 170, 255, 1)');    // Bright blue center
+        gradient.addColorStop(0.3, 'rgba(0, 170, 255, 0.6)'); // Still visible
+        gradient.addColorStop(0.6, 'rgba(0, 170, 255, 0.3)'); // Fading
+        gradient.addColorStop(1, 'rgba(0, 170, 255, 0)');     // Transparent edge
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 128, 128);
+    }
+    const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    
+    const glowMaterial = new THREE.SpriteMaterial({
+        map: glowTexture,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    
+    const glowSprite = new THREE.Sprite(glowMaterial);
+    glowSprite.scale.set(3, 3, 1); // Size of the glow
+    glowSprite.position.set(0, 0, 0); // Tip at Z=0
+    glowSprite.renderOrder = 999;
+    glowSprite.name = 'laser-glow'; // Name it so we can find it later
+    group.add(glowSprite);
+
+    // Add method to update glow intensity based on laser power
+    group.userData.updateLaserPower = (powerPercent) => {
+        // powerPercent: 0-1 (0 = off, 1 = full power)
+        const minOpacity = 0.1; // Minimum glow when laser is off
+        const maxOpacity = 1.0; // Maximum glow at full power
+        const opacity = minOpacity + (maxOpacity - minOpacity) * powerPercent;
+        glowSprite.material.opacity = opacity;
+        
+        // Also scale the glow size based on power
+        const minScale = 1.5;
+        const maxScale = 3.5;
+        const scale = minScale + (maxScale - minScale) * powerPercent;
+        glowSprite.scale.set(scale, scale, 1);
+    };
+
+    return group;
+};
+
 // Utility: list pointer meshes with indices to the console
 export const listPointerMeshes = (group) => {
     const meshes = [];

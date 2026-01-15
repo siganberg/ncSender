@@ -184,6 +184,11 @@ export function registerCncEventHandlers({
         log(`Updated machineState.homingCycle to ${serverState.machineState.homingCycle} (from $22=${newValue})`);
         broadcast('server-state-updated', serverState);
       }
+
+      // Broadcast firmware setting change for $32 (laser mode)
+      if (id === '32' && valueChanged) {
+        broadcast('firmware-setting-changed', { id, value: newValue });
+      }
     } catch (error) {
       log('Failed to update firmware.json from command-ack:', error?.message || error);
     }
