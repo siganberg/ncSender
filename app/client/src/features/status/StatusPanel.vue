@@ -228,9 +228,10 @@ const store = useStatusStore();
 const appStore = useAppStore();
 const { isJobRunning } = appStore;
 
-// Computed to check if coordinate zeroing should be disabled (not connected, not homed, or homing)
+// Computed to check if coordinate zeroing should be disabled (not connected, or homing)
+// Only require homing if homingCycle > 0
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-const cardDisabled = computed(() => !store.isConnected.value || !store.isHomed.value || isHoming.value || store.isProbing.value);
+const cardDisabled = computed(() => !store.isConnected.value || (store.homingCycle.value > 0 && !store.isHomed.value) || isHoming.value || store.isProbing.value);
 const axisControlsDisabled = computed(() => cardDisabled.value || isJobRunning.value);
 
 // TLR warning state for Z axis zeroing
@@ -442,7 +443,7 @@ const ensureAxisState = (axis: AxisKey) => {
 let activeAxis: string | null = null;
 
 const startLongPress = (axis: AxisKey, _evt: Event) => {
-  if (axisControlsDisabled.value || !store.isHomed.value) {
+  if (axisControlsDisabled.value) {
     return;
   }
   const state = ensureAxisState(axis);

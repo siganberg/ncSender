@@ -89,6 +89,21 @@ export function registerCncEventHandlers({
           log('Initializing firmware after controller connection...');
           await initializeFirmwareOnConnection(cncController);
           log('Firmware initialization complete');
+
+          // Initialize machineState.homingCycle from firmware.json $22 (bitwise value)
+          try {
+            const firmwareText = await fs.readFile(firmwareFilePath, 'utf8');
+            const firmwareData = JSON.parse(firmwareText);
+            const setting22 = firmwareData.settings?.['22']?.value;
+            if (setting22 !== undefined) {
+              const numericValue = parseInt(setting22, 10);
+              serverState.machineState.homingCycle = isNaN(numericValue) ? 0 : numericValue;
+              log(`Initialized machineState.homingCycle to ${serverState.machineState.homingCycle} (from $22=${setting22})`);
+              broadcast('server-state-updated', serverState);
+            }
+          } catch (err) {
+            log('Could not read $22 from firmware.json:', err?.message || err);
+          }
         } catch (error) {
           log('Failed to initialize firmware on connection:', error?.message || error);
         }
@@ -153,6 +168,14 @@ export function registerCncEventHandlers({
       if (valueChanged && firmwareData.settings[id]?.halDetails?.[7] === '1') {
         const restartMessage = `(Setting $${id} changed - Controller restart required for changes to take effect)`;
         broadcast('cnc-data', restartMessage);
+      }
+
+      // Update machineState.homingCycle when $22 changes (bitwise value)
+      if (id === '22' && valueChanged) {
+        const numericValue = parseInt(newValue, 10);
+        serverState.machineState.homingCycle = isNaN(numericValue) ? 0 : numericValue;
+        log(`Updated machineState.homingCycle to ${serverState.machineState.homingCycle} (from $22=${newValue})`);
+        broadcast('server-state-updated', serverState);
       }
     } catch (error) {
       log('Failed to update firmware.json from command-ack:', error?.message || error);

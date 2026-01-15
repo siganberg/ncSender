@@ -205,6 +205,7 @@ const senderStatus = computed(() => {
 const isConnected = computed(() => status.connected && websocketConnected.value);
 const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
+const homingCycle = computed(() => serverState.machineState?.homingCycle ?? 0);
 const isProbing = computed(() => senderStatus.value === 'probing');
 const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
 const unitsPreference = computed<UnitsPreference>(() => {
@@ -922,6 +923,7 @@ export function useAppStore() {
     isConnected,
     currentJobFilename,
     isHomed,
+    homingCycle,
     isProbing,
     isJobRunning,
     unitsPreference,

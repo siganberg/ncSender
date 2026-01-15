@@ -15,6 +15,7 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import fs from 'node:fs/promises';
 import { checkSameToolChange, parseM6Command, isSpindleStartCommand, isSpindleStopCommand } from '../utils/gcode-patterns.js';
 import { getSetting } from './settings-manager.js';
 import { createLogger } from './logger.js';
@@ -37,11 +38,12 @@ const DOOR_STATE_MAX_FEED_RATE = 1000;
  * Flow: Entry Point → CommandProcessor → Plugin Manager → Controller → CNC
  */
 export class CommandProcessor {
-  constructor({ cncController, pluginManager, broadcast, serverState }) {
+  constructor({ cncController, pluginManager, broadcast, serverState, firmwareFilePath }) {
     this.cncController = cncController;
     this.pluginManager = pluginManager;
     this.broadcast = broadcast;
     this.serverState = serverState;
+    this.firmwareFilePath = firmwareFilePath;
   }
 
   /**
@@ -69,6 +71,12 @@ export class CommandProcessor {
     const doorSafetyResult = this.checkDoorStateSafety(command, commandId, meta, machineState);
     if (doorSafetyResult) {
       return doorSafetyResult;
+    }
+
+    // Validate firmware setting commands (bitfield validation)
+    const bitfieldResult = await this.checkBitfieldSetting(command, commandId, meta);
+    if (bitfieldResult) {
+      return bitfieldResult;
     }
 
     // Handle $NCSENDER_CLEAR_MSG command - clear plugin message and notify all clients
@@ -300,6 +308,67 @@ export class CommandProcessor {
   validateCommand() {
     // TODO: Implement validation logic (will use command, context)
     return { valid: true };
+  }
+
+  /**
+   * Check if command is a firmware setting with bitfield dataType (2) and validate value
+   * Bitfield values must be 0 or odd (bit 0 must be set for non-zero values)
+   */
+  async checkBitfieldSetting(command, commandId, meta) {
+    const trimmed = command.trim();
+    const match = trimmed.match(/^\$(\d+)=\s*(.+)$/);
+    if (!match) return null;
+
+    const settingId = match[1];
+    const value = match[2];
+
+    // Read firmware.json to check dataType
+    let firmwareData;
+    try {
+      const text = await fs.readFile(this.firmwareFilePath, 'utf8');
+      firmwareData = JSON.parse(text);
+    } catch {
+      return null; // Can't read firmware.json, skip validation
+    }
+
+    const settingDef = firmwareData.settings?.[settingId];
+    if (settingDef?.dataType !== 2) return null; // Not a bitfield setting
+
+    const numValue = parseInt(value, 10);
+    if (isNaN(numValue) || numValue === 0 || numValue % 2 !== 0) return null; // Valid value
+
+    // Invalid bitfield value (non-zero even number)
+    const displayCommand = `$${settingId}=${value} (Ignoring, bitfield value must be 0 or odd)`;
+    log(`Invalid bitfield: ${displayCommand}`);
+
+    this.broadcast('cnc-command', {
+      id: commandId,
+      command: trimmed,
+      displayCommand,
+      status: 'pending',
+      timestamp: new Date().toISOString(),
+      sourceId: meta.sourceId || 'client'
+    });
+
+    this.broadcast('cnc-command-result', {
+      id: commandId,
+      command: trimmed,
+      displayCommand,
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      sourceId: meta.sourceId || 'client'
+    });
+
+    return {
+      shouldContinue: false,
+      result: {
+        status: 'success',
+        id: commandId,
+        command: trimmed,
+        displayCommand,
+        timestamp: new Date().toISOString()
+      }
+    };
   }
 
   /**

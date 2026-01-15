@@ -25,6 +25,7 @@ export function useJogStore() {
   return {
     isConnected: app.isConnected,
     isHomed: app.isHomed,
+    homingCycle: app.homingCycle,
     isProbing: app.isProbing,
     machineState: computed(() => app.status.machineState),
     senderStatus: app.senderStatus

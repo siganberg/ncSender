@@ -1746,9 +1746,19 @@ const escapeHtml = (text: string): string => {
 
 // Highlight G-code syntax in terminal messages
 const highlightGcode = (item: { message: string; type: string }): string => {
-  // Only highlight command type messages
+  // For response type, only highlight comments (parentheses content)
   if (item.type !== 'command') {
-    return escapeHtml(item.message);
+    let text = item.message;
+    const comments: string[] = [];
+    text = text.replace(/(\([^)]*\))/g, (match) => {
+      comments.push(match);
+      return `\x00COMMENT${comments.length - 1}\x00`;
+    });
+    let html = escapeHtml(text);
+    html = html.replace(/\x00COMMENT(\d+)\x00/g, (_, idx) => {
+      return `<span class="gc-comment">${escapeHtml(comments[parseInt(idx)])}</span>`;
+    });
+    return html;
   }
 
   let text = item.message;
