@@ -74,8 +74,8 @@
         type="text"
         class="tree-item__name-input"
         v-model="editName"
-        @blur="finishRename"
-        @keydown.enter="($event.target as HTMLInputElement).blur()"
+        @blur="handleBlur"
+        @keydown.enter="confirmRename"
         @keydown.escape="cancelRename"
         @click.stop
       />
@@ -129,6 +129,28 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3,6 5,6 21,6"/>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Rename actions (confirm/cancel) -->
+      <div class="tree-item__actions tree-item__actions--rename" v-if="isRenaming">
+        <button
+          class="tree-item__rename-btn tree-item__rename-btn--confirm"
+          @click.stop="confirmRename"
+          title="Confirm (Enter)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </button>
+        <button
+          class="tree-item__rename-btn tree-item__rename-btn--cancel"
+          @click.stop="cancelRename"
+          title="Cancel (Escape)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
       </div>
@@ -223,6 +245,7 @@ const emit = defineEmits<{
 const renameInput = ref<HTMLInputElement | null>(null);
 const editName = ref('');
 const draggedData = ref<TreeNode | null>(null);
+let renameHandled = false;
 
 const isExpanded = computed(() => props.expandedFolders.has(props.node.id));
 const isLoading = computed(() => props.loadingFile === props.node.path);
@@ -277,6 +300,7 @@ const handleDoubleClick = () => {
 };
 
 const startRename = () => {
+  renameHandled = false;
   editName.value = props.node.name;
   emit('rename-start', props.node);
   nextTick(() => {
@@ -286,10 +310,29 @@ const startRename = () => {
 };
 
 const finishRename = () => {
+  if (renameHandled) return;
+  renameHandled = true;
   emit('rename-end', { node: props.node, newName: editName.value });
 };
 
+const confirmRename = () => {
+  finishRename();
+};
+
+const handleBlur = (e: FocusEvent) => {
+  const relatedTarget = e.relatedTarget as HTMLElement | null;
+
+  // Don't finish rename if focus is moving to our action buttons
+  if (relatedTarget?.closest('.tree-item__actions--rename')) {
+    return;
+  }
+
+  finishRename();
+};
+
 const cancelRename = () => {
+  if (renameHandled) return;
+  renameHandled = true;
   emit('rename-end', { node: props.node, newName: props.node.name });
 };
 
@@ -363,6 +406,7 @@ const onDragEnd = () => {
 // Focus rename input when entering rename mode
 watch(isRenaming, (renaming) => {
   if (renaming) {
+    renameHandled = false;
     editName.value = props.node.name;
     nextTick(() => {
       renameInput.value?.focus();
@@ -492,6 +536,48 @@ watch(isRenaming, (renaming) => {
   border-radius: 4px;
   color: var(--color-text-primary);
   outline: none;
+}
+
+.tree-item__actions--rename {
+  opacity: 1;
+  justify-content: flex-start;
+}
+
+.tree-item__rename-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tree-item__rename-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tree-item__rename-btn--confirm {
+  background: var(--color-accent);
+  color: white;
+}
+
+.tree-item__rename-btn--confirm:hover {
+  background: var(--color-accent-hover, #16a085);
+}
+
+.tree-item__rename-btn--cancel {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+}
+
+.tree-item__rename-btn--cancel:hover {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
 }
 
 .tree-item__size {

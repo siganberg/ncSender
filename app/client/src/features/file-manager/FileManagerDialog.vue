@@ -529,7 +529,9 @@ const startRename = (node: TreeNode) => {
 };
 
 const finishRename = async (payload: { node: TreeNode; newName: string }) => {
-  renamingId.value = null;
+  if (renamingId.value === payload.node.id) {
+    renamingId.value = null;
+  }
 
   const { node, newName } = payload;
   if (!newName.trim() || newName === node.name) return;
