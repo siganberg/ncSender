@@ -66,6 +66,7 @@ class KeyboardManager {
   private jogStates = new Map<string, ActiveJogState>();
   private activeDiagonalKey: string | null = null;
   private longPressStates = new Map<string, ActiveLongPressState>();
+  private heldKeys = new Set<string>();
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -118,6 +119,8 @@ class KeyboardManager {
 
       event.preventDefault();
       event.stopPropagation();
+
+      this.heldKeys.add(eventCode);
 
       const isDiagonal = this.checkAndHandleDiagonalJog(eventCode, jogMeta, combo);
       if (isDiagonal) {
@@ -308,6 +311,8 @@ class KeyboardManager {
     const actionId = combo ? keyBindingStore.getBinding(combo) : undefined;
     const eventCode = event.code || combo || '';
 
+    this.heldKeys.delete(eventCode);
+
     const longPressState = this.longPressStates.get(eventCode);
     if (longPressState) {
       if (!longPressState.completed) {
@@ -403,8 +408,11 @@ class KeyboardManager {
         state.cancelled = true;
 
         const startRemainingAxisJog = () => {
-          // Start a new single-axis jog for the key that's still held
-          if (remainingEventCode && remainingCombo && remainingDirection !== undefined) {
+          // Only start if the remaining key is actually still held
+          if (!remainingEventCode || !this.heldKeys.has(remainingEventCode)) {
+            return;
+          }
+          if (remainingCombo && remainingDirection !== undefined) {
             const newState: ActiveJogState = {
               axis: remainingAxis,
               direction: remainingDirection,
@@ -469,6 +477,8 @@ class KeyboardManager {
   }
 
   private handleWindowBlur = () => {
+    this.heldKeys.clear();
+
     for (const [eventCode, longPressState] of Array.from(this.longPressStates.entries())) {
       if (!longPressState.completed) {
         longPressState.cancelled = true;
@@ -544,6 +554,9 @@ class KeyboardManager {
     promise
       .then((session) => {
         if (state.finished) {
+          if (session) {
+            session.stop('state-already-finished').catch(() => {});
+          }
           return;
         }
         state.session = session;

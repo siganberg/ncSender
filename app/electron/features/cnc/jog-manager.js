@@ -157,6 +157,11 @@ export class JogSessionManager {
     this.sessionsBySocket.set(ws, sessionSet);
 
     try {
+      // Safety: Cancel any stuck jog before starting new one (handles failed deadman switch)
+      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
+        meta: { sourceId: 'jog-safety', silent: true }
+      });
+
       // Route through CommandProcessor for safety checks and plugin interception
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
@@ -332,6 +337,11 @@ export class JogSessionManager {
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     try {
+      // Safety: Cancel any stuck jog before starting new one (handles failed deadman switch)
+      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
+        meta: { sourceId: 'jog-safety', silent: true }
+      });
+
       // Route through CommandProcessor for safety checks and plugin interception
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
