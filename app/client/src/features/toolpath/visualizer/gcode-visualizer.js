@@ -204,7 +204,6 @@ class GCodeVisualizer {
         let currentPos = { x: 0, y: 0, z: 0 };
         let lastMoveType = null;
         let unitScale = 1; // Track unit conversion: 1 for mm (G21), 25.4 for inches (G20)
-        let isIncremental = false; // Track coordinate mode: false = absolute (G90), true = incremental (G91)
         let hasOutOfBounds = false; // Track if any points are out of bounds
         let currentTool = null; // Track active tool number
         let currentSpindleSpeed = 0; // Track current S value (spindle speed/laser power)
@@ -303,12 +302,6 @@ class GCodeVisualizer {
                     } else if (gCode === 21) {
                         unitScale = 1; // G21 = mm
                     }
-                    // Track coordinate mode (absolute vs incremental)
-                    if (gCode === 90) {
-                        isIncremental = false; // G90 = absolute coordinates
-                    } else if (gCode === 91) {
-                        isIncremental = true; // G91 = incremental coordinates
-                    }
                     // Track movement type
                     if ([0, 1, 2, 3].includes(gCode)) {
                         lastMoveType = gCode;
@@ -319,15 +312,15 @@ class GCodeVisualizer {
             const newPos = { ...currentPos };
             if (xMatch) {
                 const xValue = parseFloat(xMatch[1]) * unitScale;
-                newPos.x = isIncremental ? currentPos.x + xValue : xValue;
+                newPos.x = xValue;
             }
             if (yMatch) {
                 const yValue = parseFloat(yMatch[1]) * unitScale;
-                newPos.y = isIncremental ? currentPos.y + yValue : yValue;
+                newPos.y = yValue;
             }
             if (zMatch) {
                 const zValue = parseFloat(zMatch[1]) * unitScale;
-                newPos.z = isIncremental ? currentPos.z + zValue : zValue;
+                newPos.z = zValue;
             }
 
             const hasMovement = (
