@@ -1,4 +1,4 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Improved server startup logic for better reliability
+- Added cancel and confirm buttons when renaming files in the file manager for better control over file operations
