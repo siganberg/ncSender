@@ -238,10 +238,16 @@ class KeyboardManager {
         if (action && (!action.isEnabled || action.isEnabled())) {
           const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
 
+          // Check if previous jog was continuous (long press) before cleanup
+          let wasLongPress = false;
+
           // Cancel and cleanup existing X axis state
           if (xAction.eventCode !== eventCode) {
             const xState = this.jogStates.get(xAction.eventCode);
             if (xState && !xState.finished) {
+              if (xState.longPressActive) {
+                wasLongPress = true;
+              }
               xState.cancelled = true;
               xState.handledShortStep = true;
               if (xState.timerId !== null) {
@@ -259,6 +265,9 @@ class KeyboardManager {
           if (yAction.eventCode !== eventCode) {
             const yState = this.jogStates.get(yAction.eventCode);
             if (yState && !yState.finished) {
+              if (yState.longPressActive) {
+                wasLongPress = true;
+              }
               yState.cancelled = true;
               yState.handledShortStep = true;
               if (yState.timerId !== null) {
@@ -294,9 +303,15 @@ class KeyboardManager {
           this.jogStates.set(diagonalKey, diagonalState);
           this.activeDiagonalKey = diagonalKey;
 
-          diagonalState.timerId = window.setTimeout(() => {
+          // If previous jog was continuous, start diagonal continuous jog immediately
+          // without waiting for the long press delay (key was already held long enough)
+          if (wasLongPress) {
             this.beginLongPress(diagonalKey, diagonalState);
-          }, JOG_LONG_PRESS_DELAY_MS);
+          } else {
+            diagonalState.timerId = window.setTimeout(() => {
+              this.beginLongPress(diagonalKey, diagonalState);
+            }, JOG_LONG_PRESS_DELAY_MS);
+          }
 
           return true;
         }
@@ -437,14 +452,14 @@ class KeyboardManager {
         if (state.timerId !== null) {
           clearTimeout(state.timerId);
           state.timerId = null;
+          // Short diagonal press - just do step jog, don't start continuous for remaining axis
           this.runShortJog(diagonalKey, state);
-          startRemainingAxisJog();
           return;
         }
 
         if (!state.longPressTriggered) {
           this.cleanupJogState(diagonalKey, state);
-          startRemainingAxisJog();
+          // Not a long press, don't start continuous jog
           return;
         }
 
