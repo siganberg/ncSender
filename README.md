@@ -2,7 +2,7 @@
 
 ## 💬 Join the Community
 
-[![Join Discord](https://img.shields.io/badge/Join_our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/qpKzpmYD)
+[![Join Discord](https://img.shields.io/badge/Join_our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/3U5Jx2q2wZ)
 
 Get help, share tips, and stay updated on ncSender news.
 
