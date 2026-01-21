@@ -1,5 +1,6 @@
 ## What's Changed
 
 ### 🐛 Bug Fixes
-- Fixed keyboard jog controls not responding correctly
-- Fixed atomic jog cancel functionality
+- Fixed jog oscillation issues that could cause erratic movement during jogging operations
+- Resolved watchdog timeout issues for improved connection stability
+- Fixed step jogs to use atomic commands for more reliable single-step movements
