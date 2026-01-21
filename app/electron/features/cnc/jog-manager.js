@@ -157,11 +157,6 @@ export class JogSessionManager {
     this.sessionsBySocket.set(ws, sessionSet);
 
     try {
-      // Safety: Cancel any stuck jog before starting new one (handles failed deadman switch)
-      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
-        meta: { sourceId: 'jog-safety', silent: true }
-      });
-
       // Route through CommandProcessor for safety checks and plugin interception
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
@@ -181,20 +176,20 @@ export class JogSessionManager {
           return;
         }
 
-        // Send processed commands
+        // Send processed commands with atomic jog cancel prefix
         for (const cmd of result.commands) {
           await this.cncController.sendCommand(cmd.command, {
             commandId: jogId,
             displayCommand: cmd.displayCommand || cmd.command,
-            meta: { continuous: true, sourceId: 'client' }
+            meta: { continuous: true, sourceId: 'client', atomicJogCancel: true }
           });
         }
       } else {
-        // Fallback to direct controller call
+        // Fallback to direct controller call with atomic jog cancel prefix
         await this.cncController.sendCommand(command, {
           commandId: jogId,
           displayCommand: displayCommand || command,
-          meta: { continuous: true, sourceId: 'client' }
+          meta: { continuous: true, sourceId: 'client', atomicJogCancel: true }
         });
       }
     } catch (error) {

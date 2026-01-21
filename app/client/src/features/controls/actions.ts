@@ -105,13 +105,8 @@ function createContinuousSession(jogId: string, onStop: string): ContinuousJogSe
       }
       stopped = true;
       clearInterval(heartbeatTimer);
-      try {
-        await api.sendCommandViaWebSocket({
-          command: String.fromCharCode(0x85)
-        });
-      } catch (error) {
-        console.error('Failed to send immediate jog cancel:', error);
-      }
+      // Let the server handle 0x85 - it sends it atomically with the next jog command
+      // or via finalizeSession() when stopping without a new jog
       try {
         await jogStop(jogId, reason);
       } catch (error) {

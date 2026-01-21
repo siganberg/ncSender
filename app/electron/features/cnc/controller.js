@@ -1027,6 +1027,31 @@ export class CNCController extends EventEmitter {
       log('Failed to send emergency jog cancel:', error);
     }
 
+    // Clear active jog command to unblock the queue
+    // The queue waits for 'ok' which may never come for cancelled jog
+    if (this.activeCommand && /^\$J=/i.test(this.activeCommand.rawCommand)) {
+      const cmd = this.activeCommand;
+      this.activeCommand = null;
+      log('Clearing stuck jog command from queue:', cmd.id);
+
+      if (cmd.timeoutHandle) {
+        clearTimeout(cmd.timeoutHandle);
+      }
+
+      const payload = {
+        id: cmd.id,
+        command: cmd.rawCommand,
+        displayCommand: cmd.displayCommand,
+        meta: cmd.meta,
+        status: 'cancelled',
+        reason: 'jog-cancelled-by-watchdog',
+        timestamp: new Date().toISOString()
+      };
+
+      cmd.resolve(payload);
+      this.emit('command-ack', payload);
+    }
+
     this.jogWatchdog.clear();
   }
 
@@ -1170,6 +1195,12 @@ export class CNCController extends EventEmitter {
     // Skip watchdog for step jogs (meta.jogStep = true) since they complete quickly
     const isJogCommand = /^\$J=/i.test(finalCommand);
     const isStepJog = normalizedMeta?.jogStep === true;
+
+    // For continuous jog commands, prepend 0x85 (jog cancel) to make cancel+start atomic
+    // This ensures any previous jog is cancelled in the same serial write as the new jog starts
+    if (isJogCommand && normalizedMeta?.atomicJogCancel) {
+      commandToSend = '\x85' + commandToSend;
+    }
     if (isJogCommand && !isStepJog) {
       this.jogWatchdog.start(resolvedCommandId, finalCommand);
       log('Dead-man switch watchdog started for continuous jog:', resolvedCommandId);
