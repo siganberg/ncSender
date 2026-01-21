@@ -127,6 +127,7 @@ const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
 const isLocalClient = ref<boolean | null>(null); // null = not yet determined
 const remoteControlEnabled = ref(false);
+const remoteStateInitialized = ref(false); // true after WebSocket handshake determines client type
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
 // Grid size defaults - should be loaded from firmware settings $130/$131
@@ -217,9 +218,9 @@ const unitsPreference = computed<UnitsPreference>(() => {
 const hasFullControl = computed(() => {
   // Electron app always has full control
   if (api.isElectron) return true;
-  // If client state not yet determined (WebSocket handshake pending), assume full control
-  // This prevents the gate from flashing before we know if client is local
-  if (isLocalClient.value === null) return true;
+  // Wait for WebSocket handshake to determine client type before showing gate
+  // This prevents the gate from flashing before we know the full state
+  if (!remoteStateInitialized.value) return true;
   // Local browser always has full control
   if (isLocalClient.value === true) return true;
   // Remote browser depends on setting
@@ -604,12 +605,15 @@ export function initializeStore() {
   // Remote control state changes
   api.on('remote-control-state', (data: { isLocal?: boolean; enabled?: boolean }) => {
     debugLog('Remote control state updated:', data);
-    // Only update values that are present in the data
     if (typeof data.isLocal === 'boolean') {
       isLocalClient.value = data.isLocal;
     }
     if (typeof data.enabled === 'boolean') {
       remoteControlEnabled.value = data.enabled;
+    }
+    // Mark as initialized after first client-id message (when isLocal is provided)
+    if (typeof data.isLocal === 'boolean') {
+      remoteStateInitialized.value = true;
     }
   });
 
@@ -617,6 +621,7 @@ export function initializeStore() {
   if (typeof api.isLocalClient === 'boolean') {
     isLocalClient.value = api.isLocalClient;
     remoteControlEnabled.value = api.remoteControlEnabled;
+    remoteStateInitialized.value = true;
     debugLog('Remote control state initialized from api:', { isLocal: api.isLocalClient, enabled: api.remoteControlEnabled });
   }
 
