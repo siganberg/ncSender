@@ -332,16 +332,11 @@ export class JogSessionManager {
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     try {
-      // Safety: Cancel any stuck jog before starting new one (handles failed deadman switch)
-      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
-        meta: { sourceId: 'jog-safety', silent: true }
-      });
-
       // Route through CommandProcessor for safety checks and plugin interception
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
           commandId: resolvedCommandId,
-          meta: { jogStep: true, sourceId: 'client' },
+          meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true },
           machineState: this.cncController.lastStatus
         });
 
@@ -351,20 +346,20 @@ export class JogSessionManager {
           return;
         }
 
-        // Send processed commands
+        // Send processed commands with atomic jog cancel prefix
         for (const cmd of result.commands) {
           await this.cncController.sendCommand(cmd.command, {
             commandId: resolvedCommandId,
             displayCommand: cmd.displayCommand || cmd.command,
-            meta: { jogStep: true, sourceId: 'client' }
+            meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true }
           });
         }
       } else {
-        // Fallback to direct controller call
+        // Fallback to direct controller call with atomic jog cancel prefix
         await this.cncController.sendCommand(command, {
           commandId: resolvedCommandId,
           displayCommand: displayCommand || command,
-          meta: { jogStep: true, sourceId: 'client' }
+          meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true }
         });
       }
     } catch (error) {
