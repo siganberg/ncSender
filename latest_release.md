@@ -1,4 +1,5 @@
 ## What's Changed
 
-### 🔒 Security
-- Remote clients can no longer modify connection settings, preventing unauthorized changes to your CNC configuration
+### 🐛 Bug Fixes
+- Fixed double-tap detection on touchscreen devices for axis cards
+- Fixed XY button visibility during edit mode
