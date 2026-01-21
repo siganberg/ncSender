@@ -156,52 +156,7 @@ export class JogSessionManager {
     const sessionSet = this.sessionsBySocket.get(ws) ?? new Set();
     this.sessionsBySocket.set(ws, sessionSet);
 
-    try {
-      // Route through CommandProcessor for safety checks and plugin interception
-      if (this.commandProcessor) {
-        const result = await this.commandProcessor.process(command, {
-          commandId: jogId,
-          meta: { continuous: true, sourceId: 'client' },
-          machineState: this.cncController.lastStatus
-        });
-
-        if (!result.shouldContinue) {
-          // Command was blocked or handled by CommandProcessor
-          const message = result.result?.message || 'Jog command blocked';
-          log('Jog start blocked by CommandProcessor', `jogId=${jogId}`, message);
-          this.sendSafe(ws, {
-            type: 'jog:start-failed',
-            data: { jogId, message }
-          });
-          return;
-        }
-
-        // Send processed commands with atomic jog cancel prefix
-        for (const cmd of result.commands) {
-          await this.cncController.sendCommand(cmd.command, {
-            commandId: jogId,
-            displayCommand: cmd.displayCommand || cmd.command,
-            meta: { continuous: true, sourceId: 'client', atomicJogCancel: true }
-          });
-        }
-      } else {
-        // Fallback to direct controller call with atomic jog cancel prefix
-        await this.cncController.sendCommand(command, {
-          commandId: jogId,
-          displayCommand: displayCommand || command,
-          meta: { continuous: true, sourceId: 'client', atomicJogCancel: true }
-        });
-      }
-    } catch (error) {
-      const message = error?.message || 'Failed to start jog command';
-      log('Jog start failed', `jogId=${jogId}`, message);
-      this.sendSafe(ws, {
-        type: 'jog:start-failed',
-        data: { jogId, message }
-      });
-      return;
-    }
-
+    // Register session BEFORE sending command so heartbeats can be accepted while command is queued
     const session = {
       jogId,
       ws,
@@ -212,6 +167,57 @@ export class JogSessionManager {
 
     this.sessionsById.set(jogId, session);
     sessionSet.add(jogId);
+
+    try {
+      // Route through CommandProcessor for safety checks and plugin interception
+      if (this.commandProcessor) {
+        const result = await this.commandProcessor.process(command, {
+          commandId: jogId,
+          meta: { continuous: true, sourceId: 'client' },
+          machineState: this.cncController.lastStatus
+        });
+
+        if (!result.shouldContinue) {
+          // Command was blocked - unregister session
+          this.sessionsById.delete(jogId);
+          sessionSet.delete(jogId);
+          const message = result.result?.message || 'Jog command blocked';
+          log('Jog start blocked by CommandProcessor', `jogId=${jogId}`, message);
+          this.sendSafe(ws, {
+            type: 'jog:start-failed',
+            data: { jogId, message }
+          });
+          return;
+        }
+
+        // Send processed commands
+        for (const cmd of result.commands) {
+          await this.cncController.sendCommand(cmd.command, {
+            commandId: jogId,
+            displayCommand: cmd.displayCommand || cmd.command,
+            meta: { continuous: true, sourceId: 'client' }
+          });
+        }
+      } else {
+        // Fallback to direct controller call
+        await this.cncController.sendCommand(command, {
+          commandId: jogId,
+          displayCommand: displayCommand || command,
+          meta: { continuous: true, sourceId: 'client' }
+        });
+      }
+    } catch (error) {
+      // Command failed - unregister session
+      this.sessionsById.delete(jogId);
+      sessionSet.delete(jogId);
+      const message = error?.message || 'Failed to start jog command';
+      log('Jog start failed', `jogId=${jogId}`, message);
+      this.sendSafe(ws, {
+        type: 'jog:start-failed',
+        data: { jogId, message }
+      });
+      return;
+    }
 
     log('Jog started', `jogId=${jogId}`);
 
@@ -346,20 +352,20 @@ export class JogSessionManager {
           return;
         }
 
-        // Send processed commands with atomic jog cancel prefix
+        // Send processed commands
         for (const cmd of result.commands) {
           await this.cncController.sendCommand(cmd.command, {
             commandId: resolvedCommandId,
             displayCommand: cmd.displayCommand || cmd.command,
-            meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true }
+            meta: { jogStep: true, sourceId: 'client' }
           });
         }
       } else {
-        // Fallback to direct controller call with atomic jog cancel prefix
+        // Fallback to direct controller call
         await this.cncController.sendCommand(command, {
           commandId: resolvedCommandId,
           displayCommand: displayCommand || command,
-          meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true }
+          meta: { jogStep: true, sourceId: 'client' }
         });
       }
     } catch (error) {

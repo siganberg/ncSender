@@ -99,8 +99,8 @@ class KeyboardManager {
       event.preventDefault();
       event.stopPropagation();
 
-      // Ignore key repeat
-      if (this.heldJogKeys.has(eventCode)) {
+      // Ignore key repeat (both browser auto-repeat and our own tracking)
+      if (event.repeat || this.heldJogKeys.has(eventCode)) {
         return;
       }
 
