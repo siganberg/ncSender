@@ -257,7 +257,7 @@ async function handleClose() {
 @keyframes flow { 0% { transform: translateX(-20%); } 100% { transform: translateX(20%); } }
 
 .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
-.pre-run { max-width: 180px; margin: 0 auto; }
+.pre-run { min-width: 180px; width: fit-content; margin: 0 auto; }
 .pre-run.has-warning { max-width: 260px; border: 2px solid #b84444; animation: warningPulse 2s ease-in-out infinite; }
 @keyframes warningPulse {
   0%, 50%, 100% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6); }
