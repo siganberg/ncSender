@@ -151,7 +151,7 @@ export async function createApp(options = {}) {
       }
     },
     limits: {
-      fileSize: 60 * 1024 * 1024
+      fileSize: 250 * 1024 * 1024
     }
   });
 
