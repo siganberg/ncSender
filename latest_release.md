@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed touch handling in the visualizer for selecting segments and opening context menus
+### 🔧 Improvements
+- Increased maximum file upload size from 60MB to 250MB for larger G-code files
