@@ -1,4 +1,4 @@
 ## What's Changed
 
-### 🐛 Bug Fixes
-- Fixed continuous jog commands getting stuck in pending state
+### 🔧 Improvements
+- Increased jog watchdog timeout from 500ms to 1 second for more reliable jogging operations
