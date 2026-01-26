@@ -69,7 +69,7 @@ export class CNCController extends EventEmitter {
 
     // Dead-man switch for continuous jogging
     this.jogWatchdog = new JogWatchdog({
-      timeoutMs: 1000,
+      timeoutMs: 2000,
       onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
     });
 

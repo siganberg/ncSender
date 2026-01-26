@@ -120,6 +120,20 @@ const status = reactive({
 
 const consoleLines = ref<ConsoleLine[]>([]);
 const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
+const CONSOLE_MAX_LINES = 5000;
+const CONSOLE_TRIM_BATCH = 500;
+
+function trimConsoleBuffer() {
+  if (consoleLines.value.length <= CONSOLE_MAX_LINES) return;
+  const removed = consoleLines.value.splice(0, CONSOLE_TRIM_BATCH);
+  for (const line of removed) {
+    commandLinesMap.delete(line.id);
+  }
+  for (let idx = 0; idx < consoleLines.value.length; idx++) {
+    const entry = commandLinesMap.get(consoleLines.value[idx].id);
+    if (entry) entry.index = idx;
+  }
+}
 
 // CLIENT-SPECIFIC STATE
 const websocketConnected = ref(false);
@@ -390,21 +404,7 @@ const addOrUpdateCommandLine = (payload: any) => {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
-  // Keep a larger buffer since we now exclude job (virtual scroller handles this efficiently)
-  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
-  if (consoleLines.value.length > maxLines) {
-    const removed = consoleLines.value.shift();
-    if (removed) {
-      commandLinesMap.delete(removed.id);
-    }
-    // Rebuild map indices after shift
-    consoleLines.value.forEach((line, idx) => {
-      const entry = commandLinesMap.get(line.id);
-      if (entry) {
-        entry.index = idx;
-      }
-    });
-  }
+  trimConsoleBuffer();
 
   return { line: newLine, timestamp };
 };
@@ -428,21 +428,7 @@ const addResponseLine = (data: string) => {
     appendTerminalLineToIDB(responseLine).catch(() => {});
   }
 
-  // Enforce buffer size limit (keep larger buffer since we exclude job)
-  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
-  if (consoleLines.value.length > maxLines) {
-    const removed = consoleLines.value.shift();
-    if (removed) {
-      commandLinesMap.delete(removed.id);
-    }
-    // Rebuild map indices after shift
-    consoleLines.value.forEach((line, idx) => {
-      const entry = commandLinesMap.get(line.id);
-      if (entry) {
-        entry.index = idx;
-      }
-    });
-  }
+  trimConsoleBuffer();
 };
 
 // Helper to update machine orientation from home location setting
