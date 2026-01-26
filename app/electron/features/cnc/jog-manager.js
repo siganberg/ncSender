@@ -73,15 +73,19 @@ export class JogWatchdog {
 
 export class JogSessionManager {
   constructor({ cncController, commandProcessor } = {}) {
-    if (!cncController || typeof cncController.sendCommand !== 'function') {
-      throw new Error('JogSessionManager requires a CNC controller with sendCommand method');
-    }
-
     this.cncController = cncController;
-    // commandProcessor is a wrapper { instance: CommandProcessor } to allow late initialization
     this.commandProcessorWrapper = commandProcessor;
     this.sessionsById = new Map();
     this.sessionsBySocket = new Map();
+
+    this.watchdog = new JogWatchdog({
+      timeoutMs: 2000,
+      onTimeout: () => {
+        this.handleWatchdogTimeout().catch(err => {
+          logError('Watchdog timeout handler failed', err);
+        });
+      }
+    });
   }
 
   get commandProcessor() {
@@ -221,6 +225,8 @@ export class JogSessionManager {
 
     log('Jog started', `jogId=${jogId}`);
 
+    this.watchdog.start(jogId, command);
+
     this.sendSafe(ws, {
       type: 'jog:started',
       data: { jogId, startedAt: Date.now() }
@@ -238,13 +244,7 @@ export class JogSessionManager {
       return;
     }
 
-    // Forward heartbeat to controller to extend its dead-man switch watchdog
-    this.cncController.sendCommand('', {
-      commandId: `heartbeat-${jogId}`,
-      meta: { jogHeartbeat: true }
-    }).catch(() => {
-      // Ignore errors - heartbeat is best-effort
-    });
+    this.watchdog.extend();
   }
 
   async stopSession(ws, data, defaultReason = 'client-stop') {
@@ -266,12 +266,29 @@ export class JogSessionManager {
     await this.finalizeSession(session, reason);
   }
 
-  async finalizeSession(session, reason, { notifyClient = true } = {}) {
+  async handleWatchdogTimeout() {
+    const activeJog = this.watchdog.getActiveCommand();
+    if (!activeJog) return;
+
+    const session = this.sessionsById.get(activeJog.id);
+    if (!session) return;
+
+    try {
+      await this.cncController.sendEmergencyJogCancel('watchdog-timeout');
+    } catch (err) {
+      log('Failed to send emergency jog cancel on watchdog timeout', err?.message || err);
+    }
+
+    await this.finalizeSession(session, 'watchdog-timeout', { skipCancel: true });
+  }
+
+  async finalizeSession(session, reason, { notifyClient = true, skipCancel = false } = {}) {
     if (!session || session.stopping) {
       return;
     }
 
     session.stopping = true;
+    this.watchdog.clear();
 
     this.sessionsById.delete(session.jogId);
 
@@ -283,15 +300,17 @@ export class JogSessionManager {
       }
     }
 
-    try {
-      await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
-        meta: {
-          completesCommandId: session.jogId,
-          stopReason: reason
-        }
-      });
-    } catch (error) {
-      log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
+    if (!skipCancel) {
+      try {
+        await this.cncController.sendCommand(REALTIME_JOG_CANCEL, {
+          meta: {
+            completesCommandId: session.jogId,
+            stopReason: reason
+          }
+        });
+      } catch (error) {
+        log('Failed to send jog cancel command', `jogId=${session.jogId}`, error?.message || error);
+      }
     }
 
     log('Jog stopped', `jogId=${session.jogId}`, `reason=${reason}`);
@@ -324,7 +343,8 @@ export class JogSessionManager {
     const {
       command,
       displayCommand,
-      commandId
+      commandId,
+      skipJogCancel
     } = data || {};
 
     if (typeof command !== 'string' || command.trim() === '') {
@@ -337,12 +357,17 @@ export class JogSessionManager {
 
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+    if (this.watchdog.isActive()) {
+      this.watchdog.clear();
+    }
+
     try {
-      // Route through CommandProcessor for safety checks and plugin interception
+      const stepMeta = { jogStep: true, sourceId: 'client', skipJogCancel: skipJogCancel === true };
+
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
           commandId: resolvedCommandId,
-          meta: { jogStep: true, sourceId: 'client', atomicJogCancel: true },
+          meta: { ...stepMeta, atomicJogCancel: !skipJogCancel },
           machineState: this.cncController.lastStatus
         });
 
@@ -357,7 +382,7 @@ export class JogSessionManager {
           await this.cncController.sendCommand(cmd.command, {
             commandId: resolvedCommandId,
             displayCommand: cmd.displayCommand || cmd.command,
-            meta: { jogStep: true, sourceId: 'client' }
+            meta: stepMeta
           });
         }
       } else {
@@ -365,7 +390,7 @@ export class JogSessionManager {
         await this.cncController.sendCommand(command, {
           commandId: resolvedCommandId,
           displayCommand: displayCommand || command,
-          meta: { jogStep: true, sourceId: 'client' }
+          meta: stepMeta
         });
       }
     } catch (error) {

@@ -22,7 +22,7 @@ import net from 'net';
 import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
-import { JogWatchdog, REALTIME_JOG_CANCEL } from './jog-manager.js';
+import { REALTIME_JOG_CANCEL } from './jog-manager.js';
 import { pluginEventBus } from '../../core/plugin-event-bus.js';
 import { createLogger } from '../../core/logger.js';
 
@@ -66,12 +66,6 @@ export class CNCController extends EventEmitter {
     this.commandQueue = new PQueue({ concurrency: 1 });
     this.activeCommand = null;
     this.pendingCommands = new Map();
-
-    // Dead-man switch for continuous jogging
-    this.jogWatchdog = new JogWatchdog({
-      timeoutMs: 2000,
-      onTimeout: (reason) => this.sendEmergencyJogCancel(reason)
-    });
 
     this.lastStatusLogTs = 0;
 
@@ -198,7 +192,7 @@ export class CNCController extends EventEmitter {
         this.greetingMessage = trimmedData;
 
         // Request full status report (0x87) after greeting to get all fields including P:
-        this.writeToConnection('\x87', { rawCommand: '0x87', isRealTime: true });
+        this.writeToConnection('\x87', { isRealTime: true });
       }
 
       // Detect tool change completion message from tool-changer plugins
@@ -1008,10 +1002,7 @@ export class CNCController extends EventEmitter {
 
   async sendEmergencyJogCancel(reason) {
     try {
-      await this.writeToConnection(REALTIME_JOG_CANCEL, {
-        rawCommand: REALTIME_JOG_CANCEL,
-        isRealTime: true
-      });
+      await this.writeToConnection(REALTIME_JOG_CANCEL, { isRealTime: true });
 
       log('Emergency jog cancel sent:', reason);
 
@@ -1051,11 +1042,9 @@ export class CNCController extends EventEmitter {
       cmd.resolve(payload);
       this.emit('command-ack', payload);
     }
-
-    this.jogWatchdog.clear();
   }
 
-  writeToConnection(commandToSend, { rawCommand, isRealTime, isJogCommand } = {}) {
+  writeToConnection(commandToSend, { isRealTime } = {}) {
     // Allow writes if connected or still verifying the controller during initial handshake
     if (!this.connection || (!this.isConnected && !this.isVerifyingConnection)) {
       return Promise.reject(new Error('Connection is not available'));
@@ -1077,29 +1066,43 @@ export class CNCController extends EventEmitter {
           return;
         }
 
-        this.logCommandSent(rawCommand, isRealTime, isJogCommand);
+        this.logCommandSent(commandToSend, isRealTime);
         resolve();
       });
     });
   }
 
-  logCommandSent(rawCommand, isRealTime, isJogCommand) {
-    // Don't log polling commands (? and $pinstate)
-    const isPollCommand = rawCommand === '?' || rawCommand.toUpperCase() === '$PINSTATE';
+  formatCommandForLog(command) {
+    const parts = [];
+    let text = '';
 
-    if (isPollCommand) {
-      return;
+    for (let i = 0; i < command.length; i++) {
+      const code = command.charCodeAt(i);
+      if (code === 0x0A) continue;
+      if (code >= 0x80) {
+        if (text) {
+          parts.push(text.toUpperCase());
+          text = '';
+        }
+        parts.push('0x' + code.toString(16).toUpperCase());
+      } else {
+        text += command.charAt(i);
+      }
     }
 
-    if (isRealTime && rawCommand !== '?') {
-      if (rawCommand.length === 1 && rawCommand.charCodeAt(0) >= 0x80) {
-        log('Real-time command sent:', '0x' + rawCommand.charCodeAt(0).toString(16).toUpperCase());
-      } else {
-        log('Real-time command sent:', rawCommand);
-      }
-    } else if (rawCommand) {
-      const prefix = isJogCommand ? '0x85 + ' : '';
-      log('Command sent:', prefix + rawCommand.toUpperCase());
+    if (text) parts.push(text.toUpperCase());
+    return parts.join(' + ');
+  }
+
+  logCommandSent(commandToSend, isRealTime) {
+    const display = this.formatCommandForLog(commandToSend);
+
+    if (display === '?' || display === '$PINSTATE') return;
+
+    if (isRealTime) {
+      log('Real-time command sent:', display);
+    } else if (display) {
+      log('Command sent:', display);
     }
   }
 
@@ -1112,15 +1115,6 @@ export class CNCController extends EventEmitter {
     const { meta = null, commandId = null, displayCommand = null } = options || {};
     const normalizedMeta = meta && typeof meta === 'object' ? { ...meta } : null;
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    // Handle jog heartbeat - extend watchdog timer
-    // Check this BEFORE validating command content, as heartbeats can have empty commands
-    const isJogHeartbeat = normalizedMeta?.jogHeartbeat === true;
-    if (isJogHeartbeat && this.jogWatchdog.isActive()) {
-      this.jogWatchdog.extend();
-      // Don't actually queue heartbeat - it's just to keep watchdog alive
-      return { status: 'heartbeat-ack', id: resolvedCommandId };
-    }
 
     const cleanCommand = command.trim();
     if (!cleanCommand) {
@@ -1166,12 +1160,6 @@ export class CNCController extends EventEmitter {
     let isRealTimeCommand = finalCommand.length === 1 &&
       (realTimeCommands.includes(finalCommand) || finalCommand.charCodeAt(0) >= 0x80);
 
-    // Check if this is a jog cancel command (0x85)
-    const isJogCancel = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x85;
-    if (isJogCancel) {
-      this.jogWatchdog.clear();
-    }
-
     // Check if this is a full status report request (0x87) from client
     const isFullStatusRequest = finalCommand.length === 1 && finalCommand.charCodeAt(0) === 0x87;
     if (isFullStatusRequest && normalizedMeta?.sourceId !== 'system') {
@@ -1194,15 +1182,10 @@ export class CNCController extends EventEmitter {
 
     // Detect jog commands ($J=) and prepend 0x85 to cancel any previous jog atomically
     const isJogCommand = /^\$J=/i.test(finalCommand);
-    const isStepJog = normalizedMeta?.jogStep === true;
+    const skipJogCancel = normalizedMeta?.skipJogCancel === true;
 
-    // All jog commands get 0x85 prepended - cancel+start in single serial write
-    if (isJogCommand) {
+    if (isJogCommand && !skipJogCancel) {
       commandToSend = '\x85' + commandToSend;
-    }
-    if (isJogCommand && !isStepJog) {
-      this.jogWatchdog.start(resolvedCommandId, finalCommand);
-      log('Dead-man switch watchdog started for continuous jog:', resolvedCommandId);
     }
 
     if (isRealTimeCommand) {
@@ -1220,10 +1203,7 @@ export class CNCController extends EventEmitter {
       this.emit('command-queued', pendingPayload);
 
       try {
-        await this.writeToConnection(commandToSend, {
-          rawCommand: finalCommand,
-          isRealTime: true
-        });
+        await this.writeToConnection(commandToSend, { isRealTime: true });
 
         if (finalCommand === '\x18') {
           this.flushQueue('');
@@ -1328,11 +1308,7 @@ export class CNCController extends EventEmitter {
       this.pendingCommands.delete(resolvedCommandId);
 
       try {
-        await this.writeToConnection(commandToSend, {
-          rawCommand: normalizedCommand,
-          isRealTime: false,
-          isJogCommand
-        });
+        await this.writeToConnection(commandToSend);
 
         commandEntry.sentAt = Date.now();
 
