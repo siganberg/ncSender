@@ -99,6 +99,13 @@ export function formatStepSize(mmValue: number, units: UnitsPreference = 'metric
   return mmValue.toString();
 }
 
+export function formatStepSizeJogDisplay(mmValue: number, units: UnitsPreference = 'metric'): string {
+  if (units === 'imperial') {
+    return   (mmValue/100).toFixed(3);
+  }
+  return mmValue.toString();
+}
+
 /**
  * Format feed rate for jog controls (rounded to nearest 10 for imperial, rounded for metric)
  * Used by StepControl and JogControls to ensure consistency
