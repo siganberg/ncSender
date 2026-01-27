@@ -79,7 +79,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatStepSize, formatJogFeedRate } from '@/lib/units';
+import {formatJogFeedRate, formatStepSizeJogDisplay} from '@/lib/units';
 
 const appStore = useAppStore();
 
