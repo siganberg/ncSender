@@ -268,10 +268,18 @@ export class JogSessionManager {
 
   async handleWatchdogTimeout() {
     const activeJog = this.watchdog.getActiveCommand();
-    if (!activeJog) return;
+    if (!activeJog) {
+      log('Watchdog timeout but no active jog command tracked');
+      return;
+    }
 
     const session = this.sessionsById.get(activeJog.id);
-    if (!session) return;
+    if (!session) {
+      log('Watchdog timeout but session not found', `jogId=${activeJog.id}`);
+      return;
+    }
+
+    log('Watchdog cancelling continuous jog', `jogId=${activeJog.id}`);
 
     try {
       await this.cncController.sendEmergencyJogCancel('watchdog-timeout');
