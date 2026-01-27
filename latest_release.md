@@ -1,5 +1,5 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Optimized terminal buffer performance for smoother scrolling and reduced memory usage
-- Increased jog watchdog timeout for more reliable jogging on slower connections
+- Improved jog watchdog reliability by moving it to the session manager for better lifecycle handling
+- Added diagnostic logging to watchdog timeout handler for easier troubleshooting of jog safety stops
