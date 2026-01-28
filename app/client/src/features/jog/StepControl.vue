@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
@@ -113,6 +113,23 @@ const expandedOptionsMap: Record<number, number[]> = {
   0: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
   1: [1, 2, 3, 4, 5, 6, 7, 8, 9],                                   // Medium steps
   2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
+};
+
+// Per-category persistent state (step and feed rate remembered when switching categories)
+const categoryState = reactive<Record<number, { step: number; feedRate: number }>>({
+  0: { step: 0.1, feedRate: 500 },
+  1: { step: 1, feedRate: 3000 },
+  2: { step: 10, feedRate: 6000 }
+});
+
+// Get category index for a step value
+const getCategoryForStep = (step: number): number => {
+  for (const [catIndex, options] of Object.entries(expandedOptionsMap)) {
+    if (options.some(opt => approxEqual(opt, step))) {
+      return Number(catIndex);
+    }
+  }
+  return 1; // Default to medium
 };
 
 // Helper to compare floating point numbers (round to 3 decimal places)
@@ -181,7 +198,17 @@ const handleTouchEnd = (value: number) => {
   // If it was a short tap (not long press) and dropdown isn't open, select the step
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
-    emit('update:step', value);
+    const clickedCategory = props.stepOptions.indexOf(value);
+    const currentCategory = getCategoryForStep(props.currentStep);
+
+    if (clickedCategory !== -1 && clickedCategory !== currentCategory) {
+      // Switching categories - restore saved state
+      const saved = categoryState[clickedCategory];
+      emit('update:step', saved.step);
+      nextTick(() => emit('update:feedRate', saved.feedRate));
+    } else {
+      emit('update:step', value);
+    }
   }
 };
 
@@ -200,12 +227,24 @@ const closeDropdown = () => {
 const handleStepClick = (value: number) => {
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
-    emit('update:step', value);
+    const clickedCategory = props.stepOptions.indexOf(value);
+    const currentCategory = getCategoryForStep(props.currentStep);
+
+    if (clickedCategory !== -1 && clickedCategory !== currentCategory) {
+      // Switching categories - restore saved state
+      const saved = categoryState[clickedCategory];
+      emit('update:step', saved.step);
+      nextTick(() => emit('update:feedRate', saved.feedRate));
+    } else {
+      emit('update:step', value);
+    }
   }
 };
 
 // Select step from dropdown
 const selectStep = (value: number) => {
+  const category = getCategoryForStep(value);
+  categoryState[category].step = value;
   emit('update:step', value);
   closeDropdown();
 };
@@ -262,9 +301,17 @@ const handleFeedRateChange = (event: Event) => {
   const select = event.target as HTMLSelectElement;
   const newRate = Number(select.value);
   if (Number.isFinite(newRate) && newRate > 0) {
+    const category = getCategoryForStep(props.currentStep);
+    categoryState[category].feedRate = newRate;
     emit('update:feedRate', newRate);
   }
 };
+
+// Watch for step changes to update category state
+watch(() => props.currentStep, (newStep) => {
+  const category = getCategoryForStep(newStep);
+  categoryState[category].step = newStep;
+});
 
 // Close dropdown on escape key
 const handleKeyDown = (event: KeyboardEvent) => {
