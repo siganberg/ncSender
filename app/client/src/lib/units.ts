@@ -111,7 +111,7 @@ export function formatJogFeedRate(mmPerMin: number, units: UnitsPreference = 'me
     return rounded.toString();
   }
   const rounded = Math.round(mmPerMin);
-  if (rounded >= 10000) {
+  if (rounded >= 1000) {
     return `${rounded / 1000}K`;
   }
   return rounded.toString();
