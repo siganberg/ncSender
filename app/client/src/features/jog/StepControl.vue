@@ -55,7 +55,7 @@
     <span class="feed-rate-label">Feed</span>
     <select
       class="feed-rate-select"
-      :value="currentFeedRate"
+      :value="displayFeedRate"
       @change="handleFeedRateChange"
     >
       <option
@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
@@ -115,48 +115,100 @@ const expandedOptionsMap: Record<number, number[]> = {
   2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
 };
 
-// Per-category persistent state (step and feed rate remembered when switching categories)
-const categoryState = reactive<Record<number, { step: number; feedRate: number }>>({
+// Expanded options for imperial mode (in inches)
+const expandedOptionsMapImperial: Record<number, number[]> = {
+  0: [0.001, 0.005, 0.01, 0.015625, 0.02, 0.03125, 0.03, 0.04, 0.05, 0.06, 0.0625, 0.07, 0.08, 0.09],
+  1: [0.1, 0.125, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.625, 0.7, 0.75, 0.8, 0.9],
+  2: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+};
+
+// Fraction display map for imperial values
+const fractionDisplayMap: Record<number, string> = {
+  0.015625: '1/64',
+  0.03125: '1/32',
+  0.0625: '1/16',
+  0.125: '1/8',
+  0.25: '1/4',
+  0.5: '1/2',
+  0.625: '5/8',
+  0.75: '3/4'
+};
+
+// Per-category persistent state for metric (step in mm, feed rate in mm/min)
+const categoryStateMetric = reactive<Record<number, { step: number; feedRate: number }>>({
   0: { step: 0.1, feedRate: 500 },
   1: { step: 1, feedRate: 3000 },
   2: { step: 10, feedRate: 6000 }
 });
 
-// Get category index for a step value
-const getCategoryForStep = (step: number): number => {
-  for (const [catIndex, options] of Object.entries(expandedOptionsMap)) {
-    if (options.some(opt => approxEqual(opt, step))) {
+// Per-category persistent state for imperial (step in inches, feed rate in mm/min)
+const categoryStateImperial = reactive<Record<number, { step: number; feedRate: number }>>({
+  0: { step: 0.01, feedRate: 500 },
+  1: { step: 0.1, feedRate: 3000 },
+  2: { step: 1, feedRate: 6000 }
+});
+
+// Convert mm to inches
+const mmToInches = (mm: number): number => mm / 25.4;
+
+// Convert inches to mm
+const inchesToMm = (inches: number): number => inches * 25.4;
+
+// Get the current step in display units (inches for imperial, mm for metric)
+const getStepInDisplayUnits = (stepMm: number): number => {
+  if (appStore.unitsPreference.value === 'imperial') {
+    return mmToInches(stepMm);
+  }
+  return stepMm;
+};
+
+// Get category index for a step value (expects value in display units)
+const getCategoryForStep = (stepMm: number): number => {
+  const displayStep = getStepInDisplayUnits(stepMm);
+  const optionsMap = appStore.unitsPreference.value === 'imperial' ? expandedOptionsMapImperial : expandedOptionsMap;
+
+  for (const [catIndex, options] of Object.entries(optionsMap)) {
+    if (options.some(opt => approxEqual(opt, displayStep))) {
       return Number(catIndex);
     }
   }
   return 1; // Default to medium
 };
 
-// Helper to compare floating point numbers (round to 3 decimal places)
+// Helper to compare floating point numbers with tolerance
 const approxEqual = (a: number, b: number): boolean => {
-  const roundedA = Math.round(a * 1000) / 1000;
-  const roundedB = Math.round(b * 1000) / 1000;
-  return roundedA === roundedB;
+  return Math.abs(a - b) < 0.0001;
 };
 
-// Check if current step belongs to a category
-const isStepInCategory = (step: number, categoryIndex: number): boolean => {
-  const options = expandedOptionsMap[categoryIndex];
-  return options?.some(opt => approxEqual(opt, step)) ?? false;
-};
-
-// Check if a specific option matches current step
-const isOptionActive = (opt: number, currentStep: number): boolean => {
-  return approxEqual(opt, currentStep);
-};
-
-// Get expanded options for a category
-const getExpandedOptions = (categoryIndex: number): number[] => {
-  const options = expandedOptionsMap[categoryIndex] ?? [];
-  if (appStore.unitsPreference.value === 'imperial' && categoryIndex === 0) {
-    return options.filter(opt => opt >= 0.05);
+// Find matching value in imperial options (handles floating point)
+const findMatchingImperialValue = (displayStep: number): number | null => {
+  for (const options of Object.values(expandedOptionsMapImperial)) {
+    const match = options.find(opt => approxEqual(opt, displayStep));
+    if (match !== undefined) return match;
   }
-  return options;
+  return null;
+};
+
+// Check if current step (in mm) belongs to a category
+const isStepInCategory = (stepMm: number, categoryIndex: number): boolean => {
+  const displayStep = getStepInDisplayUnits(stepMm);
+  const optionsMap = appStore.unitsPreference.value === 'imperial' ? expandedOptionsMapImperial : expandedOptionsMap;
+  const options = optionsMap[categoryIndex];
+  return options?.some(opt => approxEqual(opt, displayStep)) ?? false;
+};
+
+// Check if a specific option (in display units) matches current step (in mm)
+const isOptionActive = (opt: number, currentStepMm: number): boolean => {
+  const displayStep = getStepInDisplayUnits(currentStepMm);
+  return approxEqual(opt, displayStep);
+};
+
+// Get expanded options for a category (returns values in display units)
+const getExpandedOptions = (categoryIndex: number): number[] => {
+  if (appStore.unitsPreference.value === 'imperial') {
+    return expandedOptionsMapImperial[categoryIndex] ?? [];
+  }
+  return expandedOptionsMap[categoryIndex] ?? [];
 };
 
 // Long press handlers
@@ -205,13 +257,15 @@ const handleTouchEnd = (value: number) => {
     const clickedCategory = props.stepOptions.indexOf(value);
     if (clickedCategory === -1) return;
 
-    const currentCategory = getCategoryForStep(props.currentStep);
-    const saved = categoryState[clickedCategory];
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const state = isImperial ? categoryStateImperial : categoryStateMetric;
+    const saved = state[clickedCategory];
 
-    emit('update:step', saved.step);
-    if (clickedCategory !== currentCategory) {
-      nextTick(() => emit('update:feedRate', saved.feedRate));
-    }
+    // Emit in mm (convert if imperial)
+    const mmValue = isImperial ? inchesToMm(saved.step) : saved.step;
+    emit('update:step', mmValue);
+    // Always emit feed rate to keep parent in sync
+    nextTick(() => emit('update:feedRate', saved.feedRate));
   }
 };
 
@@ -233,71 +287,99 @@ const handleStepClick = (value: number) => {
     const clickedCategory = props.stepOptions.indexOf(value);
     if (clickedCategory === -1) return;
 
-    const currentCategory = getCategoryForStep(props.currentStep);
-    const saved = categoryState[clickedCategory];
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const state = isImperial ? categoryStateImperial : categoryStateMetric;
+    const saved = state[clickedCategory];
 
-    emit('update:step', saved.step);
-    if (clickedCategory !== currentCategory) {
-      nextTick(() => emit('update:feedRate', saved.feedRate));
-    }
+    // Emit in mm (convert if imperial)
+    const mmValue = isImperial ? inchesToMm(saved.step) : saved.step;
+    emit('update:step', mmValue);
+    // Always emit feed rate to keep parent in sync
+    nextTick(() => emit('update:feedRate', saved.feedRate));
   }
 };
 
-// Select step from dropdown
-const selectStep = (value: number) => {
-  const category = getCategoryForStep(value);
-  categoryState[category].step = value;
-  emit('update:step', value);
+// Select step from dropdown (value is in display units)
+const selectStep = (displayValue: number) => {
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const state = isImperial ? categoryStateImperial : categoryStateMetric;
+
+  // Find category from the display value
+  const optionsMap = isImperial ? expandedOptionsMapImperial : expandedOptionsMap;
+  let category = 1;
+  for (const [catIndex, options] of Object.entries(optionsMap)) {
+    if (options.some(opt => approxEqual(opt, displayValue))) {
+      category = Number(catIndex);
+      break;
+    }
+  }
+
+  state[category].step = displayValue;
+
+  // Emit in mm (convert if imperial)
+  const mmValue = isImperial ? inchesToMm(displayValue) : displayValue;
+  emit('update:step', mmValue);
+  // Always emit feed rate to keep parent in sync
+  nextTick(() => emit('update:feedRate', state[category].feedRate));
   closeDropdown();
 };
 
-// Default feed rate options per step size index (0=small, 1=medium, 2=large)
-const defaultFeedRateOptionsByIndex = [
-  [300, 400, 500, 700, 1000],      // Small step (0.1mm or 0.001in)
-  [1000, 2000, 3000, 4000, 5000],  // Medium step (1mm or 0.01in)
-  [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]  // Large step (10mm or 0.1in)
+// Feed rate options per category (0=small, 1=medium, 2=large)
+const feedRateOptionsByCategory = [
+  [300, 400, 500, 700, 1000],
+  [1000, 2000, 3000, 4000, 5000],
+  [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
 ];
 
-const feedRateOptionsMap = computed(() => props.feedRateOptions ?? {
-  0.1: [300, 400, 500, 700, 1000],
-  1: [1000, 2000, 3000, 4000, 5000],
-  10: [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+// Get current category based on current step
+const currentCategory = computed(() => getCategoryForStep(props.currentStep));
+
+// Get feed rate options for current category
+const getCurrentFeedRateOptions = (): number[] => {
+  return feedRateOptionsByCategory[currentCategory.value] ?? feedRateOptionsByCategory[1];
+};
+
+// Get the feed rate to display (from local state for current category)
+const displayFeedRate = computed(() => {
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const state = isImperial ? categoryStateImperial : categoryStateMetric;
+  return state[currentCategory.value]?.feedRate ?? feedRateOptionsByCategory[currentCategory.value][0];
 });
 
-const getCurrentFeedRateOptions = (): number[] => {
-  // Find which category the current step belongs to
-  for (const [catIndex, options] of Object.entries(expandedOptionsMap)) {
-    if (options.some(opt => approxEqual(opt, props.currentStep))) {
-      return defaultFeedRateOptionsByIndex[Number(catIndex)] ?? [500, 1000, 3000, 5000];
+// Format imperial step with fraction support
+const formatImperialStep = (inchValue: number): string => {
+  // Check fractions with approximate comparison
+  for (const [decimal, fraction] of Object.entries(fractionDisplayMap)) {
+    if (approxEqual(inchValue, Number(decimal))) {
+      return fraction;
     }
   }
-
-  // Try to find by step value first (for compatibility with JogPanel)
-  if (feedRateOptionsMap.value[props.currentStep]) {
-    return feedRateOptionsMap.value[props.currentStep];
-  }
-
-  // Fall back to using step index (for Probe with imperial units)
-  if (props.stepOptions && Array.isArray(props.stepOptions)) {
-    const stepIndex = props.stepOptions.findIndex(opt => approxEqual(opt, props.currentStep));
-    if (stepIndex >= 0 && stepIndex < defaultFeedRateOptionsByIndex.length) {
-      return defaultFeedRateOptionsByIndex[stepIndex];
-    }
-  }
-
-  // Ultimate fallback
-  return [500, 1000, 3000, 5000];
+  // Format decimal: use appropriate precision
+  if (inchValue < 0.1) return inchValue.toFixed(3);
+  if (inchValue < 1) return inchValue.toFixed(1);
+  return Math.round(inchValue).toString();
 };
 
 // Format step size for button display - always show the saved value for this category
 const formatButtonStepDisplay = (categoryIndex: number): string => {
-  const displayValue = categoryState[categoryIndex]?.step ?? props.stepOptions[categoryIndex];
-  return formatStepSize(displayValue, appStore.unitsPreference.value);
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const state = isImperial ? categoryStateImperial : categoryStateMetric;
+  const displayValue = state[categoryIndex]?.step ?? props.stepOptions[categoryIndex];
+
+  if (isImperial) {
+    // Snap to matching option to avoid floating point display issues
+    const matched = findMatchingImperialValue(displayValue);
+    return formatImperialStep(matched ?? displayValue);
+  }
+  return formatStepSize(displayValue, 'metric');
 };
 
-// Format step size for dropdown options - show the actual value
+// Format step size for dropdown options - show the actual value (in display units)
 const formatOptionStepDisplay = (value: number): string => {
-  return formatStepSize(value, appStore.unitsPreference.value);
+  if (appStore.unitsPreference.value === 'imperial') {
+    return formatImperialStep(value);
+  }
+  return formatStepSize(value, 'metric');
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {
@@ -308,16 +390,23 @@ const handleFeedRateChange = (event: Event) => {
   const select = event.target as HTMLSelectElement;
   const newRate = Number(select.value);
   if (Number.isFinite(newRate) && newRate > 0) {
-    const category = getCategoryForStep(props.currentStep);
-    categoryState[category].feedRate = newRate;
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const state = isImperial ? categoryStateImperial : categoryStateMetric;
+    state[currentCategory.value].feedRate = newRate;
     emit('update:feedRate', newRate);
   }
 };
 
-// Watch for step changes to update category state
-watch(() => props.currentStep, (newStep) => {
-  const category = getCategoryForStep(newStep);
-  categoryState[category].step = newStep;
+// Watch for unit preference changes and emit defaults
+watch(() => appStore.unitsPreference.value, (newUnit) => {
+  const state = newUnit === 'imperial' ? categoryStateImperial : categoryStateMetric;
+  const defaultCategory = 1; // Group 1 default
+  const defaultStep = state[defaultCategory].step;
+  const mmValue = newUnit === 'imperial' ? inchesToMm(defaultStep) : defaultStep;
+
+  // Always emit step and feed rate when units change to ensure parent is in sync
+  emit('update:step', mmValue);
+  emit('update:feedRate', state[defaultCategory].feedRate);
 });
 
 // Close dropdown on escape key
@@ -329,6 +418,19 @@ const handleKeyDown = (event: KeyboardEvent) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
+
+  // If in imperial mode and current step doesn't match any option, emit default for group 2
+  if (appStore.unitsPreference.value === 'imperial') {
+    const displayStep = getStepInDisplayUnits(props.currentStep);
+    const hasMatch = Object.values(expandedOptionsMapImperial).some(
+      options => options.some(opt => approxEqual(opt, displayStep))
+    );
+    if (!hasMatch) {
+      const defaultStep = categoryStateImperial[1].step; // Group 1 default (0.1 inch)
+      emit('update:step', inchesToMm(defaultStep));
+      emit('update:feedRate', categoryStateImperial[1].feedRate);
+    }
+  }
 });
 
 onUnmounted(() => {

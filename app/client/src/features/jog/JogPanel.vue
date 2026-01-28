@@ -460,14 +460,6 @@ const initialFeed = resolveFeedRate();
 const feedRate = ref(initialFeed);
 emit('update:feedRate', initialFeed);
 
-// Watch for step size changes and auto-select default feed rate
-watch(() => props.jogConfig.stepSize, (newStepSize) => {
-  const baseStep = getBaseStepForValue(newStepSize);
-  const defaultRate = feedRateDefaults.value[baseStep] ?? 500;
-  feedRate.value = defaultRate;
-  emit('update:feedRate', feedRate.value);
-});
-
 // Watch for external feed rate changes
 watch(
   () => props.jogConfig.feedRate,
