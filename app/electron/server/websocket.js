@@ -221,6 +221,7 @@ export function createWebSocketLayer({
   const wss = new WebSocketServer({ server: httpServer });
   const clients = new Set();
   const clientIdToWsMap = new Map(); // Map client IDs to WebSocket connections
+  const clientRegistry = new Map(); // clientId → metadata object
   const longRunningCommands = new Map();
 
   const sendWsMessage = (ws, type, data) => {
@@ -525,8 +526,31 @@ export function createWebSocketLayer({
     const isLocal = isLocalConnection(req);
     ws.isLocal = isLocal;
 
-    log('Client connected with ID:', clientId, 'IP:', clientIp, isLocal ? '(local)' : '(remote)');
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const product = url.searchParams.get('product') || null;
+    const machineId = url.searchParams.get('machineId') || null;
+    const clientVersion = url.searchParams.get('version') || null;
+    const licensed = url.searchParams.get('licensed') === 'true';
+
+    const clientMeta = {
+      clientId,
+      ip: clientIp,
+      isLocal,
+      product,
+      machineId,
+      version: clientVersion,
+      licensed,
+      connectedAt: Date.now()
+    };
+    clientRegistry.set(clientId, clientMeta);
+
+    log('Client connected with ID:', clientId, 'IP:', clientIp, isLocal ? '(local)' : '(remote)', product ? `product: ${product}` : '');
     clients.add(ws);
+
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
+    broadcast('client:connected', clientMeta);
 
     // Send client ID with local/remote info and remote control setting
     const remoteControlEnabled = getSetting('remoteControl.enabled', false);
@@ -606,6 +630,14 @@ export function createWebSocketLayer({
         case 'plugin-dialog-response':
           pluginManager.getEventBus().emit('client:dialog-response', parsed.data);
           break;
+        case 'client:metadata': {
+          const existing = clientRegistry.get(ws.clientId);
+          if (existing && parsed.data) {
+            Object.assign(existing, parsed.data);
+            broadcast('client:metadata-updated', existing);
+          }
+          break;
+        }
         default:
           log('Received unsupported WebSocket message type:', parsed.type);
           break;
@@ -614,6 +646,11 @@ export function createWebSocketLayer({
 
     ws.on('close', () => {
       log('Client disconnected:', ws.clientId);
+      const meta = clientRegistry.get(ws.clientId);
+      if (meta) {
+        broadcast('client:disconnected', meta);
+        clientRegistry.delete(ws.clientId);
+      }
       clients.delete(ws);
       if (ws.clientId) {
         clientIdToWsMap.delete(ws.clientId);
@@ -627,6 +664,11 @@ export function createWebSocketLayer({
 
     ws.on('error', (error) => {
       log('WebSocket error:', error);
+      const meta = clientRegistry.get(ws.clientId);
+      if (meta) {
+        broadcast('client:disconnected', meta);
+        clientRegistry.delete(ws.clientId);
+      }
       clients.delete(ws);
       if (ws.clientId) {
         clientIdToWsMap.delete(ws.clientId);
@@ -666,9 +708,10 @@ export function createWebSocketLayer({
       }, 100);
     }
 
-    // Re-send any pending plugin dialogs to reconnecting clients (with delay for Vue to mount)
+    // Re-send any pending plugin dialogs to reconnecting browser clients only (not product clients like pendants)
     const pendingDialogs = pluginManager.getPendingDialogs();
-    if (pendingDialogs.length > 0) {
+    const clientProduct = clientRegistry.get(clientId)?.product;
+    if (pendingDialogs.length > 0 && !clientProduct) {
       setTimeout(() => {
         for (const dialog of pendingDialogs) {
           sendWsMessage(ws, 'plugin:show-dialog', dialog);
@@ -680,7 +723,20 @@ export function createWebSocketLayer({
   cncController.on('command-queued', broadcastQueuedCommand);
   cncController.on('command-ack', broadcastCommandResult);
 
+  const PING_INTERVAL_MS = 5000;
+  const pingInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (!ws.isAlive) {
+        log('Client ping timeout, terminating:', ws.clientId);
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, PING_INTERVAL_MS);
+
   const shutdown = () => {
+    clearInterval(pingInterval);
     wss.close();
     cncController.off?.('command-queued', broadcastQueuedCommand);
     cncController.off?.('command-ack', broadcastCommandResult);
@@ -697,6 +753,7 @@ export function createWebSocketLayer({
     sendWsMessage,
     handleWebSocketCommand,
     getClientWebSocket: (clientId) => clientIdToWsMap.get(clientId),
+    getClientRegistry: () => [...clientRegistry.values()],
     broadcastRemoteControlState,
     shutdown
   };
