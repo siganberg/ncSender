@@ -33,7 +33,7 @@
         @touchend.prevent="handleTouchEnd(value)"
         @touchcancel="cancelLongPress"
       >
-        {{ formatStepSizeDisplay(currentStep, index) }}
+        {{ formatButtonStepDisplay(index) }}
       </button>
       <div
         v-if="openDropdown === index"
@@ -48,7 +48,7 @@
           @click="selectStep(opt)"
           @touchend.prevent="selectStep(opt)"
         >
-          {{ formatStepSizeDisplay(opt, index) }}
+          {{ formatOptionStepDisplay(opt) }}
         </button>
       </div>
     </div>
@@ -285,10 +285,15 @@ const getCurrentFeedRateOptions = (): number[] => {
   return [500, 1000, 3000, 5000];
 };
 
-// Format step size - always show the saved value for this category
-const formatStepSizeDisplay = (value: number, categoryIndex: number): string => {
+// Format step size for button display - always show the saved value for this category
+const formatButtonStepDisplay = (categoryIndex: number): string => {
   const displayValue = categoryState[categoryIndex]?.step ?? props.stepOptions[categoryIndex];
   return formatStepSize(displayValue, appStore.unitsPreference.value);
+};
+
+// Format step size for dropdown options - show the actual value
+const formatOptionStepDisplay = (value: number): string => {
+  return formatStepSize(value, appStore.unitsPreference.value);
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {
