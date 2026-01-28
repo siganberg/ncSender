@@ -411,6 +411,21 @@ class PluginManager {
         }
       },
 
+      closeModal: () => {
+        const stack = this.executionContextStack.get(pluginId);
+        const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
+        const isClientOnly = activeContext?.clientOnly || false;
+        const executionWs = activeContext?.ws || null;
+
+        if (isClientOnly && executionWs && this.sendWsMessage) {
+          this.sendWsMessage(executionWs, 'plugin:close-modal', { pluginId });
+        } else {
+          if (this.broadcast) {
+            this.broadcast('plugin:close-modal', { pluginId });
+          }
+        }
+      },
+
       registerToolMenu: (label, callback, options = {}) => {
         if (!this.toolMenuItems) {
           this.toolMenuItems = [];

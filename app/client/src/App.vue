@@ -1695,6 +1695,10 @@ onMounted(() => {
     pluginModalClosable.value = data.closable !== false;
   });
 
+  api.on('plugin:close-modal', () => {
+    showPluginModal.value = false;
+  });
+
   // Listen for $NCSENDER_CLEAR_MSG command result to close modal on all clients
   api.on('cnc-command-result', (data: any) => {
     if (data.command === '$NCSENDER_CLEAR_MSG' && data.status === 'success') {
