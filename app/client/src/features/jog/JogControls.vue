@@ -124,7 +124,7 @@
 import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatStepSize, formatJogFeedRate } from '@/lib/units';
+import {formatJogFeedRate, formatStepSize, formatStepSizeJogDisplay} from '@/lib/units';
 
 const props = withDefaults(defineProps<{
   currentStep?: number;
@@ -143,13 +143,14 @@ const props = withDefaults(defineProps<{
 const { unitsPreference } = useAppStore();
 
 // Format step size for commands using centralized utility
-const formatStepForCommand = (mmValue: number): string => {
-  return formatStepSize(mmValue, unitsPreference.value);
+const formatStepForCommand = (mmValue: number, continuous: boolean): string => {
+  return formatStepSizeJogDisplay(mmValue, continuous, unitsPreference.value);
 };
+
 
 // Format feed rate for commands using centralized utility
 const formatFeedRateForCommand = (mmPerMin: number): string => {
-  return formatJogFeedRate(mmPerMin, unitsPreference.value);
+  return formatJogFeedRate(mmPerMin,  unitsPreference.value);
 };
 
 let jogTimer: number | null = null;
@@ -205,7 +206,7 @@ const getAxisTravel = (axis: 'X' | 'Y' | 'Z'): number => {
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const isImperial = unitsPreference.value === 'imperial';
   const unitsCode = isImperial ? 'G20' : 'G21';
-  const stepFormatted = formatStepForCommand(props.currentStep);
+  const stepFormatted = formatStepForCommand(props.currentStep, false);
   const feedRateRaw = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const feedRateFormatted = formatFeedRateForCommand(feedRateRaw);
   const distanceSign = direction > 0 ? '' : '-';
@@ -227,7 +228,7 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
   const isImperial = unitsPreference.value === 'imperial';
   const unitsCode = isImperial ? 'G20' : 'G21';
-  const stepFormatted = formatStepForCommand(props.currentStep);
+  const stepFormatted = formatStepForCommand(props.currentStep, false);
   const feedRateFormatted = formatFeedRateForCommand(props.feedRate);
   const xSign = xDirection > 0 ? '' : '-';
   const ySign = yDirection > 0 ? '' : '-';
@@ -252,7 +253,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const feedRateRaw = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const feedRateFormatted = formatFeedRateForCommand(feedRateRaw);
   const travel = getAxisTravel(axis);
-  const travelFormatted = formatStepForCommand(travel);
+  const travelFormatted = formatStepForCommand(travel, true);
   const travelSign = direction > 0 ? '' : '-';
   const command = `$J=${unitsCode} G91 ${axis}${travelSign}${travelFormatted} F${feedRateFormatted}`;
   const jogId = createJogId();
@@ -282,8 +283,8 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
   const yTravel = getAxisTravel('Y');
   const isImperial = unitsPreference.value === 'imperial';
   const unitsCode = isImperial ? 'G20' : 'G21';
-  const xTravelFormatted = formatStepForCommand(xTravel);
-  const yTravelFormatted = formatStepForCommand(yTravel);
+  const xTravelFormatted = formatStepForCommand(xTravel, true);
+  const yTravelFormatted = formatStepForCommand(yTravel, true);
   const feedRateFormatted = formatFeedRateForCommand(props.feedRate);
   const xSign = xDirection > 0 ? '' : '-';
   const ySign = yDirection > 0 ? '' : '-';
