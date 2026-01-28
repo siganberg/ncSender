@@ -152,7 +152,11 @@ const isOptionActive = (opt: number, currentStep: number): boolean => {
 
 // Get expanded options for a category
 const getExpandedOptions = (categoryIndex: number): number[] => {
-  return expandedOptionsMap[categoryIndex] ?? [];
+  const options = expandedOptionsMap[categoryIndex] ?? [];
+  if (appStore.unitsPreference.value === 'imperial' && categoryIndex === 0) {
+    return options.filter(opt => opt >= 0.05);
+  }
+  return options;
 };
 
 // Long press handlers
