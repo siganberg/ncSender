@@ -1,3 +1,4 @@
+
 <!--
   This file is part of ncSender.
 
@@ -23,38 +24,38 @@
       <div class="jog-xy">
         <!-- Top Row -->
         <button
-          :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal--1-1') }]"
-          aria-label="Jog X negative Y positive"
-          @mousedown="handleJogDiagonalStart(-1, 1, $event)"
-          @mouseup="handleJogDiagonalEnd(-1, 1, $event)"
-          @touchstart="handleJogDiagonalStart(-1, 1, $event)"
-          @touchend="handleJogDiagonalEnd(-1, 1, $event)"
+            :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal--1-1') }]"
+            aria-label="Jog X negative Y positive"
+            @mousedown="handleJogDiagonalStart(-1, 1, $event)"
+            @mouseup="handleJogDiagonalEnd(-1, 1, $event)"
+            @touchstart="handleJogDiagonalStart(-1, 1, $event)"
+            @touchend="handleJogDiagonalEnd(-1, 1, $event)"
         >↖</button>
         <button
-          :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('Y-1') }]"
-          aria-label="Jog Y positive"
-          @mousedown="handleJogStart('Y', 1, $event)"
-          @mouseup="handleJogEnd('Y', 1, $event)"
-          @touchstart="handleJogStart('Y', 1, $event)"
-          @touchend="handleJogEnd('Y', 1, $event)"
+            :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('Y-1') }]"
+            aria-label="Jog Y positive"
+            @mousedown="handleJogStart('Y', 1, $event)"
+            @mouseup="handleJogEnd('Y', 1, $event)"
+            @touchstart="handleJogStart('Y', 1, $event)"
+            @touchend="handleJogEnd('Y', 1, $event)"
         >Y+</button>
         <button
-          :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal-1-1') }]"
-          aria-label="Jog X positive Y positive"
-          @mousedown="handleJogDiagonalStart(1, 1, $event)"
-          @mouseup="handleJogDiagonalEnd(1, 1, $event)"
-          @touchstart="handleJogDiagonalStart(1, 1, $event)"
-          @touchend="handleJogDiagonalEnd(1, 1, $event)"
+            :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal-1-1') }]"
+            aria-label="Jog X positive Y positive"
+            @mousedown="handleJogDiagonalStart(1, 1, $event)"
+            @mouseup="handleJogDiagonalEnd(1, 1, $event)"
+            @touchstart="handleJogDiagonalStart(1, 1, $event)"
+            @touchend="handleJogDiagonalEnd(1, 1, $event)"
         >↗</button>
 
         <!-- Middle Row -->
         <button
-          :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X--1') }]"
-          aria-label="Jog X negative"
-          @mousedown="handleJogStart('X', -1, $event)"
-          @mouseup="handleJogEnd('X', -1, $event)"
-          @touchstart="handleJogStart('X', -1, $event)"
-          @touchend="handleJogEnd('X', -1, $event)"
+            :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X--1') }]"
+            aria-label="Jog X negative"
+            @mousedown="handleJogStart('X', -1, $event)"
+            @mouseup="handleJogEnd('X', -1, $event)"
+            @touchstart="handleJogStart('X', -1, $event)"
+            @touchend="handleJogEnd('X', -1, $event)"
         >X-</button>
         <button class="jog-center" @click="handleCenterClick" aria-label="Soft Reset" title="Stop / Soft Reset">
           <svg viewBox="0 0 24 24" fill="currentColor" class="stop-icon">
@@ -62,58 +63,58 @@
           </svg>
         </button>
         <button
-          :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X-1') }]"
-          aria-label="Jog X positive"
-          @mousedown="handleJogStart('X', 1, $event)"
-          @mouseup="handleJogEnd('X', 1, $event)"
-          @touchstart="handleJogStart('X', 1, $event)"
-          @touchend="handleJogEnd('X', 1, $event)"
+            :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('X-1') }]"
+            aria-label="Jog X positive"
+            @mousedown="handleJogStart('X', 1, $event)"
+            @mouseup="handleJogEnd('X', 1, $event)"
+            @touchstart="handleJogStart('X', 1, $event)"
+            @touchend="handleJogEnd('X', 1, $event)"
         >X+</button>
 
         <!-- Bottom Row -->
         <button
-          :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal--1--1') }]"
-          aria-label="Jog X negative Y negative"
-          @mousedown="handleJogDiagonalStart(-1, -1, $event)"
-          @mouseup="handleJogDiagonalEnd(-1, -1, $event)"
-          @touchstart="handleJogDiagonalStart(-1, -1, $event)"
-          @touchend="handleJogDiagonalEnd(-1, -1, $event)"
+            :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal--1--1') }]"
+            aria-label="Jog X negative Y negative"
+            @mousedown="handleJogDiagonalStart(-1, -1, $event)"
+            @mouseup="handleJogDiagonalEnd(-1, -1, $event)"
+            @touchstart="handleJogDiagonalStart(-1, -1, $event)"
+            @touchend="handleJogDiagonalEnd(-1, -1, $event)"
         >↙</button>
         <button
-          :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('Y--1') }]"
-          aria-label="Jog Y negative"
-          @mousedown="handleJogStart('Y', -1, $event)"
-          @mouseup="handleJogEnd('Y', -1, $event)"
-          @touchstart="handleJogStart('Y', -1, $event)"
-          @touchend="handleJogEnd('Y', -1, $event)"
+            :class="['jog-btn', 'jog-axis', { pressed: isButtonPressed('Y--1') }]"
+            aria-label="Jog Y negative"
+            @mousedown="handleJogStart('Y', -1, $event)"
+            @mouseup="handleJogEnd('Y', -1, $event)"
+            @touchstart="handleJogStart('Y', -1, $event)"
+            @touchend="handleJogEnd('Y', -1, $event)"
         >Y-</button>
         <button
-          :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal-1--1') }]"
-          aria-label="Jog X positive Y negative"
-          @mousedown="handleJogDiagonalStart(1, -1, $event)"
-          @mouseup="handleJogDiagonalEnd(1, -1, $event)"
-          @touchstart="handleJogDiagonalStart(1, -1, $event)"
-          @touchend="handleJogDiagonalEnd(1, -1, $event)"
+            :class="['jog-btn', 'jog-corner', { pressed: isButtonPressed('diagonal-1--1') }]"
+            aria-label="Jog X positive Y negative"
+            @mousedown="handleJogDiagonalStart(1, -1, $event)"
+            @mouseup="handleJogDiagonalEnd(1, -1, $event)"
+            @touchstart="handleJogDiagonalStart(1, -1, $event)"
+            @touchend="handleJogDiagonalEnd(1, -1, $event)"
         >↘</button>
       </div>
 
       <!-- Z Controls -->
       <div class="jog-z">
         <button
-          :class="['jog-btn', 'jog-z-btn', { pressed: isButtonPressed('Z-1') }]"
-          aria-label="Jog Z positive"
-          @mousedown="handleJogStart('Z', 1, $event)"
-          @mouseup="handleJogEnd('Z', 1, $event)"
-          @touchstart="handleJogStart('Z', 1, $event)"
-          @touchend="handleJogEnd('Z', 1, $event)"
+            :class="['jog-btn', 'jog-z-btn', { pressed: isButtonPressed('Z-1') }]"
+            aria-label="Jog Z positive"
+            @mousedown="handleJogStart('Z', 1, $event)"
+            @mouseup="handleJogEnd('Z', 1, $event)"
+            @touchstart="handleJogStart('Z', 1, $event)"
+            @touchend="handleJogEnd('Z', 1, $event)"
         >Z+</button>
         <button
-          :class="['jog-btn', 'jog-z-btn', { pressed: isButtonPressed('Z--1') }]"
-          aria-label="Jog Z negative"
-          @mousedown="handleJogStart('Z', -1, $event)"
-          @mouseup="handleJogEnd('Z', -1, $event)"
-          @touchstart="handleJogStart('Z', -1, $event)"
-          @touchend="handleJogEnd('Z', -1, $event)"
+            :class="['jog-btn', 'jog-z-btn', { pressed: isButtonPressed('Z--1') }]"
+            aria-label="Jog Z negative"
+            @mousedown="handleJogStart('Z', -1, $event)"
+            @mouseup="handleJogEnd('Z', -1, $event)"
+            @touchstart="handleJogStart('Z', -1, $event)"
+            @touchend="handleJogEnd('Z', -1, $event)"
         >Z-</button>
       </div>
     </div>
@@ -124,7 +125,7 @@
 import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import {formatJogFeedRate, formatStepSize, formatStepSizeJogDisplay} from '@/lib/units';
+import { formatJogFeedRate, formatStepSizeJogDisplay} from '@/lib/units';
 
 const props = withDefaults(defineProps<{
   currentStep?: number;
@@ -147,10 +148,9 @@ const formatStepForCommand = (mmValue: number, continuous: boolean): string => {
   return formatStepSizeJogDisplay(mmValue, continuous, unitsPreference.value);
 };
 
-
 // Format feed rate for commands using centralized utility
 const formatFeedRateForCommand = (mmPerMin: number): string => {
-  return formatJogFeedRate(mmPerMin,  unitsPreference.value);
+  return formatJogFeedRate(mmPerMin, unitsPreference.value);
 };
 
 let jogTimer: number | null = null;
@@ -206,7 +206,7 @@ const getAxisTravel = (axis: 'X' | 'Y' | 'Z'): number => {
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const isImperial = unitsPreference.value === 'imperial';
   const unitsCode = isImperial ? 'G20' : 'G21';
-  const stepFormatted = formatStepForCommand(props.currentStep, false);
+  const stepFormatted = formatStepForCommand(props.currentStep,false);
   const feedRateRaw = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const feedRateFormatted = formatFeedRateForCommand(feedRateRaw);
   const distanceSign = direction > 0 ? '' : '-';
@@ -228,7 +228,7 @@ const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
 const jogDiagonal = async (xDirection: 1 | -1, yDirection: 1 | -1) => {
   const isImperial = unitsPreference.value === 'imperial';
   const unitsCode = isImperial ? 'G20' : 'G21';
-  const stepFormatted = formatStepForCommand(props.currentStep, false);
+  const stepFormatted = formatStepForCommand(props.currentStep,false);
   const feedRateFormatted = formatFeedRateForCommand(props.feedRate);
   const xSign = xDirection > 0 ? '' : '-';
   const ySign = yDirection > 0 ? '' : '-';
@@ -253,7 +253,7 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
   const feedRateRaw = axis === 'Z' ? props.feedRate / 2 : props.feedRate;
   const feedRateFormatted = formatFeedRateForCommand(feedRateRaw);
   const travel = getAxisTravel(axis);
-  const travelFormatted = formatStepForCommand(travel, true);
+  const travelFormatted = formatStepForCommand(travel,true);
   const travelSign = direction > 0 ? '' : '-';
   const command = `$J=${unitsCode} G91 ${axis}${travelSign}${travelFormatted} F${feedRateFormatted}`;
   const jogId = createJogId();
@@ -519,7 +519,7 @@ onBeforeUnmount(() => {
 }
 
 .plugin-dialog .jog-xy{
-   width: 180px !important;
+  width: 180px !important;
 }
 
 
