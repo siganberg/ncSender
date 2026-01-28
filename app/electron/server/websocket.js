@@ -463,7 +463,14 @@ export function createWebSocketLayer({
       return;
     }
 
+    // Continuous jog success: send ack with silentCompletion flag so UI can
+    // clear pending state without showing a new terminal line
     if (event.status === 'success' && event.meta?.continuous) {
+      const payload = toCommandPayload(event, { includeTimestamp: false });
+      payload.status = 'success';
+      payload.meta = { ...payload.meta, silentCompletion: true };
+      broadcast('cnc-command-result', payload);
+      longRunningCommands.delete(event.id);
       return;
     }
 

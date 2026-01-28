@@ -1,4 +1,5 @@
 ## What's Changed
 
 ### 🔧 Improvements
-- Added cancel and confirm buttons when renaming files in the file manager for better control over file operations
+- Improved jog watchdog reliability by moving it to the session manager for better lifecycle handling
+- Added diagnostic logging to watchdog timeout handler for easier troubleshooting of jog safety stops

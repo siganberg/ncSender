@@ -21,7 +21,6 @@ import { keyBindingStore } from './key-binding-store';
 import { comboFromEvent, isEditableElement } from './keyboard-utils';
 import {
   JOG_ACTIONS,
-  DIAGONAL_JOG_ACTIONS,
   performJogStep,
   performDiagonalJogStep,
   startContinuousJogSession,
@@ -32,25 +31,10 @@ import {
 const JOG_LONG_PRESS_DELAY_MS = 300;
 const ACTION_LONG_PRESS_DELAY_MS = 1000;
 
-interface ActiveJogState {
-  axis?: 'X' | 'Y' | 'Z';
-  direction?: 1 | -1;
-  xDir?: 1 | -1;
-  yDir?: 1 | -1;
-  // For diagonal jogs: track the original keys so we can transition back to single-axis
-  xEventCode?: string;
-  xCombo?: string;
-  yEventCode?: string;
-  yCombo?: string;
+interface HeldJogKey {
+  axis: 'X' | 'Y' | 'Z';
+  direction: 1 | -1;
   combo: string;
-  timerId: number | null;
-  longPressTriggered: boolean;
-  longPressActive: boolean;
-  cancelled: boolean;
-  session: ContinuousJogSession | null;
-  promise: Promise<ContinuousJogSession | null> | null;
-  handledShortStep: boolean;
-  finished: boolean;
 }
 
 interface ActiveLongPressState {
@@ -63,10 +47,17 @@ interface ActiveLongPressState {
 
 class KeyboardManager {
   private enabled = false;
-  private jogStates = new Map<string, ActiveJogState>();
-  private activeDiagonalKey: string | null = null;
+
+  // Simplified jog state
+  private heldJogKeys = new Map<string, HeldJogKey>();
+  private longPressTimer: number | null = null;
+  private isLongPress = false;
+  private activeSession: ContinuousJogSession | null = null;
+  private sessionPromise: Promise<void> | null = null;
+  private pendingJogStart = false;
+
+  // For non-jog long press actions (Home, Start Job, etc.)
   private longPressStates = new Map<string, ActiveLongPressState>();
-  private heldKeys = new Set<string>();
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -101,79 +92,38 @@ class KeyboardManager {
     }
 
     const jogMeta = JOG_ACTIONS[actionId];
-    const diagonalJogMeta = DIAGONAL_JOG_ACTIONS[actionId];
     const eventCode = event.code || combo;
 
-    if (jogMeta || diagonalJogMeta) {
-      if (this.jogStates.has(eventCode)) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      if (this.activeDiagonalKey && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
+    // Handle jog keys
+    if (jogMeta) {
       event.preventDefault();
       event.stopPropagation();
 
-      this.heldKeys.add(eventCode);
-
-      const isDiagonal = this.checkAndHandleDiagonalJog(eventCode, jogMeta, combo);
-      if (isDiagonal) {
+      // Ignore key repeat (both browser auto-repeat and our own tracking)
+      if (event.repeat || this.heldJogKeys.has(eventCode)) {
         return;
       }
 
-      const state: ActiveJogState = jogMeta
-        ? {
-            axis: jogMeta.axis,
-            direction: jogMeta.direction,
-            combo,
-            timerId: null,
-            longPressTriggered: false,
-            longPressActive: false,
-            cancelled: false,
-            session: null,
-            promise: null,
-            handledShortStep: false,
-            finished: false
-          }
-        : {
-            xDir: diagonalJogMeta.xDir,
-            yDir: diagonalJogMeta.yDir,
-            combo,
-            timerId: null,
-            longPressTriggered: false,
-            longPressActive: false,
-            cancelled: false,
-            session: null,
-            promise: null,
-            handledShortStep: false,
-            finished: false
-          };
+      // Add to held keys
+      this.heldJogKeys.set(eventCode, {
+        axis: jogMeta.axis,
+        direction: jogMeta.direction,
+        combo
+      });
 
-      this.jogStates.set(eventCode, state);
-
-      state.timerId = window.setTimeout(() => {
-        this.beginLongPress(eventCode, state);
-      }, JOG_LONG_PRESS_DELAY_MS);
+      // Handle jog state change
+      this.onJogKeysChanged();
       return;
     }
 
+    // Handle non-jog long press actions
     if (action.requiresLongPress) {
-      const eventCode = event.code || combo;
-
-      if (this.longPressStates.has(eventCode)) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
       event.preventDefault();
       event.stopPropagation();
+
+      if (this.longPressStates.has(eventCode)) {
+        return;
+      }
 
       const longPressState: ActiveLongPressState = {
         actionId,
@@ -191,128 +141,17 @@ class KeyboardManager {
       return;
     }
 
+    // Regular action - execute immediately
     event.preventDefault();
     event.stopPropagation();
     commandRegistry.execute(actionId);
   };
 
-  private checkAndHandleDiagonalJog(eventCode: string, jogMeta: { axis: 'X' | 'Y' | 'Z', direction: 1 | -1 } | undefined, combo: string): boolean {
-    if (!jogMeta || jogMeta.axis === 'Z') {
-      return false;
-    }
-
-    let xAction: { eventCode: string, direction: 1 | -1, combo: string, state?: ActiveJogState } | null = null;
-    let yAction: { eventCode: string, direction: 1 | -1, combo: string, state?: ActiveJogState } | null = null;
-
-    for (const [stateEventCode, state] of this.jogStates.entries()) {
-      if (state.finished) {
-        continue;
-      }
-      if (state.axis === 'X') {
-        xAction = { eventCode: stateEventCode, direction: state.direction!, combo: state.combo, state };
-      } else if (state.axis === 'Y') {
-        yAction = { eventCode: stateEventCode, direction: state.direction!, combo: state.combo, state };
-      }
-    }
-
-    if (jogMeta.axis === 'X') {
-      xAction = { eventCode, direction: jogMeta.direction, combo };
-    } else if (jogMeta.axis === 'Y') {
-      yAction = { eventCode, direction: jogMeta.direction, combo };
-    }
-
-    if (xAction && yAction) {
-      const diagonalKey = `diagonal-${xAction.direction}-${yAction.direction}`;
-
-      if (this.jogStates.has(diagonalKey)) {
-        return true;
-      }
-
-      const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
-        const meta = DIAGONAL_JOG_ACTIONS[id];
-        return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
-      });
-
-      if (diagonalActionId) {
-        const action = commandRegistry.getAction(diagonalActionId);
-        if (action && (!action.isEnabled || action.isEnabled())) {
-          const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
-
-          // Cancel and cleanup existing X axis state
-          if (xAction.eventCode !== eventCode) {
-            const xState = this.jogStates.get(xAction.eventCode);
-            if (xState && !xState.finished) {
-              xState.cancelled = true;
-              xState.handledShortStep = true;
-              if (xState.timerId !== null) {
-                clearTimeout(xState.timerId);
-                xState.timerId = null;
-              }
-              if (xState.longPressActive && xState.session) {
-                this.stopContinuousJog(xAction.eventCode, xState, 'transition-to-diagonal');
-              } else {
-                this.cleanupJogState(xAction.eventCode, xState);
-              }
-            }
-          }
-          // Cancel and cleanup existing Y axis state
-          if (yAction.eventCode !== eventCode) {
-            const yState = this.jogStates.get(yAction.eventCode);
-            if (yState && !yState.finished) {
-              yState.cancelled = true;
-              yState.handledShortStep = true;
-              if (yState.timerId !== null) {
-                clearTimeout(yState.timerId);
-                yState.timerId = null;
-              }
-              if (yState.longPressActive && yState.session) {
-                this.stopContinuousJog(yAction.eventCode, yState, 'transition-to-diagonal');
-              } else {
-                this.cleanupJogState(yAction.eventCode, yState);
-              }
-            }
-          }
-
-          const diagonalState: ActiveJogState = {
-            xDir: diagonalMeta.xDir,
-            yDir: diagonalMeta.yDir,
-            xEventCode: xAction.eventCode,
-            xCombo: xAction.combo,
-            yEventCode: yAction.eventCode,
-            yCombo: yAction.combo,
-            combo: `${xAction.combo}+${yAction.combo}`,
-            timerId: null,
-            longPressTriggered: false,
-            longPressActive: false,
-            cancelled: false,
-            session: null,
-            promise: null,
-            handledShortStep: false,
-            finished: false
-          };
-
-          this.jogStates.set(diagonalKey, diagonalState);
-          this.activeDiagonalKey = diagonalKey;
-
-          diagonalState.timerId = window.setTimeout(() => {
-            this.beginLongPress(diagonalKey, diagonalState);
-          }, JOG_LONG_PRESS_DELAY_MS);
-
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   private handleKeyUp = (event: KeyboardEvent) => {
     const combo = comboFromEvent(event);
-    const actionId = combo ? keyBindingStore.getBinding(combo) : undefined;
     const eventCode = event.code || combo || '';
 
-    this.heldKeys.delete(eventCode);
-
+    // Handle non-jog long press key up
     const longPressState = this.longPressStates.get(eventCode);
     if (longPressState) {
       if (!longPressState.completed) {
@@ -328,157 +167,240 @@ class KeyboardManager {
       return;
     }
 
-    const state = this.jogStates.get(eventCode);
-    if (!state) {
-      if (actionId && (JOG_ACTIONS[actionId] || DIAGONAL_JOG_ACTIONS[actionId])) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      this.checkAndReleaseDiagonalOnKeyUp(actionId);
-      return;
-    }
-
-    if (state.finished) {
-      this.jogStates.delete(eventCode);
-      if (actionId && (JOG_ACTIONS[actionId] || DIAGONAL_JOG_ACTIONS[actionId])) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      this.checkAndReleaseDiagonalOnKeyUp(actionId);
-      return;
-    }
-
-    state.cancelled = true;
-
-    if (state.timerId !== null) {
-      clearTimeout(state.timerId);
-      state.timerId = null;
-      this.runShortJog(eventCode, state);
+    // Handle jog key up
+    if (this.heldJogKeys.has(eventCode)) {
       event.preventDefault();
       event.stopPropagation();
-      return;
-    }
 
-    if (!state.longPressTriggered) {
-      this.cleanupJogState(eventCode, state);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
+      this.heldJogKeys.delete(eventCode);
+      this.onJogKeysChanged();
     }
-
-    if (state.longPressActive && state.session) {
-      this.stopContinuousJog(eventCode, state);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
-    if (state.promise) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
-    this.cleanupJogState(eventCode, state);
-    event.preventDefault();
-    event.stopPropagation();
   };
 
-  private checkAndReleaseDiagonalOnKeyUp(actionId: string | undefined): void {
-    if (!actionId) {
+  private onJogKeysChanged(): void {
+    const jogDirection = this.computeJogDirection();
+
+    // No keys held or opposite keys cancel out
+    if (!jogDirection) {
+      this.stopAllJogs();
       return;
     }
 
-    const jogMeta = JOG_ACTIONS[actionId];
-    if (!jogMeta || jogMeta.axis === 'Z') {
-      return;
-    }
+    // Update snapshot for potential step jog (before timer fires)
+    this.lastJogSnapshot = [...jogDirection.axes];
 
-    const diagonalKeys = Array.from(this.jogStates.keys()).filter(key => key.startsWith('diagonal-'));
-    for (const diagonalKey of diagonalKeys) {
-      const state = this.jogStates.get(diagonalKey);
-      if (state && !state.finished) {
-        // Determine which axis key is still held (the one NOT being released)
-        const releasedAxis = jogMeta.axis; // 'X' or 'Y'
-        const remainingAxis = releasedAxis === 'X' ? 'Y' : 'X';
-        const remainingEventCode = remainingAxis === 'X' ? state.xEventCode : state.yEventCode;
-        const remainingCombo = remainingAxis === 'X' ? state.xCombo : state.yCombo;
-        const remainingDirection = remainingAxis === 'X' ? state.xDir : state.yDir;
-
-        state.cancelled = true;
-
-        const startRemainingAxisJog = () => {
-          // Only start if the remaining key is actually still held
-          if (!remainingEventCode || !this.heldKeys.has(remainingEventCode)) {
-            return;
-          }
-          if (remainingCombo && remainingDirection !== undefined) {
-            const newState: ActiveJogState = {
-              axis: remainingAxis,
-              direction: remainingDirection,
-              combo: remainingCombo,
-              timerId: null,
-              longPressTriggered: false,
-              longPressActive: false,
-              cancelled: false,
-              session: null,
-              promise: null,
-              handledShortStep: false,
-              finished: false
-            };
-
-            this.jogStates.set(remainingEventCode, newState);
-
-            // Start continuous jog immediately since key is already being held
-            this.beginLongPress(remainingEventCode, newState);
-          }
-        };
-
-        if (state.timerId !== null) {
-          clearTimeout(state.timerId);
-          state.timerId = null;
-          this.runShortJog(diagonalKey, state);
-          startRemainingAxisJog();
-          return;
-        }
-
-        if (!state.longPressTriggered) {
-          this.cleanupJogState(diagonalKey, state);
-          startRemainingAxisJog();
-          return;
-        }
-
-        if (state.longPressActive && state.session) {
-          // Stop the diagonal jog, then start the single-axis jog
-          const session = state.session;
-          state.session = null;
-          state.longPressActive = false;
-
-          session
-            .stop('transition-to-single-axis')
-            .catch((error) => {
-              console.error('Failed to stop diagonal jog session:', error);
-            })
-            .finally(() => {
-              this.cleanupJogState(diagonalKey, state);
-              startRemainingAxisJog();
-            });
-          return;
-        }
-
-        if (state.promise) {
-          return;
-        }
-
-        this.cleanupJogState(diagonalKey, state);
-        startRemainingAxisJog();
+    // Keys are held - determine if short press or long press
+    if (!this.isLongPress) {
+      // Not yet in long press mode
+      if (this.longPressTimer !== null) {
+        // Timer already running - reset it for new key combo
+        clearTimeout(this.longPressTimer);
       }
+
+      this.longPressTimer = window.setTimeout(() => {
+        this.longPressTimer = null;
+        this.isLongPress = true;
+        this.startContinuousJog();
+      }, JOG_LONG_PRESS_DELAY_MS);
+    } else {
+      // Already in long press mode - transition to new direction
+      this.startContinuousJog();
     }
   }
 
-  private handleWindowBlur = () => {
-    this.heldKeys.clear();
+  private computeJogDirection(): { axes: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> } | null {
+    if (this.heldJogKeys.size === 0) {
+      return null;
+    }
 
+    const axes: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> = [];
+    let hasXPlus = false, hasXMinus = false;
+    let hasYPlus = false, hasYMinus = false;
+    let hasZPlus = false, hasZMinus = false;
+
+    for (const key of this.heldJogKeys.values()) {
+      if (key.axis === 'X') {
+        if (key.direction === 1) hasXPlus = true;
+        else hasXMinus = true;
+      } else if (key.axis === 'Y') {
+        if (key.direction === 1) hasYPlus = true;
+        else hasYMinus = true;
+      } else if (key.axis === 'Z') {
+        if (key.direction === 1) hasZPlus = true;
+        else hasZMinus = true;
+      }
+    }
+
+    // Check for opposite keys on same axis - cancel out
+    if ((hasXPlus && hasXMinus) || (hasYPlus && hasYMinus) || (hasZPlus && hasZMinus)) {
+      return null;
+    }
+
+    // Build axes array
+    if (hasXPlus) axes.push({ axis: 'X', direction: 1 });
+    else if (hasXMinus) axes.push({ axis: 'X', direction: -1 });
+
+    if (hasYPlus) axes.push({ axis: 'Y', direction: 1 });
+    else if (hasYMinus) axes.push({ axis: 'Y', direction: -1 });
+
+    if (hasZPlus) axes.push({ axis: 'Z', direction: 1 });
+    else if (hasZMinus) axes.push({ axis: 'Z', direction: -1 });
+
+    return axes.length > 0 ? { axes } : null;
+  }
+
+  private stopAllJogs(): void {
+    // Cancel any pending jog start
+    this.pendingJogStart = false;
+
+    // Cancel long press timer if running
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+
+      // Timer was running = short press, send step jog
+      const jogDirection = this.computeJogDirectionFromSnapshot();
+      if (jogDirection) {
+        this.sendStepJog(jogDirection.axes);
+      }
+    }
+
+    // Stop active continuous jog session
+    if (this.activeSession) {
+      const session = this.activeSession;
+      this.activeSession = null;
+      session.stop('keyboard-stop').catch((error) => {
+        console.error('Failed to stop jog session:', error);
+      });
+    }
+
+    this.isLongPress = false;
+  }
+
+  // Snapshot of jog direction before keys were released (for step jog)
+  private lastJogSnapshot: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> | null = null;
+
+  private computeJogDirectionFromSnapshot(): { axes: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> } | null {
+    if (this.lastJogSnapshot && this.lastJogSnapshot.length > 0) {
+      return { axes: this.lastJogSnapshot };
+    }
+    return null;
+  }
+
+  private async sendStepJog(axes: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }>): Promise<void> {
+    try {
+      if (axes.length === 1) {
+        await performJogStep(axes[0].axis, axes[0].direction);
+      } else if (axes.length === 2) {
+        // Diagonal step jog (X and Y only)
+        const xAxis = axes.find(a => a.axis === 'X');
+        const yAxis = axes.find(a => a.axis === 'Y');
+        if (xAxis && yAxis) {
+          await performDiagonalJogStep(xAxis.direction, yAxis.direction);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to send step jog:', error);
+    }
+  }
+
+  private startContinuousJog(): void {
+    const jogDirection = this.computeJogDirection();
+    if (!jogDirection) {
+      return;
+    }
+
+    // Stop existing session if any
+    if (this.activeSession) {
+      const oldSession = this.activeSession;
+      this.activeSession = null;
+      oldSession.stop('transition').catch(() => {});
+    }
+
+    // If a session is being started, mark as pending - don't queue multiple starts
+    if (this.sessionPromise) {
+      this.pendingJogStart = true;
+      return;
+    }
+
+    this.doStartContinuousJog(jogDirection.axes);
+  }
+
+  private doStartContinuousJog(axes: Array<{ axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }>): void {
+    let sessionPromise: Promise<ContinuousJogSession | null>;
+
+    if (axes.length === 1) {
+      sessionPromise = startContinuousJogSession(axes[0].axis, axes[0].direction);
+    } else if (axes.length === 2) {
+      const xAxis = axes.find(a => a.axis === 'X');
+      const yAxis = axes.find(a => a.axis === 'Y');
+      if (xAxis && yAxis) {
+        sessionPromise = startContinuousDiagonalJogSession(xAxis.direction, yAxis.direction);
+      } else {
+        return;
+      }
+    } else {
+      return;
+    }
+
+    this.sessionPromise = sessionPromise
+      .then((session) => {
+        if (session) {
+          // Check if still in long press mode and keys still held
+          if (this.isLongPress && this.heldJogKeys.size > 0) {
+            this.activeSession = session;
+          } else {
+            // Keys were released, stop the session
+            session.stop('keys-released').catch(() => {});
+          }
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to start continuous jog session:', error);
+      })
+      .finally(() => {
+        this.sessionPromise = null;
+
+        // If direction changed while starting, start a new session with current direction
+        if (this.pendingJogStart) {
+          this.pendingJogStart = false;
+          const currentDirection = this.computeJogDirection();
+          if (currentDirection && this.isLongPress && this.heldJogKeys.size > 0) {
+            // Stop the session that was just assigned before starting a new one
+            if (this.activeSession) {
+              const oldSession = this.activeSession;
+              this.activeSession = null;
+              oldSession.stop('transition').catch(() => {});
+            }
+            this.doStartContinuousJog(currentDirection.axes);
+          }
+        }
+      }) as Promise<void>;
+  }
+
+  private handleWindowBlur = () => {
+    // Clear all held keys
+    this.heldJogKeys.clear();
+
+    // Cancel any pending jog start
+    this.pendingJogStart = false;
+
+    // Stop all jogs
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+
+    if (this.activeSession) {
+      const session = this.activeSession;
+      this.activeSession = null;
+      session.stop('window-blur').catch(() => {});
+    }
+
+    this.isLongPress = false;
+    this.lastJogSnapshot = null;
+
+    // Cancel non-jog long press actions
     for (const [eventCode, longPressState] of Array.from(this.longPressStates.entries())) {
       if (!longPressState.completed) {
         longPressState.cancelled = true;
@@ -488,39 +410,6 @@ class KeyboardManager {
         }
       }
       this.longPressStates.delete(eventCode);
-    }
-
-    for (const [eventCode, state] of Array.from(this.jogStates.entries())) {
-      if (state.finished) {
-        this.jogStates.delete(eventCode);
-        continue;
-      }
-
-      state.cancelled = true;
-
-      if (state.timerId !== null) {
-        clearTimeout(state.timerId);
-        state.timerId = null;
-        this.cleanupJogState(eventCode, state);
-        continue;
-      }
-
-      if (!state.longPressTriggered) {
-        this.cleanupJogState(eventCode, state);
-        continue;
-      }
-
-      if (state.longPressActive && state.session) {
-        this.stopContinuousJog(eventCode, state, 'keyboard-blur');
-        continue;
-      }
-
-      if (state.promise) {
-        // Wait for acknowledgement; beginLongPress will observe cancellation and clean up
-        continue;
-      }
-
-      this.cleanupJogState(eventCode, state);
     }
   };
 
@@ -536,130 +425,6 @@ class KeyboardManager {
     commandRegistry.execute(state.actionId).catch((error) => {
       console.error(`Failed to execute long press action '${state.actionId}':`, error);
     });
-  };
-
-  private beginLongPress(eventCode: string, state: ActiveJogState): void {
-    if (state.finished) {
-      return;
-    }
-
-    state.timerId = null;
-    state.longPressTriggered = true;
-
-    const promise = state.axis !== undefined && state.direction !== undefined
-      ? startContinuousJogSession(state.axis, state.direction)
-      : startContinuousDiagonalJogSession(state.xDir!, state.yDir!);
-    state.promise = promise;
-
-    promise
-      .then((session) => {
-        if (state.finished) {
-          if (session) {
-            session.stop('state-already-finished').catch(() => {});
-          }
-          return;
-        }
-        state.session = session;
-        state.longPressActive = Boolean(session);
-
-        if (!state.cancelled) {
-          return;
-        }
-
-        if (session) {
-          this.stopContinuousJog(eventCode, state);
-        } else {
-          this.cleanupJogState(eventCode, state);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to start continuous jog session:', error);
-        if (state.finished) {
-          return;
-        }
-
-        state.longPressActive = false;
-        if (state.cancelled) {
-          this.cleanupJogState(eventCode, state);
-        }
-      })
-      .finally(() => {
-        if (!state.finished) {
-          state.promise = null;
-        }
-      });
-  }
-
-  private runShortJog(eventCode: string, state: ActiveJogState): void {
-    if (state.finished) {
-      return;
-    }
-
-    if (state.handledShortStep) {
-      this.cleanupJogState(eventCode, state);
-      return;
-    }
-
-    state.handledShortStep = true;
-
-    const jogPromise = state.axis !== undefined && state.direction !== undefined
-      ? performJogStep(state.axis, state.direction)
-      : performDiagonalJogStep(state.xDir!, state.yDir!);
-
-    jogPromise
-      .catch((error) => {
-        console.error('Failed to execute jog step via keyboard shortcut:', error);
-      })
-      .finally(() => {
-        this.cleanupJogState(eventCode, state);
-      });
-  }
-
-  private stopContinuousJog(eventCode: string, state: ActiveJogState, reason = 'keyboard-stop'): void {
-    if (state.finished) {
-      return;
-    }
-
-    const session = state.session;
-    state.session = null;
-    state.longPressActive = false;
-
-    if (!session) {
-      this.cleanupJogState(eventCode, state);
-      return;
-    }
-
-    session
-      .stop(reason)
-      .catch((error) => {
-        console.error('Failed to stop continuous jog session:', error);
-      })
-      .finally(() => {
-        this.cleanupJogState(eventCode, state);
-      });
-  }
-
-  private cleanupJogState(eventCode: string, state: ActiveJogState): void {
-    if (state.finished) {
-      this.jogStates.delete(eventCode);
-      if (this.activeDiagonalKey === eventCode) {
-        this.activeDiagonalKey = null;
-      }
-      return;
-    }
-
-    state.finished = true;
-
-    if (state.timerId !== null) {
-      clearTimeout(state.timerId);
-      state.timerId = null;
-    }
-
-    this.jogStates.delete(eventCode);
-
-    if (this.activeDiagonalKey === eventCode) {
-      this.activeDiagonalKey = null;
-    }
   }
 
   constructor() {

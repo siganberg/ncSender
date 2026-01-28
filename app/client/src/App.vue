@@ -123,11 +123,16 @@
       <div class="tab-content">
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
-          <div class="settings-section">
+          <div class="settings-section" :class="{ 'settings-section--disabled': !canControlRemoteAccess }">
             <h3 class="section-title">Connection Settings</h3>
+            <div v-if="!canControlRemoteAccess" class="settings-disabled-overlay">
+              <div class="settings-disabled-message">
+                Connection settings can only be changed from the host machine.
+              </div>
+            </div>
             <div class="setting-item">
               <label class="setting-label">Connection Type</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.type" @change="loadMainUsbPorts">
+              <select class="setting-select setting-input--right" v-model="connectionSettings.type" @change="loadMainUsbPorts" :disabled="!canControlRemoteAccess">
                 <option value="USB">USB</option>
                 <option value="Ethernet">Ethernet</option>
               </select>
@@ -138,13 +143,14 @@
                 <button
                   class="dropdown-trigger setting-input--right"
                   :class="{ 'invalid': !mainValidation.usbPort && connectionSettings.type === 'USB' }"
-                  @click="mainUsbDropdownOpen = !mainUsbDropdownOpen"
+                  @click="canControlRemoteAccess && (mainUsbDropdownOpen = !mainUsbDropdownOpen)"
+                  :disabled="!canControlRemoteAccess"
                   type="button"
                 >
                   <span>{{ getSelectedMainPortDisplay() }}</span>
                   <span class="dropdown-arrow">▼</span>
                 </button>
-                <div v-if="mainUsbDropdownOpen" class="dropdown-menu">
+                <div v-if="mainUsbDropdownOpen && canControlRemoteAccess" class="dropdown-menu">
                   <div
                     v-if="availableUsbPorts.length === 0"
                     class="dropdown-item disabled"
@@ -165,7 +171,7 @@
             </div>
             <div class="setting-item">
               <label class="setting-label">Baud Rate</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.baudRate">
+              <select class="setting-select setting-input--right" v-model="connectionSettings.baudRate" :disabled="!canControlRemoteAccess">
                 <option value="9600">9600</option>
                 <option value="19200">19200</option>
                 <option value="38400">38400</option>
@@ -182,7 +188,7 @@
                 type="text"
                 class="setting-input setting-input--right"
                 v-model="connectionSettings.ipAddress"
-                :disabled="connectionSettings.type === 'USB'"
+                :disabled="connectionSettings.type === 'USB' || !canControlRemoteAccess"
                 :class="{ 'invalid': !isValidIP && connectionSettings.type === 'Ethernet' }"
                 placeholder="192.168.5.1"
                 @blur="validateIP"
@@ -194,7 +200,7 @@
                 type="number"
                 class="setting-input setting-input--right"
                 v-model="connectionSettings.port"
-                :disabled="connectionSettings.type === 'USB'"
+                :disabled="connectionSettings.type === 'USB' || !canControlRemoteAccess"
                 :class="{ 'invalid': !mainValidation.port && connectionSettings.type === 'Ethernet' }"
                 min="1"
                 max="65535"
@@ -212,6 +218,7 @@
                 type="number"
                 class="setting-input setting-input--right"
                 v-model="connectionSettings.serverPort"
+                :disabled="!canControlRemoteAccess"
                 min="1024"
                 max="65535"
               >
@@ -230,6 +237,7 @@
               <button
                 class="save-connection-button"
                 :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
+                :disabled="!canControlRemoteAccess"
                 @click="saveConnectionSettings"
               >
                 {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
@@ -2914,6 +2922,36 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   border-radius: var(--radius-medium);
   padding: var(--gap-md);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: relative;
+}
+
+.settings-section--disabled {
+  pointer-events: none;
+}
+
+.settings-disabled-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.settings-disabled-message {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: var(--gap-sm) var(--gap-md);
+  border-radius: var(--radius-small);
+  font-size: 0.9rem;
+  text-align: center;
+  max-width: 80%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .section-title {

@@ -98,7 +98,10 @@ export class GCodePreAnalyzer {
 
       if (Object.prototype.hasOwnProperty.call(words, 'F')) {
         const f = Number(words.F);
-        if (Number.isFinite(f) && f > 0) lastFeed = f;
+        if (Number.isFinite(f) && f > 0) {
+          // Convert feed rate to mm/min if in imperial mode
+          lastFeed = unitsMm ? f : f * 25.4;
+        }
       }
 
       const motionCode = lineMotion !== null ? lineMotion : modalMotion;
