@@ -27,7 +27,6 @@
         @update:step="emit('update:stepSize', $event)"
         @update:feedRate="handleFeedRateUpdate"
       />
-      <h2>Motion Controls</h2>
     </header>
     <div class="jog-layout">
       <!-- Jog Controls -->

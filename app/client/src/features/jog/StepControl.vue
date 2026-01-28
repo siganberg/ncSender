@@ -110,7 +110,7 @@ let currentButtonEl: HTMLElement | null = null;
 
 // Expanded options for each step category (in mm)
 const expandedOptionsMap: Record<number, number[]> = {
-  0: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
+  0: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
   1: [1, 2, 3, 4, 5, 6, 7, 8, 9],                                   // Medium steps
   2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
 };
