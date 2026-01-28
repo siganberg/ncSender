@@ -214,13 +214,13 @@ const selectStep = (value: number) => {
 const defaultFeedRateOptionsByIndex = [
   [300, 400, 500, 700, 1000],      // Small step (0.1mm or 0.001in)
   [1000, 2000, 3000, 4000, 5000],  // Medium step (1mm or 0.01in)
-  [6000, 7000, 8000, 9000, 10000]  // Large step (10mm or 0.1in)
+  [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]  // Large step (10mm or 0.1in)
 ];
 
 const feedRateOptionsMap = computed(() => props.feedRateOptions ?? {
   0.1: [300, 400, 500, 700, 1000],
   1: [1000, 2000, 3000, 4000, 5000],
-  10: [6000, 7000, 8000, 9000, 10000]
+  10: [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
 });
 
 const getCurrentFeedRateOptions = (): number[] => {

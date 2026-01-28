@@ -101,6 +101,7 @@ export function formatStepSize(mmValue: number, units: UnitsPreference = 'metric
 
 /**
  * Format feed rate for jog controls (rounded to nearest 10 for imperial, rounded for metric)
+ * Uses "K" suffix for values >= 10000 to save space
  * Used by StepControl and JogControls to ensure consistency
  */
 export function formatJogFeedRate(mmPerMin: number, units: UnitsPreference = 'metric'): string {
@@ -109,7 +110,11 @@ export function formatJogFeedRate(mmPerMin: number, units: UnitsPreference = 'me
     const rounded = Math.round(converted / 10) * 10;
     return rounded.toString();
   }
-  return Math.round(mmPerMin).toString();
+  const rounded = Math.round(mmPerMin);
+  if (rounded >= 10000) {
+    return `${rounded / 1000}K`;
+  }
+  return rounded.toString();
 }
 
 /**
