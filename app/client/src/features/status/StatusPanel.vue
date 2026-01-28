@@ -25,10 +25,10 @@
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="editingAxis !== 'x' && startLongPress('x', $event)"
-          @mouseup="endLongPress('x')"
+          @mouseup="endLongPress('x', $event)"
           @mouseleave="cancelLongPress('x')"
           @touchstart.prevent="editingAxis !== 'x' && startLongPress('x', $event)"
-          @touchend="endLongPress('x')"
+          @touchend="endLongPress('x', $event)"
           @touchcancel="cancelLongPress('x')"
         >
           <div class="press-progress" :style="{ width: `${pressState['x']?.progress || 0}%` }"></div>
@@ -51,9 +51,9 @@
           </div>
         </div>
 
-        <!-- XY Join Indicator -->
+        <!-- XY Join Indicator (hidden during axis editing) -->
         <div
-          :class="['axis-link', { active: (pressState['xy']?.progress || 0) > 0, 'axis-disabled': axisControlsDisabled }]"
+          :class="['axis-link', { active: (pressState['xy']?.progress || 0) > 0, 'axis-disabled': axisControlsDisabled, 'axis-link--hidden': editingAxis }]"
           title="Zero X and Y (G10 L20 X0 Y0)"
           @mousedown="startLongPress('xy', $event)"
           @mouseup="endLongPress('xy')"
@@ -69,10 +69,10 @@
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="editingAxis !== 'y' && startLongPress('y', $event)"
-          @mouseup="endLongPress('y')"
+          @mouseup="endLongPress('y', $event)"
           @mouseleave="cancelLongPress('y')"
           @touchstart.prevent="editingAxis !== 'y' && startLongPress('y', $event)"
-          @touchend="endLongPress('y')"
+          @touchend="endLongPress('y', $event)"
           @touchcancel="cancelLongPress('y')"
         >
           <div class="press-progress" :style="{ width: `${pressState['y']?.progress || 0}%` }"></div>
@@ -99,10 +99,10 @@
         <div
           :class="['axis-display', { 'axis-disabled': axisControlsDisabled } ]"
           @mousedown="editingAxis !== 'z' && startLongPress('z', $event)"
-          @mouseup="endLongPress('z')"
+          @mouseup="endLongPress('z', $event)"
           @mouseleave="cancelLongPress('z')"
           @touchstart.prevent="editingAxis !== 'z' && startLongPress('z', $event)"
-          @touchend="endLongPress('z')"
+          @touchend="endLongPress('z', $event)"
           @touchcancel="cancelLongPress('z')"
         >
           <div class="press-progress" :style="{ width: `${pressState['z']?.progress || 0}%` }"></div>
@@ -430,8 +430,10 @@ const resetSpindleOverride = () => {
 // --- Long press to zero work coordinate (G10 L20 <axis>0) ---
 type AxisKey = 'x' | 'y' | 'z' | string;
 const LONG_PRESS_MS = 750;
+const DOUBLE_TAP_MS = 300;
 
 const pressState = reactive<Record<string, { start: number; progress: number; raf?: number; triggered: boolean; active: boolean }>>({});
+const lastTapTime = reactive<Record<string, number>>({ x: 0, y: 0, z: 0 });
 
 const ensureAxisState = (axis: AxisKey) => {
   if (!pressState[axis]) {
@@ -489,13 +491,13 @@ const startLongPress = (axis: AxisKey, _evt: Event) => {
   state.raf = requestAnimationFrame(tick);
 };
 
-const endLongPress = (axis: AxisKey) => {
+const endLongPress = (axis: AxisKey, event?: Event) => {
   const state = ensureAxisState(axis);
   if (state.raf) cancelAnimationFrame(state.raf);
   state.raf = undefined;
   state.active = false;
   if (activeAxis === String(axis).toLowerCase()) activeAxis = null;
-  const axisLower = String(axis).toLowerCase();
+  const axisLower = String(axis).toLowerCase() as 'x' | 'y' | 'z';
   if (!state.triggered) {
     state.progress = 0;
     // If XY was canceled before triggering, also reset mirrored X/Y bars immediately
@@ -505,6 +507,17 @@ const endLongPress = (axis: AxisKey) => {
       sx.progress = 0; sy.progress = 0;
       sx.triggered = false; sy.triggered = false;
       sx.active = false; sy.active = false;
+    } else if (['x', 'y', 'z'].includes(axisLower) && event) {
+      // Double-tap detection for touch devices (since touchstart.prevent blocks dblclick)
+      const now = Date.now();
+      const lastTap = lastTapTime[axisLower] || 0;
+      if (now - lastTap < DOUBLE_TAP_MS) {
+        // Double-tap detected - start editing
+        startEditAxis(axisLower as 'x' | 'y' | 'z');
+        lastTapTime[axisLower] = 0; // Reset to prevent triple-tap
+      } else {
+        lastTapTime[axisLower] = now;
+      }
     }
   } else {
     // Immediate reset for XY to avoid visible lag; brief linger only for single-axis
@@ -705,6 +718,11 @@ h2, h3 {
 @keyframes link-glow {
   0% { box-shadow: 0 0 0 0 var(--color-accent); }
   100% { box-shadow: 0 0 12px 2px var(--color-accent); }
+}
+
+.axis-link--hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .axis-link.active {

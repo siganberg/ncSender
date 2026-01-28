@@ -153,7 +153,7 @@ export function mountHttp({
     if (err.name === 'MulterError') {
       statusCode = 400;
       if (err.code === 'LIMIT_FILE_SIZE') {
-        message = 'File too large. Maximum file size is 60MB.';
+        message = 'File too large. Maximum file size is 250MB.';
       }
     }
 

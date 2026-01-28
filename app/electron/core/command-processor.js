@@ -239,18 +239,11 @@ export class CommandProcessor {
 
       // If this is a valid M6 command, add return-to-position and TOOL_CHANGE_COMPLETE
       if (isValidM6 && !sameToolCheck.isSameTool) {
-        // Add return-to-position command before TOOL_CHANGE_COMPLETE
-        if (m6ReturnPosition) {
-          let returnCmd;
-          if (m6UseWorkCoordinates) {
-            // Use work coordinates (from G-code look-ahead) - G90 ensures absolute mode
-            const xPart = Number.isFinite(m6ReturnPosition.x) ? `X${m6ReturnPosition.x}` : '';
-            const yPart = Number.isFinite(m6ReturnPosition.y) ? `Y${m6ReturnPosition.y}` : '';
-            returnCmd = `G90 G0 ${xPart} ${yPart}`.trim();
-          } else {
-            // Use machine coordinates (MPos fallback for manual invocation)
-            returnCmd = `G53 G21 G0 X${m6ReturnPosition.x.toFixed(3)} Y${m6ReturnPosition.y.toFixed(3)}`;
-          }
+        // Add return-to-position command ONLY for manual invocation (not during program run)
+        // During program run, the G-code already handles positioning after tool change
+        if (m6ReturnPosition && !m6UseWorkCoordinates) {
+          // Use machine coordinates (MPos for manual invocation)
+          const returnCmd = `G53 G21 G0 X${m6ReturnPosition.x.toFixed(3)} Y${m6ReturnPosition.y.toFixed(3)}`;
           log(`Adding M6 return command: ${returnCmd}`);
           commands.push({
             command: returnCmd,

@@ -120,6 +120,20 @@ const status = reactive({
 
 const consoleLines = ref<ConsoleLine[]>([]);
 const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
+const CONSOLE_MAX_LINES = 5000;
+const CONSOLE_TRIM_BATCH = 500;
+
+function trimConsoleBuffer() {
+  if (consoleLines.value.length <= CONSOLE_MAX_LINES) return;
+  const removed = consoleLines.value.splice(0, CONSOLE_TRIM_BATCH);
+  for (const line of removed) {
+    commandLinesMap.delete(line.id);
+  }
+  for (let idx = 0; idx < consoleLines.value.length; idx++) {
+    const entry = commandLinesMap.get(consoleLines.value[idx].id);
+    if (entry) entry.index = idx;
+  }
+}
 
 // CLIENT-SPECIFIC STATE
 const websocketConnected = ref(false);
@@ -127,6 +141,7 @@ const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
 const isLocalClient = ref<boolean | null>(null); // null = not yet determined
 const remoteControlEnabled = ref(false);
+const remoteStateInitialized = ref(false); // true after WebSocket handshake determines client type
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
 // Grid size defaults - should be loaded from firmware settings $130/$131
@@ -217,9 +232,9 @@ const unitsPreference = computed<UnitsPreference>(() => {
 const hasFullControl = computed(() => {
   // Electron app always has full control
   if (api.isElectron) return true;
-  // If client state not yet determined (WebSocket handshake pending), assume full control
-  // This prevents the gate from flashing before we know if client is local
-  if (isLocalClient.value === null) return true;
+  // Wait for WebSocket handshake to determine client type before showing gate
+  // This prevents the gate from flashing before we know the full state
+  if (!remoteStateInitialized.value) return true;
   // Local browser always has full control
   if (isLocalClient.value === true) return true;
   // Remote browser depends on setting
@@ -389,21 +404,7 @@ const addOrUpdateCommandLine = (payload: any) => {
     appendTerminalLineToIDB(newLine).catch(() => {});
   }
 
-  // Keep a larger buffer since we now exclude job (virtual scroller handles this efficiently)
-  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
-  if (consoleLines.value.length > maxLines) {
-    const removed = consoleLines.value.shift();
-    if (removed) {
-      commandLinesMap.delete(removed.id);
-    }
-    // Rebuild map indices after shift
-    consoleLines.value.forEach((line, idx) => {
-      const entry = commandLinesMap.get(line.id);
-      if (entry) {
-        entry.index = idx;
-      }
-    });
-  }
+  trimConsoleBuffer();
 
   return { line: newLine, timestamp };
 };
@@ -427,21 +428,7 @@ const addResponseLine = (data: string) => {
     appendTerminalLineToIDB(responseLine).catch(() => {});
   }
 
-  // Enforce buffer size limit (keep larger buffer since we exclude job)
-  const maxLines = isTerminalIDBEnabled() ? 5000 : 5000;
-  if (consoleLines.value.length > maxLines) {
-    const removed = consoleLines.value.shift();
-    if (removed) {
-      commandLinesMap.delete(removed.id);
-    }
-    // Rebuild map indices after shift
-    consoleLines.value.forEach((line, idx) => {
-      const entry = commandLinesMap.get(line.id);
-      if (entry) {
-        entry.index = idx;
-      }
-    });
-  }
+  trimConsoleBuffer();
 };
 
 // Helper to update machine orientation from home location setting
@@ -604,12 +591,15 @@ export function initializeStore() {
   // Remote control state changes
   api.on('remote-control-state', (data: { isLocal?: boolean; enabled?: boolean }) => {
     debugLog('Remote control state updated:', data);
-    // Only update values that are present in the data
     if (typeof data.isLocal === 'boolean') {
       isLocalClient.value = data.isLocal;
     }
     if (typeof data.enabled === 'boolean') {
       remoteControlEnabled.value = data.enabled;
+    }
+    // Mark as initialized after first client-id message (when isLocal is provided)
+    if (typeof data.isLocal === 'boolean') {
+      remoteStateInitialized.value = true;
     }
   });
 
@@ -617,6 +607,7 @@ export function initializeStore() {
   if (typeof api.isLocalClient === 'boolean') {
     isLocalClient.value = api.isLocalClient;
     remoteControlEnabled.value = api.remoteControlEnabled;
+    remoteStateInitialized.value = true;
     debugLog('Remote control state initialized from api:', { isLocal: api.isLocalClient, enabled: api.remoteControlEnabled });
   }
 

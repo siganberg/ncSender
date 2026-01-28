@@ -1262,9 +1262,16 @@ let mouseMoved = false;
 // Track touch for double-tap detection
 let lastTapTime = 0;
 let lastTapPosition = { x: 0, y: 0 };
+let touchEndTime = 0; // Track when touch ended to ignore synthetic click events
 
 // Handle click on canvas to select toolpath segment
 const onCanvasClick = (event: MouseEvent) => {
+  // Skip synthetic click events from touch interactions (touch handlers already processed)
+  // Synthetic clicks arrive within ~300ms after touchend
+  if (Date.now() - touchEndTime < 500) {
+    return;
+  }
+
   // Only process if mouse didn't move much (not a drag)
   const dx = event.clientX - mouseDownPosition.x;
   const dy = event.clientY - mouseDownPosition.y;
@@ -1584,6 +1591,8 @@ const onWheel = (event: WheelEvent) => {
 // Touch events with two-finger panning support
 let lastTouchDistance = 0;
 let lastTwoFingerCenter = { x: 0, y: 0 };
+let rightClickStartTime = 0;
+let rightClickStartPos = { x: 0, y: 0 };
 
 let touchStartPosition = { x: 0, y: 0 };
 let wasMultiTouchGesture = false; // Track if multi-touch gesture occurred
@@ -1592,6 +1601,8 @@ const onTouchStart = (event: TouchEvent) => {
   if (event.touches.length === 1) {
     // Only start single-finger tracking if no multi-touch gesture is active
     if (!wasMultiTouchGesture) {
+      // Prevent browser from generating synthetic click events - we handle taps ourselves
+      event.preventDefault();
       const touch = event.touches[0];
       touchStartPosition = { x: touch.clientX, y: touch.clientY };
       onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
@@ -1622,6 +1633,10 @@ const onTouchStart = (event: TouchEvent) => {
 
     lastTwoFingerCenter = { x: centerX, y: centerY };
     previousMousePosition = lastTwoFingerCenter;
+
+    // Track start time/position for two-finger tap detection (context menu)
+    rightClickStartTime = Date.now();
+    rightClickStartPos = { x: centerX, y: centerY };
 
     // Store distance for pinch zoom
     const dx = touch2.clientX - touch1.clientX;
@@ -1703,13 +1718,27 @@ const onTouchMove = (event: TouchEvent) => {
 };
 
 const onTouchEnd = (event: TouchEvent) => {
+  // Record touch end time to ignore synthetic click events
+  touchEndTime = Date.now();
+
   // Reset multi-touch flag when all fingers are lifted
   if (event.touches.length === 0) {
     const wasMultiTouch = wasMultiTouchGesture;
     wasMultiTouchGesture = false;
 
-    // Skip tap detection if this was a multi-touch gesture (pinch/zoom/rotate)
+    // Check for quick two-finger tap (context menu)
     if (wasMultiTouch) {
+      const touchDuration = Date.now() - rightClickStartTime;
+      const isValidView = props.view === 'top' || props.view === 'front';
+
+      // Quick two-finger tap (< 400ms, minimal movement) = context menu
+      if (touchDuration < 400 && isValidView && !isJobRunning.value) {
+        const dx = lastTwoFingerCenter.x - rightClickStartPos.x;
+        const dy = lastTwoFingerCenter.y - rightClickStartPos.y;
+        if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+          showContextMenuAt(lastTwoFingerCenter.x, lastTwoFingerCenter.y);
+        }
+      }
       onMouseUp();
       lastTouchDistance = 0;
       return;
@@ -1734,8 +1763,9 @@ const onTouchEnd = (event: TouchEvent) => {
       Math.pow(touchStartPosition.y - lastTapPosition.y, 2)
     );
 
-    // Check if it's a double-tap (within 300ms and 30px of last tap)
-    const isDoubleTap = timeSinceLastTap < 300 && distFromLastTap < 30;
+    // Check if it's a double-tap (between 50-400ms and within 30px of last tap)
+    // Minimum 50ms filters out hardware glitches where single tap generates multiple events
+    const isDoubleTap = timeSinceLastTap > 50 && timeSinceLastTap < 400 && distFromLastTap < 30;
 
     // Use screen-space detection for accurate tapping on overlapping segments
     if (gcodeVisualizer && camera && renderer) {
@@ -2027,6 +2057,31 @@ const handleContextMenu = (event: MouseEvent) => {
     const vector = new THREE.Vector3(ndcX, ndcY, 0);
     vector.unproject(camera);
     // Convert work coords to machine coords: machine = work + offset
+    const machineX = vector.x + (props.workOffset?.x ?? 0);
+    const machineY = vector.y + (props.workOffset?.y ?? 0);
+    worldCoordX.value = Math.round(machineX * 1000) / 1000;
+    worldCoordY.value = Math.round(machineY * 1000) / 1000;
+  }
+
+  showTransformMenu.value = true;
+};
+
+const showContextMenuAt = (clientX: number, clientY: number) => {
+  // Only show context menu in Top/Front view and no job running
+  if ((props.view !== 'top' && props.view !== 'front') || isJobRunning.value) return;
+
+  transformMenuX.value = clientX;
+  transformMenuY.value = clientY;
+
+  // Calculate machine coordinates for "Move Spindle Here"
+  if (canvas.value && camera) {
+    const rect = canvas.value.getBoundingClientRect();
+    const mouseX = clientX - rect.left;
+    const mouseY = clientY - rect.top;
+    const ndcX = (mouseX / rect.width) * 2 - 1;
+    const ndcY = -(mouseY / rect.height) * 2 + 1;
+    const vector = new THREE.Vector3(ndcX, ndcY, 0);
+    vector.unproject(camera);
     const machineX = vector.x + (props.workOffset?.x ?? 0);
     const machineY = vector.y + (props.workOffset?.y ?? 0);
     worldCoordX.value = Math.round(machineX * 1000) / 1000;

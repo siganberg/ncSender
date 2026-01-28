@@ -33,7 +33,7 @@
         @touchend.prevent="handleTouchEnd(value)"
         @touchcancel="cancelLongPress"
       >
-        {{ formatStepSizeDisplay(currentStep, index) }}
+        {{ formatButtonStepDisplay(index) }}
       </button>
       <div
         v-if="openDropdown === index"
@@ -48,7 +48,7 @@
           @click="selectStep(opt)"
           @touchend.prevent="selectStep(opt)"
         >
-          {{ formatStepSizeDisplay(opt, index) }}
+          {{ formatOptionStepDisplay(opt) }}
         </button>
       </div>
     </div>
@@ -77,9 +77,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import {formatJogFeedRate, formatStepSizeJogDisplay} from '@/lib/units';
+import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
 const appStore = useAppStore();
 
@@ -110,9 +110,26 @@ let currentButtonEl: HTMLElement | null = null;
 
 // Expanded options for each step category (in mm)
 const expandedOptionsMap: Record<number, number[]> = {
-  0: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
+  0: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
   1: [1, 2, 3, 4, 5, 6, 7, 8, 9],                                   // Medium steps
   2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
+};
+
+// Per-category persistent state (step and feed rate remembered when switching categories)
+const categoryState = reactive<Record<number, { step: number; feedRate: number }>>({
+  0: { step: 0.1, feedRate: 500 },
+  1: { step: 1, feedRate: 3000 },
+  2: { step: 10, feedRate: 6000 }
+});
+
+// Get category index for a step value
+const getCategoryForStep = (step: number): number => {
+  for (const [catIndex, options] of Object.entries(expandedOptionsMap)) {
+    if (options.some(opt => approxEqual(opt, step))) {
+      return Number(catIndex);
+    }
+  }
+  return 1; // Default to medium
 };
 
 // Helper to compare floating point numbers (round to 3 decimal places)
@@ -135,7 +152,11 @@ const isOptionActive = (opt: number, currentStep: number): boolean => {
 
 // Get expanded options for a category
 const getExpandedOptions = (categoryIndex: number): number[] => {
-  return expandedOptionsMap[categoryIndex] ?? [];
+  const options = expandedOptionsMap[categoryIndex] ?? [];
+  if (appStore.unitsPreference.value === 'imperial' && categoryIndex === 0) {
+    return options.filter(opt => opt >= 0.05);
+  }
+  return options;
 };
 
 // Long press handlers
@@ -181,7 +202,16 @@ const handleTouchEnd = (value: number) => {
   // If it was a short tap (not long press) and dropdown isn't open, select the step
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
-    emit('update:step', value);
+    const clickedCategory = props.stepOptions.indexOf(value);
+    if (clickedCategory === -1) return;
+
+    const currentCategory = getCategoryForStep(props.currentStep);
+    const saved = categoryState[clickedCategory];
+
+    emit('update:step', saved.step);
+    if (clickedCategory !== currentCategory) {
+      nextTick(() => emit('update:feedRate', saved.feedRate));
+    }
   }
 };
 
@@ -200,12 +230,23 @@ const closeDropdown = () => {
 const handleStepClick = (value: number) => {
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
-    emit('update:step', value);
+    const clickedCategory = props.stepOptions.indexOf(value);
+    if (clickedCategory === -1) return;
+
+    const currentCategory = getCategoryForStep(props.currentStep);
+    const saved = categoryState[clickedCategory];
+
+    emit('update:step', saved.step);
+    if (clickedCategory !== currentCategory) {
+      nextTick(() => emit('update:feedRate', saved.feedRate));
+    }
   }
 };
 
 // Select step from dropdown
 const selectStep = (value: number) => {
+  const category = getCategoryForStep(value);
+  categoryState[category].step = value;
   emit('update:step', value);
   closeDropdown();
 };
@@ -214,13 +255,13 @@ const selectStep = (value: number) => {
 const defaultFeedRateOptionsByIndex = [
   [300, 400, 500, 700, 1000],      // Small step (0.1mm or 0.001in)
   [1000, 2000, 3000, 4000, 5000],  // Medium step (1mm or 0.01in)
-  [6000, 7000, 8000, 9000, 10000]  // Large step (10mm or 0.1in)
+  [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]  // Large step (10mm or 0.1in)
 ];
 
 const feedRateOptionsMap = computed(() => props.feedRateOptions ?? {
   0.1: [300, 400, 500, 700, 1000],
   1: [1000, 2000, 3000, 4000, 5000],
-  10: [6000, 7000, 8000, 9000, 10000]
+  10: [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
 });
 
 const getCurrentFeedRateOptions = (): number[] => {
@@ -248,10 +289,15 @@ const getCurrentFeedRateOptions = (): number[] => {
   return [500, 1000, 3000, 5000];
 };
 
-// Format step size - show current value if in this category, otherwise show base value
-const formatStepSizeDisplay = (value: number, categoryIndex: number): string => {
-  const displayValue = isStepInCategory(value, categoryIndex) ? value : props.stepOptions[categoryIndex];
-  return formatStepSizeJogDisplay(displayValue, appStore.unitsPreference.value);
+// Format step size for button display - always show the saved value for this category
+const formatButtonStepDisplay = (categoryIndex: number): string => {
+  const displayValue = categoryState[categoryIndex]?.step ?? props.stepOptions[categoryIndex];
+  return formatStepSize(displayValue, appStore.unitsPreference.value);
+};
+
+// Format step size for dropdown options - show the actual value
+const formatOptionStepDisplay = (value: number): string => {
+  return formatStepSize(value, appStore.unitsPreference.value);
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {
@@ -262,9 +308,17 @@ const handleFeedRateChange = (event: Event) => {
   const select = event.target as HTMLSelectElement;
   const newRate = Number(select.value);
   if (Number.isFinite(newRate) && newRate > 0) {
+    const category = getCategoryForStep(props.currentStep);
+    categoryState[category].feedRate = newRate;
     emit('update:feedRate', newRate);
   }
 };
+
+// Watch for step changes to update category state
+watch(() => props.currentStep, (newStep) => {
+  const category = getCategoryForStep(newStep);
+  categoryState[category].step = newStep;
+});
 
 // Close dropdown on escape key
 const handleKeyDown = (event: KeyboardEvent) => {

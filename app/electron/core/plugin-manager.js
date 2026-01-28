@@ -62,7 +62,7 @@ class PluginManager {
     this.pendingDialogs = new Map(); // Track pending dialogs for reconnecting clients
   }
 
-  async initialize({ cncController, broadcast, sendWsMessage, serverState } = {}) {
+  async initialize({ cncController, broadcast, sendWsMessage, getClientRegistry, serverState } = {}) {
     if (this.initialized) {
       log('Plugin manager already initialized');
       return;
@@ -71,6 +71,7 @@ class PluginManager {
     this.cncController = cncController;
     this.broadcast = broadcast;
     this.sendWsMessage = sendWsMessage;
+    this.getClientRegistry = getClientRegistry || (() => []);
     this.serverState = serverState;
 
     // Register handler to intercept cnc-data and detect plugin messages
@@ -327,6 +328,15 @@ class PluginManager {
         return this.serverState || null;
       },
 
+      getConnectedClients: (filter = {}) => {
+        if (!this.getClientRegistry) return [];
+        let clients = this.getClientRegistry();
+        if (filter.product) {
+          clients = clients.filter(c => c.product === filter.product);
+        }
+        return clients;
+      },
+
       showDialog: (title, content, options = {}) => {
         return new Promise((resolve) => {
           const dialogId = `${pluginId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -407,6 +417,21 @@ class PluginManager {
             log('Updated pluginMessage with modal payload');
           } catch (error) {
             log('Failed to update pluginMessage with modal payload:', error);
+          }
+        }
+      },
+
+      closeModal: () => {
+        const stack = this.executionContextStack.get(pluginId);
+        const activeContext = stack && stack.length > 0 ? stack[stack.length - 1] : null;
+        const isClientOnly = activeContext?.clientOnly || false;
+        const executionWs = activeContext?.ws || null;
+
+        if (isClientOnly && executionWs && this.sendWsMessage) {
+          this.sendWsMessage(executionWs, 'plugin:close-modal', { pluginId });
+        } else {
+          if (this.broadcast) {
+            this.broadcast('plugin:close-modal', { pluginId });
           }
         }
       },

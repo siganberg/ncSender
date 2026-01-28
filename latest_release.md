@@ -1,4 +1,11 @@
 ## What's Changed
 
+### 🐛 Bug Fixes
+- Fixed dropdown showing incorrect values
+- Fixed step buttons to always display saved values
+
 ### 🔧 Improvements
-- Added cancel and confirm buttons when renaming files in the file manager for better control over file operations
+- Step and feed rate settings now persist per category when switching step groups
+- Added 0.01mm option to small step sizes
+- Filtered out 0.01mm step option when in imperial mode for consistency
+- Removed redundant Motion Controls label for cleaner interface
