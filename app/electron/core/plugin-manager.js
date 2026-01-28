@@ -62,7 +62,7 @@ class PluginManager {
     this.pendingDialogs = new Map(); // Track pending dialogs for reconnecting clients
   }
 
-  async initialize({ cncController, broadcast, sendWsMessage, serverState } = {}) {
+  async initialize({ cncController, broadcast, sendWsMessage, getClientRegistry, serverState } = {}) {
     if (this.initialized) {
       log('Plugin manager already initialized');
       return;
@@ -71,6 +71,7 @@ class PluginManager {
     this.cncController = cncController;
     this.broadcast = broadcast;
     this.sendWsMessage = sendWsMessage;
+    this.getClientRegistry = getClientRegistry || (() => []);
     this.serverState = serverState;
 
     // Register handler to intercept cnc-data and detect plugin messages
@@ -325,6 +326,15 @@ class PluginManager {
 
       getServerState: () => {
         return this.serverState || null;
+      },
+
+      getConnectedClients: (filter = {}) => {
+        if (!this.getClientRegistry) return [];
+        let clients = this.getClientRegistry();
+        if (filter.product) {
+          clients = clients.filter(c => c.product === filter.product);
+        }
+        return clients;
       },
 
       showDialog: (title, content, options = {}) => {

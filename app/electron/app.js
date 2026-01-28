@@ -77,7 +77,7 @@ export async function createApp(options = {}) {
 
   const autoConnector = createAutoConnector({ cncController });
 
-  const { wss, broadcast, sendWsMessage, getClientWebSocket, shutdown: shutdownWebSocket } = createWebSocketLayer({
+  const { wss, broadcast, sendWsMessage, getClientWebSocket, getClientRegistry, shutdown: shutdownWebSocket } = createWebSocketLayer({
     httpServer: server,
     cncController,
     jobManager,
@@ -191,7 +191,7 @@ export async function createApp(options = {}) {
       log(`WebSocket: ws://localhost:${port}`);
 
       try {
-        await pluginManager.initialize({ cncController, broadcast, sendWsMessage, serverState: context.serverState });
+        await pluginManager.initialize({ cncController, broadcast, sendWsMessage, getClientRegistry, serverState: context.serverState });
         log('Plugin manager initialized successfully');
       } catch (error) {
         log('Failed to initialize plugin manager:', error);
