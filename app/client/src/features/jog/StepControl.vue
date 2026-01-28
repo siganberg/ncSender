@@ -199,15 +199,14 @@ const handleTouchEnd = (value: number) => {
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
     const clickedCategory = props.stepOptions.indexOf(value);
-    const currentCategory = getCategoryForStep(props.currentStep);
+    if (clickedCategory === -1) return;
 
-    if (clickedCategory !== -1 && clickedCategory !== currentCategory) {
-      // Switching categories - restore saved state
-      const saved = categoryState[clickedCategory];
-      emit('update:step', saved.step);
+    const currentCategory = getCategoryForStep(props.currentStep);
+    const saved = categoryState[clickedCategory];
+
+    emit('update:step', saved.step);
+    if (clickedCategory !== currentCategory) {
       nextTick(() => emit('update:feedRate', saved.feedRate));
-    } else {
-      emit('update:step', value);
     }
   }
 };
@@ -228,15 +227,14 @@ const handleStepClick = (value: number) => {
   const elapsed = Date.now() - pressStartTime;
   if (elapsed < LONG_PRESS_MS && openDropdown.value === null) {
     const clickedCategory = props.stepOptions.indexOf(value);
-    const currentCategory = getCategoryForStep(props.currentStep);
+    if (clickedCategory === -1) return;
 
-    if (clickedCategory !== -1 && clickedCategory !== currentCategory) {
-      // Switching categories - restore saved state
-      const saved = categoryState[clickedCategory];
-      emit('update:step', saved.step);
+    const currentCategory = getCategoryForStep(props.currentStep);
+    const saved = categoryState[clickedCategory];
+
+    emit('update:step', saved.step);
+    if (clickedCategory !== currentCategory) {
       nextTick(() => emit('update:feedRate', saved.feedRate));
-    } else {
-      emit('update:step', value);
     }
   }
 };
@@ -287,9 +285,9 @@ const getCurrentFeedRateOptions = (): number[] => {
   return [500, 1000, 3000, 5000];
 };
 
-// Format step size - show current value if in this category, otherwise show base value
+// Format step size - always show the saved value for this category
 const formatStepSizeDisplay = (value: number, categoryIndex: number): string => {
-  const displayValue = isStepInCategory(value, categoryIndex) ? value : props.stepOptions[categoryIndex];
+  const displayValue = categoryState[categoryIndex]?.step ?? props.stepOptions[categoryIndex];
   return formatStepSize(displayValue, appStore.unitsPreference.value);
 };
 
