@@ -251,7 +251,7 @@ const getCurrentFeedRateOptions = (): number[] => {
 // Format step size - show current value if in this category, otherwise show base value
 const formatStepSizeDisplay = (value: number, categoryIndex: number): string => {
   const displayValue = isStepInCategory(value, categoryIndex) ? value : props.stepOptions[categoryIndex];
-  return formatStepSizeJogDisplay(displayValue, appStore.unitsPreference.value);
+  return formatStepSizeJogDisplay(displayValue, false, appStore.unitsPreference.value);
 };
 
 const formatFeedRateDisplay = (mmPerMin: number): string => {

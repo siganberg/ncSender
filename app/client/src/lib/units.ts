@@ -99,9 +99,9 @@ export function formatStepSize(mmValue: number, units: UnitsPreference = 'metric
   return mmValue.toString();
 }
 
-export function formatStepSizeJogDisplay(mmValue: number, units: UnitsPreference = 'metric'): string {
+export function formatStepSizeJogDisplay(mmValue: number, continuous: boolean =false, units: UnitsPreference = 'metric'): string {
   if (units === 'imperial') {
-    return   (mmValue/100).toFixed(3);
+    return  continuous ? mmToInches(mmValue).toFixed(3): (mmValue/100).toFixed(3) ;
   }
   return mmValue.toString();
 }
