@@ -113,7 +113,6 @@
           </div>
           <div class="legend-item" :class="{ 'legend-item--disabled': !showSpindle }" @click="toggleSpindle">
             <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
-            <span class="legend-label">Spindle</span>
           </div>
         </div>
       </div>
@@ -494,7 +493,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer, generateLaserPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
 import { getToolsFromInit } from '@/lib/init';
@@ -656,6 +655,7 @@ const showRapids = ref(true); // Default to shown
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
+const laserMode = ref(false); // Laser mode - off by default
 const autoFitMode = ref(false); // Auto-fit mode - off by default
 const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
 const showFileManager = ref(false);
@@ -1155,10 +1155,8 @@ const initThreeJS = () => {
   const initialBounds = computeGridBoundsFrom(props.workOffset);
   gcodeVisualizer.setGridBounds(initialBounds);
 
-  // Add cutting pointer/spindle
-  cuttingPointer = generateCuttingPointer();
-  cuttingPointer.position.set(0, 0, 0); // Start at origin
-  scene.add(cuttingPointer);
+  // Add cutting pointer/spindle (or laser pointer if in laser mode)
+  updatePointerType();
 
   refreshHomeIndicator();
 
@@ -2219,6 +2217,22 @@ const closeLoadingError = () => {
   loadingMessage.value = '';
 };
 
+// Function to check $32 setting and update laser mode
+const updateLaserModeFromSetting32 = async () => {
+  try {
+    const firmware = await api.getFirmwareSettings(false).catch(() => null as any);
+    if (firmware?.settings?.['32']) {
+      const setting32Value = String(firmware.settings['32'].value).trim();
+      const isLaserMode = setting32Value === '1';
+      if (laserMode.value !== isLaserMode) {
+        laserMode.value = isLaserMode;
+      }
+    }
+  } catch (error) {
+    console.error('[GCodeVisualizer] Failed to check $32 setting', JSON.stringify({ error: error.message }));
+  }
+};
+
 const handleGCodeUpdate = async (data: { filename: string; content?: string; timestamp: string }) => {
   try {
     // If no content provided, show loading and wait for gcode-content-ready event (new metadata-only flow)
@@ -2247,6 +2261,9 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     // Set grid bounds for out-of-bounds detection
     const gridBounds = computeGridBoundsFrom(props.workOffset);
     gcodeVisualizer.setGridBounds(gridBounds);
+
+    // Apply laser mode before rendering
+    gcodeVisualizer.setLaserMode(laserMode.value);
 
     loadingProgress.value = 70;
     gcodeVisualizer.render(content);
@@ -2285,6 +2302,9 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     }
 
     hasFile.value = true;
+
+    // Check $32 setting and update laser mode when G-code is loaded
+    await updateLaserModeFromSetting32();
 
     // Set initial visibility for all line types
     gcodeVisualizer.setRapidVisibility(showRapids.value);
@@ -2812,6 +2832,45 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso' | 'split') => {
   camera.lookAt(cameraTarget);
 };
 
+// Update pointer type (cutting vs laser) based on laser mode
+const updatePointerType = () => {
+  if (!scene) return;
+
+  // Remove existing pointer
+  if (cuttingPointer) {
+    scene.remove(cuttingPointer);
+    // Dispose of the old pointer's resources
+    cuttingPointer.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      }
+    });
+  }
+
+  // Create new pointer based on mode
+  if (laserMode.value) {
+    cuttingPointer = generateLaserPointer();
+  } else {
+    cuttingPointer = generateCuttingPointer();
+  }
+  
+  cuttingPointer.position.set(0, 0, 0); // Start at origin
+  scene.add(cuttingPointer);
+  
+  // Update scale and opacity
+  updatePointerScale();
+  setTimeout(() => {
+    updatePointerOpacity();
+  }, 500);
+};
+
 // Update pointer opacity based on view
 const updatePointerOpacity = () => {
   if (!cuttingPointer) return;
@@ -2989,6 +3048,41 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
     }
   }
 });
+
+// Watch for laser mode changes (controlled by $32, not user preference)
+watch(() => laserMode.value, (isLaserMode) => {
+  // Update pointer type (mill vs laser)
+  updatePointerType();
+  
+  // Update visualizer laser mode
+  if (gcodeVisualizer) {
+    gcodeVisualizer.setLaserMode(isLaserMode);
+  }
+}, { immediate: false });
+
+// Watch for current line changes to update laser power glow
+watch(() => props.jobLoaded?.currentLine, (currentLine) => {
+  if (!laserMode.value || !cuttingPointer || !gcodeVisualizer) return;
+  if (!currentLine || currentLine <= 0) return;
+  
+  // Get S value for current line from visualizer
+  const sValue = gcodeVisualizer.lineSpindleSpeed.get(currentLine) || 0;
+  
+  // Find max S value for normalization
+  let maxSValue = 0;
+  gcodeVisualizer.lineSpindleSpeed.forEach(value => {
+    if (value > maxSValue) maxSValue = value;
+  });
+  if (maxSValue === 0) maxSValue = 1000; // Default if no S values found
+  
+  // Calculate power percentage (0-1)
+  const powerPercent = sValue > 0 ? Math.min(sValue / maxSValue, 1.0) : 0;
+  
+  // Update laser glow if the method exists
+  if (cuttingPointer.userData.updateLaserPower) {
+    cuttingPointer.userData.updateLaserPower(powerPercent);
+  }
+}, { immediate: false });
 
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
@@ -3617,6 +3711,9 @@ onMounted(async () => {
     if (typeof settings.spindleView === 'boolean') {
       spindleViewMode.value = settings.spindleView;
     }
+    // Laser mode is now controlled by $32 setting, not user preference
+    // Check $32 setting on initialization
+    updateLaserModeFromSetting32();
     // Load I/O Switches configuration with defaults (support new auxOutputs or legacy ioSwitches)
     if (settings.auxOutputs && Array.isArray(settings.auxOutputs)) {
       ioSwitchesConfig.value = settings.auxOutputs;
@@ -3805,6 +3902,16 @@ onMounted(async () => {
   // Set up WebSocket listeners for G-code events
   api.onGCodeUpdated(handleGCodeUpdate);
   api.on('gcode-content-ready', handleGCodeUpdate);
+
+  // Listen for firmware setting changes (specifically $32 for laser mode)
+  api.on('firmware-setting-changed', (data: { id: string; value: string }) => {
+    if (data.id === '32') {
+      const isLaserMode = data.value === '1';
+      if (laserMode.value !== isLaserMode) {
+        laserMode.value = isLaserMode;
+      }
+    }
+  });
 
   // Listen for download progress
   api.on('gcode-download-progress', (progress: { percent: number }) => {
