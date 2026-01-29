@@ -16,7 +16,9 @@
  */
 
 import fs from 'node:fs/promises';
-import { checkSameToolChange, parseM6Command, isSpindleStartCommand, isSpindleStopCommand } from '../utils/gcode-patterns.js';
+import { checkSameToolChange, parseM6Command, isSpindleStartCommand, isSpindleStopCommand, isM98Command, parseM98Command } from '../utils/gcode-patterns.js';
+import * as m98Storage from '../features/macro/m98-storage.js';
+import { M98Expander } from '../features/macro/m98-expander.js';
 import { getSetting } from './settings-manager.js';
 import { createLogger } from './logger.js';
 
@@ -44,6 +46,7 @@ export class CommandProcessor {
     this.broadcast = broadcast;
     this.serverState = serverState;
     this.firmwareFilePath = firmwareFilePath;
+    this.m98Expander = new M98Expander(m98Storage);
   }
 
   /**
@@ -117,6 +120,125 @@ export class CommandProcessor {
           timestamp: new Date().toISOString()
         }
       };
+    }
+
+    // M98 Macro Expansion - intercept and expand before other processing
+    if (isM98Command(command)) {
+      try {
+        // Get macro info for display
+        const { macroId } = parseM98Command(command);
+        const macro = m98Storage.getMacro(macroId);
+        const macroName = macro?.name || `P${macroId}`;
+
+        // Track call stack for recursion detection
+        const m98CallStack = meta.m98CallStack || [];
+        const MAX_M98_DEPTH = 16;
+
+        // Check for recursion
+        if (m98CallStack.includes(macroId)) {
+          throw new Error(`Macro recursion detected: ${[...m98CallStack, macroId].join(' → ')}`);
+        }
+
+        // Check max depth
+        if (m98CallStack.length >= MAX_M98_DEPTH) {
+          throw new Error(`Max macro depth (${MAX_M98_DEPTH}) exceeded`);
+        }
+
+        // Broadcast the original M98 command to terminal
+        this.broadcast('cnc-command', {
+          id: commandId,
+          command: command,
+          displayCommand: `M98 P${macroId} (${macroName})`,
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          sourceId: meta.sourceId || 'client'
+        });
+
+        const expandedCommands = await this.m98Expander.expand(command, m98CallStack);
+
+        // Process each expanded command through the processor (recursively)
+        const allResults = [];
+
+        // Add start message
+        allResults.push({
+          command: `(Executing: ${macroName})`,
+          displayCommand: `(Executing: ${macroName})`,
+          isOriginal: false
+        });
+
+        // New call stack with current macro added
+        const newCallStack = [...m98CallStack, macroId];
+
+        for (const expandedCmd of expandedCommands) {
+          // Generate unique commandId for each expanded command
+          const expandedCommandId = `${commandId}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+          const result = await this.process(expandedCmd, {
+            ...context,
+            commandId: expandedCommandId,
+            meta: { ...meta, m98Source: command, m98CallStack: newCallStack }
+          });
+          if (!result.shouldContinue && result.error) {
+            return result;
+          }
+          if (result.commands) {
+            allResults.push(...result.commands);
+          }
+        }
+
+        // Add end message
+        allResults.push({
+          command: `(End of: ${macroName})`,
+          displayCommand: `(End of: ${macroName})`,
+          isOriginal: false
+        });
+
+        // Broadcast success for the original M98 command
+        this.broadcast('cnc-command-result', {
+          id: commandId,
+          command: command,
+          displayCommand: `M98 P${macroId} (${macroName})`,
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          sourceId: meta.sourceId || 'client'
+        });
+
+        return { shouldContinue: true, commands: allResults };
+      } catch (err) {
+        log(`M98 expansion error: ${err.message}`);
+
+        const errorDisplay = `${command} (M98 ERROR: ${err.message})`;
+
+        this.broadcast('cnc-command', {
+          id: commandId,
+          command: command,
+          displayCommand: errorDisplay,
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          sourceId: meta.sourceId || 'client'
+        });
+
+        this.broadcast('cnc-command-result', {
+          id: commandId,
+          command: command,
+          displayCommand: errorDisplay,
+          status: 'error',
+          timestamp: new Date().toISOString(),
+          sourceId: meta.sourceId || 'client'
+        });
+
+        return {
+          shouldContinue: false,
+          error: err.message,
+          result: {
+            status: 'error',
+            id: commandId,
+            command: command,
+            displayCommand: errorDisplay,
+            message: err.message,
+            timestamp: new Date().toISOString()
+          }
+        };
+      }
     }
 
     // Check if this is a valid M6 command

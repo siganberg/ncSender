@@ -17,158 +17,270 @@
 
 import { Router } from 'express';
 import {
-  readMacros,
+  listMacros,
   getMacro,
   createMacro,
   updateMacro,
-  deleteMacro
-} from './storage.js';
+  deleteMacro,
+  getNextAvailableId,
+  validateMacroId,
+  getIdRange
+} from './m98-storage.js';
+import { runMigration, getMigrationStatus } from './migration.js';
+import { readSettings, saveSettings } from '../../core/settings-manager.js';
 import { createLogger } from '../../core/logger.js';
 
-const { log, error: logError } = createLogger('Macro');
+const { log, error: logError } = createLogger('M98Routes');
 
 export function createMacroRoutes(cncController, commandProcessor) {
   const router = Router();
 
-  router.get('/macros', (req, res) => {
+  // Run migration on router creation (one-time)
+  try {
+    const migrationResult = runMigration();
+    if (migrationResult.migrated && migrationResult.count > 0) {
+      log(`Migrated ${migrationResult.count} macros from macros.json`);
+    }
+  } catch (err) {
+    logError('Migration failed:', err);
+  }
+
+  // GET /api/m98-macros - List all macros
+  router.get('/m98-macros', (req, res) => {
     try {
-      const macros = readMacros();
+      const macros = listMacros();
       res.json(macros);
     } catch (error) {
-      log('Error reading macros:', error);
-      res.status(500).json({ error: 'Failed to read macros' });
+      logError('Error listing macros:', error);
+      res.status(500).json({ error: 'Failed to list macros' });
     }
   });
 
-  router.get('/macros/:id', (req, res) => {
+  // GET /api/m98-macros/next-id - Get next available ID
+  router.get('/m98-macros/next-id', (req, res) => {
     try {
-      const macro = getMacro(req.params.id);
+      const nextId = getNextAvailableId();
+      const range = getIdRange();
+      res.json({ nextId, ...range });
+    } catch (error) {
+      logError('Error getting next ID:', error);
+      res.status(500).json({ error: 'Failed to get next ID' });
+    }
+  });
+
+  // GET /api/m98-macros/migration-status - Get migration status
+  router.get('/m98-macros/migration-status', (req, res) => {
+    try {
+      const status = getMigrationStatus();
+      res.json(status);
+    } catch (error) {
+      logError('Error getting migration status:', error);
+      res.status(500).json({ error: 'Failed to get migration status' });
+    }
+  });
+
+  // GET /api/m98-macros/:id - Get single macro
+  router.get('/m98-macros/:id', (req, res) => {
+    try {
+      const validation = validateMacroId(req.params.id);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      const macro = getMacro(validation.id);
       if (!macro) {
-        return res.status(404).json({ error: 'Macro not found' });
+        return res.status(404).json({ error: `Macro not found: ${validation.id}` });
       }
       res.json(macro);
     } catch (error) {
-      log('Error reading macro:', error);
+      logError('Error reading macro:', error);
       res.status(500).json({ error: 'Failed to read macro' });
     }
   });
 
-  router.post('/macros', (req, res) => {
+  // POST /api/m98-macros - Create new macro
+  router.post('/m98-macros', (req, res) => {
     try {
-      const { name, description, commands } = req.body;
+      const { id, name, description, body, content } = req.body;
 
-      if (!name || !commands) {
-        return res.status(400).json({ error: 'Name and commands are required' });
+      // Require either body or content
+      if (!body && !content) {
+        return res.status(400).json({ error: 'Body or content is required' });
       }
 
-      const newMacro = createMacro({ name, description, commands });
+      const newMacro = createMacro({ id, name, description, body, content });
       res.status(201).json(newMacro);
     } catch (error) {
-      log('Error creating macro:', error);
+      if (error.message.includes('already exists') || error.message.includes('Invalid macro ID')) {
+        return res.status(400).json({ error: error.message });
+      }
+      logError('Error creating macro:', error);
       res.status(500).json({ error: 'Failed to create macro' });
     }
   });
 
-  router.put('/macros/:id', (req, res) => {
+  // PUT /api/m98-macros/:id - Update macro
+  router.put('/m98-macros/:id', (req, res) => {
     try {
-      const { name, description, commands } = req.body;
+      const validation = validateMacroId(req.params.id);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      const { name, description, body, content } = req.body;
       const updates = {};
 
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
-      if (commands !== undefined) updates.commands = commands;
+      if (body !== undefined) updates.body = body;
+      if (content !== undefined) updates.content = content;
 
-      const updatedMacro = updateMacro(req.params.id, updates);
+      const updatedMacro = updateMacro(validation.id, updates);
       res.json(updatedMacro);
     } catch (error) {
       if (error.message.includes('not found')) {
         return res.status(404).json({ error: error.message });
       }
-      log('Error updating macro:', error);
+      logError('Error updating macro:', error);
       res.status(500).json({ error: 'Failed to update macro' });
     }
   });
 
-  router.delete('/macros/:id', (req, res) => {
+  // DELETE /api/m98-macros/:id - Delete macro
+  router.delete('/m98-macros/:id', (req, res) => {
     try {
-      const result = deleteMacro(req.params.id);
+      const validation = validateMacroId(req.params.id);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      const result = deleteMacro(validation.id);
+
+      // Also remove any keyboard shortcut assigned to this macro
+      try {
+        const settings = readSettings();
+        if (settings && settings.keyboardBindings) {
+          const actionId = `Macro:${validation.id}`;
+          if (actionId in settings.keyboardBindings) {
+            const updatedBindings = { ...settings.keyboardBindings };
+            delete updatedBindings[actionId];
+            saveSettings({
+              ...settings,
+              keyboardBindings: updatedBindings
+            });
+            log(`Removed keyboard binding for deleted macro: ${actionId}`);
+          }
+        }
+      } catch (bindingError) {
+        logError('Failed to remove keyboard binding for deleted macro:', bindingError);
+      }
+
       res.json(result);
     } catch (error) {
       if (error.message.includes('not found')) {
         return res.status(404).json({ error: error.message });
       }
-      log('Error deleting macro:', error);
+      logError('Error deleting macro:', error);
       res.status(500).json({ error: 'Failed to delete macro' });
     }
   });
 
-  router.post('/macros/:id/execute', async (req, res) => {
+  // POST /api/m98-macros/:id/execute - Execute macro directly
+  router.post('/m98-macros/:id/execute', async (req, res) => {
     try {
       if (!cncController || !cncController.isConnected) {
         return res.status(503).json({ error: 'CNC controller is not connected' });
       }
 
-      const macro = getMacro(req.params.id);
-      if (!macro) {
-        return res.status(404).json({ error: 'Macro not found' });
+      const validation = validateMacroId(req.params.id);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
       }
 
-      // Split commands by newline and filter empty lines
-      const commands = macro.commands.split('\n')
-        .map(line => line.trim())
-        .filter(line => line !== '');
+      const macro = getMacro(validation.id);
+      if (!macro) {
+        return res.status(404).json({ error: `Macro not found: ${validation.id}` });
+      }
 
-      log(`Executing macro: ${macro.name} (${commands.length} commands)`);
+      // Execute via M98 command through the command processor
+      const m98Command = `M98 P${validation.id}`;
+      log(`Executing macro via: ${m98Command}`);
 
-      // Send each command separately
-      for (const command of commands) {
-        // Process command through Command Processor
-        const pluginContext = {
+      const pluginContext = {
+        sourceId: 'macro',
+        commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        meta: { sourceId: 'macro', macroId: validation.id, macroName: macro.name },
+        machineState: cncController.lastStatus
+      };
+
+      const result = await commandProcessor.instance.process(m98Command, pluginContext);
+
+      if (!result.shouldContinue) {
+        if (result.error) {
+          return res.status(400).json({ error: result.error });
+        }
+        return res.json({
+          success: true,
+          message: `Macro "${macro.name}" (${validation.id}) processed`,
+          commandsExecuted: 0
+        });
+      }
+
+      const processedCommands = result.commands || [];
+
+      // Send each processed command to the controller
+      for (const cmd of processedCommands) {
+        const cmdDisplayCommand = cmd.displayCommand || cmd.command;
+        const cmdMeta = {
           sourceId: 'macro',
-          commandId: `macro-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          meta: { sourceId: 'macro', macroId: req.params.id, macroName: macro.name },
-          machineState: cncController.lastStatus
+          macroId: validation.id,
+          macroName: macro.name,
+          ...(cmd.meta || {})
         };
 
-        const result = await commandProcessor.instance.process(command, pluginContext);
+        const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-        // Check if command was skipped (e.g., same-tool M6)
-        if (!result.shouldContinue) {
-          continue; // Skip to next command
-        }
-
-        const processedCommands = result.commands;
-
-        // Iterate through command array and send each to controller
-        for (const cmd of processedCommands) {
-          const cmdDisplayCommand = cmd.displayCommand || cmd.command;
-          const cmdMeta = {
-            sourceId: 'macro',
-            macroId: req.params.id,
-            macroName: macro.name,
-            ...(cmd.meta || {})
-          };
-
-          // Generate unique commandId for each command in the array
-          const uniqueCommandId = cmd.commandId || `${pluginContext.commandId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-          await cncController.sendCommand(cmd.command, {
-            commandId: uniqueCommandId,
-            displayCommand: cmdDisplayCommand,
-            meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
-          });
-        }
+        await cncController.sendCommand(cmd.command, {
+          commandId: uniqueCommandId,
+          displayCommand: cmdDisplayCommand,
+          meta: Object.keys(cmdMeta).length > 0 ? cmdMeta : null
+        });
       }
 
       res.json({
         success: true,
-        message: `Macro "${macro.name}" executed successfully`,
-        commandsExecuted: commands.length
+        message: `Macro "${macro.name}" (${validation.id}) executed successfully`,
+        commandsExecuted: processedCommands.length
       });
     } catch (error) {
-      log('Error executing macro:', error);
+      logError('Error executing macro:', error);
       res.status(500).json({ error: 'Failed to execute macro', message: error.message });
     }
+  });
+
+  // Legacy routes for backward compatibility (redirect to new endpoints)
+  router.get('/macros', (req, res) => {
+    res.redirect(301, '/api/m98-macros');
+  });
+
+  router.get('/macros/:id', (req, res) => {
+    res.redirect(301, `/api/m98-macros/${req.params.id}`);
+  });
+
+  router.post('/macros', (req, res) => {
+    res.redirect(307, '/api/m98-macros');
+  });
+
+  router.put('/macros/:id', (req, res) => {
+    res.redirect(307, `/api/m98-macros/${req.params.id}`);
+  });
+
+  router.delete('/macros/:id', (req, res) => {
+    res.redirect(307, `/api/m98-macros/${req.params.id}`);
+  });
+
+  router.post('/macros/:id/execute', (req, res) => {
+    res.redirect(307, `/api/m98-macros/${req.params.id}/execute`);
   });
 
   return router;

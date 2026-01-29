@@ -15,6 +15,31 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
+export interface M98Macro {
+  id: number;
+  name: string;
+  description: string | null;
+  body: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface M98MacroFormData {
+  id?: number;
+  name?: string;
+  description?: string;
+  body?: string;
+  content?: string;
+}
+
+export interface M98IdInfo {
+  nextId: number | null;
+  min: number;
+  max: number;
+}
+
+// Legacy types for backward compatibility
 export interface Macro {
   id: string;
   name: string;

@@ -16,7 +16,7 @@
 -->
 
 <template>
-  <div class="macro-panel" :class="{ 'editor-open': selectedMacroId }">
+  <div class="macro-panel" :class="{ 'editor-open': selectedMacroId !== null }">
     <div class="macro-list-column">
       <div class="macro-list-header">
         <input
@@ -39,15 +39,18 @@
           @click="selectMacro(macro.id)"
         >
           <div class="macro-item-content">
-            <h3 class="macro-name">{{ macro.name }}</h3>
+            <div class="macro-header">
+              <span class="macro-id">P{{ macro.id }}</span>
+              <h3 class="macro-name">{{ macro.name }}</h3>
+            </div>
             <p v-if="macro.description" class="macro-description">{{ macro.description }}</p>
-            <p v-else class="macro-preview">{{ getCommandPreview(macro.commands) }}</p>
+            <p v-else class="macro-preview">{{ getCommandPreview(macro.body) }}</p>
           </div>
           <button
             class="macro-play-btn"
             @click.stop="runMacroFromList(macro.id)"
             :disabled="!connected"
-            title="Run macro"
+            title="Run macro (M98 P{{ macro.id }})"
           >
             ▶
           </button>
@@ -56,7 +59,7 @@
     </div>
 
     <div class="macro-editor-column">
-      <div v-if="selectedMacroId" class="macro-editor">
+      <div v-if="selectedMacroId !== null" class="macro-editor">
         <div class="editor-header">
           <button class="btn-icon btn-close" @click="closeEditor" title="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -88,14 +91,28 @@
           </div>
         </div>
         <div class="editor-form">
-          <div class="form-group-inline">
-            <label>Name</label>
-            <input
-              type="text"
-              v-model="formData.name"
-              placeholder="Macro name"
-              class="form-input"
-            />
+          <div class="form-row">
+            <div class="form-group-inline form-group-id">
+              <label>ID</label>
+              <input
+                type="number"
+                v-model.number="formData.id"
+                :placeholder="nextIdPlaceholder"
+                :min="9001"
+                :max="9999"
+                class="form-input form-input-id"
+                :disabled="selectedMacroId !== 'new'"
+              />
+            </div>
+            <div class="form-group-inline form-group-name">
+              <label>Name</label>
+              <input
+                type="text"
+                v-model="formData.name"
+                placeholder="Macro name"
+                class="form-input"
+              />
+            </div>
           </div>
           <div class="form-group-inline">
             <label>Description</label>
@@ -107,15 +124,21 @@
             />
           </div>
           <div class="form-group commands-group">
-            <label>Commands</label>
+            <label>G-code Commands</label>
             <div class="commands-editor">
               <CodeEditor
-                v-model:value="formData.commands"
+                v-model:value="formData.content"
                 language="gcode"
                 :theme="monacoTheme"
                 :options="editorOptions"
               />
             </div>
+          </div>
+          <div class="form-hint" v-if="selectedMacroId === 'new'">
+            Invoke with: <code>M98 P{{ formData.id || (macroStore.idInfo.value?.nextId || '9001') }}</code>
+          </div>
+          <div class="form-hint" v-else-if="typeof selectedMacroId === 'number'">
+            Invoke with: <code>M98 P{{ selectedMacroId }}</code>
           </div>
         </div>
       </div>
@@ -126,7 +149,7 @@
   <Dialog v-if="showDeleteConfirm" @close="cancelDelete" :show-header="false" size="small" :z-index="10000">
     <ConfirmPanel
       title="Delete Macro"
-      :message="`Are you sure you want to delete the macro &quot;${macroToDelete}&quot;?`"
+      :message="`Are you sure you want to delete the macro &quot;${macroToDelete}&quot; (P${selectedMacroId})?`"
       cancel-text="Cancel"
       confirm-text="Delete"
       variant="danger"
@@ -138,9 +161,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useMacroStore } from './store';
-import { api as macroApi } from './api';
-import type { Macro } from './types';
+import { useM98MacroStore } from './store';
+import type { M98Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
@@ -149,15 +171,16 @@ const props = defineProps<{
   connected?: boolean;
 }>();
 
-const macroStore = useMacroStore();
+const macroStore = useM98MacroStore();
 const searchQuery = ref('');
-const selectedMacroId = ref<string | null>(null);
+const selectedMacroId = ref<number | 'new' | null>(null);
 const showDeleteConfirm = ref(false);
 const macroToDelete = ref<string>('');
 const formData = ref({
+  id: undefined as number | undefined,
   name: '',
   description: '',
-  commands: ''
+  content: ''
 });
 
 // Monaco editor setup
@@ -191,6 +214,11 @@ const themeObserver = new MutationObserver(() => {
   isLightTheme.value = document.body.classList.contains('theme-light');
 });
 
+const nextIdPlaceholder = computed(() => {
+  const info = macroStore.idInfo.value;
+  return info?.nextId ? `Auto (${info.nextId})` : '9001-9999';
+});
+
 const filteredMacros = computed(() => {
   if (!searchQuery.value) {
     return macroStore.macros.value;
@@ -199,29 +227,38 @@ const filteredMacros = computed(() => {
   return macroStore.macros.value.filter(macro =>
     macro.name.toLowerCase().includes(query) ||
     macro.description?.toLowerCase().includes(query) ||
-    macro.commands.toLowerCase().includes(query)
+    macro.body.toLowerCase().includes(query) ||
+    String(macro.id).includes(query)
   );
 });
 
 const isFormValid = computed(() => {
-  return formData.value.name.trim() !== '' && formData.value.commands.trim() !== '';
+  const hasContent = formData.value.content.trim() !== '';
+  if (selectedMacroId.value === 'new') {
+    const id = formData.value.id;
+    const validId = id === undefined || (id >= 9001 && id <= 9999);
+    return hasContent && validId;
+  }
+  return hasContent;
 });
 
-const getCommandPreview = (commands: string) => {
-  const firstLine = commands.split('\n')[0];
+const getCommandPreview = (body: string) => {
+  const firstLine = body.split('\n')[0];
   return firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine;
 };
 
-const createNewMacro = () => {
+const createNewMacro = async () => {
+  await macroStore.loadNextId();
   selectedMacroId.value = 'new';
   formData.value = {
+    id: undefined,
     name: '',
     description: '',
-    commands: ''
+    content: ''
   };
 };
 
-const selectMacro = (id: string) => {
+const selectMacro = (id: number) => {
   selectedMacroId.value = id;
 };
 
@@ -230,21 +267,22 @@ const closeEditor = () => {
 };
 
 const saveMacro = async () => {
-  if (!selectedMacroId.value || !isFormValid.value) return;
+  if (selectedMacroId.value === null || !isFormValid.value) return;
 
   try {
     if (selectedMacroId.value === 'new') {
       const newMacro = await macroStore.createMacro({
-        name: formData.value.name,
-        description: formData.value.description,
-        commands: formData.value.commands
+        id: formData.value.id,
+        name: formData.value.name || undefined,
+        description: formData.value.description || undefined,
+        content: formData.value.content
       });
       selectedMacroId.value = newMacro.id;
     } else {
       await macroStore.updateMacro(selectedMacroId.value, {
-        name: formData.value.name,
-        description: formData.value.description,
-        commands: formData.value.commands
+        name: formData.value.name || undefined,
+        description: formData.value.description || undefined,
+        content: formData.value.content
       });
     }
   } catch (error) {
@@ -253,27 +291,27 @@ const saveMacro = async () => {
 };
 
 const runMacro = async () => {
-  if (!selectedMacroId.value || selectedMacroId.value === 'new' || !props.connected) return;
+  if (selectedMacroId.value === null || selectedMacroId.value === 'new' || !props.connected) return;
 
   try {
-    await macroApi.executeMacro(selectedMacroId.value);
+    await macroStore.executeMacro(selectedMacroId.value);
   } catch (error) {
     console.error('Failed to execute macro:', error);
   }
 };
 
-const runMacroFromList = async (macroId: string) => {
+const runMacroFromList = async (macroId: number) => {
   if (!props.connected) return;
 
   try {
-    await macroApi.executeMacro(macroId);
+    await macroStore.executeMacro(macroId);
   } catch (error) {
     console.error('Failed to execute macro:', error);
   }
 };
 
 const confirmDelete = () => {
-  if (!selectedMacroId.value || selectedMacroId.value === 'new') return;
+  if (selectedMacroId.value === null || selectedMacroId.value === 'new') return;
 
   const macro = macroStore.macros.value.find(m => m.id === selectedMacroId.value);
   if (macro) {
@@ -288,7 +326,7 @@ const cancelDelete = () => {
 };
 
 const performDelete = async () => {
-  if (!selectedMacroId.value) return;
+  if (selectedMacroId.value === null || selectedMacroId.value === 'new') return;
 
   try {
     await macroStore.deleteMacro(selectedMacroId.value);
@@ -303,26 +341,29 @@ const performDelete = async () => {
 };
 
 watch(selectedMacroId, (newId) => {
-  if (newId) {
+  if (newId !== null && newId !== 'new') {
     const macro = macroStore.macros.value.find(m => m.id === newId);
     if (macro) {
       formData.value = {
+        id: macro.id,
         name: macro.name,
         description: macro.description || '',
-        commands: macro.commands
+        content: macro.content
       };
     }
-  } else {
+  } else if (newId === null) {
     formData.value = {
+      id: undefined,
       name: '',
       description: '',
-      commands: ''
+      content: ''
     };
   }
 });
 
 onMounted(() => {
   macroStore.loadMacros();
+  macroStore.loadNextId();
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 });
 
@@ -360,8 +401,6 @@ onUnmounted(() => {
     width: 35vw !important;
   }
 }
-
-
 
 .macro-list-header {
   display: flex;
@@ -436,11 +475,32 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.macro-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.macro-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-surface-muted);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 .macro-name {
-  margin: 0 0 4px 0;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .macro-play-btn {
@@ -572,6 +632,11 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+.form-row {
+  display: flex;
+  gap: var(--gap-sm);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -584,6 +649,15 @@ onUnmounted(() => {
   gap: var(--gap-sm);
 }
 
+.form-group-id {
+  flex-shrink: 0;
+}
+
+.form-group-name {
+  flex: 1;
+  min-width: 0;
+}
+
 .form-group-inline label {
   font-size: 0.75rem;
   font-weight: 600;
@@ -594,6 +668,12 @@ onUnmounted(() => {
 
 .form-group-inline .form-input {
   flex: 1;
+}
+
+.form-input-id {
+  width: 120px !important;
+  flex: none !important;
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .form-group label {
@@ -621,6 +701,11 @@ onUnmounted(() => {
   border-color: var(--color-accent);
 }
 
+.form-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .form-textarea {
   resize: vertical;
   font-family: var(--font-family);
@@ -641,6 +726,20 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  padding: 4px 0;
+}
+
+.form-hint code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--color-surface-muted);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--color-accent);
+}
+
 .empty-state {
   display: flex;
   align-items: center;
@@ -652,6 +751,4 @@ onUnmounted(() => {
   text-align: center;
   padding: var(--gap-md);
 }
-
-
 </style>

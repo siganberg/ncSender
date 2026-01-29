@@ -196,6 +196,24 @@ const SPINDLE_START_PATTERN = /(?:^|[^A-Z])M0*[34](?:[^0-9]|$)/i;
 const SPINDLE_STOP_PATTERN = /(?:^|[^A-Z])M0*5(?:[^0-9]|$)/i;
 
 /**
+ * Pattern to match M98 macro call commands
+ *
+ * Matches (case-insensitive):
+ * - M98 P9001, M98 P9001 (with spaces)
+ * - M98P9001, M098P9001 (no space)
+ * - N100 M98 P9001 (with line numbers)
+ *
+ * Does NOT match:
+ * - M980, M981 (other M-codes)
+ * - ; M98 P9001 (commented lines)
+ * - (M98 P9001) (commented lines)
+ *
+ * Capture groups:
+ * - Group 1: Program number (P value)
+ */
+const M98_PATTERN = /(?:^|[^A-Z])M0*98\s*P0*(\d+)/i;
+
+/**
  * Check if a command is an M3/M4 spindle start command
  *
  * @param {string} command - The G-code command to check
@@ -245,4 +263,66 @@ export function isSpindleStopCommand(command) {
   }
 
   return SPINDLE_STOP_PATTERN.test(command.trim().toUpperCase());
+}
+
+/**
+ * Parse M98 macro call command and extract program number
+ *
+ * @param {string} command - The G-code command to parse
+ * @returns {Object} Object with { matched, macroId }
+ *
+ * @example
+ * parseM98Command('M98 P9001')  // { matched: true, macroId: 9001 }
+ * parseM98Command('M98P9002')   // { matched: true, macroId: 9002 }
+ * parseM98Command('G0 X10')     // { matched: false, macroId: null }
+ * parseM98Command('; M98 P9001') // { matched: false, macroId: null } (commented)
+ */
+export function parseM98Command(command) {
+  if (!command || typeof command !== 'string') {
+    return { matched: false, macroId: null };
+  }
+
+  if (isGcodeComment(command)) {
+    return { matched: false, macroId: null };
+  }
+
+  const normalizedCommand = command.trim().toUpperCase();
+  const match = normalizedCommand.match(M98_PATTERN);
+
+  if (!match) {
+    return { matched: false, macroId: null };
+  }
+
+  const macroId = parseInt(match[1], 10);
+
+  return {
+    matched: true,
+    macroId: Number.isFinite(macroId) ? macroId : null
+  };
+}
+
+/**
+ * Check if a command is an M98 macro call command
+ *
+ * @param {string} command - The G-code command to check
+ * @returns {boolean} True if command is M98, false otherwise
+ *
+ * @example
+ * isM98Command('M98 P9001')   // true
+ * isM98Command('M980')        // false
+ * isM98Command('; M98 P9001') // false (commented)
+ */
+export function isM98Command(command) {
+  const parsed = parseM98Command(command);
+  return parsed.matched === true;
+}
+
+/**
+ * Get the M98 pattern regex for direct use
+ * Use parseM98Command() instead when possible
+ *
+ * @returns {RegExp} The M98 pattern regex
+ */
+export function getM98Pattern() {
+  return M98_PATTERN;
 }
