@@ -802,6 +802,11 @@ const themeObserver = new MutationObserver(() => {
   isLightTheme.value = document.body.classList.contains('theme-light');
 });
 
+// Apply theme change to Monaco editor
+watch(monacoTheme, (newTheme) => {
+  monaco.editor.setTheme(newTheme);
+});
+
 onMounted(() => {
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 });

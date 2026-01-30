@@ -184,6 +184,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
+import * as monaco from 'monaco-editor';
 import { api } from '@/lib/api';
 
 const props = defineProps({
@@ -226,6 +227,11 @@ const lineWasAdjusted = ref(false);
 // Theme detection for Monaco
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
 const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+
+// Apply theme change to Monaco editor
+watch(monacoTheme, (newTheme) => {
+  monaco.editor.setTheme(newTheme);
+});
 
 // Info banner styles - sky blue for both themes
 const warningStyle = computed(() => ({

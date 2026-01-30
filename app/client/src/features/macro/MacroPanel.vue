@@ -166,6 +166,7 @@ import type { M98Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
+import * as monaco from 'monaco-editor';
 
 const props = defineProps<{
   connected?: boolean;
@@ -212,6 +213,11 @@ const editorOptions = {
 // Watch for theme changes
 const themeObserver = new MutationObserver(() => {
   isLightTheme.value = document.body.classList.contains('theme-light');
+});
+
+// Apply theme change to Monaco editor
+watch(monacoTheme, (newTheme) => {
+  monaco.editor.setTheme(newTheme);
 });
 
 const nextIdPlaceholder = computed(() => {

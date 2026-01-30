@@ -129,6 +129,11 @@ const editorInstance = ref<Monaco.editor.IStandaloneCodeEditor | null>(null);
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
 const monacoTheme = computed(() => isLightTheme.value ? 'serverlog-light' : 'serverlog-dark');
 
+// Apply theme change to Monaco editor
+watch(monacoTheme, (newTheme) => {
+  monaco.editor.setTheme(newTheme);
+});
+
 // Track if language is already registered (module-level to persist across mounts)
 let languageRegistered = false;
 
