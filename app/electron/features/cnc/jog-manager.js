@@ -132,7 +132,8 @@ export class JogSessionManager {
     const {
       jogId,
       command,
-      displayCommand
+      displayCommand,
+      silent
     } = data || {};
 
     if (!jogId || typeof jogId !== 'string') {
@@ -177,7 +178,7 @@ export class JogSessionManager {
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
           commandId: jogId,
-          meta: { continuous: true, sourceId: 'client' },
+          meta: { continuous: true, sourceId: 'client', silent: silent === true },
           machineState: this.cncController.lastStatus
         });
 
@@ -199,7 +200,7 @@ export class JogSessionManager {
           await this.cncController.sendCommand(cmd.command, {
             commandId: jogId,
             displayCommand: cmd.displayCommand || cmd.command,
-            meta: { continuous: true, sourceId: 'client' }
+            meta: { continuous: true, sourceId: 'client', silent: silent === true }
           });
         }
       } else {
@@ -207,7 +208,7 @@ export class JogSessionManager {
         await this.cncController.sendCommand(command, {
           commandId: jogId,
           displayCommand: displayCommand || command,
-          meta: { continuous: true, sourceId: 'client' }
+          meta: { continuous: true, sourceId: 'client', silent: silent === true }
         });
       }
     } catch (error) {
@@ -352,7 +353,8 @@ export class JogSessionManager {
       command,
       displayCommand,
       commandId,
-      skipJogCancel
+      skipJogCancel,
+      silent
     } = data || {};
 
     if (typeof command !== 'string' || command.trim() === '') {
@@ -370,7 +372,7 @@ export class JogSessionManager {
     }
 
     try {
-      const stepMeta = { jogStep: true, sourceId: 'client', skipJogCancel: skipJogCancel === true };
+      const stepMeta = { jogStep: true, sourceId: 'client', skipJogCancel: skipJogCancel === true, silent: silent === true };
 
       if (this.commandProcessor) {
         const result = await this.commandProcessor.process(command, {
