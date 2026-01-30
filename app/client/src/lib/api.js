@@ -839,6 +839,34 @@ class NCClient {
     return response.json();
   }
 
+  async pauseGCodeJob() {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to pause G-code job' }));
+      throw new Error(error.error || 'Failed to pause G-code job');
+    }
+
+    return response.json();
+  }
+
+  async resumeGCodeJob() {
+    const response = await fetch(`${this.baseUrl}/api/gcode-job/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to resume G-code job' }));
+      throw new Error(error.error || 'Failed to resume G-code job');
+    }
+
+    return response.json();
+  }
+
   async analyzeGCodeLine(lineNumber) {
     const response = await fetch(`${this.baseUrl}/api/gcode-job/analyze-line`, {
       method: 'POST',

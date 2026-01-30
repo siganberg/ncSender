@@ -40,10 +40,11 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
   // Start a G-code Job
   router.post('/', async (req, res) => {
     try {
-      const { filename } = req.body;
+      // Filename is optional - if not provided, use the currently loaded job
+      const filename = req.body?.filename || serverState.jobLoaded?.filename;
 
       if (!filename) {
-        return res.status(400).json({ error: 'Filename is required' });
+        return res.status(400).json({ error: 'No program loaded. Load a G-code file first.' });
       }
 
       // For temporary files (e.g., from Replicator plugin), check cache instead of gcode-files
@@ -155,6 +156,58 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
     } catch (error) {
       log('Error stopping G-code job:', error);
       return res.status(500).json({ error: 'Failed to stop G-code job' });
+    }
+  });
+
+  // Pause the running job (feed hold)
+  router.post('/pause', async (req, res) => {
+    try {
+      // Check machine state - should be running to pause
+      const machineStatus = serverState.machineState?.status?.toLowerCase();
+      if (machineStatus === 'hold' || machineStatus === 'door') {
+        return res.status(400).json({ error: 'Machine is already paused' });
+      }
+      if (machineStatus !== 'run') {
+        return res.status(400).json({ error: `Cannot pause. Machine state is: ${machineStatus || 'unknown'}` });
+      }
+
+      // Check if "Use Door as Pause" setting is enabled
+      const useDoorAsPause = getSetting('useDoorAsPause', DEFAULT_SETTINGS.useDoorAsPause);
+      const command = useDoorAsPause ? '\x84' : '!';
+      const displayCommand = useDoorAsPause ? '\\x84 (Safety Door)' : '! (Feed Hold)';
+
+      await cncController.sendCommand(command, {
+        displayCommand,
+        meta: { jobControl: true, sourceId: 'pendant' }
+      });
+
+      log('G-code job paused');
+      return res.json({ success: true, message: 'Job paused' });
+    } catch (error) {
+      log('Error pausing G-code job:', error);
+      return res.status(500).json({ error: 'Failed to pause G-code job' });
+    }
+  });
+
+  // Resume a paused job
+  router.post('/resume', async (req, res) => {
+    try {
+      // Check machine state - should be in Hold or Door state to resume
+      const machineStatus = serverState.machineState?.status?.toLowerCase();
+      if (!machineStatus || !['hold', 'door'].includes(machineStatus)) {
+        return res.status(400).json({ error: `Cannot resume. Machine state is: ${machineStatus || 'unknown'}` });
+      }
+
+      await cncController.sendCommand('~', {
+        displayCommand: '~ (Resume)',
+        meta: { jobControl: true, sourceId: 'pendant' }
+      });
+
+      log('G-code job resumed');
+      return res.json({ success: true, message: 'Job resumed' });
+    } catch (error) {
+      log('Error resuming G-code job:', error);
+      return res.status(500).json({ error: 'Failed to resume G-code job' });
     }
   });
 
