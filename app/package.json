@@ -31,6 +31,7 @@
     "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:reload:all\""
   },
   "dependencies": {
+    "@abandonware/noble": "^1.9.2-25",
     "@serialport/parser-readline": "^12.0.0",
     "adm-zip": "^0.5.12",
     "cors": "^2.8.5",

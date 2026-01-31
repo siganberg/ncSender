@@ -28,9 +28,13 @@ export default defineConfig({
             console.log('proxy error', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // Skip logging for noisy polling endpoints
+            if (req.url?.includes('/pendant/status')) return;
             console.log('Sending Request to the Target:', req.method, req.url);
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
+            // Skip logging for noisy polling endpoints
+            if (req.url?.includes('/pendant/status')) return;
             console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
           });
         },

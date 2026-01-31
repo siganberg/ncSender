@@ -48,10 +48,13 @@
         :sender-status="currentSenderStatus"
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
+        :bluetooth-connected="bluetoothConnected"
+        :pendant-connection-type="pendantConnectionType"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
+        @show-bluetooth="showBluetoothDialog = true"
         :on-show-settings="openSettings"
       />
     </template>
@@ -872,6 +875,12 @@
     @download-only="handleDownloadUpdateOnly"
   />
 
+  <!-- Bluetooth Pendant Dialog -->
+  <BluetoothDialog
+    v-if="showBluetoothDialog"
+    @close="showBluetoothDialog = false"
+  />
+
     <!-- Plugin Dialog -->
     <PluginDialog />
 
@@ -1012,6 +1021,7 @@ import PluginDialog from './components/PluginDialog.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
+import BluetoothDialog from './components/BluetoothDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings } from './lib/settings-store.js';
@@ -1078,6 +1088,9 @@ const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
+const showBluetoothDialog = ref(false);
+const bluetoothConnected = ref(false);
+const pendantConnectionType = ref<'wifi' | 'bluetooth' | null>(null);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -1765,6 +1778,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
+  if (bluetoothPollInterval) {
+    clearInterval(bluetoothPollInterval);
+  }
 });
 
 const openSettings = async () => {
@@ -2725,7 +2741,26 @@ const saveSetupSettings = async () => {
 // Clear console (delegate to store)
 const clearConsole = store.clearConsole;
 
+// Poll Bluetooth status periodically
+let bluetoothPollInterval: ReturnType<typeof setInterval> | null = null;
+
+const pollBluetoothStatus = async () => {
+  try {
+    const response = await fetch('/api/pendant/status');
+    if (response.ok) {
+      const data = await response.json();
+      bluetoothConnected.value = data.connectedDevice !== null;
+      pendantConnectionType.value = data.pendantConnectionType || null;
+    }
+  } catch {
+    // Silently fail - Bluetooth may not be available
+  }
+};
+
 onMounted(async () => {
+  // Start polling Bluetooth status
+  pollBluetoothStatus();
+  bluetoothPollInterval = setInterval(pollBluetoothStatus, 5000);
   updateCenter.ensureListeners();
   // Settings are already loaded in main.ts, just get them from the store
   const { getSettings } = await import('./lib/settings-store.js');

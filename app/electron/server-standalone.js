@@ -20,6 +20,17 @@ import { createLogger, closeLogger } from './core/logger.js';
 
 const { log, error: logError } = createLogger('Server');
 
+// Handle uncaught exceptions (e.g., from native BLE bindings)
+process.on('uncaughtException', (err) => {
+  logError('Uncaught exception:', err.message);
+  // Don't exit - allow server to continue running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logError('Unhandled rejection:', reason);
+  // Don't exit - allow server to continue running
+});
+
 log('Starting ncSender Server in standalone mode...');
 
 async function start() {

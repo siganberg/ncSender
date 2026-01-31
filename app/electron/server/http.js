@@ -32,6 +32,7 @@ import { createToolRoutes } from '../features/tool/routes.js';
 import { createToolsRoutes } from '../features/tools/routes.js';
 import { createPluginRoutes } from '../features/plugins/routes.js';
 import { createInitRoutes } from '../features/init/routes.js';
+import { createPendantRoutes } from '../features/pendant/routes.js';
 import { createLogger } from '../core/logger.js';
 
 const { log, error: logError } = createLogger('HTTP');
@@ -50,9 +51,15 @@ export function mountHttp({
   filesDir,
   upload,
   commandProcessor,
-  autoConnector
+  autoConnector,
+  websocketLayer
 }) {
   app.use('/api', (req, _res, next) => {
+    // Skip logging for noisy polling endpoints
+    if (req.path === '/pendant/status') {
+      return next();
+    }
+
     let logBody = '';
     if (req.body && Object.keys(req.body).length > 0) {
       // Filter out large fields like 'content' to avoid huge log entries
@@ -81,6 +88,7 @@ export function mountHttp({
   app.use('/api', createToolsRoutes(broadcast));
   app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
   app.use('/api', createInitRoutes(serverState, commandHistory));
+  app.use('/api/pendant', createPendantRoutes({ websocketLayer }));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

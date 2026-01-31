@@ -132,6 +132,26 @@
         <label class="unit-label">Unit:</label>
         <span class="unit-value">{{ unitDisplayText }}</span>
       </div>
+      <!-- Pendant Connection Indicator -->
+      <div v-if="pendantConnectionType" class="pendant-indicator" :class="`pendant-indicator--${pendantConnectionType}`">
+        <svg v-if="pendantConnectionType === 'bluetooth'" class="pendant-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6.5 6.5L17.5 17.5M17.5 17.5L12 23V1L17.5 6.5L6.5 17.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <svg v-else class="pendant-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="pendant-label">Pendant</span>
+      </div>
+      <button
+        class="theme-toggle bluetooth-button"
+        :class="{ 'bluetooth-button--connected': bluetoothConnected }"
+        @click="$emit('show-bluetooth')"
+        title="Bluetooth Pendant"
+      >
+        <svg class="theme-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6.5 6.5L17.5 17.5M17.5 17.5L12 23V1L17.5 6.5L6.5 17.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
         <svg class="theme-icon" width="32" height="32"><use href="#emoji-sun"></use></svg>
       </button>
@@ -174,6 +194,8 @@ const props = defineProps<{
   onShowSettings: () => void;
   lastAlarmCode?: number | string;
   updateState?: TopToolbarUpdateState;
+  bluetoothConnected?: boolean;
+  pendantConnectionType?: 'wifi' | 'bluetooth' | null;
 }>();
 
 const emit = defineEmits<{
@@ -181,7 +203,11 @@ const emit = defineEmits<{
   (e: 'unlock'): void;
   (e: 'change-workspace', value: string): void;
   (e: 'show-update-dialog'): void;
+  (e: 'show-bluetooth'): void;
 }>();
+
+const bluetoothConnected = computed(() => props.bluetoothConnected ?? false);
+const pendantConnectionType = computed(() => props.pendantConnectionType ?? null);
 
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
 
@@ -1036,6 +1062,61 @@ button.danger {
 
 .theme-icon {
   font-size: 1.1rem;
+}
+
+/* Pendant connection indicator */
+.pendant-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+}
+
+.pendant-indicator--bluetooth {
+  color: #0099ff;
+  border-color: rgba(0, 153, 255, 0.4);
+  background: rgba(0, 153, 255, 0.1);
+}
+
+.pendant-indicator--wifi {
+  color: #28a745;
+  border-color: rgba(40, 167, 69, 0.4);
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.pendant-icon {
+  flex-shrink: 0;
+}
+
+.pendant-label {
+  white-space: nowrap;
+}
+
+/* Bluetooth button */
+.bluetooth-button {
+  position: relative;
+}
+
+.bluetooth-button--connected {
+  color: #0099ff;
+  border-color: rgba(0, 153, 255, 0.5);
+}
+
+.bluetooth-button--connected::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  background: #28a745;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(40, 167, 69, 0.8);
 }
 
 @media (max-width: 959px) {

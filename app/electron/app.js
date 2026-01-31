@@ -36,6 +36,8 @@ import { pluginManager } from './core/plugin-manager.js';
 import { CommandProcessor } from './core/command-processor.js';
 import { readFile } from 'node:fs/promises';
 import { createLogger } from './core/logger.js';
+import { bleClientAdapter } from './features/pendant/ble-client.js';
+import { blePendantManager } from './features/pendant/ble-manager.js';
 
 const { log, error: logError } = createLogger('App');
 
@@ -77,7 +79,7 @@ export async function createApp(options = {}) {
 
   const autoConnector = createAutoConnector({ cncController });
 
-  const { wss, broadcast, sendWsMessage, getClientWebSocket, getClientRegistry, shutdown: shutdownWebSocket } = createWebSocketLayer({
+  const websocketLayer = createWebSocketLayer({
     httpServer: server,
     cncController,
     jobManager,
@@ -85,6 +87,8 @@ export async function createApp(options = {}) {
     context,
     commandProcessor: commandProcessorWrapper
   });
+
+  const { wss, broadcast, sendWsMessage, getClientWebSocket, getClientRegistry, shutdown: shutdownWebSocket, handleWebSocketCommand } = websocketLayer;
 
   // Now initialize CommandProcessor with broadcast function
   commandProcessorWrapper.instance = new CommandProcessor({
@@ -171,7 +175,15 @@ export async function createApp(options = {}) {
     filesDir,
     upload,
     commandProcessor: commandProcessorWrapper,
-    autoConnector
+    autoConnector,
+    websocketLayer
+  });
+
+  // Setup BLE client adapter to bridge BLE pendant connections to WebSocket handlers
+  bleClientAdapter.setup({
+    websocketLayer,
+    serverState: context.serverState,
+    jobManager
   });
 
   const { teardown: teardownCncEvents } = registerCncEventHandlers({
@@ -198,6 +210,16 @@ export async function createApp(options = {}) {
       }
 
       autoConnector.start();
+
+      // Auto-connect to BLE pendant if previously paired
+      blePendantManager.autoConnect().then(connected => {
+        if (connected) {
+          log('BLE pendant auto-connected');
+        }
+      }).catch(err => {
+        log('BLE auto-connect skipped:', err.message);
+      });
+
       resolve();
     });
   });
