@@ -11,6 +11,9 @@ import { createLogger } from '../../core/logger.js';
 
 const { log, error: logError } = createLogger('BLE-Client');
 
+// Rate limit for BLE broadcasts (ms) - don't send position updates faster than this
+const BLE_BROADCAST_INTERVAL = 100; // 10 updates per second max
+
 class BLEClientAdapter extends EventEmitter {
   constructor() {
     super();
@@ -20,6 +23,8 @@ class BLEClientAdapter extends EventEmitter {
     this.serverState = null;
     this.jobManager = null;
     this.isSetup = false;
+    this.lastBroadcastTime = 0;
+    this.pendingBroadcast = null;
   }
 
   setup({ websocketLayer, serverState, jobManager }) {
@@ -346,6 +351,44 @@ class BLEClientAdapter extends EventEmitter {
     // (pendant will receive updates via WebSocket, no need to duplicate)
     if (this.hasPendantWebSocketConnection()) {
       return;
+    }
+
+    // Only send message types the pendant actually needs
+    // Skip cnc-command, cnc-command-result, etc. - pendant only needs state updates
+    const pendantRelevantTypes = [
+      'server-state-updated',
+      'client-id',
+      'settings-changed'
+    ];
+    if (!pendantRelevantTypes.includes(type) && !type.startsWith('pendant:')) {
+      return;
+    }
+
+    // Rate limit position updates to reduce BLE traffic
+    // Other message types are sent immediately
+    if (type === 'server-state-updated') {
+      const now = Date.now();
+      const elapsed = now - this.lastBroadcastTime;
+
+      if (elapsed < BLE_BROADCAST_INTERVAL) {
+        // Store as pending - will be sent on next interval
+        this.pendingBroadcast = { type, data };
+
+        // Schedule send if not already scheduled
+        if (!this.broadcastTimer) {
+          this.broadcastTimer = setTimeout(() => {
+            this.broadcastTimer = null;
+            if (this.pendingBroadcast) {
+              const pending = this.pendingBroadcast;
+              this.pendingBroadcast = null;
+              this.broadcast(pending.type, pending.data);
+            }
+          }, BLE_BROADCAST_INTERVAL - elapsed);
+        }
+        return;
+      }
+
+      this.lastBroadcastTime = now;
     }
 
     try {

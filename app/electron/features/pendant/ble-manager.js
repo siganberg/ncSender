@@ -50,7 +50,7 @@ if (BLE_DISABLED) {
 
 // Auto-reconnect settings
 const AUTO_RECONNECT_INTERVAL = 2000; // 2 seconds between reconnect attempts
-const AUTO_RECONNECT_SCAN_DURATION = 1500; // 1.5 seconds scan
+const AUTO_RECONNECT_SCAN_DURATION = 500; // 500ms scan (pendant should be found quickly)
 
 class BLEPendantManager extends EventEmitter {
   constructor() {
@@ -614,8 +614,7 @@ class BLEPendantManager extends EventEmitter {
 
   /**
    * Start auto-connect process
-   * Does a single silent scan on startup to populate noble's cache,
-   * then starts background polling for reconnection
+   * Just starts the background reconnect polling - no initial scan needed
    */
   async autoConnect() {
     if (!this.isAutoConnectEnabled()) {
@@ -627,6 +626,8 @@ class BLEPendantManager extends EventEmitter {
       return false;
     }
 
+    log('Auto-connect: will try to connect to', lastDevice.name);
+
     try {
       const ok = await this.initialize();
       if (!ok) return false;
@@ -634,23 +635,13 @@ class BLEPendantManager extends EventEmitter {
       const ready = await this.waitForPoweredOn(5000);
       if (!ready) return false;
 
-      // Do one silent scan to populate noble's peripheral cache
-      await this.startScan(AUTO_RECONNECT_SCAN_DURATION, { silent: true });
-      await new Promise(resolve => setTimeout(resolve, AUTO_RECONNECT_SCAN_DURATION + 200));
+      // Try immediate connection
+      const connected = await this.attemptReconnect();
+      if (connected) return true;
 
-      // Look for the saved device
-      const foundDevice = [...this.discoveredDevices.values()].find(
-        d => d.id === lastDevice.id || d.address === lastDevice.address || d.name === lastDevice.name
-      );
-
-      if (foundDevice) {
-        await this.connect(foundDevice.id);
-        return true;
-      } else {
-        // Start background polling (no scanning, just connection attempts)
-        this.startAutoReconnect();
-        return false;
-      }
+      // If not connected, start background polling (every 2 seconds)
+      this.startAutoReconnect();
+      return false;
     } catch (err) {
       this.startAutoReconnect();
       return false;
@@ -718,7 +709,7 @@ class BLEPendantManager extends EventEmitter {
   /**
    * Single reconnect attempt (used by periodic auto-reconnect)
    * Silent operation - no logs to avoid noise from frequent retries
-   * Tries direct connection without scanning using noble's internal cache
+   * Tries direct connection using noble's internal cache, or quick scan if needed
    */
   async attemptReconnect() {
     const lastDevice = this.getLastConnectedDevice();
@@ -731,93 +722,24 @@ class BLEPendantManager extends EventEmitter {
       const ready = await this.waitForPoweredOn(1000);
       if (!ready) return false;
 
-      // Try to get peripheral from noble's internal cache
+      // Try to get peripheral from noble's internal cache first
       let peripheral = this.noble._peripherals?.[lastDevice.id];
 
       if (!peripheral) {
-        // Peripheral not in cache - do a quick silent scan to discover it
-        await this.startScan(AUTO_RECONNECT_SCAN_DURATION, { silent: true });
-        await new Promise(resolve => setTimeout(resolve, AUTO_RECONNECT_SCAN_DURATION + 100));
-
-        // Check if we found it
-        const foundDevice = [...this.discoveredDevices.values()].find(
-          d => d.id === lastDevice.id || d.address === lastDevice.address || d.name === lastDevice.name
-        );
-
-        if (foundDevice) {
-          peripheral = foundDevice.peripheral;
-        } else {
+        // Peripheral not in cache - scan and connect immediately when found
+        peripheral = await this.scanAndFindDevice(lastDevice);
+        if (!peripheral) {
           return false;
         }
       }
 
-      // Check if peripheral is connectable
+      // Check if peripheral is already connected
       if (peripheral.state === 'connected') {
-        return true; // Already connected
+        return true;
       }
 
       // Try direct connection
-      this.state = STATE.CONNECTING;
-
-      await peripheral.connectAsync();
-
-      // Discover services and characteristics
-      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
-        [NUS_SERVICE_UUID],
-        [NUS_TX_CHAR_UUID, NUS_RX_CHAR_UUID]
-      );
-
-      // Find TX and RX characteristics
-      for (const char of characteristics) {
-        const uuid = char.uuid.toLowerCase().replace(/-/g, '');
-        if (uuid === NUS_TX_CHAR_UUID) {
-          this.txCharacteristic = char;
-        } else if (uuid === NUS_RX_CHAR_UUID) {
-          this.rxCharacteristic = char;
-        }
-      }
-
-      if (!this.txCharacteristic || !this.rxCharacteristic) {
-        throw new Error('Nordic UART characteristics not found');
-      }
-
-      // Subscribe to TX notifications
-      this.txCharacteristic.on('data', (data) => {
-        this.handleIncomingData(data);
-      });
-
-      await this.txCharacteristic.subscribeAsync();
-
-      // Handle disconnect
-      peripheral.once('disconnect', () => {
-        this.handleDisconnect();
-      });
-
-      // Build device info for storage
-      const deviceInfo = {
-        id: lastDevice.id,
-        name: peripheral.advertisement?.localName || lastDevice.name,
-        address: peripheral.address || lastDevice.address,
-        peripheral
-      };
-
-      this.connectedDevice = deviceInfo;
-      this.discoveredDevices.set(lastDevice.id, deviceInfo);
-      this.state = STATE.CONNECTED;
-      this.receiveBuffer = '';
-
-      log('Auto-reconnect: connected to', deviceInfo.name);
-
-      this.stopAutoReconnect();
-      this.saveLastConnectedDevice(deviceInfo);
-
-      this.emit('connected', {
-        id: lastDevice.id,
-        name: deviceInfo.name,
-        address: deviceInfo.address
-      });
-
-      return true;
+      return await this.connectToPeripheral(peripheral, lastDevice);
     } catch (err) {
       // Silently reset state on failure
       this.state = STATE.IDLE;
@@ -825,6 +747,144 @@ class BLEPendantManager extends EventEmitter {
       this.rxCharacteristic = null;
       return false;
     }
+  }
+
+  /**
+   * Scan for a specific device and return immediately when found
+   * @returns {Promise<object|null>} The peripheral if found, null otherwise
+   */
+  async scanAndFindDevice(targetDevice) {
+    return new Promise(async (resolve) => {
+      let found = false;
+      let scanTimeout = null;
+
+      // Handler for when we find the target device
+      const onDiscover = (peripheral) => {
+        const name = peripheral.advertisement?.localName || peripheral.address;
+        const hasNUS = peripheral.advertisement?.serviceUuids?.some(
+          uuid => uuid.toLowerCase().replace(/-/g, '') === NUS_SERVICE_UUID
+        );
+
+        if (!hasNUS) return;
+
+        // Check if this is our target device
+        const isTarget = peripheral.id === targetDevice.id ||
+                        peripheral.address === targetDevice.address ||
+                        name === targetDevice.name;
+
+        if (isTarget && !found) {
+          found = true;
+
+          // Stop scanning immediately
+          if (scanTimeout) clearTimeout(scanTimeout);
+          this.noble.removeListener('discover', onDiscover);
+          this.stopScan().catch(() => {});
+
+          resolve(peripheral);
+        }
+      };
+
+      // Add one-shot discovery listener
+      this.noble.on('discover', onDiscover);
+
+      try {
+        // Start scanning
+        this.state = STATE.SCANNING;
+        this._silentScan = true;
+
+        if (typeof this.noble.startScanningAsync === 'function') {
+          await this.noble.startScanningAsync([NUS_SERVICE_UUID], false);
+        } else {
+          await new Promise((res, rej) => {
+            this.noble.startScanning([NUS_SERVICE_UUID], false, (err) => {
+              if (err) rej(err);
+              else res();
+            });
+          });
+        }
+
+        // Timeout after scan duration
+        scanTimeout = setTimeout(() => {
+          if (!found) {
+            this.noble.removeListener('discover', onDiscover);
+            this.stopScan().catch(() => {});
+            resolve(null);
+          }
+        }, AUTO_RECONNECT_SCAN_DURATION);
+
+      } catch (err) {
+        this.noble.removeListener('discover', onDiscover);
+        this.state = STATE.IDLE;
+        resolve(null);
+      }
+    });
+  }
+
+  /**
+   * Connect to a peripheral and set up characteristics
+   */
+  async connectToPeripheral(peripheral, deviceInfo) {
+    this.state = STATE.CONNECTING;
+
+    await peripheral.connectAsync();
+
+    // Discover services and characteristics
+    const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
+      [NUS_SERVICE_UUID],
+      [NUS_TX_CHAR_UUID, NUS_RX_CHAR_UUID]
+    );
+
+    // Find TX and RX characteristics
+    for (const char of characteristics) {
+      const uuid = char.uuid.toLowerCase().replace(/-/g, '');
+      if (uuid === NUS_TX_CHAR_UUID) {
+        this.txCharacteristic = char;
+      } else if (uuid === NUS_RX_CHAR_UUID) {
+        this.rxCharacteristic = char;
+      }
+    }
+
+    if (!this.txCharacteristic || !this.rxCharacteristic) {
+      throw new Error('Nordic UART characteristics not found');
+    }
+
+    // Subscribe to TX notifications
+    this.txCharacteristic.on('data', (data) => {
+      this.handleIncomingData(data);
+    });
+
+    await this.txCharacteristic.subscribeAsync();
+
+    // Handle disconnect
+    peripheral.once('disconnect', () => {
+      this.handleDisconnect();
+    });
+
+    // Build device info for storage
+    const device = {
+      id: deviceInfo.id,
+      name: peripheral.advertisement?.localName || deviceInfo.name,
+      address: peripheral.address || deviceInfo.address,
+      peripheral
+    };
+
+    this.connectedDevice = device;
+    this.discoveredDevices.set(deviceInfo.id, device);
+    this.state = STATE.CONNECTED;
+    this.receiveBuffer = '';
+
+    log('Auto-reconnect: connected to', device.name);
+
+    this.stopAutoReconnect();
+    this.saveLastConnectedDevice(device);
+
+    this.emit('connected', {
+      id: deviceInfo.id,
+      name: device.name,
+      address: device.address
+    });
+
+    return true;
   }
 }
 
