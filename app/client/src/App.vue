@@ -48,7 +48,6 @@
         :sender-status="currentSenderStatus"
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
-        :bluetooth-connected="bluetoothConnected"
         :pendant-connection-type="pendantConnectionType"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
@@ -1089,7 +1088,6 @@ const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showBluetoothDialog = ref(false);
-const bluetoothConnected = ref(false);
 const pendantConnectionType = ref<'wifi' | 'bluetooth' | null>(null);
 const showGateFileManager = ref(false);
 
@@ -2749,7 +2747,6 @@ const pollBluetoothStatus = async () => {
     const response = await fetch('/api/pendant/status');
     if (response.ok) {
       const data = await response.json();
-      bluetoothConnected.value = data.connectedDevice !== null;
       pendantConnectionType.value = data.pendantConnectionType || null;
     }
   } catch {

@@ -28,12 +28,19 @@ export function createPendantRoutes({ websocketLayer }) {
       const bleDevice = blePendantManager.getConnectedDevice();
       const wifiPendant = getWifiPendant();
 
-      // Determine active connection type (prefer WiFi if both are connected)
+      // Determine which connection type the pendant prefers/uses
+      // The pendant's preferWifi setting determines which channel it actually uses
       let pendantConnectionType = null;
+      let activeConnectionType = null;
+
       if (wifiPendant) {
         pendantConnectionType = 'wifi';
+        // Check if pendant prefers WiFi (default true if not specified)
+        const prefersWifi = wifiPendant.preferWifi !== false;
+        activeConnectionType = prefersWifi ? 'wifi' : (bleDevice ? 'bluetooth' : 'wifi');
       } else if (bleDevice) {
         pendantConnectionType = 'bluetooth';
+        activeConnectionType = 'bluetooth';
       }
 
       res.json({
@@ -44,13 +51,16 @@ export function createPendantRoutes({ websocketLayer }) {
           id: wifiPendant.clientId,
           name: 'Pendant (WiFi)',
           ip: wifiPendant.ip,
-          version: wifiPendant.version
+          version: wifiPendant.version,
+          preferWifi: wifiPendant.preferWifi !== false
         } : null,
         isAvailable: blePendantManager.isInitialized,
-        pendantConnectionType
+        pendantConnectionType,
+        activeConnectionType
       });
     } catch (err) {
       const wifiPendant = getWifiPendant();
+      const prefersWifi = wifiPendant ? wifiPendant.preferWifi !== false : true;
       res.json({
         adapterState: 'unavailable',
         connectionState: 'idle',
@@ -59,10 +69,12 @@ export function createPendantRoutes({ websocketLayer }) {
           id: wifiPendant.clientId,
           name: 'Pendant (WiFi)',
           ip: wifiPendant.ip,
-          version: wifiPendant.version
+          version: wifiPendant.version,
+          preferWifi: prefersWifi
         } : null,
         isAvailable: false,
         pendantConnectionType: wifiPendant ? 'wifi' : null,
+        activeConnectionType: wifiPendant ? (prefersWifi ? 'wifi' : 'bluetooth') : null,
         error: err.message
       });
     }

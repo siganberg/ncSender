@@ -44,7 +44,7 @@
 
       <!-- Connected Devices -->
       <section v-if="state.wifiPendant" class="bluetooth-dialog__connected">
-        <div class="connected-device wifi">
+        <div class="connected-device wifi" :class="{ 'connected-device--active': state.activeConnectionType === 'wifi' }">
           <div class="device-icon connected wifi">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -55,11 +55,12 @@
             <span class="device-address">{{ state.wifiPendant.ip }} · v{{ state.wifiPendant.version }}</span>
           </div>
           <span class="connection-badge wifi">WiFi</span>
+          <span v-if="state.activeConnectionType === 'wifi'" class="active-badge">Active</span>
         </div>
       </section>
 
       <section v-if="state.connectedDevice" class="bluetooth-dialog__connected">
-        <div class="connected-device">
+        <div class="connected-device" :class="{ 'connected-device--active': state.activeConnectionType === 'bluetooth' }">
           <div class="device-icon connected">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M6.5 6.5L17.5 17.5M17.5 17.5L12 23V1L17.5 6.5L6.5 17.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -70,6 +71,7 @@
             <span class="device-address">{{ state.connectedDevice.address || state.connectedDevice.id }}</span>
           </div>
           <span class="connection-badge bluetooth">BLE</span>
+          <span v-if="state.activeConnectionType === 'bluetooth'" class="active-badge">Active</span>
           <button class="btn btn-danger btn-sm" @click="disconnect" :disabled="state.isConnecting">
             Disconnect
           </button>
@@ -193,6 +195,7 @@ interface BluetoothState {
   connectingDeviceId: string | null;
   devices: BluetoothDevice[];
   error: string | null;
+  activeConnectionType: 'wifi' | 'bluetooth' | null;
 }
 
 const emit = defineEmits<{
@@ -209,7 +212,8 @@ const state = ref<BluetoothState>({
   isConnecting: false,
   connectingDeviceId: null,
   devices: [],
-  error: null
+  error: null,
+  activeConnectionType: null
 });
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
@@ -259,6 +263,7 @@ const fetchStatus = async () => {
     state.value.connectedDevice = data.connectedDevice;
     state.value.wifiPendant = data.wifiPendant;
     state.value.isAvailable = data.isAvailable && data.adapterState === 'poweredOn';
+    state.value.activeConnectionType = data.activeConnectionType || null;
     if (data.error && !state.value.error) {
       state.value.error = data.error;
     }
@@ -552,6 +557,22 @@ onUnmounted(() => {
 .connection-badge.bluetooth {
   background: rgba(0, 153, 255, 0.15);
   color: #0099ff;
+}
+
+.active-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--color-accent);
+  color: white;
+}
+
+.connected-device--active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .connected-device.wifi {

@@ -537,6 +537,7 @@ export function createWebSocketLayer({
     const machineId = url.searchParams.get('machineId') || null;
     const clientVersion = url.searchParams.get('version') || null;
     const licensed = url.searchParams.get('licensed') === 'true';
+    const preferWifi = url.searchParams.get('preferWifi') !== 'false'; // Default true if not specified
 
     const clientMeta = {
       clientId,
@@ -546,6 +547,7 @@ export function createWebSocketLayer({
       machineId,
       version: clientVersion,
       licensed,
+      preferWifi,
       connectedAt: Date.now()
     };
     clientRegistry.set(clientId, clientMeta);

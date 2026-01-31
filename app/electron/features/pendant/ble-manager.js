@@ -50,7 +50,7 @@ if (BLE_DISABLED) {
 
 // Auto-reconnect settings
 const AUTO_RECONNECT_INTERVAL = 2000; // 2 seconds between reconnect attempts
-const AUTO_RECONNECT_SCAN_DURATION = 500; // 500ms scan (pendant should be found quickly)
+const AUTO_RECONNECT_SCAN_DURATION = 1200; // 1.2 second scan (pendant advertises every 500-1000ms)
 
 class BLEPendantManager extends EventEmitter {
   constructor() {
@@ -614,7 +614,7 @@ class BLEPendantManager extends EventEmitter {
 
   /**
    * Start auto-connect process
-   * Just starts the background reconnect polling - no initial scan needed
+   * Starts background polling immediately - no blocking waits
    */
   async autoConnect() {
     if (!this.isAutoConnectEnabled()) {
@@ -626,26 +626,14 @@ class BLEPendantManager extends EventEmitter {
       return false;
     }
 
-    log('Auto-connect: will try to connect to', lastDevice.name);
+    log('Auto-connect: starting for', lastDevice.name);
 
-    try {
-      const ok = await this.initialize();
-      if (!ok) return false;
+    // Initialize BLE in background (don't wait)
+    this.initialize().catch(() => {});
 
-      const ready = await this.waitForPoweredOn(5000);
-      if (!ready) return false;
-
-      // Try immediate connection
-      const connected = await this.attemptReconnect();
-      if (connected) return true;
-
-      // If not connected, start background polling (every 2 seconds)
-      this.startAutoReconnect();
-      return false;
-    } catch (err) {
-      this.startAutoReconnect();
-      return false;
-    }
+    // Start polling immediately - it will handle connection when ready
+    this.startAutoReconnect();
+    return false;
   }
 
   /**
@@ -675,8 +663,19 @@ class BLEPendantManager extends EventEmitter {
     if (!this.isAutoConnectEnabled()) return;
     if (!this.getLastConnectedDevice()) return;
 
-    // Silent - no log to avoid noise
+    log('Auto-reconnect: starting background polling every', AUTO_RECONNECT_INTERVAL, 'ms');
     this.autoReconnectRunning = true;
+
+    // Do first attempt immediately instead of waiting for interval
+    setImmediate(async () => {
+      if (this.state === STATE.IDLE && !this.isConnected()) {
+        try {
+          await this.attemptReconnect();
+        } catch (err) {
+          // Ignore - interval will retry
+        }
+      }
+    });
 
     this.autoReconnectTimer = setInterval(async () => {
       // Skip if already connected or currently scanning/connecting
@@ -689,7 +688,7 @@ class BLEPendantManager extends EventEmitter {
       try {
         await this.attemptReconnect();
       } catch (err) {
-        // Silently ignore reconnect failures
+        // Silently ignore - will retry on next interval
       }
     }, AUTO_RECONNECT_INTERVAL);
   }
@@ -719,7 +718,8 @@ class BLEPendantManager extends EventEmitter {
       const ok = await this.initialize();
       if (!ok) return false;
 
-      const ready = await this.waitForPoweredOn(1000);
+      // Check if Bluetooth is ready
+      const ready = await this.waitForPoweredOn(500);
       if (!ready) return false;
 
       // Try to get peripheral from noble's internal cache first
