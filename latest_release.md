@@ -1,7 +1,8 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added M98 macro library with CNC-standard syntax for improved macro support
+- Added pendant-friendly job control API endpoints for external device integration
+- Added silent option for jog commands to support pendant clients
 
 ### 🐛 Bug Fixes
-- Fixed Monaco editor theme not updating when switching between dark and light mode
+- Fixed jog controls to correctly respect unit preference settings
