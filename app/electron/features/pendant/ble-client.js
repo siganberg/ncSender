@@ -8,6 +8,9 @@
 import { EventEmitter } from 'events';
 import { blePendantManager } from './ble-manager.js';
 import { createLogger } from '../../core/logger.js';
+import { getSetting, DEFAULT_SETTINGS, getAllSettings } from '../../core/settings-manager.js';
+import path from 'node:path';
+import { getUserDataDir } from '../../utils/paths.js';
 
 const { log, error: logError } = createLogger('BLE-Client');
 
@@ -27,12 +30,15 @@ class BLEClientAdapter extends EventEmitter {
     this.pendingBroadcast = null;
   }
 
-  setup({ websocketLayer, serverState, jobManager }) {
+  setup({ websocketLayer, serverState, jobManager, cncController, commandProcessor, broadcast }) {
     if (this.isSetup) return;
 
     this.websocketLayer = websocketLayer;
     this.serverState = serverState;
     this.jobManager = jobManager;
+    this.cncController = cncController;
+    this.commandProcessor = commandProcessor;
+    this.wsBroadcast = broadcast;
     this.isSetup = true;
 
     // Handle BLE connection
@@ -115,6 +121,18 @@ class BLEClientAdapter extends EventEmitter {
             jobLoaded: this.serverState.jobLoaded
           }
         });
+      }
+
+      // Send settings including theme
+      try {
+        const settings = getAllSettings();
+        await blePendantManager.send({
+          type: 'settings-changed',
+          data: settings
+        });
+        log('Sent settings to BLE pendant');
+      } catch (settingsErr) {
+        logError('Failed to send settings:', settingsErr.message);
       }
 
       log('Sent initial state to BLE pendant');
@@ -228,86 +246,116 @@ class BLEClientAdapter extends EventEmitter {
   }
 
   async handleJobStart(data) {
-    if (!this.jobManager) {
-      logError('JobManager not available');
-      return;
-    }
-
+    // Start job - same logic as WebSocket job:start handler
     try {
-      // Check if there's a job loaded and ready to start
-      if (this.jobManager.hasActiveJob()) {
-        log('Job already running, ignoring start');
+      const filename = this.serverState?.jobLoaded?.filename;
+      if (!filename) {
+        log('job:start failed: No program loaded');
         return;
       }
-
-      // If job is loaded but not started, this will be handled by the job routes
-      // For now, we can trigger a resume if paused, or log that no job is loaded
-      log('Job start requested via BLE');
-
-      // The actual job start requires a file to be loaded first
-      // This is typically done through the HTTP API which loads the file
-      // Here we can only resume a paused/loaded job
-      if (this.serverState?.jobLoaded?.filename) {
-        // There's a loaded job, try to start/resume it
-        // Use the websocket layer's job control if available
-        log('Starting loaded job:', this.serverState.jobLoaded.filename);
-      } else {
-        log('No job loaded to start');
+      if (!this.serverState?.machineState?.connected) {
+        log('job:start failed: CNC controller not connected');
+        return;
       }
+      const machineStatus = this.serverState?.machineState?.status?.toLowerCase();
+      if (machineStatus !== 'idle') {
+        log(`job:start failed: Machine state is ${machineStatus}`);
+        return;
+      }
+      // Initialize timing for progress
+      if (this.serverState.jobLoaded) {
+        this.serverState.jobLoaded.jobStartTime = new Date().toISOString();
+        this.serverState.jobLoaded.jobEndTime = null;
+        this.serverState.jobLoaded.jobPauseAt = null;
+        this.serverState.jobLoaded.jobPausedTotalSec = 0;
+        this.serverState.jobLoaded.status = 'running';
+        if (this.wsBroadcast) {
+          this.wsBroadcast('server-state-updated', this.serverState);
+        }
+      }
+      const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+      await this.jobManager.startJob(cachePath, filename, this.cncController, this.wsBroadcast, this.commandProcessor, { serverState: this.serverState });
+      log('Job started via BLE');
     } catch (err) {
       logError('Failed to start job:', err.message);
     }
   }
 
-  handleJobPause(data) {
-    if (!this.jobManager) {
-      logError('JobManager not available');
-      return;
-    }
-
+  async handleJobPause(data) {
+    // Pause job - same logic as WebSocket job:pause handler
     try {
-      if (this.jobManager.hasActiveJob()) {
-        this.jobManager.pause();
-        log('Job paused via BLE');
-      } else {
-        log('No active job to pause');
+      const machineStatus = this.serverState?.machineState?.status?.toLowerCase();
+      if (machineStatus === 'hold' || machineStatus === 'door') {
+        log('job:pause: Already paused');
+        return;
       }
+      if (machineStatus !== 'run') {
+        log(`job:pause failed: Machine state is ${machineStatus}`);
+        return;
+      }
+      const useDoorAsPause = getSetting('useDoorAsPause', DEFAULT_SETTINGS.useDoorAsPause);
+      const command = useDoorAsPause ? '\x84' : '!';
+      await this.cncController.sendCommand(command, {
+        displayCommand: useDoorAsPause ? '\\x84 (Safety Door)' : '! (Feed Hold)',
+        meta: { jobControl: true, sourceId: 'ble-pendant' }
+      });
+      log('Job paused via BLE');
     } catch (err) {
       logError('Failed to pause job:', err.message);
     }
   }
 
-  handleJobResume(data) {
-    if (!this.jobManager) {
-      logError('JobManager not available');
-      return;
-    }
-
+  async handleJobResume(data) {
+    // Resume job - same logic as WebSocket job:resume handler
     try {
-      if (this.jobManager.hasActiveJob()) {
-        this.jobManager.resume();
-        log('Job resumed via BLE');
-      } else {
-        log('No active job to resume');
+      const machineStatus = this.serverState?.machineState?.status?.toLowerCase();
+      if (!machineStatus || !['hold', 'door'].includes(machineStatus)) {
+        log(`job:resume failed: Machine state is ${machineStatus}`);
+        return;
       }
+      await this.cncController.sendCommand('~', {
+        displayCommand: '~ (Resume)',
+        meta: { jobControl: true, sourceId: 'ble-pendant' }
+      });
+      log('Job resumed via BLE');
     } catch (err) {
       logError('Failed to resume job:', err.message);
     }
   }
 
-  handleJobStop(data) {
-    if (!this.jobManager) {
-      logError('JobManager not available');
-      return;
-    }
-
+  async handleJobStop(data) {
+    // Stop job - same logic as WebSocket job:stop handler
     try {
-      if (this.jobManager.hasActiveJob()) {
-        this.jobManager.stop();
-        log('Job stopped via BLE');
-      } else {
-        log('No active job to stop');
+      if (!this.jobManager.hasActiveJob()) {
+        log('job:stop: No active job');
+        return;
       }
+      const status = this.jobManager.getJobStatus();
+      const isActiveMotion = status && (status.status === 'running' || status.status === 'paused');
+
+      const rawSetting = getSetting('pauseBeforeStop', DEFAULT_SETTINGS.pauseBeforeStop);
+      let pauseBeforeStop = Number(rawSetting);
+      if (!Number.isFinite(pauseBeforeStop) || pauseBeforeStop < 0) {
+        pauseBeforeStop = DEFAULT_SETTINGS.pauseBeforeStop;
+      }
+
+      if (isActiveMotion && pauseBeforeStop > 0) {
+        await this.cncController.sendCommand('!', {
+          displayCommand: '! (Feed Hold)',
+          meta: { jobControl: true, sourceId: 'ble-pendant' }
+        });
+        await new Promise(resolve => setTimeout(resolve, pauseBeforeStop));
+      }
+
+      if (isActiveMotion) {
+        await this.cncController.sendCommand('\x18', {
+          displayCommand: '\\x18 (Soft Reset)',
+          meta: { jobControl: true, sourceId: 'ble-pendant' }
+        });
+      }
+
+      this.jobManager.stop();
+      log('Job stopped via BLE');
     } catch (err) {
       logError('Failed to stop job:', err.message);
     }

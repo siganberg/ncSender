@@ -183,7 +183,10 @@ export async function createApp(options = {}) {
   bleClientAdapter.setup({
     websocketLayer,
     serverState: context.serverState,
-    jobManager
+    jobManager,
+    cncController,
+    commandProcessor: commandProcessorWrapper,
+    broadcast
   });
 
   const { teardown: teardownCncEvents } = registerCncEventHandlers({
