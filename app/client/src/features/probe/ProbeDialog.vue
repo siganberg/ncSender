@@ -584,8 +584,8 @@ const validateZPlunge = () => {
 const validateZOffset = () => {
   if (isNaN(zOffset.value)) {
     errors.value.zOffset = 'Must be a valid number';
-  } else if (zOffset.value < -2 || zOffset.value > 2) {
-    errors.value.zOffset = 'Must be between -2 and 2mm';
+  } else if (zOffset.value < -10 || zOffset.value > 10) {
+    errors.value.zOffset = 'Must be between -10 and 10mm';
   } else {
     errors.value.zOffset = '';
   }

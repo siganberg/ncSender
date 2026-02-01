@@ -1,7 +1,4 @@
 ## What's Changed
 
-### ✨ New Features
-- Added M98 macro library with CNC-standard syntax for improved macro support
-
-### 🐛 Bug Fixes
-- Fixed Monaco editor theme not updating when switching between dark and light mode
+### 🔧 Improvements
+- Expanded Z-offset adjustment range from -2/+2 to -10/+10 in 3D touch probe for greater flexibility

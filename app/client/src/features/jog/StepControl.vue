@@ -79,7 +79,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatStepSize, formatJogFeedRate } from '@/lib/units';
+import { formatStepSize } from '@/lib/units';
 
 const appStore = useAppStore();
 
@@ -141,34 +141,19 @@ const categoryStateMetric = reactive<Record<number, { step: number; feedRate: nu
   2: { step: 10, feedRate: 6000 }
 });
 
-// Per-category persistent state for imperial (step in inches, feed rate in mm/min)
+// Per-category persistent state for imperial (step in inches, feed rate in in/min)
 const categoryStateImperial = reactive<Record<number, { step: number; feedRate: number }>>({
-  0: { step: 0.01, feedRate: 500 },
-  1: { step: 0.1, feedRate: 3000 },
-  2: { step: 1, feedRate: 6000 }
+  0: { step: 0.01, feedRate: 20 },
+  1: { step: 0.1, feedRate: 100 },
+  2: { step: 1, feedRate: 200 }
 });
 
-// Convert mm to inches
-const mmToInches = (mm: number): number => mm / 25.4;
-
-// Convert inches to mm
-const inchesToMm = (inches: number): number => inches * 25.4;
-
-// Get the current step in display units (inches for imperial, mm for metric)
-const getStepInDisplayUnits = (stepMm: number): number => {
-  if (appStore.unitsPreference.value === 'imperial') {
-    return mmToInches(stepMm);
-  }
-  return stepMm;
-};
-
-// Get category index for a step value (expects value in display units)
-const getCategoryForStep = (stepMm: number): number => {
-  const displayStep = getStepInDisplayUnits(stepMm);
+// Get category index for a step value (value is already in display units)
+const getCategoryForStep = (step: number): number => {
   const optionsMap = appStore.unitsPreference.value === 'imperial' ? expandedOptionsMapImperial : expandedOptionsMap;
 
   for (const [catIndex, options] of Object.entries(optionsMap)) {
-    if (options.some(opt => approxEqual(opt, displayStep))) {
+    if (options.some(opt => approxEqual(opt, step))) {
       return Number(catIndex);
     }
   }
@@ -189,18 +174,16 @@ const findMatchingImperialValue = (displayStep: number): number | null => {
   return null;
 };
 
-// Check if current step (in mm) belongs to a category
-const isStepInCategory = (stepMm: number, categoryIndex: number): boolean => {
-  const displayStep = getStepInDisplayUnits(stepMm);
+// Check if current step belongs to a category (step is in display units)
+const isStepInCategory = (step: number, categoryIndex: number): boolean => {
   const optionsMap = appStore.unitsPreference.value === 'imperial' ? expandedOptionsMapImperial : expandedOptionsMap;
   const options = optionsMap[categoryIndex];
-  return options?.some(opt => approxEqual(opt, displayStep)) ?? false;
+  return options?.some(opt => approxEqual(opt, step)) ?? false;
 };
 
-// Check if a specific option (in display units) matches current step (in mm)
-const isOptionActive = (opt: number, currentStepMm: number): boolean => {
-  const displayStep = getStepInDisplayUnits(currentStepMm);
-  return approxEqual(opt, displayStep);
+// Check if a specific option matches current step (both in display units)
+const isOptionActive = (opt: number, currentStep: number): boolean => {
+  return approxEqual(opt, currentStep);
 };
 
 // Get expanded options for a category (returns values in display units)
@@ -261,10 +244,8 @@ const handleTouchEnd = (value: number) => {
     const state = isImperial ? categoryStateImperial : categoryStateMetric;
     const saved = state[clickedCategory];
 
-    // Emit in mm (convert if imperial)
-    const mmValue = isImperial ? inchesToMm(saved.step) : saved.step;
-    emit('update:step', mmValue);
-    // Always emit feed rate to keep parent in sync
+    // Emit display value directly - G20/G21 in jog command handles units
+    emit('update:step', saved.step);
     nextTick(() => emit('update:feedRate', saved.feedRate));
   }
 };
@@ -291,10 +272,8 @@ const handleStepClick = (value: number) => {
     const state = isImperial ? categoryStateImperial : categoryStateMetric;
     const saved = state[clickedCategory];
 
-    // Emit in mm (convert if imperial)
-    const mmValue = isImperial ? inchesToMm(saved.step) : saved.step;
-    emit('update:step', mmValue);
-    // Always emit feed rate to keep parent in sync
+    // Emit display value directly - G20/G21 in jog command handles units
+    emit('update:step', saved.step);
     nextTick(() => emit('update:feedRate', saved.feedRate));
   }
 };
@@ -316,19 +295,24 @@ const selectStep = (displayValue: number) => {
 
   state[category].step = displayValue;
 
-  // Emit in mm (convert if imperial)
-  const mmValue = isImperial ? inchesToMm(displayValue) : displayValue;
-  emit('update:step', mmValue);
-  // Always emit feed rate to keep parent in sync
+  // Emit display value directly - G20/G21 in jog command handles units
+  emit('update:step', displayValue);
   nextTick(() => emit('update:feedRate', state[category].feedRate));
   closeDropdown();
 };
 
-// Feed rate options per category (0=small, 1=medium, 2=large)
+// Feed rate options per category for metric (mm/min)
 const feedRateOptionsByCategory = [
   [300, 400, 500, 700, 1000],
   [1000, 2000, 3000, 4000, 5000],
   [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+];
+
+// Feed rate options per category for imperial (in/min)
+const feedRateOptionsByCategoryImperial = [
+  [10, 15, 20, 30, 40],
+  [40, 60, 80, 100, 150, 200],
+  [200, 250, 300, 400, 500, 600]
 ];
 
 // Get current category based on current step
@@ -336,14 +320,17 @@ const currentCategory = computed(() => getCategoryForStep(props.currentStep));
 
 // Get feed rate options for current category
 const getCurrentFeedRateOptions = (): number[] => {
-  return feedRateOptionsByCategory[currentCategory.value] ?? feedRateOptionsByCategory[1];
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const options = isImperial ? feedRateOptionsByCategoryImperial : feedRateOptionsByCategory;
+  return options[currentCategory.value] ?? options[1];
 };
 
 // Get the feed rate to display (from local state for current category)
 const displayFeedRate = computed(() => {
   const isImperial = appStore.unitsPreference.value === 'imperial';
   const state = isImperial ? categoryStateImperial : categoryStateMetric;
-  return state[currentCategory.value]?.feedRate ?? feedRateOptionsByCategory[currentCategory.value][0];
+  const options = isImperial ? feedRateOptionsByCategoryImperial : feedRateOptionsByCategory;
+  return state[currentCategory.value]?.feedRate ?? options[currentCategory.value][0];
 });
 
 // Format imperial step with fraction support
@@ -382,8 +369,9 @@ const formatOptionStepDisplay = (value: number): string => {
   return formatStepSize(value, 'metric');
 };
 
-const formatFeedRateDisplay = (mmPerMin: number): string => {
-  return formatJogFeedRate(mmPerMin, appStore.unitsPreference.value);
+const formatFeedRateDisplay = (value: number): string => {
+  // Value is already in display units (mm/min for metric, in/min for imperial)
+  return String(Math.round(value));
 };
 
 const handleFeedRateChange = (event: Event) => {
@@ -402,10 +390,9 @@ watch(() => appStore.unitsPreference.value, (newUnit) => {
   const state = newUnit === 'imperial' ? categoryStateImperial : categoryStateMetric;
   const defaultCategory = 1; // Group 1 default
   const defaultStep = state[defaultCategory].step;
-  const mmValue = newUnit === 'imperial' ? inchesToMm(defaultStep) : defaultStep;
 
-  // Always emit step and feed rate when units change to ensure parent is in sync
-  emit('update:step', mmValue);
+  // Emit display value directly - G20/G21 in jog command handles units
+  emit('update:step', defaultStep);
   emit('update:feedRate', state[defaultCategory].feedRate);
 });
 
@@ -416,18 +403,42 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 };
 
+// Handle keyboard shortcut: cycle through step groups
+const handleStepCycle = () => {
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const state = isImperial ? categoryStateImperial : categoryStateMetric;
+  const nextCategory = (currentCategory.value + 1) % 3;
+  const saved = state[nextCategory];
+  // Emit display value directly - G20/G21 in jog command handles units
+  emit('update:step', saved.step);
+  emit('update:feedRate', saved.feedRate);
+};
+
+// Handle keyboard shortcut: set specific step group
+const handleStepSet = (event: Event) => {
+  const category = (event as CustomEvent).detail?.category;
+  if (typeof category !== 'number' || category < 0 || category > 2) return;
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const state = isImperial ? categoryStateImperial : categoryStateMetric;
+  const saved = state[category];
+  // Emit display value directly - G20/G21 in jog command handles units
+  emit('update:step', saved.step);
+  emit('update:feedRate', saved.feedRate);
+};
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('jog-step-cycle', handleStepCycle);
+  window.addEventListener('jog-step-set', handleStepSet);
 
-  // If in imperial mode and current step doesn't match any option, emit default for group 2
+  // If in imperial mode and current step doesn't match any option, emit default for group 1
   if (appStore.unitsPreference.value === 'imperial') {
-    const displayStep = getStepInDisplayUnits(props.currentStep);
     const hasMatch = Object.values(expandedOptionsMapImperial).some(
-      options => options.some(opt => approxEqual(opt, displayStep))
+      options => options.some(opt => approxEqual(opt, props.currentStep))
     );
     if (!hasMatch) {
       const defaultStep = categoryStateImperial[1].step; // Group 1 default (0.1 inch)
-      emit('update:step', inchesToMm(defaultStep));
+      emit('update:step', defaultStep);
       emit('update:feedRate', categoryStateImperial[1].feedRate);
     }
   }
@@ -435,6 +446,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('jog-step-cycle', handleStepCycle);
+  window.removeEventListener('jog-step-set', handleStepSet);
   if (pressTimer) clearTimeout(pressTimer);
 });
 </script>

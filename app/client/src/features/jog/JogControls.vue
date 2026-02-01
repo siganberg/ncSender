@@ -124,7 +124,6 @@
 import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
-import { formatStepSize, formatJogFeedRate } from '@/lib/units';
 
 const props = withDefaults(defineProps<{
   currentStep?: number;
@@ -142,14 +141,14 @@ const props = withDefaults(defineProps<{
 
 const { unitsPreference } = useAppStore();
 
-// Format step size for commands using centralized utility
-const formatStepForCommand = (mmValue: number): string => {
-  return formatStepSize(mmValue, unitsPreference.value);
+// Format step size for commands - value is already in display units (mm or inches)
+const formatStepForCommand = (value: number): string => {
+  return value.toFixed(4).replace(/\.?0+$/, '');
 };
 
-// Format feed rate for commands using centralized utility
-const formatFeedRateForCommand = (mmPerMin: number): string => {
-  return formatJogFeedRate(mmPerMin, unitsPreference.value);
+// Format feed rate for commands - value is already in display units (mm/min or in/min)
+const formatFeedRateForCommand = (value: number): string => {
+  return Math.round(value).toString();
 };
 
 let jogTimer: number | null = null;
