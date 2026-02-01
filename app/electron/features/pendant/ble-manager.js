@@ -486,6 +486,7 @@ class BLEPendantManager extends EventEmitter {
 
   /**
    * Queue a message to be sent. Messages are sent sequentially to prevent interleaving.
+   * For state updates, newer messages replace older ones in the queue to prevent stale data.
    */
   async send(message, { withoutResponse = false } = {}) {
     if (this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
@@ -494,6 +495,21 @@ class BLEPendantManager extends EventEmitter {
 
     // Add to queue and process
     return new Promise((resolve, reject) => {
+      // For state updates, replace any existing queued state update (keeps only latest)
+      // This prevents stale position data from being sent when queue backs up
+      if (message?.type === 'server-state-updated') {
+        const existingIndex = this.sendQueue.findIndex(
+          item => item.message?.type === 'server-state-updated'
+        );
+        if (existingIndex !== -1) {
+          // Resolve the old one (it's being superseded) and replace with new
+          this.sendQueue[existingIndex].resolve();
+          this.sendQueue[existingIndex] = { message, withoutResponse, resolve, reject };
+          this.processSendQueue();
+          return;
+        }
+      }
+
       this.sendQueue.push({ message, withoutResponse, resolve, reject });
       this.processSendQueue();
     });
