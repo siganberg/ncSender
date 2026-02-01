@@ -646,6 +646,128 @@ export function createWebSocketLayer({
           }
           break;
         }
+        case 'job:start': {
+          // Start job - equivalent to POST /api/gcode-job/
+          (async () => {
+            try {
+              const filename = serverState.jobLoaded?.filename;
+              if (!filename) {
+                log('job:start failed: No program loaded');
+                return;
+              }
+              if (!serverState.machineState?.connected) {
+                log('job:start failed: CNC controller not connected');
+                return;
+              }
+              const machineStatus = serverState.machineState?.status?.toLowerCase();
+              if (machineStatus !== 'idle') {
+                log(`job:start failed: Machine state is ${machineStatus}`);
+                return;
+              }
+              // Initialize timing for progress
+              if (serverState.jobLoaded) {
+                serverState.jobLoaded.jobStartTime = new Date().toISOString();
+                serverState.jobLoaded.jobEndTime = null;
+                serverState.jobLoaded.jobPauseAt = null;
+                serverState.jobLoaded.jobPausedTotalSec = 0;
+                serverState.jobLoaded.status = 'running';
+                broadcast('server-state-updated', serverState);
+              }
+              const cachePath = path.join(getUserDataDir(), 'gcode-cache', 'current.gcode');
+              await jobManager.startJob(cachePath, filename, cncController, broadcast, commandProcessor, { serverState });
+              log('Job started via WebSocket');
+            } catch (error) {
+              log('job:start error:', error?.message || error);
+            }
+          })();
+          break;
+        }
+        case 'job:pause': {
+          // Pause job - equivalent to POST /api/gcode-job/pause
+          (async () => {
+            try {
+              const machineStatus = serverState.machineState?.status?.toLowerCase();
+              if (machineStatus === 'hold' || machineStatus === 'door') {
+                log('job:pause: Already paused');
+                return;
+              }
+              if (machineStatus !== 'run') {
+                log(`job:pause failed: Machine state is ${machineStatus}`);
+                return;
+              }
+              const useDoorAsPause = getSetting('useDoorAsPause', DEFAULT_SETTINGS.useDoorAsPause);
+              const command = useDoorAsPause ? '\x84' : '!';
+              await cncController.sendCommand(command, {
+                displayCommand: useDoorAsPause ? '\\x84 (Safety Door)' : '! (Feed Hold)',
+                meta: { jobControl: true, sourceId: 'pendant' }
+              });
+              log('Job paused via WebSocket');
+            } catch (error) {
+              log('job:pause error:', error?.message || error);
+            }
+          })();
+          break;
+        }
+        case 'job:resume': {
+          // Resume job - equivalent to POST /api/gcode-job/resume
+          (async () => {
+            try {
+              const machineStatus = serverState.machineState?.status?.toLowerCase();
+              if (!machineStatus || !['hold', 'door'].includes(machineStatus)) {
+                log(`job:resume failed: Machine state is ${machineStatus}`);
+                return;
+              }
+              await cncController.sendCommand('~', {
+                displayCommand: '~ (Resume)',
+                meta: { jobControl: true, sourceId: 'pendant' }
+              });
+              log('Job resumed via WebSocket');
+            } catch (error) {
+              log('job:resume error:', error?.message || error);
+            }
+          })();
+          break;
+        }
+        case 'job:stop': {
+          // Stop job - equivalent to POST /api/gcode-job/stop
+          (async () => {
+            try {
+              if (!jobManager.hasActiveJob()) {
+                log('job:stop: No active job');
+                return;
+              }
+              const status = jobManager.getJobStatus();
+              const isActiveMotion = status && (status.status === 'running' || status.status === 'paused');
+
+              const rawSetting = getSetting('pauseBeforeStop', DEFAULT_SETTINGS.pauseBeforeStop);
+              let pauseBeforeStop = Number(rawSetting);
+              if (!Number.isFinite(pauseBeforeStop) || pauseBeforeStop < 0) {
+                pauseBeforeStop = DEFAULT_SETTINGS.pauseBeforeStop;
+              }
+
+              if (isActiveMotion && pauseBeforeStop > 0) {
+                await cncController.sendCommand('!', {
+                  displayCommand: '! (Feed Hold)',
+                  meta: { jobControl: true, sourceId: 'pendant' }
+                });
+                await new Promise(resolve => setTimeout(resolve, pauseBeforeStop));
+              }
+
+              if (isActiveMotion) {
+                await cncController.sendCommand('\x18', {
+                  displayCommand: '\\x18 (Soft Reset)',
+                  meta: { jobControl: true, sourceId: 'pendant' }
+                });
+              }
+
+              jobManager.stop();
+              log('Job stopped via WebSocket');
+            } catch (error) {
+              log('job:stop error:', error?.message || error);
+            }
+          })();
+          break;
+        }
         default:
           log('Received unsupported WebSocket message type:', parsed.type);
           break;
