@@ -6,6 +6,7 @@
 
 import { Router } from 'express';
 import { blePendantManager } from './ble-manager.js';
+import { bleClientAdapter } from './ble-client.js';
 import { createLogger } from '../../core/logger.js';
 
 const { log, error: logError } = createLogger('BLE-API');
@@ -26,6 +27,7 @@ export function createPendantRoutes({ websocketLayer }) {
       await blePendantManager.initialize();
 
       const bleDevice = blePendantManager.getConnectedDevice();
+      const bleClientMeta = bleClientAdapter.getClientMeta();
       const wifiPendant = getWifiPendant();
 
       // Determine which connection type the pendant prefers/uses
@@ -46,7 +48,10 @@ export function createPendantRoutes({ websocketLayer }) {
       res.json({
         adapterState: blePendantManager.getAdapterState(),
         connectionState: blePendantManager.getState(),
-        connectedDevice: bleDevice,
+        connectedDevice: bleDevice ? {
+          ...bleDevice,
+          version: bleClientMeta?.version || null
+        } : null,
         wifiPendant: wifiPendant ? {
           id: wifiPendant.clientId,
           name: 'Pendant (WiFi)',

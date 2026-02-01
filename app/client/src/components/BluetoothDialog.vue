@@ -26,8 +26,8 @@
             </svg>
           </div>
           <div>
-            <h2>Bluetooth Pendant</h2>
-            <p class="bluetooth-dialog__subtitle">Connect to ncSender pendant via BLE</p>
+            <h2>Pendant Connection</h2>
+            <p class="bluetooth-dialog__subtitle">Connect to ncSender pendant via WiFi or Bluetooth</p>
           </div>
         </div>
         <button class="bluetooth-dialog__close" @click="emit('close')" aria-label="Close">&times;</button>
@@ -68,7 +68,7 @@
           </div>
           <div class="device-info">
             <span class="device-name">{{ state.connectedDevice.name }}</span>
-            <span class="device-address">{{ state.connectedDevice.address || state.connectedDevice.id }}</span>
+            <span class="device-address">{{ state.connectedDevice.version ? `v${state.connectedDevice.version}` : 'Connected' }}</span>
           </div>
           <span class="connection-badge bluetooth">BLE</span>
           <span v-if="state.activeConnectionType === 'bluetooth'" class="active-badge">Active</span>
@@ -175,6 +175,7 @@ interface BluetoothDevice {
   name: string;
   address?: string;
   rssi: number;
+  version?: string;
 }
 
 interface WifiPendant {
