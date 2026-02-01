@@ -174,26 +174,9 @@
                 class="form-input"
               />
             </div>
-            <div class="form-group">
-              <label for="server-ip">ncSender Server IP</label>
-              <input
-                id="server-ip"
-                type="text"
-                v-model="wifiConfig.serverIP"
-                placeholder="e.g., 192.168.1.100"
-                class="form-input"
-              />
-              <span class="form-hint">Auto-detected from this computer</span>
-            </div>
-            <div class="form-group">
-              <label for="server-port">Server Port</label>
-              <input
-                id="server-port"
-                type="number"
-                v-model.number="wifiConfig.serverPort"
-                placeholder="8090"
-                class="form-input"
-              />
+            <div class="form-row">
+              <span class="form-label">ncSender Server</span>
+              <span class="form-value">{{ wifiConfig.serverIP }}:{{ wifiConfig.serverPort }}</span>
             </div>
             <div class="form-actions">
               <button
@@ -212,18 +195,31 @@
         </details>
       </section>
 
-      <!-- Help Section -->
-      <section class="bluetooth-dialog__help">
-        <details>
-          <summary>Troubleshooting</summary>
+      <!-- Help Icon with Tooltip -->
+      <div class="bluetooth-dialog__help-icon">
+        <button
+          class="help-button"
+          @click="showHelpTooltip = !showHelpTooltip"
+          @mouseenter="showHelpTooltip = true"
+          @mouseleave="showHelpTooltip = false"
+          aria-label="Help"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="17" r="1" fill="currentColor"/>
+          </svg>
+        </button>
+        <div v-if="showHelpTooltip" class="help-tooltip">
+          <h4>Troubleshooting</h4>
           <ul>
             <li>Ensure your pendant is powered on and not connected to another device</li>
             <li>The pendant should be advertising with "pibotPendant" or similar name</li>
-            <li>On macOS, grant Bluetooth permission in System Settings > Privacy & Security > Bluetooth</li>
+            <li>On macOS, grant Bluetooth permission in System Settings &gt; Privacy &amp; Security &gt; Bluetooth</li>
             <li>Try restarting ncSender if Bluetooth is unavailable</li>
           </ul>
-        </details>
-      </section>
+        </div>
+      </div>
 
       <footer class="bluetooth-dialog__footer">
         <button class="btn btn-secondary" @click="emit('close')">Close</button>
@@ -295,6 +291,9 @@ const wifiConfig = ref({
   serverIP: '',
   serverPort: 8090
 });
+
+// Help tooltip state
+const showHelpTooltip = ref(false);
 
 const hasPendantConnected = computed(() => state.value.connectedDevice || state.value.wifiPendant);
 
@@ -515,6 +514,7 @@ onUnmounted(() => {
 
 <style scoped>
 .bluetooth-dialog {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -868,17 +868,6 @@ onUnmounted(() => {
   margin-left: auto;
 }
 
-/* Help Section */
-.bluetooth-dialog__help {
-  border-top: 1px solid var(--color-border);
-  padding-top: 16px;
-}
-
-.bluetooth-dialog__help details {
-  color: var(--color-text-secondary);
-  font-size: 0.85rem;
-}
-
 /* WiFi Configuration */
 .bluetooth-dialog__wifi-config {
   border-top: 1px solid var(--color-border);
@@ -968,21 +957,87 @@ onUnmounted(() => {
   border: 1px solid rgba(220, 53, 69, 0.3);
 }
 
-.bluetooth-dialog__help summary {
-  cursor: pointer;
+.form-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.form-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.form-value {
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 8px;
+  font-family: var(--font-mono, monospace);
 }
 
-.bluetooth-dialog__help ul {
+/* Help Icon and Tooltip */
+.bluetooth-dialog__help-icon {
+  position: absolute;
+  top: 24px;
+  right: 56px;
+}
+
+.help-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.help-button:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-muted);
+}
+
+.help-tooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 320px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.help-tooltip h4 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.help-tooltip ul {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 18px;
 }
 
-.bluetooth-dialog__help li {
-  margin: 4px 0;
+.help-tooltip li {
+  margin: 6px 0;
+  font-size: 0.8rem;
   line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 /* Footer */
