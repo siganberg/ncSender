@@ -548,7 +548,10 @@ class BLEPendantManager extends EventEmitter {
   }
 
   getConnectedDevice() {
-    if (!this.connectedDevice) return null;
+    // Only report connected if we have all required state for sending
+    if (!this.connectedDevice || this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
+      return null;
+    }
     return {
       id: this.connectedDevice.id,
       name: this.connectedDevice.name,
@@ -733,12 +736,13 @@ class BLEPendantManager extends EventEmitter {
         }
       }
 
-      // Check if peripheral is already connected
-      if (peripheral.state === 'connected') {
+      // Check if peripheral is already connected at noble level
+      // but we still need to set up our internal state
+      if (peripheral.state === 'connected' && this.state === STATE.CONNECTED && this.rxCharacteristic) {
         return true;
       }
 
-      // Try direct connection
+      // Try direct connection (or reconnection if noble thinks it's connected but we're not ready)
       return await this.connectToPeripheral(peripheral, lastDevice);
     } catch (err) {
       // Silently reset state on failure
