@@ -23,15 +23,17 @@ import { jogStart, jogStop, jogHeartbeat, jogStep } from '../jog/api';
 import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
 const CONTINUOUS_DISTANCE_MM = 3000;
+const CONTINUOUS_DISTANCE_IN = 120;
 const HEARTBEAT_INTERVAL_MS = 250;
 
-function getJogSettings(): { step: number; xyFeedRate: number; zFeedRate: number } {
+function getJogSettings(): { step: number; xyFeedRate: number; zFeedRate: number; unitCode: 'G20' | 'G21' } {
   const store = useAppStore();
   const step = store.jogConfig.stepSize;
   const feedRate = store.jogConfig.feedRate;
   const xyFeed = Number.isFinite(feedRate) && feedRate > 0 ? feedRate : 3000;
   const zFeed = Math.max(1, xyFeed / 2);
-  return { step, xyFeedRate: xyFeed, zFeedRate: zFeed };
+  const unitCode = store.unitsPreference.value === 'imperial' ? 'G20' : 'G21';
+  return { step, xyFeedRate: xyFeed, zFeedRate: zFeed, unitCode };
 }
 
 export const JOG_ACTIONS: Record<string, { axis: 'X' | 'Y' | 'Z'; direction: 1 | -1 }> = {
@@ -117,11 +119,11 @@ function createContinuousSession(jogId: string, onStop: string): ContinuousJogSe
 }
 
 export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): Promise<void> {
-  const { step, xyFeedRate, zFeedRate } = getJogSettings();
+  const { step, xyFeedRate, zFeedRate, unitCode } = getJogSettings();
   const distance = Number((step * direction).toFixed(4));
   const feedRate = axis === 'Z' ? zFeedRate : xyFeedRate;
 
-  const command = `$J=G21 G91 ${axis}${distance} F${feedRate}`;
+  const command = `$J=${unitCode} G91 ${axis}${distance} F${feedRate}`;
   await jogStep({
     command,
     displayCommand: command,
@@ -133,15 +135,15 @@ export async function performJogStep(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): 
 }
 
 export async function performDiagonalJogStep(xDir: 1 | -1, yDir: 1 | -1): Promise<void> {
-  const { step, xyFeedRate } = getJogSettings();
+  const { step, xyFeedRate, unitCode } = getJogSettings();
   const xDistance = Number((step * xDir).toFixed(4));
   const yDistance = Number((step * yDir).toFixed(4));
 
-  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
+  const command = `$J=${unitCode} G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
   await jogStep({
     command,
     displayCommand: command,
-    axis: 'X', // Use X as primary axis for diagonal
+    axis: 'X',
     direction: xDir,
     feedRate: xyFeedRate,
     distance: step
@@ -149,9 +151,10 @@ export async function performDiagonalJogStep(xDir: 1 | -1, yDir: 1 | -1): Promis
 }
 
 export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction: 1 | -1): Promise<ContinuousJogSession | null> {
-  const { xyFeedRate, zFeedRate } = getJogSettings();
+  const { xyFeedRate, zFeedRate, unitCode } = getJogSettings();
   const feedRate = axis === 'Z' ? zFeedRate : xyFeedRate;
-  const command = `$J=G21 G91 ${axis}${CONTINUOUS_DISTANCE_MM * direction} F${feedRate}`;
+  const distance = unitCode === 'G20' ? CONTINUOUS_DISTANCE_IN : CONTINUOUS_DISTANCE_MM;
+  const command = `$J=${unitCode} G91 ${axis}${distance * direction} F${feedRate}`;
   const jogId = createJogId();
 
   try {
@@ -172,10 +175,11 @@ export async function startContinuousJogSession(axis: 'X' | 'Y' | 'Z', direction
 }
 
 export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | -1): Promise<ContinuousJogSession | null> {
-  const { xyFeedRate } = getJogSettings();
-  const xDistance = CONTINUOUS_DISTANCE_MM * xDir;
-  const yDistance = CONTINUOUS_DISTANCE_MM * yDir;
-  const command = `$J=G21 G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
+  const { xyFeedRate, unitCode } = getJogSettings();
+  const distance = unitCode === 'G20' ? CONTINUOUS_DISTANCE_IN : CONTINUOUS_DISTANCE_MM;
+  const xDistance = distance * xDir;
+  const yDistance = distance * yDir;
+  const command = `$J=${unitCode} G91 X${xDistance} Y${yDistance} F${xyFeedRate}`;
   const jogId = createJogId();
 
   try {
@@ -333,53 +337,47 @@ export function registerCoreKeyboardActions(): void {
     isEnabled: canStop
   });
 
-  // Jog Step Controls
-  const STEP_CYCLE = [0.1, 1, 10];
-
+  // Jog Step Controls - dispatch events that StepControl listens for
   commandRegistry.register({
     id: 'CycleSteps',
     label: 'Cycle Jog Steps',
     group: jogActionGroup,
-    description: 'Cycle through jog step sizes: 0.1 → 1 → 10',
+    description: 'Cycle through jog step groups',
     handler: () => {
-      const { step: currentStep } = getJogSettings();
-      const currentIndex = STEP_CYCLE.findIndex(s => Math.abs(s - currentStep) < 0.001);
-      const nextIndex = (currentIndex + 1) % STEP_CYCLE.length;
-      const nextStep = STEP_CYCLE[nextIndex];
-      store.jogConfig.stepSize = nextStep;
+      window.dispatchEvent(new CustomEvent('jog-step-cycle'));
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
 
   commandRegistry.register({
     id: 'SetStep0.1',
-    label: 'Set Step 0.1',
+    label: 'Set Step Small',
     group: jogActionGroup,
-    description: 'Set jog step size to 0.1mm',
+    description: 'Set jog step to small group',
     handler: () => {
-      store.jogConfig.stepSize = 0.1;
+      window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 0 } }));
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
 
   commandRegistry.register({
     id: 'SetStep1',
-    label: 'Set Step 1',
+    label: 'Set Step Medium',
     group: jogActionGroup,
-    description: 'Set jog step size to 1mm',
+    description: 'Set jog step to medium group',
     handler: () => {
-      store.jogConfig.stepSize = 1;
+      window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 1 } }));
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
 
   commandRegistry.register({
     id: 'SetStep10',
-    label: 'Set Step 10',
+    label: 'Set Step Large',
     group: jogActionGroup,
-    description: 'Set jog step size to 10mm',
+    description: 'Set jog step to large group',
     handler: () => {
-      store.jogConfig.stepSize = 10;
+      window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 2 } }));
     },
     isEnabled: () => keyBindingStore.isActive.value
   });
