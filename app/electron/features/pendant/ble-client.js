@@ -8,7 +8,7 @@
 import { EventEmitter } from 'events';
 import { blePendantManager } from './ble-manager.js';
 import { createLogger } from '../../core/logger.js';
-import { getSetting, DEFAULT_SETTINGS, getAllSettings } from '../../core/settings-manager.js';
+import { getSetting, DEFAULT_SETTINGS, readSettings } from '../../core/settings-manager.js';
 import path from 'node:path';
 import { getUserDataDir } from '../../utils/paths.js';
 
@@ -125,7 +125,7 @@ class BLEClientAdapter extends EventEmitter {
 
       // Send settings including theme
       try {
-        const settings = getAllSettings();
+        const settings = readSettings();
         await blePendantManager.send({
           type: 'settings-changed',
           data: settings
