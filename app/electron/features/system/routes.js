@@ -47,8 +47,11 @@ export function createSystemRoutes(serverState, cncController, ensureSenderStatu
       for (const [name, addrs] of Object.entries(interfaces)) {
         if (!addrs) continue;
         for (const addr of addrs) {
-          // Skip internal and IPv6 addresses
-          if (addr.internal || addr.family !== 'IPv4') continue;
+          // Skip internal addresses
+          if (addr.internal) continue;
+          // Check for IPv4 (family can be 'IPv4' string or 4 number depending on Node version)
+          const isIPv4 = addr.family === 'IPv4' || addr.family === 4;
+          if (!isIPv4) continue;
           // Prefer addresses that look like local network IPs
           if (addr.address.startsWith('192.168.') ||
               addr.address.startsWith('10.') ||
