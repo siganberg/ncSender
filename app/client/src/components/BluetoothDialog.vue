@@ -146,6 +146,72 @@
         </div>
       </section>
 
+      <!-- WiFi Configuration Section (show when BLE connected) -->
+      <section v-if="state.connectedDevice" class="bluetooth-dialog__wifi-config">
+        <details :open="wifiConfigOpen" @toggle="wifiConfigOpen = $event.target.open">
+          <summary>
+            <span class="config-title">WiFi Configuration</span>
+            <span class="config-hint">Configure pendant WiFi via Bluetooth</span>
+          </summary>
+          <div class="wifi-config-form">
+            <div class="form-group">
+              <label for="wifi-ssid">WiFi Network (SSID)</label>
+              <input
+                id="wifi-ssid"
+                type="text"
+                v-model="wifiConfig.ssid"
+                placeholder="Enter WiFi network name"
+                class="form-input"
+              />
+            </div>
+            <div class="form-group">
+              <label for="wifi-password">WiFi Password</label>
+              <input
+                id="wifi-password"
+                type="password"
+                v-model="wifiConfig.password"
+                placeholder="Enter WiFi password"
+                class="form-input"
+              />
+            </div>
+            <div class="form-group">
+              <label for="server-ip">ncSender Server IP</label>
+              <input
+                id="server-ip"
+                type="text"
+                v-model="wifiConfig.serverIP"
+                placeholder="e.g., 192.168.1.100"
+                class="form-input"
+              />
+              <span class="form-hint">Auto-detected from this computer</span>
+            </div>
+            <div class="form-group">
+              <label for="server-port">Server Port</label>
+              <input
+                id="server-port"
+                type="number"
+                v-model.number="wifiConfig.serverPort"
+                placeholder="8090"
+                class="form-input"
+              />
+            </div>
+            <div class="form-actions">
+              <button
+                class="btn btn-primary btn-sm"
+                @click="sendWifiConfig"
+                :disabled="wifiConfigSending || !wifiConfig.ssid"
+              >
+                <span v-if="wifiConfigSending" class="spinner"></span>
+                <span>{{ wifiConfigSending ? 'Sending...' : 'Send to Pendant' }}</span>
+              </button>
+            </div>
+            <div v-if="wifiConfigResult" class="config-result" :class="wifiConfigResult.success ? 'success' : 'error'">
+              {{ wifiConfigResult.message }}
+            </div>
+          </div>
+        </details>
+      </section>
+
       <!-- Help Section -->
       <section class="bluetooth-dialog__help">
         <details>
@@ -218,6 +284,17 @@ const state = ref<BluetoothState>({
 });
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+// WiFi configuration state
+const wifiConfigOpen = ref(false);
+const wifiConfigSending = ref(false);
+const wifiConfigResult = ref<{ success: boolean; message: string } | null>(null);
+const wifiConfig = ref({
+  ssid: '',
+  password: '',
+  serverIP: '',
+  serverPort: 8090
+});
 
 const hasPendantConnected = computed(() => state.value.connectedDevice || state.value.wifiPendant);
 
@@ -360,9 +437,72 @@ const disconnect = async () => {
   }
 };
 
+// Fetch server info for WiFi configuration defaults
+const fetchServerInfo = async () => {
+  try {
+    const response = await fetch('/api/server-info');
+    const data = await response.json();
+    if (data.serverIP) {
+      wifiConfig.value.serverIP = data.serverIP;
+    }
+    if (data.serverPort) {
+      wifiConfig.value.serverPort = data.serverPort;
+    }
+  } catch (err) {
+    console.error('Failed to fetch server info:', err);
+  }
+};
+
+// Send WiFi configuration to pendant via BLE
+const sendWifiConfig = async () => {
+  if (!state.value.connectedDevice || wifiConfigSending.value) return;
+
+  wifiConfigSending.value = true;
+  wifiConfigResult.value = null;
+
+  try {
+    const response = await fetch('/api/pendant/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          type: 'pendant:configure-wifi',
+          data: {
+            ssid: wifiConfig.value.ssid,
+            password: wifiConfig.value.password,
+            serverIP: wifiConfig.value.serverIP,
+            serverPort: wifiConfig.value.serverPort
+          }
+        }
+      })
+    });
+
+    if (response.ok) {
+      wifiConfigResult.value = {
+        success: true,
+        message: 'Configuration sent! Restart pendant to apply WiFi settings.'
+      };
+    } else {
+      const data = await response.json();
+      wifiConfigResult.value = {
+        success: false,
+        message: data.error || 'Failed to send configuration'
+      };
+    }
+  } catch (err) {
+    wifiConfigResult.value = {
+      success: false,
+      message: 'Failed to send configuration'
+    };
+  } finally {
+    wifiConfigSending.value = false;
+  }
+};
+
 onMounted(() => {
   fetchStatus();
   fetchDevices();
+  fetchServerInfo();
   pollInterval = setInterval(fetchStatus, 3000);
 });
 
@@ -737,6 +877,95 @@ onUnmounted(() => {
 .bluetooth-dialog__help details {
   color: var(--color-text-secondary);
   font-size: 0.85rem;
+}
+
+/* WiFi Configuration */
+.bluetooth-dialog__wifi-config {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.bluetooth-dialog__wifi-config summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bluetooth-dialog__wifi-config .config-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.bluetooth-dialog__wifi-config .config-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.wifi-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.form-input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  transition: border-color 0.15s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.form-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.form-actions {
+  padding-top: 8px;
+}
+
+.config-result {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.config-result.success {
+  background: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.config-result.error {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.3);
 }
 
 .bluetooth-dialog__help summary {

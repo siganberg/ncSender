@@ -19,7 +19,9 @@ import { Router } from 'express';
 import fs from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createLogger, getLogsDir } from '../../core/logger.js';
+import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 
 const { log, error: logError } = createLogger('System');
 
@@ -29,6 +31,48 @@ export function createSystemRoutes(serverState, cncController, ensureSenderStatu
   // Health check endpoint
   router.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Get server info for pendant WiFi configuration
+  router.get('/server-info', (req, res) => {
+    try {
+      // Get server port from settings
+      const connectionSettings = getSetting('connection');
+      const serverPort = connectionSettings?.serverPort ?? DEFAULT_SETTINGS.connection.serverPort;
+
+      // Get local IP addresses (prefer non-internal IPv4)
+      const interfaces = os.networkInterfaces();
+      let serverIP = '';
+
+      for (const [name, addrs] of Object.entries(interfaces)) {
+        if (!addrs) continue;
+        for (const addr of addrs) {
+          // Skip internal and IPv6 addresses
+          if (addr.internal || addr.family !== 'IPv4') continue;
+          // Prefer addresses that look like local network IPs
+          if (addr.address.startsWith('192.168.') ||
+              addr.address.startsWith('10.') ||
+              addr.address.startsWith('172.')) {
+            serverIP = addr.address;
+            break;
+          }
+          // Use first non-internal IPv4 as fallback
+          if (!serverIP) {
+            serverIP = addr.address;
+          }
+        }
+        if (serverIP.startsWith('192.168.') || serverIP.startsWith('10.')) break;
+      }
+
+      res.json({
+        serverIP,
+        serverPort,
+        hostname: os.hostname()
+      });
+    } catch (error) {
+      log('Error getting server info:', error);
+      res.status(500).json({ error: 'Failed to get server info' });
+    }
   });
 
   // Get server state
