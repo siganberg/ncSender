@@ -1,8 +1,4 @@
 ## What's Changed
 
-### ✨ New Features
-- Added pendant-friendly job control API endpoints for external device integration
-- Added silent option for jog commands to support pendant clients
-
-### 🐛 Bug Fixes
-- Fixed jog controls to correctly respect unit preference settings
+### 🔧 Improvements
+- Expanded Z-offset adjustment range from -2/+2 to -10/+10 in 3D touch probe for greater flexibility
