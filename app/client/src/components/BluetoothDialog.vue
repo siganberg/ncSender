@@ -70,7 +70,6 @@
             <span class="device-name">{{ state.connectedDevice.name }}</span>
             <span class="device-address">{{ state.connectedDevice.version ? `v${state.connectedDevice.version}` : 'Connected' }}</span>
           </div>
-          <span class="connection-badge bluetooth">BLE</span>
           <span v-if="state.activeConnectionType === 'bluetooth'" class="active-badge">Active</span>
           <button class="btn btn-danger btn-sm" @click="disconnect" :disabled="state.isConnecting">
             Disconnect
@@ -146,9 +145,187 @@
         </div>
       </section>
 
+      <!-- Manual IP Connection Section (show when no pendant connected) -->
+      <section v-if="!state.connectedDevice && !state.wifiPendant" class="bluetooth-dialog__manual-ip">
+        <details :open="manualPendantInfo !== null || manualIpError !== null">
+          <summary>
+            <span class="config-title">Connect via WiFi (IP Address)</span>
+            <span class="config-hint">Enter pendant IP address to activate license</span>
+          </summary>
+          <div class="manual-ip-form">
+            <div class="form-group">
+              <label for="pendant-ip">Pendant IP Address</label>
+              <div class="ip-input-row">
+                <input
+                  id="pendant-ip"
+                  type="text"
+                  v-model="manualIp"
+                  placeholder="192.168.1.100"
+                  class="form-input"
+                  @keyup.enter="connectManualIp"
+                  :disabled="manualIpConnecting"
+                />
+                <button
+                  class="btn btn-primary btn-sm"
+                  @click="connectManualIp"
+                  :disabled="manualIpConnecting || !manualIp"
+                >
+                  <span v-if="manualIpConnecting" class="spinner"></span>
+                  <span>{{ manualIpConnecting ? 'Connecting...' : 'Connect' }}</span>
+                </button>
+              </div>
+              <span class="form-hint">Find the IP address on your pendant's activation screen</span>
+            </div>
+
+            <div v-if="manualIpError" class="config-result error">
+              {{ manualIpError }}
+            </div>
+
+            <!-- Show pendant info when connected -->
+            <div v-if="manualPendantInfo" class="manual-pendant-connected">
+              <div class="manual-pendant-header">
+                <div class="device-icon connected wifi">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div class="device-info">
+                  <span class="device-name">Pendant ({{ manualIp }})</span>
+                  <span class="device-address">v{{ manualPendantInfo.firmwareVersion }}</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" @click="clearManualConnection">
+                  Disconnect
+                </button>
+              </div>
+
+              <!-- Device Info Box -->
+              <div class="device-info-box">
+                <div class="device-info-row">
+                  <span class="device-info-label">Device ID</span>
+                  <span class="device-info-value">{{ manualPendantInfo.deviceIdFormatted || manualPendantInfo.deviceId }}</span>
+                </div>
+                <div class="device-info-row">
+                  <span class="device-info-label">Model</span>
+                  <span class="device-info-value">{{ manualPendantInfo.deviceModel }}</span>
+                </div>
+                <div class="device-info-row">
+                  <span class="device-info-label">Firmware</span>
+                  <span class="device-info-value">v{{ manualPendantInfo.firmwareVersion }}</span>
+                </div>
+              </div>
+
+              <!-- Licensed Badge or Activation Form -->
+              <div v-if="manualPendantInfo.licensed" class="licensed-badge">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                  <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>License Active</span>
+              </div>
+
+              <div v-else class="manual-activation-form">
+                <div class="form-group">
+                  <label for="manual-installation-id">Installation ID</label>
+                  <input
+                    id="manual-installation-id"
+                    type="text"
+                    :value="installationId"
+                    @input="onInstallationIdInput"
+                    placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                    class="form-input installation-id-input"
+                    spellcheck="false"
+                    autocomplete="off"
+                    maxlength="41"
+                  />
+                  <span class="form-hint">Enter the Installation ID from your purchase email</span>
+                </div>
+                <div class="form-actions">
+                  <button
+                    class="btn btn-success btn-sm"
+                    @click="activateManualPendant"
+                    :disabled="activationSending || !isInstallationIdValid()"
+                  >
+                    <span v-if="activationSending" class="spinner"></span>
+                    <span>{{ activationSending ? 'Activating...' : 'Activate License' }}</span>
+                  </button>
+                </div>
+                <div v-if="activationResult" class="config-result" :class="activationResult.success ? 'success' : 'error'">
+                  {{ activationResult.message }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Activation Section (show when pendant connected via BLE or WiFi and not licensed) -->
+      <section v-if="(state.connectedDevice || state.wifiPendant) && pendantInfo && !pendantInfo.licensed" class="bluetooth-dialog__activation">
+        <details :open="activationOpen" @toggle="activationOpen = ($event.target as HTMLDetailsElement).open">
+          <summary>
+            <span class="config-title">License Activation</span>
+            <span class="config-hint">Activate pendant license via Bluetooth</span>
+          </summary>
+          <div class="activation-form">
+            <div class="device-info-box">
+              <div class="device-info-row">
+                <span class="device-info-label">Device ID</span>
+                <span class="device-info-value">{{ pendantInfo.deviceIdFormatted || pendantInfo.deviceId }}</span>
+              </div>
+              <div class="device-info-row">
+                <span class="device-info-label">Model</span>
+                <span class="device-info-value">{{ pendantInfo.deviceModel }}</span>
+              </div>
+              <div class="device-info-row">
+                <span class="device-info-label">Firmware</span>
+                <span class="device-info-value">v{{ pendantInfo.firmwareVersion }}</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="installation-id">Installation ID</label>
+              <input
+                id="installation-id"
+                type="text"
+                :value="installationId"
+                @input="onInstallationIdInput"
+                placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                class="form-input installation-id-input"
+                spellcheck="false"
+                autocomplete="off"
+                maxlength="41"
+              />
+              <span class="form-hint">Enter the Installation ID from your purchase email</span>
+            </div>
+            <div class="form-actions">
+              <button
+                class="btn btn-success btn-sm"
+                @click="activateLicense"
+                :disabled="activationSending || !isInstallationIdValid()"
+              >
+                <span v-if="activationSending" class="spinner"></span>
+                <span>{{ activationSending ? 'Activating...' : 'Activate License' }}</span>
+              </button>
+            </div>
+            <div v-if="activationResult" class="config-result" :class="activationResult.success ? 'success' : 'error'">
+              {{ activationResult.message }}
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Licensed Badge (show when pendant connected and licensed) -->
+      <section v-if="(state.connectedDevice || state.wifiPendant) && pendantInfo?.licensed" class="bluetooth-dialog__licensed">
+        <div class="licensed-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+            <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>License Active</span>
+        </div>
+      </section>
+
       <!-- WiFi Configuration Section (show when BLE connected) -->
       <section v-if="state.connectedDevice" class="bluetooth-dialog__wifi-config">
-        <details :open="wifiConfigOpen" @toggle="wifiConfigOpen = $event.target.open">
+        <details :open="wifiConfigOpen" @toggle="wifiConfigOpen = ($event.target as HTMLDetailsElement).open">
           <summary>
             <span class="config-title">WiFi Configuration</span>
             <span class="config-hint">Configure pendant WiFi via Bluetooth</span>
@@ -240,6 +417,16 @@ interface BluetoothDevice {
   version?: string;
 }
 
+interface PendantInfo {
+  firmwareVersion: string;
+  deviceId: string;
+  deviceIdFormatted: string;
+  deviceModel: string;
+  licensed: boolean;
+  licenseId?: string;
+  customer?: string;
+}
+
 interface WifiPendant {
   id: string;
   name: string;
@@ -295,6 +482,19 @@ const wifiConfig = ref({
 // Help tooltip state
 const showHelpTooltip = ref(false);
 
+// Activation state
+const activationOpen = ref(false);
+const activationSending = ref(false);
+const activationResult = ref<{ success: boolean; message: string } | null>(null);
+const pendantInfo = ref<PendantInfo | null>(null);
+const installationId = ref('');
+
+// Manual IP connection state
+const manualIp = ref('');
+const manualIpConnecting = ref(false);
+const manualIpError = ref<string | null>(null);
+const manualPendantInfo = ref<PendantInfo | null>(null);
+
 const hasPendantConnected = computed(() => state.value.connectedDevice || state.value.wifiPendant);
 
 const statusClass = computed(() => {
@@ -335,6 +535,11 @@ const fetchStatus = async () => {
   try {
     const response = await fetch('/api/pendant/status');
     const data = await response.json();
+    const wasBleConnected = !!state.value.connectedDevice;
+    const wasWifiConnected = !!state.value.wifiPendant;
+    const isNowBleConnected = !!data.connectedDevice;
+    const isNowWifiConnected = !!data.wifiPendant;
+
     state.value.adapterState = data.adapterState;
     state.value.connectionState = data.connectionState;
     state.value.connectedDevice = data.connectedDevice;
@@ -344,8 +549,48 @@ const fetchStatus = async () => {
     if (data.error && !state.value.error) {
       state.value.error = data.error;
     }
+
+    // Fetch pendant info when any pendant connected (BLE or WiFi)
+    if (isNowBleConnected || isNowWifiConnected) {
+      fetchPendantInfo();
+    }
+
+    // Clear pendant info when all pendants disconnect
+    if ((wasBleConnected || wasWifiConnected) && !isNowBleConnected && !isNowWifiConnected) {
+      pendantInfo.value = null;
+      activationResult.value = null;
+    }
   } catch (err) {
     console.error('Failed to fetch Bluetooth status:', err);
+  }
+};
+
+const fetchPendantInfo = async () => {
+  try {
+    // Try BLE first if connected
+    if (state.value.connectedDevice) {
+      const response = await fetch('/api/pendant/info');
+      if (response.ok) {
+        pendantInfo.value = await response.json();
+        if (pendantInfo.value && !pendantInfo.value.licensed) {
+          activationOpen.value = true;
+        }
+        return;
+      }
+    }
+
+    // Fall back to WiFi pendant API
+    if (state.value.wifiPendant?.ip) {
+      const response = await fetch(`http://${state.value.wifiPendant.ip}/api/info`);
+      if (response.ok) {
+        pendantInfo.value = await response.json();
+        if (pendantInfo.value && !pendantInfo.value.licensed) {
+          activationOpen.value = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch pendant info:', err);
   }
 };
 
@@ -498,10 +743,225 @@ const sendWifiConfig = async () => {
   }
 };
 
-onMounted(() => {
-  fetchStatus();
+// Request pendant info via BLE
+const requestPendantInfo = async () => {
+  if (!state.value.connectedDevice) return;
+
+  try {
+    // Send pendant:get-info request via BLE
+    await fetch('/api/pendant/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          type: 'pendant:get-info'
+        }
+      })
+    });
+  } catch (err) {
+    console.error('Failed to request pendant info:', err);
+  }
+};
+
+// Format installation ID (XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX)
+const formatInstallationId = (raw: string): string => {
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 36);
+  const parts = clean.match(/.{1,6}/g);
+  return parts ? parts.join('-') : '';
+};
+
+// Handle installation ID input
+const onInstallationIdInput = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const pos = input.selectionStart || 0;
+  const oldLen = input.value.length;
+  installationId.value = formatInstallationId(input.value);
+  const newLen = installationId.value.length;
+  const newPos = pos + (newLen - oldLen);
+  input.setSelectionRange(newPos, newPos);
+};
+
+// Validate installation ID
+const isInstallationIdValid = (): boolean => {
+  const raw = installationId.value.replace(/[^A-Za-z0-9]/g, '');
+  return raw.length === 36;
+};
+
+// Connect to pendant via manual IP address
+const connectManualIp = async () => {
+  if (!manualIp.value || manualIpConnecting.value) return;
+
+  manualIpConnecting.value = true;
+  manualIpError.value = null;
+  manualPendantInfo.value = null;
+
+  try {
+    const response = await fetch(`http://${manualIp.value}/api/info`, {
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to connect (HTTP ${response.status})`);
+    }
+
+    const info = await response.json();
+    manualPendantInfo.value = info;
+
+    if (!info.licensed) {
+      activationOpen.value = true;
+    }
+  } catch (err: any) {
+    if (err.name === 'TimeoutError') {
+      manualIpError.value = 'Connection timed out. Check the IP address and ensure the pendant is online.';
+    } else if (err.message?.includes('Failed to fetch')) {
+      manualIpError.value = 'Unable to reach pendant. Check the IP address and network connection.';
+    } else {
+      manualIpError.value = err.message || 'Failed to connect to pendant';
+    }
+  } finally {
+    manualIpConnecting.value = false;
+  }
+};
+
+// Activate pendant via manual IP
+const activateManualPendant = async () => {
+  if (!manualPendantInfo.value || activationSending.value || !isInstallationIdValid()) return;
+  if (!manualPendantInfo.value.deviceId) {
+    activationResult.value = {
+      success: false,
+      message: 'Device ID not available.'
+    };
+    return;
+  }
+
+  activationSending.value = true;
+  activationResult.value = null;
+
+  try {
+    const response = await fetch('/api/pendant/activate-wifi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        installationId: installationId.value.trim().toUpperCase(),
+        deviceId: manualPendantInfo.value.deviceId,
+        pendantIp: manualIp.value
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      activationResult.value = {
+        success: true,
+        message: 'License activated successfully! The pendant will update.'
+      };
+      if (manualPendantInfo.value) {
+        manualPendantInfo.value.licensed = true;
+      }
+      installationId.value = '';
+    } else {
+      activationResult.value = {
+        success: false,
+        message: data.error || 'Activation failed'
+      };
+    }
+  } catch (err) {
+    activationResult.value = {
+      success: false,
+      message: 'Failed to activate license'
+    };
+  } finally {
+    activationSending.value = false;
+  }
+};
+
+// Clear manual connection
+const clearManualConnection = () => {
+  manualPendantInfo.value = null;
+  manualIpError.value = null;
+  activationResult.value = null;
+};
+
+// Activate pendant license
+const activateLicense = async () => {
+  const hasPendant = state.value.connectedDevice || state.value.wifiPendant;
+  if (!hasPendant || activationSending.value || !isInstallationIdValid()) return;
+  if (!pendantInfo.value?.deviceId) {
+    activationResult.value = {
+      success: false,
+      message: 'Device ID not available. Please wait for device info.'
+    };
+    return;
+  }
+
+  activationSending.value = true;
+  activationResult.value = null;
+
+  try {
+    let response;
+
+    // Use BLE activation if Bluetooth connected, otherwise use WiFi
+    if (state.value.connectedDevice) {
+      response = await fetch('/api/pendant/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installationId: installationId.value.trim().toUpperCase(),
+          deviceId: pendantInfo.value.deviceId
+        })
+      });
+    } else if (state.value.wifiPendant?.ip) {
+      // WiFi activation - call server endpoint that handles WiFi activation
+      response = await fetch('/api/pendant/activate-wifi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installationId: installationId.value.trim().toUpperCase(),
+          deviceId: pendantInfo.value.deviceId,
+          pendantIp: state.value.wifiPendant.ip
+        })
+      });
+    } else {
+      throw new Error('No pendant connection available');
+    }
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      activationResult.value = {
+        success: true,
+        message: 'License activated successfully! The pendant will update.'
+      };
+      // Update local state
+      if (pendantInfo.value) {
+        pendantInfo.value.licensed = true;
+      }
+      // Clear installation ID
+      installationId.value = '';
+    } else {
+      activationResult.value = {
+        success: false,
+        message: data.error || 'Activation failed'
+      };
+    }
+  } catch (err) {
+    activationResult.value = {
+      success: false,
+      message: 'Failed to activate license'
+    };
+  } finally {
+    activationSending.value = false;
+  }
+};
+
+onMounted(async () => {
+  await fetchStatus();
   fetchDevices();
   fetchServerInfo();
+  // Fetch pendant info if already connected (BLE or WiFi)
+  if (state.value.connectedDevice || state.value.wifiPendant) {
+    fetchPendantInfo();
+  }
   pollInterval = setInterval(fetchStatus, 3000);
 });
 
@@ -868,6 +1328,158 @@ onUnmounted(() => {
   margin-left: auto;
 }
 
+/* Manual IP Connection Section */
+.bluetooth-dialog__manual-ip {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.bluetooth-dialog__manual-ip summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bluetooth-dialog__manual-ip .config-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.bluetooth-dialog__manual-ip .config-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.manual-ip-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.ip-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ip-input-row .form-input {
+  flex: 1;
+}
+
+.manual-pendant-connected {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(40, 167, 69, 0.08);
+  border: 1px solid rgba(40, 167, 69, 0.25);
+  border-radius: 12px;
+}
+
+.manual-pendant-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.manual-pendant-header .device-info {
+  flex: 1;
+}
+
+.manual-activation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(40, 167, 69, 0.25);
+}
+
+/* Activation Section */
+.bluetooth-dialog__activation {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.bluetooth-dialog__activation summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bluetooth-dialog__activation .config-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.bluetooth-dialog__activation .config-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.activation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.device-info-box {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.device-info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.85rem;
+}
+
+.device-info-label {
+  color: var(--color-text-secondary);
+}
+
+.device-info-value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  font-family: var(--font-mono, monospace);
+}
+
+.installation-id-input {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+/* Licensed Badge */
+.bluetooth-dialog__licensed {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.licensed-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  border-radius: 8px;
+  color: #28a745;
+  font-weight: 600;
+}
+
 /* WiFi Configuration */
 .bluetooth-dialog__wifi-config {
   border-top: 1px solid var(--color-border);
@@ -1101,6 +1713,15 @@ onUnmounted(() => {
 
 .btn-danger:hover:not(:disabled) {
   background: #c82333;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #218838;
 }
 
 .spinner {

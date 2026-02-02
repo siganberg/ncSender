@@ -98,7 +98,8 @@ const DEFAULT_SETTINGS = {
   useDoorAsPause: true,
   remoteControl: {
     enabled: false
-  }
+  },
+  showPendant: false
 };
 
 function getUserDataDir() {

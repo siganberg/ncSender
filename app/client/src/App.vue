@@ -49,6 +49,7 @@
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
+        :show-pendant="showPendant"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
@@ -1023,7 +1024,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import BluetoothDialog from './components/BluetoothDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
-import { getSettings } from './lib/settings-store.js';
+import { getSettings, settingsStore } from './lib/settings-store.js';
 import { getPluginsFromInit } from './lib/init';
 import { useAppStore } from './composables/use-app-store';
 import { useUpdateCenter } from './composables/use-update-center';
@@ -1089,6 +1090,7 @@ let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showBluetoothDialog = ref(false);
 const pendantConnectionType = ref<'wifi' | 'bluetooth' | null>(null);
+const showPendant = computed(() => settingsStore.data?.showPendant ?? false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -2743,6 +2745,11 @@ const clearConsole = store.clearConsole;
 let bluetoothPollInterval: ReturnType<typeof setInterval> | null = null;
 
 const pollBluetoothStatus = async () => {
+  // Only poll if pendant feature is enabled
+  if (!showPendant.value) {
+    pendantConnectionType.value = null;
+    return;
+  }
   try {
     const response = await fetch('/api/pendant/status');
     if (response.ok) {
@@ -2755,7 +2762,7 @@ const pollBluetoothStatus = async () => {
 };
 
 onMounted(async () => {
-  // Start polling Bluetooth status
+  // Start polling Bluetooth status (only polls when showPendant is enabled)
   pollBluetoothStatus();
   bluetoothPollInterval = setInterval(pollBluetoothStatus, 5000);
   updateCenter.ensureListeners();

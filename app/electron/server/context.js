@@ -27,7 +27,8 @@ export function createServerContext() {
       connected: false,
       isToolChanging: false,
       isProbing: false,
-      homingCycle: null // From firmware $22 - null until read from controller
+      homingCycle: null, // From firmware $22 - null until read from controller
+      maxFeedrate: 8000 // From firmware $110/$111 - default 8000 until read
     },
     senderStatus: 'connecting',
     greetingMessage: null,

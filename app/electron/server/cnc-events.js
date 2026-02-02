@@ -93,19 +93,34 @@ export function registerCncEventHandlers({
           await initializeFirmwareOnConnection(cncController);
           log('Firmware initialization complete');
 
-          // Initialize machineState.homingCycle from firmware.json $22 (bitwise value)
+          // Initialize machineState from firmware.json
           try {
             const firmwareText = await fs.readFile(firmwareFilePath, 'utf8');
             const firmwareData = JSON.parse(firmwareText);
+
+            // $22 = homing cycle (bitwise value)
             const setting22 = firmwareData.settings?.['22']?.value;
             if (setting22 !== undefined) {
               const numericValue = parseInt(setting22, 10);
               serverState.machineState.homingCycle = isNaN(numericValue) ? 0 : numericValue;
               log(`Initialized machineState.homingCycle to ${serverState.machineState.homingCycle} (from $22=${setting22})`);
-              broadcast('server-state-updated', serverState);
             }
+
+            // $110, $111, $112 = max feedrates for X, Y, Z (mm/min)
+            // Use the minimum of X and Y as maxFeedrate for jog scaling
+            const maxX = parseFloat(firmwareData.settings?.['110']?.value);
+            const maxY = parseFloat(firmwareData.settings?.['111']?.value);
+            if (Number.isFinite(maxX) || Number.isFinite(maxY)) {
+              const validRates = [maxX, maxY].filter(v => Number.isFinite(v) && v > 0);
+              if (validRates.length > 0) {
+                serverState.machineState.maxFeedrate = Math.min(...validRates);
+                log(`Initialized machineState.maxFeedrate to ${serverState.machineState.maxFeedrate} (from $110=${maxX}, $111=${maxY})`);
+              }
+            }
+
+            broadcast('server-state-updated', serverState);
           } catch (err) {
-            log('Could not read $22 from firmware.json:', err?.message || err);
+            log('Could not read firmware settings from firmware.json:', err?.message || err);
           }
         } catch (error) {
           log('Failed to initialize firmware on connection:', error?.message || error);
@@ -183,6 +198,19 @@ export function registerCncEventHandlers({
         serverState.machineState.homingCycle = isNaN(numericValue) ? 0 : numericValue;
         log(`Updated machineState.homingCycle to ${serverState.machineState.homingCycle} (from $22=${newValue})`);
         broadcast('server-state-updated', serverState);
+      }
+
+      // Update machineState.maxFeedrate when $110 or $111 changes
+      if ((id === '110' || id === '111') && valueChanged) {
+        // Re-read both values to compute min
+        const maxX = parseFloat(firmwareData.settings?.['110']?.value);
+        const maxY = parseFloat(firmwareData.settings?.['111']?.value);
+        const validRates = [maxX, maxY].filter(v => Number.isFinite(v) && v > 0);
+        if (validRates.length > 0) {
+          serverState.machineState.maxFeedrate = Math.min(...validRates);
+          log(`Updated machineState.maxFeedrate to ${serverState.machineState.maxFeedrate} (from $110=${maxX}, $111=${maxY})`);
+          broadcast('server-state-updated', serverState);
+        }
       }
     } catch (error) {
       log('Failed to update firmware.json from command-ack:', error?.message || error);

@@ -568,6 +568,41 @@ class BLEPendantManager extends EventEmitter {
     return this.state === STATE.CONNECTED;
   }
 
+  /**
+   * Request pendant info and wait for response
+   * @param {number} timeout - Timeout in milliseconds
+   * @returns {Promise<object>} Pendant info object
+   */
+  async requestInfo(timeout = 5000) {
+    if (this.state !== STATE.CONNECTED) {
+      throw new Error('Not connected to pendant');
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.removeListener('message', onMessage);
+        reject(new Error('Timeout waiting for pendant info'));
+      }, timeout);
+
+      const onMessage = (message) => {
+        if (message.type === 'pendant:info') {
+          clearTimeout(timer);
+          this.removeListener('message', onMessage);
+          resolve(message.data);
+        }
+      };
+
+      this.on('message', onMessage);
+
+      // Send request
+      this.send({ type: 'pendant:get-info' }).catch((err) => {
+        clearTimeout(timer);
+        this.removeListener('message', onMessage);
+        reject(err);
+      });
+    });
+  }
+
   getConnectedDevice() {
     // Only report connected if we have all required state for sending
     if (!this.connectedDevice || this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
