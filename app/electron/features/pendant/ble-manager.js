@@ -497,10 +497,15 @@ class BLEPendantManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       // For state updates, replace any existing queued state update (keeps only latest)
       // This prevents stale position data from being sent when queue backs up
+      // BUT: only replace if senderStatus is the same - status changes must be sent
       if (message?.type === 'server-state-updated') {
-        const existingIndex = this.sendQueue.findIndex(
-          item => item.message?.type === 'server-state-updated'
-        );
+        const newStatus = message?.data?.senderStatus;
+        const existingIndex = this.sendQueue.findIndex(item => {
+          if (item.message?.type !== 'server-state-updated') return false;
+          const oldStatus = item.message?.data?.senderStatus;
+          // Only replace if status is the same (position-only update)
+          return oldStatus === newStatus;
+        });
         if (existingIndex !== -1) {
           // Resolve the old one (it's being superseded) and replace with new
           this.sendQueue[existingIndex].resolve();
