@@ -104,13 +104,22 @@
         @click="$emit('show-bluetooth')"
         :title="pendantConnectionType ? `Pendant connected (${pendantConnectionType})` : 'Pendant'"
       >
-        <svg class="pendant-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Outer body - tall rectangle with rounded corners -->
-          <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" stroke-width="2"/>
-          <!-- Display - small rectangle at top -->
-          <rect x="8" y="5" width="8" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-          <!-- Rotary encoder - circle -->
-          <circle cx="12" cy="16" r="3" stroke="currentColor" stroke-width="1.5"/>
+        <svg class="pendant-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Body - dark charcoal fill -->
+          <rect x="5" y="1" width="18" height="26" rx="4" fill="#2d3748" stroke="#4a5568" stroke-width="1"/>
+          <!-- LCD Display - cyan/teal glow -->
+          <rect x="8" y="4" width="12" height="6" rx="1.5" fill="#0d9488" stroke="#14b8a6" stroke-width="0.5"/>
+          <!-- Display lines - bright cyan -->
+          <line x1="9.5" y1="6" x2="15" y2="6" stroke="#5eead4" stroke-width="1" stroke-linecap="round"/>
+          <line x1="9.5" y1="8" x2="13" y2="8" stroke="#5eead4" stroke-width="1" stroke-linecap="round"/>
+          <!-- MPG Rotary encoder wheel - metallic silver -->
+          <circle cx="14" cy="18" r="5.5" fill="#718096" stroke="#a0aec0" stroke-width="1"/>
+          <circle cx="14" cy="18" r="2.5" fill="#4a5568" stroke="#718096" stroke-width="0.5"/>
+          <!-- Encoder notch indicator - bright marker -->
+          <circle cx="14" cy="13.5" r="1" fill="#f59e0b"/>
+          <!-- Side buttons - orange accent -->
+          <rect x="6" y="11" width="2.5" height="2" rx="0.5" fill="#f59e0b"/>
+          <rect x="19.5" y="11" width="2.5" height="2" rx="0.5" fill="#f59e0b"/>
         </svg>
       </button>
     </div>
@@ -1074,24 +1083,31 @@ button.danger {
   border-radius: var(--radius-small);
   cursor: pointer;
   padding: 4px;
-  color: var(--color-text-secondary);
-  opacity: 0.4;
-  transition: all 0.15s ease;
+  opacity: 0.6;
+  transition: all 0.2s ease;
   margin-left: -8px;
+}
+
+.pendant-button .pendant-icon {
+  filter: grayscale(1) drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+  transition: filter 0.2s ease;
 }
 
 .pendant-button:hover {
   background: var(--color-surface);
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .pendant-button--connected {
-  color: var(--color-accent);
   opacity: 1;
 }
 
+.pendant-button--connected .pendant-icon {
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
+}
+
 .pendant-button--connected:hover {
-  opacity: 1;
+  filter: brightness(1.1);
 }
 
 .pendant-icon {
