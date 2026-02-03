@@ -4,6 +4,10 @@
  * Handles Bluetooth Low Energy connections to ncSender pendants.
  * Uses Nordic UART Service (NUS) for bidirectional JSON communication.
  * Supports auto-connect to previously paired devices.
+ *
+ * Platform support:
+ * - All platforms use @stoprocent/noble
+ * - Linux requires setcap permissions (see docs/LINUX_BLE_SETUP.md)
  */
 
 import { EventEmitter } from 'events';
@@ -11,11 +15,6 @@ import { createLogger } from '../../core/logger.js';
 import { getSetting, saveSettings } from '../../core/settings-manager.js';
 
 const { log, error: logError } = createLogger('BLE');
-
-// Nordic UART Service UUIDs
-const NUS_SERVICE_UUID = '6e400001b5a3f393e0a9e50e24dcca9e';
-const NUS_TX_CHAR_UUID = '6e400003b5a3f393e0a9e50e24dcca9e'; // Pendant -> Host (notifications)
-const NUS_RX_CHAR_UUID = '6e400002b5a3f393e0a9e50e24dcca9e'; // Host -> Pendant (write)
 
 // Connection states
 const STATE = {
@@ -55,11 +54,10 @@ const AUTO_RECONNECT_SCAN_DURATION = 1200; // 1.2 second scan (pendant advertise
 class BLEPendantManager extends EventEmitter {
   constructor() {
     super();
-    this.noble = null;
+    this.backend = null;
     this.state = STATE.IDLE;
     this.connectedDevice = null;
-    this.txCharacteristic = null;
-    this.rxCharacteristic = null;
+    this.connection = null;
     this.discoveredDevices = new Map();
     this.receiveBuffer = '';
     this.isInitialized = false;
@@ -93,31 +91,17 @@ class BLEPendantManager extends EventEmitter {
     }
 
     try {
-      // Dynamic import to handle platforms without BLE support
-      // Wrap in Promise to catch any synchronous throws during import
-      let noble;
-      try {
-        const nobleModule = await import('@abandonware/noble');
-        noble = nobleModule.default || nobleModule;
-      } catch (importErr) {
-        logError('Failed to import noble:', importErr.message);
-        this.initError = importErr;
-        return false;
-      }
+      // Load Noble backend
+      const { NobleBackend } = await import('./ble-backend-noble.js');
+      this.backend = new NobleBackend();
 
-      this.noble = noble;
-
-      // CRITICAL: Handle error events to prevent process crash
-      this.noble.on('error', (err) => {
-        logError('Noble error:', err.message);
+      // Set up backend event handlers
+      this.backend.on('error', (err) => {
+        logError('Backend error:', err.message);
         this.emit('error', err);
       });
 
-      this.noble.on('warning', (msg) => {
-        log('Noble warning:', msg);
-      });
-
-      this.noble.on('stateChange', (state) => {
+      this.backend.on('stateChange', (state) => {
         log('Bluetooth adapter state:', state);
         this.emit('adapterState', state);
 
@@ -128,12 +112,11 @@ class BLEPendantManager extends EventEmitter {
         }
       });
 
-      this.noble.on('discover', (peripheral) => {
-        this.handleDiscovery(peripheral);
+      this.backend.on('discover', (device) => {
+        this.handleDiscovery(device);
       });
 
-      // Handle scan stop event
-      this.noble.on('scanStop', () => {
+      this.backend.on('scanStop', () => {
         if (this.state === STATE.SCANNING) {
           this.state = STATE.IDLE;
           if (!this._silentScan) {
@@ -142,21 +125,26 @@ class BLEPendantManager extends EventEmitter {
         }
       });
 
-      this.isInitialized = true;
+      this.backend.on('data', (data) => {
+        this.handleIncomingData(data);
+      });
 
-      // On macOS, accessing noble.state can trigger native code
-      // Wrap in try/catch to prevent crash
-      let currentState = 'unknown';
-      try {
-        currentState = this.noble.state;
-      } catch (stateErr) {
-        logError('Failed to get noble state:', stateErr.message);
+      this.backend.on('disconnect', () => {
+        this.handleDisconnect();
+      });
+
+      // Initialize backend
+      const ok = await this.backend.initialize();
+      if (!ok) {
+        this.initError = this.backend.initError || new Error('Backend initialization failed');
+        return false;
       }
 
+      this.isInitialized = true;
+
+      const currentState = this.backend.getState();
       log('BLE manager initialized, current state:', currentState);
 
-      // On macOS, if state is 'unknown', it might need a moment
-      // The stateChange event will fire when ready
       return true;
     } catch (err) {
       this.initError = err;
@@ -168,12 +156,8 @@ class BLEPendantManager extends EventEmitter {
   getAdapterState() {
     if (BLE_DISABLED) return 'disabled';
     if (!PLATFORM_BLE_SAFE) return 'unsupported';
-    if (!this.noble) return 'uninitialized';
-    try {
-      return this.noble.state;
-    } catch {
-      return 'unknown';
-    }
+    if (!this.backend) return 'uninitialized';
+    return this.backend.getState();
   }
 
   async waitForPoweredOn(timeout = 5000) {
@@ -183,31 +167,32 @@ class BLEPendantManager extends EventEmitter {
         if (!ok) return false;
       }
 
-      if (!this.noble) return false;
+      if (!this.backend) return false;
 
-      if (this.noble.state === 'poweredOn') {
+      const state = this.backend.getState();
+      if (state === 'poweredOn') {
         return true;
       }
 
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          this.noble.removeListener('stateChange', checkState);
+          this.backend.removeListener('stateChange', checkState);
           resolve(false);
         }, timeout);
 
         const checkState = (state) => {
           if (state === 'poweredOn') {
             clearTimeout(timer);
-            this.noble.removeListener('stateChange', checkState);
+            this.backend.removeListener('stateChange', checkState);
             resolve(true);
           } else if (state === 'poweredOff' || state === 'unauthorized' || state === 'unsupported') {
             clearTimeout(timer);
-            this.noble.removeListener('stateChange', checkState);
+            this.backend.removeListener('stateChange', checkState);
             resolve(false);
           }
         };
 
-        this.noble.on('stateChange', checkState);
+        this.backend.on('stateChange', checkState);
       });
     } catch (err) {
       logError('Error waiting for Bluetooth:', err.message);
@@ -215,34 +200,27 @@ class BLEPendantManager extends EventEmitter {
     }
   }
 
-  handleDiscovery(peripheral) {
-    const name = peripheral.advertisement?.localName || peripheral.address;
-    const hasNUS = peripheral.advertisement?.serviceUuids?.some(
-      uuid => uuid.toLowerCase().replace(/-/g, '') === NUS_SERVICE_UUID
-    );
-
-    if (!hasNUS) return;
-
+  handleDiscovery(device) {
     const deviceInfo = {
-      id: peripheral.id,
-      name,
-      address: peripheral.address,
-      rssi: peripheral.rssi,
-      peripheral
+      id: device.id,
+      name: device.name,
+      address: device.address,
+      rssi: device.rssi,
+      _backendDevice: device
     };
 
-    this.discoveredDevices.set(peripheral.id, deviceInfo);
+    this.discoveredDevices.set(device.id, deviceInfo);
 
     // Only log during user-initiated scans
     if (!this._silentScan) {
-      log('Discovered pendant:', name, 'RSSI:', peripheral.rssi);
+      log('Discovered pendant:', device.name, 'RSSI:', device.rssi);
     }
 
     this.emit('deviceDiscovered', {
-      id: peripheral.id,
-      name,
-      address: peripheral.address,
-      rssi: peripheral.rssi
+      id: device.id,
+      name: device.name,
+      address: device.address,
+      rssi: device.rssi
     });
   }
 
@@ -257,8 +235,9 @@ class BLEPendantManager extends EventEmitter {
       return;
     }
 
-    if (this.noble.state !== 'poweredOn') {
-      throw new Error('Bluetooth is not powered on (state: ' + this.noble.state + ')');
+    const state = this.backend.getState();
+    if (state !== 'poweredOn') {
+      throw new Error('Bluetooth is not powered on (state: ' + state + ')');
     }
 
     this.state = STATE.SCANNING;
@@ -269,18 +248,7 @@ class BLEPendantManager extends EventEmitter {
     this.emit('scanStarted');
 
     try {
-      // Scan for devices advertising Nordic UART Service
-      // noble API varies - try async version first, fall back to callback
-      if (typeof this.noble.startScanningAsync === 'function') {
-        await this.noble.startScanningAsync([NUS_SERVICE_UUID], false);
-      } else {
-        await new Promise((resolve, reject) => {
-          this.noble.startScanning([NUS_SERVICE_UUID], false, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      }
+      await this.backend.startScanning(duration);
     } catch (err) {
       this.state = STATE.IDLE;
       logError('Failed to start scanning:', err.message);
@@ -301,18 +269,10 @@ class BLEPendantManager extends EventEmitter {
     const silent = this._silentScan;
     this._silentScan = false;
 
-    // Set state to IDLE before stopping to prevent scanStop event from logging
+    // Set state to IDLE before stopping
     this.state = STATE.IDLE;
 
-    try {
-      if (typeof this.noble.stopScanningAsync === 'function') {
-        await this.noble.stopScanningAsync();
-      } else {
-        this.noble.stopScanning();
-      }
-    } catch (err) {
-      if (!silent) logError('Error stopping scan:', err.message);
-    }
+    await this.backend.stopScanning();
 
     if (!silent) log('Scan stopped, found', this.discoveredDevices.size, 'devices');
     this.emit('scanStopped', [...this.discoveredDevices.values()].map(d => ({
@@ -346,70 +306,36 @@ class BLEPendantManager extends EventEmitter {
     log('Connecting to', device.name);
     this.emit('connecting', { id: deviceId, name: device.name });
 
-    const peripheral = device.peripheral;
-
     try {
-      // Connect to peripheral
-      await peripheral.connectAsync();
-      log('Connected to peripheral');
+      this.connection = await this.backend.connect(deviceId);
 
-      // Discover services and characteristics
-      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
-        [NUS_SERVICE_UUID],
-        [NUS_TX_CHAR_UUID, NUS_RX_CHAR_UUID]
-      );
-
-      // Find TX and RX characteristics
-      for (const char of characteristics) {
-        const uuid = char.uuid.toLowerCase().replace(/-/g, '');
-        if (uuid === NUS_TX_CHAR_UUID) {
-          this.txCharacteristic = char;
-        } else if (uuid === NUS_RX_CHAR_UUID) {
-          this.rxCharacteristic = char;
-        }
-      }
-
-      if (!this.txCharacteristic || !this.rxCharacteristic) {
-        throw new Error('Nordic UART characteristics not found');
-      }
-
-      // Subscribe to TX notifications (data from pendant)
-      this.txCharacteristic.on('data', (data) => {
-        this.handleIncomingData(data);
-      });
-
-      await this.txCharacteristic.subscribeAsync();
-      log('Subscribed to TX notifications');
-
-      // Handle disconnect
-      peripheral.once('disconnect', () => {
-        this.handleDisconnect();
-      });
-
-      this.connectedDevice = device;
+      this.connectedDevice = {
+        id: deviceId,
+        name: this.connection.name,
+        address: this.connection.address
+      };
       this.state = STATE.CONNECTED;
       this.receiveBuffer = '';
 
-      log('Connected to pendant:', device.name);
+      log('Connected to pendant:', this.connectedDevice.name);
 
       // Stop auto-reconnect since we're now connected
       this.stopAutoReconnect();
 
       // Save for auto-reconnect
-      this.saveLastConnectedDevice(device);
+      this.saveLastConnectedDevice(this.connectedDevice);
 
       this.emit('connected', {
         id: deviceId,
-        name: device.name,
-        address: device.address
+        name: this.connectedDevice.name,
+        address: this.connectedDevice.address
       });
 
       return true;
     } catch (err) {
       this.state = STATE.IDLE;
       this.connectedDevice = null;
-      this.txCharacteristic = null;
-      this.rxCharacteristic = null;
+      this.connection = null;
       logError('Connection failed:', err.message);
       this.emit('connectionFailed', { id: deviceId, error: err.message });
       throw err;
@@ -443,8 +369,7 @@ class BLEPendantManager extends EventEmitter {
 
     this.state = STATE.IDLE;
     this.connectedDevice = null;
-    this.txCharacteristic = null;
-    this.rxCharacteristic = null;
+    this.connection = null;
     this.receiveBuffer = '';
 
     // Clear send queue and reject pending sends
@@ -472,42 +397,26 @@ class BLEPendantManager extends EventEmitter {
     this.state = STATE.DISCONNECTING;
     log('Disconnecting from', this.connectedDevice.name);
 
-    try {
-      if (this.txCharacteristic) {
-        await this.txCharacteristic.unsubscribeAsync();
-      }
-      await this.connectedDevice.peripheral.disconnectAsync();
-    } catch (err) {
-      logError('Disconnect error:', err.message);
-    }
-
+    await this.backend.disconnect(this.connection);
     this.handleDisconnect();
   }
 
-  /**
-   * Queue a message to be sent. Messages are sent sequentially to prevent interleaving.
-   * For state updates, newer messages replace older ones in the queue to prevent stale data.
-   */
   async send(message, { withoutResponse = false } = {}) {
-    if (this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
+    if (this.state !== STATE.CONNECTED || !this.connection) {
       throw new Error('Not connected to pendant');
     }
 
     // Add to queue and process
     return new Promise((resolve, reject) => {
       // For state updates, replace any existing queued state update (keeps only latest)
-      // This prevents stale position data from being sent when queue backs up
-      // BUT: only replace if senderStatus is the same - status changes must be sent
       if (message?.type === 'server-state-updated') {
         const newStatus = message?.data?.senderStatus;
         const existingIndex = this.sendQueue.findIndex(item => {
           if (item.message?.type !== 'server-state-updated') return false;
           const oldStatus = item.message?.data?.senderStatus;
-          // Only replace if status is the same (position-only update)
           return oldStatus === newStatus;
         });
         if (existingIndex !== -1) {
-          // Resolve the old one (it's being superseded) and replace with new
           this.sendQueue[existingIndex].resolve();
           this.sendQueue[existingIndex] = { message, withoutResponse, resolve, reject };
           this.processSendQueue();
@@ -520,9 +429,6 @@ class BLEPendantManager extends EventEmitter {
     });
   }
 
-  /**
-   * Process the send queue sequentially
-   */
   async processSendQueue() {
     if (this.isSending || this.sendQueue.length === 0) {
       return;
@@ -533,7 +439,7 @@ class BLEPendantManager extends EventEmitter {
     while (this.sendQueue.length > 0) {
       const { message, withoutResponse, resolve, reject } = this.sendQueue.shift();
 
-      if (this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
+      if (this.state !== STATE.CONNECTED || !this.connection) {
         reject(new Error('Not connected to pendant'));
         continue;
       }
@@ -549,18 +455,15 @@ class BLEPendantManager extends EventEmitter {
     this.isSending = false;
   }
 
-  /**
-   * Send a message immediately (internal use only)
-   */
   async sendImmediate(message, withoutResponse = false) {
     const jsonStr = JSON.stringify(message) + '\n';
     const data = Buffer.from(jsonStr, 'utf8');
 
-    // BLE has MTU limits, chunk if needed (default ~20 bytes, negotiated higher)
-    const chunkSize = 200; // Safe chunk size after MTU negotiation
+    // BLE has MTU limits, chunk if needed
+    const chunkSize = 200;
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
-      await this.rxCharacteristic.writeAsync(chunk, withoutResponse);
+      await this.backend.write(this.connection, chunk);
     }
   }
 
@@ -568,11 +471,6 @@ class BLEPendantManager extends EventEmitter {
     return this.state === STATE.CONNECTED;
   }
 
-  /**
-   * Request pendant info and wait for response
-   * @param {number} timeout - Timeout in milliseconds
-   * @returns {Promise<object>} Pendant info object
-   */
   async requestInfo(timeout = 5000) {
     if (this.state !== STATE.CONNECTED) {
       throw new Error('Not connected to pendant');
@@ -594,7 +492,6 @@ class BLEPendantManager extends EventEmitter {
 
       this.on('message', onMessage);
 
-      // Send request
       this.send({ type: 'pendant:get-info' }).catch((err) => {
         clearTimeout(timer);
         this.removeListener('message', onMessage);
@@ -604,8 +501,7 @@ class BLEPendantManager extends EventEmitter {
   }
 
   getConnectedDevice() {
-    // Only report connected if we have all required state for sending
-    if (!this.connectedDevice || this.state !== STATE.CONNECTED || !this.rxCharacteristic) {
+    if (!this.connectedDevice || this.state !== STATE.CONNECTED || !this.connection) {
       return null;
     }
     return {
@@ -621,9 +517,6 @@ class BLEPendantManager extends EventEmitter {
 
   // Auto-connect functionality
 
-  /**
-   * Save the connected device for auto-reconnect
-   */
   saveLastConnectedDevice(device) {
     if (!device) return;
 
@@ -644,9 +537,6 @@ class BLEPendantManager extends EventEmitter {
     }
   }
 
-  /**
-   * Get the last connected device from settings
-   */
   getLastConnectedDevice() {
     try {
       const blePendant = getSetting('blePendant');
@@ -659,22 +549,15 @@ class BLEPendantManager extends EventEmitter {
     return null;
   }
 
-  /**
-   * Check if auto-connect is enabled
-   */
   isAutoConnectEnabled() {
     try {
       const blePendant = getSetting('blePendant');
       return blePendant?.autoConnect !== false;
     } catch {
-      return true; // Default to enabled
+      return true;
     }
   }
 
-  /**
-   * Start auto-connect process
-   * Starts background polling immediately - no blocking waits
-   */
   async autoConnect() {
     if (!this.isAutoConnectEnabled()) {
       return false;
@@ -687,17 +570,14 @@ class BLEPendantManager extends EventEmitter {
 
     log('Auto-connect: starting for', lastDevice.name);
 
-    // Initialize BLE in background (don't wait)
+    // Initialize BLE in background
     this.initialize().catch(() => {});
 
-    // Start polling immediately - it will handle connection when ready
+    // Start polling immediately
     this.startAutoReconnect();
     return false;
   }
 
-  /**
-   * Clear saved device (disable auto-connect to this device)
-   */
   clearLastConnectedDevice() {
     try {
       this.stopAutoReconnect();
@@ -713,10 +593,6 @@ class BLEPendantManager extends EventEmitter {
     }
   }
 
-  /**
-   * Start periodic auto-reconnect attempts
-   * Runs in background when not connected but have a saved device
-   */
   startAutoReconnect() {
     if (this.autoReconnectTimer) return;
     if (!this.isAutoConnectEnabled()) return;
@@ -725,7 +601,6 @@ class BLEPendantManager extends EventEmitter {
     log('Auto-reconnect: starting background polling every', AUTO_RECONNECT_INTERVAL, 'ms');
     this.autoReconnectRunning = true;
 
-    // Do first attempt immediately instead of waiting for interval
     setImmediate(async () => {
       if (this.state === STATE.IDLE && !this.isConnected()) {
         try {
@@ -737,7 +612,6 @@ class BLEPendantManager extends EventEmitter {
     });
 
     this.autoReconnectTimer = setInterval(async () => {
-      // Skip if already connected or currently scanning/connecting
       if (this.state !== STATE.IDLE) return;
       if (this.isConnected()) {
         this.stopAutoReconnect();
@@ -747,28 +621,19 @@ class BLEPendantManager extends EventEmitter {
       try {
         await this.attemptReconnect();
       } catch (err) {
-        // Silently ignore - will retry on next interval
+        // Silently ignore
       }
     }, AUTO_RECONNECT_INTERVAL);
   }
 
-  /**
-   * Stop periodic auto-reconnect
-   */
   stopAutoReconnect() {
     if (this.autoReconnectTimer) {
       clearInterval(this.autoReconnectTimer);
       this.autoReconnectTimer = null;
       this.autoReconnectRunning = false;
-      // Silent - no log to avoid noise
     }
   }
 
-  /**
-   * Single reconnect attempt (used by periodic auto-reconnect)
-   * Silent operation - no logs to avoid noise from frequent retries
-   * Tries direct connection using noble's internal cache, or quick scan if needed
-   */
   async attemptReconnect() {
     const lastDevice = this.getLastConnectedDevice();
     if (!lastDevice) return false;
@@ -777,174 +642,117 @@ class BLEPendantManager extends EventEmitter {
       const ok = await this.initialize();
       if (!ok) return false;
 
-      // Check if Bluetooth is ready
       const ready = await this.waitForPoweredOn(500);
       if (!ready) return false;
 
-      // Try to get peripheral from noble's internal cache first
-      let peripheral = this.noble._peripherals?.[lastDevice.id];
+      // Try to get device from backend cache
+      let cachedDevice = this.backend.getPeripheralFromCache(lastDevice.id);
 
-      if (!peripheral) {
-        // Peripheral not in cache - scan and connect immediately when found
-        peripheral = await this.scanAndFindDevice(lastDevice);
-        if (!peripheral) {
+      // Also check by address
+      if (!cachedDevice && lastDevice.address) {
+        cachedDevice = this.backend.getPeripheralFromCache(lastDevice.address);
+      }
+
+      if (!cachedDevice) {
+        // Device not in cache - do a quick scan
+        cachedDevice = await this.scanAndFindDevice(lastDevice);
+        if (!cachedDevice) {
           return false;
         }
       }
 
-      // Check if peripheral is already connected at noble level
-      // but we still need to set up our internal state
-      if (peripheral.state === 'connected' && this.state === STATE.CONNECTED && this.rxCharacteristic) {
-        return true;
-      }
-
-      // Try direct connection (or reconnection if noble thinks it's connected but we're not ready)
-      return await this.connectToPeripheral(peripheral, lastDevice);
+      // Connect to the device
+      return await this.connectToFoundDevice(cachedDevice, lastDevice);
     } catch (err) {
-      // Silently reset state on failure
       this.state = STATE.IDLE;
-      this.txCharacteristic = null;
-      this.rxCharacteristic = null;
+      this.connection = null;
       return false;
     }
   }
 
-  /**
-   * Scan for a specific device and return immediately when found
-   * @returns {Promise<object|null>} The peripheral if found, null otherwise
-   */
   async scanAndFindDevice(targetDevice) {
     return new Promise(async (resolve) => {
       let found = false;
       let scanTimeout = null;
 
-      // Handler for when we find the target device
-      const onDiscover = (peripheral) => {
-        const name = peripheral.advertisement?.localName || peripheral.address;
-        const hasNUS = peripheral.advertisement?.serviceUuids?.some(
-          uuid => uuid.toLowerCase().replace(/-/g, '') === NUS_SERVICE_UUID
-        );
-
-        if (!hasNUS) return;
-
-        // Check if this is our target device
-        const isTarget = peripheral.id === targetDevice.id ||
-                        peripheral.address === targetDevice.address ||
-                        name === targetDevice.name;
+      const onDiscover = (device) => {
+        const isTarget = device.id === targetDevice.id ||
+                        device.address === targetDevice.address ||
+                        device.name === targetDevice.name;
 
         if (isTarget && !found) {
           found = true;
-
-          // Stop scanning immediately
           if (scanTimeout) clearTimeout(scanTimeout);
-          this.noble.removeListener('discover', onDiscover);
+          this.backend.removeListener('discover', onDiscover);
           this.stopScan().catch(() => {});
-
-          resolve(peripheral);
+          resolve(device);
         }
       };
 
-      // Add one-shot discovery listener
-      this.noble.on('discover', onDiscover);
+      this.backend.on('discover', onDiscover);
 
       try {
-        // Start scanning
         this.state = STATE.SCANNING;
         this._silentScan = true;
 
-        if (typeof this.noble.startScanningAsync === 'function') {
-          await this.noble.startScanningAsync([NUS_SERVICE_UUID], false);
-        } else {
-          await new Promise((res, rej) => {
-            this.noble.startScanning([NUS_SERVICE_UUID], false, (err) => {
-              if (err) rej(err);
-              else res();
-            });
-          });
-        }
+        await this.backend.startScanning(AUTO_RECONNECT_SCAN_DURATION);
 
-        // Timeout after scan duration
         scanTimeout = setTimeout(() => {
           if (!found) {
-            this.noble.removeListener('discover', onDiscover);
+            this.backend.removeListener('discover', onDiscover);
             this.stopScan().catch(() => {});
             resolve(null);
           }
         }, AUTO_RECONNECT_SCAN_DURATION);
 
       } catch (err) {
-        this.noble.removeListener('discover', onDiscover);
+        this.backend.removeListener('discover', onDiscover);
         this.state = STATE.IDLE;
         resolve(null);
       }
     });
   }
 
-  /**
-   * Connect to a peripheral and set up characteristics
-   */
-  async connectToPeripheral(peripheral, deviceInfo) {
+  async connectToFoundDevice(device, deviceInfo) {
     this.state = STATE.CONNECTING;
 
-    await peripheral.connectAsync();
+    try {
+      // Store in discovered devices for connect() to find
+      this.discoveredDevices.set(device.id || deviceInfo.id, {
+        id: device.id || deviceInfo.id,
+        name: device.name || deviceInfo.name,
+        address: device.address || deviceInfo.address,
+        rssi: device.rssi || 0,
+        _backendDevice: device
+      });
 
-    // Discover services and characteristics
-    const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
-      [NUS_SERVICE_UUID],
-      [NUS_TX_CHAR_UUID, NUS_RX_CHAR_UUID]
-    );
+      this.connection = await this.backend.connectToPeripheral(device._backendDevice || device);
 
-    // Find TX and RX characteristics
-    for (const char of characteristics) {
-      const uuid = char.uuid.toLowerCase().replace(/-/g, '');
-      if (uuid === NUS_TX_CHAR_UUID) {
-        this.txCharacteristic = char;
-      } else if (uuid === NUS_RX_CHAR_UUID) {
-        this.rxCharacteristic = char;
-      }
+      this.connectedDevice = {
+        id: deviceInfo.id,
+        name: this.connection.name || deviceInfo.name,
+        address: this.connection.address || deviceInfo.address
+      };
+      this.state = STATE.CONNECTED;
+      this.receiveBuffer = '';
+
+      log('Auto-reconnect: connected to', this.connectedDevice.name);
+
+      this.stopAutoReconnect();
+      this.saveLastConnectedDevice(this.connectedDevice);
+
+      this.emit('connected', {
+        id: deviceInfo.id,
+        name: this.connectedDevice.name,
+        address: this.connectedDevice.address
+      });
+
+      return true;
+    } catch (err) {
+      this.state = STATE.IDLE;
+      this.connection = null;
+      throw err;
     }
-
-    if (!this.txCharacteristic || !this.rxCharacteristic) {
-      throw new Error('Nordic UART characteristics not found');
-    }
-
-    // Subscribe to TX notifications
-    this.txCharacteristic.on('data', (data) => {
-      this.handleIncomingData(data);
-    });
-
-    await this.txCharacteristic.subscribeAsync();
-
-    // Handle disconnect
-    peripheral.once('disconnect', () => {
-      this.handleDisconnect();
-    });
-
-    // Build device info for storage
-    const device = {
-      id: deviceInfo.id,
-      name: peripheral.advertisement?.localName || deviceInfo.name,
-      address: peripheral.address || deviceInfo.address,
-      peripheral
-    };
-
-    this.connectedDevice = device;
-    this.discoveredDevices.set(deviceInfo.id, device);
-    this.state = STATE.CONNECTED;
-    this.receiveBuffer = '';
-
-    log('Auto-reconnect: connected to', device.name);
-
-    this.stopAutoReconnect();
-    this.saveLastConnectedDevice(device);
-
-    this.emit('connected', {
-      id: deviceInfo.id,
-      name: device.name,
-      address: device.address
-    });
-
-    return true;
   }
 }
 
