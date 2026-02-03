@@ -27,11 +27,17 @@ class PendantController {
 
   /**
    * Initialize pendant (BLE) if showPendant setting is enabled
+   * Non-blocking - runs in background to avoid holding up server startup
    */
   async initialize() {
     const showPendant = getSetting('showPendant', false);
     if (showPendant) {
-      await this.enable();
+      // Run in background to avoid blocking startup
+      setImmediate(() => {
+        this.enable().catch(err => {
+          logError('Background pendant enable failed:', err.message);
+        });
+      });
     }
   }
 

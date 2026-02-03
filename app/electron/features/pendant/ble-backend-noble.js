@@ -29,7 +29,13 @@ export class NobleBackend extends EventEmitter {
     if (this.initError) return false;
 
     try {
-      const nobleModule = await import('@stoprocent/noble');
+      // Import with timeout to prevent blocking
+      const importPromise = import('@stoprocent/noble');
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Noble import timeout')), 10000)
+      );
+
+      const nobleModule = await Promise.race([importPromise, timeoutPromise]);
       this.noble = nobleModule.default || nobleModule;
 
       this.noble.on('error', (err) => {
