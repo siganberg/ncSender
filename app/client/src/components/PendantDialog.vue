@@ -1,7 +1,6 @@
 <template>
   <Dialog
     :show-header="true"
-    size="small"
     @close="$emit('close')"
   >
     <template #title>Pendant</template>
@@ -228,9 +227,11 @@ const activateLicense = async () => {
 
     const data = await response.json();
     if (data.success) {
-      activationSuccess.value = true;
       installationId.value = '';
       manualPendantIp.value = '';
+      if (wifiPendant.value) {
+        wifiPendant.value.licensed = true;
+      }
     }
   } catch (error: any) {
     activationError.value = error.response?.data?.error || error.message || 'Activation failed';
@@ -250,7 +251,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  min-width: 540px;
+  min-width: 520px;
 }
 
 /* Status Card */

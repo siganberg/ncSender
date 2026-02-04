@@ -23,7 +23,6 @@ export function createPendantRoutes({ websocketLayer }) {
   // Get pendant status
   router.get('/status', async (req, res) => {
     const showPendant = getSetting('showPendant', false);
-    const clients = websocketLayer?.getClientRegistry?.() || [];
     const wifiPendant = getWifiPendant();
 
     if (!showPendant) {
@@ -37,6 +36,22 @@ export function createPendantRoutes({ websocketLayer }) {
       });
     }
 
+    let licensed = false;
+    if (wifiPendant?.ip) {
+      try {
+        const infoResponse = await fetch(`http://${wifiPendant.ip}/api/info`, {
+          signal: AbortSignal.timeout(3000)
+        });
+        if (infoResponse.ok) {
+          const info = await infoResponse.json();
+          licensed = info.licensed === true;
+        }
+      } catch {
+        // Pendant not reachable, use cached value
+        licensed = wifiPendant.licensed === true;
+      }
+    }
+
     res.json({
       connectionState: wifiPendant ? 'connected' : 'idle',
       connectedDevice: null,
@@ -45,7 +60,7 @@ export function createPendantRoutes({ websocketLayer }) {
         name: 'Pendant (WiFi)',
         ip: wifiPendant.ip,
         version: wifiPendant.version,
-        licensed: wifiPendant.licensed === true
+        licensed
       } : null,
       pendantConnectionType: wifiPendant ? 'wifi' : null,
       activeConnectionType: wifiPendant ? 'wifi' : null,
