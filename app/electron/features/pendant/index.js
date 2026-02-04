@@ -1,9 +1,7 @@
 /*
- * BLE Pendant Feature
+ * Pendant Feature
  *
- * Exports for BLE pendant connectivity.
+ * Exports for pendant connectivity (WiFi only).
  */
 
-export { blePendantManager } from './ble-manager.js';
-export { bleClientAdapter } from './ble-client.js';
 export { createPendantRoutes } from './routes.js';

@@ -30,9 +30,6 @@
     "plugins:reload:all": "node ../.scripts/reload-all-plugins.mjs",
     "dev:hot:plugins": "concurrently -k --raw \"npm run server:dev\" \"npm run client:dev\" \"npm run plugins:reload:all\""
   },
-  "optionalDependencies": {
-    "@stoprocent/noble": "^1.15.1"
-  },
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",
     "adm-zip": "^0.5.12",

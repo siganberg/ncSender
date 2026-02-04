@@ -23,7 +23,6 @@ import { pluginManager } from '../core/plugin-manager.js';
 import { parseM6Command } from '../utils/gcode-patterns.js';
 import { getUserDataDir } from '../utils/paths.js';
 import { createLogger } from '../core/logger.js';
-import { bleClientAdapter } from '../features/pendant/ble-client.js';
 
 const { log, error: logError } = createLogger('WebSocket');
 
@@ -283,11 +282,6 @@ export function createWebSocketLayer({
         if (client.readyState === WS_READY_STATE_OPEN) {
           client.send(message);
         }
-      });
-
-      // Also broadcast to BLE pendant if connected
-      bleClientAdapter.broadcast(type, payload).catch(() => {
-        // Silently ignore BLE broadcast errors
       });
     } catch (error) {
       log('Error broadcasting message:', error?.message || error);

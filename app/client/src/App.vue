@@ -54,7 +54,7 @@
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
-        @show-bluetooth="showBluetoothDialog = true"
+        @show-bluetooth="showPendantDialog = true"
         :on-show-settings="openSettings"
       />
     </template>
@@ -875,10 +875,10 @@
     @download-only="handleDownloadUpdateOnly"
   />
 
-  <!-- Bluetooth Pendant Dialog -->
-  <BluetoothDialog
-    v-if="showBluetoothDialog"
-    @close="showBluetoothDialog = false"
+  <!-- Pendant Dialog (WiFi only) -->
+  <PendantDialog
+    v-if="showPendantDialog"
+    @close="showPendantDialog = false"
   />
 
     <!-- Plugin Dialog -->
@@ -1021,7 +1021,7 @@ import PluginDialog from './components/PluginDialog.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
-import BluetoothDialog from './components/BluetoothDialog.vue';
+import PendantDialog from './components/PendantDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
@@ -1088,7 +1088,7 @@ const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
-const showBluetoothDialog = ref(false);
+const showPendantDialog = ref(false);
 const pendantConnectionType = ref<'wifi' | 'bluetooth' | null>(null);
 const showPendant = computed(() => settingsStore.data?.showPendant ?? false);
 const showGateFileManager = ref(false);

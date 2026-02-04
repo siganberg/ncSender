@@ -18,7 +18,6 @@
 import { Router } from 'express';
 import { readSettings, saveSettings, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 import { createLogger } from '../../core/logger.js';
-import { pendantController } from '../pendant/pendant-controller.js';
 
 const { log, error: logError } = createLogger('Settings');
 
@@ -195,13 +194,6 @@ export function createSettingsRoutes(serverState, cncController, broadcast) {
       // Broadcast remote control state change if that setting was updated
       if (updates.remoteControl?.enabled !== undefined) {
         broadcast('remote-control-state', { enabled: updates.remoteControl.enabled });
-      }
-
-      // Toggle pendant/BLE support if showPendant setting changed
-      if (updates.showPendant !== undefined) {
-        pendantController.onSettingChanged(updates.showPendant).catch(err => {
-          log('Failed to toggle pendant:', err.message);
-        });
       }
 
       res.json({

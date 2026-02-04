@@ -36,7 +36,6 @@ import { pluginManager } from './core/plugin-manager.js';
 import { CommandProcessor } from './core/command-processor.js';
 import { readFile } from 'node:fs/promises';
 import { createLogger } from './core/logger.js';
-import { pendantController } from './features/pendant/pendant-controller.js';
 
 const { log, error: logError } = createLogger('App');
 
@@ -178,16 +177,6 @@ export async function createApp(options = {}) {
     websocketLayer
   });
 
-  // Setup pendant controller with dependencies (BLE will init if showPendant is enabled)
-  pendantController.setDependencies({
-    websocketLayer,
-    serverState: context.serverState,
-    jobManager,
-    cncController,
-    commandProcessor: commandProcessorWrapper,
-    broadcast
-  });
-
   const { teardown: teardownCncEvents } = registerCncEventHandlers({
     cncController,
     jobManager,
@@ -212,9 +201,6 @@ export async function createApp(options = {}) {
       }
 
       autoConnector.start();
-
-      // Initialize pendant if showPendant setting is enabled
-      await pendantController.initialize();
 
       resolve();
     });
