@@ -543,9 +543,9 @@ export function createPendantSerialHandler({
     // Construct full jog command
     const jogCommand = `$J=G21 G91 ${axis}${distance} F${feedRate}`;
 
-    // Send directly to CNC controller
+    // Send directly to CNC controller (skipJogCancel: true to avoid 0x85 prefix)
     cncController.sendCommand(jogCommand, {
-      meta: { sourceId: 'usb-pendant', jogCommand: true }
+      meta: { sourceId: 'usb-pendant', jogCommand: true, skipJogCancel: true }
     }).catch((err) => {
       logError('Jog command failed:', err.message);
     });
