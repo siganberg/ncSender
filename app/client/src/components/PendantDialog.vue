@@ -6,18 +6,24 @@
     <template #title>Pendant</template>
     <div class="pendant-content">
       <!-- Connection Status Card -->
-      <div class="status-card" :class="{ 'status-card--connected': wifiPendant }">
+      <div class="status-card" :class="{ 'status-card--connected': isConnected }">
         <div class="status-card__icon">
           <svg v-if="loading" class="spinner" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
             <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
           </svg>
+          <!-- USB Trident Icon -->
+          <svg v-else-if="usbPendant" width="32" height="32" viewBox="40 5 113 180" fill="currentColor">
+            <path d="M81.114 37.464l16.415-28.96 16.834 28.751-12.164.077-.174 70.181c.988-.552 2.027-1.09 3.096-1.643 6.932-3.586 15.674-8.11 15.998-28.05h-8.533V53.251h24.568V77.82h-7.611c-.334 25.049-11.627 30.892-20.572 35.519-3.232 1.672-6.012 3.111-6.975 5.68l-.09 36.683a14.503 14.503 0 0 1 10.68 14.02 14.5 14.5 0 0 1-14.533 14.532 14.5 14.5 0 0 1-14.533-14.532 14.504 14.504 0 0 1 9.454-13.628l.057-22.801c-2.873-1.613-5.62-2.704-8.139-3.705-11.142-4.43-18.705-7.441-18.857-33.4a14.381 14.381 0 0 1-10.43-13.869c0-7.946 6.482-14.428 14.428-14.428 7.946 0 14.428 6.482 14.428 14.428 0 6.488-4.21 11.889-10.004 13.74.116 20.396 5.54 22.557 13.528 25.732 1.61.641 3.303 1.312 5.069 2.114l.214-86.517-12.154.076z"/>
+          </svg>
+          <!-- WiFi Icon -->
           <svg v-else-if="wifiPendant" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
             <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
             <circle cx="12" cy="20" r="1" fill="currentColor"/>
           </svg>
+          <!-- Not Connected Icon -->
           <svg v-else width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="1" y1="1" x2="23" y2="23"/>
             <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
@@ -31,27 +37,31 @@
         <div class="status-card__content">
           <div class="status-card__title">
             <span v-if="loading">Checking connection...</span>
-            <span v-else-if="wifiPendant">Connected</span>
+            <span v-else-if="isConnected">Connected</span>
             <span v-else>Not Connected</span>
           </div>
           <div class="status-card__subtitle" v-if="!loading">
-            <template v-if="wifiPendant">
+            <template v-if="usbPendant">
+              <span class="status-ip">{{ usbPendant.port }}</span>
+              <span v-if="usbPendant.version" class="status-version">v{{ usbPendant.version }}</span>
+            </template>
+            <template v-else-if="wifiPendant">
               <span class="status-ip">{{ wifiPendant.ip }}</span>
               <span v-if="wifiPendant.version" class="status-version">v{{ wifiPendant.version }}</span>
             </template>
             <template v-else>
-              No pendant detected on network
+              No pendant detected
             </template>
           </div>
         </div>
-        <div v-if="wifiPendant && !loading" class="status-card__badge">
+        <div v-if="isConnected && !loading" class="status-card__badge">
           <span class="pulse"></span>
-          WiFi
+          {{ usbPendant ? 'USB' : 'WiFi' }}
         </div>
       </div>
 
       <!-- License Status (when licensed) -->
-      <div v-if="wifiPendant?.licensed" class="licensed-card">
+      <div v-if="activePendant?.licensed" class="licensed-card">
         <div class="licensed-card__icon">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -75,8 +85,8 @@
         </div>
 
         <div class="activation-card__body">
-          <!-- Manual IP field when not connected -->
-          <div v-if="!wifiPendant" class="form-field">
+          <!-- Manual IP field when not connected via USB or WiFi -->
+          <div v-if="!usbPendant && !wifiPendant" class="form-field">
             <label>Pendant IP Address</label>
             <div class="input-wrapper">
               <input
@@ -87,7 +97,7 @@
                 @keyup.enter="activateLicense"
               />
             </div>
-            <span class="form-hint">Enter the IP address shown on your pendant</span>
+            <span class="form-hint">Enter the IP address shown on your pendant, or connect via USB</span>
           </div>
 
           <div class="form-field">
@@ -97,13 +107,15 @@
                 v-model="installationId"
                 type="text"
                 placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX"
-                :disabled="activating"
+                :disabled="activating || activationSuccess"
+                :readonly="activationSuccess"
                 @keyup.enter="activateLicense"
               />
             </div>
           </div>
 
           <button
+            v-if="!activationSuccess"
             class="activate-button"
             @click="activateLicense"
             :disabled="!canActivate || activating"
@@ -146,13 +158,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Dialog from './Dialog.vue';
 import { getApiBaseUrl } from '../lib/api-base';
 
 const emit = defineEmits(['close']);
 
 const loading = ref(true);
+const usbPendant = ref<{ id: string; port: string; version?: string; licensed?: boolean; deviceId?: string } | null>(null);
 const wifiPendant = ref<{ id: string; ip: string; version?: string; licensed?: boolean } | null>(null);
 const installationId = ref('');
 const manualPendantIp = ref('');
@@ -160,24 +173,33 @@ const activating = ref(false);
 const activationError = ref('');
 const activationSuccess = ref(false);
 
+const isConnected = computed(() => usbPendant.value || wifiPendant.value);
+const activePendant = computed(() => usbPendant.value || wifiPendant.value);
+
 const canActivate = computed(() => {
   if (!installationId.value) return false;
-  if (!wifiPendant.value && !manualPendantIp.value) return false;
+  // Can activate if USB connected, WiFi connected, or manual IP provided
+  if (!usbPendant.value && !wifiPendant.value && !manualPendantIp.value) return false;
   return true;
 });
 
-const fetchStatus = async () => {
-  loading.value = true;
+const fetchStatus = async (showLoading = true) => {
+  if (showLoading) {
+    loading.value = true;
+  }
   try {
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/api/pendant/status`);
     if (!response.ok) throw new Error('Failed to fetch pendant status');
     const data = await response.json();
+    usbPendant.value = data.usbPendant;
     wifiPendant.value = data.wifiPendant;
   } catch (error) {
     console.error('Failed to fetch pendant status:', error);
   } finally {
-    loading.value = false;
+    if (showLoading) {
+      loading.value = false;
+    }
   }
 };
 
@@ -188,60 +210,108 @@ const activateLicense = async () => {
   activationError.value = '';
   activationSuccess.value = false;
 
-  const pendantIp = wifiPendant.value?.ip || manualPendantIp.value;
-  let deviceId = '';
-
-  // Always fetch device ID from pendant's /api/info endpoint
-  try {
-    const infoResponse = await fetch(`http://${pendantIp}/api/info`);
-    if (infoResponse.ok) {
-      const info = await infoResponse.json();
-      if (info.deviceId) deviceId = info.deviceId;
-    }
-  } catch {
-    // Pendant not reachable
-  }
-
-  if (!deviceId) {
-    activationError.value = 'Could not retrieve device ID from pendant';
-    activating.value = false;
-    return;
-  }
-
   try {
     const baseUrl = getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/pendant/activate-wifi`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        installationId: installationId.value,
-        deviceId,
-        pendantIp
-      })
-    });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Activation failed');
-    }
+    // USB activation (preferred - no WiFi needed)
+    if (usbPendant.value) {
+      // Device ID is sent by pendant via USB serial on connection
+      if (!usbPendant.value.deviceId) {
+        activationError.value = 'Device ID not available. Please reconnect the pendant.';
+        activating.value = false;
+        return;
+      }
 
-    const data = await response.json();
-    if (data.success) {
-      installationId.value = '';
-      manualPendantIp.value = '';
-      if (wifiPendant.value) {
-        wifiPendant.value.licensed = true;
+      const response = await fetch(`${baseUrl}/api/pendant/activate-usb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installationId: installationId.value
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'USB activation failed');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        activationSuccess.value = true;
+        if (usbPendant.value) {
+          usbPendant.value.licensed = true;
+        }
+      }
+    } else {
+      // WiFi activation
+      const pendantIp = wifiPendant.value?.ip || manualPendantIp.value;
+      let deviceId = '';
+
+      // Fetch device ID from pendant's /api/info endpoint
+      try {
+        const infoResponse = await fetch(`http://${pendantIp}/api/info`);
+        if (infoResponse.ok) {
+          const info = await infoResponse.json();
+          if (info.deviceId) deviceId = info.deviceId;
+        }
+      } catch {
+        // Pendant not reachable
+      }
+
+      if (!deviceId) {
+        activationError.value = 'Could not retrieve device ID from pendant';
+        activating.value = false;
+        return;
+      }
+
+      const response = await fetch(`${baseUrl}/api/pendant/activate-wifi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installationId: installationId.value,
+          deviceId,
+          pendantIp
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Activation failed');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        activationSuccess.value = true;
+        manualPendantIp.value = '';
+        if (wifiPendant.value) {
+          wifiPendant.value.licensed = true;
+        }
       }
     }
   } catch (error: any) {
-    activationError.value = error.response?.data?.error || error.message || 'Activation failed';
+    activationError.value = error.message || 'Activation failed';
   } finally {
     activating.value = false;
   }
 };
 
+let refreshInterval: ReturnType<typeof setInterval> | null = null;
+
 onMounted(() => {
-  fetchStatus();
+  fetchStatus(true);
+  // Refresh status periodically to pick up license status updates
+  refreshInterval = setInterval(() => {
+    if (!activating.value) {
+      fetchStatus(false);
+    }
+  }, 3000);
+});
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
 });
 </script>
 

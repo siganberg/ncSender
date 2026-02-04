@@ -52,7 +52,8 @@ export function mountHttp({
   upload,
   commandProcessor,
   autoConnector,
-  websocketLayer
+  websocketLayer,
+  pendantSerial
 }) {
   app.use('/api', (req, _res, next) => {
     // Skip logging for noisy polling endpoints
@@ -88,7 +89,7 @@ export function mountHttp({
   app.use('/api', createToolsRoutes(broadcast));
   app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
   app.use('/api', createInitRoutes(serverState, commandHistory));
-  app.use('/api/pendant', createPendantRoutes({ websocketLayer }));
+  app.use('/api/pendant', createPendantRoutes({ websocketLayer, pendantSerial }));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

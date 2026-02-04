@@ -25,6 +25,7 @@ import fs from 'node:fs/promises';
 import { CNCController } from './features/cnc/controller.js';
 import { JogSessionManager } from './features/cnc/jog-manager.js';
 import { jobManager } from './features/gcode/job-manager.js';
+import { createPendantSerialHandler } from './features/pendant/index.js';
 import { getSetting, saveSettings, DEFAULT_SETTINGS } from './core/settings-manager.js';
 import { getUserDataDir } from './utils/paths.js';
 import { createServerContext } from './server/context.js';
@@ -77,13 +78,17 @@ export async function createApp(options = {}) {
 
   const autoConnector = createAutoConnector({ cncController });
 
+  // Pendant serial handler - created after websocketLayer but referenced via getter
+  let pendantSerial = null;
+
   const websocketLayer = createWebSocketLayer({
     httpServer: server,
     cncController,
     jobManager,
     jogManager,
     context,
-    commandProcessor: commandProcessorWrapper
+    commandProcessor: commandProcessorWrapper,
+    getPendantSerial: () => pendantSerial
   });
 
   const { wss, broadcast, sendWsMessage, getClientWebSocket, getClientRegistry, shutdown: shutdownWebSocket, handleWebSocketCommand } = websocketLayer;
@@ -95,6 +100,16 @@ export async function createApp(options = {}) {
     broadcast,
     serverState: context.serverState,
     firmwareFilePath
+  });
+
+  // Initialize USB pendant serial handler
+  pendantSerial = createPendantSerialHandler({
+    cncController,
+    jobManager,
+    jogManager,
+    context,
+    commandProcessor: commandProcessorWrapper,
+    broadcast
   });
 
   const filesDir = path.join(userDataDir, 'gcode-files');
@@ -174,7 +189,8 @@ export async function createApp(options = {}) {
     upload,
     commandProcessor: commandProcessorWrapper,
     autoConnector,
-    websocketLayer
+    websocketLayer,
+    pendantSerial
   });
 
   const { teardown: teardownCncEvents } = registerCncEventHandlers({
@@ -202,6 +218,11 @@ export async function createApp(options = {}) {
 
       autoConnector.start();
 
+      // Start USB pendant auto-connect
+      if (pendantSerial) {
+        pendantSerial.autoConnect();
+      }
+
       resolve();
     });
   });
@@ -209,6 +230,9 @@ export async function createApp(options = {}) {
   const close = async () => {
     log('Shutting down server...');
     await autoConnector.stop();
+    if (pendantSerial) {
+      pendantSerial.shutdown();
+    }
     teardownCncEvents();
     shutdownWebSocket();
     await new Promise((resolve) => server.close(resolve));

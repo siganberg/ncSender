@@ -208,7 +208,8 @@ export function createWebSocketLayer({
   jobManager,
   jogManager,
   context,
-  commandProcessor
+  commandProcessor,
+  getPendantSerial = () => null
 }) {
   const {
     serverState,
@@ -283,6 +284,12 @@ export function createWebSocketLayer({
           client.send(message);
         }
       });
+
+      // Also send to USB pendant if connected
+      const pendantSerial = getPendantSerial();
+      if (pendantSerial?.isConnected()) {
+        pendantSerial.sendMessage(type, payload);
+      }
     } catch (error) {
       log('Error broadcasting message:', error?.message || error);
       log('Problematic data:', type, typeof data);

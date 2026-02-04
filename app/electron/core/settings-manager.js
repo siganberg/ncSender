@@ -99,7 +99,12 @@ const DEFAULT_SETTINGS = {
   remoteControl: {
     enabled: false
   },
-  showPendant: false
+  showPendant: false,
+  pendant: {
+    serialPort: 'auto',
+    baudRate: 115200,
+    autoConnect: true
+  }
 };
 
 function getUserDataDir() {
@@ -203,6 +208,16 @@ export function readSettings() {
     if (parsedObject.numberOfTools !== undefined && parsedObject.tool === undefined) {
       merged.tool.count = parsedObject.numberOfTools;
     }
+
+    // Merge pendant settings
+    const parsedPendant = parsedObject.pendant && typeof parsedObject.pendant === 'object'
+      ? parsedObject.pendant
+      : {};
+
+    merged.pendant = {
+      ...DEFAULT_SETTINGS.pendant,
+      ...parsedPendant
+    };
 
     const parsedConnection = parsedObject.connection;
     const hasCustomConnection = parsedConnection && typeof parsedConnection === 'object';
