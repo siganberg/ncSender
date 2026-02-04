@@ -190,19 +190,23 @@ const activateLicense = async () => {
   activationSuccess.value = false;
 
   const pendantIp = wifiPendant.value?.ip || manualPendantIp.value;
-  let deviceId = wifiPendant.value?.id || 'manual-' + Date.now();
+  let deviceId = '';
 
-  // Try to get device ID from pendant if using manual IP
-  if (!wifiPendant.value && manualPendantIp.value) {
-    try {
-      const infoResponse = await fetch(`http://${manualPendantIp.value}/api/info`);
-      if (infoResponse.ok) {
-        const info = await infoResponse.json();
-        if (info.deviceId) deviceId = info.deviceId;
-      }
-    } catch {
-      // Use fallback device ID
+  // Always fetch device ID from pendant's /api/info endpoint
+  try {
+    const infoResponse = await fetch(`http://${pendantIp}/api/info`);
+    if (infoResponse.ok) {
+      const info = await infoResponse.json();
+      if (info.deviceId) deviceId = info.deviceId;
     }
+  } catch {
+    // Pendant not reachable
+  }
+
+  if (!deviceId) {
+    activationError.value = 'Could not retrieve device ID from pendant';
+    activating.value = false;
+    return;
   }
 
   try {
