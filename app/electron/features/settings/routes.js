@@ -21,7 +21,7 @@ import { createLogger } from '../../core/logger.js';
 
 const { log, error: logError } = createLogger('Settings');
 
-const VALID_CONNECTION_TYPES = ['usb', 'ethernet'];
+const VALID_CONNECTION_TYPES = ['usb', 'ethernet', 'websocket'];
 
 export function createSettingsRoutes(serverState, cncController, broadcast) {
   const router = Router();
