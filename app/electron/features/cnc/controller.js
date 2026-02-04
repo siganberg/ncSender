@@ -19,6 +19,7 @@ import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 import { EventEmitter } from 'events';
 import net from 'net';
+import WebSocket from 'ws';
 import PQueue from 'p-queue';
 import { grblErrors } from './grbl-errors.js';
 import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
@@ -652,15 +653,19 @@ export class CNCController extends EventEmitter {
 
       this.isConnecting = true;
 
-      if (connectionType === 'ethernet') {
+      if (connectionType === 'ethernet' || connectionType === 'websocket') {
         const { ip, port } = connection;
         if (!ip || !port) {
-          log('Incomplete Ethernet settings...');
+          log(`Incomplete ${connectionType} settings...`);
           this.isConnecting = false;
           return 'no-settings';
         }
 
-        this.connectionAttempt = this.connectEthernet(ip, port);
+        if (connectionType === 'websocket') {
+          this.connectionAttempt = this.connectWebSocket(ip, port);
+        } else {
+          this.connectionAttempt = this.connectEthernet(ip, port);
+        }
         return await this.connectionAttempt;
       } else if (connectionType === 'usb') {
         const { usbPort } = connection;
@@ -842,6 +847,61 @@ export class CNCController extends EventEmitter {
     }
   }
 
+  async connectWebSocket(ip, port) {
+    if (this.isConnected) {
+      log('Already connected to CNC controller');
+      return true;
+    }
+
+    try {
+      this.connectionType = 'websocket';
+      this.emitConnectionStatus('connecting', false);
+
+      const wsUrl = `ws://${ip}:${port}/`;
+      this.connection = new WebSocket(wsUrl);
+
+      return new Promise((resolve, reject) => {
+        this.connection.on('open', () => {
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          this.onConnectionEstablished('websocket');
+          resolve(true);
+        });
+
+        this.connection.on('message', (data) => {
+          const message = data.toString();
+          const lines = message.split('\n');
+          for (const line of lines) {
+            if (line.trim()) {
+              this.handleIncomingData(line.trim());
+            }
+          }
+        });
+
+        this.connection.on('error', (error) => {
+          const now = Date.now();
+          if (now - this.lastConnectionErrorLog > this.connectionErrorThrottleMs) {
+            log('CNC controller websocket connection error:', error.message);
+            this.lastConnectionErrorLog = now;
+          }
+          this.isConnecting = false;
+          this.connectionAttempt = null;
+          this.handleConnectionError(error);
+          reject(error);
+        });
+
+        this.connection.on('close', () => {
+          this.onConnectionClosed('websocket');
+        });
+      });
+
+    } catch (error) {
+      log('Failed to connect to CNC controller via websocket:', error);
+      this.handleConnectionError(error);
+      throw error;
+    }
+  }
+
   async connect(portPath, baudRate = 115200) {
     if (this.isConnected) {
       log('Already connected to CNC controller');
@@ -916,6 +976,11 @@ export class CNCController extends EventEmitter {
               this.connection.removeAllListeners();
               this.connection.destroy();
             }
+          } else if (this.connectionType === 'websocket') {
+            this.connection.removeAllListeners();
+            if (this.connection.readyState === WebSocket.OPEN || this.connection.readyState === WebSocket.CONNECTING) {
+              this.connection.close();
+            }
           } else if (this.connectionType === 'usb') {
             if (this.connection.isOpen) {
               this.connection.removeAllListeners();
@@ -923,7 +988,6 @@ export class CNCController extends EventEmitter {
                 if (err) log('Error closing USB port during cancellation:', err.message);
               });
             } else if (!this.connection.destroyed) {
-              // Handle case where port is opening but not yet open
               this.connection.removeAllListeners();
               try {
                 this.connection.destroy();
@@ -970,6 +1034,10 @@ export class CNCController extends EventEmitter {
         if (this.connectionType === 'ethernet') {
           if (!this.connection.destroyed) {
             this.connection.destroy();
+          }
+        } else if (this.connectionType === 'websocket') {
+          if (this.connection.readyState === WebSocket.OPEN || this.connection.readyState === WebSocket.CONNECTING) {
+            this.connection.close();
           }
         } else if (this.connectionType === 'usb') {
           if (this.connection.isOpen) {
@@ -1063,17 +1131,32 @@ export class CNCController extends EventEmitter {
       return Promise.reject(new Error('Serial port is not open'));
     }
 
-    return new Promise((resolve, reject) => {
-      this.connection.write(commandToSend, (error) => {
-        if (error) {
-          log('Error sending command:', error);
-          reject(error);
-          return;
-        }
+    if (this.connectionType === 'websocket' && this.connection.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('WebSocket is not open'));
+    }
 
-        this.logCommandSent(commandToSend, isRealTime);
-        resolve();
-      });
+    return new Promise((resolve, reject) => {
+      if (this.connectionType === 'websocket') {
+        try {
+          this.connection.send(commandToSend);
+          this.logCommandSent(commandToSend, isRealTime);
+          resolve();
+        } catch (error) {
+          log('Error sending command via websocket:', error);
+          reject(error);
+        }
+      } else {
+        this.connection.write(commandToSend, (error) => {
+          if (error) {
+            log('Error sending command:', error);
+            reject(error);
+            return;
+          }
+
+          this.logCommandSent(commandToSend, isRealTime);
+          resolve();
+        });
+      }
     });
   }
 
