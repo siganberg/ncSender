@@ -250,7 +250,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  min-width: 480px;
+  min-width: 540px;
 }
 
 /* Status Card */
