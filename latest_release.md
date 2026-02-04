@@ -1,13 +1,9 @@
 ## What's Changed
 
 ### ✨ New Features
-- Added USB serial communication support for pendant devices
-
-### 🐛 Bug Fixes
-- Fixed pendant dialog to correctly show licensed state after activation
-- Fixed pendant activation to properly retrieve device ID
+- Add WebSocket protocol support for CNC controller connections
+- Add Protocol selector in connection settings to choose between Telnet and WebSocket
 
 ### 🔧 Improvements
-- Simplified pendant connectivity to WiFi-only mode
-- Reduced log noise by throttling reconnection messages
-- Improved dialog layout with wider display
+- Add default port configuration for different connection protocols
+- Reduce status polling rate for better performance
