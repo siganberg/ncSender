@@ -97,7 +97,7 @@
               <input
                 v-model="installationId"
                 type="text"
-                placeholder="XXXX-XXXX-XXXX-XXXX"
+                placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX"
                 :disabled="activating"
                 @keyup.enter="activateLicense"
               />
