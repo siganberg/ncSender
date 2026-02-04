@@ -78,6 +78,7 @@ export class CNCController extends EventEmitter {
     // Track last connection error for throttling
     this.lastConnectionErrorLog = 0;
     this.lastDisconnectLog = 0;
+    this.lastConnectionOpenLog = 0;
     this.connectionErrorThrottleMs = 30000; // Log connection errors max once per 30 seconds
   }
 
@@ -692,7 +693,11 @@ export class CNCController extends EventEmitter {
   }
 
   onConnectionEstablished(type) {
-    log(`CNC controller connection opened via ${type}, verifying controller readiness...`);
+    const now = Date.now();
+    if (now - this.lastConnectionOpenLog > this.connectionErrorThrottleMs) {
+      log(`CNC controller connection opened via ${type}, verifying controller readiness...`);
+      this.lastConnectionOpenLog = now;
+    }
 
     // Reset throttle timers on successful connection
     this.lastConnectionErrorLog = 0;
@@ -1097,7 +1102,8 @@ export class CNCController extends EventEmitter {
   logCommandSent(commandToSend, isRealTime) {
     const display = this.formatCommandForLog(commandToSend);
 
-    if (display === '?' || display === '$PINSTATE') return;
+    // Skip logging for status queries and soft-reset during reconnection
+    if (display === '?' || display === '$PINSTATE' || !display) return;
 
     if (isRealTime) {
       log('Real-time command sent:', display);

@@ -69,6 +69,7 @@ export function registerCncEventHandlers({
   const { serverState, computeJobProgressFields } = context;
 
   let lastConnectionLostLog = 0;
+  let lastStopCommandLog = 0;
   const connectionLostThrottleMs = 30000;
 
   const handleStatus = (data) => {
@@ -364,7 +365,11 @@ export function registerCncEventHandlers({
   };
 
   const handleStop = () => {
-    log('Stop command detected, resetting job manager');
+    const now = Date.now();
+    if (now - lastStopCommandLog > connectionLostThrottleMs) {
+      log('Stop command detected, resetting job manager');
+      lastStopCommandLog = now;
+    }
     const hadActiveJob = jobManager.hasActiveJob();
     jobManager.forceReset();
 
