@@ -520,10 +520,16 @@ export function createPendantSerialHandler({
   }
 
   function handleCompactJog(jogData) {
-    // Format: X1.000F3000 or Y-0.100F1500
-    // Parse axis, distance, and feed rate
+    // Format: X1.000F3000 or Y-0.100F1500 or X1.000F3000S (S=silent)
+    // Parse axis, distance, feed rate, and silent flag
     const axis = jogData[0].toUpperCase();
-    const rest = jogData.substring(1);
+    let rest = jogData.substring(1);
+
+    // Check for silent flag at the end
+    const silent = rest.endsWith('S') || rest.endsWith('s');
+    if (silent) {
+      rest = rest.slice(0, -1);
+    }
 
     // Find F separator
     const fIndex = rest.toUpperCase().indexOf('F');
@@ -545,7 +551,7 @@ export function createPendantSerialHandler({
 
     // Send directly to CNC controller (skipJogCancel: true to avoid 0x85 prefix)
     cncController.sendCommand(jogCommand, {
-      meta: { sourceId: 'usb-pendant', jogCommand: true, skipJogCancel: true }
+      meta: { sourceId: 'usb-pendant', jogCommand: true, skipJogCancel: true, silent }
     }).catch((err) => {
       logError('Jog command failed:', err.message);
     });
