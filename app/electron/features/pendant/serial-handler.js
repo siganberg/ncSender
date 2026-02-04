@@ -252,6 +252,7 @@ export function createPendantSerialHandler({
   let lastOverrides = { feed: 0, rapid: 0, spindle: 0 };
   let lastWCO = '';
   let lastJobProgress = '';
+  let lastMaxFeedrate = 0;
 
   function sendRaw(message) {
     if (!port || !port.isOpen) {
@@ -349,6 +350,13 @@ export function createPendantSerialHandler({
     // Alarm code (only if in alarm)
     if (ms.alarmCode && ms.status === 'Alarm') {
       parts.push(`A:${ms.alarmCode}`);
+    }
+
+    // Max feedrate - only send when changed
+    const curMaxFeedrate = ms.maxFeedrate || 0;
+    if (curMaxFeedrate > 0 && curMaxFeedrate !== lastMaxFeedrate) {
+      parts.push(`M:${Math.round(curMaxFeedrate)}`);
+      lastMaxFeedrate = curMaxFeedrate;
     }
 
     // Job progress - only if job is running
