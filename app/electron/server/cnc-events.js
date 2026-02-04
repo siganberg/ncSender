@@ -120,6 +120,10 @@ export function registerCncEventHandlers({
             }
 
             broadcast('server-state-updated', serverState);
+            // Also broadcast settings-changed for pendant to receive maxFeedrate
+            if (serverState.machineState.maxFeedrate) {
+              broadcast('settings-changed', { maxFeedrate: serverState.machineState.maxFeedrate });
+            }
           } catch (err) {
             log('Could not read firmware settings from firmware.json:', err?.message || err);
           }
@@ -211,6 +215,8 @@ export function registerCncEventHandlers({
           serverState.machineState.maxFeedrate = Math.min(...validRates);
           log(`Updated machineState.maxFeedrate to ${serverState.machineState.maxFeedrate} (from $110=${maxX}, $111=${maxY})`);
           broadcast('server-state-updated', serverState);
+          // Also broadcast settings-changed for pendant to receive maxFeedrate
+          broadcast('settings-changed', { maxFeedrate: serverState.machineState.maxFeedrate });
         }
       }
     } catch (error) {

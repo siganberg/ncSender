@@ -252,7 +252,7 @@ export function createPendantSerialHandler({
   let lastOverrides = { feed: 0, rapid: 0, spindle: 0 };
   let lastWCO = '';
   let lastJobProgress = '';
-  let lastMaxFeedrate = 0;
+  let lastSentSettings = null;
 
   function sendRaw(message) {
     if (!port || !port.isOpen) {
@@ -352,13 +352,6 @@ export function createPendantSerialHandler({
       parts.push(`A:${ms.alarmCode}`);
     }
 
-    // Max feedrate - only send when changed
-    const curMaxFeedrate = ms.maxFeedrate || 0;
-    if (curMaxFeedrate > 0 && curMaxFeedrate !== lastMaxFeedrate) {
-      parts.push(`M:${Math.round(curMaxFeedrate)}`);
-      lastMaxFeedrate = curMaxFeedrate;
-    }
-
     // Job progress - only if job is running
     const job = state.jobLoaded;
     if (job && job.status === 'running' && job.totalLines > 0) {
@@ -385,6 +378,37 @@ export function createPendantSerialHandler({
   function sendState(state) {
     // Use compact DRO format for state updates
     return sendCompactDRO(state);
+  }
+
+  function sendSettings(settings, force = false) {
+    if (!port || !port.isOpen || !isConnected) {
+      return false;
+    }
+
+    // Build settings object with relevant pendant settings
+    // maxFeedrate comes from machineState (read from firmware $110/$111)
+    const pendantSettings = {
+      maxFeedrate: serverState.machineState?.maxFeedrate || 8000,
+      theme: settings?.theme,
+      accentColor: settings?.accentColor || settings?.primaryColor,
+      gradientColor: settings?.gradientColor,
+      darkMode: settings?.darkMode
+    };
+
+    // Skip if settings haven't changed (unless forced)
+    if (!force && lastSentSettings) {
+      const unchanged = Object.keys(pendantSettings).every(
+        key => pendantSettings[key] === lastSentSettings[key]
+      );
+      if (unchanged) {
+        return true;
+      }
+    }
+
+    lastSentSettings = { ...pendantSettings };
+
+    // Send as JSON since settings are infrequent
+    return sendMessage('settings-changed', pendantSettings);
   }
 
   function handleMessage(data) {
@@ -522,6 +546,10 @@ export function createPendantSerialHandler({
       setTimeout(() => {
         if (port && port.isOpen) {
           sendState(serverState);
+
+          // Send initial settings (force send on connection)
+          const settings = serverState.settings || {};
+          sendSettings(settings, true);
         }
       }, 100);
     }
@@ -759,6 +787,7 @@ export function createPendantSerialHandler({
     disconnect,
     isConnected: () => isConnected,
     sendState,
+    sendSettings,
     sendMessage,
     autoConnect,
     listPorts,
