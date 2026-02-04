@@ -2659,13 +2659,10 @@ const saveConnectionSettings = async () => {
 
   try {
     // Prepare the complete settings object with all settings
-    // For Ethernet, use the protocol (telnet -> 'ethernet', websocket -> 'websocket')
-    const connectionType = connectionSettings.type === 'Ethernet'
-      ? (connectionSettings.protocol === 'websocket' ? 'websocket' : 'ethernet')
-      : 'usb';
     const settingsToSave = {
       connection: {
-        type: connectionType,
+        type: connectionSettings.type?.toLowerCase() || 'usb',
+        protocol: connectionSettings.type === 'Ethernet' ? connectionSettings.protocol : undefined,
         ip: connectionSettings.ipAddress || '192.168.5.1',
         port: parseInt(connectionSettings.port, 10) || 23,
         serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,

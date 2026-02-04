@@ -653,15 +653,15 @@ export class CNCController extends EventEmitter {
 
       this.isConnecting = true;
 
-      if (connectionType === 'ethernet' || connectionType === 'websocket') {
-        const { ip, port } = connection;
+      if (connectionType === 'ethernet') {
+        const { ip, port, protocol } = connection;
         if (!ip || !port) {
-          log(`Incomplete ${connectionType} settings...`);
+          log('Incomplete Ethernet settings...');
           this.isConnecting = false;
           return 'no-settings';
         }
 
-        if (connectionType === 'websocket') {
+        if (protocol === 'websocket') {
           this.connectionAttempt = this.connectWebSocket(ip, port);
         } else {
           this.connectionAttempt = this.connectEthernet(ip, port);
