@@ -59,6 +59,7 @@ export function createAutoConnector({ cncController }) {
         type: normalizedType,
         ip: rawConnection.ip,
         port: rawConnection.port,
+        protocol: rawConnection.protocol,
         serverPort: rawConnection.serverPort,
         usbPort: rawConnection.usbPort,
         baudRate: rawConnection.baudRate

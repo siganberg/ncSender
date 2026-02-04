@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
     type: 'usb',
     ip: '192.168.5.1',
     port: 23,
+    protocol: 'telnet',
     serverPort: 8090,
     usbPort: '',
     baudRate: 115200

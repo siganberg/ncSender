@@ -142,7 +142,7 @@
             </div>
             <div class="setting-item" v-if="connectionSettings.type === 'Ethernet'">
               <label class="setting-label">Protocol</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.protocol" :disabled="!canControlRemoteAccess">
+              <select class="setting-select setting-input--right" v-model="connectionSettings.protocol" @change="onProtocolChange" :disabled="!canControlRemoteAccess">
                 <option value="telnet">Telnet</option>
                 <option value="websocket">WebSocket</option>
               </select>
@@ -1648,6 +1648,10 @@ const loadMainUsbPorts = async () => {
   validateMainForm();
 };
 
+const onProtocolChange = () => {
+  connectionSettings.port = connectionSettings.protocol === 'websocket' ? 81 : 23;
+};
+
 const loadSetupUsbPorts = async () => {
   setupUsbPorts.value = await loadUsbPorts();
 };
@@ -1805,6 +1809,7 @@ const openSettings = async () => {
       // Update connection settings with fresh data from nested connection object
       const conn = freshSettings.connection;
       connectionSettings.type = conn.type === 'usb' ? 'USB' : 'Ethernet';
+      connectionSettings.protocol = conn.protocol || 'telnet';
       connectionSettings.baudRate = conn.baudRate?.toString() || '115200';
       connectionSettings.ipAddress = conn.ip || '192.168.5.1';
       connectionSettings.port = conn.port || 23;
