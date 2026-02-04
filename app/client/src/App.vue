@@ -140,6 +140,13 @@
                 <option value="Ethernet">Ethernet</option>
               </select>
             </div>
+            <div class="setting-item" v-if="connectionSettings.type === 'Ethernet'">
+              <label class="setting-label">Protocol</label>
+              <select class="setting-select setting-input--right" v-model="connectionSettings.protocol" :disabled="!canControlRemoteAccess">
+                <option value="telnet">Telnet</option>
+                <option value="websocket">WebSocket</option>
+              </select>
+            </div>
             <div class="setting-item" v-if="connectionSettings.type === 'USB'">
               <label class="setting-label">USB Port</label>
               <div class="custom-dropdown">
@@ -1415,7 +1422,8 @@ const pendingUnitsChange = ref<'metric' | 'imperial' | null>(null);
 const initialConnection = initialSettings?.connection;
 const initialBaudRate = initialConnection?.baudRate ?? 115200;
 const connectionSettings = reactive({
-  type: initialConnection?.type === 'ethernet' ? 'Ethernet' : 'USB',
+  type: initialConnection?.type === 'ethernet' || initialConnection?.type === 'websocket' ? 'Ethernet' : 'USB',
+  protocol: initialConnection?.type === 'websocket' ? 'websocket' : 'telnet',
   baudRate: initialBaudRate.toString(),
   ipAddress: initialConnection?.ip || '192.168.5.1',
   port: initialConnection?.port ?? 23,
@@ -2651,9 +2659,13 @@ const saveConnectionSettings = async () => {
 
   try {
     // Prepare the complete settings object with all settings
+    // For Ethernet, use the protocol (telnet -> 'ethernet', websocket -> 'websocket')
+    const connectionType = connectionSettings.type === 'Ethernet'
+      ? (connectionSettings.protocol === 'websocket' ? 'websocket' : 'ethernet')
+      : 'usb';
     const settingsToSave = {
       connection: {
-        type: connectionSettings.type?.toLowerCase() || 'usb',
+        type: connectionType,
         ip: connectionSettings.ipAddress || '192.168.5.1',
         port: parseInt(connectionSettings.port, 10) || 23,
         serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
