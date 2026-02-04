@@ -248,6 +248,33 @@ export function createPendantSerialHandler({
   // Queue for serializing message sends
   let sendQueue = Promise.resolve();
 
+  // Track last sent values to avoid redundant sends
+  let lastOverrides = { feed: 0, rapid: 0, spindle: 0 };
+  let lastWCO = '';
+  let lastJobProgress = '';
+
+  function sendRaw(message) {
+    if (!port || !port.isOpen) {
+      return false;
+    }
+
+    sendQueue = sendQueue.then(() => {
+      return new Promise((resolve) => {
+        if (!port || !port.isOpen) {
+          resolve();
+          return;
+        }
+        port.write(message + '\n', () => {
+          port.drain(() => {
+            resolve();
+          });
+        });
+      });
+    });
+
+    return true;
+  }
+
   function sendMessage(type, data) {
     if (!port || !port.isOpen) {
       return false;
@@ -255,61 +282,144 @@ export function createPendantSerialHandler({
 
     try {
       const message = JSON.stringify({ type, data });
-
-      // Queue the send to ensure proper serialization
-      sendQueue = sendQueue.then(() => {
-        return new Promise((resolve) => {
-          if (!port || !port.isOpen) {
-            resolve();
-            return;
-          }
-          port.write(message + '\n', () => {
-            port.drain(() => {
-              resolve();
-            });
-          });
-        });
-      });
-
-      return true;
+      return sendRaw(message);
     } catch (err) {
       logError('sendMessage failed:', err.message);
       return false;
     }
   }
 
-  function sendState(state) {
-    // Only send essential fields to pendant to avoid buffer overflow
-    // Pendant has a 4096 byte JSON buffer limit
-    const pendantState = {
-      machineState: state.machineState ? {
-        connected: state.machineState.connected,
-        homed: state.machineState.homed,
-        status: state.machineState.status,
-        MPos: state.machineState.MPos,
-        WCO: state.machineState.WCO,
-        WCS: state.machineState.WCS,
-        feedRate: state.machineState.feedRate,
-        spindleRpmActual: state.machineState.spindleRpmActual,
-        feedrateOverride: state.machineState.feedrateOverride,
-        rapidOverride: state.machineState.rapidOverride,
-        spindleOverride: state.machineState.spindleOverride,
-        alarmCode: state.machineState.alarmCode,
-        maxFeedrate: state.machineState.maxFeedrate
-      } : null,
-      senderStatus: state.senderStatus,
-      jobLoaded: state.jobLoaded ? {
-        filename: state.jobLoaded.filename,
-        currentLine: state.jobLoaded.currentLine,
-        totalLines: state.jobLoaded.totalLines,
-        progressPercent: state.jobLoaded.progressPercent,
-        status: state.jobLoaded.status
-      } : null
+  function sendCompactDRO(state) {
+    if (!port || !port.isOpen) {
+      return false;
+    }
+
+    const ms = state.machineState;
+    if (!ms) {
+      return false;
+    }
+
+    // Build compact DRO message: $Status|P:x,y,z|O:f,r,s|F:feed|R:rpm|C|H|J:cur/total
+    const parts = [];
+
+    // Status (first field, no prefix)
+    parts.push(ms.status || 'Unknown');
+
+    // Work position - calculate from MPos and WCO
+    if (ms.MPos) {
+      const mpos = ms.MPos.split(',').map(parseFloat);
+      const wco = ms.WCO ? ms.WCO.split(',').map(parseFloat) : [0, 0, 0];
+      const wpos = mpos.map((m, i) => (m - (wco[i] || 0)).toFixed(3));
+      parts.push(`P:${wpos.join(',')}`);
+    }
+
+    // Overrides - only send if changed
+    const curOverrides = {
+      feed: ms.feedrateOverride || 100,
+      rapid: ms.rapidOverride || 100,
+      spindle: ms.spindleOverride || 100
     };
-    return sendMessage('server-state-updated', pendantState);
+    if (curOverrides.feed !== lastOverrides.feed ||
+        curOverrides.rapid !== lastOverrides.rapid ||
+        curOverrides.spindle !== lastOverrides.spindle) {
+      parts.push(`O:${curOverrides.feed},${curOverrides.rapid},${curOverrides.spindle}`);
+      lastOverrides = curOverrides;
+    }
+
+    // Feed rate (only if > 0)
+    if (ms.feedRate > 0) {
+      parts.push(`F:${Math.round(ms.feedRate)}`);
+    }
+
+    // Spindle RPM (only if > 0)
+    if (ms.spindleRpmActual > 0) {
+      parts.push(`R:${Math.round(ms.spindleRpmActual)}`);
+    }
+
+    // Connected flag
+    if (ms.connected) {
+      parts.push('C');
+    }
+
+    // Homed flag
+    if (ms.homed) {
+      parts.push('H');
+    }
+
+    // Alarm code (only if in alarm)
+    if (ms.alarmCode && ms.status === 'Alarm') {
+      parts.push(`A:${ms.alarmCode}`);
+    }
+
+    // Job progress - only if job is running
+    const job = state.jobLoaded;
+    if (job && job.status === 'running' && job.totalLines > 0) {
+      const jobStr = `${job.currentLine || 0}/${job.totalLines}`;
+      if (jobStr !== lastJobProgress) {
+        parts.push(`J:${jobStr}`);
+        lastJobProgress = jobStr;
+      }
+    } else {
+      lastJobProgress = '';
+    }
+
+    // WCO - only send when changed
+    const curWCO = ms.WCO || '0,0,0';
+    if (curWCO !== lastWCO) {
+      parts.push(`W:${curWCO}`);
+      lastWCO = curWCO;
+    }
+
+    const message = '$' + parts.join('|');
+    return sendRaw(message);
+  }
+
+  function sendState(state) {
+    // Use compact DRO format for state updates
+    return sendCompactDRO(state);
   }
 
   function handleMessage(data) {
+    // Handle compact jog format: JX1.000F3000
+    if (data.startsWith('J') && data.length > 1) {
+      const axis = data[1].toUpperCase();
+      if (['X', 'Y', 'Z', 'A', 'B', 'C'].includes(axis)) {
+        handleCompactJog(data.substring(1));
+        return;
+      }
+    }
+
+    // Handle compact command format: C$H or C! or C~
+    if (data.startsWith('C') && data.length > 1) {
+      handleCompactCommand(data.substring(1));
+      return;
+    }
+
+    // Handle compact job control: RS (start), RP (pause), RR (resume), RT (stop)
+    if (data.startsWith('R') && data.length === 2) {
+      const action = data[1].toUpperCase();
+      if (action === 'S') {
+        handleJobStart().catch((err) => logError('Error handling job:start:', err.message));
+        return;
+      } else if (action === 'P') {
+        handleJobPause().catch((err) => logError('Error handling job:pause:', err.message));
+        return;
+      } else if (action === 'R') {
+        handleJobResume().catch((err) => logError('Error handling job:resume:', err.message));
+        return;
+      } else if (action === 'T') {
+        handleJobStop().catch((err) => logError('Error handling job:stop:', err.message));
+        return;
+      }
+    }
+
+    // Handle ping (compact or JSON)
+    if (data === 'P') {
+      handlePing();
+      return;
+    }
+
+    // Try JSON parsing for backwards compatibility and other messages
     let parsed;
     try {
       parsed = JSON.parse(data);
@@ -324,28 +434,9 @@ export function createPendantSerialHandler({
 
     const { type } = parsed;
 
-    // Handle ping from pendant
+    // Handle ping from pendant (JSON format)
     if (type === 'ping') {
-      lastPongTime = Date.now();
-      sendMessage('pong', {});
-
-      if (!isConnected) {
-        isConnected = true;
-        clientMeta.connectedAt = Date.now();
-        log('Pendant connected via USB serial');
-        broadcast('client:connected', clientMeta);
-
-        // Send initial state
-        updateSenderStatus();
-        updateJobStatus(jobManager);
-        computeJobProgressFields();
-
-        setTimeout(() => {
-          if (port && port.isOpen) {
-            sendState(serverState);
-          }
-        }, 100);
-      }
+      handlePing();
       return;
     }
 
@@ -354,7 +445,7 @@ export function createPendantSerialHandler({
       lastPongTime = Date.now();
     }
 
-    // Handle jog commands
+    // Handle jog commands (JSON format for backwards compatibility)
     if (type.startsWith('jog:')) {
       if (jogManager) {
         jogManager.handleMessage({ clientId: 'usb-pendant' }, parsed).catch((err) => {
@@ -374,32 +465,24 @@ export function createPendantSerialHandler({
       return;
     }
 
-    // Handle job control
+    // Handle job control (JSON format)
     if (type === 'job:start') {
-      handleJobStart().catch((err) => {
-        logError('Error handling job:start:', err.message);
-      });
+      handleJobStart().catch((err) => logError('Error handling job:start:', err.message));
       return;
     }
 
     if (type === 'job:pause') {
-      handleJobPause().catch((err) => {
-        logError('Error handling job:pause:', err.message);
-      });
+      handleJobPause().catch((err) => logError('Error handling job:pause:', err.message));
       return;
     }
 
     if (type === 'job:resume') {
-      handleJobResume().catch((err) => {
-        logError('Error handling job:resume:', err.message);
-      });
+      handleJobResume().catch((err) => logError('Error handling job:resume:', err.message));
       return;
     }
 
     if (type === 'job:stop') {
-      handleJobStop().catch((err) => {
-        logError('Error handling job:stop:', err.message);
-      });
+      handleJobStop().catch((err) => logError('Error handling job:stop:', err.message));
       return;
     }
 
@@ -411,6 +494,75 @@ export function createPendantSerialHandler({
       }
       return;
     }
+  }
+
+  function handlePing() {
+    lastPongTime = Date.now();
+    sendRaw('K'); // Compact pong: K (OK)
+
+    if (!isConnected) {
+      isConnected = true;
+      clientMeta.connectedAt = Date.now();
+      log('Pendant connected via USB serial');
+      broadcast('client:connected', clientMeta);
+
+      // Send initial state
+      updateSenderStatus();
+      updateJobStatus(jobManager);
+      computeJobProgressFields();
+
+      setTimeout(() => {
+        if (port && port.isOpen) {
+          sendState(serverState);
+        }
+      }, 100);
+    }
+  }
+
+  function handleCompactJog(jogData) {
+    // Format: X1.000F3000 or Y-0.100F1500
+    // Parse axis, distance, and feed rate
+    const axis = jogData[0].toUpperCase();
+    const rest = jogData.substring(1);
+
+    // Find F separator
+    const fIndex = rest.toUpperCase().indexOf('F');
+    if (fIndex === -1) {
+      logError('Invalid compact jog format (missing F):', jogData);
+      return;
+    }
+
+    const distance = rest.substring(0, fIndex);
+    const feedRate = rest.substring(fIndex + 1);
+
+    if (!distance || !feedRate) {
+      logError('Invalid compact jog format:', jogData);
+      return;
+    }
+
+    // Construct full jog command
+    const jogCommand = `$J=G21 G91 ${axis}${distance} F${feedRate}`;
+
+    // Send directly to CNC controller
+    cncController.sendCommand(jogCommand, {
+      meta: { sourceId: 'usb-pendant', jogCommand: true }
+    }).catch((err) => {
+      logError('Jog command failed:', err.message);
+    });
+  }
+
+  function handleCompactCommand(command) {
+    // Translate hex notation if present
+    let cmd = command;
+    const hexMatch = /^\\x([0-9a-fA-F]{2})$/i.exec(command);
+    if (hexMatch) {
+      cmd = String.fromCharCode(parseInt(hexMatch[1], 16));
+    }
+
+    // Send command through normal processing
+    handleCncCommand({ command: cmd }).catch((err) => {
+      logError('Command failed:', err.message);
+    });
   }
 
   async function handleCncCommand(payload) {
