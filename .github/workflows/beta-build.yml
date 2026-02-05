@@ -323,15 +323,20 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
-      - name: Get release notes
+      - name: Get release notes from tag message
         id: release_notes
         run: |
-          if [ -f "latest_release.md" ]; then
+          TAG="${{ steps.version.outputs.tag }}"
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          if [ -n "$TAG_MESSAGE" ]; then
+            echo "$TAG_MESSAGE" > release-notes.md
+            echo "Release notes content:"
+            cat release-notes.md
+          elif [ -f "latest_release.md" ]; then
             cp latest_release.md release-notes.md
             echo "Release notes content:"
             cat release-notes.md
           else
-            TAG="${{ steps.version.outputs.tag }}"
             echo "## Beta Release ${TAG}" > release-notes.md
             echo "" >> release-notes.md
             echo "This is a beta release for testing purposes." >> release-notes.md

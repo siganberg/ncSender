@@ -38,11 +38,6 @@ if git rev-list "$LATEST_TAG..HEAD" --count | grep -q "^0$"; then
     echo "Will update package.json with new version and create tag"
     echo ""
 
-    # Ask for confirmation (commented out for now)
-    # read -p "Do you want to commit and push the version bump as $NEW_TAG? (y/n) " -n 1 -r
-    # echo ""
-    # if [[ $REPLY =~ ^[Yy]$ ]]; then
-
     # Commit the version change only
     git add app/package.json
     git commit -m "chore: create new release $NEW_TAG"
@@ -58,13 +53,6 @@ if git rev-list "$LATEST_TAG..HEAD" --count | grep -q "^0$"; then
     echo "✅ Successfully created and pushed $NEW_TAG"
     echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
     exit 0
-
-    # else
-    #     # Revert the changes
-    #     git restore app/package.json
-    #     echo "Cancelled. Changes reverted."
-    #     exit 1
-    # fi
 fi
 
 # Get commit messages
@@ -108,82 +96,58 @@ if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
     echo "Falling back to basic release notes..."
 
     # Fallback: basic categorization
-    RELEASE_NOTES_FILE=$(mktemp)
-    echo "## What's Changed" > "$RELEASE_NOTES_FILE"
-    echo "" >> "$RELEASE_NOTES_FILE"
+    RELEASE_NOTES="## What's Changed"$'\n'
 
-    # Simple categorization
     FEATURES=$(echo "$COMMITS" | grep -i "^feat\|^feature\|^add" || true)
     FIXES=$(echo "$COMMITS" | grep -i "^fix\|^bug" || true)
     OTHER=$(echo "$COMMITS" | grep -iv "^feat\|^feature\|^add\|^fix\|^bug\|^chore" || true)
 
     if [ -n "$FEATURES" ]; then
-        echo "### ✨ New Features" >> "$RELEASE_NOTES_FILE"
-        echo "$FEATURES" | while read -r line; do
+        RELEASE_NOTES+=$'\n'"### ✨ New Features"$'\n'
+        while IFS= read -r line; do
             CLEAN_LINE=$(echo "$line" | sed -E 's/^(feat|feature|add|Add|Feature|Feat)://i' | sed 's/^[[:space:]]*//')
-            echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
-        done
-        echo "" >> "$RELEASE_NOTES_FILE"
+            RELEASE_NOTES+="- $CLEAN_LINE"$'\n'
+        done <<< "$FEATURES"
     fi
 
     if [ -n "$FIXES" ]; then
-        echo "### 🐛 Bug Fixes" >> "$RELEASE_NOTES_FILE"
-        echo "$FIXES" | while read -r line; do
+        RELEASE_NOTES+=$'\n'"### 🐛 Bug Fixes"$'\n'
+        while IFS= read -r line; do
             CLEAN_LINE=$(echo "$line" | sed -E 's/^(fix|bug|Fix|Bug)://i' | sed 's/^[[:space:]]*//')
-            echo "- $CLEAN_LINE" >> "$RELEASE_NOTES_FILE"
-        done
-        echo "" >> "$RELEASE_NOTES_FILE"
+            RELEASE_NOTES+="- $CLEAN_LINE"$'\n'
+        done <<< "$FIXES"
     fi
 
     if [ -n "$OTHER" ]; then
-        echo "### 📦 Other Changes" >> "$RELEASE_NOTES_FILE"
-        echo "$OTHER" | while read -r line; do
-            echo "- $line" >> "$RELEASE_NOTES_FILE"
-        done
-        echo "" >> "$RELEASE_NOTES_FILE"
+        RELEASE_NOTES+=$'\n'"### 📦 Other Changes"$'\n'
+        while IFS= read -r line; do
+            RELEASE_NOTES+="- $line"$'\n'
+        done <<< "$OTHER"
     fi
-
-    RELEASE_NOTES=$(cat "$RELEASE_NOTES_FILE")
-    rm "$RELEASE_NOTES_FILE"
 else
     echo "✅ Release notes generated successfully"
 fi
-
-# Save to latest_release.md file
-RELEASE_NOTES_FILE="latest_release.md"
-printf '%s\n' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
 
 # Display release notes
 echo ""
 echo "========================================="
 echo "Release Notes for $NEW_TAG:"
 echo "========================================="
-cat "$RELEASE_NOTES_FILE"
+echo "$RELEASE_NOTES"
 echo "========================================="
-
-# Ask for confirmation (commented out for now)
 echo ""
-# read -p "Do you want to commit, tag, and push with these release notes? (y/n) " -n 1 -r
-# echo ""
-# if [[ $REPLY =~ ^[Yy]$ ]]; then
 
-# Commit the version change and release notes
-git add app/package.json "$RELEASE_NOTES_FILE"
+# Commit the version change only (no release notes file)
+git add app/package.json
 git commit -m "chore: create new release $NEW_TAG"
 
 # Push the commit
 git push origin $(git branch --show-current)
 
-# Create and push the tag (using simple message since CI will use latest_release.md)
-git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+# Create annotated tag with release notes as the tag message
+git tag -a "$NEW_TAG" -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
 
 echo ""
 echo "✅ Successfully created and pushed $NEW_TAG"
 echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
-
-# else
-#     # Revert the changes
-#     git restore app/package.json "$RELEASE_NOTES_FILE"
-#     echo "Cancelled. Changes reverted."
-# fi

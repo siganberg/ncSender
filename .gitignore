@@ -51,3 +51,4 @@ app/client/vite.config.ts.timestamp-**
 
 # Plugin configuration files (user data)
 plugins/**/config.json
+latest_release.md

@@ -316,17 +316,24 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
-      - name: Get release notes from latest_release.md
+      - name: Get release notes from tag message
         id: release_notes
         run: |
-          if [ -f "latest_release.md" ]; then
+          TAG="${{ github.ref_name }}"
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          if [ -n "$TAG_MESSAGE" ]; then
+            echo "$TAG_MESSAGE" > release-notes.md
+            echo "Release notes content:"
+            cat release-notes.md
+            echo "---END RELEASE NOTES---"
+          elif [ -f "latest_release.md" ]; then
             cp latest_release.md release-notes.md
             echo "Release notes content:"
             cat release-notes.md
             echo "---END RELEASE NOTES---"
           else
-            echo "⚠️ latest_release.md not found, using default message"
-            echo "Release ${{ github.ref_name }}" > release-notes.md
+            echo "⚠️ No tag message or latest_release.md found, using default message"
+            echo "Release $TAG" > release-notes.md
           fi
 
       - name: Create Release
