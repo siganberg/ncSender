@@ -1,9 +1,13 @@
 ## What's Changed
 
 ### ✨ New Features
-- Add WebSocket protocol support for CNC controller connections
-- Add Protocol selector in connection settings to choose between Telnet and WebSocket
+- Add compact protocol for USB pendant communication
+- Add silent jog mode for smoother pendant operation
+- Add max feedrate display to DRO status
 
 ### 🔧 Improvements
-- Add default port configuration for different connection protocols
-- Reduce status polling rate for better performance
+- Reduce status polling rate for better system performance
+- Move max feedrate data to settings channel for cleaner data separation
+
+### 🐛 Bug Fixes
+- Fix jog cancel command being incorrectly sent for compact jog commands
