@@ -123,9 +123,14 @@ echo "========================================="
 echo ""
 
 # Create annotated tag on current HEAD with release notes
-# No commit needed - CI injects version from tag name during build
 git tag -a "$NEW_TAG" -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
+
+# Update package.json to reflect the released version
+cd app && npm version "$NEW_VERSION" --no-git-tag-version && cd ..
+git add app/package.json app/package-lock.json
+git commit -m "chore: bump version to $NEW_VERSION"
+git push origin main
 
 echo ""
 echo "✅ Successfully created and pushed $NEW_TAG"
