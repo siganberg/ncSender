@@ -127,7 +127,7 @@ git tag -a "$NEW_TAG" -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
 
 # Update package.json to reflect the released version
-cd app && npm version "$NEW_VERSION" --no-git-tag-version && cd ..
+(cd app && npm version "$NEW_VERSION" --no-git-tag-version --allow-same-version)
 git add app/package.json app/package-lock.json
 git commit -m "chore: bump version to $NEW_VERSION"
 git push origin main
