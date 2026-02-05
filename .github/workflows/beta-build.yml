@@ -24,6 +24,12 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          cd app && npm version "$VERSION" --no-git-tag-version
+
       - name: Install Dependencies
         run: |
           npm ci
@@ -61,6 +67,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Set version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          cd app && npm version "$VERSION" --no-git-tag-version
 
       - name: Install system dependencies
         run: |
@@ -107,6 +119,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          cd app && npm version "$VERSION" --no-git-tag-version
+        shell: bash
+
       - name: Install Dependencies
         run: |
           npm ci
@@ -141,6 +160,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Set version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          cd app && npm version "$VERSION" --no-git-tag-version
 
       - name: Install system dependencies
         run: |

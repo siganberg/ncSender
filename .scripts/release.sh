@@ -23,41 +23,26 @@ NEW_TAG="v$NEW_VERSION"
 echo "New version: $NEW_VERSION"
 echo "New tag: $NEW_TAG"
 
-# Update package.json version
-sed -i '' "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" app/package.json
-
-# Show the change
-echo ""
-echo "Updated app/package.json:"
-grep "\"version\":" app/package.json
+# Ensure working tree is clean
+if [ -n "$(git status --porcelain)" ]; then
+    echo "❌ Working tree is not clean. Commit or stash changes first."
+    exit 1
+fi
 
 # Check if there are new commits since last tag
 echo ""
-if git rev-list "$LATEST_TAG..HEAD" --count | grep -q "^0$"; then
-    echo "⚠️  No new commits since $LATEST_TAG"
-    echo "Will update package.json with new version and create tag"
-    echo ""
-
-    # Commit the version change only
-    git add app/package.json
-    git commit -m "chore: create new release $NEW_TAG"
-
-    # Push the commit
-    git push origin $(git branch --show-current)
-
-    # Create and push the tag
-    git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
-    git push origin "$NEW_TAG"
-
-    echo ""
-    echo "✅ Successfully created and pushed $NEW_TAG"
-    echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"
-    exit 0
+COMMIT_COUNT=$(git rev-list "$LATEST_TAG..HEAD" --count)
+if [ "$COMMIT_COUNT" = "0" ]; then
+    echo "⚠️  No new commits since $LATEST_TAG. Nothing to release."
+    exit 1
 fi
+
+echo "$COMMIT_COUNT commit(s) since $LATEST_TAG"
 
 # Get commit messages
 COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s")
 
+echo ""
 echo "Generating release notes using Claude..."
 echo ""
 
@@ -137,14 +122,8 @@ echo "$RELEASE_NOTES"
 echo "========================================="
 echo ""
 
-# Commit the version change only (no release notes file)
-git add app/package.json
-git commit -m "chore: create new release $NEW_TAG"
-
-# Push the commit
-git push origin $(git branch --show-current)
-
-# Create annotated tag with release notes as the tag message
+# Create annotated tag on current HEAD with release notes
+# No commit needed - CI injects version from tag name during build
 git tag -a "$NEW_TAG" -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
 
