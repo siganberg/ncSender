@@ -323,16 +323,7 @@ jobs:
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
           if [ -n "$TAG_MESSAGE" ]; then
             echo "$TAG_MESSAGE" > release-notes.md
-            echo "Release notes content:"
-            cat release-notes.md
-            echo "---END RELEASE NOTES---"
-          elif [ -f "latest_release.md" ]; then
-            cp latest_release.md release-notes.md
-            echo "Release notes content:"
-            cat release-notes.md
-            echo "---END RELEASE NOTES---"
           else
-            echo "⚠️ No tag message or latest_release.md found, using default message"
             echo "Release $TAG" > release-notes.md
           fi
 
