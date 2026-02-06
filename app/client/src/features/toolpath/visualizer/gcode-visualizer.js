@@ -29,6 +29,9 @@ class GCodeVisualizer {
         // Grid boundaries (set via setGridBounds)
         this.gridBounds = null; // { minX, maxX, minY, maxY, minZ?, maxZ? }
 
+        // Work offset for G28 calculations (set via setWorkOffset)
+        this.workOffset = { x: 0, y: 0, z: 0 };
+
         // Store current G-code for re-rendering
         this.currentGCode = null;
 
@@ -153,6 +156,10 @@ class GCodeVisualizer {
         this.updateOutOfBoundsColors();
     }
 
+    setWorkOffset(workOffset) {
+        this.workOffset = workOffset || { x: 0, y: 0, z: 0 };
+    }
+
     _axisOutOfBounds(x, y, z) {
         if (!this.gridBounds) return { x: false, y: false, z: false };
         const { minX, maxX, minY, maxY, minZ, maxZ } = this.gridBounds;
@@ -250,11 +257,11 @@ class GCodeVisualizer {
                 const hasY = /\bY/.test(cleanLine);
                 const hasZ = /\bZ/.test(cleanLine);
 
-                // Move specified axes to machine home position
-                // X/Y home to 0, Z homes to max (top of travel)
+                // G28 moves to MACHINE coordinates (0,0 for X/Y, maxZ for Z)
+                // In work coordinates: machine 0 = -workOffset
                 const homePos = { ...currentPos };
-                if (hasX) homePos.x = 0;
-                if (hasY) homePos.y = 0;
+                if (hasX) homePos.x = -(this.workOffset?.x ?? 0);
+                if (hasY) homePos.y = -(this.workOffset?.y ?? 0);
                 if (hasZ) homePos.z = this.gridBounds?.maxZ ?? 0;
 
                 // If position changed, draw rapid move to home

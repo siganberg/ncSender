@@ -1154,6 +1154,7 @@ const initThreeJS = () => {
 
   const initialBounds = computeGridBoundsFrom(props.workOffset);
   gcodeVisualizer.setGridBounds(initialBounds);
+  gcodeVisualizer.setWorkOffset(props.workOffset);
 
   // Add cutting pointer/spindle
   cuttingPointer = generateCuttingPointer();
@@ -2913,6 +2914,7 @@ watch(() => props.workOffset, (newOffset) => {
     showOutOfBoundsWarning.value = false;
     return;
   }
+  gcodeVisualizer?.setWorkOffset(newOffset);
   rebuildGrid(newOffset);
 }, { deep: true });
 
