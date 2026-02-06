@@ -244,17 +244,18 @@ class GCodeVisualizer {
                 return;
             }
 
-            // Handle G28 (return to home) - move specified axes to machine zero
+            // Handle G28 (return to home) - move specified axes to machine home
             if (cleanLine.includes('G28')) {
                 const hasX = /\bX/.test(cleanLine);
                 const hasY = /\bY/.test(cleanLine);
                 const hasZ = /\bZ/.test(cleanLine);
 
-                // Move specified axes to 0 (machine home)
+                // Move specified axes to machine home position
+                // X/Y home to 0, Z homes to max (top of travel)
                 const homePos = { ...currentPos };
                 if (hasX) homePos.x = 0;
                 if (hasY) homePos.y = 0;
-                if (hasZ) homePos.z = 0;
+                if (hasZ) homePos.z = this.gridBounds?.maxZ ?? 0;
 
                 // If position changed, draw rapid move to home
                 if (homePos.x !== currentPos.x || homePos.y !== currentPos.y || homePos.z !== currentPos.z) {
