@@ -163,9 +163,10 @@ class GCodeVisualizer {
     _axisOutOfBounds(x, y, z) {
         if (!this.gridBounds) return { x: false, y: false, z: false };
         const { minX, maxX, minY, maxY, minZ, maxZ } = this.gridBounds;
-        const xOob = (typeof minX === 'number' && x < minX) || (typeof maxX === 'number' && x > maxX);
-        const yOob = (typeof minY === 'number' && y < minY) || (typeof maxY === 'number' && y > maxY);
-        const zOob = (typeof minZ === 'number' && z < minZ) || (typeof maxZ === 'number' && z > maxZ);
+        const eps = 0.001; // Small tolerance for floating point comparisons
+        const xOob = (typeof minX === 'number' && x < minX - eps) || (typeof maxX === 'number' && x > maxX + eps);
+        const yOob = (typeof minY === 'number' && y < minY - eps) || (typeof maxY === 'number' && y > maxY + eps);
+        const zOob = (typeof minZ === 'number' && z < minZ - eps) || (typeof maxZ === 'number' && z > maxZ + eps);
         return { x: !!xOob, y: !!yOob, z: !!zOob };
     }
 
