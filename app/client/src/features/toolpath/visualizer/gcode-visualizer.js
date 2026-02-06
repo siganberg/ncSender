@@ -244,6 +244,53 @@ class GCodeVisualizer {
                 return;
             }
 
+            // Handle G28 (return to home) - move specified axes to machine zero
+            if (cleanLine.includes('G28')) {
+                const hasX = /\bX/.test(cleanLine);
+                const hasY = /\bY/.test(cleanLine);
+                const hasZ = /\bZ/.test(cleanLine);
+
+                // Move specified axes to 0 (machine home)
+                const homePos = { ...currentPos };
+                if (hasX) homePos.x = 0;
+                if (hasY) homePos.y = 0;
+                if (hasZ) homePos.z = 0;
+
+                // If position changed, draw rapid move to home
+                if (homePos.x !== currentPos.x || homePos.y !== currentPos.y || homePos.z !== currentPos.z) {
+                    this.lineMoveType.set(lineNumber, 'rapid');
+                    if (currentTool !== null) {
+                        this.lineToolNumber.set(lineNumber, currentTool);
+                    }
+
+                    const oob1 = this._axisOutOfBounds(currentPos.x, currentPos.y, currentPos.z);
+                    const oob2 = this._axisOutOfBounds(homePos.x, homePos.y, homePos.z);
+                    const isOutOfBounds = (oob1.x||oob1.y||oob1.z) || (oob2.x||oob2.y||oob2.z);
+
+                    if (isOutOfBounds) hasOutOfBounds = true;
+                    if (oob1.x || oob2.x) this._outOfBoundsAxes.add('X');
+                    if (oob1.y || oob2.y) this._outOfBoundsAxes.add('Y');
+                    if (oob1.z || oob2.z) this._outOfBoundsAxes.add('Z');
+
+                    let color;
+                    if (isOutOfBounds) {
+                        color = outOfBoundsColor;
+                    } else if (currentTool !== null && this.toolColors.has(currentTool)) {
+                        color = new THREE.Color(this.toolColors.get(currentTool));
+                    } else {
+                        color = rapidColor;
+                    }
+
+                    vertices.push(currentPos.x, currentPos.y, currentPos.z);
+                    vertices.push(homePos.x, homePos.y, homePos.z);
+                    colors.push(color.r, color.g, color.b);
+                    colors.push(color.r, color.g, color.b);
+
+                    currentPos = homePos;
+                }
+                return;
+            }
+
             // Parse G-code
             const gMatch = cleanLine.match(/G(\d+)/g); // Match all G codes on the line
             const xMatch = cleanLine.match(/X([-+]?\d*\.?\d+)/);
