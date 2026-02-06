@@ -317,6 +317,19 @@
                   <option :value="2000">Extra Long (2s)</option>
                 </select>
               </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">Status Polling Interval</label>
+                  <div class="settings-note">
+                    How often the app queries the CNC controller for status updates. Faster polling gives smoother position updates but uses more bandwidth.
+                  </div>
+                </div>
+                <select class="setting-select" v-model="pollingInterval" @change="savePollingInterval">
+                  <option :value="50">Fast (50ms)</option>
+                  <option :value="100">Normal (100ms)</option>
+                  <option :value="150">Relaxed (150ms)</option>
+                </select>
+              </div>
               <div class="setting-item">
                 <label class="setting-label">Accent / Gradient Color</label>
                 <div class="color-controls">
@@ -1452,6 +1465,8 @@ const consoleSettings = reactive({
 // Stop deceleration delay (pause before soft reset)
 const pauseBeforeStop = ref(initialSettings?.pauseBeforeStop ?? 500);
 
+const pollingInterval = ref(initialSettings?.pollingInterval ?? 100);
+
 // Helper function to compute OFF command based on ON command
 const getOffCommand = (onCommand: string): string => {
   if (!onCommand) return '';
@@ -2484,6 +2499,13 @@ const savePauseBeforeStop = async () => {
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     pauseBeforeStop: Number(pauseBeforeStop.value)
+  });
+};
+
+const savePollingInterval = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    pollingInterval: Number(pollingInterval.value)
   });
 };
 

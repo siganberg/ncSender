@@ -25,6 +25,7 @@ const { log, error: logError } = createLogger('Settings');
 
 const DEFAULT_SETTINGS = {
   pauseBeforeStop: 500,
+  pollingInterval: 100,
   connection: {
     type: 'usb',
     ip: '192.168.5.1',

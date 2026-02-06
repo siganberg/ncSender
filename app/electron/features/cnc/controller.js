@@ -604,15 +604,21 @@ export class CNCController extends EventEmitter {
 
   startPolling() {
     if (this.statusPollInterval) return;
+    const interval = getSetting('pollingInterval') || 100;
     this.statusPollInterval = setInterval(() => {
-      // Send status requests while connected or verifying controller readiness
       if (this.connection && (this.isConnected || this.isVerifyingConnection)) {
         this.sendCommand('?', { meta: { sourceId: 'system' } }).catch((error) => {
           log('Status polling failed, stopping polling:', error.message);
           this.stopPolling();
         });
       }
-    }, 100);
+    }, interval);
+  }
+
+  updatePollingInterval() {
+    if (!this.statusPollInterval) return;
+    this.stopPolling();
+    this.startPolling();
   }
 
   stopPolling() {
