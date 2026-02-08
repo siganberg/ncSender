@@ -244,6 +244,14 @@ export function createWebSocketLayer({
       updateJobStatus(jobManager);
       computeJobProgressFields();
 
+      // Always send compact DRO to USB/dongle pendant whenever the port is open.
+      // Don't gate on isConnected() — the pendant treats received DRO as connection
+      // proof, so sending before the ping handshake completes lets it connect faster.
+      const pendantSerial = getPendantSerial();
+      if (pendantSerial) {
+        pendantSerial.sendState(serverState);
+      }
+
       const sanitizedState = sanitizeForJson(serverState);
       const enableStateDeltaBroadcast = getSetting('enableStateDeltaBroadcast') ?? DEFAULT_SETTINGS.enableStateDeltaBroadcast;
 
@@ -285,10 +293,12 @@ export function createWebSocketLayer({
         }
       });
 
-      // Also send to USB pendant if connected
-      const pendantSerial = getPendantSerial();
-      if (pendantSerial?.isConnected()) {
-        pendantSerial.sendMessage(type, payload);
+      // Non-state messages still go to pendant as JSON
+      if (type !== 'server-state-updated') {
+        const pendantSerial = getPendantSerial();
+        if (pendantSerial?.isConnected()) {
+          pendantSerial.sendMessage(type, payload);
+        }
       }
     } catch (error) {
       log('Error broadcasting message:', error?.message || error);

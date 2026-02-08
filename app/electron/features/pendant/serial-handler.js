@@ -22,6 +22,9 @@ const PENDANT_IDENTIFIERS = [
   { vendorId: '0403', productId: '6001' },  // FTDI FT232
 ];
 
+// USB product strings that identify an ESP-NOW dongle (not a pendant)
+const DONGLE_PRODUCT_NAMES = ['ncSender ESP-NOW Dongle'];
+
 const BAUD_RATE = 115200;
 const PING_INTERVAL_MS = 1000;
 const PING_TIMEOUT_MS = 3000;
@@ -68,6 +71,17 @@ export function createPendantSerialHandler({
     }
   }
 
+  function isDonglePort(portInfo) {
+    const fields = [
+      portInfo.manufacturer,
+      portInfo.serialNumber,
+      portInfo.pnpId,
+      portInfo.friendlyName
+    ].filter(Boolean).join(' ');
+
+    return DONGLE_PRODUCT_NAMES.some(name => fields.includes(name));
+  }
+
   async function detectPendantPort() {
     const configuredPort = getSetting('pendant.serialPort', 'auto');
 
@@ -76,18 +90,36 @@ export function createPendantSerialHandler({
     }
 
     // Auto-detect based on known VID/PID
+    // Prefer dongle over direct USB — pendant prioritizes ESP-NOW when dongle exists,
+    // so direct USB pendant will suppress pings and won't respond
     const ports = await listPorts();
+    let donglePort = null;
+    let pendantPort = null;
 
     for (const portInfo of ports) {
       const vid = (portInfo.vendorId || '').toLowerCase();
       const pid = (portInfo.productId || '').toLowerCase();
 
-      for (const identifier of PENDANT_IDENTIFIERS) {
-        if (vid === identifier.vendorId && pid === identifier.productId) {
-          log('Auto-detected pendant port:', portInfo.path, `(VID:${vid}, PID:${pid})`);
-          return portInfo.path;
-        }
+      const matches = PENDANT_IDENTIFIERS.some(id => vid === id.vendorId && pid === id.productId);
+      if (!matches) continue;
+
+      if (isDonglePort(portInfo)) {
+        donglePort = donglePort || portInfo.path;
+        log('Found dongle port:', portInfo.path);
+      } else {
+        pendantPort = pendantPort || portInfo.path;
+        log('Found pendant port:', portInfo.path);
       }
+    }
+
+    if (donglePort) {
+      log('Using dongle port (ESP-NOW bridge):', donglePort);
+      return donglePort;
+    }
+
+    if (pendantPort) {
+      log('Using direct pendant port:', pendantPort);
+      return pendantPort;
     }
 
     return null;
@@ -206,15 +238,22 @@ export function createPendantSerialHandler({
     lastPongTime = Date.now();
 
     pingInterval = setInterval(() => {
-      // Check for timeout
       if (isConnected && Date.now() - lastPongTime > PING_TIMEOUT_MS) {
         log('Pendant ping timeout');
-        handleDisconnect();
-        return;
+        // Don't close the serial port — dongle stays connected even when pendant is off.
+        // Just mark as disconnected. When pendant reboots and pings again,
+        // handlePing() will re-establish the connection through the same port.
+        isConnected = false;
+        broadcast('client:disconnected', clientMeta);
       }
 
-      // Respond to any pending pings from pendant
-      // The pendant sends pings, server responds with pongs
+      // Push DRO to pendant periodically. This ensures the pendant receives
+      // state data even if ping responses or broadcastState DRO get lost.
+      // The pendant treats DRO as connection proof, so this also lets it
+      // connect without waiting for the K pong handshake.
+      if (port && port.isOpen) {
+        sendState(serverState);
+      }
     }, PING_INTERVAL_MS);
   }
 
@@ -314,18 +353,13 @@ export function createPendantSerialHandler({
       parts.push(`P:${wpos.join(',')}`);
     }
 
-    // Overrides - only send if changed
+    // Overrides - always send (no dedup — ESP-NOW is unreliable)
     const curOverrides = {
       feed: ms.feedrateOverride || 100,
       rapid: ms.rapidOverride || 100,
       spindle: ms.spindleOverride || 100
     };
-    if (curOverrides.feed !== lastOverrides.feed ||
-        curOverrides.rapid !== lastOverrides.rapid ||
-        curOverrides.spindle !== lastOverrides.spindle) {
-      parts.push(`O:${curOverrides.feed},${curOverrides.rapid},${curOverrides.spindle}`);
-      lastOverrides = curOverrides;
-    }
+    parts.push(`O:${curOverrides.feed},${curOverrides.rapid},${curOverrides.spindle}`);
 
     // Feed rate (only if > 0)
     if (ms.feedRate > 0) {
@@ -352,7 +386,7 @@ export function createPendantSerialHandler({
       parts.push(`A:${ms.alarmCode}`);
     }
 
-    // Job progress - only if job is running
+    // Job progress and status
     const job = state.jobLoaded;
     if (job && job.status === 'running' && job.totalLines > 0) {
       const jobStr = `${job.currentLine || 0}/${job.totalLines}`;
@@ -364,12 +398,14 @@ export function createPendantSerialHandler({
       lastJobProgress = '';
     }
 
-    // WCO - only send when changed
-    const curWCO = ms.WCO || '0,0,0';
-    if (curWCO !== lastWCO) {
-      parts.push(`W:${curWCO}`);
-      lastWCO = curWCO;
+    // Job status (running/paused/stopped) for auto-switch and UI
+    if (job && job.status) {
+      parts.push(`D:${job.status}`);
     }
+
+    // WCO - always send (no dedup — ESP-NOW is unreliable)
+    const curWCO = ms.WCO || '0,0,0';
+    parts.push(`W:${curWCO}`);
 
     const message = '$' + parts.join('|');
     return sendRaw(message);
@@ -530,15 +566,22 @@ export function createPendantSerialHandler({
 
   function handlePing() {
     lastPongTime = Date.now();
-    sendRaw('K'); // Compact pong: K (OK)
 
     if (!isConnected) {
+      sendRaw('K'); // Initial pong to establish connection
       isConnected = true;
       clientMeta.connectedAt = Date.now();
       log('Pendant connected via USB serial');
       broadcast('client:connected', clientMeta);
 
-      // Send initial state
+      // Reset dedup state so first compact DRO sends ALL fields (WCO, overrides, etc.)
+      lastOverrides = { feed: 0, rapid: 0, spindle: 0 };
+      lastWCO = '';
+      lastJobProgress = '';
+      lastSentSettings = null;
+
+      // Send initial state after brief delay to avoid back-to-back ESP-NOW sends
+      // (K + DRO sent too close together can cause the dongle to drop the second packet)
       updateSenderStatus();
       updateJobStatus(jobManager);
       computeJobProgressFields();
@@ -552,6 +595,12 @@ export function createPendantSerialHandler({
           sendSettings(settings, true);
         }
       }, 100);
+    } else {
+      // Send DRO directly — no "K" pong needed because the pendant treats
+      // received DRO as connection proof. Sending a single packet (DRO only)
+      // instead of two (K + DRO) avoids back-to-back ESP-NOW sends through
+      // the dongle where the second packet can get dropped.
+      sendState(serverState);
     }
   }
 

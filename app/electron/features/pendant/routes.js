@@ -317,8 +317,11 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
         ports: ports.map(p => ({
           path: p.path,
           manufacturer: p.manufacturer || null,
+          serialNumber: p.serialNumber || null,
           vendorId: p.vendorId || null,
-          productId: p.productId || null
+          productId: p.productId || null,
+          friendlyName: p.friendlyName || null,
+          pnpId: p.pnpId || null
         }))
       });
     } catch (err) {
