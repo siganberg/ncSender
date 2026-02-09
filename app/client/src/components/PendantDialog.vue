@@ -74,8 +74,116 @@
         </div>
       </div>
 
-      <!-- Activation Section (when not licensed) -->
-      <div v-else class="activation-card">
+      <!-- Firmware Update (USB only) -->
+      <div v-if="usbPendant" class="firmware-card">
+        <div class="firmware-card__header">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Firmware Update</span>
+          <button v-if="!fwUpdating" class="firmware-card__refresh" @click="checkFirmware" :disabled="fwChecking">
+            <svg :class="{ 'spinner': fwChecking }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+        </div>
+        <div class="firmware-card__body">
+          <!-- Checking -->
+          <div v-if="fwChecking && !fwInfo" class="firmware-status firmware-status--checking">
+            <svg class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+              <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+            </svg>
+            <span>Checking for updates...</span>
+          </div>
+
+          <!-- Up to date -->
+          <div v-else-if="fwInfo && !fwInfo.updateAvailable && !fwUpdating && !fwSuccess" class="firmware-status firmware-status--uptodate">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span>Firmware is up to date{{ fwInfo.currentVersion ? ` (v${fwInfo.currentVersion})` : '' }}</span>
+            <button v-if="!fwSelectedFile" class="firmware-flash-file-btn" @click="($refs.fwFileInput as HTMLInputElement).click()">
+              Flash from file
+            </button>
+          </div>
+
+          <!-- Update available -->
+          <div v-else-if="fwInfo && fwInfo.updateAvailable && !fwUpdating && !fwSuccess" class="firmware-update-available">
+            <div class="firmware-versions">
+              <span class="firmware-version-current">v{{ fwInfo.currentVersion }}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"/>
+                <polyline points="12 5 19 12 12 19"/>
+              </svg>
+              <span class="firmware-version-latest">v{{ fwInfo.latestVersion }}</span>
+            </div>
+            <div v-if="fwInfo.deviceModel === null" class="form-field" style="margin-bottom: 8px;">
+              <label>Device Model</label>
+              <select v-model="fwModelOverride" class="firmware-select">
+                <option value="">Select model...</option>
+                <option value="pibot">PiBot (ESP32)</option>
+                <option value="ncsender">ncSender (Waveshare ESP32-S3)</option>
+              </select>
+            </div>
+            <button class="firmware-update-btn" @click="startFirmwareUpdate" :disabled="fwInfo.deviceModel === null && !fwModelOverride">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span>Update Now</span>
+            </button>
+          </div>
+
+          <!-- Updating -->
+          <div v-else-if="fwUpdating" class="firmware-status firmware-status--updating">
+            <div class="firmware-progress-bar">
+              <div class="firmware-progress-fill" :style="{ width: fwProgress + '%' }"></div>
+            </div>
+            <div class="firmware-progress-row">
+              <span class="firmware-progress-text">{{ fwStatusText }} {{ fwProgress }}%</span>
+              <button class="firmware-cancel-btn" @click="cancelFirmwareFlash">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Success -->
+          <div v-else-if="fwSuccess" class="firmware-status firmware-status--success">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span>{{ fwSuccessVersion ? `Updated to v${fwSuccessVersion}!` : 'Flash complete!' }} Pendant is rebooting...</span>
+          </div>
+
+          <!-- Error -->
+          <Transition name="fade">
+            <div v-if="fwError" class="message message--error" style="margin-top: 8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+              <span>{{ fwError }}</span>
+            </div>
+          </Transition>
+
+          <!-- Flash from file -->
+          <input ref="fwFileInput" type="file" accept=".bin" style="display: none" @change="onFileSelected" />
+          <div v-if="!fwUpdating && fwSelectedFile" class="firmware-flash-file-row">
+            <span class="firmware-selected-file">{{ fwSelectedFile.name }}</span>
+            <button class="firmware-flash-btn" @click="flashFromFile">Flash</button>
+            <button class="firmware-flash-clear-btn" @click="fwSelectedFile = null">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activation Section (when connected but not licensed) -->
+      <div v-else-if="isConnected && !activePendant?.licensed" class="activation-card">
         <div class="activation-card__header">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -173,6 +281,19 @@ const activating = ref(false);
 const activationError = ref('');
 const activationSuccess = ref(false);
 
+// Firmware update state
+const fwChecking = ref(false);
+const fwInfo = ref<{ currentVersion: string; latestVersion: string; updateAvailable: boolean; releaseNotes: string; deviceModel: string | null } | null>(null);
+const fwUpdating = ref(false);
+const fwProgress = ref(0);
+const fwStatusText = ref('');
+const fwError = ref('');
+const fwSuccess = ref(false);
+const fwSuccessVersion = ref('');
+const fwModelOverride = ref('');
+const fwFileInput = ref<HTMLInputElement | null>(null);
+const fwSelectedFile = ref<File | null>(null);
+
 const isConnected = computed(() => usbPendant.value || wifiPendant.value);
 const activePendant = computed(() => usbPendant.value || wifiPendant.value);
 
@@ -201,6 +322,180 @@ const fetchStatus = async (showLoading = true) => {
       loading.value = false;
     }
   }
+};
+
+const checkFirmware = async () => {
+  fwChecking.value = true;
+  fwError.value = '';
+  try {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/pendant/firmware/check`);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to check for updates');
+    }
+    fwInfo.value = await response.json();
+  } catch (error: any) {
+    fwError.value = error.message || 'Could not check for updates';
+  } finally {
+    fwChecking.value = false;
+  }
+};
+
+const showFwSuccess = (version: string) => {
+  fwSuccess.value = true;
+  fwSuccessVersion.value = version;
+  fwUpdating.value = false;
+  setTimeout(() => {
+    fwSuccess.value = false;
+    fwInfo.value = null;
+    checkFirmware();
+  }, 10000);
+};
+
+const startFirmwareUpdate = async () => {
+  fwUpdating.value = true;
+  fwProgress.value = 0;
+  fwStatusText.value = 'Starting...';
+  fwError.value = '';
+  fwSuccess.value = false;
+
+  try {
+    const baseUrl = getApiBaseUrl();
+    const body: Record<string, string> = {};
+    if (fwModelOverride.value) {
+      body.deviceModel = fwModelOverride.value;
+    }
+
+    const response = await fetch(`${baseUrl}/api/pendant/firmware/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok || !response.body) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Update failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.substring(6));
+          if (event.type === 'progress') {
+            fwProgress.value = event.percent || 0;
+            fwStatusText.value = event.status || 'Flashing firmware...';
+          } else if (event.type === 'complete') {
+            showFwSuccess(event.version || '');
+          } else if (event.type === 'error') {
+            throw new Error(event.message || 'Update failed');
+          }
+        } catch (e: any) {
+          if (e.message && e.message !== 'Update failed') {
+            // JSON parse error — ignore partial data
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    fwError.value = error.message || 'Firmware update failed';
+    fwUpdating.value = false;
+  }
+};
+
+const onFileSelected = () => {
+  const file = fwFileInput.value?.files?.[0];
+  if (file) fwSelectedFile.value = file;
+  if (fwFileInput.value) fwFileInput.value.value = '';
+};
+
+const flashFromFile = async () => {
+  const file = fwSelectedFile.value;
+  if (!file) return;
+
+  fwSelectedFile.value = null;
+  fwUpdating.value = true;
+  fwProgress.value = 0;
+  fwStatusText.value = 'Flashing firmware...';
+  fwError.value = '';
+  fwSuccess.value = false;
+
+  try {
+    const baseUrl = getApiBaseUrl();
+    const arrayBuffer = await file.arrayBuffer();
+
+    const response = await fetch(`${baseUrl}/api/pendant/firmware/flash-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: arrayBuffer
+    });
+
+    if (!response.ok || !response.body) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Flash failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.substring(6));
+          if (event.type === 'progress') {
+            fwProgress.value = event.percent || 0;
+            fwStatusText.value = event.status || 'Flashing firmware...';
+          } else if (event.type === 'complete') {
+            showFwSuccess('');
+          } else if (event.type === 'error') {
+            throw new Error(event.message || 'Flash failed');
+          }
+        } catch (e: any) {
+          if (e.message && e.message !== 'Flash failed') {
+            // JSON parse error — ignore partial data
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    fwError.value = error.message || 'Firmware flash failed';
+    fwUpdating.value = false;
+  }
+};
+
+const cancelFirmwareFlash = async () => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    await fetch(`${baseUrl}/api/pendant/firmware/cancel`, { method: 'POST' });
+  } catch {}
+  fwUpdating.value = false;
+  fwError.value = 'Firmware update cancelled';
+  setTimeout(() => { fwError.value = ''; }, 15000);
 };
 
 const activateLicense = async () => {
@@ -238,6 +533,7 @@ const activateLicense = async () => {
       const data = await response.json();
       if (data.success) {
         activationSuccess.value = true;
+        installationId.value = '';
         if (usbPendant.value) {
           usbPendant.value.licensed = true;
         }
@@ -282,6 +578,7 @@ const activateLicense = async () => {
       const data = await response.json();
       if (data.success) {
         activationSuccess.value = true;
+        installationId.value = '';
         manualPendantIp.value = '';
         if (wifiPendant.value) {
           wifiPendant.value.licensed = true;
@@ -298,10 +595,14 @@ const activateLicense = async () => {
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-  fetchStatus(true);
+  fetchStatus(true).then(() => {
+    if (usbPendant.value) {
+      checkFirmware();
+    }
+  });
   // Refresh status periodically to pick up license status updates
   refreshInterval = setInterval(() => {
-    if (!activating.value) {
+    if (!activating.value && !fwUpdating.value) {
       fetchStatus(false);
     }
   }, 3000);
@@ -637,5 +938,283 @@ onUnmounted(() => {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* Firmware Update Card */
+.firmware-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.firmware-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.firmware-card__header svg {
+  color: var(--color-text-secondary);
+}
+
+.firmware-card__refresh {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.firmware-card__refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+.firmware-card__refresh:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.firmware-card__body {
+  padding: 16px 20px;
+}
+
+.firmware-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.firmware-status--checking {
+  color: var(--color-text-secondary);
+}
+
+.firmware-status--uptodate {
+  color: #4ade80;
+  flex-wrap: wrap;
+}
+
+.firmware-status--uptodate .firmware-flash-file-btn {
+  margin-left: auto;
+}
+
+.firmware-status--success {
+  color: #4ade80;
+}
+
+.firmware-status--updating {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.firmware-progress-bar {
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.firmware-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), color-mix(in srgb, var(--color-accent), white 30%), var(--color-accent));
+  background-size: 200% 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  min-width: 0;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.firmware-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.firmware-progress-text {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.firmware-cancel-btn {
+  background: rgba(239, 68, 68, 0.85);
+  border: 1px solid rgba(239, 68, 68, 0.9);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.firmware-cancel-btn:hover {
+  background: rgba(239, 68, 68, 1);
+  border-color: rgba(239, 68, 68, 1);
+}
+
+.firmware-update-available {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.firmware-versions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.firmware-version-current {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.firmware-version-latest {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 14px;
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.1);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.firmware-versions svg {
+  color: var(--color-text-secondary);
+}
+
+.firmware-select {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.firmware-update-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 80%, black) 100%);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.firmware-update-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb, 59, 130, 246), 0.3);
+}
+
+.firmware-update-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.firmware-flash-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.firmware-flash-file-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s ease;
+}
+
+.firmware-flash-file-btn:hover {
+  color: var(--color-text);
+}
+
+.firmware-selected-file {
+  font-size: 12px;
+  color: var(--color-text);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 4px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.firmware-flash-btn {
+  background: #3b82f6;
+  border: none;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.firmware-flash-btn:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.firmware-flash-clear-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.firmware-flash-clear-btn:hover {
+  color: #f87171;
 }
 </style>

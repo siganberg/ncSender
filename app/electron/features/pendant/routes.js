@@ -309,6 +309,224 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
     }
   });
 
+  // Check for firmware updates
+  router.get('/firmware/check', async (req, res) => {
+    try {
+      const usbStatus = pendantSerial?.getStatus() || { connected: false };
+      if (!usbStatus.connected) {
+        return res.status(400).json({ error: 'USB pendant not connected' });
+      }
+
+      const currentVersion = usbStatus.clientMeta?.version || null;
+      let deviceModel = usbStatus.clientMeta?.deviceModel || null;
+
+      // Fallback: infer model from VID/PID
+      if (!deviceModel && pendantSerial.getPortVidPid) {
+        const vidPid = await pendantSerial.getPortVidPid();
+        if (vidPid) {
+          if (vidPid.vendorId === '303a' && vidPid.productId === '1001') {
+            deviceModel = 'ncsender';
+          } else {
+            deviceModel = 'pibot';
+          }
+        }
+      }
+
+      const ghResponse = await fetch(
+        'https://api.github.com/repos/siganberg/ncSender.pendant.releases/releases/latest',
+        {
+          headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'ncSender' },
+          signal: AbortSignal.timeout(10000)
+        }
+      );
+
+      if (!ghResponse.ok) {
+        return res.status(502).json({ error: 'Could not check for updates' });
+      }
+
+      const release = await ghResponse.json();
+      const latestVersion = (release.tag_name || '').replace(/^v/, '');
+
+      const updateAvailable = currentVersion && latestVersion
+        ? currentVersion !== latestVersion
+        : false;
+
+      res.json({
+        currentVersion,
+        latestVersion,
+        updateAvailable,
+        releaseNotes: release.body || '',
+        publishedAt: release.published_at || null,
+        deviceModel
+      });
+    } catch (err) {
+      logError('Firmware check failed:', err.message);
+      res.status(500).json({ error: 'Could not check for updates' });
+    }
+  });
+
+  // Flash firmware update via SSE
+  router.post('/firmware/update', async (req, res) => {
+    try {
+      if (!pendantSerial?.isConnected()) {
+        return res.status(400).json({ error: 'USB pendant not connected' });
+      }
+
+      const usbStatus = pendantSerial.getStatus();
+      let deviceModel = usbStatus.clientMeta?.deviceModel || null;
+
+      // Fallback: infer from VID/PID
+      if (!deviceModel && pendantSerial.getPortVidPid) {
+        const vidPid = await pendantSerial.getPortVidPid();
+        if (vidPid) {
+          deviceModel = (vidPid.vendorId === '303a' && vidPid.productId === '1001')
+            ? 'ncsender' : 'pibot';
+        }
+      }
+
+      // Allow client to override device model
+      if (req.body?.deviceModel) {
+        deviceModel = req.body.deviceModel;
+      }
+
+      if (!deviceModel) {
+        return res.status(400).json({ error: 'Could not determine device model' });
+      }
+
+      // Set up SSE
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+
+      const sendEvent = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      sendEvent({ type: 'progress', percent: 0, status: 'Fetching release info...' });
+
+      // Fetch latest release
+      const ghResponse = await fetch(
+        'https://api.github.com/repos/siganberg/ncSender.pendant.releases/releases/latest',
+        {
+          headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'ncSender' },
+          signal: AbortSignal.timeout(10000)
+        }
+      );
+
+      if (!ghResponse.ok) {
+        sendEvent({ type: 'error', message: 'Failed to fetch release info' });
+        res.end();
+        return;
+      }
+
+      const release = await ghResponse.json();
+      const latestVersion = (release.tag_name || '').replace(/^v/, '');
+
+      // Find the correct firmware asset
+      const assetName = `firmware_${deviceModel}_pendant_v${latestVersion}.bin`;
+      const asset = (release.assets || []).find(a => a.name === assetName);
+
+      if (!asset) {
+        sendEvent({ type: 'error', message: `Firmware asset not found: ${assetName}` });
+        res.end();
+        return;
+      }
+
+      sendEvent({ type: 'progress', percent: 0, status: 'Downloading firmware...' });
+
+      // Download firmware binary
+      const dlResponse = await fetch(asset.browser_download_url, {
+        headers: { 'User-Agent': 'ncSender' },
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (!dlResponse.ok) {
+        sendEvent({ type: 'error', message: 'Failed to download firmware' });
+        res.end();
+        return;
+      }
+
+      const arrayBuf = await dlResponse.arrayBuffer();
+      const firmwareBuffer = Buffer.from(arrayBuf);
+
+      log(`Downloaded firmware: ${assetName} (${firmwareBuffer.length} bytes)`);
+      sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
+
+      // Flash firmware over serial
+      await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
+        sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
+      });
+
+      sendEvent({ type: 'complete', version: latestVersion });
+      res.end();
+    } catch (err) {
+      logError('Firmware update failed:', err.message);
+      try {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+        res.end();
+      } catch {
+        // Response may already be closed
+      }
+    }
+  });
+
+  // Flash firmware from user-provided .bin file via SSE
+  router.post('/firmware/flash-file', async (req, res) => {
+      try {
+        if (!pendantSerial?.isConnected()) {
+          return res.status(400).json({ error: 'USB pendant not connected' });
+        }
+
+        const chunks = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+        const firmwareBuffer = Buffer.concat(chunks);
+
+        if (!firmwareBuffer.length) {
+          return res.status(400).json({ error: 'No firmware data received' });
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+
+        const sendEvent = (data) => {
+          res.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+
+        log(`Flashing firmware from file (${firmwareBuffer.length} bytes)`);
+        sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
+
+        await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
+          sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
+        });
+
+        sendEvent({ type: 'complete', version: 'file' });
+        res.end();
+      } catch (err) {
+        logError('Firmware flash from file failed:', err.message);
+        try {
+          res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+          res.end();
+        } catch {
+          // Response may already be closed
+        }
+      }
+  });
+
+  // Cancel an in-progress firmware flash
+  router.post('/firmware/cancel', (req, res) => {
+    if (pendantSerial?.cancelFlashFirmware) {
+      pendantSerial.cancelFlashFirmware();
+    }
+    res.json({ success: true });
+  });
+
   // List available serial ports
   router.get('/serial/ports', async (req, res) => {
     try {

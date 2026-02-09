@@ -297,7 +297,11 @@ export function createWebSocketLayer({
       if (type !== 'server-state-updated') {
         const pendantSerial = getPendantSerial();
         if (pendantSerial?.isConnected()) {
-          pendantSerial.sendMessage(type, payload);
+          if (type === 'settings-changed') {
+            pendantSerial.sendSettings(payload, true);
+          } else {
+            pendantSerial.sendMessage(type, payload);
+          }
         }
       }
     } catch (error) {

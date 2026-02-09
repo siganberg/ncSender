@@ -8,7 +8,7 @@
 import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
 import { createLogger } from '../../core/logger.js';
-import { getSetting, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
+import { getSetting, readSettings, DEFAULT_SETTINGS } from '../../core/settings-manager.js';
 
 const { log, error: logError } = createLogger('PendantSerial');
 
@@ -25,7 +25,7 @@ const PENDANT_IDENTIFIERS = [
 // USB product strings that identify an ESP-NOW dongle (not a pendant)
 const DONGLE_PRODUCT_NAMES = ['ncSender ESP-NOW Dongle'];
 
-const BAUD_RATE = 115200;
+const BAUD_RATE = 460800;
 const PING_INTERVAL_MS = 1000;
 const PING_TIMEOUT_MS = 3000;
 const RECONNECT_INTERVAL_MS = 5000;
@@ -47,6 +47,7 @@ export function createPendantSerialHandler({
   let pingInterval = null;
   let reconnectInterval = null;
   let currentPortPath = null;
+  let otaResponseHandler = null;
 
   // Client metadata for registry
   const clientMeta = {
@@ -448,6 +449,12 @@ export function createPendantSerialHandler({
   }
 
   function handleMessage(data) {
+    // Intercept $OTA responses during firmware flashing
+    if (otaResponseHandler && data.startsWith('$OTA:')) {
+      otaResponseHandler(data);
+      return;
+    }
+
     // Handle compact jog format: JX1.000F3000
     if (data.startsWith('J') && data.length > 1) {
       const axis = data[1].toUpperCase();
@@ -591,7 +598,7 @@ export function createPendantSerialHandler({
           sendState(serverState);
 
           // Send initial settings (force send on connection)
-          const settings = serverState.settings || {};
+          const settings = readSettings() || {};
           sendSettings(settings, true);
         }
       }, 100);
@@ -806,6 +813,102 @@ export function createPendantSerialHandler({
     log('Job stopped via USB pendant');
   }
 
+  let otaReject = null;
+  let otaInactivityTimer = null;
+
+  function otaCleanup() {
+    clearTimeout(otaInactivityTimer);
+    otaInactivityTimer = null;
+    otaResponseHandler = null;
+    otaReject = null;
+  }
+
+  async function flashFirmware(firmwareBuffer, onProgress) {
+    if (!port || !port.isOpen) {
+      throw new Error('Serial port not open');
+    }
+
+    stopPingInterval();
+
+    return new Promise((resolve, reject) => {
+      otaReject = reject;
+      const INACTIVITY_TIMEOUT_MS = 15000;
+      otaInactivityTimer = setTimeout(onTimeout, INACTIVITY_TIMEOUT_MS);
+
+      function resetTimeout() {
+        clearTimeout(otaInactivityTimer);
+        otaInactivityTimer = setTimeout(onTimeout, INACTIVITY_TIMEOUT_MS);
+      }
+
+      function onTimeout() {
+        otaCleanup();
+        setTimeout(() => startPingInterval(), 7000);
+        reject(new Error('Firmware update timed out'));
+      }
+
+      const chunkSize = 4096;
+      let offset = 0;
+
+      const sendNextChunk = () => {
+        if (offset >= firmwareBuffer.length) return;
+        const end = Math.min(offset + chunkSize, firmwareBuffer.length);
+        const chunk = firmwareBuffer.slice(offset, end);
+        offset = end;
+        port.write(chunk);
+      };
+
+      otaResponseHandler = (line) => {
+        if (line === '$OTA:READY') {
+          resetTimeout();
+          sendNextChunk();
+        } else if (line === '$OTA:ACK') {
+          resetTimeout();
+          sendNextChunk();
+        } else if (line.startsWith('$OTA:PROGRESS:')) {
+          resetTimeout();
+          const percent = parseInt(line.substring(14), 10);
+          if (onProgress) onProgress({ percent });
+        } else if (line === '$OTA:OK') {
+          otaCleanup();
+          resolve();
+        } else if (line.startsWith('$OTA:ERROR:')) {
+          otaCleanup();
+          startPingInterval();
+          reject(new Error(line.substring(11)));
+        }
+      };
+
+      const cmd = `$OTA:${firmwareBuffer.length}\n`;
+      port.write(cmd, (err) => {
+        if (err) {
+          otaCleanup();
+          startPingInterval();
+          reject(new Error('Failed to send OTA command: ' + err.message));
+        }
+      });
+    });
+  }
+
+  function cancelFlashFirmware() {
+    if (otaReject) {
+      const r = otaReject;
+      otaCleanup();
+      setTimeout(() => startPingInterval(), 7000);
+      r(new Error('Firmware update cancelled'));
+    }
+  }
+
+  async function getPortVidPid() {
+    if (!currentPortPath) return null;
+    const ports = await listPorts();
+    const match = ports.find(p => p.path === currentPortPath);
+    if (!match) return null;
+    return {
+      vendorId: (match.vendorId || '').toLowerCase(),
+      productId: (match.productId || '').toLowerCase()
+    };
+  }
+
   async function autoConnect() {
     const autoConnect = getSetting('pendant.autoConnect', true);
     if (!autoConnect) {
@@ -841,6 +944,9 @@ export function createPendantSerialHandler({
     autoConnect,
     listPorts,
     getStatus,
+    flashFirmware,
+    cancelFlashFirmware,
+    getPortVidPid,
     shutdown
   };
 }
