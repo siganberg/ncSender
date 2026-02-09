@@ -5,6 +5,7 @@
  */
 
 import { Router } from 'express';
+import http from 'node:http';
 import { createLogger } from '../../core/logger.js';
 import { getSetting } from '../../core/settings-manager.js';
 
@@ -18,6 +19,63 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
     if (!websocketLayer?.getClientRegistry) return null;
     const clients = websocketLayer.getClientRegistry();
     return clients.find(c => c.product === 'ncSenderPendant') || null;
+  };
+
+  const uploadFirmwareOTA = (pendantIp, firmwareBuffer, onProgress) => {
+    return new Promise((resolve, reject) => {
+      const boundary = '----FirmwareOTA' + Date.now();
+      const headerPart = Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="firmware"; filename="firmware.bin"\r\nContent-Type: application/octet-stream\r\n\r\n`
+      );
+      const footerPart = Buffer.from(`\r\n--${boundary}--\r\n`);
+      const totalSize = headerPart.length + firmwareBuffer.length + footerPart.length;
+
+      const url = new URL(`http://${pendantIp}/update`);
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': totalSize
+        },
+        timeout: 120000
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 200) resolve();
+          else reject(new Error(body || `HTTP ${res.statusCode}`));
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('OTA upload timed out')); });
+
+      req.write(headerPart);
+
+      const CHUNK_SIZE = 4096;
+      let offset = 0;
+
+      const writeChunks = () => {
+        let ok = true;
+        while (ok && offset < firmwareBuffer.length) {
+          const end = Math.min(offset + CHUNK_SIZE, firmwareBuffer.length);
+          ok = req.write(firmwareBuffer.subarray(offset, end));
+          offset = end;
+          onProgress(Math.round((offset / firmwareBuffer.length) * 100));
+        }
+        if (offset < firmwareBuffer.length) {
+          req.once('drain', writeChunks);
+        } else {
+          req.write(footerPart);
+          req.end();
+        }
+      };
+
+      writeChunks();
+    });
   };
 
   // Get pendant status (includes both USB and WiFi)
@@ -38,12 +96,12 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
       });
     }
 
-    // Determine active connection (USB has priority)
+    // Determine active connection (WiFi/WebSocket has priority over USB)
     let activeConnectionType = null;
-    if (usbStatus.connected) {
-      activeConnectionType = 'usb';
-    } else if (wifiPendant) {
+    if (wifiPendant) {
       activeConnectionType = 'wifi';
+    } else if (usbStatus.connected) {
+      activeConnectionType = 'usb';
     }
 
     let wifiLicensed = false;
@@ -79,7 +137,7 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
         version: wifiPendant.version,
         licensed: wifiLicensed
       } : null,
-      pendantConnectionType: usbStatus.connected ? 'usb' : (wifiPendant ? 'wifi' : null),
+      pendantConnectionType: wifiPendant ? 'wifi' : (usbStatus.connected ? 'usb' : null),
       activeConnectionType,
       pendantEnabled: true
     });
@@ -313,23 +371,44 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
   router.get('/firmware/check', async (req, res) => {
     try {
       const usbStatus = pendantSerial?.getStatus() || { connected: false };
-      if (!usbStatus.connected) {
-        return res.status(400).json({ error: 'USB pendant not connected' });
-      }
+      const wifiPendant = getWifiPendant();
 
-      const currentVersion = usbStatus.clientMeta?.version || null;
-      let deviceModel = usbStatus.clientMeta?.deviceModel || null;
+      let currentVersion = null;
+      let deviceModel = null;
+      let connectionType = null;
 
-      // Fallback: infer model from VID/PID
-      if (!deviceModel && pendantSerial.getPortVidPid) {
-        const vidPid = await pendantSerial.getPortVidPid();
-        if (vidPid) {
-          if (vidPid.vendorId === '303a' && vidPid.productId === '1001') {
-            deviceModel = 'ncsender';
-          } else {
-            deviceModel = 'pibot';
+      if (usbStatus.connected) {
+        connectionType = 'usb';
+        currentVersion = usbStatus.clientMeta?.version || null;
+        deviceModel = usbStatus.clientMeta?.deviceModel || null;
+
+        if (!deviceModel && pendantSerial.getPortVidPid) {
+          const vidPid = await pendantSerial.getPortVidPid();
+          if (vidPid) {
+            deviceModel = (vidPid.vendorId === '303a' && vidPid.productId === '1001')
+              ? 'ncsender' : 'pibot';
           }
         }
+      } else if (wifiPendant) {
+        connectionType = 'wifi';
+        currentVersion = wifiPendant.version || null;
+
+        if (wifiPendant.ip) {
+          try {
+            const infoResponse = await fetch(`http://${wifiPendant.ip}/api/info`, {
+              signal: AbortSignal.timeout(3000)
+            });
+            if (infoResponse.ok) {
+              const info = await infoResponse.json();
+              deviceModel = info.deviceModel || null;
+              if (!currentVersion) currentVersion = info.version || null;
+            }
+          } catch {
+            log('Could not fetch device info from WiFi pendant');
+          }
+        }
+      } else {
+        return res.status(400).json({ error: 'No pendant connected' });
       }
 
       const ghResponse = await fetch(
@@ -357,7 +436,8 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
         updateAvailable,
         releaseNotes: release.body || '',
         publishedAt: release.published_at || null,
-        deviceModel
+        deviceModel,
+        connectionType
       });
     } catch (err) {
       logError('Firmware check failed:', err.message);
@@ -368,23 +448,39 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
   // Flash firmware update via SSE
   router.post('/firmware/update', async (req, res) => {
     try {
-      if (!pendantSerial?.isConnected()) {
-        return res.status(400).json({ error: 'USB pendant not connected' });
+      const usbStatus = pendantSerial?.getStatus() || { connected: false };
+      const wifiPendant = getWifiPendant();
+      const useWifi = !usbStatus.connected && wifiPendant?.ip;
+
+      if (!usbStatus.connected && !wifiPendant) {
+        return res.status(400).json({ error: 'No pendant connected' });
       }
 
-      const usbStatus = pendantSerial.getStatus();
-      let deviceModel = usbStatus.clientMeta?.deviceModel || null;
+      let deviceModel = null;
 
-      // Fallback: infer from VID/PID
-      if (!deviceModel && pendantSerial.getPortVidPid) {
-        const vidPid = await pendantSerial.getPortVidPid();
-        if (vidPid) {
-          deviceModel = (vidPid.vendorId === '303a' && vidPid.productId === '1001')
-            ? 'ncsender' : 'pibot';
+      if (usbStatus.connected) {
+        deviceModel = usbStatus.clientMeta?.deviceModel || null;
+        if (!deviceModel && pendantSerial.getPortVidPid) {
+          const vidPid = await pendantSerial.getPortVidPid();
+          if (vidPid) {
+            deviceModel = (vidPid.vendorId === '303a' && vidPid.productId === '1001')
+              ? 'ncsender' : 'pibot';
+          }
+        }
+      } else if (wifiPendant?.ip) {
+        try {
+          const infoResponse = await fetch(`http://${wifiPendant.ip}/api/info`, {
+            signal: AbortSignal.timeout(3000)
+          });
+          if (infoResponse.ok) {
+            const info = await infoResponse.json();
+            deviceModel = info.deviceModel || null;
+          }
+        } catch {
+          log('Could not fetch device info from WiFi pendant');
         }
       }
 
-      // Allow client to override device model
       if (req.body?.deviceModel) {
         deviceModel = req.body.deviceModel;
       }
@@ -393,7 +489,6 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
         return res.status(400).json({ error: 'Could not determine device model' });
       }
 
-      // Set up SSE
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -406,7 +501,6 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
 
       sendEvent({ type: 'progress', percent: 0, status: 'Fetching release info...' });
 
-      // Fetch latest release
       const ghResponse = await fetch(
         'https://api.github.com/repos/siganberg/ncSender.pendant.releases/releases/latest',
         {
@@ -424,7 +518,6 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
       const release = await ghResponse.json();
       const latestVersion = (release.tag_name || '').replace(/^v/, '');
 
-      // Find the correct firmware asset
       const assetName = `firmware_${deviceModel}_pendant_v${latestVersion}.bin`;
       const asset = (release.assets || []).find(a => a.name === assetName);
 
@@ -436,7 +529,6 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
 
       sendEvent({ type: 'progress', percent: 0, status: 'Downloading firmware...' });
 
-      // Download firmware binary
       const dlResponse = await fetch(asset.browser_download_url, {
         headers: { 'User-Agent': 'ncSender' },
         signal: AbortSignal.timeout(60000)
@@ -452,12 +544,20 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
       const firmwareBuffer = Buffer.from(arrayBuf);
 
       log(`Downloaded firmware: ${assetName} (${firmwareBuffer.length} bytes)`);
-      sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
 
-      // Flash firmware over serial
-      await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
-        sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
-      });
+      if (useWifi) {
+        sendEvent({ type: 'progress', percent: 0, status: 'Uploading firmware via WiFi...' });
+
+        await uploadFirmwareOTA(wifiPendant.ip, firmwareBuffer, (percent) => {
+          sendEvent({ type: 'progress', percent, status: 'Uploading firmware via WiFi...' });
+        });
+      } else {
+        sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
+
+        await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
+          sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
+        });
+      }
 
       sendEvent({ type: 'complete', version: latestVersion });
       res.end();
@@ -475,8 +575,12 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
   // Flash firmware from user-provided .bin file via SSE
   router.post('/firmware/flash-file', async (req, res) => {
       try {
-        if (!pendantSerial?.isConnected()) {
-          return res.status(400).json({ error: 'USB pendant not connected' });
+        const usbStatus = pendantSerial?.getStatus() || { connected: false };
+        const wifiPendant = getWifiPendant();
+        const useWifi = !usbStatus.connected && wifiPendant?.ip;
+
+        if (!usbStatus.connected && !wifiPendant) {
+          return res.status(400).json({ error: 'No pendant connected' });
         }
 
         const chunks = [];
@@ -500,11 +604,20 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
         };
 
         log(`Flashing firmware from file (${firmwareBuffer.length} bytes)`);
-        sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
 
-        await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
-          sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
-        });
+        if (useWifi) {
+          sendEvent({ type: 'progress', percent: 0, status: 'Uploading firmware via WiFi...' });
+
+          await uploadFirmwareOTA(wifiPendant.ip, firmwareBuffer, (percent) => {
+            sendEvent({ type: 'progress', percent, status: 'Uploading firmware via WiFi...' });
+          });
+        } else {
+          sendEvent({ type: 'progress', percent: 0, status: 'Flashing firmware...' });
+
+          await pendantSerial.flashFirmware(firmwareBuffer, (progress) => {
+            sendEvent({ type: 'progress', percent: progress.percent, status: 'Flashing firmware...' });
+          });
+        }
 
         sendEvent({ type: 'complete', version: 'file' });
         res.end();

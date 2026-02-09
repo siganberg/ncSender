@@ -27,7 +27,7 @@ const DONGLE_PRODUCT_NAMES = ['ncSender ESP-NOW Dongle'];
 
 const BAUD_RATE = 460800;
 const PING_INTERVAL_MS = 1000;
-const PING_TIMEOUT_MS = 3000;
+const PING_TIMEOUT_MS = 8000;
 const RECONNECT_INTERVAL_MS = 5000;
 
 export function createPendantSerialHandler({
