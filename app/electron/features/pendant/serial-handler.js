@@ -298,6 +298,9 @@ export function createPendantSerialHandler({
     if (!port || !port.isOpen) {
       return false;
     }
+    if (otaResponseHandler) {
+      return false;
+    }
 
     sendQueue = sendQueue.then(() => {
       return new Promise((resolve) => {
@@ -452,6 +455,13 @@ export function createPendantSerialHandler({
     // Intercept $OTA responses during firmware flashing
     if (otaResponseHandler && data.startsWith('$OTA:')) {
       otaResponseHandler(data);
+      return;
+    }
+
+    // During OTA, drop all non-OTA messages — responding to pings would send
+    // DRO text into the serial port, which the dongle (in binary mode) would
+    // interpret as firmware bytes, corrupting the OTA stream.
+    if (otaResponseHandler) {
       return;
     }
 
