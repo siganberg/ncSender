@@ -345,6 +345,7 @@ jobs:
         id: release_notes
         run: |
           TAG="${{ github.ref_name }}"
+          git fetch origin tag "$TAG" --force
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
           if [ -n "$TAG_MESSAGE" ]; then
             echo "$TAG_MESSAGE" > release-notes.md
