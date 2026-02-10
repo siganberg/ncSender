@@ -115,12 +115,12 @@
           <!-- Update available -->
           <div v-else-if="fwInfo && fwInfo.updateAvailable && !fwUpdating && !fwSuccess" class="firmware-update-available">
             <div class="firmware-versions">
-              <span class="firmware-version-current">v{{ fwInfo.currentVersion }}</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <span v-if="fwInfo.currentVersion" class="firmware-version-current">v{{ fwInfo.currentVersion }}</span>
+              <svg v-if="fwInfo.currentVersion" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"/>
                 <polyline points="12 5 19 12 12 19"/>
               </svg>
-              <span class="firmware-version-latest">v{{ fwInfo.latestVersion }}</span>
+              <span class="firmware-version-latest">v{{ fwInfo.latestVersion }} available</span>
             </div>
             <div v-if="fwInfo.deviceModel === null" class="form-field" style="margin-bottom: 8px;">
               <label>Device Model</label>
@@ -130,14 +130,19 @@
                 <option value="ncsender">ncSender (Waveshare ESP32-S3)</option>
               </select>
             </div>
-            <button class="firmware-update-btn" @click="startFirmwareUpdate" :disabled="fwInfo.deviceModel === null && !fwModelOverride">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              <span>Update Now</span>
-            </button>
+            <div class="firmware-update-actions">
+              <button class="firmware-update-btn" @click="startFirmwareUpdate" :disabled="fwInfo.deviceModel === null && !fwModelOverride">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Update Now</span>
+              </button>
+              <button v-if="!fwSelectedFile" class="firmware-flash-file-btn" @click="($refs.fwFileInput as HTMLInputElement).click()">
+                Flash from file
+              </button>
+            </div>
           </div>
 
           <!-- Updating -->
@@ -183,7 +188,7 @@
       </div>
 
       <!-- Activation Section (when connected but not licensed) -->
-      <div v-if="isConnected && !activePendant?.licensed" class="activation-card">
+      <div v-if="isConnected && activePendant?.version && !activePendant?.licensed" class="activation-card">
         <div class="activation-card__header">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -1124,6 +1129,13 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.firmware-update-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
 .firmware-update-btn {
   display: flex;
   align-items: center;
@@ -1131,7 +1143,7 @@ onUnmounted(() => {
   gap: 8px;
   width: 100%;
   padding: 12px 16px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 80%, black) 100%);
+  background: linear-gradient(135deg, var(--color-accent) 0%, color-mix(in srgb, var(--color-accent) 80%, black) 100%);
   border: none;
   border-radius: 10px;
   color: white;
@@ -1143,7 +1155,7 @@ onUnmounted(() => {
 
 .firmware-update-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb, 59, 130, 246), 0.3);
+  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
 }
 
 .firmware-update-btn:disabled {

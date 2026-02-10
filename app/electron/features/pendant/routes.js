@@ -426,8 +426,8 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
       const release = await ghResponse.json();
       const latestVersion = (release.tag_name || '').replace(/^v/, '');
 
-      const updateAvailable = currentVersion && latestVersion
-        ? currentVersion !== latestVersion
+      const updateAvailable = latestVersion
+        ? (currentVersion ? currentVersion !== latestVersion : true)
         : false;
 
       res.json({
