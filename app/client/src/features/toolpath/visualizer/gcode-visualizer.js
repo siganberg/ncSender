@@ -252,50 +252,28 @@ class GCodeVisualizer {
                 return;
             }
 
-            // Handle G28 (return to home) - move specified axes to machine home
             if (cleanLine.includes('G28')) {
-                const hasX = /\bX/.test(cleanLine);
-                const hasY = /\bY/.test(cleanLine);
                 const hasZ = /\bZ/.test(cleanLine);
+                if (!hasZ) return;
 
-                // G28 moves to MACHINE coordinates (0,0 for X/Y, maxZ for Z)
-                // In work coordinates: machine 0 = -workOffset
-                const homePos = { ...currentPos };
-                if (hasX) homePos.x = -(this.workOffset?.x ?? 0);
-                if (hasY) homePos.y = -(this.workOffset?.y ?? 0);
-                if (hasZ) homePos.z = this.gridBounds?.maxZ ?? 0;
+                const homeZ = this.gridBounds?.maxZ ?? 0;
 
-                // If position changed, draw rapid move to home
-                if (homePos.x !== currentPos.x || homePos.y !== currentPos.y || homePos.z !== currentPos.z) {
+                if (homeZ !== currentPos.z) {
                     this.lineMoveType.set(lineNumber, 'rapid');
                     if (currentTool !== null) {
                         this.lineToolNumber.set(lineNumber, currentTool);
                     }
 
-                    const oob1 = this._axisOutOfBounds(currentPos.x, currentPos.y, currentPos.z);
-                    const oob2 = this._axisOutOfBounds(homePos.x, homePos.y, homePos.z);
-                    const isOutOfBounds = (oob1.x||oob1.y||oob1.z) || (oob2.x||oob2.y||oob2.z);
-
-                    if (isOutOfBounds) hasOutOfBounds = true;
-                    if (oob1.x || oob2.x) this._outOfBoundsAxes.add('X');
-                    if (oob1.y || oob2.y) this._outOfBoundsAxes.add('Y');
-                    if (oob1.z || oob2.z) this._outOfBoundsAxes.add('Z');
-
-                    let color;
-                    if (isOutOfBounds) {
-                        color = outOfBoundsColor;
-                    } else if (currentTool !== null && this.toolColors.has(currentTool)) {
-                        color = new THREE.Color(this.toolColors.get(currentTool));
-                    } else {
-                        color = rapidColor;
-                    }
+                    const color = (currentTool !== null && this.toolColors.has(currentTool))
+                        ? new THREE.Color(this.toolColors.get(currentTool))
+                        : rapidColor;
 
                     vertices.push(currentPos.x, currentPos.y, currentPos.z);
-                    vertices.push(homePos.x, homePos.y, homePos.z);
+                    vertices.push(currentPos.x, currentPos.y, homeZ);
                     colors.push(color.r, color.g, color.b);
                     colors.push(color.r, color.g, color.b);
 
-                    currentPos = homePos;
+                    currentPos.z = homeZ;
                 }
                 return;
             }
