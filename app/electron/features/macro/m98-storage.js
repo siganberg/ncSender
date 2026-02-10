@@ -213,7 +213,11 @@ export function saveMacro(id, { name, description, body, content }) {
 
   let fileContent;
   if (content !== undefined) {
-    fileContent = content;
+    const contentBody = extractBody(content);
+    const contentHeaders = parseMacroHeader(content);
+    const effectiveName = name !== undefined ? name : contentHeaders.name;
+    const effectiveDesc = description !== undefined ? description : contentHeaders.description;
+    fileContent = buildMacroContent(effectiveName, effectiveDesc, contentBody);
   } else {
     fileContent = buildMacroContent(name, description, body);
   }

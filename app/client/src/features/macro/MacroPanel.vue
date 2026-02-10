@@ -285,11 +285,14 @@ const saveMacro = async () => {
       });
       selectedMacroId.value = newMacro.id;
     } else {
-      await macroStore.updateMacro(selectedMacroId.value, {
+      const updated = await macroStore.updateMacro(selectedMacroId.value, {
         name: formData.value.name || undefined,
         description: formData.value.description || undefined,
         content: formData.value.content
       });
+      formData.value.content = updated.content;
+      formData.value.name = updated.name;
+      formData.value.description = updated.description || '';
     }
   } catch (error) {
     console.error('Failed to save macro:', error);
