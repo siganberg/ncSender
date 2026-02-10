@@ -123,7 +123,7 @@ echo "========================================="
 echo ""
 
 # Create annotated tag on current HEAD with release notes
-git tag -a "$NEW_TAG" -m "$RELEASE_NOTES"
+git tag -a "$NEW_TAG" --cleanup=verbatim -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
 
 # Update package.json to reflect the released version
