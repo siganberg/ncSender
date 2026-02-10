@@ -267,11 +267,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       // Check if tool change will be needed (mismatch and not already starting at tool change)
       const willPerformToolChange = toolComparison.mismatch && !isStartingAtToolChange;
 
-      // Generate resume sequence preview (with default options for preview)
+      // Generate resume sequence preview (defaults are unit-aware via targetState.units)
       const resumeSequence = generateResumeSequence(state, {
-        spindleDelaySec: 0,
-        approachHeight: 10,
-        plungeFeedRate: 500,
         isStartingAtToolChange,
         expectedTool: willPerformToolChange ? expectedTool : null,
         currentTool: willPerformToolChange ? currentTool : null
