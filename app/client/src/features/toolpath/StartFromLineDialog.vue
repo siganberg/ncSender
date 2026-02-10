@@ -395,10 +395,11 @@ async function handleConfirm() {
   errorMessage.value = '';
 
   try {
+    const isInch = analyzedState.value?.units === 'G20';
     await api.startGCodeJobFromLine(props.filename, selectedLine.value, {
       spindleDelaySec: spindleDelaySec.value,
-      approachHeight: 10,
-      plungeFeedRate: 500
+      approachHeight: isInch ? 0.4 : 10,
+      plungeFeedRate: isInch ? 20 : 500
     });
 
     emit('started', { line: selectedLine.value });

@@ -191,10 +191,11 @@ export class GCodeStateAnalyzer {
 }
 
 export function generateResumeSequence(targetState, options = {}) {
+  const isInch = targetState.units === 'G20';
   const {
     spindleDelaySec = 0,
-    approachHeight = 10,
-    plungeFeedRate = 500,
+    approachHeight = isInch ? 0.4 : 10,
+    plungeFeedRate = isInch ? 20 : 500,
     isStartingAtToolChange = false,
     expectedTool = null,
     currentTool = null
