@@ -289,9 +289,10 @@
 
       <!-- Alarm message -->
       <div class="alarm-message-warning" v-if="alarmMessage">
-        <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
-          <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
+        <svg class="warning-icon" width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3.5c-.6 0-1.1.3-1.4.8L2.6 18.1c-.6 1 .1 2.4 1.4 2.4h16c1.3 0 2-1.3 1.4-2.4L13.4 4.3c-.3-.5-.8-.8-1.4-.8z" fill="#ff8888" opacity="0.2" stroke="#ff8888" stroke-width="1" stroke-linejoin="round"/>
+          <rect x="11" y="9.5" width="2" height="5.5" rx="1" fill="#ff8888"/>
+          <circle cx="12" cy="17" r="1.2" fill="#ff8888"/>
         </svg>
         <span>Alert: {{ alarmMessage }}</span>
       </div>
@@ -4739,9 +4740,9 @@ body.theme-light .dot--rapid {
 /* Alarm message warning */
 .alarm-message-warning {
   position: absolute;
-  top: 20px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   gap: 8px;
