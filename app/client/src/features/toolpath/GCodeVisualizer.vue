@@ -3812,9 +3812,18 @@ onMounted(async () => {
   }, { deep: true });
 
   // Listen for tools updates via WebSocket
-  api.on('tools-updated', () => {
-    // Re-fetch tool inventory data when tools are updated
-    loadToolInventory();
+  api.on('tools-updated', (tools: any[]) => {
+    if (Array.isArray(tools)) {
+      const inventory: Record<number, any> = {};
+      tools.forEach((tool: any) => {
+        if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
+          inventory[tool.toolNumber] = tool;
+        }
+      });
+      toolInventory.value = inventory;
+    } else {
+      loadToolInventory();
+    }
   });
 
   // Watch for container size changes
