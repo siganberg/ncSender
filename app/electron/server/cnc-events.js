@@ -205,6 +205,11 @@ export function registerCncEventHandlers({
         broadcast('server-state-updated', serverState);
       }
 
+      // Broadcast laser mode changes when $32 changes
+      if (id === '32' && valueChanged) {
+        broadcast('firmware-setting-changed', { id, value: newValue });
+      }
+
       // Update machineState.maxFeedrate when $110 or $111 changes
       if ((id === '110' || id === '111') && valueChanged) {
         // Re-read both values to compute min
