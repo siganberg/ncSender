@@ -3813,6 +3813,7 @@ onMounted(async () => {
 
   // Listen for tools updates via WebSocket
   api.on('tools-updated', (tools: any[]) => {
+    showToolInfo.value = null;
     if (Array.isArray(tools)) {
       const inventory: Record<number, any> = {};
       tools.forEach((tool: any) => {
