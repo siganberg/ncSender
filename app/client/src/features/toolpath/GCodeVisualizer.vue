@@ -289,12 +289,24 @@
 
       <!-- Alarm message -->
       <div class="alarm-message-warning" v-if="alarmMessage">
-        <svg class="warning-icon" width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 3.5c-.6 0-1.1.3-1.4.8L2.6 18.1c-.6 1 .1 2.4 1.4 2.4h16c1.3 0 2-1.3 1.4-2.4L13.4 4.3c-.3-.5-.8-.8-1.4-.8z" fill="#ff8888" opacity="0.2" stroke="#ff8888" stroke-width="1" stroke-linejoin="round"/>
-          <rect x="11" y="9.5" width="2" height="5.5" rx="1" fill="#ff8888"/>
-          <circle cx="12" cy="17" r="1.2" fill="#ff8888"/>
-        </svg>
-        <span>Alert: {{ alarmMessage }}</span>
+        <div class="alarm-message-body">
+          <svg class="warning-icon" width="64" height="64" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3.5c-.6 0-1.1.3-1.4.8L2.6 18.1c-.6 1 .1 2.4 1.4 2.4h16c1.3 0 2-1.3 1.4-2.4L13.4 4.3c-.3-.5-.8-.8-1.4-.8z" fill="#b84444" stroke="#b84444" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="11" y="9.5" width="2" height="5.5" rx="1" fill="#ff8888"/>
+            <circle cx="12" cy="17" r="1.2" fill="#ff8888"/>
+          </svg>
+          <div class="alarm-message-right">
+            <span>Alert: {{ alarmMessage }}</span>
+            <button class="alarm-unlock-btn" @click="handleUnlock">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17 11H7C5.89543 11 5 11.8954 5 13V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V13C19 11.8954 18.1046 11 17 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="16" r="1" fill="currentColor"/>
+                <path d="M7 11V7C7 5.67392 7.52678 4.40215 8.46447 3.46447C9.40215 2.52678 10.6739 2 12 2C13.3261 2 14.5979 2.52678 15.5355 3.46447C16.4732 4.40215 17 5.67392 17 7V11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Press to Unlock
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Out of bounds warning (only show when job is running, not in pre-run state) -->
@@ -577,6 +589,16 @@ const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLower
 const isToolChanging = computed(() => normalizedSenderStatus.value === 'tool-changing');
 const isConnecting = computed(() => normalizedSenderStatus.value === 'connecting');
 const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
+
+const handleUnlock = async () => {
+  try {
+    await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await api.sendCommand('$X', { meta: { sourceId: 'client' } });
+  } catch (error) {
+    console.error('Failed to send unlock command:', error);
+  }
+};
 const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
 const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
 
@@ -4743,20 +4765,60 @@ body.theme-light .dot--rapid {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
   background: transparent;
   backdrop-filter: blur(8px);
   border: 2px solid #b84444;
   color: #ff8888;
-  padding: 10px 20px;
+  padding: 16px 24px;
   border-radius: var(--radius-medium);
   font-size: 0.9rem;
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 11;
   animation: warningPulse 2s ease-in-out infinite;
+}
+
+.alarm-message-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.alarm-message-body .warning-icon {
+  flex-shrink: 0;
+}
+
+.alarm-message-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.alarm-unlock-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.alarm-unlock-btn:hover {
+  background: #ff4444;
+  transform: translateY(-1px);
+}
+
+.alarm-unlock-btn:active {
+  transform: translateY(0);
 }
 
 /* Out of bounds warning */
