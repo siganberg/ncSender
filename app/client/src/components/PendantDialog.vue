@@ -3,7 +3,16 @@
     :show-header="true"
     @close="$emit('close')"
   >
-    <template #title>Pendant</template>
+    <template #title>
+      <span>Pendant</span>
+      <span v-if="activePendant?.licensed" class="title-licensed">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <polyline points="9 12 11 14 15 10"/>
+        </svg>
+        Licensed
+      </span>
+    </template>
     <div class="pendant-content">
       <!-- Connection Status Card -->
       <div class="status-card" :class="{ 'status-card--connected': isConnected }">
@@ -60,18 +69,100 @@
         </div>
       </div>
 
-      <!-- License Status (when licensed) -->
-      <div v-if="activePendant?.licensed" class="licensed-card">
-        <div class="licensed-card__icon">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            <polyline points="9 12 11 14 15 10"/>
+      <!-- WiFi Settings (USB only) -->
+      <div v-if="usbPendant" class="wifi-card">
+        <div class="wifi-card__header" @click="wifiExpanded = !wifiExpanded">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <circle cx="12" cy="20" r="1" fill="currentColor"/>
+          </svg>
+          <span>WiFi Settings</span>
+          <svg class="wifi-card__chevron" :class="{ 'wifi-card__chevron--open': wifiExpanded }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
           </svg>
         </div>
-        <div class="licensed-card__content">
-          <div class="licensed-card__title">License Active</div>
-          <div class="licensed-card__subtitle">Your pendant is fully licensed and ready to use.</div>
-        </div>
+        <Transition name="slide">
+          <div v-if="wifiExpanded" class="wifi-card__body">
+            <div class="form-field">
+              <label>SSID</label>
+              <div class="input-wrapper">
+                <input
+                  v-model="wifiSsid"
+                  type="text"
+                  placeholder="Network name"
+                  :disabled="wifiPushing"
+                  style="text-align: left;"
+                />
+              </div>
+            </div>
+            <div class="form-field">
+              <label>Password</label>
+              <div class="input-wrapper">
+                <input
+                  v-model="wifiPassword"
+                  type="password"
+                  placeholder="WiFi password"
+                  :disabled="wifiPushing"
+                  style="text-align: left;"
+                />
+              </div>
+            </div>
+            <div class="form-field">
+              <label>ncSender Address</label>
+              <div class="wifi-address-row">
+                <select v-model="wifiServerIP" class="wifi-select" :disabled="wifiPushing">
+                  <option v-for="ip in hostIPs" :key="ip.address" :value="ip.address">
+                    {{ ip.address }} ({{ ip.interface }})
+                  </option>
+                </select>
+                <span class="wifi-address-colon">:</span>
+                <input
+                  v-model.number="wifiServerPort"
+                  type="number"
+                  class="wifi-port-input"
+                  placeholder="8090"
+                  :disabled="wifiPushing"
+                />
+              </div>
+            </div>
+            <button
+              class="wifi-push-btn"
+              @click="pushWifiSettings"
+              :disabled="!wifiSsid || wifiPushing"
+            >
+              <svg v-if="wifiPushing" class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 14 20 9 15 4"/>
+                <path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
+              </svg>
+              <span>{{ wifiPushing ? 'Pushing...' : 'Push to Pendant' }}</span>
+            </button>
+            <Transition name="fade">
+              <div v-if="wifiError" class="message message--error">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="15" y1="9" x2="9" y2="15"/>
+                  <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <span>{{ wifiError }}</span>
+              </div>
+            </Transition>
+            <Transition name="fade">
+              <div v-if="wifiSuccess" class="message message--success">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span>WiFi settings pushed successfully!</span>
+              </div>
+            </Transition>
+          </div>
+        </Transition>
       </div>
 
       <!-- Firmware Update -->
@@ -285,6 +376,17 @@ const manualPendantIp = ref('');
 const activating = ref(false);
 const activationError = ref('');
 const activationSuccess = ref(false);
+
+// WiFi settings state
+const wifiExpanded = ref(false);
+const wifiSsid = ref('');
+const wifiPassword = ref('');
+const wifiServerIP = ref('');
+const wifiServerPort = ref(8090);
+const hostIPs = ref<{ address: string; interface: string }[]>([]);
+const wifiPushing = ref(false);
+const wifiError = ref('');
+const wifiSuccess = ref(false);
 
 // Firmware update state
 const fwChecking = ref(false);
@@ -602,12 +704,62 @@ const activateLicense = async () => {
   }
 };
 
+const fetchWifiInfo = async () => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/pendant/wifi-info`);
+    if (!response.ok) return;
+    const data = await response.json();
+    hostIPs.value = data.ips || [];
+    if (hostIPs.value.length > 0 && !wifiServerIP.value) {
+      wifiServerIP.value = hostIPs.value[0].address;
+    }
+    if (data.serverPort) {
+      wifiServerPort.value = data.serverPort;
+    }
+  } catch {}
+};
+
+const pushWifiSettings = async () => {
+  if (!wifiSsid.value) return;
+  wifiPushing.value = true;
+  wifiError.value = '';
+  wifiSuccess.value = false;
+  try {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/pendant/push-wifi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ssid: wifiSsid.value,
+        password: wifiPassword.value,
+        serverIP: wifiServerIP.value,
+        serverPort: wifiServerPort.value
+      })
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to push WiFi settings');
+    }
+    wifiSuccess.value = true;
+    setTimeout(() => { wifiSuccess.value = false; }, 5000);
+  } catch (error: any) {
+    wifiError.value = error.message || 'Failed to push WiFi settings';
+    setTimeout(() => { wifiError.value = ''; }, 10000);
+  } finally {
+    wifiPushing.value = false;
+  }
+};
+
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   fetchStatus(true).then(() => {
     if (isConnected.value) {
       checkFirmware();
+    }
+    if (usbPendant.value) {
+      fetchWifiInfo();
     }
   });
   // Refresh status periodically to pick up license status updates
@@ -731,43 +883,19 @@ onUnmounted(() => {
   color: #fbbf24;
 }
 
-/* Licensed Card */
-.licensed-card {
-  display: flex;
+/* Title Licensed Badge */
+.title-licensed {
+  display: inline-flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.03) 100%);
-  border: 1px solid rgba(251, 191, 36, 0.15);
-  border-radius: 16px;
-}
-
-.licensed-card__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  background: rgba(251, 191, 36, 0.15);
-  border-radius: 14px;
+  gap: 4px;
+  margin-left: 10px;
+  padding: 2px 8px;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
   color: #fbbf24;
-  flex-shrink: 0;
-}
-
-.licensed-card__content {
-  flex: 1;
-}
-
-.licensed-card__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #fbbf24;
-  margin-bottom: 4px;
-}
-
-.licensed-card__subtitle {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+  vertical-align: middle;
 }
 
 .pulse {
@@ -1233,5 +1361,172 @@ onUnmounted(() => {
 
 .firmware-flash-clear-btn:hover {
   color: #f87171;
+}
+
+/* WiFi Settings Card */
+.wifi-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.wifi-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.wifi-card__header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wifi-card__header svg:first-child {
+  color: var(--color-text-secondary);
+}
+
+.wifi-card__chevron {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.wifi-card__chevron--open {
+  transform: rotate(180deg);
+}
+
+.wifi-card__body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wifi-select {
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--color-text);
+  font-size: 14px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.wifi-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.wifi-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wifi-address-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wifi-address-row .wifi-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.wifi-address-colon {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.wifi-port-input {
+  width: 72px;
+  padding: 14px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--color-text);
+  font-size: 14px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+}
+
+.wifi-port-input::-webkit-inner-spin-button,
+.wifi-port-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.wifi-port-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.wifi-port-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wifi-push-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.wifi-push-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.wifi-push-btn:disabled {
+  background: color-mix(in srgb, var(--color-accent) 40%, #1a1a2e);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Slide transition */
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.slide-enter-to,
+.slide-leave-from {
+  opacity: 1;
+  max-height: 500px;
 }
 </style>

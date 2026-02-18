@@ -48,6 +48,7 @@ export function createPendantSerialHandler({
   let reconnectInterval = null;
   let currentPortPath = null;
   let otaResponseHandler = null;
+  let wifiSettingsResolver = null;
 
   // Client metadata for registry
   const clientMeta = {
@@ -494,6 +495,12 @@ export function createPendantSerialHandler({
       return;
     }
 
+    // Handle bare G-code lines (continuation of multi-line compact commands)
+    if (/^[GM$]\d/i.test(data)) {
+      handleCompactCommand(data);
+      return;
+    }
+
     // Try JSON parsing for backwards compatibility and other messages
     let parsed;
     try {
@@ -558,6 +565,15 @@ export function createPendantSerialHandler({
 
     if (type === 'job:stop') {
       handleJobStop().catch((err) => logError('Error handling job:stop:', err.message));
+      return;
+    }
+
+    // Handle WiFi settings ack from pendant
+    if (type === 'wifi-settings-ack') {
+      if (wifiSettingsResolver) {
+        wifiSettingsResolver(parsed.data);
+        wifiSettingsResolver = null;
+      }
       return;
     }
 
@@ -922,6 +938,26 @@ export function createPendantSerialHandler({
     }
   }
 
+  function pushWifiSettings(settings) {
+    return new Promise((resolve, reject) => {
+      if (!port || !port.isOpen || !isConnected) {
+        return reject(new Error('USB pendant not connected'));
+      }
+
+      const timeout = setTimeout(() => {
+        wifiSettingsResolver = null;
+        reject(new Error('No response from pendant (timeout)'));
+      }, 5000);
+
+      wifiSettingsResolver = (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      };
+
+      sendMessage('wifi-settings', settings);
+    });
+  }
+
   function getStatus() {
     return {
       connected: isConnected,
@@ -944,6 +980,7 @@ export function createPendantSerialHandler({
     autoConnect,
     listPorts,
     getStatus,
+    pushWifiSettings,
     flashFirmware,
     cancelFlashFirmware,
     getPortVidPid,

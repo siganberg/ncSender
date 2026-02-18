@@ -6,6 +6,7 @@
 
 import { Router } from 'express';
 import http from 'node:http';
+import os from 'node:os';
 import { createLogger } from '../../core/logger.js';
 import { getSetting } from '../../core/settings-manager.js';
 
@@ -638,6 +639,72 @@ export function createPendantRoutes({ websocketLayer, pendantSerial }) {
       pendantSerial.cancelFlashFirmware();
     }
     res.json({ success: true });
+  });
+
+  // Get host network info for WiFi settings push
+  router.get('/wifi-info', (req, res) => {
+    const interfaces = os.networkInterfaces();
+    const ips = [];
+
+    // Virtual/tunnel interface prefixes to exclude (macOS, Windows, Linux)
+    const virtualPrefixes = [
+      'bridge', 'utun', 'feth', 'veth', 'vmnet', 'docker', 'br-',
+      'virbr', 'vbox', 'tun', 'tap', 'llw', 'awdl', 'ap',
+      'isatap', 'teredo',
+    ];
+
+    for (const [name, addrs] of Object.entries(interfaces)) {
+      const nameLower = name.toLowerCase();
+      if (virtualPrefixes.some(p => nameLower.startsWith(p))) continue;
+      for (const addr of addrs) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          ips.push({ address: addr.address, interface: name });
+        }
+      }
+    }
+
+    // Sort RFC1918 addresses first
+    ips.sort((a, b) => {
+      const aPrivate = a.address.startsWith('192.168.') || a.address.startsWith('10.') || a.address.startsWith('172.');
+      const bPrivate = b.address.startsWith('192.168.') || b.address.startsWith('10.') || b.address.startsWith('172.');
+      if (aPrivate && !bPrivate) return -1;
+      if (!aPrivate && bPrivate) return 1;
+      return 0;
+    });
+
+    const serverPort = getSetting('connection.serverPort', 8090);
+    res.json({ ips, serverPort });
+  });
+
+  // Push WiFi settings to pendant via USB serial
+  router.post('/push-wifi', async (req, res) => {
+    try {
+      const { ssid, password, serverIP, serverPort } = req.body || {};
+
+      if (!ssid) {
+        return res.status(400).json({ error: 'SSID is required' });
+      }
+
+      if (!pendantSerial?.isConnected()) {
+        return res.status(400).json({ error: 'USB pendant not connected' });
+      }
+
+      const result = await pendantSerial.pushWifiSettings({
+        ssid,
+        password: password || '',
+        serverIP: serverIP || '192.168.1.100',
+        serverPort: serverPort || 8090
+      });
+
+      if (result?.success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ error: result?.error || 'Failed to push WiFi settings' });
+      }
+    } catch (err) {
+      logError('Push WiFi settings failed:', err.message);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // List available serial ports
