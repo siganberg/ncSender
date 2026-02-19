@@ -673,8 +673,14 @@ class NCClient {
           this.isLocalClient = message.data.isLocal === true;
           this.remoteControlEnabled = message.data.remoteControlEnabled === true;
           if (message.data.serverVersion) {
+            const prevVersion = this.serverVersion;
             this.serverVersion = message.data.serverVersion;
             this.emit('server-version', this.serverVersion);
+            if (prevVersion && prevVersion !== this.serverVersion) {
+              debugLog('Server version changed from', prevVersion, 'to', this.serverVersion, '— reloading page');
+              window.location.reload();
+              return;
+            }
           }
           debugLog('Client ID assigned:', this.clientId, 'isLocal:', this.isLocalClient, 'remoteControlEnabled:', this.remoteControlEnabled, 'serverVersion:', this.serverVersion);
           this.emit('client-id-assigned', this.clientId);
