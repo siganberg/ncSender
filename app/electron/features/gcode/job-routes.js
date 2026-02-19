@@ -171,7 +171,7 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         return res.status(400).json({ error: `Cannot pause. Machine state is: ${machineStatus || 'unknown'}` });
       }
 
-      // Check if "Use Door as Pause" setting is enabled
+      // Check if "Park on Pause" setting is enabled
       const useDoorAsPause = getSetting('useDoorAsPause', DEFAULT_SETTINGS.useDoorAsPause);
       const command = useDoorAsPause ? '\x84' : '!';
       const displayCommand = useDoorAsPause ? '\\x84 (Safety Door)' : '! (Feed Hold)';

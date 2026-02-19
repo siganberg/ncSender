@@ -489,7 +489,7 @@ export class CommandProcessor {
   /**
    * Door state safety check
    * When door is detected (status='Door' OR Pn contains 'D'):
-   * - Block: G0 rapid moves, spindle commands (M3/M4/M5)
+   * - Block: G0 rapid moves, spindle start commands (M3/M4)
    * - Limit: All movement feed rates to 1000mm/min (including jog)
    *
    * @param {string} command - The command to check
@@ -527,10 +527,10 @@ export class CommandProcessor {
       return this.createBlockedResult(commandId, trimmedCommand, meta, 'G0 rapid not allowed in Door state');
     }
 
-    // Block spindle commands M3/M4/M5
-    if (isSpindleStartCommand(trimmedCommand) || isSpindleStopCommand(trimmedCommand)) {
-      log(`Door state safety: Blocking spindle command "${trimmedCommand}"`);
-      return this.createBlockedResult(commandId, trimmedCommand, meta, 'Spindle not allowed in Door state');
+    // Block spindle start commands M3/M4 (M5 stop is always allowed)
+    if (isSpindleStartCommand(trimmedCommand)) {
+      log(`Door state safety: Blocking spindle start command "${trimmedCommand}"`);
+      return this.createBlockedResult(commandId, trimmedCommand, meta, 'Spindle start not allowed in Door state');
     }
 
     // Limit feed rate on jog commands ($J=)

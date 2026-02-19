@@ -300,6 +300,25 @@ export function registerCncEventHandlers({
       jobManager.forceReset();
     }
 
+    // Send M5 (spindle off) when entering door state and $61=1 (restore spindle on door re-open)
+    if (currentMachineStatus === 'door' && prevMachineStatus !== 'door') {
+      try {
+        const fwText = await fs.readFile(firmwareFilePath, 'utf8');
+        const fwData = JSON.parse(fwText);
+        const setting61 = fwData.settings?.['61']?.value;
+        if (String(setting61) === '1') {
+          log('Door opened with $61=1, sending M5 to stop spindle');
+          cncController.sendCommand('M5', {
+            commandId: `door-m5-${Date.now()}`,
+            displayCommand: 'M5 (Door safety: spindle off)',
+            meta: { sourceId: 'system' }
+          });
+        }
+      } catch (err) {
+        log('Could not check $61 for door spindle-off:', err?.message || err);
+      }
+    }
+
     if (hasChanged) {
       broadcast('server-state-updated', serverState);
     }

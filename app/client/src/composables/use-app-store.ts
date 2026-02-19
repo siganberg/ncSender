@@ -212,7 +212,7 @@ const senderStatus = computed(() => {
     return 'hold';
   }
 
-  // Map Door to Hold when "Use Door as Pause" is enabled
+  // Map Door to Hold when "Park on Pause" is enabled
   const settings = getSettings();
   const useDoorAsPause = settings?.useDoorAsPause ?? false;
   if (useDoorAsPause && raw === 'running' && machineStatus === 'door') {

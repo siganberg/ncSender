@@ -260,7 +260,7 @@
             <div class="settings-group">
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
-                  <label class="setting-label">Use Door as Pause</label>
+                  <label class="setting-label">Park on Pause</label>
                   <div class="settings-note">
                     Note: Ensure that the parking parameters ($41, $42, $56, $57, $58, $59) are properly configured as part of your setup.
                   </div>
@@ -1420,7 +1420,7 @@ const toolSourceName = computed(() => {
   return plugin?.name || toolSource.value;
 });
 
-// Use Door as Pause setting
+// Park on Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 
 // Home Location setting

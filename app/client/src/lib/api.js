@@ -880,7 +880,7 @@ class NCClient {
     let command;
 
     if (action === 'pause') {
-      // Check if "Use Door as Pause" setting is enabled
+      // Check if "Park on Pause" setting is enabled
       const { getSettings } = await import('./settings-store.js');
       const settings = getSettings();
       const useDoorAsPause = settings?.useDoorAsPause ?? false;
