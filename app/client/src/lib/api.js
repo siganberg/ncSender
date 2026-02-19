@@ -439,6 +439,87 @@ class NCClient {
     return await response.json();
   }
 
+  async listControllerFiles() {
+    const response = await fetch(`${this.baseUrl}/api/controller-files`);
+    if (!response.ok) throw new Error('Failed to list controller files');
+    return await response.json();
+  }
+
+  async runControllerFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/controller-files/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename })
+    });
+    if (!response.ok) throw new Error('Failed to run controller file');
+    return await response.json();
+  }
+
+  async deleteControllerFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/controller-files/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename })
+    });
+    if (!response.ok) throw new Error('Failed to delete controller file');
+    return await response.json();
+  }
+
+  async readControllerFile(filename) {
+    const response = await fetch(`${this.baseUrl}/api/controller-files/read?filename=${encodeURIComponent(filename)}`);
+    if (!response.ok) throw new Error('Failed to read controller file');
+    return await response.json();
+  }
+
+  async uploadControllerFile(filename, content, onProgress) {
+    const response = await fetch(`${this.baseUrl}/api/controller-files/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content })
+    });
+    return this._readSSEResponse(response, onProgress);
+  }
+
+  async saveControllerFile(filename, content, onProgress) {
+    const response = await fetch(`${this.baseUrl}/api/controller-files/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content })
+    });
+    return this._readSSEResponse(response, onProgress);
+  }
+
+  async _readSSEResponse(response, onProgress) {
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(err.error || 'Request failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const event = JSON.parse(line.slice(6));
+
+        if (event.type === 'progress' && onProgress) {
+          onProgress(event);
+        } else if (event.type === 'error') {
+          throw new Error(event.message);
+        }
+      }
+    }
+  }
+
   async downloadGCodeFile(onProgress) {
     const response = await fetch(`${this.baseUrl}/api/gcode-files/current/download`);
     if (!response.ok) throw new Error('Failed to download G-code file');

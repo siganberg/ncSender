@@ -225,7 +225,7 @@ export function registerCncEventHandlers({
   };
 
   const handleData = (data, sourceId) => {
-    if (sourceId === 'system') {
+    if (sourceId === 'system' || sourceId === 'controller-files') {
       return;
     }
     if (!data || (typeof data === 'string' && data.trim() === '')) {

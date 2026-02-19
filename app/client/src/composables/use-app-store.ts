@@ -115,7 +115,9 @@ const status = reactive({
   activeProbe: null as number | null,
   inputPins: 0,
   outputPins: 0,
-  outputPinsState: [] as number[]
+  outputPinsState: [] as number[],
+  hasSD: false,
+  hasFTP: false
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
@@ -334,6 +336,13 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof report.spindleActive === 'boolean') {
     status.spindleActive = report.spindleActive;
+  }
+
+  if (typeof (report as any).hasSD === 'boolean') {
+    status.hasSD = (report as any).hasSD;
+  }
+  if (typeof (report as any).hasFTP === 'boolean') {
+    status.hasFTP = (report as any).hasFTP;
   }
 };
 

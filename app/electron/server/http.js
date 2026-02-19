@@ -33,6 +33,7 @@ import { createToolsRoutes } from '../features/tools/routes.js';
 import { createPluginRoutes } from '../features/plugins/routes.js';
 import { createInitRoutes } from '../features/init/routes.js';
 import { createPendantRoutes } from '../features/pendant/routes.js';
+import { createControllerFilesRoutes } from '../features/controller-files/routes.js';
 import { createLogger } from '../core/logger.js';
 
 const { log, error: logError } = createLogger('HTTP');
@@ -90,6 +91,7 @@ export function mountHttp({
   app.use('/api/plugins', createPluginRoutes({ getClientWebSocket, broadcast }));
   app.use('/api', createInitRoutes(serverState, commandHistory));
   app.use('/api/pendant', createPendantRoutes({ websocketLayer, pendantSerial }));
+  app.use('/api/controller-files', createControllerFilesRoutes(cncController));
 
   log('Serving client files from:', clientDistPath);
   app.use(express.static(clientDistPath, {

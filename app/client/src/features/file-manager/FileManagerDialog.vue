@@ -25,12 +25,28 @@
           </svg>
           <h2 class="file-manager__title">
             File Manager
-            <span class="file-manager__title-count">
+            <span v-if="activeTab === 'uploaded'" class="file-manager__title-count">
               ({{ fileCount }} {{ fileCount === 1 ? 'file' : 'files' }})
             </span>
           </h2>
         </div>
-        <div class="file-manager__toolbar">
+        <div v-if="showControllerTab" class="file-manager__tabs">
+          <button
+            class="file-manager__tab-button"
+            :class="{ 'file-manager__tab-button--active': activeTab === 'uploaded' }"
+            @click="activeTab = 'uploaded'"
+          >
+            Uploaded Files
+          </button>
+          <button
+            class="file-manager__tab-button"
+            :class="{ 'file-manager__tab-button--active': activeTab === 'controller' }"
+            @click="activeTab = 'controller'"
+          >
+            Controller Files
+          </button>
+        </div>
+        <div v-if="activeTab === 'uploaded'" class="file-manager__toolbar">
           <button class="file-manager__new-folder-btn" @click="createNewFolder" title="New Folder">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -79,7 +95,7 @@
       </div>
 
       <!-- Filter indicator -->
-      <div v-if="searchQuery && filteredTree.length > 0" class="file-manager__filter-indicator">
+      <div v-if="activeTab === 'uploaded' && searchQuery && filteredTree.length > 0" class="file-manager__filter-indicator">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
         </svg>
@@ -90,6 +106,7 @@
       </div>
 
       <div
+        v-if="activeTab === 'uploaded'"
         class="file-manager__content"
         @dragover.prevent="handleRootDragOver"
         @dragleave="handleRootDragLeave"
@@ -180,7 +197,9 @@
         </div>
       </div>
 
-      <div v-if="storagePath" class="file-manager__storage-info" :title="storagePath">
+      <ControllerFilesTab v-if="activeTab === 'controller'" />
+
+      <div v-if="activeTab === 'uploaded' && storagePath" class="file-manager__storage-info" :title="storagePath">
         Storage: <em>{{ storagePath }}</em>
       </div>
 
@@ -228,9 +247,13 @@
 import { ref, watch, computed, nextTick } from 'vue';
 import { api } from '../toolpath/api';
 import { settingsStore, updateSettings } from '../../lib/settings-store.js';
+import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import TreeItem from './components/TreeItem.vue';
+import ControllerFilesTab from './components/ControllerFilesTab.vue';
+
+const store = useAppStore();
 
 interface FileNode {
   id: string;
@@ -261,6 +284,9 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'close'): void;
 }>();
+
+const activeTab = ref<'uploaded' | 'controller'>('uploaded');
+const showControllerTab = computed(() => store.status.hasSD || store.status.hasFTP);
 
 const tree = ref<TreeNode[]>([]);
 const storagePath = ref('');
@@ -647,6 +673,7 @@ const fetchTree = async () => {
 
 watch(() => props.show, async (isOpen) => {
   if (isOpen) {
+    activeTab.value = 'uploaded';
     searchQuery.value = '';
     // Load sorting preferences from settings
     const fileManagerSettings = settingsStore.data?.fileManager;
@@ -700,6 +727,42 @@ watch(() => props.show, async (isOpen) => {
   font-weight: 400;
   font-size: 1rem;
   color: var(--color-text-secondary);
+}
+
+.file-manager__tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.file-manager__tab-button {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  font-weight: 500;
+  position: relative;
+  margin-bottom: -1px;
+  min-width: 80px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-manager__tab-button:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.file-manager__tab-button--active {
+  background: transparent;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-accent);
 }
 
 .file-manager__toolbar {

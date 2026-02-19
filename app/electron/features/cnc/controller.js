@@ -81,6 +81,9 @@ export class CNCController extends EventEmitter {
     this.lastDisconnectLog = 0;
     this.lastConnectionOpenLog = 0;
     this.connectionErrorThrottleMs = 30000; // Log connection errors max once per 30 seconds
+
+    this.rawMode = false;
+    this.rawDataHandler = null;
   }
 
   emitConnectionStatus(status, isConnected = this.isConnected) {
@@ -97,6 +100,7 @@ export class CNCController extends EventEmitter {
   }
 
   handleIncomingData(trimmedData) {
+    if (this.rawMode) return;
     if (trimmedData.endsWith('>')) {
       if (this.isVerifyingConnection && !this.hasReceivedFirstStatus) {
         this.hasReceivedFirstStatus = true;
@@ -179,6 +183,19 @@ export class CNCController extends EventEmitter {
       const isSystemCommand = this.activeCommand?.meta?.sourceId === 'system';
       if (!isSystemCommand) {
         log('CNC controller responded:', trimmedData);
+      }
+      this.handleCommandOk();
+    } else if (trimmedData.length > 2 && trimmedData.slice(-2).toLowerCase() === 'ok' && !trimmedData.toLowerCase().endsWith(':ok')) {
+      // grblHAL $F<= file dump appends 'ok' to the last content line without a newline
+      const dataLine = trimmedData.slice(0, -2);
+      const sourceId = this.activeCommand?.meta?.sourceId || null;
+      if (dataLine.trim()) {
+        log('CNC data:', dataLine);
+        this.emit('data', dataLine, sourceId);
+      }
+      const isSystemCommand = this.activeCommand?.meta?.sourceId === 'system';
+      if (!isSystemCommand) {
+        log('CNC controller responded: ok');
       }
       this.handleCommandOk();
     } else {
@@ -530,13 +547,28 @@ export class CNCController extends EventEmitter {
     const content = data.substring(8, data.length - 1); // Remove [NEWOPT: and ]
     const options = content.split(',');
 
-    // Look for PROBES=N pattern (default to 0 if not present)
     const probesOption = options.find(opt => opt.startsWith('PROBES='));
     const probeCount = probesOption ? parseInt(probesOption.substring(7)) : 0;
+    const hasSD = options.includes('SD');
+    const hasFTP = options.includes('FTP');
 
+    let changed = false;
     if (this.lastStatus.probeCount !== probeCount) {
       log('Probe count detected:', probeCount);
       this.lastStatus.probeCount = probeCount;
+      changed = true;
+    }
+    if (this.lastStatus.hasSD !== hasSD) {
+      log('SD card support:', hasSD);
+      this.lastStatus.hasSD = hasSD;
+      changed = true;
+    }
+    if (this.lastStatus.hasFTP !== hasFTP) {
+      log('FTP support:', hasFTP);
+      this.lastStatus.hasFTP = hasFTP;
+      changed = true;
+    }
+    if (changed) {
       this.emit('status-report', { ...this.lastStatus });
     }
   }
@@ -1468,6 +1500,44 @@ export class CNCController extends EventEmitter {
 
   getGreetingMessage() {
     return this.greetingMessage;
+  }
+
+  enterRawMode() {
+    if (this.connectionType === 'websocket') {
+      throw new Error('Raw mode is not supported for WebSocket connections');
+    }
+    this.rawMode = true;
+    if (this.parser && this.connection) {
+      this.connection.unpipe(this.parser);
+    }
+  }
+
+  exitRawMode() {
+    this.rawMode = false;
+    if (this.rawDataHandler && this.connection) {
+      this.connection.removeListener('data', this.rawDataHandler);
+      this.rawDataHandler = null;
+    }
+    if (this.parser && this.connection) {
+      this.connection.pipe(this.parser);
+    }
+  }
+
+  writeRaw(buffer) {
+    return new Promise((resolve, reject) => {
+      if (!this.connection) {
+        return reject(new Error('Connection is not available'));
+      }
+      this.connection.write(buffer, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  onRawData(handler) {
+    this.rawDataHandler = handler;
+    this.connection.on('data', handler);
   }
 
   handleConnectionError(error) {
