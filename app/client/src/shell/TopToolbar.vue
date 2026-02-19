@@ -183,9 +183,9 @@ type TopToolbarUpdateState = {
 };
 
 const store = useAppStore();
-const { isJobRunning, isConnected, senderStatus: storeSenderStatus, unitsPreference } = store;
+const { isJobRunning, isConnected, senderStatus: storeSenderStatus, unitsPreference, serverVersion } = store;
 
-const appVersion = packageJson.version;
+const appVersion = computed(() => serverVersion.value || packageJson.version);
 
 const props = defineProps<{
   workspace: string;

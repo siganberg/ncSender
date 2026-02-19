@@ -209,7 +209,8 @@ export function createWebSocketLayer({
   jogManager,
   context,
   commandProcessor,
-  getPendantSerial = () => null
+  getPendantSerial = () => null,
+  serverVersion = '0.0.0'
 }) {
   const {
     serverState,
@@ -580,7 +581,8 @@ export function createWebSocketLayer({
     sendWsMessage(ws, 'client-id', {
       clientId,
       isLocal,
-      remoteControlEnabled
+      remoteControlEnabled,
+      serverVersion
     });
 
     ws.on('message', (rawData) => {

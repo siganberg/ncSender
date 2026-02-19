@@ -17,6 +17,7 @@ class NCClient {
     this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
     this.isLocalClient = false; // Whether client is on localhost
     this.remoteControlEnabled = false; // Whether remote control is enabled on server
+    this.serverVersion = null;
   }
 
   get isElectron() {
@@ -671,7 +672,11 @@ class NCClient {
           this.clientId = message.data.clientId;
           this.isLocalClient = message.data.isLocal === true;
           this.remoteControlEnabled = message.data.remoteControlEnabled === true;
-          debugLog('Client ID assigned:', this.clientId, 'isLocal:', this.isLocalClient, 'remoteControlEnabled:', this.remoteControlEnabled);
+          if (message.data.serverVersion) {
+            this.serverVersion = message.data.serverVersion;
+            this.emit('server-version', this.serverVersion);
+          }
+          debugLog('Client ID assigned:', this.clientId, 'isLocal:', this.isLocalClient, 'remoteControlEnabled:', this.remoteControlEnabled, 'serverVersion:', this.serverVersion);
           this.emit('client-id-assigned', this.clientId);
           this.emit('remote-control-state', {
             isLocal: this.isLocalClient,

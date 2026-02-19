@@ -88,7 +88,8 @@ export async function createApp(options = {}) {
     jogManager,
     context,
     commandProcessor: commandProcessorWrapper,
-    getPendantSerial: () => pendantSerial
+    getPendantSerial: () => pendantSerial,
+    serverVersion: packageJson.version
   });
 
   const { wss, broadcast, sendWsMessage, getClientWebSocket, getClientRegistry, shutdown: shutdownWebSocket, handleWebSocketCommand } = websocketLayer;

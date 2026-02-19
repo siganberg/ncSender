@@ -144,6 +144,7 @@ const alarmMessage = ref<string>('');
 const isLocalClient = ref<boolean | null>(null); // null = not yet determined
 const remoteControlEnabled = ref(false);
 const remoteStateInitialized = ref(false); // true after WebSocket handshake determines client type
+const serverVersion = ref<string | null>(null);
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
 // Grid size defaults - should be loaded from firmware settings $130/$131
@@ -612,12 +613,19 @@ export function initializeStore() {
     }
   });
 
+  api.on('server-version', (version: string) => {
+    serverVersion.value = version;
+  });
+
   // Check if we already have remote control state from api (in case we missed the event)
   if (typeof api.isLocalClient === 'boolean') {
     isLocalClient.value = api.isLocalClient;
     remoteControlEnabled.value = api.remoteControlEnabled;
     remoteStateInitialized.value = true;
     debugLog('Remote control state initialized from api:', { isLocal: api.isLocalClient, enabled: api.remoteControlEnabled });
+  }
+  if (api.serverVersion) {
+    serverVersion.value = api.serverVersion;
   }
 
   // CNC error events (including alarms)
@@ -940,6 +948,7 @@ export function useAppStore() {
     unitsPreference,
     hasFullControl,
     isLocalClient: readonly(isLocalClient),
+    serverVersion: readonly(serverVersion),
 
     // Actions
     clearConsole: () => {
