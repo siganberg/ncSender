@@ -300,8 +300,10 @@ export function registerCncEventHandlers({
       jobManager.forceReset();
     }
 
-    // Send M5 (spindle off) when entering door state and $61 bit 0 is set (restore spindle on door re-open)
-    if (currentMachineStatus === 'door' && prevMachineStatus !== 'door') {
+    // Send M5 (spindle off) when door is first detected and $61 bit 0 is set
+    const isDoorActive = currentMachineStatus === 'door' || (status?.Pn || '').includes('D');
+    const wasDoorActive = prevMachineStatus === 'door' || (prevMachineState?.Pn || '').includes('D');
+    if (isDoorActive && !wasDoorActive) {
       try {
         const fwText = await fs.readFile(firmwareFilePath, 'utf8');
         const fwData = JSON.parse(fwText);
