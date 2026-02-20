@@ -248,7 +248,7 @@ export function registerCncEventHandlers({
     serverState.machineState = { ...serverState.machineState, ...status };
 
     const currentMachineStatus = status?.status?.toLowerCase();
-    const prevMachineStatus = prevMachineState?.status;
+    const prevMachineStatus = prevMachineState?.status?.toLowerCase();
 
     // If entering alarm state, include alarm code and description in machineState
     if (currentMachineStatus === 'alarm') {
@@ -300,14 +300,14 @@ export function registerCncEventHandlers({
       jobManager.forceReset();
     }
 
-    // Send M5 (spindle off) when entering door state and $61=1 (restore spindle on door re-open)
+    // Send M5 (spindle off) when entering door state and $61 bit 0 is set (restore spindle on door re-open)
     if (currentMachineStatus === 'door' && prevMachineStatus !== 'door') {
       try {
         const fwText = await fs.readFile(firmwareFilePath, 'utf8');
         const fwData = JSON.parse(fwText);
-        const setting61 = fwData.settings?.['61']?.value;
-        if (String(setting61) === '1') {
-          log('Door opened with $61=1, sending M5 to stop spindle');
+        const setting61 = parseInt(fwData.settings?.['61']?.value, 10) || 0;
+        if (setting61 & 1) {
+          log(`Door opened with $61=${setting61} (bit 0 set), sending M5 to stop spindle`);
           cncController.sendCommand('M5', {
             commandId: `door-m5-${Date.now()}`,
             displayCommand: 'M5 (Door safety: spindle off)',
