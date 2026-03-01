@@ -1834,13 +1834,20 @@ const refreshFirmwareData = () => {
 
 // Load firmware data when firmware tab is opened
 watch(activeTab, (newTab) => {
-  if (newTab === 'firmware' && !firmwareData.value && !isFirmwareLoading.value) {
+  if (newTab === 'firmware' && !isFirmwareLoading.value) {
     loadFirmwareData();
   }
 
   // Reload keyboard bindings when keyboard tab is opened (to pick up new macros)
   if (newTab === 'keyboard') {
     keyBindingStore.reload();
+  }
+});
+
+// Also reload firmware when settings dialog opens while already on the firmware tab
+watch(showSettings, (isOpen) => {
+  if (isOpen && activeTab.value === 'firmware' && !isFirmwareLoading.value) {
+    loadFirmwareData();
   }
 });
 
