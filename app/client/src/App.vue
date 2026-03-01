@@ -126,6 +126,21 @@
       <div class="tab-content">
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
+          <div class="settings-section">
+            <h3 class="section-title">CNC Controller Setup</h3>
+            <div class="setting-item">
+              <div class="setting-item-content">
+                <label class="setting-label">Connection Settings</label>
+                <div class="settings-note">
+                  Configure serial or network connection to your CNC controller.
+                </div>
+              </div>
+              <button class="setup-open-button" @click="openSetupFromSettings">
+                CNC Controller Setup
+              </button>
+            </div>
+          </div>
+
           <div class="settings-section" :class="{ 'settings-section--disabled': !canControlRemoteAccess }">
             <h3 class="section-title">Remote Control Settings</h3>
             <div v-if="!canControlRemoteAccess" class="settings-disabled-overlay">
@@ -160,23 +175,14 @@
             </div>
             <div class="setting-item">
               <label class="setting-label"></label>
-              <div class="connection-buttons">
-                <button
-                  class="setup-open-button"
-                  :disabled="!canControlRemoteAccess"
-                  @click="openSetupFromSettings"
-                >
-                  CNC Controller Setup
-                </button>
-                <button
-                  class="save-connection-button"
-                  :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
-                  :disabled="!canControlRemoteAccess"
-                  @click="saveConnectionSettings"
-                >
-                  {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
-                </button>
-              </div>
+              <button
+                class="save-connection-button"
+                :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
+                :disabled="!canControlRemoteAccess"
+                @click="saveConnectionSettings"
+              >
+                {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
+              </button>
             </div>
           </div>
 
@@ -787,7 +793,7 @@
 
       <div class="setup-footer">
         <button v-if="setupDismissible" class="setup-cancel-button" @click="closeSetupDialog">
-          Cancel
+          Close
         </button>
         <button class="setup-save-button" @click="saveSetupSettings">
           Connect
@@ -3447,9 +3453,9 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .setup-open-button {
-  background: transparent;
-  color: var(--color-accent);
-  border: 1px solid var(--color-accent);
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
   border-radius: var(--radius-small);
   padding: 12px 24px;
   font-size: 0.85rem;
@@ -3460,8 +3466,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .setup-open-button:hover {
-  background: var(--color-accent);
-  color: white;
+  filter: brightness(1.1);
 }
 
 .setup-open-button:disabled {
@@ -3620,9 +3625,9 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .setup-cancel-button {
   padding: var(--gap-sm) var(--gap-lg);
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--color-accent);
+  color: white;
+  border: none;
   border-radius: var(--radius-medium);
   font-size: 0.9rem;
   font-weight: 600;
@@ -3632,13 +3637,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .setup-cancel-button:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  filter: brightness(1.1);
 }
 
 .setup-save-button {
   padding: var(--gap-sm) var(--gap-lg);
-  background: linear-gradient(135deg, var(--color-accent) 0%, #16a085 100%);
+  background: var(--color-accent);
   color: white;
   border: none;
   border-radius: var(--radius-medium);
@@ -3652,8 +3656,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .setup-save-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
+  filter: brightness(1.1);
 }
 
 .setup-save-button:active {
