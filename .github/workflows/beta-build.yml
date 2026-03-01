@@ -12,8 +12,59 @@ on:
         type: string
 
 jobs:
+  prepare-release:
+    name: Prepare Draft Beta Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="v${{ github.event.inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Get release notes from tag message
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git fetch origin tag "$TAG" --force 2>/dev/null || true
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          if [ -n "$TAG_MESSAGE" ]; then
+            echo "$TAG_MESSAGE" > release-notes.md
+          else
+            echo "Beta Release $TAG" > release-notes.md
+          fi
+
+      - name: Create draft beta release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" \
+            --repo ${{ github.repository }} \
+            --title "Beta Release $TAG" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --draft
+
   macos:
     name: macOS Builds
+    needs: [prepare-release]
     runs-on: macos-14
     steps:
       - name: Checkout
@@ -26,7 +77,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
           VERSION="${TAG#v}"
           cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
@@ -54,6 +105,7 @@ jobs:
 
   linux:
     name: Linux Builds
+    needs: [prepare-release]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -70,7 +122,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
           VERSION="${TAG#v}"
           cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
@@ -105,6 +157,7 @@ jobs:
 
   windows:
     name: Windows Builds
+    needs: [prepare-release]
     runs-on: windows-2022
     strategy:
       fail-fast: false
@@ -121,7 +174,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
           VERSION="${TAG#v}"
           cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
         shell: bash
@@ -151,6 +204,7 @@ jobs:
 
   linux-arm64:
     name: Linux ARM64 Build
+    needs: [prepare-release]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -163,7 +217,7 @@ jobs:
 
       - name: Set version from tag
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
           VERSION="${TAG#v}"
           cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
@@ -211,30 +265,13 @@ jobs:
           name: linux-arm64-artifacts
           path: app/dist-electron/**
 
-  release:
-    name: Create Beta Release
-    needs: [macos, linux, windows, linux-arm64]
+  publish-release:
+    name: Publish Beta Release
+    needs: [prepare-release, macos, linux, windows, linux-arm64]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      - name: Checkout (for tag annotation)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            TAG="v${{ github.event.inputs.version }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Using tag: $TAG"
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -243,7 +280,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          VERSION="${{ needs.prepare-release.outputs.version }}"
 
           echo "Downloaded artifacts structure:"
           find artifacts -type f
@@ -292,8 +330,6 @@ jobs:
               fi
             done
           fi
-
-          VERSION="${TAG#v}"
 
           # Linux x64 assets (.AppImage + .deb)
           if [ -d "artifacts/linux-x64-artifacts" ]; then
@@ -348,25 +384,21 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
-      - name: Get release notes from tag message
-        id: release_notes
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
-          if [ -n "$TAG_MESSAGE" ]; then
-            echo "$TAG_MESSAGE" > release-notes.md
-          else
-            echo "Release $TAG" > release-notes.md
-          fi
-
-      - name: Create Beta Release
+      - name: Upload assets to draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          gh release create "$TAG" \
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          gh release upload "$TAG" \
             --repo ${{ github.repository }} \
-            --title "Beta Release $TAG" \
-            --notes-file release-notes.md \
-            --prerelease \
+            --clobber \
             release-assets/*
+
+      - name: Publish beta release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          gh release edit "$TAG" \
+            --repo ${{ github.repository }} \
+            --draft=false

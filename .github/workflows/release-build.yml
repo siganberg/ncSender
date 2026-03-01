@@ -7,8 +7,54 @@ on:
       - '!v*-beta*'
 
 jobs:
+  prepare-release:
+    name: Prepare Draft Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.info.outputs.tag }}
+      version: ${{ steps.info.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Extract tag info
+        id: info
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Get release notes from tag message
+        run: |
+          TAG="${{ github.ref_name }}"
+          git fetch origin tag "$TAG" --force
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          if [ -n "$TAG_MESSAGE" ]; then
+            echo "$TAG_MESSAGE" > release-notes.md
+          else
+            echo "Release $TAG" > release-notes.md
+          fi
+
+      - name: Create draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release create "$TAG" \
+            --repo ${{ github.repository }} \
+            --title "Release $TAG" \
+            --notes-file release-notes.md \
+            --draft
+
   macos:
     name: macOS Builds
+    needs: [prepare-release]
     runs-on: macos-14  # macOS Sonoma (stable)
     steps:
       - name: Checkout
@@ -49,6 +95,7 @@ jobs:
 
   linux:
     name: Linux Builds
+    needs: [prepare-release]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     strategy:
       fail-fast: false
@@ -100,6 +147,7 @@ jobs:
 
   windows:
     name: Windows Builds
+    needs: [prepare-release]
     runs-on: windows-2022  # Windows Server 2022 (stable)
     strategy:
       fail-fast: false
@@ -146,6 +194,7 @@ jobs:
 
   linux-arm64:
     name: Linux ARM64 Build
+    needs: [prepare-release]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     steps:
       - name: Checkout
@@ -206,19 +255,13 @@ jobs:
           name: linux-arm64-artifacts
           path: app/dist-electron/**
 
-  release:
-    name: Create Release
-    needs: [macos, linux, windows, linux-arm64]
+  publish-release:
+    name: Publish Release
+    needs: [prepare-release, macos, linux, windows, linux-arm64]
     runs-on: ubuntu-22.04  # Ubuntu 22.04 LTS (stable)
     permissions:
       contents: write
     steps:
-      - name: Checkout (for tag annotation)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -227,21 +270,11 @@ jobs:
       - name: Prepare release assets (preserve electron-builder filenames)
         run: |
           mkdir -p release-assets
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          VERSION="${{ needs.prepare-release.outputs.version }}"
 
           echo "Downloaded artifacts structure:"
           find artifacts -type f
-
-          copy_matching_files() {
-            local source_dir="$1"
-            shift
-            if [ ! -d "$source_dir" ]; then
-              return
-            fi
-            for pattern in "$@"; do
-              find "$source_dir" -maxdepth 1 -type f -name "$pattern" -print -exec cp {} release-assets/ \;
-            done
-          }
 
           # macOS assets (only DMG files, skip ZIP due to signing issues)
           if [ -d "artifacts/macos-artifacts" ]; then
@@ -285,8 +318,6 @@ jobs:
               fi
             done
           fi
-
-          VERSION="${TAG#v}"
 
           # Linux x64 assets (.AppImage + .deb)
           if [ -d "artifacts/linux-x64-artifacts" ]; then
@@ -341,39 +372,37 @@ jobs:
           echo "Release assets to upload:"
           ls -lh release-assets/
 
-      - name: Get release notes from tag message
-        id: release_notes
-        run: |
-          TAG="${{ github.ref_name }}"
-          git fetch origin tag "$TAG" --force
-          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
-          if [ -n "$TAG_MESSAGE" ]; then
-            echo "$TAG_MESSAGE" > release-notes.md
-          else
-            echo "Release $TAG" > release-notes.md
-          fi
-
-      - name: Create Release
+      - name: Upload assets to draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} \
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          gh release upload "$TAG" \
             --repo ${{ github.repository }} \
-            --title "Release ${{ github.ref_name }}" \
-            --notes-file release-notes.md \
+            --clobber \
             release-assets/*
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          gh release edit "$TAG" \
+            --repo ${{ github.repository }} \
+            --draft=false \
+            --latest
 
       - name: Announce on Discord
         if: success() && env.DISCORD_WEBHOOK_URL != ''
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare-release.outputs.tag }}"
 
           curl -H "Content-Type: application/json" \
             -d "{
               \"embeds\": [{
-                \"title\": \"🚀 ncSender ${{ github.ref_name }} Released!\",
+                \"title\": \"🚀 ncSender ${{ needs.prepare-release.outputs.tag }} Released!\",
                 \"description\": \"A new version of ncSender is now available.\",
                 \"url\": \"${RELEASE_URL}\",
                 \"color\": 1941124,

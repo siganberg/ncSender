@@ -2,6 +2,12 @@
 
 set -e
 
+# Ensure working tree is clean
+if [ -n "$(git status --porcelain)" ]; then
+    echo "❌ Working tree is not clean. Commit or stash changes first."
+    exit 1
+fi
+
 # Get the latest stable tag (exclude beta tags)
 LATEST_STABLE_TAG=$(git tag --sort=-version:refname | grep -v "beta" | head -1)
 if [ -z "$LATEST_STABLE_TAG" ]; then
@@ -33,23 +39,21 @@ NEW_TAG="v$NEW_VERSION"
 echo "New beta version: $NEW_VERSION"
 echo "New tag: $NEW_TAG"
 
-# Update package.json version
-sed -i '' "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" app/package.json
+# Get commit messages since last beta (or last stable if no prior beta)
+if [ -n "$LATEST_BETA_TAG" ]; then
+    SINCE_TAG="$LATEST_BETA_TAG"
+else
+    SINCE_TAG="$LATEST_STABLE_TAG"
+fi
 
-# Show the change
-echo ""
-echo "Updated app/package.json:"
-grep "\"version\":" app/package.json
-
-# Get commit messages since last stable release
-COMMITS=$(git log "$LATEST_STABLE_TAG..HEAD" --pretty=format:"%s")
+COMMITS=$(git log "$SINCE_TAG..HEAD" --pretty=format:"%s")
 
 echo ""
 echo "Generating beta release notes using Claude..."
 echo ""
 
 # Create a prompt for Claude
-PROMPT="Based on the following git commit messages from $LATEST_STABLE_TAG to HEAD, generate release notes for beta version $NEW_VERSION.
+PROMPT="Based on the following git commit messages from $SINCE_TAG to HEAD, generate release notes for beta version $NEW_VERSION.
 
 Commit messages:
 $COMMITS
@@ -97,7 +101,7 @@ $RELEASE_NOTES
 ---
 *Please report any issues on [GitHub Issues](https://github.com/siganberg/ncSender/issues)*"
 
-# Save to latest_release.md file
+# Save to latest_release.md file for local reference
 RELEASE_NOTES_FILE="latest_release.md"
 printf '%s\n' "$FULL_NOTES" > "$RELEASE_NOTES_FILE"
 
@@ -111,15 +115,8 @@ echo "========================================="
 
 echo ""
 
-# Commit the version change and release notes
-git add app/package.json "$RELEASE_NOTES_FILE"
-git commit -m "chore: create beta release $NEW_TAG"
-
-# Push the commit
-git push origin $(git branch --show-current)
-
-# Create and push the tag
-git tag -a "$NEW_TAG" -m "Beta Release $NEW_TAG"
+# Create and push the tag (embed full notes in tag message)
+git tag -a "$NEW_TAG" --cleanup=verbatim -m "$FULL_NOTES"
 git push origin "$NEW_TAG"
 
 echo ""
