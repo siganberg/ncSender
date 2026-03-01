@@ -127,95 +127,11 @@
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
           <div class="settings-section" :class="{ 'settings-section--disabled': !canControlRemoteAccess }">
-            <h3 class="section-title">Connection Settings</h3>
+            <h3 class="section-title">Remote Control Settings</h3>
             <div v-if="!canControlRemoteAccess" class="settings-disabled-overlay">
               <div class="settings-disabled-message">
-                Connection settings can only be changed from the host machine.
+                Remote control settings can only be changed from the host machine.
               </div>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Connection Type</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.type" @change="loadMainUsbPorts" :disabled="!canControlRemoteAccess">
-                <option value="USB">USB</option>
-                <option value="Ethernet">Ethernet</option>
-              </select>
-            </div>
-            <div class="setting-item" v-if="connectionSettings.type === 'Ethernet'">
-              <label class="setting-label">Protocol</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.protocol" @change="onProtocolChange" :disabled="!canControlRemoteAccess">
-                <option value="telnet">Telnet</option>
-                <option value="websocket">WebSocket</option>
-              </select>
-            </div>
-            <div class="setting-item" v-if="connectionSettings.type === 'USB'">
-              <label class="setting-label">USB Port</label>
-              <div class="custom-dropdown">
-                <button
-                  class="dropdown-trigger setting-input--right"
-                  :class="{ 'invalid': !mainValidation.usbPort && connectionSettings.type === 'USB' }"
-                  @click="canControlRemoteAccess && (mainUsbDropdownOpen = !mainUsbDropdownOpen)"
-                  :disabled="!canControlRemoteAccess"
-                  type="button"
-                >
-                  <span>{{ getSelectedMainPortDisplay() }}</span>
-                  <span class="dropdown-arrow">▼</span>
-                </button>
-                <div v-if="mainUsbDropdownOpen && canControlRemoteAccess" class="dropdown-menu">
-                  <div
-                    v-if="availableUsbPorts.length === 0"
-                    class="dropdown-item disabled"
-                  >
-                    No USB ports available
-                  </div>
-                  <div
-                    v-for="port in availableUsbPorts"
-                    :key="port.path"
-                    class="dropdown-item"
-                    @click="selectMainUsbPort(port)"
-                  >
-                    <div class="port-path">{{ port.path }}</div>
-                    <div class="port-manufacturer">{{ port.manufacturer || 'Unknown Manufacturer' }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Baud Rate</label>
-              <select class="setting-select setting-input--right" v-model="connectionSettings.baudRate" :disabled="!canControlRemoteAccess">
-                <option value="9600">9600</option>
-                <option value="19200">19200</option>
-                <option value="38400">38400</option>
-                <option value="57600">57600</option>
-                <option value="115200">115200</option>
-                <option value="230400">230400</option>
-                <option value="460800">460800</option>
-                <option value="921600">921600</option>
-              </select>
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">IP Address</label>
-              <input
-                type="text"
-                class="setting-input setting-input--right"
-                v-model="connectionSettings.ipAddress"
-                :disabled="connectionSettings.type === 'USB' || !canControlRemoteAccess"
-                :class="{ 'invalid': !isValidIP && connectionSettings.type === 'Ethernet' }"
-                placeholder="192.168.5.1"
-                @blur="validateIP"
-              >
-            </div>
-            <div class="setting-item">
-              <label class="setting-label">Port</label>
-              <input
-                type="number"
-                class="setting-input setting-input--right"
-                v-model="connectionSettings.port"
-                :disabled="connectionSettings.type === 'USB' || !canControlRemoteAccess"
-                :class="{ 'invalid': !mainValidation.port && connectionSettings.type === 'Ethernet' }"
-                min="1"
-                max="65535"
-                @blur="validateMainPort"
-              >
             </div>
             <div class="setting-item setting-item--with-note">
               <div class="setting-item-content">
@@ -244,14 +160,23 @@
             </div>
             <div class="setting-item">
               <label class="setting-label"></label>
-              <button
-                class="save-connection-button"
-                :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
-                :disabled="!canControlRemoteAccess"
-                @click="saveConnectionSettings"
-              >
-                {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
-              </button>
+              <div class="connection-buttons">
+                <button
+                  class="setup-open-button"
+                  :disabled="!canControlRemoteAccess"
+                  @click="openSetupFromSettings"
+                >
+                  CNC Controller Setup
+                </button>
+                <button
+                  class="save-connection-button"
+                  :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
+                  :disabled="!canControlRemoteAccess"
+                  @click="saveConnectionSettings"
+                >
+                  {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -758,7 +683,7 @@
   </Dialog>
 
   <!-- Mandatory Setup Dialog (non-dismissible) -->
-  <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus">
+  <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus" :close-on-backdrop-click="setupDismissible" @close="closeSetupDialog">
     <div class="setup-container">
       <div class="setup-header">
         <h2 class="setup-title">CNC Controller Setup</h2>
@@ -771,6 +696,13 @@
           <select class="setting-select setting-input--right" v-model="setupSettings.type" @change="loadSetupUsbPorts(); validateSetupForm()">
             <option value="USB">USB</option>
             <option value="Ethernet">Ethernet</option>
+          </select>
+        </div>
+        <div class="setting-item" v-if="setupSettings.type === 'Ethernet'">
+          <label class="setting-label">Protocol</label>
+          <select class="setting-select setting-input--right" v-model="setupSettings.protocol" @change="onSetupProtocolChange">
+            <option value="telnet">Telnet</option>
+            <option value="websocket">WebSocket</option>
           </select>
         </div>
         <div class="setting-item" v-if="setupSettings.type === 'USB'">
@@ -854,6 +786,9 @@
       </div>
 
       <div class="setup-footer">
+        <button v-if="setupDismissible" class="setup-cancel-button" @click="closeSetupDialog">
+          Cancel
+        </button>
         <button class="setup-save-button" @click="saveSetupSettings">
           Connect
         </button>
@@ -1104,6 +1039,7 @@ const viewport = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.default
 const defaultView = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
+const setupDismissible = ref(false);
 const showWorkspaceMismatchDialog = ref(false);
 const detectedWorkspace = ref<string>('');
 let isInitialThemeLoad = true;
@@ -1449,6 +1385,7 @@ const connectionSettingsSaved = ref(false);
 // Setup dialog connection settings (separate from main settings)
 const setupSettings = reactive({
   type: 'USB',
+  protocol: 'telnet',
   baudRate: '115200',
   ipAddress: '192.168.5.1',
   port: 23,
@@ -1658,13 +1595,33 @@ const loadUsbPorts = async () => {
 
 const loadMainUsbPorts = async () => {
   availableUsbPorts.value = await loadUsbPorts();
-
-  // Trigger validation when connection type changes
-  validateMainForm();
 };
 
 const onProtocolChange = () => {
   connectionSettings.port = connectionSettings.protocol === 'websocket' ? 81 : 23;
+};
+
+const onSetupProtocolChange = () => {
+  setupSettings.port = setupSettings.protocol === 'websocket' ? 81 : 23;
+};
+
+const closeSetupDialog = () => {
+  if (!setupDismissible.value) return;
+  showSetupDialog.value = false;
+  setupDismissible.value = false;
+};
+
+const openSetupFromSettings = async () => {
+  setupSettings.type = connectionSettings.type;
+  setupSettings.protocol = connectionSettings.protocol;
+  setupSettings.baudRate = connectionSettings.baudRate;
+  setupSettings.ipAddress = connectionSettings.ipAddress;
+  setupSettings.port = connectionSettings.port;
+  setupSettings.usbPort = connectionSettings.usbPort;
+  setupSettings.homeLocation = homeLocation.value;
+  setupDismissible.value = true;
+  showSetupDialog.value = true;
+  await loadSetupUsbPorts();
 };
 
 const loadSetupUsbPorts = async () => {
@@ -1842,6 +1799,8 @@ const openSettings = async () => {
 };
 
 const closeSettings = () => {
+  // Don't close settings while setup dialog is on top
+  if (showSetupDialog.value) return;
   // Clear any pending firmware changes
   clearFirmwareChanges();
   // Close the dialog
@@ -2604,43 +2563,6 @@ const validateSetupForm = () => {
   return isValid;
 };
 
-const validateMainPort = () => {
-  if (connectionSettings.type === 'USB') {
-    mainValidation.port = true;
-    return;
-  }
-
-  mainValidation.port = !!(connectionSettings.port && connectionSettings.port > 0 && connectionSettings.port <= 65535);
-};
-
-const validateMainForm = () => {
-  let isValid = true;
-
-  // Validate USB port if USB connection
-  if (connectionSettings.type === 'USB') {
-    mainValidation.usbPort = !!connectionSettings.usbPort;
-    if (!mainValidation.usbPort) isValid = false;
-
-    // Clear Ethernet validation for USB
-    mainValidation.port = true;
-  }
-
-  // Validate Ethernet settings if Ethernet connection
-  if (connectionSettings.type === 'Ethernet') {
-    mainValidation.usbPort = true;
-
-    // Validate IP (using existing validateIP function and isValidIP)
-    validateIP();
-    mainValidation.ipAddress = isValidIP.value;
-    if (!mainValidation.ipAddress) isValid = false;
-
-    // Validate port
-    validateMainPort();
-    if (!mainValidation.port) isValid = false;
-  }
-
-  return isValid;
-};
 
 const isSettingsValid = (settings) => {
   if (!settings) return false;
@@ -2679,52 +2601,20 @@ const isSettingsValid = (settings) => {
 };
 
 const saveConnectionSettings = async () => {
-  // Validate form before saving
-  if (!validateMainForm()) {
-    return;
-  }
-
   try {
-    // Prepare the complete settings object with all settings
-    const settingsToSave = {
+    const { updateSettings } = await import('./lib/settings-store.js');
+    await updateSettings({
       connection: {
-        type: connectionSettings.type?.toLowerCase() || 'usb',
-        protocol: connectionSettings.type === 'Ethernet' ? connectionSettings.protocol : undefined,
-        ip: connectionSettings.ipAddress || '192.168.5.1',
-        port: parseInt(connectionSettings.port, 10) || 23,
         serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
-        usbPort: connectionSettings.usbPort || '',
-        baudRate: parseInt(connectionSettings.baudRate, 10) || 115200
       },
       remoteControl: {
         enabled: connectionSettings.remoteControlEnabled
-      },
-      theme: theme.value,
-      workspace: workspace.value,
-      defaultGcodeView: defaultView.value,
-      accentColor: accentColor.value,
-      gradientColor: gradientColor.value,
-      autoClearConsole: consoleSettings.autoClearConsole
-    };
-
-    const response = await fetch(`${getApiBaseUrl()}/api/settings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(settingsToSave)
+      }
     });
-
-    if (response.ok) {
-      const result = await response.json();
-      connectionSettingsSaved.value = true;
-      setTimeout(() => {
-        connectionSettingsSaved.value = false;
-      }, 1500);
-    } else {
-      const error = await response.json();
-      console.error('Failed to save settings:', error.error);
-    }
+    connectionSettingsSaved.value = true;
+    setTimeout(() => {
+      connectionSettingsSaved.value = false;
+    }, 1500);
   } catch (error) {
     console.error('Error saving settings:', error);
   }
@@ -2741,9 +2631,10 @@ const saveSetupSettings = async () => {
     const settingsToSave = {
       connection: {
         type: setupSettings.type?.toLowerCase() || 'usb',
+        protocol: setupSettings.type === 'Ethernet' ? setupSettings.protocol : undefined,
         ip: setupSettings.ipAddress || '192.168.5.1',
         port: parseInt(setupSettings.port, 10) || 23,
-        serverPort: 8090,
+        serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
         usbPort: setupSettings.usbPort || '',
         baudRate: parseInt(setupSettings.baudRate, 10) || 115200
       },
@@ -2756,6 +2647,7 @@ const saveSetupSettings = async () => {
 
     // Update local connection settings
     connectionSettings.type = setupSettings.type;
+    connectionSettings.protocol = setupSettings.protocol;
     connectionSettings.baudRate = setupSettings.baudRate;
     connectionSettings.ipAddress = setupSettings.ipAddress;
     connectionSettings.port = setupSettings.port;
@@ -2764,6 +2656,7 @@ const saveSetupSettings = async () => {
 
     // Close setup dialog
     showSetupDialog.value = false;
+    setupDismissible.value = false;
 
     // Load USB ports if USB connection type
     if (connectionSettings.type === 'USB') {
@@ -3541,6 +3434,34 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   border-bottom: none;
 }
 
+.connection-buttons {
+  display: flex;
+  gap: var(--gap-sm);
+}
+
+.setup-open-button {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  padding: 12px 24px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.setup-open-button:hover {
+  background: var(--color-accent);
+  color: white;
+}
+
+.setup-open-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .save-connection-button {
   background: var(--gradient-accent);
   color: white;
@@ -3687,6 +3608,25 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   border-radius: 0 0 var(--radius-medium) var(--radius-medium);
   display: flex;
   justify-content: center;
+  gap: var(--gap-sm);
+}
+
+.setup-cancel-button {
+  padding: var(--gap-sm) var(--gap-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.setup-cancel-button:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .setup-save-button {
