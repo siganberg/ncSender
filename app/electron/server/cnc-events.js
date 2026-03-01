@@ -205,6 +205,11 @@ export function registerCncEventHandlers({
         broadcast('server-state-updated', serverState);
       }
 
+      // Broadcast machine limit changes ($130/$131/$132) for visualizer grid
+      if ((id === '130' || id === '131' || id === '132') && valueChanged) {
+        broadcast('firmware-setting-changed', { id, value: newValue });
+      }
+
       // Update machineState.maxFeedrate when $110 or $111 changes
       if ((id === '110' || id === '111') && valueChanged) {
         // Re-read both values to compute min

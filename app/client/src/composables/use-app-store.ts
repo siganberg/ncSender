@@ -147,12 +147,40 @@ const remoteStateInitialized = ref(false); // true after WebSocket handshake det
 const serverVersion = ref<string | null>(null);
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
-// Grid size defaults - should be loaded from firmware settings $130/$131
-// These defaults keep the visualizer usable until firmware values arrive
-const gridSizeX = ref(DEFAULT_GRID_SIZE_MM);
-const gridSizeY = ref(DEFAULT_GRID_SIZE_MM);
+const MACHINE_DIMS_CACHE_KEY = 'ncsender-machine-dims';
+
+// Load cached machine dimensions from localStorage (survives app restarts)
+const loadMachineDimsFromCache = () => {
+  try {
+    const cached = localStorage.getItem(MACHINE_DIMS_CACHE_KEY);
+    if (cached) {
+      const dims = JSON.parse(cached);
+      return {
+        x: (typeof dims.x === 'number' && dims.x > 0) ? dims.x : DEFAULT_GRID_SIZE_MM,
+        y: (typeof dims.y === 'number' && dims.y > 0) ? dims.y : DEFAULT_GRID_SIZE_MM,
+        z: (typeof dims.z === 'number' && dims.z > 0) ? dims.z : DEFAULT_Z_TRAVEL_MM
+      };
+    }
+  } catch { /* ignore parse errors */ }
+  return { x: DEFAULT_GRID_SIZE_MM, y: DEFAULT_GRID_SIZE_MM, z: DEFAULT_Z_TRAVEL_MM };
+};
+
+const saveMachineDimsToCache = () => {
+  try {
+    localStorage.setItem(MACHINE_DIMS_CACHE_KEY, JSON.stringify({
+      x: gridSizeX.value,
+      y: gridSizeY.value,
+      z: zMaxTravel.value
+    }));
+  } catch { /* ignore storage errors */ }
+};
+
+const cachedDims = loadMachineDimsFromCache();
+// Grid size defaults - loaded from localStorage cache, then updated from firmware
+const gridSizeX = ref(cachedDims.x);
+const gridSizeY = ref(cachedDims.y);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
-const zMaxTravel = ref<number | null>(DEFAULT_Z_TRAVEL_MM);
+const zMaxTravel = ref<number | null>(cachedDims.z);
 const machineDimsLoaded = ref(false);
 let machineDimsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
 let cachedFirmwareData: any = null;
@@ -533,6 +561,7 @@ const tryLoadMachineDimensionsOnce = async () => {
     const homeLocationSetting = settings?.homeLocation || 'back-left';
     updateMachineOrientationFromHomeLocation(homeLocationSetting);
 
+    saveMachineDimsToCache();
     machineDimsLoaded.value = true;
     machineDimsLoading = false;
     debugLog(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
@@ -615,6 +644,25 @@ export function initializeStore() {
 
   api.on('server-version', (version: string) => {
     serverVersion.value = version;
+  });
+
+  // Machine limits changed ($130/$131/$132) — update visualizer grid reactively
+  api.on('firmware-setting-changed', (data: { id: string; value: string }) => {
+    const val = parseFloat(data.value);
+    if (Number.isNaN(val) || val <= 0) return;
+    if (data.id === '130') {
+      gridSizeX.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $130 (X) updated to ${val}`);
+    } else if (data.id === '131') {
+      gridSizeY.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $131 (Y) updated to ${val}`);
+    } else if (data.id === '132') {
+      zMaxTravel.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $132 (Z) updated to ${val}`);
+    }
   });
 
   // Check if we already have remote control state from api (in case we missed the event)
