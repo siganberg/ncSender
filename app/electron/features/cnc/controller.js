@@ -47,6 +47,14 @@ const WATCHED_STATUS_FIELDS = [
   'activeProbe',      // Active probe input (grblHAL P: field)
 ];
 
+function getJogDirection(cmd) {
+  const parts = [];
+  for (const m of cmd.matchAll(/([XYZABC])\s*(-?)/gi)) {
+    parts.push(m[1].toUpperCase() + (m[2] === '-' ? '-' : '+'));
+  }
+  return parts.sort().join('');
+}
+
 export class CNCController extends EventEmitter {
   constructor() {
     super();
@@ -1305,6 +1313,15 @@ export class CNCController extends EventEmitter {
       // Preserve case for GRBL variable syntax (% assignments and [] expressions)
       const hasVariableSyntax = finalCommand.startsWith('%') || /\[.*\]/.test(finalCommand);
       commandToSend = (hasVariableSyntax ? finalCommand : finalCommand.toUpperCase()) + '\n';
+    }
+
+    // Prepend 0x85 jog cancel only when jog direction changes
+    if (/^\$J=/i.test(finalCommand)) {
+      const dir = getJogDirection(finalCommand);
+      if (this._lastJogDirection && dir !== this._lastJogDirection) {
+        commandToSend = '\x85' + commandToSend;
+      }
+      this._lastJogDirection = dir;
     }
 
     if (isRealTimeCommand) {
