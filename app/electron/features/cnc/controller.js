@@ -1307,14 +1307,6 @@ export class CNCController extends EventEmitter {
       commandToSend = (hasVariableSyntax ? finalCommand : finalCommand.toUpperCase()) + '\n';
     }
 
-    // Detect jog commands ($J=) and prepend 0x85 to cancel any previous jog atomically
-    const isJogCommand = /^\$J=/i.test(finalCommand);
-    const skipJogCancel = normalizedMeta?.skipJogCancel === true;
-
-    if (isJogCommand && !skipJogCancel) {
-      commandToSend = '\x85' + commandToSend;
-    }
-
     if (isRealTimeCommand) {
       const display = displayCommand || finalCommand;
       const pendingPayload = {
