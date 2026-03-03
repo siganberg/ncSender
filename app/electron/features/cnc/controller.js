@@ -1119,50 +1119,6 @@ export class CNCController extends EventEmitter {
     this.emitConnectionStatus('disconnected', false);
   }
 
-  async sendEmergencyJogCancel(reason) {
-    try {
-      await this.writeToConnection(REALTIME_JOG_CANCEL, { isRealTime: true });
-
-      log('Emergency jog cancel sent:', reason);
-
-      this.emit('command-ack', {
-        id: `emergency-cancel-${Date.now()}`,
-        command: REALTIME_JOG_CANCEL,
-        displayCommand: `\\x85 (Emergency Jog Cancel - ${reason})`,
-        status: 'success',
-        timestamp: new Date().toISOString(),
-        meta: { emergencyStop: true, reason }
-      });
-    } catch (error) {
-      log('Failed to send emergency jog cancel:', error);
-    }
-
-    // Clear active jog command to unblock the queue
-    // The queue waits for 'ok' which may never come for cancelled jog
-    if (this.activeCommand && /^\$J=/i.test(this.activeCommand.rawCommand)) {
-      const cmd = this.activeCommand;
-      this.activeCommand = null;
-      log('Clearing stuck jog command from queue:', cmd.id);
-
-      if (cmd.timeoutHandle) {
-        clearTimeout(cmd.timeoutHandle);
-      }
-
-      const payload = {
-        id: cmd.id,
-        command: cmd.rawCommand,
-        displayCommand: cmd.displayCommand,
-        meta: cmd.meta,
-        status: 'cancelled',
-        reason: 'jog-cancelled-by-watchdog',
-        timestamp: new Date().toISOString()
-      };
-
-      cmd.resolve(payload);
-      this.emit('command-ack', payload);
-    }
-  }
-
   writeToConnection(commandToSend, { isRealTime } = {}) {
     // Allow writes if connected or still verifying the controller during initial handshake
     if (!this.connection || (!this.isConnected && !this.isVerifyingConnection)) {

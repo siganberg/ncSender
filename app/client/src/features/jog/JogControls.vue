@@ -121,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { api, jogStart, jogStop, jogHeartbeat, jogStep } from './api';
+import { api, jogStart, jogStop, jogStep } from './api';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 
@@ -152,7 +152,6 @@ const formatFeedRateForCommand = (value: number): string => {
 };
 
 let jogTimer: number | null = null;
-let heartbeatTimer: number | null = null;
 
 // Handle center button click - send soft reset
 const handleCenterClick = async () => {
@@ -167,24 +166,7 @@ const handleCenterClick = async () => {
 let isLongPress = false;
 let activeJogId: string | null = null;
 
-const HEARTBEAT_INTERVAL_MS = 250;
-
 const createJogId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const startHeartbeat = (jogId: string) => {
-  stopHeartbeat();
-  jogHeartbeat(jogId);
-  heartbeatTimer = window.setInterval(() => {
-    jogHeartbeat(jogId);
-  }, HEARTBEAT_INTERVAL_MS);
-};
-
-const stopHeartbeat = () => {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-};
 
 // Track which buttons are pressed for visual feedback
 const pressedButtons = ref(new Set<string>());
@@ -193,12 +175,11 @@ const DEFAULT_CONTINUOUS_DISTANCE = 400;
 
 const getAxisTravel = (axis: 'X' | 'Y' | 'Z'): number => {
   const raw = axis === 'X' ? props.xTravel : axis === 'Y' ? props.yTravel : props.zTravel;
-  const fallback = DEFAULT_CONTINUOUS_DISTANCE;
   const value = typeof raw === 'number' ? raw : Number(raw);
   if (Number.isFinite(value) && value > 0) {
     return value;
   }
-  return fallback;
+  return DEFAULT_CONTINUOUS_DISTANCE;
 };
 
 const jog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
@@ -266,10 +247,8 @@ const continuousJog = async (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
       direction,
       feedRate: feedRateRaw
     });
-    startHeartbeat(jogId);
   } catch (error) {
     console.error('Failed to start continuous jog:', error);
-    stopHeartbeat();
     if (activeJogId === jogId) {
       activeJogId = null;
     }
@@ -299,10 +278,8 @@ const continuousDiagonalJog = async (xDirection: 1 | -1, yDirection: 1 | -1) => 
       direction: null,
       feedRate: props.feedRate
     });
-    startHeartbeat(jogId);
   } catch (error) {
     console.error('Failed to start diagonal continuous jog:', error);
-    stopHeartbeat();
     if (activeJogId === jogId) {
       activeJogId = null;
     }
@@ -390,7 +367,6 @@ const stopJog = async () => {
 
   const jogId = activeJogId;
   activeJogId = null;
-  stopHeartbeat();
 
   try {
     await api.sendCommandViaWebSocket({
@@ -434,7 +410,6 @@ onMounted(() => {
     }
     if (activeJogId && data.jogId === activeJogId) {
       activeJogId = null;
-      stopHeartbeat();
     }
   });
 });
@@ -444,7 +419,6 @@ onBeforeUnmount(() => {
     unsubscribeJogStopped();
     unsubscribeJogStopped = null;
   }
-  stopHeartbeat();
 });
 </script>
 

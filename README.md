@@ -43,7 +43,6 @@ ncSender is a lightweight, cross‑platform CNC controller with a clean UI and b
 - Metric and imperial units support with automatic conversion.
 - Firmware settings browser for GrblHAL (read/submit, import/export).
 - Safe job controls: pause before stop, resume.
-- Dead-man switch safety feature for jogging operations.
 - Headless mode: run just the server and use it from a browser.
 - UI theme support (light/dark) and configurable accent/gradient colors.
 

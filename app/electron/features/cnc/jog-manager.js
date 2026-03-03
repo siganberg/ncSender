@@ -22,70 +22,12 @@ const WS_READY_STATE_OPEN = 1;
 
 const { log, error: logError } = createLogger('JogManager');
 
-// Dead-man switch for continuous jogging
-// Automatically sends jog cancel if heartbeat is not received within timeout
-export class JogWatchdog {
-  constructor({ timeoutMs = 1500, onTimeout = null } = {}) {
-    this.timeoutMs = timeoutMs;
-    this.onTimeout = onTimeout;
-    this.timer = null;
-    this.activeJogCommand = null;
-  }
-
-  start(commandId, command) {
-    this.clear();
-    this.activeJogCommand = { id: commandId, command };
-    this.timer = setTimeout(() => {
-      log('Jog watchdog timeout - triggering emergency cancel');
-      if (this.onTimeout) {
-        this.onTimeout('watchdog-timeout');
-      }
-    }, this.timeoutMs);
-  }
-
-  extend() {
-    if (!this.timer) return;
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      log('Jog watchdog timeout - triggering emergency cancel');
-      if (this.onTimeout) {
-        this.onTimeout('watchdog-timeout');
-      }
-    }, this.timeoutMs);
-  }
-
-  clear() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.activeJogCommand = null;
-  }
-
-  isActive() {
-    return this.timer !== null;
-  }
-
-  getActiveCommand() {
-    return this.activeJogCommand;
-  }
-}
-
 export class JogSessionManager {
   constructor({ cncController, commandProcessor } = {}) {
     this.cncController = cncController;
     this.commandProcessorWrapper = commandProcessor;
     this.sessionsById = new Map();
     this.sessionsBySocket = new Map();
-
-    this.watchdog = new JogWatchdog({
-      timeoutMs: 2000,
-      onTimeout: () => {
-        this.handleWatchdogTimeout().catch(err => {
-          logError('Watchdog timeout handler failed', err);
-        });
-      }
-    });
   }
 
   get commandProcessor() {
@@ -112,9 +54,6 @@ export class JogSessionManager {
     switch (type) {
       case 'jog:start':
         await this.startSession(ws, data);
-        break;
-      case 'jog:heartbeat':
-        this.recordHeartbeat(ws, data);
         break;
       case 'jog:stop':
         await this.stopSession(ws, data, 'client-stop');
@@ -161,7 +100,6 @@ export class JogSessionManager {
     const sessionSet = this.sessionsBySocket.get(ws) ?? new Set();
     this.sessionsBySocket.set(ws, sessionSet);
 
-    // Register session BEFORE sending command so heartbeats can be accepted while command is queued
     const session = {
       jogId,
       ws,
@@ -226,26 +164,10 @@ export class JogSessionManager {
 
     log('Jog started', `jogId=${jogId}`);
 
-    this.watchdog.start(jogId, command);
-
     this.sendSafe(ws, {
       type: 'jog:started',
       data: { jogId, startedAt: Date.now() }
     });
-  }
-
-  recordHeartbeat(ws, data) {
-    const { jogId } = data || {};
-    if (!jogId) {
-      return;
-    }
-
-    const session = this.sessionsById.get(jogId);
-    if (!session || session.ws !== ws) {
-      return;
-    }
-
-    this.watchdog.extend();
   }
 
   async stopSession(ws, data, defaultReason = 'client-stop') {
@@ -267,37 +189,12 @@ export class JogSessionManager {
     await this.finalizeSession(session, reason);
   }
 
-  async handleWatchdogTimeout() {
-    const activeJog = this.watchdog.getActiveCommand();
-    if (!activeJog) {
-      log('Watchdog timeout but no active jog command tracked');
-      return;
-    }
-
-    const session = this.sessionsById.get(activeJog.id);
-    if (!session) {
-      log('Watchdog timeout but session not found', `jogId=${activeJog.id}`);
-      return;
-    }
-
-    log('Watchdog cancelling continuous jog', `jogId=${activeJog.id}`);
-
-    try {
-      await this.cncController.sendEmergencyJogCancel('watchdog-timeout');
-    } catch (err) {
-      log('Failed to send emergency jog cancel on watchdog timeout', err?.message || err);
-    }
-
-    await this.finalizeSession(session, 'watchdog-timeout', { skipCancel: true });
-  }
-
   async finalizeSession(session, reason, { notifyClient = true, skipCancel = false } = {}) {
     if (!session || session.stopping) {
       return;
     }
 
     session.stopping = true;
-    this.watchdog.clear();
 
     this.sessionsById.delete(session.jogId);
 
@@ -366,10 +263,6 @@ export class JogSessionManager {
     }
 
     const resolvedCommandId = commandId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    if (this.watchdog.isActive()) {
-      this.watchdog.clear();
-    }
 
     try {
       const stepMeta = { jogStep: true, sourceId: 'client', skipJogCancel: skipJogCancel === true, silent: silent === true };

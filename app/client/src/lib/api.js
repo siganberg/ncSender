@@ -14,7 +14,6 @@ class NCClient {
     this.discoveredPort = null;
     this.lastServerState = null;
     this.messageStates = new Map(); // Track state for each message type
-    this.activeJogSessions = new Set(); // Track active jog sessions for dead-man switch
     this.isLocalClient = false; // Whether client is on localhost
     this.remoteControlEnabled = false; // Whether remote control is enabled on server
     this.serverVersion = null;
@@ -195,8 +194,6 @@ class NCClient {
           return;
         }
         cleanup();
-        // Track active jog session for dead-man switch
-        this.activeJogSessions.add(jogId);
         resolve(data);
       });
 
@@ -247,8 +244,6 @@ class NCClient {
           return;
         }
         cleanup();
-        // Remove from active jog sessions
-        this.activeJogSessions.delete(jogId);
         resolve(data);
       });
 
@@ -259,20 +254,6 @@ class NCClient {
         }
       });
     });
-  }
-
-  sendJogHeartbeat(jogId) {
-    if (!jogId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return Promise.resolve();
-    }
-
-    try {
-      this.ws.send(JSON.stringify({ type: 'jog:heartbeat', data: { jogId } }));
-      return Promise.resolve();
-    } catch (error) {
-      console.error('Failed to send jog heartbeat:', error);
-      return Promise.reject(error);
-    }
   }
 
   async sendJogStep({ command, displayCommand, axis, direction, feedRate, distance, commandId }) {
@@ -725,25 +706,6 @@ class NCClient {
 
     this.ws.onclose = (event) => {
       debugLog('WebSocket disconnected', 'Code:', event.code, 'Reason:', event.reason);
-
-      // Dead-man switch: Send emergency jog cancel if any jog sessions are active
-      if (this.activeJogSessions.size > 0) {
-        debugWarn('WebSocket disconnected with active jog sessions - sending emergency jog cancel');
-        // Send jog cancel via HTTP as fallback (WebSocket is closed)
-        fetch(`${this.baseUrl}/api/cnc/send-command`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            command: REALTIME_JOG_CANCEL,
-            displayCommand: '0x85 (Emergency Jog Cancel - WebSocket Disconnected)',
-            meta: { emergencyStop: true }
-          })
-        }).catch((error) => {
-          console.error('Failed to send emergency jog cancel:', error);
-        });
-        // Clear all active jog sessions
-        this.activeJogSessions.clear();
-      }
 
       this.emit('disconnected');
       this.attemptReconnect();

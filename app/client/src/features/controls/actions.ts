@@ -19,12 +19,11 @@ import { commandRegistry } from '@/lib/command-registry';
 import { api } from '@/lib/api.js';
 import { useAppStore } from '@/composables/use-app-store';
 import { keyBindingStore } from './key-binding-store';
-import { jogStart, jogStop, jogHeartbeat, jogStep } from '../jog/api';
+import { jogStart, jogStop, jogStep } from '../jog/api';
 import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
 const CONTINUOUS_DISTANCE_MM = 3000;
 const CONTINUOUS_DISTANCE_IN = 120;
-const HEARTBEAT_INTERVAL_MS = 250;
 
 function getJogSettings(): { step: number; xyFeedRate: number; zFeedRate: number; unitCode: 'G20' | 'G21' } {
   const store = useAppStore();
@@ -88,15 +87,6 @@ export interface ContinuousJogSession {
 }
 
 function createContinuousSession(jogId: string, onStop: string): ContinuousJogSession {
-  const sendHeartbeat = () => {
-    jogHeartbeat(jogId).catch((error) => {
-      console.error('Failed to send jog heartbeat:', error);
-    });
-  };
-
-  sendHeartbeat();
-  const heartbeatTimer = window.setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
-
   let stopped = false;
 
   return {
@@ -106,9 +96,6 @@ function createContinuousSession(jogId: string, onStop: string): ContinuousJogSe
         return;
       }
       stopped = true;
-      clearInterval(heartbeatTimer);
-      // Let the server handle 0x85 - it sends it atomically with the next jog command
-      // or via finalizeSession() when stopping without a new jog
       try {
         await jogStop(jogId, reason);
       } catch (error) {

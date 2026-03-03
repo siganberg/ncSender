@@ -361,30 +361,29 @@ const defaultOrientation: MachineOrientation = {
 
 const orientation = computed(() => props.machineOrientation ?? defaultOrientation);
 
-const DEFAULT_CONTINUOUS_DISTANCE = 400;
+const DEFAULT_CONTINUOUS_DISTANCE_MM = 400;
+const MM_TO_IN = 1 / 25.4;
+
+const toDisplayUnits = (valueMm: number): number => {
+  return appStore.unitsPreference.value === 'imperial' ? valueMm * MM_TO_IN : valueMm;
+};
 
 const xTravelDistance = computed(() => {
   const value = Number(props.gridSizeX);
-  if (Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  return DEFAULT_CONTINUOUS_DISTANCE;
+  const distanceMm = Number.isFinite(value) && value > 0 ? value : DEFAULT_CONTINUOUS_DISTANCE_MM;
+  return toDisplayUnits(distanceMm);
 });
 
 const yTravelDistance = computed(() => {
   const value = Number(props.gridSizeY);
-  if (Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  return DEFAULT_CONTINUOUS_DISTANCE;
+  const distanceMm = Number.isFinite(value) && value > 0 ? value : DEFAULT_CONTINUOUS_DISTANCE_MM;
+  return toDisplayUnits(distanceMm);
 });
 
 const zTravelDistance = computed(() => {
   const value = Number(props.zMaxTravel);
-  if (Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  return DEFAULT_CONTINUOUS_DISTANCE;
+  const distanceMm = Number.isFinite(value) && value > 0 ? value : DEFAULT_CONTINUOUS_DISTANCE_MM;
+  return toDisplayUnits(distanceMm);
 });
 
 const computeAxisBounds = (size: number | undefined, home: AxisHome) => {

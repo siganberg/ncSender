@@ -177,7 +177,6 @@ Subfolders/files
   - Serial over USB or TCP sockets
   - GrblHAL status parsing (`<...>`), `$G` modes, error/alarm handling
   - Command queue with real‑time commands and ACK propagation
-  - Dead-man switch watchdog for jog safety (500ms timeout)
 - G‑code Job Runner: `app/electron/features/gcode/job-routes.js`
   - Line‑by‑line streaming, pause/resume/stop with safe timings
   - Progress provider hooks and server‑side ETA calculation
