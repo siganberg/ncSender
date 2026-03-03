@@ -34,6 +34,13 @@ export async function updateSettings(updates, options) {
   return result;
 }
 
+// Merge broadcast changes into the reactive store (for WebSocket broadcasts)
+export function mergeSettings(changes) {
+  if (settingsStore.data && changes) {
+    Object.assign(settingsStore.data, changes);
+  }
+}
+
 // Save settings and refresh store
 export async function saveSettings(settings) {
   const result = await api.saveSettings(settings);

@@ -19,7 +19,7 @@ import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
 import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/lib/gcode-store.js';
 import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
-import { getSettings } from '@/lib/settings-store.js';
+import { getSettings, mergeSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
 import type { UnitsPreference } from '@/lib/units';
 
@@ -791,6 +791,12 @@ export function initializeStore() {
 
   // Listen for settings changes (including homeLocation)
   api.on('settings-changed', (changedSettings) => {
+    mergeSettings(changedSettings);
+    if (changedSettings?.unitsPreference) {
+      const isImperial = changedSettings.unitsPreference === 'imperial';
+      jogConfig.stepSize = isImperial ? 0.1 : 1;
+      jogConfig.feedRate = isImperial ? 100 : 3000;
+    }
     if (changedSettings?.homeLocation) {
       debugLog(`[Store] Home location changed to: ${changedSettings.homeLocation}`);
       updateMachineOrientationFromHomeLocation(changedSettings.homeLocation);
@@ -957,6 +963,12 @@ export async function seedInitialState(initData?: any) {
     } catch (error) {
       debugLog('[Store] No existing G-code to load on startup (this is normal for first load)');
     }
+  }
+
+  const initialUnits = getSettings()?.unitsPreference;
+  if (initialUnits === 'imperial') {
+    jogConfig.stepSize = 0.1;
+    jogConfig.feedRate = 100;
   }
 
   debugLog('Initial state seeded successfully');

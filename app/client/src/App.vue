@@ -1763,6 +1763,9 @@ onMounted(() => {
         toolSource.value = detail.tool.source;
       }
     }
+    if (detail?.unitsPreference) {
+      unitsPreference.value = detail.unitsPreference;
+    }
   });
 });
 
