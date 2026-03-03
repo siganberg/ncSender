@@ -491,6 +491,7 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
+const appStore = useAppStore();
 const jogStep = ref(appStore.unitsPreference.value === 'imperial' ? 0.1 : 1);
 const jogFeedRate = ref(appStore.unitsPreference.value === 'imperial' ? 100 : 3000);
 const requireConnectionTest = ref(false);
@@ -541,7 +542,6 @@ let isInitialLoad = true;
 const settingsLoaded = ref(false);
 
 // App store state
-const appStore = useAppStore();
 const normalizedSenderStatus = computed(() => (appStore.senderStatus.value || '').toLowerCase());
 const isAlarmState = computed(() => normalizedSenderStatus.value === 'alarm');
 
