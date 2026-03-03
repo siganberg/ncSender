@@ -1064,18 +1064,6 @@ onMounted(() => {
   }
 });
 
-// Watch for step changes and update feed rate to default
-watch(() => jogStep.value, (newStep) => {
-  // Map step to index to get default feed rate
-  const stepIndex = stepOptions.value.indexOf(newStep);
-  const isImperial = appStore.unitsPreference.value === 'imperial';
-  const feedRateDefaults = isImperial ? [20, 100, 200] : [500, 3000, 8000];
-
-  if (stepIndex >= 0 && stepIndex < feedRateDefaults.length) {
-    jogFeedRate.value = feedRateDefaults[stepIndex];
-  }
-});
-
 // Watch for units preference changes and adjust jog step
 watch(() => appStore.unitsPreference.value, (newUnits) => {
   const isImperial = newUnits === 'imperial';
