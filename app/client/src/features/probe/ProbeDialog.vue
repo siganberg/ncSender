@@ -1068,7 +1068,8 @@ onMounted(() => {
 watch(() => jogStep.value, (newStep) => {
   // Map step to index to get default feed rate
   const stepIndex = stepOptions.value.indexOf(newStep);
-  const feedRateDefaults = [500, 3000, 8000]; // Small, Medium, Large
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const feedRateDefaults = isImperial ? [20, 100, 200] : [500, 3000, 8000];
 
   if (stepIndex >= 0 && stepIndex < feedRateDefaults.length) {
     jogFeedRate.value = feedRateDefaults[stepIndex];
