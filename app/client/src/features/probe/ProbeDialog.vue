@@ -491,8 +491,8 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
-const jogStep = ref(1); // Will be adjusted by watcher if needed
-const jogFeedRate = ref(3000);
+const jogStep = ref(appStore.unitsPreference.value === 'imperial' ? 0.1 : 1);
+const jogFeedRate = ref(appStore.unitsPreference.value === 'imperial' ? 100 : 3000);
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
 const zThickness = ref(15);
@@ -1077,12 +1077,9 @@ watch(() => jogStep.value, (newStep) => {
 
 // Watch for units preference changes and adjust jog step
 watch(() => appStore.unitsPreference.value, (newUnits) => {
-  // Adjust jogStep to match the closest value in the new stepOptions
-  const currentStepOptions = stepOptions.value;
-  if (!currentStepOptions.includes(jogStep.value)) {
-    // Default to middle option
-    jogStep.value = currentStepOptions[Math.floor(currentStepOptions.length / 2)];
-  }
+  const isImperial = newUnits === 'imperial';
+  jogStep.value = isImperial ? 0.1 : 1;
+  jogFeedRate.value = isImperial ? 100 : 3000;
 });
 
 // Handler for connection test toggle
