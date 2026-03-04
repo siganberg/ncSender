@@ -528,6 +528,8 @@ const store = useToolpathStore();
 const appStore = useAppStore();
 const { isJobRunning, isConnected: storeIsConnected } = appStore;
 
+const safeZHeightMm = computed(() => getSettings()?.safeZHeight ?? -5);
+
 type AxisHome = 'min' | 'max';
 type MachineOrientation = {
   xHome: AxisHome;
@@ -2167,8 +2169,8 @@ const executeMoveSpindle = async () => {
   showMoveSpindleDialog.value = false;
 
   try {
-    // First move Z to machine Z0 for safe height (top of Z travel)
-    await api.sendCommand(`G53 G0 Z0`);
+    // First move Z to safe height
+    await api.sendCommand(`G53 G0 Z${safeZHeightMm.value}`);
     // Then rapid move to target XY in machine coordinates
     await api.sendCommand(`G53 G0 X${moveSpindleX.value} Y${moveSpindleY.value}`);
   } catch (error) {

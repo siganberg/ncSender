@@ -226,6 +226,18 @@
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
+                  <label class="setting-label">Safe Z Height</label>
+                  <div class="settings-note">
+                    Machine-coordinate Z position used for safe height moves (e.g. before go-to-zero, move spindle). Decrease if your machine triggers limits at Z0. Allowed range: {{ safeZMin }} to 0 {{ unitsPreference === 'imperial' ? 'in' : 'mm' }}.
+                  </div>
+                </div>
+                <div class="setting-input-with-unit">
+                  <input type="number" class="setting-input" v-model.number="safeZHeight" :min="safeZMin" :max="0" :step="safeZStep" @change="saveSafeZHeight" />
+                  <span class="setting-unit">{{ unitsPreference === 'imperial' ? 'in' : 'mm' }}</span>
+                </div>
+              </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
                   <label class="setting-label">Enable Browser Debug Logging</label>
                   <div class="settings-note">
                     Enables console logging for debugging. Useful for troubleshooting issues.
@@ -987,6 +999,7 @@ import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
 import { getPluginsFromInit } from './lib/init';
+import { mmToInches, inchesToMm } from './lib/units';
 import { useAppStore } from './composables/use-app-store';
 import { useUpdateCenter } from './composables/use-update-center';
 import ControlsTab from './features/controls/ControlsTab.vue';
@@ -1409,6 +1422,21 @@ const consoleSettings = reactive({
 const pauseBeforeStop = ref(initialSettings?.pauseBeforeStop ?? 500);
 
 const pollingInterval = ref(initialSettings?.pollingInterval ?? 100);
+
+// Safe Z Height setting (stored in mm on server, displayed in user's preferred units)
+const safeZHeightRaw = initialSettings?.safeZHeight ?? -5;
+const safeZHeight = ref(unitsPreference.value === 'imperial' ? mmToInches(safeZHeightRaw) : safeZHeightRaw);
+const safeZMin = computed(() => unitsPreference.value === 'imperial' ? -0.4 : -10);
+const safeZStep = computed(() => unitsPreference.value === 'imperial' ? 0.01 : 0.1);
+
+const saveSafeZHeight = async () => {
+  const isImperial = unitsPreference.value === 'imperial';
+  const min = safeZMin.value;
+  safeZHeight.value = Math.max(min, Math.min(0, safeZHeight.value));
+  const valueMm = isImperial ? inchesToMm(safeZHeight.value) : safeZHeight.value;
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({ safeZHeight: valueMm });
+};
 
 // Helper function to compute OFF command based on ON command
 const getOffCommand = (onCommand: string): string => {
@@ -2491,6 +2519,16 @@ watch(() => consoleSettings.debugLogging, async (newValue) => {
   await updateSettings({
     debugLogging: newValue
   });
+});
+
+// Convert Safe Z Height display value when units change
+watch(unitsPreference, (newUnits, oldUnits) => {
+  if (newUnits === oldUnits) return;
+  if (newUnits === 'imperial') {
+    safeZHeight.value = parseFloat(mmToInches(safeZHeight.value).toFixed(3));
+  } else {
+    safeZHeight.value = parseFloat(inchesToMm(safeZHeight.value).toFixed(1));
+  }
 });
 
 // Set units preference
@@ -4225,6 +4263,18 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-weight: 600;
   color: var(--color-accent);
   font-size: 1rem;
+}
+
+.setting-input-with-unit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.setting-input-with-unit .setting-input {
+  width: 70px;
+  text-align: right;
 }
 
 .setting-unit {

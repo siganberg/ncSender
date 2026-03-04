@@ -198,14 +198,15 @@ export function generateResumeSequence(targetState, options = {}) {
     plungeFeedRate = isInch ? 20 : 500,
     isStartingAtToolChange = false,
     expectedTool = null,
-    currentTool = null
+    currentTool = null,
+    safeZHeight = -5
   } = options;
 
   const commands = [];
 
   commands.push(`(Resume sequence for starting from line)`);
 
-  commands.push('G53 G0 Z0');
+  commands.push(`G53 G0 Z${safeZHeight.toFixed(3)}`);
 
   const needsToolChange = expectedTool !== null && currentTool !== null && expectedTool !== currentTool;
   if (needsToolChange) {

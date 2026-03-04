@@ -279,6 +279,7 @@ import JogControls from './JogControls.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatCoordinate, getUnitGCode, mmToInches } from '@/lib/units';
+import { getSettings } from '@/lib/settings-store.js';
 
 const store = useJogStore();
 const appStore = useAppStore();
@@ -410,17 +411,7 @@ const formatMachineCoord = (value: number) => {
   return normalized.toString();
 };
 
-const safeZValue = computed(() => {
-  const travel = typeof props.zMaxTravel === 'number' && props.zMaxTravel > 0 ? props.zMaxTravel : null;
-  if (orientation.value.zHome === 'max') {
-    const offset = travel != null ? Math.min(5, travel) : 5;
-    return -offset;
-  }
-  if (travel != null) {
-    return travel > 5 ? travel - 5 : travel;
-  }
-  return 5;
-});
+const safeZValue = computed(() => getSettings()?.safeZHeight ?? -5);
 
 const safeZCommand = computed(() => formatMachineCoord(safeZValue.value));
 
@@ -970,8 +961,8 @@ const goToZeroXY = async () => {
     return;
   }
   try {
-    // First raise Z to machine zero for safety, then move XY to work zero
-    const command = 'G53 G0 Z0\nG90 G0 X0 Y0';
+    // First raise Z to safe height, then move XY to work zero
+    const command = `G53 G0 Z${safeZCommand.value}\nG90 G0 X0 Y0`;
     await api.sendCommandViaWebSocket({
       command,
       displayCommand: command

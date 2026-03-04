@@ -271,7 +271,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
       const resumeSequence = generateResumeSequence(state, {
         isStartingAtToolChange,
         expectedTool: willPerformToolChange ? expectedTool : null,
-        currentTool: willPerformToolChange ? currentTool : null
+        currentTool: willPerformToolChange ? currentTool : null,
+        safeZHeight: getSetting('safeZHeight', -5)
       });
 
       // Add arc adjustment warning if line was adjusted
@@ -385,7 +386,8 @@ export function createGCodeJobRoutes(filesDir, cncController, serverState, broad
         plungeFeedRate,
         isStartingAtToolChange,
         expectedTool: willPerformToolChange ? expectedTool : null,
-        currentTool: willPerformToolChange ? currentTool : null
+        currentTool: willPerformToolChange ? currentTool : null,
+        safeZHeight: getSetting('safeZHeight', -5)
       });
 
       if (serverState.jobLoaded) {
