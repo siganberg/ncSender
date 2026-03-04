@@ -850,6 +850,8 @@ let renderer: THREE.WebGLRenderer;
 let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
 let animationId: number;
+let needsRender = false;
+const requestRender = () => { needsRender = true; };
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
@@ -1503,6 +1505,7 @@ const onMouseMove = (event: MouseEvent) => {
   }
 
   previousMousePosition = { x: event.clientX, y: event.clientY };
+  requestRender();
 };
 
 const onMouseUp = () => {
@@ -1612,6 +1615,7 @@ const onWheel = (event: WheelEvent) => {
     updatePointerScale();
     updateAxisLabelsScale();
   }
+  requestRender();
 };
 
 // Touch events with two-finger panning support
@@ -1736,6 +1740,7 @@ const onTouchMove = (event: TouchEvent) => {
       activeCamera.updateProjectionMatrix();
       updatePointerScale();
       updateAxisLabelsScale();
+      requestRender();
     }
 
     lastTouchDistance = distance;
@@ -1882,10 +1887,21 @@ const animate = () => {
 
   // Smoothly interpolate spindle position with exponential smoothing (no bouncing)
   if (cuttingPointer) {
-    // Simple exponential moving average - always approaches target, never overshoots
-    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleSmoothFactor;
-    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleSmoothFactor;
-    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleSmoothFactor;
+    const dx = targetSpindlePosition.x - currentSpindlePosition.x;
+    const dy = targetSpindlePosition.y - currentSpindlePosition.y;
+    const dz = targetSpindlePosition.z - currentSpindlePosition.z;
+
+    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001 || Math.abs(dz) > 0.001) {
+      currentSpindlePosition.x += dx * spindleSmoothFactor;
+      currentSpindlePosition.y += dy * spindleSmoothFactor;
+      currentSpindlePosition.z += dz * spindleSmoothFactor;
+      needsRender = true;
+    } else if (dx !== 0 || dy !== 0 || dz !== 0) {
+      currentSpindlePosition.x = targetSpindlePosition.x;
+      currentSpindlePosition.y = targetSpindlePosition.y;
+      currentSpindlePosition.z = targetSpindlePosition.z;
+      needsRender = true;
+    }
 
     // In spindle view mode, spindle stays at origin and everything else moves
     if (spindleViewMode.value) {
@@ -1957,17 +1973,19 @@ const animate = () => {
     if (props.spindleRpmActual > 0) {
       const now = performance.now();
       if (now - lastSpindleUpdateTime >= spindleUpdateInterval) {
-        // Rotate around Z axis (spindle axis after rotation)
-        // 10 rotations per second at 30 fps = (10 * 2π) / 30 radians per update
         const rotationSpeed = (10 * 2 * Math.PI) / 30;
         cuttingPointer.rotation.z += rotationSpeed;
         lastSpindleUpdateTime = now;
+        needsRender = true;
       }
-    } else {
-      // Spindle stopped - reset rotation to 0
+    } else if (cuttingPointer.rotation.z !== 0) {
       cuttingPointer.rotation.z = 0;
+      needsRender = true;
     }
   }
+
+  if (!needsRender) return;
+  needsRender = false;
 
   if (renderer && scene && camera) {
     // Use CSS pixels (clientWidth/clientHeight) not device pixels (width/height)
@@ -2344,6 +2362,7 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     scene.add(axisLabelsGroup);
     updatePointerScale();
     updateAxisLabelsScale();
+    requestRender();
 
     // Complete loading
     loadingProgress.value = 100;
@@ -2383,12 +2402,14 @@ const handleGCodeClear = () => {
   if (fileInput.value) {
     fileInput.value.value = '';
   }
+  requestRender();
 };
 
 const toggleRapids = () => {
   showRapids.value = !showRapids.value;
   if (gcodeVisualizer) {
     gcodeVisualizer.setRapidVisibility(showRapids.value);
+    requestRender();
   }
 };
 
@@ -2396,6 +2417,7 @@ const toggleCutting = () => {
   showCutting.value = !showCutting.value;
   if (gcodeVisualizer) {
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
+    requestRender();
   }
 };
 
@@ -2403,6 +2425,7 @@ const toggleSpindle = () => {
   showSpindle.value = !showSpindle.value;
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
+    requestRender();
   }
 };
 
@@ -2414,6 +2437,7 @@ const toggleTool = (toolNumber: number) => {
   if (tool) {
     tool.visible = !tool.visible;
     gcodeVisualizer.setToolVisibility(toolNumber, tool.visible);
+    requestRender();
   }
 };
 
@@ -2713,6 +2737,7 @@ const handleResize = () => {
 
   updatePointerScale();
   updateAxisLabelsScale();
+  requestRender();
 };
 
 const updateSplitViewCameras = () => {
@@ -2891,6 +2916,7 @@ watch(() => props.view, (newView) => {
   }
   // Update pointer opacity
   updatePointerOpacity();
+  requestRender();
 });
 
 // Watch for theme changes
@@ -2915,6 +2941,7 @@ watch(() => props.theme, (newTheme) => {
   }
 
   refreshHomeIndicator();
+  requestRender();
 });
 
 // Watch for work coordinate changes to update cutting pointer target position
@@ -2930,6 +2957,7 @@ watch(() => props.workCoords, (newCoords) => {
       currentSpindlePosition.y = newCoords.y;
       currentSpindlePosition.z = newCoords.z;
     }
+    requestRender();
   }
 }, { deep: true, immediate: true });
 
@@ -2941,12 +2969,14 @@ watch(() => props.workOffset, (newOffset) => {
   }
   gcodeVisualizer?.setWorkOffset(newOffset);
   rebuildGrid(newOffset);
+  requestRender();
 }, { deep: true });
 
 // When toolchange ends, recompute bounds and OOB once using the latest work offset
 watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
     rebuildGrid(props.workOffset);
+    requestRender();
   }
 });
 
@@ -2967,11 +2997,13 @@ watch(() => [normalizedSenderStatus.value, props.jobLoaded?.status], ([senderSta
 // Watch for grid size changes to update the grid and bounds
 watch(() => [props.gridSizeX, props.gridSizeY], () => {
   rebuildGrid(props.workOffset);
+  requestRender();
 });
 
 // Watch for units preference changes to rebuild grid with new spacing/labels
 watch(() => appStore.unitsPreference.value, () => {
   rebuildGrid(props.workOffset);
+  requestRender();
 });
 
 // Watch for Z travel changes to update limits
@@ -2985,11 +3017,13 @@ watch(() => props.zMaxTravel, () => {
       fitCameraToBounds(getGridBounds());
     }
   }
+  requestRender();
 });
 
 // Watch for machine orientation changes to rebuild the grid
 watch(() => props.machineOrientation, () => {
   rebuildGrid(props.workOffset);
+  requestRender();
 }, { deep: true });
 
 
@@ -3015,6 +3049,7 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
       fitCameraToBounds(getGridBounds());
     }
   }
+  requestRender();
 });
 
 // Watch for spindle view mode changes
@@ -3136,6 +3171,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       fitCameraToBounds(getGridBounds());
     }
   }
+  requestRender();
 });
 
 const toggleIOSwitch = async (switchKey: string) => {
@@ -3951,7 +3987,7 @@ onMounted(async () => {
         fitCameraToBounds(getGridBounds(), props.view);
       }
     }
-
+    requestRender();
   }, 100);
 });
 
@@ -4033,6 +4069,7 @@ watch(
         }
       }
     }
+    requestRender();
   },
   { immediate: true }
 );
@@ -4041,6 +4078,7 @@ watch(
 watch(() => [...appStore.selectedGCodeLines.value], (newLines) => {
   if (gcodeVisualizer) {
     gcodeVisualizer.highlightSelectedLines(newLines);
+    requestRender();
   }
 }, { deep: true });
 

@@ -60,8 +60,6 @@ let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
 let renderer: THREE.WebGLRenderer | null = null;
 let controls: OrbitControls | null = null;
-let animationFrame = 0;
-
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -162,8 +160,7 @@ const initScene = () => {
   scene.add(fillLight);
 
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
+  controls.enableDamping = false;
   controls.enableZoom = true;
   controls.zoomSpeed = 0.1;
   controls.enablePan = true;
@@ -191,13 +188,6 @@ const initScene = () => {
   renderer.domElement.addEventListener('click', handleCanvasClick);
   renderer.domElement.addEventListener('mousemove', handleCanvasHover);
 
-  const animate = () => {
-    animationFrame = requestAnimationFrame(animate);
-    controls?.update();
-    renderScene();
-  };
-  animate();
-
   window.addEventListener('resize', handleResize);
 };
 
@@ -209,7 +199,6 @@ const destroyScene = () => {
     renderer.domElement.removeEventListener('mousemove', handleCanvasHover);
   }
 
-  cancelAnimationFrame(animationFrame);
   controls?.dispose();
   renderer?.dispose();
 

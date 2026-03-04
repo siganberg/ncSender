@@ -33,7 +33,7 @@ import { useAppStore } from '@/composables/use-app-store';
 
 const JOG_LONG_PRESS_DELAY_MS = 300;
 const ACTION_LONG_PRESS_DELAY_MS = 1000;
-const POLL_INTERVAL_MS = 16;
+const POLL_INTERVAL_MS = 50;
 
 interface ActiveJogState {
   axis?: 'X' | 'Y' | 'Z';
@@ -77,6 +77,11 @@ class GamepadManager {
 
     this.actionsExecutedThisFrame.clear();
 
+    const gamepads = navigator.getGamepads();
+    if (!gamepads || !Array.from(gamepads).some(gp => gp !== null)) {
+      return;
+    }
+
     // Check for step size or feed rate changes - restart continuous jogs if changed
     const appStore = useAppStore();
     const currentStepSize = appStore.jogConfig.stepSize;
@@ -92,7 +97,6 @@ class GamepadManager {
     this.previousStepSize = currentStepSize;
     this.previousFeedRate = currentFeedRate;
 
-    const gamepads = navigator.getGamepads();
     const currentButtonStates = new Map<string, boolean>();
 
     for (const gamepad of gamepads) {
