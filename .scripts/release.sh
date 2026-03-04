@@ -47,7 +47,7 @@ echo "Generating release notes using Claude..."
 echo ""
 
 # Create a prompt for Claude
-PROMPT="Based on the following git commit messages from $LATEST_TAG to HEAD, generate user-focused release notes for version $NEW_VERSION.
+PROMPT="Generate release notes for version $NEW_VERSION from ONLY the following commit messages. Do NOT invent, assume, or add any changes not explicitly listed below.
 
 Commit messages:
 $COMMITS
@@ -59,19 +59,21 @@ Required format:
 
 ### [emoji] [Category Name]
 - [change description]
-- [change description]
 
 Rules:
 1. Start with exactly \"## What's Changed\"
-2. Group by category with emojis (✨ New Features, 🐛 Bug Fixes, 🔧 Improvements)
-3. Use user-focused language
-4. Exclude internal/chore commits unless they impact users
-5. No markdown code blocks, URLs, links, or non-English characters
+2. Group by category with emojis (e.g. :rocket: New Features, :bug: Bug Fixes, :wrench: Improvements)
+3. Write from the USER's perspective - describe what they can now do or what was fixed for them, not internal code details
+4. SKIP commits that are purely internal (test updates, refactors, CI fixes, code cleanup) - users do not care about these
+5. If multiple commits relate to the same user-facing change, combine them into a single bullet point
+6. Do NOT fabricate changes that are not in the commit list
+7. No markdown code blocks, URLs, links, or non-English characters
+8. If after filtering out internal commits there are no user-facing changes, output: \"## What's Changed\n\n- Internal improvements and maintenance\"
 
 Output ONLY the markdown. No preamble. No explanation. Just the markdown."
 
 # Use Claude CLI to generate release notes
-RELEASE_NOTES=$(claude -p "$PROMPT" 2>&1)
+RELEASE_NOTES=$(claude -p --system-prompt "You are a release note generator for a CNC controller app. Write notes for end users, not developers. Only use the commit messages provided. Never invent changes. Skip internal-only changes like test fixes, refactors, and CI updates." "$PROMPT" 2>&1)
 CLAUDE_EXIT_CODE=$?
 
 if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
