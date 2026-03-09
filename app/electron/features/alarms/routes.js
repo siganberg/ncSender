@@ -70,11 +70,14 @@ function writeAlarmsFile(alarms) {
   }
 }
 
-// Fetch alarm codes from controller using $EA command
+// Fetch alarm codes from controller using protocol-specific command
 async function fetchAlarmCodesFromController(cncController) {
   if (!cncController || !cncController.isConnected) {
     throw new Error('CNC controller not connected');
   }
+
+  const protocol = cncController.activeProtocol;
+  const command = protocol?.alarmFetchCommand || '$EA';
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -83,21 +86,24 @@ async function fetchAlarmCodesFromController(cncController) {
 
     const alarmCodes = {};
     const dataListener = (data) => {
-      // Parse format: [ALARMCODE:1||Description text]
+      // Try protocol-specific parsing first
+      if (protocol) {
+        const parsed = protocol.parseAlarmLine(data);
+        if (parsed) {
+          alarmCodes[parseInt(parsed.id)] = parsed.description;
+          return;
+        }
+      }
+      // Fallback: grblHAL format [ALARMCODE:N||Description]
       const match = data.match(/\[ALARMCODE:(\d+)\|\|(.*?)\]/);
       if (match) {
-        const code = parseInt(match[1]);
-        const description = match[2].trim();
-        alarmCodes[code] = description;
+        alarmCodes[parseInt(match[1])] = match[2].trim();
       }
     };
 
-    // Listen for response
     cncController.on('data', dataListener);
 
-    // Send $EA command
-    cncController.sendCommand('$EA', { meta: { sourceId: 'system' } }).then(() => {
-      // Wait a bit for all responses
+    cncController.sendCommand(command, { meta: { sourceId: 'system' } }).then(() => {
       setTimeout(() => {
         clearTimeout(timeout);
         cncController.off('data', dataListener);

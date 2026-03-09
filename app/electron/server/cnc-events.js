@@ -119,6 +119,14 @@ export function registerCncEventHandlers({
               }
             }
 
+            // Broadcast key settings so client updates reactively
+            for (const id of ['32', '130', '131', '132']) {
+              const setting = firmwareData.settings?.[id];
+              if (setting?.value !== undefined) {
+                broadcast('firmware-setting-changed', { id, value: String(setting.value) });
+              }
+            }
+
             broadcast('server-state-updated', serverState);
             // Also broadcast settings-changed for pendant to receive maxFeedrate
             if (serverState.machineState.maxFeedrate) {

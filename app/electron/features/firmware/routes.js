@@ -419,8 +419,9 @@ export async function initializeFirmwareOnConnection(cncController, force = fals
       log('Force refresh requested, will re-query all firmware data');
     }
 
-    // Query firmware structure if needed
-    if (needsStructureUpdate) {
+    // Query firmware structure if needed (only for protocols that support $EG/$ES/$ESH)
+    const supportsEnumeration = cncController.activeProtocol?.supportsSettingEnumeration ?? true;
+    if (needsStructureUpdate && supportsEnumeration) {
       log('Querying firmware structure ($EG, $ES, $ESH)...');
       const { groups, settings, halSettings } = await queryFirmwareStructure(cncController);
 
