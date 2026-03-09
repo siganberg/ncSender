@@ -28,13 +28,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import StepControl from '../features/jog/StepControl.vue';
+import { useAppStore } from '@/composables/use-app-store';
 
-// Auto-configure with sensible defaults
-const currentStep = ref(1);
+const appStore = useAppStore();
+const isImperial = appStore.unitsPreference.value === 'imperial';
+
+// Auto-configure with sensible defaults based on unit preference
+const currentStep = ref(isImperial ? 0.1 : 1);
 const stepOptions = ref([0.1, 1, 10]);
-const currentFeedRate = ref(3000);
+const currentFeedRate = ref(isImperial ? 100 : 3000);
 
 // Feed rate defaults per step (middle value of each range)
 const feedRateDefaults: Record<number, number> = {
@@ -79,5 +83,15 @@ onMounted(() => {
   window.addEventListener('nc:feed-rate-changed', ((e: CustomEvent) => {
     currentFeedRate.value = e.detail.feedRate;
   }) as EventListener);
+
+  // Dispatch initial state after all sibling components have mounted
+  nextTick(() => {
+    window.dispatchEvent(new CustomEvent('nc:step-changed', {
+      detail: { step: currentStep.value }
+    }));
+    window.dispatchEvent(new CustomEvent('nc:feed-rate-changed', {
+      detail: { feedRate: currentFeedRate.value }
+    }));
+  });
 });
 </script>

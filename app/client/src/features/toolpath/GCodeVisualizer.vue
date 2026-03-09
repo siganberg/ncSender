@@ -3624,7 +3624,7 @@ const loadToolInventory = async () => {
 
 const formatDiameter = (mm: number): string => {
   if (appStore.unitsPreference.value === 'imperial') {
-    return mmToInches(mm).toFixed(2);
+    return mmToInches(mm).toFixed(3);
   }
   return mm.toFixed(3);
 };

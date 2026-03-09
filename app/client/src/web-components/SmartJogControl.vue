@@ -30,10 +30,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import JogControls from '../features/jog/JogControls.vue';
+import { useAppStore } from '@/composables/use-app-store';
 
-// Auto-configure with sensible defaults
-const currentStep = ref(1);
-const feedRate = ref(2000);
+const appStore = useAppStore();
+const isImperial = appStore.unitsPreference.value === 'imperial';
+
+// Auto-configure with sensible defaults based on unit preference
+const currentStep = ref(isImperial ? 0.1 : 1);
+const feedRate = ref(isImperial ? 100 : 2000);
 const customClass = ref('jog-controls-probe');
 const disabled = ref(false);
 
