@@ -166,7 +166,7 @@
               <span v-if="toolInventory[t].toolId" class="tool-id-label">#{{ toolInventory[t].toolId }}</span>
               <template v-if="toolInventory[t].diameter || toolInventory[t].type">
                 <span v-if="toolInventory[t].toolId && (toolInventory[t].diameter || toolInventory[t].type)"> - </span>
-                <span v-if="toolInventory[t].diameter">Ø{{ toolInventory[t].diameter.toFixed(3) }}mm</span>
+                <span v-if="toolInventory[t].diameter">Ø{{ formatDiameter(toolInventory[t].diameter) }}{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
                 <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
                 <span v-if="toolInventory[t].type">{{
                   { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
@@ -513,6 +513,7 @@ import { getSettings, updateSettings, settingsStore } from '../../lib/settings-s
 import { getToolsFromInit } from '@/lib/init';
 import { useToolpathStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
+import { mmToInches, getDistanceUnitLabel } from '../../lib/units';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ProgressBar from '../../components/ProgressBar.vue';
@@ -3621,6 +3622,13 @@ const loadToolInventory = async () => {
   }
 };
 
+const formatDiameter = (mm: number): string => {
+  if (appStore.unitsPreference.value === 'imperial') {
+    return mmToInches(mm).toFixed(2);
+  }
+  return mm.toFixed(3);
+};
+
 // Get enhanced tooltip for tool (includes inventory data if available)
 const getToolTooltip = (toolNumber: number): string => {
   const baseText = props.currentTool === toolNumber
@@ -3632,7 +3640,7 @@ const getToolTooltip = (toolNumber: number): string => {
 
   const details: string[] = [];
   if (toolInfo.name) details.push(toolInfo.name);
-  if (toolInfo.diameter) details.push(`Ø${toolInfo.diameter.toFixed(3)}mm`);
+  if (toolInfo.diameter) details.push(`Ø${formatDiameter(toolInfo.diameter)}${getDistanceUnitLabel(appStore.unitsPreference.value)}`);
   if (toolInfo.type) {
     const typeMap: Record<string, string> = {
       'flat': 'Flat End Mill',

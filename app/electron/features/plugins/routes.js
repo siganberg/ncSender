@@ -24,13 +24,19 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { createLogger } from '../../core/logger.js';
 
-// Get app version from package.json
+// Get app version from package.json (falls back to git tag in dev where version is 0.0.0)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, '../../..', 'package.json');
 const packageJson = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
-const APP_VERSION = packageJson.version;
+let APP_VERSION = packageJson.version;
+if (APP_VERSION === '0.0.0') {
+  try {
+    APP_VERSION = execSync('git describe --tags --abbrev=0 2>/dev/null', { encoding: 'utf-8' }).trim().replace(/^v/, '');
+  } catch { /* keep 0.0.0 */ }
+}
 
 const { log, error: logError } = createLogger('Plugins');
 

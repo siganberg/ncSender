@@ -48,6 +48,19 @@ const packageJson = JSON.parse(
   await readFile(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
+// In development, package.json version is 0.0.0 — derive from latest git tag instead
+if (packageJson.version === '0.0.0') {
+  try {
+    const { execSync } = await import('node:child_process');
+    const tag = execSync('git describe --tags --abbrev=0 2>/dev/null', { encoding: 'utf-8' }).trim();
+    if (tag) {
+      packageJson.version = tag.replace(/^v/, '');
+    }
+  } catch {
+    // Not in a git repo or no tags — keep 0.0.0
+  }
+}
+
 export async function createApp(options = {}) {
   const connectionSettings = getSetting('connection');
   const configuredServerPort = connectionSettings?.serverPort ?? DEFAULT_SETTINGS.connection.serverPort;
