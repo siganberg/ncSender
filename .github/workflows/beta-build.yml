@@ -387,3 +387,28 @@ jobs:
           gh release edit "$TAG" \
             --repo ${{ github.repository }} \
             --draft=false
+
+      - name: Announce on Discord
+        if: success() && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+
+          curl -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"ncSender ${TAG} Beta Released!\",
+                \"description\": \"A new beta version of ncSender is available for testing.\",
+                \"url\": \"${RELEASE_URL}\",
+                \"color\": 16750848,
+                \"fields\": [
+                  {
+                    \"name\": \"Download\",
+                    \"value\": \"[View Beta Release](${RELEASE_URL})\"
+                  }
+                ]
+              }]
+            }" \
+            "$DISCORD_WEBHOOK_URL"
