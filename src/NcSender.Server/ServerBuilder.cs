@@ -83,8 +83,10 @@ public static class ServerBuilder
         // Fast shutdown — don't wait 30s for WebSocket connections to close
         builder.Services.Configure<HostOptions>(opts => opts.ShutdownTimeout = TimeSpan.FromMilliseconds(100));
 
-        // Kestrel: listen on all interfaces
+        // Kestrel: listen on all interfaces, allow 200MB uploads
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+        builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 200 * 1024 * 1024);
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => options.MultipartBodyLengthLimit = 200 * 1024 * 1024);
 
         // Phase 1 DI registrations
         builder.Services.AddSingleton<ISettingsManager>(settingsManager);
