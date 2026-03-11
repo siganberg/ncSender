@@ -79,7 +79,7 @@ jobs:
   linux-x64:
     name: Linux x64
     needs: [prepare-release, test]
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,33 +133,15 @@ jobs:
   linux-arm64:
     name: Linux ARM64
     needs: [prepare-release, test]
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, macos]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libfuse2 \
-            rpm \
-            fakeroot \
-            ruby \
-            ruby-dev \
-            rubygems \
-            build-essential
-          sudo gem install --no-document fpm
 
       - name: Build client
         run: |
@@ -196,8 +178,6 @@ jobs:
           cd src/NcSender.Desktop
           npx electron-builder --linux deb --arm64 --publish never \
             -c.extraMetadata.version="$VERSION"
-        env:
-          USE_SYSTEM_FPM: "true"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -336,7 +316,6 @@ jobs:
         run: |
           mkdir -p release-assets
           TAG="${{ needs.prepare-release.outputs.tag }}"
-          VERSION="${{ needs.prepare-release.outputs.version }}"
 
           echo "Downloaded artifacts structure:"
           find artifacts -type f
@@ -348,11 +327,6 @@ jobs:
                 cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.dmg"
               fi
             done
-            for file in artifacts/macos-artifacts/latest-mac.yml; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/latest-mac.yml"
-              fi
-            done
           fi
 
           # Windows assets
@@ -360,21 +334,6 @@ jobs:
             for file in artifacts/windows-x64-artifacts/*.exe; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_windows_x64.exe"
-              fi
-            done
-            for file in artifacts/windows-x64-artifacts/*.msi; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.msi"
-              fi
-            done
-            for file in artifacts/windows-x64-artifacts/*.zip; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/ncSender_${TAG}_windows_x64.zip"
-              fi
-            done
-            for file in artifacts/windows-x64-artifacts/latest.yml; do
-              if [ -f "$file" ]; then
-                cp "$file" "release-assets/latest.yml"
               fi
             done
           fi
@@ -395,28 +354,6 @@ jobs:
                 cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
               fi
             done
-          fi
-
-          # Linux updater manifests
-          if [ -f "artifacts/linux-x64-artifacts/latest-linux.yml" ]; then
-            cp "artifacts/linux-x64-artifacts/latest-linux.yml" "release-assets/latest-linux.yml"
-          elif [ -f "artifacts/linux-x64-artifacts/latest-linux-x64.yml" ]; then
-            cp "artifacts/linux-x64-artifacts/latest-linux-x64.yml" "release-assets/latest-linux.yml"
-          fi
-
-          if [ -f "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" ]; then
-            cp "artifacts/linux-arm64-artifacts/latest-linux-arm64.yml" "release-assets/latest-linux-arm64.yml"
-          elif [ -f "artifacts/linux-arm64-artifacts/latest-linux.yml" ]; then
-            cp "artifacts/linux-arm64-artifacts/latest-linux.yml" "release-assets/latest-linux-arm64.yml"
-          fi
-
-          # Rewrite Linux updater manifests to match renamed asset filenames
-          if [ -f "release-assets/latest-linux.yml" ]; then
-            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/latest-linux.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncsender_{version}_amd64.deb', f'ncSender_{tag}_linux_x64.deb'); path.write_text(text)"
-          fi
-
-          if [ -f "release-assets/latest-linux-arm64.yml" ]; then
-            VERSION="${VERSION}" TAG="${TAG}" python3 -c "from pathlib import Path; import os; path = Path('release-assets/latest-linux-arm64.yml'); text = path.read_text(); version = os.environ['VERSION']; tag = os.environ['TAG']; text = text.replace(f'ncsender_{version}_arm64.deb', f'ncSender_{tag}_linux_arm64.deb'); path.write_text(text)"
           fi
 
           echo "Release assets to upload:"
