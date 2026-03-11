@@ -1,0 +1,25 @@
+###############################################################################
+# Build .NET AOT server binary for Debian/glibc targets
+# Output: NcSender.Server binary (ready for Electron packaging)
+###############################################################################
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang zlib1g-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY src/ ./src/
+COPY *.slnx ./
+
+ARG RID=linux-x64
+ARG VERSION=0.0.0
+
+RUN dotnet publish src/NcSender.Server -c Release -r "$RID" --self-contained \
+    /p:PublishAot=true /p:Version="$VERSION" -o /out/ && \
+    rm -f /out/*.pdb
+
+###############################################################################
+# Output artifact
+###############################################################################
+FROM scratch AS artifact
+COPY --from=builder /out/ .

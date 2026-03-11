@@ -7,16 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Beta version (e.g., 0.3.114-beta.1)'
+        description: 'Beta version (e.g., 2.0.0-beta.1)'
         required: true
         type: string
+
+permissions:
+  contents: write
 
 jobs:
   prepare-release:
     name: Prepare Draft Beta Release
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
@@ -55,6 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.version.outputs.tag }}"
+          gh release delete "$TAG" --repo ${{ github.repository }} --yes 2>/dev/null || true
           gh release create "$TAG" \
             --repo ${{ github.repository }} \
             --title "Beta Release $TAG" \
@@ -62,55 +64,32 @@ jobs:
             --prerelease \
             --draft
 
-  macos:
-    name: macOS Builds
-    needs: [prepare-release]
-    runs-on: macos-14
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Set version from tag
-        run: |
-          TAG="${{ needs.prepare-release.outputs.tag }}"
-          VERSION="${TAG#v}"
-          cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-      - name: Install Dependencies
-        run: |
-          npm ci
-          cd client && npm ci
-        working-directory: app
-
-      - name: Build Client
-        run: npm run build:client
-        working-directory: app
-
-      - name: Build Electron (arm64)
-        run: |
-          rm -rf dist-electron
-          npm run dist -- --mac --arm64 --publish never
-        working-directory: app
-
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-artifacts
-          path: app/dist-electron/**
-
-  linux:
-    name: Linux Builds
-    needs: [prepare-release]
+  test:
+    name: Run Tests
+    needs: prepare-release
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --logger "trx;LogFileName=test-results.trx"
+
+  linux-x64:
+    name: Linux x64
+    needs: [prepare-release, test]
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,106 +99,64 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Set version from tag
+      - name: Build client
         run: |
-          TAG="${{ needs.prepare-release.outputs.tag }}"
-          VERSION="${TAG#v}"
-          cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libudev-dev \
-            libusb-1.0-0-dev
-
-      - name: Install Dependencies
-        run: |
+          cd src/NcSender.Client
           npm ci
-          cd client && npm ci
-        working-directory: app
+          npm run build
 
-      - name: Build Client
-        run: npm run build:client
-        working-directory: app
-
-      - name: Build Electron (${{ matrix.arch }})
+      - name: Build server via Docker
         run: |
-          rm -rf dist-electron
-          npm run dist -- --linux --${{ matrix.arch }} --publish never
-        working-directory: app
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          DOCKER_BUILDKIT=1 docker build \
+            --build-arg RID=linux-x64 \
+            --build-arg VERSION=$VERSION \
+            -f .scripts/DockerfileServerDebian \
+            --output type=local,dest=publish-server \
+            .
 
-      - name: Upload Linux Artifact (${{ matrix.arch }})
+      - name: Stage resources for Electron
+        run: |
+          mkdir -p src/NcSender.Desktop/resources/server
+          mkdir -p src/NcSender.Desktop/resources/client/dist
+          cp -r publish-server/* src/NcSender.Desktop/resources/server/
+          cp -r src/NcSender.Client/dist/* src/NcSender.Desktop/resources/client/dist/
+
+      - name: Install Electron dependencies
+        run: |
+          cd src/NcSender.Desktop
+          npm ci
+
+      - name: Package Electron app
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          cd src/NcSender.Desktop
+          npx electron-builder --linux deb --x64 --publish never \
+            -c.extraMetadata.version="$VERSION"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch }}-artifacts
-          path: app/dist-electron/**
-
-  windows:
-    name: Windows Builds
-    needs: [prepare-release]
-    runs-on: windows-2022
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Set version from tag
-        run: |
-          TAG="${{ needs.prepare-release.outputs.tag }}"
-          VERSION="${TAG#v}"
-          cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
-        shell: bash
-
-      - name: Install Dependencies
-        run: |
-          npm ci
-          cd client && npm ci
-        working-directory: app
-
-      - name: Build Client
-        run: npm run build:client
-        working-directory: app
-
-      - name: Build Electron (${{ matrix.arch }})
-        shell: pwsh
-        run: |
-          if (Test-Path dist-electron) { Remove-Item dist-electron -Recurse -Force }
-          npm run dist -- --win --${{ matrix.arch }} --publish never
-        working-directory: app
-
-      - name: Upload Windows Artifact (${{ matrix.arch }})
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-${{ matrix.arch }}-artifacts
-          path: app/dist-electron/**
+          name: linux-x64-artifacts
+          path: src/NcSender.Desktop/dist-electron/**
 
   linux-arm64:
-    name: Linux ARM64 Build
-    needs: [prepare-release]
+    name: Linux ARM64
+    needs: [prepare-release, test]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Set version from tag
-        run: |
-          TAG="${{ needs.prepare-release.outputs.tag }}"
-          VERSION="${TAG#v}"
-          cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Install system dependencies
         run: |
@@ -231,46 +168,174 @@ jobs:
             ruby \
             ruby-dev \
             rubygems \
-            build-essential \
-            libudev-dev \
-            libusb-1.0-0-dev
+            build-essential
           sudo gem install --no-document fpm
 
-      - name: Install Dependencies
+      - name: Build client
         run: |
+          cd src/NcSender.Client
           npm ci
-          cd client && npm ci
-        working-directory: app
+          npm run build
 
-      - name: Build Client
-        run: npm run build:client
-        working-directory: app
-
-      - name: Build Electron (Linux ARM64)
+      - name: Build server via Docker
         run: |
-          rm -rf dist-electron
-          npm run dist -- --linux --arm64 --publish never
-        working-directory: app
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          DOCKER_BUILDKIT=1 docker build \
+            --platform linux/arm64 \
+            --build-arg RID=linux-arm64 \
+            --build-arg VERSION=$VERSION \
+            -f .scripts/DockerfileServerDebian \
+            --output type=local,dest=publish-server \
+            .
+
+      - name: Stage resources for Electron
+        run: |
+          mkdir -p src/NcSender.Desktop/resources/server
+          mkdir -p src/NcSender.Desktop/resources/client/dist
+          cp -r publish-server/* src/NcSender.Desktop/resources/server/
+          cp -r src/NcSender.Client/dist/* src/NcSender.Desktop/resources/client/dist/
+
+      - name: Install Electron dependencies
+        run: |
+          cd src/NcSender.Desktop
+          npm ci
+
+      - name: Package Electron app
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          cd src/NcSender.Desktop
+          npx electron-builder --linux deb --arm64 --publish never \
+            -c.extraMetadata.version="$VERSION"
         env:
           USE_SYSTEM_FPM: "true"
 
-      - name: List built artifacts
-        run: |
-          echo "Built Linux ARM64 artifacts:"
-          ls -lh app/dist-electron/
-
-      - name: Upload Linux ARM64 Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-arm64-artifacts
-          path: app/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/**
+
+  macos:
+    name: macOS
+    needs: [prepare-release, test]
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build client
+        run: |
+          cd src/NcSender.Client
+          npm ci
+          npm run build
+
+      - name: Publish server
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          SYSROOT="$(xcrun --show-sdk-path)"
+          dotnet publish src/NcSender.Server -c Release -r osx-arm64 --self-contained \
+            /p:PublishAot=true "/p:SysRoot=${SYSROOT}" /p:Version="$VERSION" -o publish-server/
+
+      - name: Stage resources for Electron
+        run: |
+          mkdir -p src/NcSender.Desktop/resources/server
+          mkdir -p src/NcSender.Desktop/resources/client/dist
+          cp -r publish-server/* src/NcSender.Desktop/resources/server/
+          rm -f src/NcSender.Desktop/resources/server/*.pdb
+          cp -r src/NcSender.Client/dist/* src/NcSender.Desktop/resources/client/dist/
+
+      - name: Install Electron dependencies
+        run: |
+          cd src/NcSender.Desktop
+          npm ci
+
+      - name: Package Electron app
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          cd src/NcSender.Desktop
+          npx electron-builder --mac dmg --arm64 --publish never \
+            -c.extraMetadata.version="$VERSION"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: src/NcSender.Desktop/dist-electron/**
+
+  windows-x64:
+    name: Windows x64
+    needs: [prepare-release, test]
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build client
+        run: |
+          cd src/NcSender.Client
+          npm ci
+          npm run build
+
+      - name: Publish Server
+        run: |
+          $VERSION = "${{ needs.prepare-release.outputs.version }}"
+          dotnet publish src/NcSender.Server -c Release -r win-x64 --self-contained /p:PublishAot=true "/p:Version=$VERSION" -o publish-server/
+
+      - name: Stage resources for Electron
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "src/NcSender.Desktop/resources/server", "src/NcSender.Desktop/resources/client/dist" -Force
+          Copy-Item -Recurse publish-server/* src/NcSender.Desktop/resources/server/
+          Remove-Item src/NcSender.Desktop/resources/server/*.pdb -ErrorAction SilentlyContinue
+          Copy-Item -Recurse src/NcSender.Client/dist/* src/NcSender.Desktop/resources/client/dist/
+
+      - name: Install Electron dependencies
+        run: |
+          cd src/NcSender.Desktop
+          npm ci
+
+      - name: Package Electron app
+        shell: powershell
+        run: |
+          $VERSION = "${{ needs.prepare-release.outputs.version }}"
+          cd src/NcSender.Desktop
+          npx electron-builder --win nsis --x64 --publish never "-c.extraMetadata.version=$VERSION"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-artifacts
+          path: src/NcSender.Desktop/dist-electron/**
 
   publish-release:
     name: Publish Beta Release
-    needs: [prepare-release, macos, linux, windows, linux-arm64]
+    needs:
+      - prepare-release
+      - linux-x64
+      - linux-arm64
+      - macos
+      - windows-x64
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -286,14 +351,13 @@ jobs:
           echo "Downloaded artifacts structure:"
           find artifacts -type f
 
-          # macOS assets (only DMG files)
+          # macOS assets (DMG only)
           if [ -d "artifacts/macos-artifacts" ]; then
             for file in artifacts/macos-artifacts/*arm64*.dmg; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/ncSender_${TAG}_macos_arm64.dmg"
               fi
             done
-            # Beta channel manifest
             for file in artifacts/macos-artifacts/latest-mac.yml; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/beta-mac.yml"
@@ -318,7 +382,6 @@ jobs:
                 cp "$file" "release-assets/ncSender_${TAG}_windows_x64.zip"
               fi
             done
-            # Beta channel manifest
             for file in artifacts/windows-x64-artifacts/latest.yml; do
               if [ -f "$file" ]; then
                 cp "$file" "release-assets/beta.yml"

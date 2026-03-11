@@ -2,21 +2,32 @@
 
 set -e
 
-# Get the latest STABLE tag (exclude beta tags)
-LATEST_TAG=$(git tag --sort=-version:refname | grep -v '\-beta' | head -1)
+# Get the latest STABLE v2+ tag (exclude beta tags and v0/v1)
+LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[2-9]\.' | grep -v '\-beta' | head -1)
+# If no stable v2+ tag, fall back to the latest v2+ tag of any kind
 if [ -z "$LATEST_TAG" ]; then
-    LATEST_TAG="v0.0.0"
+    LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[2-9]\.' | head -1)
 fi
-echo "Latest stable tag: $LATEST_TAG"
+HAS_TAG=true
+if [ -z "$LATEST_TAG" ]; then
+    HAS_TAG=false
+    LATEST_TAG="v2.0.0"
+fi
+echo "Latest tag: $LATEST_TAG"
 
-# Extract version number (remove 'v' prefix)
+# Extract base version (remove 'v' prefix and any pre-release suffix like -beta.N)
 VERSION=${LATEST_TAG#v}
+VERSION=${VERSION%%-*}
 
 # Split version into major.minor.patch
 IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-# Increment patch version
+# Increment patch version (rollover to next minor at 1000)
 PATCH=$((PATCH + 1))
+if [ "$PATCH" -ge 1000 ]; then
+    MINOR=$((MINOR + 1))
+    PATCH=0
+fi
 NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 NEW_TAG="v$NEW_VERSION"
 
@@ -25,22 +36,30 @@ echo "New tag: $NEW_TAG"
 
 # Ensure working tree is clean
 if [ -n "$(git status --porcelain)" ]; then
-    echo "❌ Working tree is not clean. Commit or stash changes first."
+    echo "Working tree is not clean. Commit or stash changes first."
     exit 1
 fi
 
 # Check if there are new commits since last tag
 echo ""
-COMMIT_COUNT=$(git rev-list "$LATEST_TAG..HEAD" --count)
+if [ "$HAS_TAG" = true ]; then
+    COMMIT_COUNT=$(git rev-list "$LATEST_TAG..HEAD" --count)
+else
+    COMMIT_COUNT=$(git rev-list HEAD --count)
+fi
 if [ "$COMMIT_COUNT" = "0" ]; then
-    echo "⚠️  No new commits since $LATEST_TAG. Nothing to release."
+    echo "No new commits since $LATEST_TAG. Nothing to release."
     exit 1
 fi
 
 echo "$COMMIT_COUNT commit(s) since $LATEST_TAG"
 
 # Get commit messages
-COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s")
+if [ "$HAS_TAG" = true ]; then
+    COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"%s")
+else
+    COMMITS=$(git log --pretty=format:"%s")
+fi
 
 echo ""
 echo "Generating release notes using Claude..."
@@ -77,7 +96,7 @@ RELEASE_NOTES=$(claude -p --system-prompt "You are a release note generator for 
 CLAUDE_EXIT_CODE=$?
 
 if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
-    echo "❌ Failed to generate release notes with Claude"
+    echo "Failed to generate release notes with Claude"
     echo "Please make sure 'claude' CLI is installed and configured"
     echo ""
     echo "Falling back to basic release notes..."
@@ -90,7 +109,7 @@ if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
     OTHER=$(echo "$COMMITS" | grep -iv "^feat\|^feature\|^add\|^fix\|^bug\|^chore" || true)
 
     if [ -n "$FEATURES" ]; then
-        RELEASE_NOTES+=$'\n'"### ✨ New Features"$'\n'
+        RELEASE_NOTES+=$'\n'"### New Features"$'\n'
         while IFS= read -r line; do
             CLEAN_LINE=$(echo "$line" | sed -E 's/^(feat|feature|add|Add|Feature|Feat)://i' | sed 's/^[[:space:]]*//')
             RELEASE_NOTES+="- $CLEAN_LINE"$'\n'
@@ -98,7 +117,7 @@ if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
     fi
 
     if [ -n "$FIXES" ]; then
-        RELEASE_NOTES+=$'\n'"### 🐛 Bug Fixes"$'\n'
+        RELEASE_NOTES+=$'\n'"### Bug Fixes"$'\n'
         while IFS= read -r line; do
             CLEAN_LINE=$(echo "$line" | sed -E 's/^(fix|bug|Fix|Bug)://i' | sed 's/^[[:space:]]*//')
             RELEASE_NOTES+="- $CLEAN_LINE"$'\n'
@@ -106,13 +125,13 @@ if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
     fi
 
     if [ -n "$OTHER" ]; then
-        RELEASE_NOTES+=$'\n'"### 📦 Other Changes"$'\n'
+        RELEASE_NOTES+=$'\n'"### Other Changes"$'\n'
         while IFS= read -r line; do
             RELEASE_NOTES+="- $line"$'\n'
         done <<< "$OTHER"
     fi
 else
-    echo "✅ Release notes generated successfully"
+    echo "Release notes generated successfully"
 fi
 
 # Display release notes
@@ -129,5 +148,5 @@ git tag -a "$NEW_TAG" --cleanup=verbatim -m "$RELEASE_NOTES"
 git push origin "$NEW_TAG"
 
 echo ""
-echo "✅ Successfully created and pushed $NEW_TAG"
+echo "Successfully created and pushed $NEW_TAG"
 echo "CI pipeline will build the release at: https://github.com/siganberg/ncSender/actions"

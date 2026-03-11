@@ -1,0 +1,9 @@
+<Project>
+  <!-- Add absolute Swift library path for macOS NativeAOT linking.
+       The classic linker (-ld_classic) used by NativeAOT doesn't properly
+       remap -L/usr/lib/swift via -isysroot, so we pass the absolute SDK
+       path directly. SysRoot is passed from CI via /p:SysRoot=... -->
+  <ItemGroup Condition="'$(SysRoot)' != ''">
+    <LinkerArg Include="-L$(SysRoot)/usr/lib/swift" />
+  </ItemGroup>
+</Project>

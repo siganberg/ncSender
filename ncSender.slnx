@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NcSender.Core/NcSender.Core.csproj" />
+    <Project Path="src/NcSender.Server/NcSender.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NcSender.Core.Tests/NcSender.Core.Tests.csproj" />
+    <Project Path="tests/NcSender.Server.Tests/NcSender.Server.Tests.csproj" />
+  </Folder>
+</Solution>

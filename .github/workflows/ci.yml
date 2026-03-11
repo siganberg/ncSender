@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --logger "trx;LogFileName=test-results.trx"
+
+  aot-check:
+    name: AOT Compile Check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify Server AOT publish
+        run: |
+          dotnet publish src/NcSender.Server -c Release -r linux-x64 --self-contained \
+            /p:PublishAot=true -o publish-server/
+          test -f publish-server/NcSender.Server
+          echo "Server AOT binary produced successfully"
+
+      - name: Verify Desktop AOT publish
+        run: |
+          dotnet publish src/NcSender.Desktop -c Release -r linux-x64 --self-contained \
+            /p:PublishAot=true -o publish-desktop/
+          test -f publish-desktop/NcSender.Desktop
+          echo "Desktop AOT binary produced successfully"

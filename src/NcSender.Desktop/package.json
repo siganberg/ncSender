@@ -1,0 +1,66 @@
+{
+  "name": "ncsender-desktop",
+  "version": "0.0.0",
+  "description": "ncSender Desktop Shell",
+  "main": "main.js",
+  "private": true,
+  "author": {
+    "name": "Francis Marasigan",
+    "email": "support@franciscreation.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/siganberg/ncSender"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.franciscreation.ncsender",
+    "productName": "ncSender",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "extraResources": [
+      {
+        "from": "resources/server",
+        "to": "server",
+        "filter": ["**/*", "!*.pdb"]
+      },
+      {
+        "from": "resources/client/dist",
+        "to": "client/dist"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "Assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "Assets/icon.ico",
+      "uninstallerIcon": "Assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "Assets/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "deb",
+      "icon": "Assets/icons",
+      "category": "Utility",
+      "executableArgs": ["--no-sandbox"]
+    },
+    "deb": {
+      "afterInstall": "scripts/afterInstall.sh"
+    }
+  }
+}

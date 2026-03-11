@@ -1,0 +1,690 @@
+/*
+ * This file is part of ncSender.
+ *
+ * ncSender is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ncSender is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import { watchEffect } from 'vue';
+import { commandRegistry } from '@/lib/command-registry';
+import { gamepadBindingStore } from './gamepad-binding-store';
+import { keyBindingStore } from './key-binding-store';
+import { parseGamepadBinding, isGamepadInputActive, isAxisAtFullStrength, type GamepadBinding } from './gamepad-utils';
+import {
+  JOG_ACTIONS,
+  DIAGONAL_JOG_ACTIONS,
+  performJogStep,
+  performDiagonalJogStep,
+  startContinuousJogSession,
+  startContinuousDiagonalJogSession,
+  type ContinuousJogSession
+} from './actions';
+import { useAppStore } from '@/composables/use-app-store';
+
+const JOG_LONG_PRESS_DELAY_MS = 300;
+const ACTION_LONG_PRESS_DELAY_MS = 1000;
+const POLL_INTERVAL_MS = 16;
+
+interface ActiveJogState {
+  axis?: 'X' | 'Y' | 'Z';
+  direction?: 1 | -1;
+  xDir?: 1 | -1;
+  yDir?: 1 | -1;
+  bindingKey: string;
+  timerId: number | null;
+  longPressTriggered: boolean;
+  longPressActive: boolean;
+  cancelled: boolean;
+  session: ContinuousJogSession | null;
+  promise: Promise<ContinuousJogSession | null> | null;
+  handledShortStep: boolean;
+  finished: boolean;
+}
+
+interface ActiveLongPressState {
+  actionId: string;
+  bindingKey: string;
+  timerId: number | null;
+  completed: boolean;
+  cancelled: boolean;
+}
+
+class GamepadManager {
+  private enabled = false;
+  private pollInterval: number | null = null;
+  private jogStates = new Map<string, ActiveJogState>();
+  private longPressStates = new Map<string, ActiveLongPressState>();
+  private previousButtonStates = new Map<string, boolean>();
+  private actionsExecutedThisFrame = new Set<string>();
+  private previousDiagonalState = new Map<string, boolean>();
+  private previousStepSize: number | null = null;
+  private previousFeedRate: number | null = null;
+
+  private pollGamepads = () => {
+    if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
+      return;
+    }
+
+    this.actionsExecutedThisFrame.clear();
+
+    // Check for step size or feed rate changes - restart continuous jogs if changed
+    const appStore = useAppStore();
+    const currentStepSize = appStore.jogConfig.stepSize;
+    const currentFeedRate = appStore.jogConfig.feedRate;
+
+    if (this.previousStepSize !== null && this.previousFeedRate !== null) {
+      if (currentStepSize !== this.previousStepSize || currentFeedRate !== this.previousFeedRate) {
+        // Step or feed rate changed - restart all continuous jogs
+        this.restartContinuousJogs();
+      }
+    }
+
+    this.previousStepSize = currentStepSize;
+    this.previousFeedRate = currentFeedRate;
+
+    const gamepads = navigator.getGamepads();
+    const currentButtonStates = new Map<string, boolean>();
+
+    for (const gamepad of gamepads) {
+      if (!gamepad) {
+        continue;
+      }
+
+      const bindings = gamepadBindingStore.getAllBindings();
+      const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>();
+
+      for (const [actionId, bindingStr] of Object.entries(bindings)) {
+        if (!bindingStr) {
+          continue;
+        }
+
+        const binding = parseGamepadBinding(bindingStr);
+        if (!binding) {
+          continue;
+        }
+
+        const bindingKey = `${gamepad.index}-${bindingStr}`;
+        const isActive = isGamepadInputActive(gamepad, binding);
+        const wasActive = this.previousButtonStates.get(bindingKey) || false;
+
+        currentButtonStates.set(bindingKey, isActive);
+
+        if (isActive) {
+          const jogMeta = JOG_ACTIONS[actionId];
+          if (jogMeta) {
+            activeJogActions.set(actionId, {
+              axis: jogMeta.axis,
+              direction: jogMeta.direction,
+              bindingKey,
+              axisIndex: binding.type === 'axis' ? binding.index : undefined
+            });
+          }
+        }
+      }
+
+      const isDiagonal = this.handleDiagonalJogs(gamepad, bindings);
+      const gamepadKey = `gamepad-${gamepad.index}`;
+      const wasDiagonal = this.previousDiagonalState.get(gamepadKey) || false;
+
+      // Handle transition from diagonal to single-axis or vice versa
+      if (wasDiagonal && !isDiagonal) {
+        // Diagonal just ended - stop any diagonal jog and check for single-axis
+        const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
+          key.startsWith(`${gamepad.index}-diagonal-`)
+        );
+        for (const diagonalKey of diagonalKeys) {
+          this.handleGamepadButtonUp('', diagonalKey);
+        }
+      } else if (!wasDiagonal && isDiagonal) {
+        // Diagonal just started - stop any single-axis X/Y jogs
+        for (const [actionId, bindingStr] of Object.entries(bindings)) {
+          if (!bindingStr) continue;
+          const jogMeta = JOG_ACTIONS[actionId];
+          if (jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+            const bindingKey = `${gamepad.index}-${bindingStr}`;
+            if (this.jogStates.has(bindingKey)) {
+              this.handleGamepadButtonUp(actionId, bindingKey);
+            }
+          }
+        }
+      }
+
+      this.previousDiagonalState.set(gamepadKey, isDiagonal);
+
+      for (const [actionId, bindingStr] of Object.entries(bindings)) {
+        if (!bindingStr) {
+          continue;
+        }
+
+        const binding = parseGamepadBinding(bindingStr);
+        if (!binding) {
+          continue;
+        }
+
+        const bindingKey = `${gamepad.index}-${bindingStr}`;
+        const isActive = currentButtonStates.get(bindingKey) || false;
+        const wasActive = this.previousButtonStates.get(bindingKey) || false;
+
+        const jogMeta = JOG_ACTIONS[actionId];
+        const shouldSkipDueTodiagonal = isDiagonal && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y');
+
+        // Transition from diagonal to single-axis: force trigger if axis is active
+        const justEndedDiagonal = wasDiagonal && !isDiagonal;
+        if (justEndedDiagonal && isActive && !shouldSkipDueTodiagonal && jogMeta && (jogMeta.axis === 'X' || jogMeta.axis === 'Y')) {
+          // Force trigger to handle transition from diagonal to single-axis
+          if (!this.jogStates.has(bindingKey)) {
+            this.handleGamepadButtonDown(actionId, bindingKey, binding);
+          }
+        } else if (isActive && !wasActive && !shouldSkipDueTodiagonal) {
+          this.handleGamepadButtonDown(actionId, bindingKey, binding);
+        } else if (!isActive && wasActive) {
+          this.handleGamepadButtonUp(actionId, bindingKey);
+        }
+      }
+    }
+
+    this.previousButtonStates = currentButtonStates;
+  };
+
+  private handleDiagonalJogs(gamepad: Gamepad, bindings: Record<string, string | null>): boolean {
+    const DIAGONAL_THRESHOLD = 0.3;
+
+    let xAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
+    let yAction: { actionId: string, direction: 1 | -1, bindingKey: string, axisIndex?: number } | null = null;
+    let xStrength = 0;
+    let yStrength = 0;
+
+    for (const [actionId, bindingStr] of Object.entries(bindings)) {
+      if (!bindingStr) continue;
+
+      const binding = parseGamepadBinding(bindingStr);
+      if (!binding || binding.type !== 'axis') continue;
+
+      const jogMeta = JOG_ACTIONS[actionId];
+      if (!jogMeta) continue;
+
+      const axisValue = gamepad.axes[binding.index];
+      const strength = Math.abs(axisValue);
+      const bindingKey = `${gamepad.index}-${bindingStr}`;
+
+      // Check if axis is moving in the correct direction for this binding
+      const isCorrectDirection =
+        (binding.direction === 'positive' && axisValue > 0) ||
+        (binding.direction === 'negative' && axisValue < 0);
+
+      if (!isCorrectDirection || strength < DIAGONAL_THRESHOLD) {
+        continue;
+      }
+
+      if (jogMeta.axis === 'X') {
+        xAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
+        xStrength = strength;
+      } else if (jogMeta.axis === 'Y') {
+        yAction = { actionId, direction: jogMeta.direction, bindingKey, axisIndex: binding.index };
+        yStrength = strength;
+      }
+    }
+
+    if (xAction && yAction && xStrength >= DIAGONAL_THRESHOLD && yStrength >= DIAGONAL_THRESHOLD) {
+        const diagonalKey = `${gamepad.index}-diagonal-${xAction.direction}-${yAction.direction}`;
+
+        const diagonalActionId = Object.keys(DIAGONAL_JOG_ACTIONS).find(id => {
+          const meta = DIAGONAL_JOG_ACTIONS[id];
+          return meta.xDir === xAction!.direction && meta.yDir === yAction!.direction;
+        });
+
+        if (diagonalActionId) {
+          const action = commandRegistry.getAction(diagonalActionId);
+          if (action && (!action.isEnabled || action.isEnabled())) {
+            const diagonalMeta = DIAGONAL_JOG_ACTIONS[diagonalActionId];
+
+            if (!this.jogStates.has(diagonalKey)) {
+              const wasActive = this.previousButtonStates.get(diagonalKey) || false;
+              this.previousButtonStates.set(diagonalKey, true);
+
+              if (!wasActive) {
+                const state: ActiveJogState = {
+                  xDir: diagonalMeta.xDir,
+                  yDir: diagonalMeta.yDir,
+                  bindingKey: diagonalKey,
+                  timerId: null,
+                  longPressTriggered: false,
+                  longPressActive: false,
+                  cancelled: false,
+                  session: null,
+                  promise: null,
+                  handledShortStep: false,
+                  finished: false
+                };
+
+                this.jogStates.set(diagonalKey, state);
+
+                state.timerId = window.setTimeout(() => {
+                  this.beginLongPress(diagonalKey, state);
+                }, JOG_LONG_PRESS_DELAY_MS);
+              }
+            }
+          }
+        }
+
+        return true;
+    }
+
+    const diagonalKeys = Array.from(this.jogStates.keys()).filter(key =>
+      key.startsWith(`${gamepad.index}-diagonal-`)
+    );
+
+    for (const diagonalKey of diagonalKeys) {
+      const state = this.jogStates.get(diagonalKey);
+      if (state && !state.finished) {
+        this.handleGamepadButtonUp('', diagonalKey);
+      }
+    }
+
+    return false;
+  }
+
+  private handleGamepadButtonDown(actionId: string, bindingKey: string, binding: GamepadBinding): void {
+    if (this.actionsExecutedThisFrame.has(actionId)) {
+      return;
+    }
+
+    const action = commandRegistry.getAction(actionId);
+    if (!action) {
+      return;
+    }
+
+    if (action.isEnabled && !action.isEnabled()) {
+      return;
+    }
+
+    const jogMeta = JOG_ACTIONS[actionId];
+    const diagonalJogMeta = DIAGONAL_JOG_ACTIONS[actionId];
+
+    if (jogMeta || diagonalJogMeta) {
+      if (this.jogStates.has(bindingKey)) {
+        return;
+      }
+
+      const state: ActiveJogState = jogMeta
+        ? {
+            axis: jogMeta.axis,
+            direction: jogMeta.direction,
+            bindingKey,
+            timerId: null,
+            longPressTriggered: false,
+            longPressActive: false,
+            cancelled: false,
+            session: null,
+            promise: null,
+            handledShortStep: false,
+            finished: false
+          }
+        : {
+            xDir: diagonalJogMeta.xDir,
+            yDir: diagonalJogMeta.yDir,
+            bindingKey,
+            timerId: null,
+            longPressTriggered: false,
+            longPressActive: false,
+            cancelled: false,
+            session: null,
+            promise: null,
+            handledShortStep: false,
+            finished: false
+          };
+
+      this.jogStates.set(bindingKey, state);
+
+      state.timerId = window.setTimeout(() => {
+        this.beginLongPress(bindingKey, state);
+      }, JOG_LONG_PRESS_DELAY_MS);
+      return;
+    }
+
+    if (action.requiresLongPress) {
+      if (this.longPressStates.has(bindingKey)) {
+        return;
+      }
+
+      const longPressState: ActiveLongPressState = {
+        actionId,
+        bindingKey,
+        timerId: null,
+        completed: false,
+        cancelled: false
+      };
+
+      this.longPressStates.set(bindingKey, longPressState);
+
+      longPressState.timerId = window.setTimeout(() => {
+        this.executeLongPressAction(bindingKey, longPressState);
+      }, ACTION_LONG_PRESS_DELAY_MS);
+      return;
+    }
+
+    this.actionsExecutedThisFrame.add(actionId);
+    commandRegistry.execute(actionId);
+  }
+
+  private handleGamepadButtonUp(actionId: string, bindingKey: string): void {
+    const longPressState = this.longPressStates.get(bindingKey);
+    if (longPressState) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(bindingKey);
+      return;
+    }
+
+    const state = this.jogStates.get(bindingKey);
+    if (!state) {
+      return;
+    }
+
+    if (state.finished) {
+      this.jogStates.delete(bindingKey);
+      return;
+    }
+
+    state.cancelled = true;
+
+    if (state.timerId !== null) {
+      clearTimeout(state.timerId);
+      state.timerId = null;
+      this.runShortJog(bindingKey, state);
+      return;
+    }
+
+    if (!state.longPressTriggered) {
+      this.cleanupJogState(bindingKey, state);
+      return;
+    }
+
+    if (state.longPressActive && state.session) {
+      this.stopContinuousJog(bindingKey, state);
+      return;
+    }
+
+    if (state.promise) {
+      return;
+    }
+
+    this.cleanupJogState(bindingKey, state);
+  }
+
+  private beginLongPress(bindingKey: string, state: ActiveJogState): void {
+    if (state.finished) {
+      return;
+    }
+
+    state.timerId = null;
+    state.longPressTriggered = true;
+
+    const promise = state.axis !== undefined && state.direction !== undefined
+      ? startContinuousJogSession(state.axis, state.direction)
+      : startContinuousDiagonalJogSession(state.xDir!, state.yDir!);
+    state.promise = promise;
+
+    promise
+      .then((session) => {
+        if (state.finished) {
+          return;
+        }
+        state.session = session;
+        state.longPressActive = Boolean(session);
+
+        if (!state.cancelled) {
+          return;
+        }
+
+        if (session) {
+          this.stopContinuousJog(bindingKey, state);
+        } else {
+          this.cleanupJogState(bindingKey, state);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to start continuous jog session:', JSON.stringify(error));
+        if (state.finished) {
+          return;
+        }
+
+        state.longPressActive = false;
+        if (state.cancelled) {
+          this.cleanupJogState(bindingKey, state);
+        }
+      })
+      .finally(() => {
+        if (!state.finished) {
+          state.promise = null;
+        }
+      });
+  }
+
+  private runShortJog(bindingKey: string, state: ActiveJogState): void {
+    if (state.finished) {
+      return;
+    }
+
+    if (state.handledShortStep) {
+      this.cleanupJogState(bindingKey, state);
+      return;
+    }
+
+    state.handledShortStep = true;
+
+    const jogPromise = state.axis !== undefined && state.direction !== undefined
+      ? performJogStep(state.axis, state.direction)
+      : performDiagonalJogStep(state.xDir!, state.yDir!);
+
+    jogPromise
+      .catch((error) => {
+        console.error('Failed to execute jog step via gamepad:', JSON.stringify(error));
+      })
+      .finally(() => {
+        this.cleanupJogState(bindingKey, state);
+      });
+  }
+
+  private stopContinuousJog(bindingKey: string, state: ActiveJogState, reason = 'gamepad-stop'): void {
+    if (state.finished) {
+      return;
+    }
+
+    const session = state.session;
+    state.session = null;
+    state.longPressActive = false;
+
+    if (!session) {
+      this.cleanupJogState(bindingKey, state);
+      return;
+    }
+
+    session
+      .stop(reason)
+      .catch((error) => {
+        console.error('Failed to stop continuous jog session:', JSON.stringify(error));
+      })
+      .finally(() => {
+        this.cleanupJogState(bindingKey, state);
+      });
+  }
+
+  private cleanupJogState(bindingKey: string, state: ActiveJogState): void {
+    if (state.finished) {
+      this.jogStates.delete(bindingKey);
+      return;
+    }
+
+    state.finished = true;
+
+    if (state.timerId !== null) {
+      clearTimeout(state.timerId);
+      state.timerId = null;
+    }
+
+    this.jogStates.delete(bindingKey);
+  }
+
+  private restartContinuousJogs(): void {
+    // Collect all active continuous jog states
+    const activeJogs: Array<{ bindingKey: string; state: ActiveJogState }> = [];
+
+    for (const [bindingKey, state] of this.jogStates.entries()) {
+      if (state.longPressActive && state.session) {
+        activeJogs.push({ bindingKey, state });
+      }
+    }
+
+    // Stop and restart each continuous jog
+    for (const { bindingKey, state } of activeJogs) {
+      const session = state.session;
+      if (!session) continue;
+
+      // Stop the current session
+      session.stop('settings-changed').catch((error) => {
+        console.error('Failed to stop continuous jog for restart:', JSON.stringify(error));
+      });
+
+      // Reset state for restart
+      state.session = null;
+      state.longPressActive = false;
+      state.longPressTriggered = false;
+
+      // Start new session with updated settings
+      const promise = state.axis !== undefined && state.direction !== undefined
+        ? startContinuousJogSession(state.axis, state.direction)
+        : startContinuousDiagonalJogSession(state.xDir!, state.yDir!);
+
+      state.promise = promise;
+
+      promise
+        .then((session) => {
+          if (state.finished || state.cancelled) {
+            if (session) {
+              session.stop('cancelled-during-restart').catch(() => {});
+            }
+            return;
+          }
+          state.session = session;
+          state.longPressActive = Boolean(session);
+          state.longPressTriggered = true;
+        })
+        .catch((error) => {
+          console.error('Failed to restart continuous jog session:', JSON.stringify(error));
+          state.longPressActive = false;
+        })
+        .finally(() => {
+          if (!state.finished) {
+            state.promise = null;
+          }
+        });
+    }
+  }
+
+  private executeLongPressAction(bindingKey: string, state: ActiveLongPressState): void {
+    if (state.cancelled) {
+      this.longPressStates.delete(bindingKey);
+      return;
+    }
+
+    state.timerId = null;
+    state.completed = true;
+
+    commandRegistry.execute(state.actionId).catch((error) => {
+      console.error(`Failed to execute long press action '${state.actionId}':`, JSON.stringify(error));
+    });
+  }
+
+  private handleDisconnect = () => {
+    for (const [bindingKey, longPressState] of Array.from(this.longPressStates.entries())) {
+      if (!longPressState.completed) {
+        longPressState.cancelled = true;
+        if (longPressState.timerId !== null) {
+          clearTimeout(longPressState.timerId);
+          longPressState.timerId = null;
+        }
+      }
+      this.longPressStates.delete(bindingKey);
+    }
+
+    for (const [bindingKey, state] of Array.from(this.jogStates.entries())) {
+      if (state.finished) {
+        this.jogStates.delete(bindingKey);
+        continue;
+      }
+
+      state.cancelled = true;
+
+      if (state.timerId !== null) {
+        clearTimeout(state.timerId);
+        state.timerId = null;
+        this.cleanupJogState(bindingKey, state);
+        continue;
+      }
+
+      if (!state.longPressTriggered) {
+        this.cleanupJogState(bindingKey, state);
+        continue;
+      }
+
+      if (state.longPressActive && state.session) {
+        this.stopContinuousJog(bindingKey, state, 'gamepad-disconnect');
+        continue;
+      }
+
+      if (state.promise) {
+        continue;
+      }
+
+      this.cleanupJogState(bindingKey, state);
+    }
+  };
+
+  constructor() {
+    this.pollInterval = window.setInterval(this.pollGamepads, POLL_INTERVAL_MS);
+    window.addEventListener('gamepaddisconnected', this.handleDisconnect);
+    window.addEventListener('blur', this.handleDisconnect);
+
+    watchEffect(() => {
+      this.enabled = keyBindingStore.isActive.value;
+      if (!this.enabled) {
+        this.handleDisconnect();
+      }
+    });
+  }
+
+  dispose(): void {
+    if (this.pollInterval !== null) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+    window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
+    window.removeEventListener('blur', this.handleDisconnect);
+    this.handleDisconnect();
+  }
+}
+
+let instance: GamepadManager | null = null;
+
+export function getGamepadManager(): GamepadManager {
+  if (!instance) {
+    instance = new GamepadManager();
+  }
+  return instance;
+}

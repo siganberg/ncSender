@@ -1,0 +1,1152 @@
+/*
+ * This file is part of ncSender.
+ *
+ * ncSender is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ncSender is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import { reactive, ref, readonly, computed } from 'vue';
+import { api } from '@/lib/api.js';
+import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/lib/gcode-store.js';
+import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
+import { getSettings, mergeSettings } from '@/lib/settings-store.js';
+import { debugLog, debugWarn } from '@/lib/debug-logger';
+import type { UnitsPreference } from '@/lib/units';
+
+/**
+ * Format timestamp with fixed width to prevent console shifting
+ * Format: HH:MM:SS AM/PM (always 11 characters)
+ */
+function formatTimestampFixedWidth(date: Date): string {
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const seconds = date.getSeconds();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 should be 12
+
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+
+  return `${hh}:${mm}:${ss} ${ampm}`;
+}
+
+// Types
+type ConsoleStatus = 'pending' | 'success' | 'error';
+
+interface ConsoleLine {
+  id: string | number;
+  level: 'info' | 'error' | 'warning';
+  message: string;
+  timestamp: string;
+  status?: ConsoleStatus;
+  type?: 'command' | 'response';
+  sourceId?: string;
+  meta?: any;
+}
+
+interface StatusReport {
+  status?: string;
+  workspace?: string;
+  WCO?: string;
+  MPos?: string;
+  feedrateOverride?: number;
+  rapidOverride?: number;
+  spindleOverride?: number;
+  tool?: number;
+  homed?: boolean;
+  feedRate?: number;
+  spindleRpmTarget?: number;
+  spindleRpmActual?: number;
+  floodCoolant?: boolean;
+  mistCoolant?: boolean;
+  spindleActive?: boolean;
+}
+
+// SHARED STATE (synchronized across all clients via WebSocket broadcasts)
+const serverState = reactive({
+  machineState: null as any,
+  senderStatus: 'connecting' as string,
+  displayFirmware: true as boolean,
+  displayConfig: false as boolean,
+  jobLoaded: null as {
+    filename: string;
+    currentLine: number;
+    totalLines: number;
+    status: 'running' | 'paused' | 'stopped' | 'completed' | null;
+    remainingSec?: number | null;
+    progressPercent?: number | null;
+    runtimeSec?: number | null;
+    sourceId?: string;
+  } | null
+});
+
+const status = reactive({
+  connected: false,
+  machineState: 'offline',
+  machineCoords: { x: 0, y: 0, z: 0 },
+  workCoords: { x: 0, y: 0, z: 0 },
+  wco: { x: 0, y: 0, z: 0 },
+  alarms: [] as string[],
+  feedRate: 0,
+  spindleRpmTarget: 0,
+  spindleRpmActual: 0,
+  feedrateOverride: 100,
+  rapidOverride: 100,
+  spindleOverride: 100,
+  tool: 0,
+  toolLengthSet: false,
+  homed: false,
+  floodCoolant: false,
+  mistCoolant: false,
+  spindleActive: false,
+  Pn: '',
+  probeCount: 0,
+  activeProbe: null as number | null,
+  inputPins: 0,
+  outputPins: 0,
+  outputPinsState: [] as number[],
+  hasSD: false,
+  hasFTP: false
+});
+
+const consoleLines = ref<ConsoleLine[]>([]);
+const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
+const CONSOLE_MAX_LINES = 5000;
+const CONSOLE_TRIM_BATCH = 500;
+
+function trimConsoleBuffer() {
+  if (consoleLines.value.length <= CONSOLE_MAX_LINES) return;
+  const removed = consoleLines.value.splice(0, CONSOLE_TRIM_BATCH);
+  for (const line of removed) {
+    commandLinesMap.delete(line.id);
+  }
+  for (let idx = 0; idx < consoleLines.value.length; idx++) {
+    const entry = commandLinesMap.get(consoleLines.value[idx].id);
+    if (entry) entry.index = idx;
+  }
+}
+
+// CLIENT-SPECIFIC STATE
+const websocketConnected = ref(false);
+const lastAlarmCode = ref<number | string | undefined>(undefined);
+const alarmMessage = ref<string>('');
+const isLocalClient = ref<boolean | null>(null); // null = not yet determined
+const remoteControlEnabled = ref(false);
+const remoteStateInitialized = ref(false); // true after WebSocket handshake determines client type
+const serverVersion = ref<string | null>(null);
+const DEFAULT_GRID_SIZE_MM = 400;
+const DEFAULT_Z_TRAVEL_MM = 100;
+const MACHINE_DIMS_CACHE_KEY = 'ncsender-machine-dims';
+
+// Load cached machine dimensions from localStorage (survives app restarts)
+const loadMachineDimsFromCache = () => {
+  try {
+    const cached = localStorage.getItem(MACHINE_DIMS_CACHE_KEY);
+    if (cached) {
+      const dims = JSON.parse(cached);
+      return {
+        x: (typeof dims.x === 'number' && dims.x > 0) ? dims.x : DEFAULT_GRID_SIZE_MM,
+        y: (typeof dims.y === 'number' && dims.y > 0) ? dims.y : DEFAULT_GRID_SIZE_MM,
+        z: (typeof dims.z === 'number' && dims.z > 0) ? dims.z : DEFAULT_Z_TRAVEL_MM
+      };
+    }
+  } catch { /* ignore parse errors */ }
+  return { x: DEFAULT_GRID_SIZE_MM, y: DEFAULT_GRID_SIZE_MM, z: DEFAULT_Z_TRAVEL_MM };
+};
+
+const saveMachineDimsToCache = () => {
+  try {
+    localStorage.setItem(MACHINE_DIMS_CACHE_KEY, JSON.stringify({
+      x: gridSizeX.value,
+      y: gridSizeY.value,
+      z: zMaxTravel.value
+    }));
+  } catch { /* ignore storage errors */ }
+};
+
+const cachedDims = loadMachineDimsFromCache();
+// Grid size defaults - loaded from localStorage cache, then updated from firmware
+const gridSizeX = ref(cachedDims.x);
+const gridSizeY = ref(cachedDims.y);
+// Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
+const zMaxTravel = ref<number | null>(cachedDims.z);
+const machineDimsLoaded = ref(false);
+let machineDimsLoading = false;
+let machineDimsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+let cachedFirmwareData: any = null;
+type AxisHome = 'min' | 'max';
+type HomeCorner = 'front-left' | 'front-right' | 'back-left' | 'back-right';
+const machineOrientation = reactive({
+  xHome: 'min' as AxisHome,
+  yHome: 'max' as AxisHome,
+  zHome: 'max' as AxisHome,
+  homeCorner: 'back-left' as HomeCorner
+});
+const gcodeContent = ref<string>(''); // Deprecated for UI rendering; kept for compatibility
+const gcodeFilename = ref<string>('');
+const gcodeLineCount = ref<number>(0);
+
+// Selected G-code lines for highlighting in visualizer
+const selectedGCodeLines = ref<Set<number>>(new Set());
+
+// Request to open Start From Line dialog (set by ConsolePanel, watched by GCodeVisualizer)
+const startFromLineRequest = ref<number | null>(null);
+
+// Jog config (shared UI state for current jog settings)
+const jogConfig = reactive({
+  stepSize: 1,
+  stepOptions: [0.1, 1, 10],
+  feedRate: 3000,
+  feedRateOptions: {
+    0.1: [300, 400, 500, 700, 1000],
+    1: [1000, 2000, 3000, 4000, 5000],
+    10: [6000, 7000, 8000, 9000, 10000]
+  },
+  feedRateDefaults: {
+    0.1: 500,
+    1: 3000,
+    10: 8000
+  }
+});
+
+// INTERNAL STATE
+let storeInitialized = false;
+let lastJobStatus: 'running' | 'paused' | 'stopped' | undefined = undefined;
+let lastJobFilename: string | undefined = undefined;
+let responseLineIdCounter = 0;
+let prevShowProgress: boolean | undefined = undefined;
+
+// COMPUTED PROPERTIES (created once at module level)
+const senderStatus = computed(() => {
+  // If WebSocket is not connected, always show 'connecting'
+  if (!websocketConnected.value) {
+    return 'connecting';
+  }
+
+  const raw = serverState.senderStatus || 'connecting';
+  const machineStatus = (serverState.machineState?.status || '').toLowerCase();
+
+  if (raw === 'tool-changing' && machineStatus === 'hold') {
+    return 'hold';
+  }
+
+  // Map Door to Hold when "Park on Pause" is enabled
+  const settings = getSettings();
+  const useDoorAsPause = settings?.useDoorAsPause ?? false;
+  if (useDoorAsPause && raw === 'running' && machineStatus === 'door') {
+    return 'hold';
+  }
+
+  return raw;
+});
+const isConnected = computed(() => status.connected && websocketConnected.value);
+const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
+const isHomed = computed(() => status.homed === true);
+const homingCycle = computed(() => serverState.machineState?.homingCycle ?? 0);
+const isProbing = computed(() => senderStatus.value === 'probing');
+const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
+const unitsPreference = computed<UnitsPreference>(() => {
+  const settings = getSettings();
+  return (settings?.unitsPreference as UnitsPreference) ?? 'metric';
+});
+const remoteStateLoading = computed(() => {
+  // Show loading screen until WebSocket handshake determines client type
+  return !remoteStateInitialized.value;
+});
+const hasFullControl = computed(() => {
+  // Local client always has full control
+  if (isLocalClient.value === true) return true;
+  // Remote browser depends on setting
+  return remoteControlEnabled.value;
+});
+
+// Helper function to apply status report updates
+const applyStatusReport = (report: StatusReport | null | undefined) => {
+  if (!report) return;
+
+  if (report.status) {
+    status.machineState = report.status;
+  }
+
+  if (report.WCO) {
+    const [x, y, z, a] = report.WCO.split(',').map(Number);
+    if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+      status.wco.x = x;
+      status.wco.y = y;
+      status.wco.z = z;
+      if (!isNaN(a)) {
+        status.wco.a = a;
+      }
+    }
+  }
+
+  if (report.MPos) {
+    const [x, y, z] = report.MPos.split(',').map(Number);
+    // Update properties instead of replacing object to preserve reactivity
+    status.machineCoords.x = x;
+    status.machineCoords.y = y;
+    status.machineCoords.z = z;
+    status.workCoords.x = status.machineCoords.x - status.wco.x;
+    status.workCoords.y = status.machineCoords.y - status.wco.y;
+    status.workCoords.z = status.machineCoords.z - status.wco.z;
+  }
+
+  if (typeof (report as any).feedRate === 'number') {
+    status.feedRate = (report as any).feedRate;
+  }
+  if (typeof (report as any).spindleRpmTarget === 'number') {
+    status.spindleRpmTarget = (report as any).spindleRpmTarget;
+  }
+  if (typeof (report as any).spindleRpmActual === 'number') {
+    status.spindleRpmActual = (report as any).spindleRpmActual;
+  }
+
+  if (typeof report.feedrateOverride === 'number') {
+    status.feedrateOverride = report.feedrateOverride;
+  }
+  if (typeof report.rapidOverride === 'number') {
+    status.rapidOverride = report.rapidOverride;
+  }
+  if (typeof report.spindleOverride === 'number') {
+    status.spindleOverride = report.spindleOverride;
+  }
+
+  if (typeof report.tool === 'number') {
+    status.tool = report.tool;
+  }
+
+  if (typeof (report as any).toolLengthSet === 'boolean') {
+    status.toolLengthSet = (report as any).toolLengthSet;
+  }
+
+  if (typeof (report as any).Pn === 'string') {
+    status.Pn = (report as any).Pn;
+  }
+
+  if (typeof (report as any).probeCount === 'number') {
+    status.probeCount = (report as any).probeCount;
+  }
+
+  if (typeof (report as any).activeProbe === 'number') {
+    status.activeProbe = (report as any).activeProbe;
+  } else if ((report as any).activeProbe === undefined || (report as any).activeProbe === null) {
+    status.activeProbe = null;
+  }
+
+  if (typeof (report as any).inputPins === 'number') {
+    status.inputPins = (report as any).inputPins;
+  }
+
+  if (typeof (report as any).outputPins === 'number') {
+    status.outputPins = (report as any).outputPins;
+  }
+
+  if (Array.isArray((report as any).outputPinsState)) {
+    status.outputPinsState = (report as any).outputPinsState;
+  }
+
+  if (typeof report.homed === 'boolean') {
+    status.homed = report.homed;
+  }
+
+  if (typeof report.floodCoolant === 'boolean') {
+    status.floodCoolant = report.floodCoolant;
+  }
+
+  if (typeof report.mistCoolant === 'boolean') {
+    status.mistCoolant = report.mistCoolant;
+  }
+
+  if (typeof report.spindleActive === 'boolean') {
+    status.spindleActive = report.spindleActive;
+  }
+
+  if (typeof (report as any).hasSD === 'boolean') {
+    status.hasSD = (report as any).hasSD;
+  }
+  if (typeof (report as any).hasFTP === 'boolean') {
+    status.hasFTP = (report as any).hasFTP;
+  }
+};
+
+// Helper function to add or update command line in console
+const addOrUpdateCommandLine = (payload: any) => {
+  if (!payload) return null;
+
+  if (api.isJogCancelCommand(payload.command)) {
+    return null;
+  }
+
+  // Skip job commands - they're not displayed in terminal
+  // Visualizer & preview use jobLoaded.currentLine to reflect executed lines
+  if (payload.sourceId === 'job') {
+    return null;
+  }
+
+  let message = payload.message || payload.displayCommand || payload.command || 'Command';
+
+  // Format error messages specially
+  if (payload.status === 'error' && payload.error?.message) {
+    const lineInfo = payload.meta?.lineNumber ? ` (Line: ${payload.meta.lineNumber})` : '';
+    message = `${message}; --> ${payload.error.message}${lineInfo}`;
+  }
+
+  // Use Map for O(1) lookup instead of array.find()
+  const existingEntry = commandLinesMap.get(payload.id);
+
+  if (existingEntry) {
+    // Update existing entry - preserve original timestamp
+    const updatedLine = {
+      ...existingEntry.line,
+      message,
+      status: payload.status ?? existingEntry.line.status,
+      level: payload.status === 'error' ? 'error' : existingEntry.line.level,
+      sourceId: payload.sourceId ?? existingEntry.line.sourceId,
+      meta: payload.meta ?? existingEntry.line.meta
+    };
+
+    // Update both structures with O(1) operations
+    consoleLines.value[existingEntry.index] = updatedLine;
+    commandLinesMap.set(payload.id, { line: updatedLine, index: existingEntry.index });
+
+    return { line: updatedLine, timestamp: existingEntry.line.timestamp };
+  }
+
+  // New entry - generate timestamp from payload or current time
+  const timestamp = payload.timestamp ? formatTimestampFixedWidth(new Date(payload.timestamp)) : formatTimestampFixedWidth(new Date());
+
+  const newLine: ConsoleLine = {
+    id: payload.id ?? `${Date.now()}-pending`,
+    level: payload.status === 'error' ? 'error' : 'info',
+    message,
+    timestamp,
+    status: payload.status ?? 'pending',
+    type: 'command',
+    sourceId: payload.sourceId,
+    meta: payload.meta
+  };
+
+  // Add to both array (for reactivity) and map (for fast lookup)
+  const newIndex = consoleLines.value.length;
+  consoleLines.value.push(newLine);
+  commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
+
+  // Persist to IndexedDB if available (exclude job chatter)
+  if (isTerminalIDBEnabled() && newLine.sourceId !== 'job') {
+    appendTerminalLineToIDB(newLine).catch(() => {});
+  }
+
+  trimConsoleBuffer();
+
+  return { line: newLine, timestamp };
+};
+
+// Helper function to add response line to console
+const addResponseLine = (data: string) => {
+  const timestamp = formatTimestampFixedWidth(new Date());
+  const responseLine: ConsoleLine = {
+    id: `response-${Date.now()}-${responseLineIdCounter++}`,
+    level: 'info',
+    message: data,
+    timestamp: timestamp,
+    type: 'response'
+  };
+  const newIndex = consoleLines.value.length;
+  consoleLines.value.push(responseLine);
+  commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
+
+  // Persist to IDB if available
+  if (isTerminalIDBEnabled()) {
+    appendTerminalLineToIDB(responseLine).catch(() => {});
+  }
+
+  trimConsoleBuffer();
+};
+
+// Helper to update machine orientation from home location setting
+const updateMachineOrientationFromHomeLocation = (homeLocation: string) => {
+  // Map homeLocation string to xHome, yHome, zHome values
+  // Assumes standard GRBL orientation where:
+  // - X+ is to the right, X- is to the left
+  // - Y+ is towards the front, Y- is towards the back
+  // - Z+ is up, Z- is down (and home is typically at top, so zHome is 'max')
+
+  switch (homeLocation) {
+    case 'back-left':
+      machineOrientation.xHome = 'min';  // Home at left (X-)
+      machineOrientation.yHome = 'max';  // Home at back (Y+)
+      machineOrientation.homeCorner = 'back-left';
+      break;
+    case 'back-right':
+      machineOrientation.xHome = 'max';  // Home at right (X+)
+      machineOrientation.yHome = 'max';  // Home at back (Y+)
+      machineOrientation.homeCorner = 'back-right';
+      break;
+    case 'front-left':
+      machineOrientation.xHome = 'min';  // Home at left (X-)
+      machineOrientation.yHome = 'min';  // Home at front (Y-)
+      machineOrientation.homeCorner = 'front-left';
+      break;
+    case 'front-right':
+      machineOrientation.xHome = 'max';  // Home at right (X+)
+      machineOrientation.yHome = 'min';  // Home at front (Y-)
+      machineOrientation.homeCorner = 'front-right';
+      break;
+    default:
+      // Default to back-left
+      machineOrientation.xHome = 'min';
+      machineOrientation.yHome = 'max';
+      machineOrientation.homeCorner = 'back-left';
+  }
+
+  // Z home is typically at the top (max) for most CNC machines
+  machineOrientation.zHome = 'max';
+};
+
+// Initialize orientation from settings immediately (avoids flash on reload)
+const _initHomeLocation = getSettings()?.homeLocation;
+if (_initHomeLocation) {
+  updateMachineOrientationFromHomeLocation(_initHomeLocation);
+}
+
+// Helper to try loading machine dimensions once
+const tryLoadMachineDimensionsOnce = async () => {
+  if (!status.connected || !websocketConnected.value) {
+    debugLog('[Store] Skipping machine dimensions load: not connected');
+    if (machineDimsRetryTimeout) {
+      clearTimeout(machineDimsRetryTimeout);
+      machineDimsRetryTimeout = null;
+    }
+    return;
+  }
+  if (machineDimsLoaded.value || machineDimsLoading) {
+    return;
+  }
+  machineDimsLoading = true;
+  debugLog('[Store] Loading machine dimensions from firmware settings...');
+  try {
+    // Use cached firmware data from init if available, otherwise fetch
+    // IDs: X max travel = 130, Y max travel = 131, Z max travel = 132
+    const firmware = cachedFirmwareData || await api.getFirmwareSettings(false).catch(() => null as any);
+
+    if (!firmware || !firmware.settings) {
+      debugWarn('[Store] Firmware settings not available');
+      machineDimsLoading = false;
+      if (!machineDimsRetryTimeout) {
+        machineDimsRetryTimeout = setTimeout(async () => {
+          machineDimsRetryTimeout = null;
+          await tryLoadMachineDimensionsOnce();
+        }, 1500);
+      }
+      return;
+    }
+
+    const xVal = parseFloat(String(firmware?.settings?.['130']?.value ?? ''));
+    const yVal = parseFloat(String(firmware?.settings?.['131']?.value ?? ''));
+    const zVal = parseFloat(String(firmware?.settings?.['132']?.value ?? ''));
+
+    if (!Number.isNaN(xVal) && xVal > 0) {
+      gridSizeX.value = xVal;
+    }
+    if (!Number.isNaN(yVal) && yVal > 0) {
+      gridSizeY.value = yVal;
+    }
+    if (!Number.isNaN(zVal) && zVal > 0) {
+      zMaxTravel.value = zVal;
+    }
+
+    // Load home location from settings (already loaded via init)
+    const settings = getSettings();
+    const homeLocationSetting = settings?.homeLocation || 'back-left';
+    updateMachineOrientationFromHomeLocation(homeLocationSetting);
+
+    saveMachineDimsToCache();
+    machineDimsLoaded.value = true;
+    machineDimsLoading = false;
+    debugLog(`[Store] Loaded machine dimensions from firmware: X=${gridSizeX.value}, Y=${gridSizeY.value}, Z=${zMaxTravel.value ?? 'n/a'}`);
+    if (machineDimsRetryTimeout) {
+      clearTimeout(machineDimsRetryTimeout);
+      machineDimsRetryTimeout = null;
+    }
+  } catch (e) {
+    machineDimsLoading = false;
+    debugWarn('[Store] Could not load machine dimensions ($130/$131/$132):', (e && (e as any).message) ? (e as any).message : e);
+    if (!machineDimsRetryTimeout) {
+      machineDimsRetryTimeout = setTimeout(async () => {
+        machineDimsRetryTimeout = null;
+        await tryLoadMachineDimensionsOnce();
+      }, 1500);
+    }
+  } finally {
+    machineDimsLoading = false;
+  }
+};
+
+// Helper to fetch alarm description
+const fetchAlarmDescription = async (code: number | string | undefined) => {
+  if (code === undefined || code === null) {
+    alarmMessage.value = '';
+    return;
+  }
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/alarm/${code}`);
+    if (!response.ok) {
+      alarmMessage.value = 'Unknown Alarm';
+      return;
+    }
+    const data = await response.json();
+    alarmMessage.value = data.description;
+  } catch (error) {
+    console.error('Failed to fetch alarm description:', error);
+    alarmMessage.value = 'Error fetching alarm description';
+  }
+};
+
+// Initialize WebSocket event listeners (called once at app startup)
+export function initializeStore() {
+  if (storeInitialized) {
+    debugWarn('Store already initialized, skipping...');
+    return;
+  }
+
+  debugLog('Initializing app store and WebSocket event listeners...');
+
+  // WebSocket connection events
+  api.on('connected', () => {
+    debugLog('WebSocket connected');
+    websocketConnected.value = true;
+  });
+
+  api.on('disconnected', () => {
+    debugLog('WebSocket disconnected');
+    websocketConnected.value = false;
+  });
+
+  api.on('error', () => {
+    debugLog('WebSocket connection error');
+    websocketConnected.value = false;
+  });
+
+  // Remote control state changes
+  api.on('remote-control-state', (data: { isLocal?: boolean; enabled?: boolean }) => {
+    debugLog('Remote control state updated:', data);
+    if (typeof data.isLocal === 'boolean') {
+      isLocalClient.value = data.isLocal;
+    }
+    if (typeof data.enabled === 'boolean') {
+      remoteControlEnabled.value = data.enabled;
+    }
+    // Mark as initialized after first client-id message (when isLocal is provided)
+    if (typeof data.isLocal === 'boolean') {
+      remoteStateInitialized.value = true;
+    }
+  });
+
+  api.on('server-version', (version: string) => {
+    serverVersion.value = version;
+  });
+
+  // Machine limits changed ($130/$131/$132) — update visualizer grid reactively
+  api.on('firmware-setting-changed', (data: { id: string; value: string }) => {
+    const val = parseFloat(data.value);
+    if (Number.isNaN(val) || val <= 0) return;
+    if (data.id === '130') {
+      gridSizeX.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $130 (X) updated to ${val}`);
+    } else if (data.id === '131') {
+      gridSizeY.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $131 (Y) updated to ${val}`);
+    } else if (data.id === '132') {
+      zMaxTravel.value = val;
+      saveMachineDimsToCache();
+      debugLog(`[Store] Machine limit $132 (Z) updated to ${val}`);
+    }
+  });
+
+  // Check if we already have remote control state from api (in case we missed the event)
+  if (typeof api.isLocalClient === 'boolean') {
+    isLocalClient.value = api.isLocalClient;
+    remoteControlEnabled.value = api.remoteControlEnabled;
+    remoteStateInitialized.value = true;
+    debugLog('Remote control state initialized from api:', { isLocal: api.isLocalClient, enabled: api.remoteControlEnabled });
+  }
+  if (api.serverVersion) {
+    serverVersion.value = api.serverVersion;
+  }
+
+  // CNC error events (including alarms)
+  api.on('cnc-error', async (errorData) => {
+    if (!errorData) return;
+
+    // Add error to terminal with warning icon
+    const errorMessage = errorData.message || 'Unknown error';
+    const errorCode = errorData.code ? `[Error ${errorData.code}] ` : '';
+    addOrUpdateCommandLine({
+      id: `error-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      message: `${errorCode}${errorMessage}`,
+      level: 'error',
+      status: 'error',
+      type: 'response',
+      timestamp: new Date().toISOString()
+    });
+
+    // cnc-error is only for terminal logging
+    // Alarm display is handled by server-state-updated → machineState
+  });
+
+  // Server state updates (main synchronization event)
+  api.onServerStateUpdated(async (newServerState) => {
+    // Deep merge machineState to preserve existing fields (like 'connected') during partial updates
+    if (newServerState.machineState && serverState.machineState) {
+      Object.assign(serverState.machineState, newServerState.machineState);
+      const { machineState: _, ...rest } = newServerState;
+      Object.assign(serverState, rest);
+    } else {
+      Object.assign(serverState, newServerState);
+    }
+
+    const derivedSenderStatus = senderStatus.value;
+    const machineConnected = serverState.machineState?.connected === true;
+
+    const previouslyConnected = status.connected;
+    // Only treat as connected when controller reports connected and status is not setup-required/connecting
+    status.connected = machineConnected && !['setup-required', 'connecting'].includes(derivedSenderStatus);
+
+    if (previouslyConnected && !status.connected) {
+      machineDimsLoaded.value = false;
+    }
+
+    // Apply machine status details when available from controller
+    if (machineConnected && serverState.machineState) {
+      applyStatusReport(serverState.machineState);
+    } else {
+      status.machineState = 'offline';
+    }
+
+    // Update alarm indicators based on senderStatus and machineState
+    if (derivedSenderStatus === 'alarm') {
+      // If in alarm state, read alarm info from machineState
+      if (serverState.machineState?.alarmDescription) {
+        lastAlarmCode.value = serverState.machineState.alarmCode;
+        alarmMessage.value = serverState.machineState.alarmDescription;
+      }
+    } else {
+      // Clear alarm indicators if senderStatus is no longer alarm
+      lastAlarmCode.value = undefined;
+      alarmMessage.value = '';
+    }
+
+    // Try to load machine dimensions when connected
+    if (status.connected && websocketConnected.value) {
+      await tryLoadMachineDimensionsOnce();
+    }
+
+    // If a run starts (status transitions into running), reset completed tracking
+    const currentStatus = serverState.jobLoaded?.status as any;
+    const currentFilename = serverState.jobLoaded?.filename as string | undefined;
+    const currentLine = serverState.jobLoaded?.currentLine;
+
+    // Removed gcodeCompletedUpTo - now using jobLoaded.currentLine directly
+    lastJobStatus = currentStatus;
+    if (currentFilename) lastJobFilename = currentFilename;
+
+    // Do not auto-clear the G-code viewer when job stops/completes.
+    // We keep the last loaded file so users can review it.
+  });
+
+  // Console/command events
+  api.on('cnc-command', (commandEvent) => {
+    addOrUpdateCommandLine(commandEvent);
+  });
+
+  api.on('cnc-command-result', (result) => {
+    if (!result) return;
+    if (api.isJogCancelCommand(result.command)) return;
+    const updated = addOrUpdateCommandLine(result);
+    if (isTerminalIDBEnabled() && result?.id && result?.sourceId !== 'job') {
+      updateTerminalLineByIdInIDB(result.id, {
+        message: updated?.line?.message ?? result.displayCommand ?? result.command,
+        status: result.status,
+        level: result.status === 'error' ? 'error' : 'info',
+        sourceId: result.sourceId,
+        meta: result.meta
+      }).catch(() => {});
+    }
+
+    // Line completion tracking removed - viewers now use jobLoaded.currentLine
+  });
+
+  api.onData((data) => {
+    addResponseLine(data);
+  });
+
+  // Handle initial greeting for late-joining clients (only add if not already in console)
+  api.on('initial-greeting', (data) => {
+    // Check if greeting is already in console history
+    const greetingExists = consoleLines.value.some(line =>
+      line.message && line.message.toLowerCase().includes('grbl') &&
+      line.message.toLowerCase().includes('help')
+    );
+
+    // Only add if it's not already there
+    if (!greetingExists) {
+      addResponseLine(data);
+    }
+  });
+
+  // Listen for settings changes (including homeLocation)
+  api.on('settings-changed', (changedSettings) => {
+    mergeSettings(changedSettings);
+    if (changedSettings?.unitsPreference) {
+      const isImperial = changedSettings.unitsPreference === 'imperial';
+      jogConfig.stepSize = isImperial ? 0.1 : 1;
+      jogConfig.feedRate = isImperial ? 100 : 3000;
+    }
+    if (changedSettings?.homeLocation) {
+      debugLog(`[Store] Home location changed to: ${changedSettings.homeLocation}`);
+      updateMachineOrientationFromHomeLocation(changedSettings.homeLocation);
+    }
+  });
+
+  // G-code content updates (now receives metadata, downloads content via HTTP)
+  api.onGCodeUpdated(async (data) => {
+    if (data?.filename) {
+      // Update metadata immediately
+      gcodeFilename.value = data.filename;
+      if (data.totalLines) {
+        gcodeLineCount.value = data.totalLines;
+      }
+
+      // Download content via HTTP streaming
+      try {
+        debugLog(`Downloading G-code file via HTTP: ${data.filename}`);
+        const content = await api.downloadGCodeFile((progress) => {
+          api.emit('gcode-download-progress', { percent: progress.percent });
+        });
+
+        if (isIDBEnabled()) {
+          saveGCodeToIDB(data.filename || '', content)
+            .then(({ lineCount }) => {
+              gcodeLineCount.value = lineCount;
+              gcodeContent.value = content; // Keep in memory for fast virtual scroll access
+              debugLog(`G-code saved to IndexedDB: ${lineCount} lines`);
+
+              // Emit content-ready event for visualizer
+              api.emit('gcode-content-ready', {
+                filename: data.filename,
+                content,
+                timestamp: new Date().toISOString()
+              });
+            })
+            .catch((err) => {
+              console.error('Failed to persist G-code to IndexedDB:', err);
+              const lines = content.split('\n');
+              while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+                lines.pop();
+              }
+              gcodeContent.value = content;
+              gcodeLineCount.value = lines.length;
+
+              // Emit content-ready event even on fallback
+              api.emit('gcode-content-ready', {
+                filename: data.filename,
+                content,
+                timestamp: new Date().toISOString()
+              });
+            });
+        } else {
+          const lines = content.split('\n');
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+          gcodeContent.value = content;
+          gcodeLineCount.value = lines.length;
+
+          // Emit content-ready event
+          api.emit('gcode-content-ready', {
+            filename: data.filename,
+            content,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (err) {
+        console.error('Failed to download G-code file:', err);
+      }
+    }
+  });
+
+  storeInitialized = true;
+  debugLog('App store initialized successfully');
+}
+
+// Seed initial state from server (for late-joining clients)
+export async function seedInitialState(initData?: any) {
+  debugLog('Seeding initial state from server...');
+
+  // Set initial WebSocket state
+  if (api.ws) {
+    websocketConnected.value = api.ws.readyState === 1; // WebSocket.OPEN = 1
+  } else {
+    websocketConnected.value = false;
+  }
+
+  // Cache firmware data from init if available
+  if (initData?.firmware) {
+    cachedFirmwareData = initData.firmware;
+  }
+
+  // Determine remote control state from init data (available immediately, no WebSocket wait)
+  if (initData && typeof initData.isLocal === 'boolean') {
+    isLocalClient.value = initData.isLocal;
+    const remoteEnabled = initData.settings?.remoteControl?.enabled === true;
+    remoteControlEnabled.value = remoteEnabled;
+    remoteStateInitialized.value = true;
+    debugLog('Remote control state from init:', { isLocal: initData.isLocal, enabled: remoteEnabled });
+  }
+
+  // Seed UI from last known server state; if incomplete, fetch full server-state snapshot
+  try {
+    let state = initData?.serverState || api.lastServerState;
+    const needsFetch = !state || typeof state !== 'object' || state.jobLoaded === undefined || state.machineState === undefined;
+    if (needsFetch && !initData) {
+      try {
+        state = await api.getServerState();
+        // Hydrate api cache too, so future deltas merge correctly
+        api.lastServerState = state;
+      } catch (fetchErr) {
+        console.warn('Failed to fetch full server state; proceeding with partial WS cache:', (fetchErr as any)?.message || fetchErr);
+      }
+    } else if (state) {
+      // Hydrate api cache with initData serverState
+      api.lastServerState = state;
+    }
+
+    if (state && typeof state === 'object') {
+      Object.assign(serverState, state);
+
+      const derivedSenderStatus = serverState.senderStatus || 'connecting';
+      const machineConnected = serverState.machineState?.connected === true;
+
+      status.connected = machineConnected && !['setup-required', 'connecting'].includes(derivedSenderStatus);
+
+      if (machineConnected && serverState.machineState) {
+        applyStatusReport(serverState.machineState);
+      } else {
+        status.machineState = 'offline';
+      }
+
+      // Update alarm indicators based on senderStatus and machineState
+      if (derivedSenderStatus === 'alarm') {
+        // If in alarm state, read alarm info from machineState
+        if (serverState.machineState?.alarmDescription) {
+          lastAlarmCode.value = serverState.machineState.alarmCode;
+          alarmMessage.value = serverState.machineState.alarmDescription;
+        }
+      } else {
+        lastAlarmCode.value = undefined;
+        alarmMessage.value = '';
+      }
+
+      // Cache firmware data from initData for machine dimensions
+      if (initData?.firmware) {
+        cachedFirmwareData = initData.firmware;
+      }
+
+      // Show GRBL greeting in terminal if available from server state
+      if (serverState.greetingMessage) {
+        const greetingExists = consoleLines.value.some(line =>
+          line.message && line.message.toLowerCase().includes('grbl') &&
+          line.message.toLowerCase().includes('help')
+        );
+        if (!greetingExists) {
+          addResponseLine(serverState.greetingMessage);
+        }
+      }
+
+      // Attempt to load machine dimensions if already connected
+      if (status.connected && websocketConnected.value) {
+        await tryLoadMachineDimensionsOnce();
+      }
+
+      // Restore completed line tracking from server state if job is stopped/paused/completed
+      const jobStatus = serverState.jobLoaded?.status;
+      const currentLine = serverState.jobLoaded?.currentLine;
+      if (jobStatus && (jobStatus === 'stopped' || jobStatus === 'paused' || jobStatus === 'completed') && typeof currentLine === 'number' && currentLine > 0) {
+        debugLog(`[Store] Line tracking restored from server: ${currentLine} (viewers use jobLoaded.currentLine)`);
+      }
+    }
+  } catch (e) {
+    debugWarn('Unable to seed initial server state:', e);
+  }
+
+  // Load G-code from IDB if available (handles race condition where component mounts before WebSocket event)
+  if (isIDBEnabled()) {
+    try {
+      const gcodeData = await getGCodeFromIDB();
+      if (gcodeData?.content && gcodeData.content.trim().length > 0) {
+        debugLog('[Store] Loading existing G-code from IndexedDB on startup');
+        const lines = gcodeData.content.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+          lines.pop();
+        }
+        gcodeLineCount.value = lines.length;
+        gcodeFilename.value = gcodeData.filename || '';
+        gcodeContent.value = gcodeData.content; // Keep in memory for fast virtual scroll access
+      }
+    } catch (error) {
+      debugLog('[Store] No existing G-code to load on startup (this is normal for first load)');
+    }
+  }
+
+  // If server has a file loaded but we have no content (fresh session / incognito), download via HTTP
+  if (serverState.jobLoaded?.filename && !gcodeContent.value) {
+    try {
+      debugLog(`[Store] Downloading G-code from server: ${serverState.jobLoaded.filename}`);
+      const content = await api.downloadGCodeFile((progress: any) => {
+        api.emit('gcode-download-progress', { percent: progress.percent });
+      });
+
+      if (content) {
+        gcodeFilename.value = serverState.jobLoaded.filename;
+        gcodeContent.value = content;
+
+        if (isIDBEnabled()) {
+          try {
+            const { lineCount } = await saveGCodeToIDB(serverState.jobLoaded.filename, content);
+            gcodeLineCount.value = lineCount;
+          } catch {
+            const lines = content.split('\n');
+            while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+              lines.pop();
+            }
+            gcodeLineCount.value = lines.length;
+          }
+        } else {
+          const lines = content.split('\n');
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+          gcodeLineCount.value = lines.length;
+        }
+
+        api.emit('gcode-content-ready', {
+          filename: serverState.jobLoaded.filename,
+          content,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      debugLog('[Store] Failed to download G-code on startup:', err);
+    }
+  }
+
+  const initialUnits = getSettings()?.unitsPreference;
+  if (initialUnits === 'imperial') {
+    jogConfig.stepSize = 0.1;
+    jogConfig.feedRate = 100;
+  }
+
+  debugLog('Initial state seeded successfully');
+}
+
+// Composable for components to access the store
+export function useAppStore() {
+    return {
+    // Shared state (read-only for components)
+    serverState: readonly(serverState),
+    status: readonly(status),
+    consoleLines: readonly(consoleLines),
+
+    // Client-specific state (read-only)
+    websocketConnected: readonly(websocketConnected),
+    lastAlarmCode: readonly(lastAlarmCode),
+      alarmMessage: readonly(alarmMessage),
+      gridSizeX: readonly(gridSizeX),
+      gridSizeY: readonly(gridSizeY),
+      zMaxTravel: readonly(zMaxTravel),
+      machineOrientation: readonly(machineOrientation),
+      gcodeContent: readonly(gcodeContent),
+      gcodeFilename: readonly(gcodeFilename),
+      gcodeLineCount: readonly(gcodeLineCount),
+      selectedGCodeLines: readonly(selectedGCodeLines),
+      startFromLineRequest: readonly(startFromLineRequest),
+      jogConfig,  // Writable - shared jog settings
+
+    // Computed properties
+    senderStatus,
+    isConnected,
+    currentJobFilename,
+    isHomed,
+    homingCycle,
+    isProbing,
+    isJobRunning,
+    unitsPreference,
+    hasFullControl,
+    remoteStateLoading,
+    isLocalClient: readonly(isLocalClient),
+    serverVersion: readonly(serverVersion),
+
+    // Actions
+    clearConsole: () => {
+      consoleLines.value = [];
+      commandLinesMap.clear();
+      if (isTerminalIDBEnabled()) {
+        clearTerminalIDB().catch(() => {});
+      }
+    },
+
+    clearGCodePreview: () => {
+      if (isIDBEnabled()) {
+        clearGCodeIDB().catch(() => {});
+      }
+      gcodeContent.value = '';
+      gcodeFilename.value = '';
+      gcodeLineCount.value = 0;
+      selectedGCodeLines.value = new Set();
+    },
+
+    setSelectedGCodeLines: (lines: Set<number>) => {
+      selectedGCodeLines.value = lines;
+    },
+
+    clearSelectedGCodeLines: () => {
+      selectedGCodeLines.value = new Set();
+    },
+
+    requestStartFromLine: (lineNumber: number) => {
+      startFromLineRequest.value = lineNumber;
+    },
+
+    clearStartFromLineRequest: () => {
+      startFromLineRequest.value = null;
+    },
+
+    setLastAlarmCode: async (code: number | string | undefined) => {
+      lastAlarmCode.value = code;
+      await fetchAlarmDescription(code);
+    },
+
+    // Expose internal helpers for special cases
+    _internals: {
+      applyStatusReport,
+      tryLoadMachineDimensionsOnce,
+      fetchAlarmDescription
+    }
+  };
+}

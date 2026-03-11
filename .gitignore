@@ -1,54 +1,42 @@
-# Dependencies
-**/node_modules/
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.DotSettings.user
 
-# Package lock files (except app/ and app/client/ which are tracked for reproducible builds)
-package-lock.json
-**/package-lock.json
-!app/package-lock.json
-!app/client/package-lock.json
+## NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
 
-# Build output
-app/dist/
-**/dist/
-**/dist-ssr/
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+bld/
 
-# Logs and reports
-/logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Environment files
-.env
-.env.*
-
-# IDE and editor settings
-.vscode/
+## Rider / JetBrains
 .idea/
-*.sw?
+*.sln.iml
 
-# macOS metadata
+## macOS
 .DS_Store
 
-# TypeScript
-*.tsbuildinfo
+## Node / Vue client
+node_modules/
+src/NcSender.Client/dist/
+src/NcSender.Server/client
 
-# Coverage
-coverage/
-
-# Electron cache
-/.webpack/
-/out/
-
-# G-code files storage
-app/electron/files/
-app/electron/data/command-history.json
-app/dist-electron/**
-releases/**
-app/client/vite.config.ts.timestamp-**
-
-# Plugin configuration files (user data)
-plugins/**/config.json
+## Local build artifacts
+publish-*/
+ncSender.app/
+*.dmg
+dist-deb/
+dmg-stage/
 latest_release.md

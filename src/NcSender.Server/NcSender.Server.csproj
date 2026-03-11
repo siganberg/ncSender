@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NcSender.Core\NcSender.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+    <PackageReference Include="Jint" Version="4.*" />
+
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RdXmlFile Include="rd.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NcSender.Server.Tests" />
+  </ItemGroup>
+
+  <Target Name="GenerateBuildVersion" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_BuildVersion>$(Version)</_BuildVersion>
+      <_BuildVersion Condition="'$(_BuildVersion)' == '' or '$(_BuildVersion)' == '1.0.0'">0.0.0-dev</_BuildVersion>
+    </PropertyGroup>
+    <WriteLinesToFile
+      File="$(IntermediateOutputPath)BuildVersion.g.cs"
+      Lines="namespace NcSender.Server { internal static class BuildVersion { internal const string Value = &quot;$(_BuildVersion)&quot;%3B } }"
+      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)BuildVersion.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>
