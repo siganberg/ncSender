@@ -963,8 +963,12 @@ const goToZeroXY = async () => {
     return;
   }
   try {
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const unitsGCode = getUnitGCode(appStore.unitsPreference.value);
+    const safeZ = isImperial ? mmToInches(safeZValue.value) : safeZValue.value;
+    const safeZStr = formatMachineCoord(safeZ);
     // First raise Z to safe height, then move XY to work zero
-    const command = `G53 G0 Z${safeZCommand.value}\nG90 G0 X0 Y0`;
+    const command = `G53 ${unitsGCode} G90 G0 Z${safeZStr}\nG90 G0 X0 Y0`;
     await api.sendCommandViaWebSocket({
       command,
       displayCommand: command
