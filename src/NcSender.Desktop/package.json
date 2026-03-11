@@ -1,6 +1,6 @@
 {
   "name": "ncsender-desktop",
-  "version": "0.0.0",
+  "version": "2.0.0",
   "description": "ncSender Desktop Shell",
   "main": "main.js",
   "private": true,

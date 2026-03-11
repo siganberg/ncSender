@@ -111,6 +111,7 @@ const status = reactive({
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
+  activeWorkspace: 'g54' as string,
   spindleActive: false,
   Pn: '',
   probeCount: 0,
@@ -356,6 +357,12 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (Array.isArray((report as any).outputPinsState)) {
     status.outputPinsState = (report as any).outputPinsState;
+  }
+
+  // Track active workspace (WCS or workspace field, e.g., "G54")
+  const wcs = (report as any).WCS || (report as any).workspace;
+  if (wcs) {
+    status.activeWorkspace = wcs.toLowerCase(); // 'g54', 'g55', etc.
   }
 
   if (typeof report.homed === 'boolean') {

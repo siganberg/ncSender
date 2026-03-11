@@ -48,6 +48,16 @@ public class FluidNcProtocol : IProtocolHandler
         return false;
     }
 
+    private static readonly HashSet<string> WorkspaceCommands = new(StringComparer.OrdinalIgnoreCase)
+        { "G54", "G55", "G56", "G57", "G58", "G59" };
+
+    public bool NeedsGCodeStateRefresh(string command)
+    {
+        // FluidNC doesn't report WCS in status reports — need $G after workspace changes
+        var trimmed = command.Trim();
+        return WorkspaceCommands.Contains(trimmed);
+    }
+
     public bool TryParseError(string line, out int? errorCode, out string errorMessage)
     {
         errorCode = null;

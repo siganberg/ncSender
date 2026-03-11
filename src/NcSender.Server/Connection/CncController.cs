@@ -888,6 +888,13 @@ public partial class CncController : ICncController
             _ = SendCommandAsync("?", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
             _ = SendCommandAsync("$#", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
         }
+
+        // Protocol-specific: refresh G-code parser state after commands that change it
+        // (e.g. FluidNC doesn't report WCS in status reports, so we need $G after G54-G59)
+        if (cmd.RawCommand is not null && _activeProtocol?.NeedsGCodeStateRefresh(cmd.RawCommand) == true)
+        {
+            _ = SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
+        }
     }
 
     private void HandleCommandError(string message, int? code)
@@ -1164,15 +1171,30 @@ public partial class CncController : ICncController
         // [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
         var content = data[4..^1];
         var modes = content.Split(' ');
+        var hasChanges = false;
 
+        // Extract active workspace (G54-G59)
+        var wcsMode = Array.Find(modes, m => m is "G54" or "G55" or "G56" or "G57" or "G58" or "G59");
+        if (wcsMode is not null && _lastStatus.Workspace != wcsMode)
+        {
+            _lastStatus.Workspace = wcsMode;
+            hasChanges = true;
+        }
+
+        // Extract tool number (T0, T1, etc.)
         var toolMode = Array.Find(modes, m => m.Length >= 2 && m[0] == 'T' && char.IsDigit(m[1]));
         if (toolMode is not null && int.TryParse(toolMode[1..], out var toolNumber))
         {
             if (_lastStatus.Tool != toolNumber)
             {
                 _lastStatus.Tool = toolNumber;
-                StatusReportReceived?.Invoke(_lastStatus);
+                hasChanges = true;
             }
+        }
+
+        if (hasChanges)
+        {
+            StatusReportReceived?.Invoke(_lastStatus);
         }
     }
 

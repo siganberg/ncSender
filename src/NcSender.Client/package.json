@@ -1,6 +1,6 @@
 {
   "name": "ncsender-client",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "ncSender Client - Vue app that can run in browser or Electron",
   "main": "electron/main.js",
   "type": "module",

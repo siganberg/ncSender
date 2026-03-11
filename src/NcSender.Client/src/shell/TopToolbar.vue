@@ -44,6 +44,18 @@
           v{{ appVersion }}
         </span>
       </div>
+      <div class="workspace-selector">
+        <label class="workspace-label" for="workspace-select">Workspace:</label>
+        <select
+          id="workspace-select"
+          class="workspace-select"
+          :value="workspace"
+          @change="onWorkspaceChange($event)"
+          :disabled="isWorkspaceDisabled"
+        >
+          <option v-for="ws in workspaces" :key="ws" :value="ws">{{ ws }}</option>
+        </select>
+      </div>
       <button
         class="machine-info-button"
         :class="{ 'pin-triggered': hasAnyPinTriggered }"
@@ -181,6 +193,7 @@ const { isJobRunning, isConnected, senderStatus: storeSenderStatus, unitsPrefere
 const appVersion = computed(() => serverVersion.value || packageJson.version);
 
 const props = defineProps<{
+  workspace: string;
   senderStatus?: string;
   onShowSettings: () => void;
   lastAlarmCode?: number | string;
@@ -192,9 +205,22 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'toggle-theme'): void;
   (e: 'unlock'): void;
+  (e: 'change-workspace', value: string): void;
   (e: 'show-update-dialog'): void;
   (e: 'show-bluetooth'): void;
 }>();
+
+const isWorkspaceDisabled = computed(() => !isConnected.value || isJobRunning.value);
+
+const workspaces = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
+
+const onWorkspaceChange = (e: Event) => {
+  const target = e.target as HTMLSelectElement | null;
+  const value = (target?.value || '').toUpperCase();
+  if (workspaces.includes(value)) {
+    emit('change-workspace', value);
+  }
+};
 
 const pendantConnectionType = computed(() => props.pendantConnectionType ?? null);
 
@@ -618,6 +644,30 @@ const onVersionClick = () => {
   text-align: center;
   color: var(--color-text-secondary);
   font-size: 0.9rem;
+}
+
+.workspace-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  height: 40px;
+}
+
+.workspace-label {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.workspace-select {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  font-size: 0.95rem;
 }
 
 .unit-display {

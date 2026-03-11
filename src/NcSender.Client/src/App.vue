@@ -56,9 +56,10 @@
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
         :show-pendant="showPendant"
+        :workspace="workspace"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
-
+        @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
         @show-bluetooth="showPendantDialog = true"
         :on-show-settings="openSettings"
@@ -1117,6 +1118,7 @@ initDebugLogger();
 const theme = ref<'light' | 'dark'>(initialSettings?.theme || 'dark');
 const viewport = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
 const defaultView = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
+const workspace = ref(initialSettings?.workspace || 'G54');
 const showSettings = ref(false);
 const showSetupDialog = ref(false);
 const setupDismissible = ref(false);
@@ -2937,6 +2939,28 @@ const handleUnlock = async () => {
     console.error('Failed to send unlock command:', error);
   }
 };
+
+const handleWorkspaceChange = async (newWorkspace: string) => {
+  try {
+    // Optimistically update UI; server will confirm via status update
+    workspace.value = newWorkspace;
+    await api.sendCommandViaWebSocket({ command: newWorkspace, displayCommand: newWorkspace, meta: { sourceId: 'client' } });
+  } catch (error) {
+    console.error('Failed to change workspace:', error?.message || error);
+  }
+};
+
+watch(
+  () => serverState.machineState?.workspace,
+  (newWorkspace) => {
+    if (!newWorkspace) return;
+    const normalized = String(newWorkspace).toUpperCase();
+    if (workspace.value !== normalized) {
+      workspace.value = normalized;
+    }
+  },
+  { immediate: true }
+);
 
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 

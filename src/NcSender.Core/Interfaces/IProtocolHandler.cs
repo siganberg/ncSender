@@ -66,4 +66,10 @@ public interface IProtocolHandler
     /// Returns true if this handler recognized the error format.
     /// </summary>
     bool TryParseError(string line, out int? errorCode, out string errorMessage);
+
+    /// <summary>
+    /// Returns true if the given command requires a $G refresh to detect state changes
+    /// (e.g. workspace switches on protocols that don't report WCS in status reports).
+    /// </summary>
+    bool NeedsGCodeStateRefresh(string command) => false;
 }
