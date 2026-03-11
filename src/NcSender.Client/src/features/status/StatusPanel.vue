@@ -699,6 +699,7 @@ h2, h3 {
 @media (max-width: 1279px) {
   .card {
     height: 100%; /* stretch to grid row height */
+    overflow: hidden;
   }
 }
 
@@ -747,18 +748,24 @@ h2, h3 {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* Both rows should expand equally */
   .axis-row--xy,
   .axis-row--za {
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* Axis cards fill vertical space */
   .axis-display {
     flex: 1;
     justify-content: center;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* Hide landscape Z card */
