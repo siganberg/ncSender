@@ -920,7 +920,10 @@ let camera: THREE.OrthographicCamera;
 let renderer: THREE.WebGLRenderer;
 let controls: any;
 let gcodeVisualizer: GCodeVisualizer;
-let animationId: number;
+let animationId: number | null = null;
+let renderDirty = true;
+let idleFrameCount = 0;
+const IDLE_FRAMES_BEFORE_STOP = 30; // ~0.5s of convergence for smoothing
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
@@ -1148,6 +1151,8 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
       fitCameraToBounds(getGridBounds());
     }
   }
+
+  requestRender();
 };
 
 // Mouse/touch controls
@@ -1157,6 +1162,14 @@ let isRotating = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
 let pendingResizeFrame: number | null = null;
+
+const requestRender = () => {
+  renderDirty = true;
+  idleFrameCount = 0;
+  if (animationId === null) {
+    animationId = requestAnimationFrame(animate);
+  }
+};
 
 // Spindle position interpolation with exponential smoothing
 let targetSpindlePosition = { x: 0, y: 0, z: 0 };
@@ -1693,6 +1706,7 @@ const onMouseMove = (event: MouseEvent) => {
   }
 
   previousMousePosition = { x: event.clientX, y: event.clientY };
+  requestRender();
 };
 
 const onMouseUp = (event: MouseEvent | Event) => {
@@ -1811,6 +1825,7 @@ const onWheel = (event: WheelEvent) => {
     updatePointerScale();
     updateAxisLabelsScale();
   }
+  requestRender();
 };
 
 // Touch events with two-finger panning support
@@ -1933,6 +1948,7 @@ const onTouchMove = (event: TouchEvent) => {
       activeCamera.updateProjectionMatrix();
       updatePointerScale();
       updateAxisLabelsScale();
+      requestRender();
     }
 
     lastTouchDistance = distance;
@@ -2076,6 +2092,28 @@ let lastSpindleUpdateTime = 0;
 const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
 
 const animate = () => {
+  // Check if spindle is still converging (smoothing not settled)
+  const isSmoothing = cuttingPointer && (
+    Math.abs(targetSpindlePosition.x - currentSpindlePosition.x) > 0.001 ||
+    Math.abs(targetSpindlePosition.y - currentSpindlePosition.y) > 0.001 ||
+    Math.abs(targetSpindlePosition.z - currentSpindlePosition.z) > 0.001
+  );
+
+  // Keep rendering while spindle is spinning or execution is active (progressive graying)
+  const isAnimating = ((props.spindleRpmActual ?? 0) > 0) ||
+    (gcodeVisualizer?.executionActive && lastExecutedLine.value > 0);
+
+  if (!renderDirty && !isSmoothing && !isAnimating) {
+    idleFrameCount++;
+    if (idleFrameCount >= IDLE_FRAMES_BEFORE_STOP) {
+      animationId = null;
+      return;
+    }
+  } else {
+    idleFrameCount = 0;
+    renderDirty = false;
+  }
+
   animationId = requestAnimationFrame(animate);
 
   // Smoothly interpolate spindle position with exponential smoothing (no bouncing)
@@ -2537,6 +2575,7 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
 
     // Complete loading
     loadingProgress.value = 100;
+    requestRender();
     setTimeout(() => {
       isLoading.value = false;
     }, 300);
@@ -2573,6 +2612,7 @@ const handleGCodeClear = () => {
   if (fileInput.value) {
     fileInput.value.value = '';
   }
+  requestRender();
 };
 
 const toggleRapids = () => {
@@ -2580,6 +2620,7 @@ const toggleRapids = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.setRapidVisibility(showRapids.value);
   }
+  requestRender();
 };
 
 const toggleCutting = () => {
@@ -2587,6 +2628,7 @@ const toggleCutting = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
   }
+  requestRender();
 };
 
 const toggleSpindle = () => {
@@ -2948,6 +2990,7 @@ const handleResize = () => {
 
   updatePointerScale();
   updateAxisLabelsScale();
+  requestRender();
 };
 
 const updateSplitViewCameras = () => {
@@ -3163,6 +3206,7 @@ watch(() => props.theme, (newTheme) => {
   }
 
   refreshHomeIndicator();
+  requestRender();
 });
 
 // Watch for machine coordinate changes to update cutting pointer target position
@@ -3191,6 +3235,8 @@ watch(
         currentSpindlePosition.z = targetSpindlePosition.z;
         spindleInitialized = true;
       }
+
+      requestRender();
     }
   },
   { immediate: true }
@@ -4304,8 +4350,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  if (animationId) {
+  if (animationId !== null) {
     cancelAnimationFrame(animationId);
+    animationId = null;
   }
 
   if (pendingResizeFrame != null) {
@@ -4395,6 +4442,8 @@ watch(
         }
       }
     }
+
+    requestRender();
   },
   { immediate: true }
 );
@@ -4403,6 +4452,7 @@ watch(
 watch(() => [...appStore.selectedGCodeLines.value], (newLines) => {
   if (gcodeVisualizer) {
     gcodeVisualizer.highlightSelectedLines(newLines);
+    requestRender();
   }
 }, { deep: true });
 

@@ -33,7 +33,7 @@ import { useAppStore } from '@/composables/use-app-store';
 
 const JOG_LONG_PRESS_DELAY_MS = 300;
 const ACTION_LONG_PRESS_DELAY_MS = 1000;
-const POLL_INTERVAL_MS = 16;
+
 
 interface ActiveJogState {
   axis?: 'X' | 'Y' | 'Z';
@@ -61,7 +61,8 @@ interface ActiveLongPressState {
 
 class GamepadManager {
   private enabled = false;
-  private pollInterval: number | null = null;
+  private rafId: number | null = null;
+  private gamepadConnected = false;
   private jogStates = new Map<string, ActiveJogState>();
   private longPressStates = new Map<string, ActiveLongPressState>();
   private previousButtonStates = new Map<string, boolean>();
@@ -69,6 +70,27 @@ class GamepadManager {
   private previousDiagonalState = new Map<string, boolean>();
   private previousStepSize: number | null = null;
   private previousFeedRate: number | null = null;
+
+  private pollLoop = () => {
+    if (!this.gamepadConnected) {
+      this.rafId = null;
+      return;
+    }
+    this.pollGamepads();
+    this.rafId = requestAnimationFrame(this.pollLoop);
+  };
+
+  private startPolling(): void {
+    if (this.rafId !== null) return;
+    this.rafId = requestAnimationFrame(this.pollLoop);
+  }
+
+  private stopPolling(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
 
   private pollGamepads = () => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -611,6 +633,11 @@ class GamepadManager {
     });
   }
 
+  private handleConnect = () => {
+    this.gamepadConnected = true;
+    this.startPolling();
+  };
+
   private handleDisconnect = () => {
     for (const [bindingKey, longPressState] of Array.from(this.longPressStates.entries())) {
       if (!longPressState.completed) {
@@ -654,10 +681,24 @@ class GamepadManager {
 
       this.cleanupJogState(bindingKey, state);
     }
+
+    // Stop polling if no gamepads remain
+    const gamepads = navigator.getGamepads();
+    const hasGamepad = gamepads.some(gp => gp !== null);
+    if (!hasGamepad) {
+      this.gamepadConnected = false;
+    }
   };
 
   constructor() {
-    this.pollInterval = window.setInterval(this.pollGamepads, POLL_INTERVAL_MS);
+    // Only start polling if a gamepad is already connected
+    const gamepads = navigator.getGamepads();
+    if (gamepads.some(gp => gp !== null)) {
+      this.gamepadConnected = true;
+      this.startPolling();
+    }
+
+    window.addEventListener('gamepadconnected', this.handleConnect);
     window.addEventListener('gamepaddisconnected', this.handleDisconnect);
     window.addEventListener('blur', this.handleDisconnect);
 
@@ -670,10 +711,8 @@ class GamepadManager {
   }
 
   dispose(): void {
-    if (this.pollInterval !== null) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
+    this.stopPolling();
+    window.removeEventListener('gamepadconnected', this.handleConnect);
     window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
     window.removeEventListener('blur', this.handleDisconnect);
     this.handleDisconnect();
