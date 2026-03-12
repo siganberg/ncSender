@@ -260,10 +260,11 @@ public class JsPluginEngine : IJsPluginEngine
             if (item is not ObjectInstance obj)
                 continue;
 
+            var isOriginal = obj.Get("isOriginal");
             var cmd = new ProcessedCommand
             {
                 Command = obj.Get("command").AsString(),
-                IsOriginal = obj.Get("isOriginal").AsBoolean()
+                IsOriginal = isOriginal.IsBoolean() ? isOriginal.AsBoolean() : false
             };
 
             var displayCommand = obj.Get("displayCommand");
