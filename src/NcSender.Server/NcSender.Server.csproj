@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageReference Include="Jint" Version="4.*" />
+    <PackageReference Include="LibUsbDotNet" Version="3.0.167-alpha" />
 
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
@@ -33,10 +34,7 @@
       <_BuildVersion>$(Version)</_BuildVersion>
       <_BuildVersion Condition="'$(_BuildVersion)' == '' or '$(_BuildVersion)' == '1.0.0'">0.0.0-dev</_BuildVersion>
     </PropertyGroup>
-    <WriteLinesToFile
-      File="$(IntermediateOutputPath)BuildVersion.g.cs"
-      Lines="namespace NcSender.Server { internal static class BuildVersion { internal const string Value = &quot;$(_BuildVersion)&quot;%3B } }"
-      Overwrite="true" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)BuildVersion.g.cs" Lines="namespace NcSender.Server { internal static class BuildVersion { internal const string Value = &quot;$(_BuildVersion)&quot;%3B } }" Overwrite="true" />
     <ItemGroup>
       <Compile Include="$(IntermediateOutputPath)BuildVersion.g.cs" />
     </ItemGroup>

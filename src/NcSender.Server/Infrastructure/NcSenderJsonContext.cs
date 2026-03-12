@@ -137,6 +137,13 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PluginInstallFromUrlRequest))]
 [JsonSerializable(typeof(PluginExecuteToolMenuRequest))]
 [JsonSerializable(typeof(RotationRequest))]
+// Firmware flash
+[JsonSerializable(typeof(FirmwareFlashRequest))]
+[JsonSerializable(typeof(FirmwareFlashResponse))]
+// Firmware flash WS messages
+[JsonSerializable(typeof(WsFlashProgress))]
+[JsonSerializable(typeof(WsFlashMessage))]
+[JsonSerializable(typeof(WsFlashError))]
 public partial class NcSenderJsonContext : JsonSerializerContext;
 
 // SSE message types for AOT-safe serialization

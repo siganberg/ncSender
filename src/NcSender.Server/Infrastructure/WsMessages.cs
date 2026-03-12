@@ -43,3 +43,8 @@ public record WsFirmwareSettingChanged(string Id, string Value);
 
 // CommandHistoryService: command-history-appended
 public record WsCommandHistoryAppended(string Command);
+
+// FirmwareEndpoints: flash events
+public record WsFlashProgress(int Value, int Total);
+public record WsFlashMessage(string Type, string Content);
+public record WsFlashError(string Error);

@@ -1265,8 +1265,12 @@ const startFirmwareFlash = async () => {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || error.error || 'Flash failed');
+      let errorMsg = 'Flash failed';
+      try {
+        const error = await response.json();
+        errorMsg = error.message || error.error || errorMsg;
+      } catch { /* response may not be JSON */ }
+      throw new Error(errorMsg);
     }
 
     addFlashMessage('info', 'Flash command sent, waiting for response...');

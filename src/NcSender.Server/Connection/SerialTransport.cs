@@ -29,7 +29,7 @@ public class SerialTransport : IConnectionTransport
 
     public Task ConnectAsync(CancellationToken ct = default)
     {
-        Logger.Information("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
+        Logger.Debug("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
 
         _port = new SerialPort(_portPath, _baudRate)
         {
