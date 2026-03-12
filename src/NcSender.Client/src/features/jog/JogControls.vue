@@ -493,6 +493,7 @@ onBeforeUnmount(() => {
 
 .jog-controls.jog-controls-probe {
   height: unset;
+  align-items: center;
 }
 
 .jog-controls-probe .jog-grid {
@@ -500,8 +501,11 @@ onBeforeUnmount(() => {
 }
 
 .jog-controls-probe .jog-xy {
+  height: 180px !important;
+}
 
-  height: 180px !important;;
+.jog-controls-probe .jog-za-wrapper {
+  height: 180px;
 }
 
 .jog-controls-mobile .jog-xy {
