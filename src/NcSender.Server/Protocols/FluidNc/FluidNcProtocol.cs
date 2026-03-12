@@ -33,6 +33,26 @@ public class FluidNcProtocol : IProtocolHandler
         // FluidNC has no H: field in status reports — always report as homed
         // so the UI doesn't gate on "homing required". Homing is up to the user.
         state.Homed = true;
+
+        // FluidNC doesn't send [AXS:...] like grblHAL — detect axes from MPos field count
+        if (!string.IsNullOrEmpty(state.MPos))
+        {
+            var count = state.MPos.Split(',').Length;
+            var axes = count switch
+            {
+                >= 6 => "XYZABC",
+                5 => "XYZAB",
+                4 => "XYZA",
+                _ => "XYZ"
+            };
+            axes = axes[..count];
+
+            if (state.Axes != axes || state.AxisCount != count)
+            {
+                state.Axes = axes;
+                state.AxisCount = count;
+            }
+        }
     }
 
     public string NormalizePinState(string pn, int activeProbe)
