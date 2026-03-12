@@ -138,6 +138,7 @@ public class JsPluginEngine : IJsPluginEngine
                         jsOffsets.Set("x", JsValue.FromObject(engine, t.Offsets.X));
                         jsOffsets.Set("y", JsValue.FromObject(engine, t.Offsets.Y));
                         jsOffsets.Set("z", JsValue.FromObject(engine, t.Offsets.Tlo));
+                        jsOffsets.Set("tlsZ", JsValue.FromObject(engine, t.Offsets.Z));
                         jsTool.Set("offsets", jsOffsets);
                         return (JsValue)jsTool;
                     }).ToArray());

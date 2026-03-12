@@ -58,6 +58,7 @@ public class ToolOffsets
     public double Tlo { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
+    public double Z { get; set; }
 }
 
 public class ToolDimensions
