@@ -1045,6 +1045,19 @@ const applyBoundsAndWarnings = () => {
   outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 };
 
+// Delta between current WCO and the WCO used at render time.
+// Vertices are in parse-time machine coords; this delta shifts them to current machine coords.
+const getWcoDelta = () => {
+  if (!gcodeVisualizer) return { x: 0, y: 0, z: 0 };
+  const wco = gcodeVisualizer.wco || { x: 0, y: 0, z: 0 };
+  const renderWCO = gcodeVisualizer.renderWCO || { x: 0, y: 0, z: 0 };
+  return {
+    x: wco.x - renderWCO.x,
+    y: wco.y - renderWCO.y,
+    z: wco.z - renderWCO.z
+  };
+};
+
 const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' | 'split' = props.view, skipCameraFit = false) => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
@@ -1349,6 +1362,12 @@ const initThreeJS = () => {
 
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
+  gcodeVisualizer.onOobUpdated(() => {
+    showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
+    outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
+    outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
+    requestRender();
+  });
   scene.add(gcodeVisualizer.group);
   // Improve rapid color contrast in light theme
   if (props.theme === 'light') {
@@ -2135,7 +2154,9 @@ const animate = () => {
         z: -currentSpindlePosition.z
       };
       if (gcodeVisualizer && gcodeVisualizer.group) {
-        gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
+        // Combine WCO delta (parse-time vs current) with spindle view offset
+        const wcoDelta = getWcoDelta();
+        gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       }
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
@@ -2664,6 +2685,7 @@ const toggleTool = (toolNumber: number) => {
   if (tool) {
     tool.visible = !tool.visible;
     gcodeVisualizer.setToolVisibility(toolNumber, tool.visible);
+    requestRender();
   }
 };
 
@@ -3270,11 +3292,10 @@ watch(() => props.workOffset, (newOffset) => {
   // Rebuild grid to move crosshair
   rebuildGrid(newOffset, props.view, true);
 
-  // Re-render G-code when WCO changes (work zero moved)
+  // Fast path: move group position instantly, debounced OOB recolor
   if (gcodeVisualizer && gcodeVisualizer.currentGCode) {
-    gcodeVisualizer.setWCO(newOffset);
-    gcodeVisualizer.render(gcodeVisualizer.currentGCode);
-    applyBoundsAndWarnings();
+    gcodeVisualizer.updateWCO(newOffset);
+    requestRender();
   }
 }, { deep: true });
 
@@ -3283,6 +3304,12 @@ watch(() => props.workOffset, (newOffset) => {
 watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
     rebuildGrid(props.workOffset, props.view, true);
+
+    // Apply WCO change that was skipped during toolchange (TLO may have changed)
+    if (gcodeVisualizer && gcodeVisualizer.currentGCode && props.workOffset) {
+      gcodeVisualizer.updateWCO(props.workOffset);
+      requestRender();
+    }
   }
 });
 
@@ -3360,6 +3387,8 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
       fitCameraToBounds(getGridBounds());
     }
   }
+
+  requestRender();
 });
 
 // Watch for spindle view mode changes
@@ -3383,7 +3412,9 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
         y: -currentSpindlePosition.y,
         z: -currentSpindlePosition.z
       };
-      gcodeVisualizer.group.position.set(offset.x, offset.y, offset.z);
+      // Combine WCO offset with spindle view offset
+      const wcoDelta = getWcoDelta();
+      gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       // Axes must stay at WCO (crosshair) position, offset by spindle transform
@@ -3437,9 +3468,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       }
     }
   } else {
-    // Normal mode - reset all positions
+    // Normal mode - reset to WCO delta (vertices are in parse-time machine coords)
     if (gcodeVisualizer && gcodeVisualizer.group) {
-      gcodeVisualizer.group.position.set(0, 0, 0);
+      const wcoDelta = getWcoDelta();
+      gcodeVisualizer.group.position.set(wcoDelta.x, wcoDelta.y, wcoDelta.z);
     }
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
@@ -3492,6 +3524,8 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       fitCameraToBounds(getGridBounds());
     }
   }
+
+  requestRender();
 });
 
 const toggleIOSwitch = async (switchKey: string) => {

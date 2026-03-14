@@ -70,6 +70,40 @@ class GCodeVisualizer {
         }
     }
 
+    // Fast WCO update: shifts group by delta from render-time WCO, debounces OOB recolor.
+    // Vertices are in machine coords based on renderWCO. The delta shifts them to match the new WCO.
+    updateWCO(wco) {
+        if (!wco) return;
+        this.wco = { x: wco.x || 0, y: wco.y || 0, z: wco.z || 0 };
+
+        const dx = this.wco.x - this.renderWCO.x;
+        const dy = this.wco.y - this.renderWCO.y;
+        const dz = this.wco.z - this.renderWCO.z;
+
+        this.group.position.set(dx, dy, dz);
+
+        clearTimeout(this._oobDebounceTimer);
+        this._oobDebounceTimer = setTimeout(() => {
+            if (this.pathLines.length > 0) {
+                const box = new THREE.Box3().setFromObject(this.group);
+                this.bounds = {
+                    min: box.min,
+                    max: box.max,
+                    center: box.getCenter(new THREE.Vector3()),
+                    size: box.getSize(new THREE.Vector3())
+                };
+            }
+
+            this.updateOutOfBoundsColors();
+
+            if (this._onOobUpdated) this._onOobUpdated();
+        }, 50);
+    }
+
+    onOobUpdated(callback) {
+        this._onOobUpdated = callback;
+    }
+
     // Get the original color for a line based on its tool (both rapid and cutting use tool color)
     getLineColor(lineNumber) {
         const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
@@ -957,6 +991,11 @@ class GCodeVisualizer {
             const oobColor = new THREE.Color(this.moveColors.outOfBounds);
             const hiddenColor = new THREE.Color(0x000000);
 
+            // Delta from render-time WCO to current WCO (vertices are in parse-time machine coords)
+            const dx = this.wco.x - this.renderWCO.x;
+            const dy = this.wco.y - this.renderWCO.y;
+            const dz = this.wco.z - this.renderWCO.z;
+
             let anyOob = false;
             const axes = new Set();
             const dirs = new Set();
@@ -975,9 +1014,10 @@ class GCodeVisualizer {
                 const baseActive = this.getLineColor(lineNumber);
 
                 for (let i = startVertexIdx; i < endVertexIdx; i++) {
-                    const x = positions[i * 3];
-                    const y = positions[i * 3 + 1];
-                    const z = positions[i * 3 + 2];
+                    // Vertices are in parse-time machine coords; add delta for current machine coords
+                    const x = positions[i * 3] + dx;
+                    const y = positions[i * 3 + 1] + dy;
+                    const z = positions[i * 3 + 2] + dz;
 
                     let c;
                     if (isToolHidden) {
@@ -1124,6 +1164,15 @@ class GCodeVisualizer {
         const range = this.lineNumberMap.get(lineNumber);
         if (!range) return this.getLineEndDistance(lineNumber);
 
+        // Convert current machine position to parse-time machine coords
+        // Vertices are in machine coords based on renderWCO, so subtract the delta
+        const dx = this.wco.x - this.renderWCO.x;
+        const dy = this.wco.y - this.renderWCO.y;
+        const dz = this.wco.z - this.renderWCO.z;
+        const wpx = machinePos.x - dx;
+        const wpy = machinePos.y - dy;
+        const wpz = machinePos.z - dz;
+
         const { startVertexIdx, endVertexIdx } = range;
         const positions = line.geometry.attributes.position.array;
         const cumDist = line.geometry.attributes.cumulativeDistance.array;
@@ -1146,14 +1195,14 @@ class GCodeVisualizer {
 
             let t = 0;
             if (lenSq > 0) {
-                t = ((machinePos.x - p1x) * dx + (machinePos.y - p1y) * dy + (machinePos.z - p1z) * dz) / lenSq;
+                t = ((wpx - p1x) * dx + (wpy - p1y) * dy + (wpz - p1z) * dz) / lenSq;
                 t = Math.max(0, Math.min(1, t));
             }
 
             const projX = p1x + t * dx;
             const projY = p1y + t * dy;
             const projZ = p1z + t * dz;
-            const dist = (machinePos.x - projX) ** 2 + (machinePos.y - projY) ** 2 + (machinePos.z - projZ) ** 2;
+            const dist = (wpx - projX) ** 2 + (wpy - projY) ** 2 + (wpz - projZ) ** 2;
 
             if (dist < closestDist) {
                 closestDist = dist;
