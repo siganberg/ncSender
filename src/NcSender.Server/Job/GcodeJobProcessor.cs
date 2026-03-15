@@ -139,12 +139,20 @@ internal class GcodeJobProcessor
             var stripped = GcodePatterns.StripNNumber(trimmed);
             var numbered = $"N{fileLineNumber} {stripped}";
 
+            // Detect M6 — set NextXYPosition to suppress return-to-position during job execution
+            // (return-to-position is only for manual M6 invocations, not during program run)
+            var m6Parse = GcodePatterns.ParseM6Command(stripped);
+            XyPosition? nextXY = null;
+            if (m6Parse.Matched && m6Parse.ToolNumber is not null)
+                nextXY = new XyPosition { X = 0, Y = 0 };
+
             // Process through command processor
             var processorContext = new CommandProcessorContext
             {
                 MachineState = _context.State.MachineState,
                 LineNumber = fileLineNumber,
-                Filename = job.Filename
+                Filename = job.Filename,
+                NextXYPosition = nextXY
             };
 
             var result = await _commandProcessor.ProcessAsync(numbered, processorContext);
