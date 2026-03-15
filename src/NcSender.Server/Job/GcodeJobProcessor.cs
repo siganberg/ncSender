@@ -55,6 +55,8 @@ internal class GcodeJobProcessor
         _stopwatch.Start();
 
         // Send resume preamble commands before processing the file
+        // Route through command processor so M6 tool changes, plugin expansion,
+        // safety checks, and IsToolChanging flow all work correctly
         if (_resumeSequence is { Length: > 0 })
         {
             _logger.LogInformation("Sending {Count} resume preamble commands", _resumeSequence.Length);
@@ -65,11 +67,38 @@ internal class GcodeJobProcessor
                 var trimmed = cmd.Trim();
                 if (string.IsNullOrEmpty(trimmed)) continue;
 
-                await _controller.SendCommandAsync(trimmed, new CommandOptions
+                // Wait while paused
+                while (_isPaused && !_isStopped)
                 {
-                    DisplayCommand = trimmed,
+                    await Task.Delay(100);
+                }
+                if (_isStopped) break;
+
+                var processorContext = new CommandProcessorContext
+                {
+                    MachineState = _context.State.MachineState,
+                    LineNumber = 0,
+                    Filename = job.Filename,
                     Meta = new CommandMeta { SourceId = "job" }
-                });
+                };
+
+                var result = await _commandProcessor.ProcessAsync(trimmed, processorContext);
+
+                if (!result.ShouldContinue)
+                    continue;
+
+                foreach (var processedCmd in result.Commands)
+                {
+                    if (_isStopped) break;
+
+                    var options = new CommandOptions
+                    {
+                        DisplayCommand = processedCmd.DisplayCommand ?? trimmed,
+                        Meta = processedCmd.Meta ?? new CommandMeta { SourceId = "job" }
+                    };
+
+                    await _controller.SendCommandAsync(processedCmd.Command, options);
+                }
             }
         }
 
