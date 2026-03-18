@@ -1886,6 +1886,12 @@ onMounted(() => {
     if (detail?.unitsPreference) {
       unitsPreference.value = detail.unitsPreference;
     }
+    // Apply accent/gradient color changes from other clients
+    if (detail?.accentColor || detail?.gradientColor) {
+      if (detail.accentColor) accentColor.value = detail.accentColor;
+      if (detail.gradientColor) gradientColor.value = detail.gradientColor;
+      applyColors();
+    }
   });
 });
 
@@ -2467,6 +2473,7 @@ const applyColors = () => {
 };
 
 const saveColors = async () => {
+  applyColors();
   const { updateSettings } = await import('./lib/settings-store.js');
   await updateSettings({
     accentColor: accentColor.value,
