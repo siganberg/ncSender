@@ -415,6 +415,16 @@ public class PendantManager : IPendantManager
                 {
                     OtaCleanup();
                     inactivityTimer.Dispose();
+                    // Reset connection state — pendant is rebooting
+                    _pendantConnected = false;
+                    _lastSentDro = null;
+                    _lastSentSettings = null;
+                    ResetClientMeta();
+                    // Restart keep-alive immediately — it sends DRO every 1s which
+                    // the pendant treats as connection proof once it finishes rebooting.
+                    // ESP32-S3 native USB CDC stays connected across esp_restart,
+                    // so the port remains open and DRO flows when pendant comes back.
+                    StartKeepAliveTimer();
                     // Signal completion so progress drain loop exits
                     progressSignal.Release();
                     tcs.TrySetResult();
