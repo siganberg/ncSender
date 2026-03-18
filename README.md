@@ -94,14 +94,8 @@ Theme and colors
 - Toggle light/dark from the toolbar sun icon.
 - Change accent/gradient colors under Settings → Application Settings.
 
-## 🖥️ Using Headless Mode (advanced)
-Run the embedded server without the Electron window and access ncSender from any browser on your network.
-
-- **macOS**: `/Applications/ncSender.app/Contents/MacOS/ncSender --headless`
-- **Windows**: `"C:\\Program Files\\ncSender\\ncSender.exe" --headless`
-- **Linux/Raspberry Pi (AppImage)**: `./ncSender-*.AppImage --headless` or `ncSender --headless` if installed in PATH
-
-Then open `http://<this-computer-ip>:8090` in a browser (replace with your machine's LAN IP). The port is configurable in Settings (Remote Control Port) and requires an app restart to take effect.
+## 🖥️ Headless Mode
+For instructions on running ncSender in headless mode, see the [Headless Mode wiki page](https://github.com/siganberg/ncSender/wiki/Headless-Mode).
 
 ## 💾 Data & Settings
 ncSender stores its data per‑platform:
