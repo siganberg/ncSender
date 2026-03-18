@@ -9,6 +9,9 @@ public class MachineState
     public bool IsProbing { get; set; }
     public int? HomingCycle { get; set; }
     public double MaxFeedrate { get; set; }
+    public double MaxFeedrateX { get; set; }
+    public double MaxFeedrateY { get; set; }
+    public double MaxFeedrateZ { get; set; }
 
     // GRBL status report fields
     public string Status { get; set; } = "Unknown";

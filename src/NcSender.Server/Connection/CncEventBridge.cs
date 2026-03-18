@@ -77,9 +77,13 @@ public class CncEventBridge
 
             double? maxX = firmware.Settings.TryGetValue("110", out var s110) && double.TryParse(s110.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mx) ? mx : null;
             double? maxY = firmware.Settings.TryGetValue("111", out var s111) && double.TryParse(s111.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var my) ? my : null;
+            double? maxZ = firmware.Settings.TryGetValue("112", out var s112) && double.TryParse(s112.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mz) ? mz : null;
             var validRates = new[] { maxX, maxY }.Where(v => v is > 0).ToArray();
             if (validRates.Length > 0)
                 _context.State.MachineState.MaxFeedrate = validRates.Min()!.Value;
+            if (maxX is > 0) _context.State.MachineState.MaxFeedrateX = maxX.Value;
+            if (maxY is > 0) _context.State.MachineState.MaxFeedrateY = maxY.Value;
+            if (maxZ is > 0) _context.State.MachineState.MaxFeedrateZ = maxZ.Value;
         }
         catch (Exception ex)
         {
@@ -223,15 +227,19 @@ public class CncEventBridge
                             _logger.LogInformation("Initialized machineState.HomingCycle to {Value} (from $22={Raw})", val, setting22.Value);
                         }
 
-                        // $110, $111 = max feedrates for X, Y (mm/min)
+                        // $110, $111, $112 = max feedrates for X, Y, Z (mm/min)
                         double? maxX = firmware.Settings.TryGetValue("110", out var s110) && double.TryParse(s110.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mx) ? mx : null;
                         double? maxY = firmware.Settings.TryGetValue("111", out var s111) && double.TryParse(s111.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var my) ? my : null;
+                        double? maxZ = firmware.Settings.TryGetValue("112", out var s112) && double.TryParse(s112.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mz) ? mz : null;
                         var validRates = new[] { maxX, maxY }.Where(v => v is > 0).ToArray();
                         if (validRates.Length > 0)
                         {
                             state.MachineState.MaxFeedrate = validRates.Min()!.Value;
                             _logger.LogInformation("Initialized machineState.MaxFeedrate to {Value} (from $110={X}, $111={Y})", state.MachineState.MaxFeedrate, maxX, maxY);
                         }
+                        if (maxX is > 0) state.MachineState.MaxFeedrateX = maxX.Value;
+                        if (maxY is > 0) state.MachineState.MaxFeedrateY = maxY.Value;
+                        if (maxZ is > 0) state.MachineState.MaxFeedrateZ = maxZ.Value;
 
                         // Broadcast key settings so client updates reactively
                         foreach (var id in new[] { "32", "130", "131", "132" })
@@ -355,18 +363,22 @@ public class CncEventBridge
                     NcSenderJsonContext.Default.WsFirmwareSettingChanged);
             }
 
-            // $110/$111 → update machineState.maxFeedrate
-            if (id is "110" or "111")
+            // $110/$111/$112 → update machineState.maxFeedrate (per-axis)
+            if (id is "110" or "111" or "112")
             {
                 double? maxX = firmware.Settings.TryGetValue("110", out var s110) && double.TryParse(s110.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mx) ? mx : null;
                 double? maxY = firmware.Settings.TryGetValue("111", out var s111) && double.TryParse(s111.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var my) ? my : null;
+                double? maxZ = firmware.Settings.TryGetValue("112", out var s112z) && double.TryParse(s112z.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mz) ? mz : null;
                 var validRates = new[] { maxX, maxY }.Where(v => v is > 0).ToArray();
                 if (validRates.Length > 0)
                 {
                     _context.State.MachineState.MaxFeedrate = validRates.Min()!.Value;
                     _logger.LogInformation("Updated machineState.MaxFeedrate to {Value}", _context.State.MachineState.MaxFeedrate);
-                    BroadcastStateDelta();
                 }
+                if (maxX is > 0) _context.State.MachineState.MaxFeedrateX = maxX.Value;
+                if (maxY is > 0) _context.State.MachineState.MaxFeedrateY = maxY.Value;
+                if (maxZ is > 0) _context.State.MachineState.MaxFeedrateZ = maxZ.Value;
+                BroadcastStateDelta();
             }
 
             // Check if setting requires restart (halDetails[7] === '1')

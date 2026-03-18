@@ -29,6 +29,7 @@ public class PendantManager : IPendantManager
     private Action<string>? _otaResponseHandler;
     private bool _otaInProgress;
     private PendantSettingsSnapshot? _lastSentSettings;
+    private PendantDroSnapshot? _lastSentDro;
 
     // Dual-connection tracking (scanner manages discovery, we manage usage)
     private PendantPortScanner? _scanner;
@@ -81,7 +82,7 @@ public class PendantManager : IPendantManager
     {
         if (_serialHandler?.IsConnected == true && _pendantConnected && !_otaInProgress)
         {
-            _ = SendCompactDroAsync();
+            _ = SendDroAsync(full: false);
         }
     }
 
@@ -832,7 +833,7 @@ public class PendantManager : IPendantManager
             // Always send DRO if port is open — pendant treats DRO as connection proof
             if (_serialHandler?.IsConnected == true)
             {
-                _ = SendCompactDroAsync();
+                _ = SendDroAsync(full: false);
 
                 // Retry request:metadata until pendant responds — first attempt may be
                 // dropped by dongle due to back-to-back ESP-NOW sends
@@ -882,6 +883,13 @@ public class PendantManager : IPendantManager
             if (data == "P")
             {
                 _ = HandlePingAsync();
+                return;
+            }
+
+            // Full DRO request (like grblHAL's 0x87)
+            if (data == "F")
+            {
+                _ = SendDroAsync(full: true);
                 return;
             }
 
@@ -1036,14 +1044,15 @@ public class PendantManager : IPendantManager
 
             // Reset dedup state
             _lastSentSettings = null;
+            _lastSentDro = null;
 
-            // Send initial DRO + settings after brief delay to avoid back-to-back ESP-NOW drops
+            // Send initial full DRO + settings after brief delay to avoid back-to-back ESP-NOW drops
             _serverContext.UpdateSenderStatus();
             await Task.Delay(100);
 
             if (_serialHandler?.IsConnected == true)
             {
-                await SendCompactDroAsync();
+                await SendDroAsync(full: true);
                 SendSettings(force: true);
 
                 // Request metadata (scanner already classified the port via $ID)
@@ -1055,8 +1064,8 @@ public class PendantManager : IPendantManager
         }
         else
         {
-            // Already connected — send DRO only (no K, avoids back-to-back ESP-NOW drops)
-            await SendCompactDroAsync();
+            // Already connected — send delta DRO (no K, avoids back-to-back ESP-NOW drops)
+            await SendDroAsync(full: false);
         }
     }
 
@@ -1346,75 +1355,148 @@ public class PendantManager : IPendantManager
 
     #endregion
 
-    #region Compact DRO Broadcasting
+    #region Full/Delta DRO Broadcasting
 
-    private async Task SendCompactDroAsync()
+    private async Task SendDroAsync(bool full)
     {
         if (_serialHandler is not { IsConnected: true } || _otaInProgress) return;
 
         var state = _serverContext.State;
         var ms = state.MachineState;
 
-        var sb = new StringBuilder(128);
-        sb.Append('$');
+        // Build current snapshot
+        var wpos = ComputeWorkPosition(ms);
+        var overrides = $"{ms.FeedrateOverride:F0},{ms.RapidOverride:F0},{ms.SpindleOverride:F0}";
+        var feedRate = Math.Round(ms.FeedRate);
+        var spindleRpm = Math.Round(ms.SpindleRpmActual);
+        var connected = ms.Connected;
+        var homed = ms.Homed;
+        var alarmCode = ms.AlarmCode.HasValue && ms.Status == "Alarm" ? ms.AlarmCode : null;
+        var job = state.JobLoaded;
+        var jobProgress = job is { Status: "running", TotalLines: > 0 } ? $"{job.CurrentLine}/{job.TotalLines}" : null;
+        var jobStatus = job?.Status;
+        var wco = ms.WCO ?? "0,0,0";
+        var workspace = ms.Workspace ?? "G54";
+        var maxFeedX = ms.MaxFeedrateX;
+        var maxFeedY = ms.MaxFeedrateY;
+        var maxFeedZ = ms.MaxFeedrateZ;
 
-        // Status
-        sb.Append(ms.Status ?? "Unknown");
+        var current = new PendantDroSnapshot(
+            Status: ms.Status ?? "Unknown",
+            WPos: wpos,
+            Overrides: overrides,
+            FeedRate: feedRate,
+            SpindleRpm: spindleRpm,
+            Connected: connected,
+            Homed: homed,
+            AlarmCode: alarmCode,
+            JobProgress: jobProgress,
+            JobStatus: jobStatus,
+            WCO: wco,
+            Workspace: workspace,
+            MaxFeedX: maxFeedX,
+            MaxFeedY: maxFeedY,
+            MaxFeedZ: maxFeedZ
+        );
 
-        // Work position = MPos - WCO
-        if (!string.IsNullOrEmpty(ms.MPos))
+        var prev = _lastSentDro;
+        var isFull = full || prev is null;
+
+        var sb = new StringBuilder(180);
+        sb.Append(isFull ? "$!" : "$");
+
+        // Status — always included (heartbeat)
+        sb.Append(current.Status);
+
+        if (isFull || current.WPos != prev!.WPos)
+            sb.Append($"|P:{current.WPos}");
+
+        if (isFull || current.Overrides != prev!.Overrides)
+            sb.Append($"|O:{current.Overrides}");
+
+        if (isFull || current.FeedRate != prev!.FeedRate)
         {
-            var mposParts = ms.MPos.Split(',');
-            var wcoParts = (ms.WCO ?? "0,0,0").Split(',');
-            sb.Append("|P:");
-            for (var i = 0; i < mposParts.Length; i++)
-            {
-                if (i > 0) sb.Append(',');
-                var mVal = double.TryParse(mposParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var m) ? m : 0;
-                var wVal = i < wcoParts.Length && double.TryParse(wcoParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ? w : 0;
-                sb.Append((mVal - wVal).ToString("F3", CultureInfo.InvariantCulture));
-            }
+            if (isFull || current.FeedRate > 0)
+                sb.Append($"|F:{current.FeedRate}");
         }
 
-        // Overrides — always send (ESP-NOW is unreliable)
-        sb.Append($"|O:{ms.FeedrateOverride:F0},{ms.RapidOverride:F0},{ms.SpindleOverride:F0}");
+        if (isFull || current.SpindleRpm != prev!.SpindleRpm)
+        {
+            if (isFull || current.SpindleRpm > 0)
+                sb.Append($"|R:{current.SpindleRpm}");
+        }
 
-        // Feed rate
-        if (ms.FeedRate > 0)
-            sb.Append($"|F:{Math.Round(ms.FeedRate)}");
-
-        // Spindle RPM
-        if (ms.SpindleRpmActual > 0)
-            sb.Append($"|R:{Math.Round(ms.SpindleRpmActual)}");
-
-        // Connected flag
-        if (ms.Connected)
+        // Connected/Homed — always send in full; in delta always send (sticky flags need reset signal)
+        if (current.Connected)
             sb.Append("|C");
-
-        // Homed flag
-        if (ms.Homed)
+        if (current.Homed)
             sb.Append("|H");
 
-        // Alarm code
-        if (ms.AlarmCode.HasValue && ms.Status == "Alarm")
-            sb.Append($"|A:{ms.AlarmCode}");
-
-        // Job progress
-        var job = state.JobLoaded;
-        if (job is { Status: "running", TotalLines: > 0 })
+        if (isFull || current.AlarmCode != prev!.AlarmCode)
         {
-            sb.Append($"|J:{job.CurrentLine}/{job.TotalLines}");
+            if (current.AlarmCode.HasValue)
+                sb.Append($"|A:{current.AlarmCode}");
         }
 
-        // Job status
-        if (job?.Status is not null)
-            sb.Append($"|D:{job.Status}");
+        if (isFull || current.JobProgress != prev!.JobProgress)
+        {
+            if (current.JobProgress is not null)
+                sb.Append($"|J:{current.JobProgress}");
+        }
 
-        // WCO — always send
-        sb.Append($"|W:{ms.WCO ?? "0,0,0"}");
+        if (isFull || current.JobStatus != prev!.JobStatus)
+        {
+            if (current.JobStatus is not null)
+                sb.Append($"|D:{current.JobStatus}");
+        }
 
+        // WCO — always send (ESP-NOW unreliable)
+        sb.Append($"|W:{current.WCO}");
+
+        // Workspace (G54/G55/etc.)
+        if (isFull || current.Workspace != prev!.Workspace)
+            sb.Append($"|G:{current.Workspace}");
+
+        // Per-axis max feedrate
+        if (isFull || current.MaxFeedX != prev!.MaxFeedX || current.MaxFeedY != prev!.MaxFeedY || current.MaxFeedZ != prev!.MaxFeedZ)
+            sb.Append($"|M:{current.MaxFeedX:F0},{current.MaxFeedY:F0},{current.MaxFeedZ:F0}");
+
+        _lastSentDro = current;
         await _serialHandler.SendRawAsync(sb.ToString());
     }
+
+    private static string ComputeWorkPosition(MachineState ms)
+    {
+        var mposParts = (ms.MPos ?? "0,0,0").Split(',');
+        var wcoParts = (ms.WCO ?? "0,0,0").Split(',');
+        var sb = new StringBuilder(40);
+        for (var i = 0; i < mposParts.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var mVal = double.TryParse(mposParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var m) ? m : 0;
+            var wVal = i < wcoParts.Length && double.TryParse(wcoParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ? w : 0;
+            sb.Append((mVal - wVal).ToString("F3", CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
+    }
+
+    private record PendantDroSnapshot(
+        string Status,
+        string WPos,
+        string Overrides,
+        double FeedRate,
+        double SpindleRpm,
+        bool Connected,
+        bool Homed,
+        int? AlarmCode,
+        string? JobProgress,
+        string? JobStatus,
+        string WCO,
+        string Workspace,
+        double MaxFeedX,
+        double MaxFeedY,
+        double MaxFeedZ
+    );
 
     #endregion
 
@@ -1430,10 +1512,8 @@ public class PendantManager : IPendantManager
         if (_serialHandler is not { IsConnected: true } || !_pendantConnected)
             return;
 
-        var ms = _serverContext.State.MachineState;
         var theme = _settingsManager.GetSetting<string>("theme") ?? "dark";
         var snapshot = new PendantSettingsSnapshot(
-            MaxFeedrate: ms.MaxFeedrate,
             Theme: theme,
             AccentColor: _settingsManager.GetSetting<string>("accentColor") ?? _settingsManager.GetSetting<string>("primaryColor"),
             GradientColor: _settingsManager.GetSetting<string>("gradientColor"),
@@ -1446,7 +1526,6 @@ public class PendantManager : IPendantManager
         _lastSentSettings = snapshot;
 
         var msg = new PendantSettingsMsg("settings-changed", new PendantSettingsData(
-            snapshot.MaxFeedrate,
             snapshot.Theme,
             snapshot.AccentColor,
             snapshot.GradientColor,
@@ -1457,7 +1536,6 @@ public class PendantManager : IPendantManager
     }
 
     private record PendantSettingsSnapshot(
-        double MaxFeedrate,
         string? Theme,
         string? AccentColor,
         string? GradientColor,

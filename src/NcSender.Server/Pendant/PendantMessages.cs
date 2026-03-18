@@ -10,7 +10,7 @@ public record PendantFlashInitMsg(string Type, int Size);
 public record PendantFlashDataMsg(string Type, string Data);
 public record PendantWifiConfigMsg(string Type, string Ssid, string Password, string Ip, int Port);
 public record PendantSettingsMsg(string Type, PendantSettingsData Data);
-public record PendantSettingsData(double MaxFeedrate, string? Theme, string? AccentColor, string? GradientColor, bool DarkMode);
+public record PendantSettingsData(string? Theme, string? AccentColor, string? GradientColor, bool DarkMode);
 public record PendantClientMeta(string ClientId, string Ip, bool IsLocal, string Product, string? DeviceId, string? Version, bool Licensed);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
