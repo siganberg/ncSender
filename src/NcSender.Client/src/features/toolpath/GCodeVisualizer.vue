@@ -1504,6 +1504,9 @@ let touchEndTime = 0; // Track when touch ended to ignore synthetic click events
 
 // Handle click on canvas to select toolpath segment
 const onCanvasClick = (event: MouseEvent) => {
+  // No segment selection while a job is running
+  if (isJobRunning.value) return;
+
   // Skip synthetic click events from touch interactions (touch handlers already processed)
   // Synthetic clicks arrive within ~300ms after touchend
   if (Date.now() - touchEndTime < 500) {
@@ -1860,7 +1863,10 @@ let lastTwoFingerCenter = { x: 0, y: 0 };
 let touchStartPosition = { x: 0, y: 0 };
 let wasMultiTouchGesture = false; // Track if multi-touch gesture occurred
 
+let touchStartedOnCanvas = false;
+
 const onTouchStart = (event: TouchEvent) => {
+  touchStartedOnCanvas = true;
   if (event.touches.length === 1) {
     // Only start single-finger tracking if no multi-touch gesture is active
     if (!wasMultiTouchGesture) {
@@ -1985,6 +1991,10 @@ const onTouchEnd = (event: TouchEvent) => {
   // Record touch end time to ignore synthetic click events
   touchEndTime = Date.now();
 
+  // Ignore if touch didn't start on the canvas (e.g., jog buttons below visualizer)
+  if (!touchStartedOnCanvas) return;
+  if (event.touches.length === 0) touchStartedOnCanvas = false;
+
   // Reset multi-touch flag when all fingers are lifted
   if (event.touches.length === 0) {
     const wasMultiTouch = wasMultiTouchGesture;
@@ -2010,6 +2020,13 @@ const onTouchEnd = (event: TouchEvent) => {
     }
   } else {
     // Still have fingers down, don't process tap yet
+    onMouseUp();
+    lastTouchDistance = 0;
+    return;
+  }
+
+  // No segment selection while a job is running
+  if (isJobRunning.value) {
     onMouseUp();
     lastTouchDistance = 0;
     return;
