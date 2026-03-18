@@ -42,6 +42,19 @@ public static class GcodeAnalysisEndpoints
             var targetLine = Math.Max(1, effectiveLine - 1);
             var state = analyzer.AnalyzeToLine(content, targetLine);
 
+            // If the start line itself is a tool change, use the NEW tool in the preamble
+            if (effectiveLine <= lines.Length)
+            {
+                var startLineWords = GcodeStateAnalyzer.ParseWords(StripLineComments(lines[effectiveLine - 1]));
+                var hasToolChange = startLineWords.Any(w => w.Letter == 'M' && (int)w.Value == 6);
+                if (hasToolChange)
+                {
+                    var toolWord = startLineWords.Find(w => w.Letter == 'T');
+                    if (toolWord is not null)
+                        state.Tool = (int)toolWord.Value;
+                }
+            }
+
             var resumeOptions = new StartFromLineRequest { StartLine = effectiveLine, SafeZHeight = settings.GetSetting<double>("safeZHeight", -5) };
             var resumeSequence = analyzer.GenerateResumeSequence(state, resumeOptions);
 
@@ -92,6 +105,20 @@ public static class GcodeAnalysisEndpoints
                 // Analyze to effectiveLine - 1 to get state BEFORE the start line
                 var targetLine = Math.Max(1, effectiveLine - 1);
                 var state = analyzer.AnalyzeToLine(content, targetLine);
+
+                // If the start line itself is a tool change, use the NEW tool
+                if (effectiveLine <= lines.Length)
+                {
+                    var startLineWords = GcodeStateAnalyzer.ParseWords(StripLineComments(lines[effectiveLine - 1]));
+                    var hasToolChange = startLineWords.Any(w => w.Letter == 'M' && (int)w.Value == 6);
+                    if (hasToolChange)
+                    {
+                        var toolWord = startLineWords.Find(w => w.Letter == 'T');
+                        if (toolWord is not null)
+                            state.Tool = (int)toolWord.Value;
+                    }
+                }
+
                 var resumeSequence = analyzer.GenerateResumeSequence(state, request);
 
                 await jobManager.StartJobFromLineAsync(effectiveLine, resumeSequence.ToArray());
@@ -113,5 +140,21 @@ public static class GcodeAnalysisEndpoints
                 return Results.BadRequest(new StartFromLineResponse { Success = false, Error = ex.Message });
             }
         });
+    }
+
+    private static string StripLineComments(string line)
+    {
+        var result = line.Trim();
+        while (true)
+        {
+            var start = result.IndexOf('(');
+            if (start < 0) break;
+            var end = result.IndexOf(')', start);
+            if (end < 0) break;
+            result = result[..start] + result[(end + 1)..];
+        }
+        var semiIdx = result.IndexOf(';');
+        if (semiIdx >= 0) result = result[..semiIdx];
+        return result.Trim();
     }
 }

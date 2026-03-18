@@ -79,7 +79,7 @@ internal class GcodeJobProcessor
                     MachineState = _context.State.MachineState,
                     LineNumber = 0,
                     Filename = job.Filename,
-                    Meta = new CommandMeta { SourceId = "job" }
+                    Meta = new CommandMeta { SourceId = "resume" }
                 };
 
                 var result = await _commandProcessor.ProcessAsync(trimmed, processorContext);
@@ -94,7 +94,7 @@ internal class GcodeJobProcessor
                     var options = new CommandOptions
                     {
                         DisplayCommand = processedCmd.DisplayCommand ?? trimmed,
-                        Meta = processedCmd.Meta ?? new CommandMeta { SourceId = "job" }
+                        Meta = processedCmd.Meta ?? new CommandMeta { SourceId = "resume" }
                     };
 
                     await _controller.SendCommandAsync(processedCmd.Command, options);

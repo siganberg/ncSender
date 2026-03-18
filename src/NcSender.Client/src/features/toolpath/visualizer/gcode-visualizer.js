@@ -922,6 +922,17 @@ class GCodeVisualizer {
             // Skip lines with no vertices
             if (startVertexIdx >= endVertexIdx) continue;
 
+            // Skip hidden tools
+            const toolNum = this.lineToolNumber.get(lineNumber);
+            if (toolNum !== undefined && this.toolVisibility.get(toolNum) === false) continue;
+
+            // Skip hidden rapids
+            const moveType = this.lineMoveType.get(lineNumber) || 'cutting';
+            if (moveType === 'rapid' && !this.showRapid) continue;
+
+            // Skip completed (grayed out) lines
+            if (this.completedLines.has(lineNumber)) continue;
+
             // Check distance to each segment in this line
             for (let i = startVertexIdx; i < endVertexIdx - 1; i++) {
                 const p1 = projectToScreen(

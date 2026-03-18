@@ -58,10 +58,18 @@ public static class ResumeSequenceGenerator
                 commands.Add($"M64 P{port}");
         }
 
-        // Z movement
-        var approachZ = state.PositionZ + options.ApproachHeight;
-        commands.Add($"G0 Z{Fmt(approachZ)}");
-        commands.Add($"G1 Z{Fmt(state.PositionZ)} F{Fmt0(options.PlungeFeedRate)}");
+        // Z movement — if state Z is at or above 0 (retract height), just rapid there
+        // directly. Only add approach height when plunging into material (negative Z).
+        if (state.PositionZ >= 0)
+        {
+            commands.Add($"G0 Z{Fmt(state.PositionZ)}");
+        }
+        else
+        {
+            var approachZ = state.PositionZ + options.ApproachHeight;
+            commands.Add($"G0 Z{Fmt(approachZ)}");
+            commands.Add($"G1 Z{Fmt(state.PositionZ)} F{Fmt0(options.PlungeFeedRate)}");
+        }
 
         // Restore actual positioning mode after all positioning moves
         if (state.PositioningMode != "G90")

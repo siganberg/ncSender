@@ -4325,6 +4325,7 @@ onMounted(async () => {
       if (gcodeVisualizer) {
         gcodeVisualizer.setExecutionActive(false);
         gcodeVisualizer.resetCompletedLines();
+        requestRender();
       }
       markedLines.clear();
     }
