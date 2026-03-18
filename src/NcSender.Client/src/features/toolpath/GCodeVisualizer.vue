@@ -1363,6 +1363,12 @@ const initThreeJS = () => {
   // G-code visualizer
   gcodeVisualizer = new GCodeVisualizer();
   gcodeVisualizer.onOobUpdated(() => {
+    // Only show OOB warning when a file is actually loaded — stale debounce
+    // timers can fire after file unload with leftover hasOutOfBounds state
+    if (!hasFile.value) {
+      showOutOfBoundsWarning.value = false;
+      return;
+    }
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
     outOfBoundsAxes.value = gcodeVisualizer.getOutOfBoundsAxes();
     outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
