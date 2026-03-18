@@ -420,11 +420,32 @@ public class PendantManager : IPendantManager
                     _lastSentDro = null;
                     _lastSentSettings = null;
                     ResetClientMeta();
-                    // Restart keep-alive immediately — it sends DRO every 1s which
-                    // the pendant treats as connection proof once it finishes rebooting.
-                    // ESP32-S3 native USB CDC stays connected across esp_restart,
-                    // so the port remains open and DRO flows when pendant comes back.
-                    StartKeepAliveTimer();
+                    StopKeepAliveTimer();
+
+                    // Close the handler and release the port from the scanner.
+                    // ESP32-S3 native USB CDC stays enumerated across esp_restart,
+                    // but the macOS serial fd goes stale — reads/writes silently fail.
+                    // Closing forces the scanner to re-open the port fresh after reboot.
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(500);
+                            var port = handler.ConnectedPort;
+                            DetachActiveHandler();
+                            _serialHandler = null;
+                            _pendantUsbHandler = null;
+                            await handler.DisconnectAsync();
+                            if (port is not null)
+                                _scanner?.ReleaseDevice(port);
+                            _logger.LogInformation("OTA: closed handler, scanner will re-discover port");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "OTA: error closing handler after flash");
+                        }
+                    });
+
                     // Signal completion so progress drain loop exits
                     progressSignal.Release();
                     tcs.TrySetResult();
@@ -491,8 +512,8 @@ public class PendantManager : IPendantManager
         }
         finally
         {
-            // Don't close the OTA handler — it's either the pendant USB handler
-            // (managed by scanner, must stay open) or the main handler.
+            // Handler is closed asynchronously in the $OTA:OK path (background task).
+            // On error, handler stays open for scanner to manage.
         }
     }
 
