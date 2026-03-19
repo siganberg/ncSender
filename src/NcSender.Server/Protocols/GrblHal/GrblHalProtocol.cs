@@ -36,7 +36,7 @@ public partial class GrblHalProtocol : IProtocolHandler
         return null;
     }
 
-    public string NormalizePinState(string pn, int activeProbe)
+    public string NormalizePinState(string pn, int activeProbe, int tlsIndex = 0, int probeCount = 0)
     {
         if (!pn.Contains('P'))
             return pn;
@@ -77,6 +77,12 @@ public partial class GrblHalProtocol : IProtocolHandler
         if (line.StartsWith("[PINSTATE:DOUT|") && line.EndsWith(']'))
         {
             ParsePinState(line, state, ref stateChanged);
+            return true;
+        }
+
+        if (line.StartsWith("[NEWOPT:") && line.EndsWith(']'))
+        {
+            ParseNewOpt(line, state, ref stateChanged);
             return true;
         }
 
@@ -144,6 +150,20 @@ public partial class GrblHalProtocol : IProtocolHandler
         {
             state.OutputPins = outputPins;
             changed = true;
+        }
+    }
+
+    private static void ParseNewOpt(string data, MachineState state, ref bool changed)
+    {
+        // [NEWOPT:ENUMS,RT+,HOME,PROBES=3,ES,EXPR,TC,SED]
+        var content = data[8..^1]; // strip [NEWOPT: and ]
+        foreach (var part in content.Split(','))
+        {
+            if (part.StartsWith("PROBES=", StringComparison.OrdinalIgnoreCase) && state.ProbeCount != 2)
+            {
+                state.ProbeCount = 2;
+                changed = true;
+            }
         }
     }
 

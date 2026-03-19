@@ -55,7 +55,7 @@ public class FluidNcProtocol : IProtocolHandler
         }
     }
 
-    public string NormalizePinState(string pn, int activeProbe)
+    public string NormalizePinState(string pn, int activeProbe, int tlsIndex = 0, int probeCount = 0)
     {
         // FluidNC reports Pn:P (probe) and Pn:T (TLS) natively — no normalization needed
         return pn;

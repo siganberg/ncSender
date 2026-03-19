@@ -13,6 +13,7 @@ public class PluginCommandProcessor : ICommandProcessor
     private readonly IToolService _toolService;
     private readonly IServerContext _serverContext;
     private readonly IBroadcaster _broadcaster;
+    private readonly ISettingsManager _settingsManager;
     private readonly ILogger<PluginCommandProcessor> _logger;
 
     public PluginCommandProcessor(
@@ -21,6 +22,7 @@ public class PluginCommandProcessor : ICommandProcessor
         IToolService toolService,
         IServerContext serverContext,
         IBroadcaster broadcaster,
+        ISettingsManager settingsManager,
         ILogger<PluginCommandProcessor> logger)
     {
         _inner = inner;
@@ -28,6 +30,7 @@ public class PluginCommandProcessor : ICommandProcessor
         _toolService = toolService;
         _serverContext = serverContext;
         _broadcaster = broadcaster;
+        _settingsManager = settingsManager;
         _logger = logger;
     }
 
@@ -162,6 +165,31 @@ public class PluginCommandProcessor : ICommandProcessor
 
         if (isTLS)
         {
+            const int probeIdx = 0;
+            var tlsIdx = _settingsManager.GetSetting<int>("tlsIndex", 0);
+
+            // Switch to TLS probe source before TLS commands
+            if (tlsIdx != probeIdx)
+            {
+                finalCommands.Insert(0, new ProcessedCommand
+                {
+                    Command = $"G65P5Q{tlsIdx}",
+                    DisplayCommand = $"G65P5Q{tlsIdx} (switch to TLS probe source)",
+                    IsOriginal = false
+                });
+            }
+
+            // Restore probe source after TLS
+            if (tlsIdx != probeIdx)
+            {
+                finalCommands.Add(new ProcessedCommand
+                {
+                    Command = $"G65P5Q{probeIdx}",
+                    DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
+                    IsOriginal = false
+                });
+            }
+
             if (tlsReturnPosition is not null)
             {
                 var returnCmd = string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 X{0:F3} Y{1:F3}", tlsReturnPosition.X, tlsReturnPosition.Y);

@@ -127,6 +127,7 @@ public static class ServerBuilder
                 sp.GetRequiredService<IToolService>(),
                 sp.GetRequiredService<IServerContext>(),
                 sp.GetRequiredService<IBroadcaster>(),
+                sp.GetRequiredService<ISettingsManager>(),
                 sp.GetRequiredService<ILogger<NcSender.Server.CommandProcessor.PluginCommandProcessor>>()
             ));
         builder.Services.AddSingleton<IPluginManager, PluginManager>();

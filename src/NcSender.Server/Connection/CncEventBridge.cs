@@ -117,6 +117,7 @@ public class CncEventBridge
         state.MachineState.RapidOverride = status.RapidOverride;
         state.MachineState.SpindleOverride = status.SpindleOverride;
         state.MachineState.ActiveProbe = status.ActiveProbe;
+        state.MachineState.ProbeCount = status.ProbeCount;
         state.MachineState.Pn = status.Pn;
         state.MachineState.FeedRate = status.FeedRate;
         state.MachineState.SpindleRpmTarget = status.SpindleRpmTarget;

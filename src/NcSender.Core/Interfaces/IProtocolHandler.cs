@@ -41,7 +41,7 @@ public interface IProtocolHandler
     /// Normalize the Pn (pin state) string after status report parsing.
     /// Allows protocol-specific mapping of probe/TLS indicators.
     /// </summary>
-    string NormalizePinState(string pn, int activeProbe);
+    string NormalizePinState(string pn, int activeProbe, int tlsIndex = 0, int probeCount = 0);
 
     /// <summary>
     /// Whether this protocol supports dynamic setting enumeration ($EG, $ES, $ESH).

@@ -350,8 +350,14 @@
           </div>
 
           <div class="settings-section">
-            <h3 class="section-title">Auxiliary Outputs</h3>
+            <h3 class="section-title">Auxiliary I/O</h3>
             <div class="settings-group">
+              <div class="setting-item">
+                <label class="setting-label">TLS Source</label>
+                <select class="setting-select" v-model.number="tlsIndex" @change="saveTlsIndex">
+                  <option v-for="i in probeOptionCount" :key="i - 1" :value="i - 1">{{ i - 1 }}</option>
+                </select>
+              </div>
             </div>
             <div class="io-switches-table-container">
               <table class="io-switches-table">
@@ -1527,6 +1533,17 @@ const getOffCommand = (onCommand: string): string => {
     return `M65 ${m64Match[1]}`;
   }
   return '';
+};
+
+// TLS index assignment (probe is always 0)
+const tlsIndex = ref<number>(initialSettings?.tlsIndex ?? 0);
+
+// At least 1 option (0); more if PROBES=N reported by firmware
+const probeOptionCount = computed(() => Math.max(1, store.status.probeCount));
+
+const saveTlsIndex = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({ tlsIndex: tlsIndex.value });
 };
 
 // Auxiliary Outputs settings (formerly I/O Switches)

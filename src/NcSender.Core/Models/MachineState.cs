@@ -26,6 +26,7 @@ public class MachineState
     public double RapidOverride { get; set; } = 100;
     public double SpindleOverride { get; set; } = 100;
     public int ActiveProbe { get; set; }
+    public int ProbeCount { get; set; }
 
     // GRBL protocol fields — preserve exact casing for V1 client compatibility
     [JsonPropertyName("Pn")]
