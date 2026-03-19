@@ -2777,8 +2777,10 @@ const openStartFromLineDialog = (lineNumber?: number) => {
   // Don't open dialog if start from line is not allowed (e.g., door open)
   if (!canStartFromLine.value) return;
 
-  // Use provided lineNumber, or jobLoaded.currentLine from server state, or default to 1
-  const suggestedLine = lineNumber ?? (props.jobLoaded?.currentLine || 0);
+  // Use provided lineNumber, or selected segment, or jobLoaded.currentLine from server state, or default to 1
+  const selectedLines = appStore.selectedGCodeLines.value;
+  const selectedLine = selectedLines.size === 1 ? [...selectedLines][0] : 0;
+  const suggestedLine = lineNumber ?? (selectedLine || (props.jobLoaded?.currentLine || 0));
   startFromLineInitial.value = suggestedLine > 0 ? suggestedLine : 1;
   showStartFromLineDialog.value = true;
 };
