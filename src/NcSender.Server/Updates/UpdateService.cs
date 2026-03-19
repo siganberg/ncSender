@@ -10,7 +10,7 @@ public class UpdateService : IUpdateService
 {
     private readonly ILogger<UpdateService> _logger;
     private readonly ISettingsManager _settings;
-    private const string GitHubReleasesUrl = "https://api.github.com/repos/siganberg/ncsenderpro.releases/releases";
+    private const string GitHubReleasesUrl = "https://api.github.com/repos/siganberg/ncSender/releases";
     private UpdateStatus _status = new();
     private string? _downloadedAssetPath;
 
