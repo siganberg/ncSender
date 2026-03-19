@@ -60,7 +60,12 @@ public static class ResumeSequenceGenerator
 
         // Z movement — if state Z is at or above 0 (retract height), just rapid there
         // directly. Only add approach height when plunging into material (negative Z).
-        if (state.PositionZ >= 0)
+        if (options.TargetLineIsRapid && state.PositionZ < 0)
+        {
+            // Target line is a rapid move (G0) — don't lower Z at all.
+            // Stay at safe retract height and let the G-code handle Z when cutting resumes.
+        }
+        else if (state.PositionZ >= 0)
         {
             commands.Add($"G0 Z{Fmt(state.PositionZ)}");
         }

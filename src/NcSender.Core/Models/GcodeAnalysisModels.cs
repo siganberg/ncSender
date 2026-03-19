@@ -49,6 +49,7 @@ public class StartFromLineRequest
     public double ApproachHeight { get; set; } = 5;
     public double PlungeFeedRate { get; set; } = 100;
     public double SafeZHeight { get; set; } = -5;
+    public bool TargetLineIsRapid { get; set; }
 }
 
 public class StartFromLineResponse

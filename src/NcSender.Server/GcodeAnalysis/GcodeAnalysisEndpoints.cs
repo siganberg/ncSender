@@ -55,7 +55,10 @@ public static class GcodeAnalysisEndpoints
                 }
             }
 
-            var resumeOptions = new StartFromLineRequest { StartLine = effectiveLine, SafeZHeight = settings.GetSetting<double>("safeZHeight", -5) };
+            // Check if the target line is a rapid (G0) move — if so, skip plunging into material
+            var targetLineIsRapid = IsTargetLineRapid(lines, effectiveLine, state);
+
+            var resumeOptions = new StartFromLineRequest { StartLine = effectiveLine, SafeZHeight = settings.GetSetting<double>("safeZHeight", -5), TargetLineIsRapid = targetLineIsRapid };
             var resumeSequence = analyzer.GenerateResumeSequence(state, resumeOptions);
 
             var currentTool = cnc.LastStatus.Tool;
@@ -119,6 +122,9 @@ public static class GcodeAnalysisEndpoints
                     }
                 }
 
+                // Check if the target line is a rapid (G0) move — if so, skip plunging into material
+                request.TargetLineIsRapid = IsTargetLineRapid(lines, effectiveLine, state);
+
                 var resumeSequence = analyzer.GenerateResumeSequence(state, request);
 
                 await jobManager.StartJobFromLineAsync(effectiveLine, resumeSequence.ToArray());
@@ -140,6 +146,21 @@ public static class GcodeAnalysisEndpoints
                 return Results.BadRequest(new StartFromLineResponse { Success = false, Error = ex.Message });
             }
         });
+    }
+
+    private static bool IsTargetLineRapid(string[] lines, int effectiveLine, GcodeState state)
+    {
+        if (effectiveLine < 1 || effectiveLine > lines.Length) return false;
+
+        var words = GcodeStateAnalyzer.ParseWords(StripLineComments(lines[effectiveLine - 1]));
+        var gWord = words.Find(w => w.Letter == 'G' && w.Value is 0 or 1 or 2 or 3);
+
+        // If the target line explicitly has G0, it's a rapid
+        if (gWord is not null)
+            return (int)gWord.Value == 0;
+
+        // No explicit motion mode on this line — use the modal state from previous lines
+        return state.MotionMode == "G0";
     }
 
     private static string StripLineComments(string line)
