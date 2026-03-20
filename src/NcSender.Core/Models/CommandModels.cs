@@ -31,6 +31,13 @@ public class CommandMeta
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? StopReason { get; set; }
+
+    /// <summary>
+    /// Response timeout in milliseconds. 0 = no timeout (wait indefinitely).
+    /// When set, the command will be treated as failed if no ok/error is received within this time.
+    /// </summary>
+    [JsonIgnore]
+    public int TimeoutMs { get; set; }
 }
 
 public class CommandResult

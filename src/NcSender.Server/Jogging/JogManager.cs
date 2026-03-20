@@ -115,7 +115,7 @@ public class JogManager : IJogManager
         {
             await _controller.SendCommandAsync(cmd.Command, new CommandOptions
             {
-                Meta = new CommandMeta { SourceId = "jog", Continuous = true }
+                Meta = new CommandMeta { SourceId = "jog", Continuous = true, TimeoutMs = 500 }
             });
         }
 
@@ -182,7 +182,7 @@ public class JogManager : IJogManager
                 {
                     CommandId = commandId,
                     DisplayCommand = cmd.DisplayCommand ?? displayCommand,
-                    Meta = new CommandMeta { SourceId = "jog", Silent = silent, SkipJogCancel = skipJogCancel }
+                    Meta = new CommandMeta { SourceId = "jog", Silent = silent, SkipJogCancel = skipJogCancel, TimeoutMs = 500 }
                 });
             }
         }

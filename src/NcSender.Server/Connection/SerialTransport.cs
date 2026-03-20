@@ -13,6 +13,7 @@ public class SerialTransport : IConnectionTransport
     private readonly int _baudRate;
     private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
+    private readonly object _bufferLock = new();
 
     public bool IsConnected => _port?.IsOpen == true;
     public string TransportType => "usb";
@@ -117,38 +118,44 @@ public class SerialTransport : IConnectionTransport
                 return;
 
             var data = _port.ReadExisting();
-            foreach (var ch in data)
+
+            // SerialPort.DataReceived can fire concurrently on multiple thread pool threads.
+            // Lock to prevent _lineBuffer corruption which can cause lost ok/error responses.
+            lock (_bufferLock)
             {
-                if (ch == '\n')
+                foreach (var ch in data)
                 {
-                    var line = _lineBuffer.ToString().TrimEnd('\r');
-                    _lineBuffer.Clear();
-                    if (line.Length > 0)
-                        LineReceived?.Invoke(line);
-                }
-                else if (ch == '<')
-                {
-                    // Status reports can be injected mid-line by GRBL real-time commands.
-                    // Flush any partial line before starting the status report.
-                    if (_lineBuffer.Length > 0)
+                    if (ch == '\n')
                     {
-                        var partial = _lineBuffer.ToString().TrimEnd('\r');
+                        var line = _lineBuffer.ToString().TrimEnd('\r');
                         _lineBuffer.Clear();
-                        if (partial.Length > 0)
-                            LineReceived?.Invoke(partial);
+                        if (line.Length > 0)
+                            LineReceived?.Invoke(line);
                     }
-                    _lineBuffer.Append(ch);
-                }
-                else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
-                {
-                    _lineBuffer.Append(ch);
-                    var line = _lineBuffer.ToString();
-                    _lineBuffer.Clear();
-                    LineReceived?.Invoke(line);
-                }
-                else
-                {
-                    _lineBuffer.Append(ch);
+                    else if (ch == '<')
+                    {
+                        // Status reports can be injected mid-line by GRBL real-time commands.
+                        // Flush any partial line before starting the status report.
+                        if (_lineBuffer.Length > 0)
+                        {
+                            var partial = _lineBuffer.ToString().TrimEnd('\r');
+                            _lineBuffer.Clear();
+                            if (partial.Length > 0)
+                                LineReceived?.Invoke(partial);
+                        }
+                        _lineBuffer.Append(ch);
+                    }
+                    else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
+                    {
+                        _lineBuffer.Append(ch);
+                        var line = _lineBuffer.ToString();
+                        _lineBuffer.Clear();
+                        LineReceived?.Invoke(line);
+                    }
+                    else
+                    {
+                        _lineBuffer.Append(ch);
+                    }
                 }
             }
         }

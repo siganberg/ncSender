@@ -337,10 +337,42 @@ public partial class CncController : ICncController
                     LogCommandSent(entry.RawCommand, isRealTime: false);
 
                     // Wait for the TCS to be completed by HandleCommandOk/HandleCommandError.
-                    // No timeout — commands like M0 (program pause) hold until the user
-                    // sends ~ (cycle start), which is a real-time command that bypasses
-                    // the queue. Disconnection cancels via ct.
-                    await entry.Tcs.Task.WaitAsync(ct);
+                    // Commands with TimeoutMs > 0 will fail if no response is received in time.
+                    // Commands with TimeoutMs = 0 (default) wait indefinitely — needed for
+                    // M0 (program pause) which holds until ~ (cycle start) is sent.
+                    var timeoutMs = entry.Meta?.TimeoutMs ?? 0;
+                    if (timeoutMs > 0)
+                    {
+                        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        timeoutCts.CancelAfter(timeoutMs);
+                        try
+                        {
+                            await entry.Tcs.Task.WaitAsync(timeoutCts.Token);
+                        }
+                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                        {
+                            _logger.LogWarning("Command '{Command}' timed out after {Timeout}ms with no response",
+                                entry.RawCommand, timeoutMs);
+                            var result = new CommandResult
+                            {
+                                Id = entry.Id,
+                                Command = entry.RawCommand,
+                                DisplayCommand = entry.DisplayCommand,
+                                Meta = entry.Meta,
+                                Status = "error",
+                                ErrorMessage = "Timed out waiting for controller response",
+                                Timestamp = DateTime.UtcNow.ToString("o")
+                            };
+                            _pendingCommands.TryRemove(entry.Id, out _);
+                            entry.Tcs.TrySetResult(result);
+                            CommandAcknowledged?.Invoke(result);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        await entry.Tcs.Task.WaitAsync(ct);
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
