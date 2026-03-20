@@ -750,10 +750,15 @@ public partial class CncController : ICncController
                     var protocol = _activeProtocol;
                     _ = Task.Run(async () =>
                     {
-                        await Task.Delay(250);
+                        await Task.Delay(500);
                         var systemMeta = new CommandOptions { Meta = new CommandMeta { SourceId = "system" } };
                         foreach (var cmd in protocol.GetInitCommands())
+                        {
                             await SendCommandAsync(cmd, systemMeta);
+                            // Small delay between init commands to let the controller's
+                            // USB CDC buffer drain — prevents data corruption on RP2350
+                            await Task.Delay(50);
+                        }
 
                         // Start polling after init commands have completed
                         StartPolling();

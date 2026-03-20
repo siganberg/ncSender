@@ -217,7 +217,9 @@ public class CncEventBridge
                     await Task.Delay(1000);
 
                     await _firmwareService.RefreshAsync(force: false);
+                    await Task.Delay(100);
                     await _alarmService.FetchAndCacheAsync();
+                    await Task.Delay(100);
                     await _errorService.FetchAndCacheAsync();
 
                     // Initialize machineState from firmware settings (matching V1 cnc-events.js)
@@ -368,7 +370,8 @@ public class CncEventBridge
                 BroadcastStateDelta();
             }
 
-            // $32/$130/$131/$132 → broadcast firmware-setting-changed for visualizer
+            // $32 → broadcast firmware-setting-changed for laser mode
+            // $130/$131/$132 → broadcast for machine limits (visualizer grid)
             if (id is "32" or "130" or "131" or "132")
             {
                 _ = _broadcaster.Broadcast("firmware-setting-changed",
