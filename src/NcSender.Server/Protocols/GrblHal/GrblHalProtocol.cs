@@ -14,6 +14,7 @@ public partial class GrblHalProtocol : IProtocolHandler
     public string CacheKey => "grblhal";
     public byte? FullStatusRequestByte => 0x87;
     public string AlarmFetchCommand => "$EA";
+    public string? ErrorFetchCommand => "$EE";
 
     public bool MatchesGreeting(string line)
         => line.StartsWith("grbl", StringComparison.OrdinalIgnoreCase)
@@ -32,6 +33,24 @@ public partial class GrblHalProtocol : IProtocolHandler
         var parts = inner["ALARMCODE:".Length..].Split("||", 2);
         if (parts.Length == 2)
             return (parts[0].Trim(), parts[1].Trim());
+
+        return null;
+    }
+
+    public (string Id, string Description)? ParseErrorLine(string line)
+    {
+        // grblHAL format: [ERRORCODE:N||description]
+        if (!line.StartsWith("[ERRORCODE:"))
+            return null;
+
+        var inner = line.TrimStart('[').TrimEnd(']');
+        var parts = inner["ERRORCODE:".Length..].Split("||", 2);
+        if (parts.Length == 2)
+        {
+            var desc = parts[1].Trim();
+            if (desc.Length > 0)
+                return (parts[0].Trim(), desc);
+        }
 
         return null;
     }

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 using NcSender.Server.Alarms;
+using NcSender.Server.Errors;
 using NcSender.Server.SystemApi;
 using NcSender.Server.CommandHistory;
 using NcSender.Server.CommandProcessor;
@@ -114,6 +115,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IFirmwareService, FirmwareService>();
         builder.Services.AddSingleton<IConfigService, ConfigService>();
         builder.Services.AddSingleton<IAlarmService, AlarmService>();
+        builder.Services.AddSingleton<IErrorService, ErrorService>();
         builder.Services.AddSingleton<ILogService, LogService>();
         builder.Services.AddSingleton<IProbeService, ProbeService>();
         builder.Services.AddSingleton<IJogManager, JogManager>();

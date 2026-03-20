@@ -61,6 +61,8 @@ public static class PathUtils
 
     public static string GetAlarmsPath(string protocol) => Path.Combine(GetFirmwareDir(protocol), "alarms.json");
 
+    public static string GetErrorsPath(string protocol) => Path.Combine(GetFirmwareDir(protocol), "errors.json");
+
     /// <summary>
     /// Ensures all required data directories exist.
     /// </summary>

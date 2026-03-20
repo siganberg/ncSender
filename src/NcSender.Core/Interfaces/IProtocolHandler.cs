@@ -38,6 +38,17 @@ public interface IProtocolHandler
     (string Id, string Description)? ParseAlarmLine(string line);
 
     /// <summary>
+    /// The command to fetch error codes from the controller. Null if not supported.
+    /// </summary>
+    string? ErrorFetchCommand => null;
+
+    /// <summary>
+    /// Parse an error code data line (e.g. [ERRORCODE:N||description]).
+    /// Returns (id, description) or null if not an error line.
+    /// </summary>
+    (string Id, string Description)? ParseErrorLine(string line) => null;
+
+    /// <summary>
     /// Normalize the Pn (pin state) string after status report parsing.
     /// Allows protocol-specific mapping of probe/TLS indicators.
     /// </summary>

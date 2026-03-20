@@ -16,6 +16,7 @@ public class CncEventBridge
     private readonly ILogger<CncEventBridge> _logger;
     private readonly IFirmwareService _firmwareService;
     private readonly IAlarmService _alarmService;
+    private readonly IErrorService _errorService;
     private readonly IJobManager _jobManager;
     private readonly IPluginManager _pluginManager;
     private readonly ISettingsManager _settingsManager;
@@ -33,6 +34,7 @@ public class CncEventBridge
         ILogger<CncEventBridge> logger,
         IFirmwareService firmwareService,
         IAlarmService alarmService,
+        IErrorService errorService,
         IJobManager jobManager,
         IPluginManager pluginManager,
         ISettingsManager settingsManager)
@@ -43,6 +45,7 @@ public class CncEventBridge
         _logger = logger;
         _firmwareService = firmwareService;
         _alarmService = alarmService;
+        _errorService = errorService;
         _jobManager = jobManager;
         _pluginManager = pluginManager;
         _settingsManager = settingsManager;
@@ -215,6 +218,7 @@ public class CncEventBridge
 
                     await _firmwareService.RefreshAsync(force: false);
                     await _alarmService.FetchAndCacheAsync();
+                    await _errorService.FetchAndCacheAsync();
 
                     // Initialize machineState from firmware settings (matching V1 cnc-events.js)
                     var firmware = await _firmwareService.GetCachedAsync();
@@ -302,6 +306,14 @@ public class CncEventBridge
                 Message = "Command flushed: likely due to connection loss or controller reset",
                 Code = "FLUSHED"
             };
+        }
+
+        // Enrich error messages with controller-specific descriptions when available
+        if (cmd.Status == "error" && cmd.ErrorCode is int errorCode)
+        {
+            var richMessage = _errorService.GetError(errorCode);
+            if (richMessage is not null)
+                cmd.ErrorMessage = richMessage;
         }
 
         // Continuous jog success: send with silentCompletion so UI clears pending
@@ -696,6 +708,15 @@ public class CncEventBridge
 
     private void OnErrorReceived(CncError error)
     {
+        // Enrich error messages with controller-fetched descriptions
+        if (error.Code != "ALARM" && int.TryParse(error.Code, out var errCode))
+        {
+            var richMessage = _errorService.GetError(errCode);
+            if (richMessage is not null)
+                error.Message = richMessage;
+            error.Message += " (Jog any axis to clear error state)";
+        }
+
         // Populate alarm info on machineState so the client can display the alarm overlay
         if (error.Code == "ALARM" && error.AlarmCode is int code)
         {
