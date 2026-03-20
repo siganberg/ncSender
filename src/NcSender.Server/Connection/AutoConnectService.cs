@@ -1,3 +1,4 @@
+using System.IO.Ports;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 
@@ -7,19 +8,23 @@ public class AutoConnectService : BackgroundService
 {
     private readonly ICncController _controller;
     private readonly ISettingsManager _settings;
+    private readonly IPendantManager _pendantManager;
     private readonly ILogger<AutoConnectService> _logger;
 
     private volatile bool _inhibited;
     private string _lastSettingsHash = "";
-    private string _lastFailedTarget = "";
+    private int _scanIndex;
+    private string? _lastLoggedScanPort;
 
     public AutoConnectService(
         ICncController controller,
         ISettingsManager settings,
+        IPendantManager pendantManager,
         ILogger<AutoConnectService> logger)
     {
         _controller = controller;
         _settings = settings;
+        _pendantManager = pendantManager;
         _logger = logger;
     }
 
@@ -57,14 +62,18 @@ public class AutoConnectService : BackgroundService
 
     private async Task TryConnectAsync(CancellationToken ct)
     {
+        // Don't attempt connection if connection type hasn't been configured yet
+        var rawType = _settings.GetSetting<string>("connection.type");
+        if (string.IsNullOrEmpty(rawType))
+            return;
+
         var settings = BuildConnectionSettings();
         var currentHash = ComputeSettingsHash(settings);
 
         // If settings changed, disconnect to reconnect with new settings
         if (_controller.IsConnected && currentHash != _lastSettingsHash && _lastSettingsHash != "")
         {
-            _logger.LogInformation("Connection settings changed from [{OldHash}] to [{NewHash}], reconnecting...",
-                _lastSettingsHash, currentHash);
+            _logger.LogInformation("Connection settings changed, reconnecting...");
             _controller.Disconnect();
         }
 
@@ -75,32 +84,148 @@ public class AutoConnectService : BackgroundService
 
         var type = settings.Type.ToLowerInvariant();
 
-        // Don't attempt if settings are incomplete
-        if (type == "usb" && (string.IsNullOrEmpty(settings.UsbPort) || settings.BaudRate <= 0))
+        // Ethernet: connect directly to configured IP (no scanning needed)
+        if (type == "ethernet")
+        {
+            if (string.IsNullOrEmpty(settings.Ip) || settings.Port <= 0)
+                return;
+            await TryConnectToTarget(settings, $"ethernet ({settings.Ip}:{settings.Port})", ct);
+            return;
+        }
+
+        // USB: scan ports and try round-robin
+        if (settings.BaudRate <= 0)
             return;
 
-        if (type == "ethernet" && (string.IsNullOrEmpty(settings.Ip) || settings.Port <= 0))
+        var savedPort = settings.UsbPort ?? "";
+        var candidatePorts = GetUsbCandidatePorts(savedPort);
+
+        if (candidatePorts.Count == 0)
             return;
 
-        var target = type == "usb"
-            ? $"usb ({settings.UsbPort} @ {settings.BaudRate})"
-            : $"ethernet ({settings.Ip}:{settings.Port})";
+        // Pick next port in round-robin
+        if (_scanIndex >= candidatePorts.Count)
+            _scanIndex = 0;
 
-        var isRetry = target == _lastFailedTarget;
-        if (!isRetry)
-            _logger.LogInformation("Auto-connect attempting {Target}...", target);
+        var port = candidatePorts[_scanIndex];
+        _scanIndex++;
 
+        var probeSettings = new ConnectionSettings
+        {
+            Type = settings.Type,
+            UsbPort = port,
+            BaudRate = settings.BaudRate,
+            Ip = settings.Ip,
+            Port = settings.Port,
+            Protocol = settings.Protocol,
+            ServerPort = settings.ServerPort
+        };
+        var target = $"usb ({port} @ {settings.BaudRate})";
+
+        // Log only when we move to a new port (avoid spam)
+        if (port != _lastLoggedScanPort)
+        {
+            _logger.LogInformation("Auto-connect probing {Target}...", target);
+            _lastLoggedScanPort = port;
+        }
+
+        await TryConnectToTarget(probeSettings, target, ct);
+
+        // If connected but no greeting after brief wait, wrong device — disconnect
+        if (_controller.IsConnected && _controller.ActiveProtocol is null)
+        {
+            // Wait briefly for greeting
+            await Task.Delay(1500, ct);
+
+            if (_controller.ActiveProtocol is null)
+            {
+                _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
+                _controller.Disconnect();
+            }
+        }
+
+        // On successful connection with greeting, update saved port if it changed
+        // But only if user selected a specific port (not Auto-Detect)
+        if (_controller.IsConnected && _controller.ActiveProtocol is not null
+            && !string.IsNullOrEmpty(savedPort) && port != savedPort)
+        {
+            _logger.LogInformation("CNC controller found on {Port} (saved port was {SavedPort}), updating settings", port, savedPort);
+            _ = _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
+            {
+                ["connection"] = new System.Text.Json.Nodes.JsonObject { ["usbPort"] = port }
+            });
+        }
+    }
+
+    private async Task TryConnectToTarget(ConnectionSettings settings, string target, CancellationToken ct)
+    {
         try
         {
             await _controller.ConnectAsync(settings, ct);
-            _lastFailedTarget = "";
         }
         catch (Exception ex)
         {
-            if (!isRetry)
-                _logger.LogWarning("Auto-connect to {Target} failed: {Error} (retries will be silent)", target, ex.Message);
-            _lastFailedTarget = target;
+            _logger.LogDebug("Auto-connect to {Target} failed: {Error}", target, ex.Message);
         }
+    }
+
+    // macOS built-in ports that should never be probed during auto-detect
+    private static readonly string[] MacOsExcludedPorts =
+    [
+        "debug-console", "Bluetooth-Incoming-Port", "wlan-debug"
+    ];
+
+    private static bool IsMacOsBuiltInPort(string port)
+    {
+        foreach (var excluded in MacOsExcludedPorts)
+        {
+            if (port.Contains(excluded, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private List<string> GetUsbCandidatePorts(string savedPort)
+    {
+        var occupiedPorts = _pendantManager.GetOccupiedPorts();
+        var allPorts = SerialPort.GetPortNames();
+        var isAutoDetect = string.IsNullOrEmpty(savedPort);
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var port in allPorts)
+        {
+            // Skip ports occupied by pendant/dongle
+            if (occupiedPorts.Contains(port))
+                continue;
+
+            // Skip macOS built-in ports during auto-detect
+            if (isAutoDetect && IsMacOsBuiltInPort(port))
+                continue;
+
+            // macOS dedup: prefer /dev/cu.* over /dev/tty.*
+            var key = NormalizeMacPort(port);
+            if (!seen.ContainsKey(key))
+                seen[key] = port;
+            else if (port.StartsWith("/dev/cu.", StringComparison.Ordinal))
+                seen[key] = port;
+        }
+
+        var candidates = seen.Values.ToList();
+
+        // Put saved port first if it's available
+        if (!string.IsNullOrEmpty(savedPort))
+        {
+            var idx = candidates.FindIndex(p => string.Equals(p, savedPort, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(NormalizeMacPort(p), NormalizeMacPort(savedPort), StringComparison.OrdinalIgnoreCase));
+            if (idx > 0)
+            {
+                var saved = candidates[idx];
+                candidates.RemoveAt(idx);
+                candidates.Insert(0, saved);
+            }
+        }
+
+        return candidates;
     }
 
     private ConnectionSettings BuildConnectionSettings()
@@ -115,6 +240,13 @@ public class AutoConnectService : BackgroundService
             Protocol = _settings.GetSetting<string>("connection.protocol") ?? "telnet",
             ServerPort = _settings.GetSetting<int>("connection.serverPort", 8090),
         };
+    }
+
+    private static string NormalizeMacPort(string port)
+    {
+        if (port.StartsWith("/dev/cu.", StringComparison.Ordinal))
+            return "/dev/tty." + port[8..];
+        return port;
     }
 
     private static string ComputeSettingsHash(ConnectionSettings s) =>

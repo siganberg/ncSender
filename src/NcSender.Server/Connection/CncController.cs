@@ -46,6 +46,7 @@ public partial class CncController : ICncController
     private bool _hasReceivedFirstStatus;
     private bool _hasReceivedGreeting;
     private string? _greetingMessage;
+    private CancellationTokenSource? _verificationCts;
     private string? _rawStatusData;
     private string? _pendingFullStatusSourceId;
     private MachineState _lastStatus = new();
@@ -218,6 +219,24 @@ public partial class CncController : ICncController
                 else
                     _logger.LogInformation("Soft-reset sent, waiting for greeting...");
             });
+
+        // Start verification timeout — disconnect if no greeting received
+        _verificationCts?.Cancel();
+        _verificationCts = new CancellationTokenSource();
+        var cts = _verificationCts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(5000, cts.Token);
+                if (_isVerifying && !_hasReceivedGreeting)
+                {
+                    _logger.LogWarning("No CNC greeting received within 5s, disconnecting (wrong device?)");
+                    OnConnectionLost(new TimeoutException("No CNC greeting received"));
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
     }
 
     private void OnConnectionLost(Exception? ex)
@@ -825,6 +844,14 @@ public partial class CncController : ICncController
         }
         else
         {
+            // If we receive a pendant/dongle ID during verification, we connected to the wrong device
+            if (_isVerifying && !_hasReceivedGreeting && trimmedData.StartsWith("$ID:", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Connected to {Device} instead of CNC controller, disconnecting", trimmedData);
+                OnConnectionLost(new InvalidOperationException($"Wrong device: {trimmedData}"));
+                return;
+            }
+
             // Try greeting detection — selects protocol handler and starts polling
             if (!_hasReceivedGreeting)
                 TryDetectGreeting(trimmedData);
@@ -854,6 +881,7 @@ public partial class CncController : ICncController
             _hasReceivedGreeting = true;
             _greetingMessage = line;
             _activeProtocol = handler;
+            _verificationCts?.Cancel();
             _logger.LogInformation("Detected {Protocol} controller: {Greeting}", handler.Name, line);
 
             // Start polling now that we know what controller we're talking to

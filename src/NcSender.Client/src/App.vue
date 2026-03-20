@@ -814,6 +814,13 @@
             </button>
             <div v-if="setupUsbDropdownOpen" class="dropdown-menu">
               <div
+                class="dropdown-item"
+                @click="selectSetupUsbPort({ path: '' })"
+              >
+                <div class="port-path">Auto-Detect</div>
+                <div class="port-manufacturer">Automatically scan all available USB ports</div>
+              </div>
+              <div
                 v-if="setupUsbPorts.length === 0"
                 class="dropdown-item disabled"
               >
@@ -1770,20 +1777,20 @@ const selectMainUsbPort = (port) => {
   connectionSettings.usbPort = port.path;
   mainUsbDropdownOpen.value = false;
 
-  // Validate USB port selection
+  // USB port is always valid (empty = Auto-Detect)
   if (connectionSettings.type === 'USB') {
-    mainValidation.usbPort = !!connectionSettings.usbPort;
+    mainValidation.usbPort = true;
   }
 };
 
 const getSelectedSetupPortDisplay = () => {
-  if (!setupSettings.usbPort) return 'Select USB Port...';
+  if (!setupSettings.usbPort) return 'Auto-Detect';
   const port = setupUsbPorts.value.find(p => p.path === setupSettings.usbPort);
   return port ? port.path : setupSettings.usbPort;
 };
 
 const getSelectedMainPortDisplay = () => {
-  if (!connectionSettings.usbPort) return 'Select USB Port...';
+  if (!connectionSettings.usbPort) return 'Auto-Detect';
   const port = availableUsbPorts.value.find(p => p.path === connectionSettings.usbPort);
   return port ? port.path : connectionSettings.usbPort;
 };
@@ -2712,10 +2719,9 @@ const validateSetupIP = () => {
 const validateSetupForm = () => {
   let isValid = true;
 
-  // Validate USB port if USB connection
+  // Validate USB port if USB connection (empty = Auto-Detect, always valid)
   if (setupSettings.type === 'USB') {
-    setupValidation.usbPort = !!setupSettings.usbPort;
-    if (!setupValidation.usbPort) isValid = false;
+    setupValidation.usbPort = true;
 
     // Clear Ethernet validation for USB
     setupValidation.ipAddress = true;
@@ -2755,10 +2761,8 @@ const isSettingsValid = (settings) => {
     return false;
   }
 
-  // USB-specific validation
-  if (connectionType === 'usb') {
-    if (!connection?.usbPort) return false;
-  }
+  // USB-specific validation (empty usbPort = Auto-Detect, which is valid)
+  // No USB-specific validation needed
 
   // Ethernet-specific validation
   if (connectionType === 'ethernet') {
@@ -2849,6 +2853,7 @@ const saveSetupSettings = async () => {
     if (connectionSettings.type === 'USB') {
       await loadMainUsbPorts();
     }
+
   } catch (error) {
     console.error('Error saving setup settings:', error);
   }

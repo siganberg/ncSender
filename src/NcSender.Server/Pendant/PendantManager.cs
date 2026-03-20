@@ -627,6 +627,19 @@ public class PendantManager : IPendantManager
 
     #region Auto-Connect (Scanner-based)
 
+    public HashSet<string> GetOccupiedPorts()
+    {
+        var ports = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_scanner is not null)
+        {
+            var pendant = _scanner.Pendant;
+            var dongle = _scanner.Dongle;
+            if (pendant is not null) ports.Add(pendant.Port);
+            if (dongle is not null) ports.Add(dongle.Port);
+        }
+        return ports;
+    }
+
     public void StartAutoConnect()
     {
         var autoConnect = _settingsManager.GetSetting<bool>("pendant.autoConnect", true);
