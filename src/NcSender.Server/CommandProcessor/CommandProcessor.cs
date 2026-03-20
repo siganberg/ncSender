@@ -183,34 +183,9 @@ public class CommandProcessor : ICommandProcessor
             });
         }
 
-        // 16. If $TLS, switch probe source, run TLS, restore probe source, return
+        // 16. If $TLS, add return-to-position + sentinel
         if (isTLS)
         {
-            const int probeIdx = 0;
-            var tlsIdx = _settingsManager.GetSetting<int>("tlsIndex", 0);
-
-            // Switch to TLS probe source before the $TLS command
-            if (tlsIdx != probeIdx)
-            {
-                commands.Insert(0, new ProcessedCommand
-                {
-                    Command = $"G65P5Q{tlsIdx}",
-                    DisplayCommand = $"G65P5Q{tlsIdx} (switch to TLS probe source)",
-                    IsOriginal = false
-                });
-            }
-
-            // Restore probe source after $TLS
-            if (tlsIdx != probeIdx)
-            {
-                commands.Add(new ProcessedCommand
-                {
-                    Command = $"G65P5Q{probeIdx}",
-                    DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
-                    IsOriginal = false
-                });
-            }
-
             if (tlsReturnPosition is not null)
             {
                 var returnCmd = string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 X{0:F3} Y{1:F3}", tlsReturnPosition.X, tlsReturnPosition.Y);

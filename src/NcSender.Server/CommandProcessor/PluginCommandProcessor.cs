@@ -142,27 +142,6 @@ public class PluginCommandProcessor : ICommandProcessor
 
         if (isValidM6)
         {
-            // Switch probe source for TLS during tool change (same as $TLS handling)
-            const int probeIdx = 0;
-            var tlsIdx = _settingsManager.GetSetting<int>("tlsIndex", 0);
-
-            if (tlsIdx != probeIdx)
-            {
-                finalCommands.Insert(0, new ProcessedCommand
-                {
-                    Command = $"G65P5Q{tlsIdx}",
-                    DisplayCommand = $"G65P5Q{tlsIdx} (switch to TLS probe source)",
-                    IsOriginal = false
-                });
-
-                finalCommands.Add(new ProcessedCommand
-                {
-                    Command = $"G65P5Q{probeIdx}",
-                    DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
-                    IsOriginal = false
-                });
-            }
-
             // Return-to-position only for manual invocation (not during program run)
             if (m6ReturnPosition is not null && !m6UseWorkCoordinates)
             {
@@ -186,30 +165,6 @@ public class PluginCommandProcessor : ICommandProcessor
 
         if (isTLS)
         {
-            const int probeIdx = 0;
-            var tlsIdx = _settingsManager.GetSetting<int>("tlsIndex", 0);
-
-            // Switch to TLS probe source before TLS commands
-            if (tlsIdx != probeIdx)
-            {
-                finalCommands.Insert(0, new ProcessedCommand
-                {
-                    Command = $"G65P5Q{tlsIdx}",
-                    DisplayCommand = $"G65P5Q{tlsIdx} (switch to TLS probe source)",
-                    IsOriginal = false
-                });
-            }
-
-            // Restore probe source after TLS
-            if (tlsIdx != probeIdx)
-            {
-                finalCommands.Add(new ProcessedCommand
-                {
-                    Command = $"G65P5Q{probeIdx}",
-                    DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
-                    IsOriginal = false
-                });
-            }
 
             if (tlsReturnPosition is not null)
             {
