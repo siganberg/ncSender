@@ -310,6 +310,8 @@ public class SerialTransport : IConnectionTransport
 
     private void ProcessIncomingData(string data)
     {
+        // Simple line splitting on \n — matches node.js ReadlineParser behavior.
+        // Status report <...> parsing is handled upstream by CncController.HandleIncomingData.
         foreach (var ch in data)
         {
             if (ch == '\n')
@@ -318,24 +320,6 @@ public class SerialTransport : IConnectionTransport
                 _lineBuffer.Clear();
                 if (line.Length > 0)
                     LineReceived?.Invoke(line);
-            }
-            else if (ch == '<')
-            {
-                if (_lineBuffer.Length > 0)
-                {
-                    var partial = _lineBuffer.ToString().TrimEnd('\r');
-                    _lineBuffer.Clear();
-                    if (partial.Length > 0)
-                        LineReceived?.Invoke(partial);
-                }
-                _lineBuffer.Append(ch);
-            }
-            else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
-            {
-                _lineBuffer.Append(ch);
-                var line = _lineBuffer.ToString();
-                _lineBuffer.Clear();
-                LineReceived?.Invoke(line);
             }
             else
             {
