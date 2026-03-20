@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Ports;
 using System.Text;
 using NcSender.Core.Interfaces;
@@ -11,12 +12,17 @@ public class SerialTransport : IConnectionTransport
 
     private readonly string _portPath;
     private readonly int _baudRate;
-    private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
     private CancellationTokenSource? _readCts;
     private Thread? _readThread;
 
-    public bool IsConnected => _port?.IsOpen == true;
+    // Windows: use SerialPort. Linux/macOS: use direct FileStream + stty.
+    private SerialPort? _port;
+    private FileStream? _fileStream;
+    private bool _useDirectIO;
+    private volatile bool _isConnected;
+
+    public bool IsConnected => _isConnected;
     public string TransportType => "usb";
     public string PortPath => _portPath;
 
@@ -33,44 +39,15 @@ public class SerialTransport : IConnectionTransport
     {
         Logger.Debug("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
 
-        _port = new SerialPort(_portPath, _baudRate)
-        {
-            DtrEnable = true,
-            RtsEnable = true,
-            ReadBufferSize = 65536,
-            ReadTimeout = 1000,
-            WriteTimeout = 5000
-        };
+        _useDirectIO = !OperatingSystem.IsWindows();
 
-        _port.Open();
+        if (_useDirectIO)
+            OpenDirectIO();
+        else
+            OpenSerialPort();
 
-        // On Linux, force raw mode via stty to match node.js serialport behavior.
-        // .NET SerialPort may leave suboptimal termios settings that cause the kernel
-        // to batch data, leading to USB CDC buffer overflow on fast controllers.
-        if (!OperatingSystem.IsWindows())
-        {
-            try
-            {
-                using var stty = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "stty",
-                    Arguments = $"-F {_portPath} raw -echo -echoe -echok {_baudRate}",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                });
-                stty?.WaitForExit(2000);
-            }
-            catch (Exception ex)
-            {
-                Logger.Debug("stty raw mode failed (non-fatal): {Error}", ex.Message);
-            }
-        }
+        _isConnected = true;
 
-        // Use a dedicated thread with blocking reads for lowest possible latency.
-        // ReadAsync through the thread pool has scheduling delays that can cause
-        // USB CDC buffer overflows on Linux (Pi 5) during high-throughput bursts.
         _readCts = new CancellationTokenSource();
         _readThread = new Thread(() => ReadLoop(_readCts.Token))
         {
@@ -82,28 +59,92 @@ public class SerialTransport : IConnectionTransport
         return Task.CompletedTask;
     }
 
-    public Task DisconnectAsync()
+    private void OpenDirectIO()
     {
-        // Signal read thread to stop
-        _readCts?.Cancel();
-
-        var port = _port;
-        _port = null;
-
-        // Close port first — this unblocks any blocking Read() in the read thread
-        if (port is not null)
+        // Configure port via stty before opening — matches node.js serialport behavior.
+        // This sets raw mode, baud rate, and DTR/RTS in one call.
+        var sttyArgs = $"-F {_portPath} {_baudRate} raw -echo -echoe -echok cs8 -cstopb cread clocal -crtscts -hupcl";
+        try
         {
-            try
+            using var stty = Process.Start(new ProcessStartInfo
             {
-                if (port.IsOpen)
-                    port.Close();
+                FileName = "stty",
+                Arguments = sttyArgs,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            stty?.WaitForExit(2000);
+            if (stty?.ExitCode != 0)
+            {
+                var stderr = stty?.StandardError.ReadToEnd();
+                Logger.Warning("stty exited with code {Code}: {Error}", stty?.ExitCode, stderr);
             }
-            catch { /* best effort */ }
-
-            port.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("stty failed, falling back to SerialPort: {Error}", ex.Message);
+            _useDirectIO = false;
+            OpenSerialPort();
+            return;
         }
 
-        // Wait for read thread to finish
+        // Open as a regular file — the kernel handles serial I/O via the tty driver.
+        // FileOptions.None avoids .NET adding async I/O overhead.
+        _fileStream = new FileStream(_portPath, FileMode.Open, FileAccess.ReadWrite,
+            FileShare.ReadWrite, bufferSize: 4096, FileOptions.None);
+
+        // Assert DTR by writing to the control line (stty hupcl handles this on close)
+        try
+        {
+            using var dtr = Process.Start(new ProcessStartInfo
+            {
+                FileName = "stty",
+                Arguments = $"-F {_portPath} hupcl",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            dtr?.WaitForExit(1000);
+        }
+        catch { /* non-fatal */ }
+    }
+
+    private void OpenSerialPort()
+    {
+        _port = new SerialPort(_portPath, _baudRate)
+        {
+            DtrEnable = true,
+            RtsEnable = true,
+            ReadBufferSize = 65536,
+            ReadTimeout = 1000,
+            WriteTimeout = 5000
+        };
+        _port.Open();
+    }
+
+    public Task DisconnectAsync()
+    {
+        _isConnected = false;
+        _readCts?.Cancel();
+
+        if (_useDirectIO)
+        {
+            var stream = _fileStream;
+            _fileStream = null;
+            try { stream?.Close(); } catch { /* best effort */ }
+            try { stream?.Dispose(); } catch { /* best effort */ }
+        }
+        else
+        {
+            var port = _port;
+            _port = null;
+            try { if (port?.IsOpen == true) port.Close(); } catch { /* best effort */ }
+            try { port?.Dispose(); } catch { /* best effort */ }
+        }
+
         if (_readThread is not null)
         {
             _readThread.Join(TimeSpan.FromSeconds(2));
@@ -118,7 +159,7 @@ public class SerialTransport : IConnectionTransport
 
     public Task WriteAsync(string data, CancellationToken ct = default)
     {
-        if (_port is not { IsOpen: true })
+        if (!_isConnected)
         {
             ConnectionLost?.Invoke(new IOException("Serial port is not open"));
             throw new InvalidOperationException("Serial port is not open");
@@ -126,7 +167,20 @@ public class SerialTransport : IConnectionTransport
 
         try
         {
-            _port.Write(data);
+            if (_useDirectIO && _fileStream is not null)
+            {
+                var bytes = Encoding.ASCII.GetBytes(data);
+                _fileStream.Write(bytes, 0, bytes.Length);
+                _fileStream.Flush();
+            }
+            else if (_port is { IsOpen: true })
+            {
+                _port.Write(data);
+            }
+            else
+            {
+                throw new InvalidOperationException("Serial port is not open");
+            }
         }
         catch (Exception ex)
         {
@@ -138,7 +192,7 @@ public class SerialTransport : IConnectionTransport
 
     public Task WriteRawAsync(byte[] data, CancellationToken ct = default)
     {
-        if (_port is not { IsOpen: true })
+        if (!_isConnected)
         {
             ConnectionLost?.Invoke(new IOException("Serial port is not open"));
             throw new InvalidOperationException("Serial port is not open");
@@ -146,7 +200,19 @@ public class SerialTransport : IConnectionTransport
 
         try
         {
-            _port.Write(data, 0, data.Length);
+            if (_useDirectIO && _fileStream is not null)
+            {
+                _fileStream.Write(data, 0, data.Length);
+                _fileStream.Flush();
+            }
+            else if (_port is { IsOpen: true })
+            {
+                _port.Write(data, 0, data.Length);
+            }
+            else
+            {
+                throw new InvalidOperationException("Serial port is not open");
+            }
         }
         catch (Exception ex)
         {
@@ -162,33 +228,45 @@ public class SerialTransport : IConnectionTransport
 
         try
         {
-            while (!ct.IsCancellationRequested && _port is { IsOpen: true })
+            while (!ct.IsCancellationRequested && _isConnected)
             {
                 int bytesRead;
                 try
                 {
-                    // Blocking read — wakes as soon as data arrives (no thread pool delay).
-                    // ReadTimeout is set to 1000ms so we periodically check cancellation.
-                    bytesRead = _port.Read(buffer, 0, buffer.Length);
+                    if (_useDirectIO && _fileStream is not null)
+                    {
+                        // Direct read from file descriptor — lowest latency, no .NET overhead.
+                        // Blocks until data arrives (raw mode: VMIN=1, VTIME=0).
+                        bytesRead = _fileStream.Read(buffer, 0, buffer.Length);
+                    }
+                    else if (_port is { IsOpen: true })
+                    {
+                        bytesRead = _port.Read(buffer, 0, buffer.Length);
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
                 catch (TimeoutException)
                 {
-                    // ReadTimeout expired — loop back to check cancellation and port state
                     continue;
                 }
                 catch (IOException)
                 {
-                    // Port closed or disconnected
                     break;
                 }
                 catch (InvalidOperationException)
                 {
-                    // Port was closed
                     break;
                 }
 
                 if (bytesRead == 0)
+                {
+                    // EOF on Linux means port was closed/disconnected
+                    if (_useDirectIO) break;
                     continue;
+                }
 
                 var data = Encoding.ASCII.GetString(buffer, 0, bytesRead);
                 ProcessIncomingData(data);
@@ -200,8 +278,7 @@ public class SerialTransport : IConnectionTransport
                 ConnectionLost?.Invoke(ex);
         }
 
-        // If we exited the loop unexpectedly (not from cancellation), signal connection lost
-        if (!ct.IsCancellationRequested && _port is not null)
+        if (!ct.IsCancellationRequested && _isConnected)
             ConnectionLost?.Invoke(new IOException("Serial port read loop ended unexpectedly"));
     }
 
