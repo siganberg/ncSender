@@ -14,7 +14,7 @@ public class SerialTransport : IConnectionTransport
     private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
     private CancellationTokenSource? _readCts;
-    private Task? _readTask;
+    private Thread? _readThread;
 
     public bool IsConnected => _port?.IsOpen == true;
     public string TransportType => "usb";
@@ -37,42 +37,36 @@ public class SerialTransport : IConnectionTransport
         {
             DtrEnable = true,
             RtsEnable = true,
-            ReadTimeout = SerialPort.InfiniteTimeout,
+            ReadBufferSize = 65536,
+            ReadTimeout = 1000,
             WriteTimeout = 5000
         };
 
         _port.Open();
 
-        // Use a dedicated read loop instead of DataReceived event.
-        // DataReceived is unreliable on Linux/.NET — it can miss data,
-        // deliver partial reads, or not fire at all on some platforms (Pi 5).
+        // Use a dedicated thread with blocking reads for lowest possible latency.
+        // ReadAsync through the thread pool has scheduling delays that can cause
+        // USB CDC buffer overflows on Linux (Pi 5) during high-throughput bursts.
         _readCts = new CancellationTokenSource();
-        _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
+        _readThread = new Thread(() => ReadLoop(_readCts.Token))
+        {
+            Name = "SerialRead",
+            IsBackground = true
+        };
+        _readThread.Start();
 
         return Task.CompletedTask;
     }
 
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync()
     {
-        // Stop read loop first
-        if (_readCts is not null)
-        {
-            await _readCts.CancelAsync();
-            try
-            {
-                if (_readTask is not null)
-                    await _readTask.WaitAsync(TimeSpan.FromSeconds(2));
-            }
-            catch { /* timeout or cancelled — expected */ }
-
-            _readCts.Dispose();
-            _readCts = null;
-            _readTask = null;
-        }
+        // Signal read thread to stop
+        _readCts?.Cancel();
 
         var port = _port;
         _port = null;
 
+        // Close port first — this unblocks any blocking Read() in the read thread
         if (port is not null)
         {
             try
@@ -84,6 +78,18 @@ public class SerialTransport : IConnectionTransport
 
             port.Dispose();
         }
+
+        // Wait for read thread to finish
+        if (_readThread is not null)
+        {
+            _readThread.Join(TimeSpan.FromSeconds(2));
+            _readThread = null;
+        }
+
+        _readCts?.Dispose();
+        _readCts = null;
+
+        return Task.CompletedTask;
     }
 
     public Task WriteAsync(string data, CancellationToken ct = default)
@@ -126,55 +132,43 @@ public class SerialTransport : IConnectionTransport
         return Task.CompletedTask;
     }
 
-    private async Task ReadLoopAsync(CancellationToken ct)
+    private void ReadLoop(CancellationToken ct)
     {
         var buffer = new byte[4096];
 
         try
         {
-            var stream = _port?.BaseStream;
-            if (stream is null) return;
-
             while (!ct.IsCancellationRequested && _port is { IsOpen: true })
             {
                 int bytesRead;
                 try
                 {
-                    // Use a linked timeout so we periodically check if the port is still alive.
-                    // On Linux, ReadAsync can hang indefinitely if the USB cable is disconnected.
-                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(5000);
-                    bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, timeoutCts.Token);
+                    // Blocking read — wakes as soon as data arrives (no thread pool delay).
+                    // ReadTimeout is set to 1000ms so we periodically check cancellation.
+                    bytesRead = _port.Read(buffer, 0, buffer.Length);
                 }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                catch (TimeoutException)
                 {
-                    // Read timeout — check if port is still open and retry
-                    if (_port is not { IsOpen: true })
-                        break;
+                    // ReadTimeout expired — loop back to check cancellation and port state
                     continue;
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
                 }
                 catch (IOException)
                 {
                     // Port closed or disconnected
                     break;
                 }
-
-                // bytesRead == 0 on serial BaseStream means the port was closed
-                if (bytesRead == 0)
+                catch (InvalidOperationException)
+                {
+                    // Port was closed
                     break;
+                }
 
-                // Decode bytes to chars and process
+                if (bytesRead == 0)
+                    continue;
+
                 var data = Encoding.ASCII.GetString(buffer, 0, bytesRead);
                 ProcessIncomingData(data);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown
         }
         catch (Exception ex)
         {

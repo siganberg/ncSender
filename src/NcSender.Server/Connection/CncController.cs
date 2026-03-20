@@ -750,7 +750,6 @@ public partial class CncController : ICncController
                         _ = SendCommandAsync(cmd, systemMeta);
                 }
 
-                DataReceived?.Invoke(trimmedData, null);
             }
 
             _rawStatusData = trimmedData;
