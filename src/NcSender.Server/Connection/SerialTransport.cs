@@ -13,7 +13,8 @@ public class SerialTransport : IConnectionTransport
     private readonly int _baudRate;
     private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
-    private readonly object _bufferLock = new();
+    private CancellationTokenSource? _readCts;
+    private Task? _readTask;
 
     public bool IsConnected => _port?.IsOpen == true;
     public string TransportType => "usb";
@@ -40,23 +41,40 @@ public class SerialTransport : IConnectionTransport
             WriteTimeout = 5000
         };
 
-        _port.DataReceived += OnDataReceived;
-        _port.ErrorReceived += OnErrorReceived;
-
         _port.Open();
+
+        // Use a dedicated read loop instead of DataReceived event.
+        // DataReceived is unreliable on Linux/.NET — it can miss data,
+        // deliver partial reads, or not fire at all on some platforms (Pi 5).
+        _readCts = new CancellationTokenSource();
+        _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
+
         return Task.CompletedTask;
     }
 
-    public Task DisconnectAsync()
+    public async Task DisconnectAsync()
     {
+        // Stop read loop first
+        if (_readCts is not null)
+        {
+            await _readCts.CancelAsync();
+            try
+            {
+                if (_readTask is not null)
+                    await _readTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch { /* timeout or cancelled — expected */ }
+
+            _readCts.Dispose();
+            _readCts = null;
+            _readTask = null;
+        }
+
         var port = _port;
         _port = null;
 
         if (port is not null)
         {
-            port.DataReceived -= OnDataReceived;
-            port.ErrorReceived -= OnErrorReceived;
-
             try
             {
                 if (port.IsOpen)
@@ -66,8 +84,6 @@ public class SerialTransport : IConnectionTransport
 
             port.Dispose();
         }
-
-        return Task.CompletedTask;
     }
 
     public Task WriteAsync(string data, CancellationToken ct = default)
@@ -110,64 +126,103 @@ public class SerialTransport : IConnectionTransport
         return Task.CompletedTask;
     }
 
-    private void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private async Task ReadLoopAsync(CancellationToken ct)
     {
+        var buffer = new byte[4096];
+
         try
         {
-            if (_port is not { IsOpen: true })
-                return;
+            var stream = _port?.BaseStream;
+            if (stream is null) return;
 
-            var data = _port.ReadExisting();
-
-            // SerialPort.DataReceived can fire concurrently on multiple thread pool threads.
-            // Lock to prevent _lineBuffer corruption which can cause lost ok/error responses.
-            lock (_bufferLock)
+            while (!ct.IsCancellationRequested && _port is { IsOpen: true })
             {
-                foreach (var ch in data)
+                int bytesRead;
+                try
                 {
-                    if (ch == '\n')
-                    {
-                        var line = _lineBuffer.ToString().TrimEnd('\r');
-                        _lineBuffer.Clear();
-                        if (line.Length > 0)
-                            LineReceived?.Invoke(line);
-                    }
-                    else if (ch == '<')
-                    {
-                        // Status reports can be injected mid-line by GRBL real-time commands.
-                        // Flush any partial line before starting the status report.
-                        if (_lineBuffer.Length > 0)
-                        {
-                            var partial = _lineBuffer.ToString().TrimEnd('\r');
-                            _lineBuffer.Clear();
-                            if (partial.Length > 0)
-                                LineReceived?.Invoke(partial);
-                        }
-                        _lineBuffer.Append(ch);
-                    }
-                    else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
-                    {
-                        _lineBuffer.Append(ch);
-                        var line = _lineBuffer.ToString();
-                        _lineBuffer.Clear();
-                        LineReceived?.Invoke(line);
-                    }
-                    else
-                    {
-                        _lineBuffer.Append(ch);
-                    }
+                    // Use a linked timeout so we periodically check if the port is still alive.
+                    // On Linux, ReadAsync can hang indefinitely if the USB cable is disconnected.
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(5000);
+                    bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, timeoutCts.Token);
                 }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Read timeout — check if port is still open and retry
+                    if (_port is not { IsOpen: true })
+                        break;
+                    continue;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (IOException)
+                {
+                    // Port closed or disconnected
+                    break;
+                }
+
+                // bytesRead == 0 on serial BaseStream means the port was closed
+                if (bytesRead == 0)
+                    break;
+
+                // Decode bytes to chars and process
+                var data = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                ProcessIncomingData(data);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown
         }
         catch (Exception ex)
         {
-            ConnectionLost?.Invoke(ex);
+            if (!ct.IsCancellationRequested)
+                ConnectionLost?.Invoke(ex);
         }
+
+        // If we exited the loop unexpectedly (not from cancellation), signal connection lost
+        if (!ct.IsCancellationRequested && _port is not null)
+            ConnectionLost?.Invoke(new IOException("Serial port read loop ended unexpectedly"));
     }
 
-    private void OnErrorReceived(object sender, SerialErrorReceivedEventArgs e)
+    private void ProcessIncomingData(string data)
     {
-        ConnectionLost?.Invoke(new IOException($"Serial error: {e.EventType}"));
+        foreach (var ch in data)
+        {
+            if (ch == '\n')
+            {
+                var line = _lineBuffer.ToString().TrimEnd('\r');
+                _lineBuffer.Clear();
+                if (line.Length > 0)
+                    LineReceived?.Invoke(line);
+            }
+            else if (ch == '<')
+            {
+                // Status reports can be injected mid-line by GRBL real-time commands.
+                // Flush any partial line before starting the status report.
+                if (_lineBuffer.Length > 0)
+                {
+                    var partial = _lineBuffer.ToString().TrimEnd('\r');
+                    _lineBuffer.Clear();
+                    if (partial.Length > 0)
+                        LineReceived?.Invoke(partial);
+                }
+                _lineBuffer.Append(ch);
+            }
+            else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
+            {
+                _lineBuffer.Append(ch);
+                var line = _lineBuffer.ToString();
+                _lineBuffer.Clear();
+                LineReceived?.Invoke(line);
+            }
+            else
+            {
+                _lineBuffer.Append(ch);
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()

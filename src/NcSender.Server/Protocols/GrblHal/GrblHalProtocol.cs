@@ -55,7 +55,7 @@ public partial class GrblHalProtocol : IProtocolHandler
         return null;
     }
 
-    public string NormalizePinState(string pn, int activeProbe, int tlsIndex = 0, int probeCount = 0)
+    public string NormalizePinState(string pn, int activeProbe)
     {
         if (!pn.Contains('P'))
             return pn;

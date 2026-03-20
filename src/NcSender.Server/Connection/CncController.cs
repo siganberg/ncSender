@@ -1110,8 +1110,7 @@ public partial class CncController : ICncController
         // Delegate Pn normalization to protocol handler (probe/TLS mapping)
         if (_activeProtocol is not null && _lastStatus.Pn.Length > 0)
         {
-            var tlsIdx = _settings.GetSetting<int>("tlsIndex", 0);
-            _lastStatus.Pn = _activeProtocol.NormalizePinState(_lastStatus.Pn, _lastStatus.ActiveProbe, tlsIdx, _lastStatus.ProbeCount);
+            _lastStatus.Pn = _activeProtocol.NormalizePinState(_lastStatus.Pn, _lastStatus.ActiveProbe);
         }
 
         // Compute wPos from MPos - WCO (GRBL typically only sends MPos + WCO)
