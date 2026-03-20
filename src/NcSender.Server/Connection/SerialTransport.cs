@@ -44,6 +44,30 @@ public class SerialTransport : IConnectionTransport
 
         _port.Open();
 
+        // On Linux, force raw mode via stty to match node.js serialport behavior.
+        // .NET SerialPort may leave suboptimal termios settings that cause the kernel
+        // to batch data, leading to USB CDC buffer overflow on fast controllers.
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using var stty = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "stty",
+                    Arguments = $"-F {_portPath} raw -echo -echoe -echok {_baudRate}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                stty?.WaitForExit(2000);
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug("stty raw mode failed (non-fatal): {Error}", ex.Message);
+            }
+        }
+
         // Use a dedicated thread with blocking reads for lowest possible latency.
         // ReadAsync through the thread pool has scheduling delays that can cause
         // USB CDC buffer overflows on Linux (Pi 5) during high-throughput bursts.
