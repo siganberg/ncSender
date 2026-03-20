@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Ports;
+using System.Runtime.InteropServices;
 using System.Text;
 using NcSender.Core.Interfaces;
 using Serilog;
@@ -16,10 +17,10 @@ public class SerialTransport : IConnectionTransport
     private CancellationTokenSource? _readCts;
     private Thread? _readThread;
 
-    // Windows: use SerialPort. Linux/macOS: use direct FileStream + stty.
+    // Windows: use SerialPort. Linux/macOS: use raw fd via P/Invoke.
     private SerialPort? _port;
-    private FileStream? _fileStream;
-    private bool _useDirectIO;
+    private int _fd = -1;
+    private bool _useNativeIO;
     private volatile bool _isConnected;
 
     public bool IsConnected => _isConnected;
@@ -39,10 +40,10 @@ public class SerialTransport : IConnectionTransport
     {
         Logger.Debug("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
 
-        _useDirectIO = !OperatingSystem.IsWindows();
+        _useNativeIO = !OperatingSystem.IsWindows();
 
-        if (_useDirectIO)
-            OpenDirectIO();
+        if (_useNativeIO)
+            OpenNative();
         else
             OpenSerialPort();
 
@@ -59,11 +60,11 @@ public class SerialTransport : IConnectionTransport
         return Task.CompletedTask;
     }
 
-    private void OpenDirectIO()
+    private void OpenNative()
     {
-        // Configure port via stty before opening — matches node.js serialport behavior.
-        // This sets raw mode, baud rate, and DTR/RTS in one call.
-        var sttyArgs = $"-F {_portPath} {_baudRate} raw -echo -echoe -echok cs8 -cstopb cread clocal -crtscts -hupcl";
+        // Configure port via stty BEFORE opening our fd.
+        // This sets raw mode and baud rate so our fd inherits correct settings.
+        var sttyArgs = $"-F {_portPath} {_baudRate} raw -echo -echoe -echok -hupcl cs8 -cstopb cread clocal -crtscts";
         try
         {
             using var stty = Process.Start(new ProcessStartInfo
@@ -75,41 +76,37 @@ public class SerialTransport : IConnectionTransport
                 UseShellExecute = false,
                 CreateNoWindow = true
             });
-            stty?.WaitForExit(2000);
-            if (stty?.ExitCode != 0)
-            {
-                var stderr = stty?.StandardError.ReadToEnd();
-                Logger.Warning("stty exited with code {Code}: {Error}", stty?.ExitCode, stderr);
-            }
+            stty?.WaitForExit(3000);
         }
         catch (Exception ex)
         {
             Logger.Warning("stty failed, falling back to SerialPort: {Error}", ex.Message);
-            _useDirectIO = false;
+            _useNativeIO = false;
             OpenSerialPort();
             return;
         }
 
-        // Open as a regular file — the kernel handles serial I/O via the tty driver.
-        // FileOptions.None avoids .NET adding async I/O overhead.
-        _fileStream = new FileStream(_portPath, FileMode.Open, FileAccess.ReadWrite,
-            FileShare.ReadWrite, bufferSize: 4096, FileOptions.None);
-
-        // Assert DTR by writing to the control line (stty hupcl handles this on close)
-        try
+        // Open fd with O_RDWR | O_NOCTTY | O_NONBLOCK (matches node.js serialport)
+        _fd = Posix.Open(_portPath, Posix.O_RDWR | Posix.O_NOCTTY | Posix.O_NONBLOCK);
+        if (_fd < 0)
         {
-            using var dtr = Process.Start(new ProcessStartInfo
-            {
-                FileName = "stty",
-                Arguments = $"-F {_portPath} hupcl",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
-            dtr?.WaitForExit(1000);
+            var errno = Marshal.GetLastWin32Error();
+            Logger.Warning("Native open failed (errno={Errno}), falling back to SerialPort", errno);
+            _useNativeIO = false;
+            OpenSerialPort();
+            return;
         }
-        catch { /* non-fatal */ }
+
+        // Clear O_NONBLOCK — we want blocking reads (matches node.js serialport behavior)
+        var flags = Posix.Fcntl(_fd, Posix.F_GETFL, 0);
+        if (flags >= 0)
+            Posix.Fcntl(_fd, Posix.F_SETFL, flags & ~Posix.O_NONBLOCK);
+
+        // Assert DTR
+        var dtrBits = Posix.TIOCM_DTR | Posix.TIOCM_RTS;
+        Posix.Ioctl(_fd, Posix.TIOCMBIS, ref dtrBits);
+
+        Logger.Debug("Serial port opened via native fd={Fd}", _fd);
     }
 
     private void OpenSerialPort()
@@ -130,19 +127,19 @@ public class SerialTransport : IConnectionTransport
         _isConnected = false;
         _readCts?.Cancel();
 
-        if (_useDirectIO)
+        if (_useNativeIO)
         {
-            var stream = _fileStream;
-            _fileStream = null;
-            try { stream?.Close(); } catch { /* best effort */ }
-            try { stream?.Dispose(); } catch { /* best effort */ }
+            var fd = _fd;
+            _fd = -1;
+            if (fd >= 0)
+                Posix.Close(fd);
         }
         else
         {
             var port = _port;
             _port = null;
-            try { if (port?.IsOpen == true) port.Close(); } catch { /* best effort */ }
-            try { port?.Dispose(); } catch { /* best effort */ }
+            try { if (port?.IsOpen == true) port.Close(); } catch { }
+            try { port?.Dispose(); } catch { }
         }
 
         if (_readThread is not null)
@@ -167,11 +164,10 @@ public class SerialTransport : IConnectionTransport
 
         try
         {
-            if (_useDirectIO && _fileStream is not null)
+            if (_useNativeIO && _fd >= 0)
             {
                 var bytes = Encoding.ASCII.GetBytes(data);
-                _fileStream.Write(bytes, 0, bytes.Length);
-                _fileStream.Flush();
+                NativeWrite(bytes);
             }
             else if (_port is { IsOpen: true })
             {
@@ -200,10 +196,9 @@ public class SerialTransport : IConnectionTransport
 
         try
         {
-            if (_useDirectIO && _fileStream is not null)
+            if (_useNativeIO && _fd >= 0)
             {
-                _fileStream.Write(data, 0, data.Length);
-                _fileStream.Flush();
+                NativeWrite(data);
             }
             else if (_port is { IsOpen: true })
             {
@@ -222,6 +217,24 @@ public class SerialTransport : IConnectionTransport
         return Task.CompletedTask;
     }
 
+    private unsafe void NativeWrite(byte[] data)
+    {
+        fixed (byte* ptr = data)
+        {
+            int written = 0;
+            while (written < data.Length)
+            {
+                var result = Posix.Write(_fd, ptr + written, (nint)(data.Length - written));
+                if (result < 0)
+                {
+                    var errno = Marshal.GetLastWin32Error();
+                    throw new IOException($"Serial write failed (errno={errno})");
+                }
+                written += (int)result;
+            }
+        }
+    }
+
     private void ReadLoop(CancellationToken ct)
     {
         var buffer = new byte[4096];
@@ -233,11 +246,9 @@ public class SerialTransport : IConnectionTransport
                 int bytesRead;
                 try
                 {
-                    if (_useDirectIO && _fileStream is not null)
+                    if (_useNativeIO && _fd >= 0)
                     {
-                        // Direct read from file descriptor — lowest latency, no .NET overhead.
-                        // Blocks until data arrives (raw mode: VMIN=1, VTIME=0).
-                        bytesRead = _fileStream.Read(buffer, 0, buffer.Length);
+                        bytesRead = NativeRead(buffer);
                     }
                     else if (_port is { IsOpen: true })
                     {
@@ -261,10 +272,9 @@ public class SerialTransport : IConnectionTransport
                     break;
                 }
 
-                if (bytesRead == 0)
+                if (bytesRead <= 0)
                 {
-                    // EOF on Linux means port was closed/disconnected
-                    if (_useDirectIO) break;
+                    if (_useNativeIO) break; // EOF or error
                     continue;
                 }
 
@@ -282,6 +292,22 @@ public class SerialTransport : IConnectionTransport
             ConnectionLost?.Invoke(new IOException("Serial port read loop ended unexpectedly"));
     }
 
+    private unsafe int NativeRead(byte[] buffer)
+    {
+        fixed (byte* ptr = buffer)
+        {
+            var result = Posix.Read(_fd, ptr, (nint)buffer.Length);
+            if (result < 0)
+            {
+                var errno = Marshal.GetLastWin32Error();
+                if (errno == 11 /* EAGAIN */ || errno == 4 /* EINTR */)
+                    return 0;
+                throw new IOException($"Serial read failed (errno={errno})");
+            }
+            return (int)result;
+        }
+    }
+
     private void ProcessIncomingData(string data)
     {
         foreach (var ch in data)
@@ -295,8 +321,6 @@ public class SerialTransport : IConnectionTransport
             }
             else if (ch == '<')
             {
-                // Status reports can be injected mid-line by GRBL real-time commands.
-                // Flush any partial line before starting the status report.
                 if (_lineBuffer.Length > 0)
                 {
                     var partial = _lineBuffer.ToString().TrimEnd('\r');
@@ -324,5 +348,36 @@ public class SerialTransport : IConnectionTransport
     {
         await DisconnectAsync();
         GC.SuppressFinalize(this);
+    }
+
+    // --- POSIX interop (Linux/macOS) ---
+    private static class Posix
+    {
+        public const int O_RDWR = 0x02;
+        public const int O_NOCTTY = 0x100;
+        public const int O_NONBLOCK = 0x800;
+        public const int F_GETFL = 3;
+        public const int F_SETFL = 4;
+        public const int TIOCMBIS = 0x5416;
+        public const int TIOCM_DTR = 0x002;
+        public const int TIOCM_RTS = 0x004;
+
+        [DllImport("libc", EntryPoint = "open", SetLastError = true)]
+        public static extern int Open([MarshalAs(UnmanagedType.LPStr)] string path, int flags);
+
+        [DllImport("libc", EntryPoint = "close", SetLastError = true)]
+        public static extern int Close(int fd);
+
+        [DllImport("libc", EntryPoint = "read", SetLastError = true)]
+        public static extern unsafe nint Read(int fd, byte* buf, nint count);
+
+        [DllImport("libc", EntryPoint = "write", SetLastError = true)]
+        public static extern unsafe nint Write(int fd, byte* buf, nint count);
+
+        [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+        public static extern int Fcntl(int fd, int cmd, int arg);
+
+        [DllImport("libc", EntryPoint = "ioctl", SetLastError = true)]
+        public static extern int Ioctl(int fd, nuint request, ref int value);
     }
 }
