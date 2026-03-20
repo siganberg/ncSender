@@ -62,6 +62,11 @@ public class AutoConnectService : BackgroundService
 
     private async Task TryConnectAsync(CancellationToken ct)
     {
+        // Don't attempt connection if connection type hasn't been configured yet
+        var rawType = _settings.GetSetting<string>("connection.type");
+        if (string.IsNullOrEmpty(rawType))
+            return;
+
         var settings = BuildConnectionSettings();
         var currentHash = ComputeSettingsHash(settings);
 
@@ -140,7 +145,9 @@ public class AutoConnectService : BackgroundService
         }
 
         // On successful connection with greeting, update saved port if it changed
-        if (_controller.IsConnected && _controller.ActiveProtocol is not null && port != savedPort)
+        // But only if user selected a specific port (not Auto-Detect)
+        if (_controller.IsConnected && _controller.ActiveProtocol is not null
+            && !string.IsNullOrEmpty(savedPort) && port != savedPort)
         {
             _logger.LogInformation("CNC controller found on {Port} (saved port was {SavedPort}), updating settings", port, savedPort);
             _ = _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
@@ -162,16 +169,37 @@ public class AutoConnectService : BackgroundService
         }
     }
 
+    // macOS built-in ports that should never be probed during auto-detect
+    private static readonly string[] MacOsExcludedPorts =
+    [
+        "debug-console", "Bluetooth-Incoming-Port", "wlan-debug"
+    ];
+
+    private static bool IsMacOsBuiltInPort(string port)
+    {
+        foreach (var excluded in MacOsExcludedPorts)
+        {
+            if (port.Contains(excluded, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     private List<string> GetUsbCandidatePorts(string savedPort)
     {
         var occupiedPorts = _pendantManager.GetOccupiedPorts();
         var allPorts = SerialPort.GetPortNames();
+        var isAutoDetect = string.IsNullOrEmpty(savedPort);
         var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var port in allPorts)
         {
             // Skip ports occupied by pendant/dongle
             if (occupiedPorts.Contains(port))
+                continue;
+
+            // Skip macOS built-in ports during auto-detect
+            if (isAutoDetect && IsMacOsBuiltInPort(port))
                 continue;
 
             // macOS dedup: prefer /dev/cu.* over /dev/tty.*

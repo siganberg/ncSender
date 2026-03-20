@@ -92,9 +92,8 @@ public class ServerContext : IServerContext
     {
         if (type == "usb")
         {
-            var usbPort = _settings.GetSetting<string>("connection.usbPort");
             var baudRate = _settings.GetSetting<int>("connection.baudRate", 115200);
-            return string.IsNullOrEmpty(usbPort) || baudRate <= 0;
+            return baudRate <= 0;
         }
 
         if (type == "ethernet")
