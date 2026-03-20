@@ -22,4 +22,5 @@ public interface IPendantManager
     Task UnpairDongleAsync();
     void NotifySettingsChanged();
     void StartAutoConnect();
+    HashSet<string> GetOccupiedPorts();
 }
