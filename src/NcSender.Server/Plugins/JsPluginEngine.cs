@@ -19,6 +19,7 @@ public class JsPluginEngine : IJsPluginEngine
     {
         public required Engine JintEngine { get; init; }
         public required JsValue CachedSettings { get; init; }
+        public int Priority { get; init; }
     }
 
     public JsPluginEngine(ILogger<JsPluginEngine> logger)
@@ -26,7 +27,7 @@ public class JsPluginEngine : IJsPluginEngine
         _logger = logger;
     }
 
-    public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings)
+    public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
     {
         lock (_lock)
         {
@@ -61,7 +62,8 @@ public class JsPluginEngine : IJsPluginEngine
                 _plugins[pluginId] = new PluginState
                 {
                     JintEngine = engine,
-                    CachedSettings = cachedSettings
+                    CachedSettings = cachedSettings,
+                    Priority = priority
                 };
 
                 _logger.LogInformation("JS plugin {PluginId} loaded from {Path}", pluginId, commandsFilePath);
@@ -95,7 +97,7 @@ public class JsPluginEngine : IJsPluginEngine
     {
         lock (_lock)
         {
-            return [.. _plugins.Keys];
+            return _plugins.OrderBy(kv => kv.Value.Priority).Select(kv => kv.Key).ToList();
         }
     }
 

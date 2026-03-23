@@ -590,7 +590,7 @@ public class PluginManager : IPluginManager
         var settings = GetSettings(pluginId);
         _logger.LogInformation("Plugin {PluginId}: settings keys = [{Keys}]",
             pluginId, string.Join(", ", settings.Keys));
-        _jsEngine.LoadPlugin(pluginId, commandsPath, settings);
+        _jsEngine.LoadPlugin(pluginId, commandsPath, settings, manifest.Priority);
     }
 
     private void SyncToolSettingsOnEnable(string pluginId)
