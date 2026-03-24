@@ -105,7 +105,7 @@ public class GcodeJobProcessorTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessLines_SkipsBlankLinesAndComments()
+    public async Task ProcessLines_SkipsBlankLines_SendsComments()
     {
         var gcode = "G0 X0\n\n(comment)\n; another comment\nG1 X10 F500\n";
         var cachePath = SetupCacheFile(gcode);
@@ -116,10 +116,10 @@ public class GcodeJobProcessorTests : IDisposable
 
             await processor.ProcessLinesAsync();
 
-            // Only G0 X0 and G1 X10 should be sent (blanks + comments skipped)
+            // Blank lines skipped, comments and G-code sent (4 commands total)
             controller.Verify(c => c.SendCommandAsync(
                 It.IsAny<string>(),
-                It.IsAny<CommandOptions?>()), Times.Exactly(2));
+                It.IsAny<CommandOptions?>()), Times.Exactly(4));
         }
         finally
         {
