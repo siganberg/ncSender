@@ -127,9 +127,9 @@ internal class GcodeJobProcessor
 
             if (_isStopped) break;
 
-            // Skip blank lines and pure comments
+            // Skip blank lines
             var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed) || GcodePatterns.IsGcodeComment(trimmed))
+            if (string.IsNullOrEmpty(trimmed))
             {
                 UpdateProgress(job, fileLineNumber, totalLines);
                 continue;

@@ -136,6 +136,45 @@
       </div>
     </div>
 
+    <!-- Events Tab -->
+    <div v-if="activeTab === 'events'" class="tab-content events-tab">
+      <div class="events-list">
+        <div class="event-item">
+          <label class="event-label">Program Start</label>
+          <div class="event-note">Executed before the program runs. Not executed on Start From Line.</div>
+          <div class="event-editor-wrap">
+            <CodeEditor
+              :value="eventProgramStart"
+              language="gcode"
+              :theme="monacoTheme"
+              :options="eventEditorOptions"
+              @update:value="eventProgramStart = $event"
+              @editorDidMount="() => {}"
+            />
+          </div>
+        </div>
+        <div class="event-item">
+          <label class="event-label">Program End</label>
+          <div class="event-note">Executed after the program completes successfully.</div>
+          <div class="event-editor-wrap">
+            <CodeEditor
+              :value="eventProgramEnd"
+              language="gcode"
+              :theme="monacoTheme"
+              :options="eventEditorOptions"
+              @update:value="eventProgramEnd = $event"
+              @editorDidMount="() => {}"
+            />
+          </div>
+        </div>
+        <div class="event-actions">
+          <button class="event-save-btn" @click="saveEvents" :disabled="!eventsDirty">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- G-Code Preview Tab -->
     <div v-show="activeTab === 'gcode-preview'" class="tab-content">
       <div v-if="!totalLines" class="placeholder-content">
@@ -563,8 +602,73 @@ const tabs = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'gcode-preview', label: 'G-Code Preview' },
   { id: 'macros', label: 'Macros' },
-  { id: 'tools', label: 'Plugins' }
+  { id: 'tools', label: 'Plugins' },
+  { id: 'events', label: 'Events' }
 ];
+
+watch(activeTab, (tab) => {
+  if (tab === 'events' && !eventsSavedSnapshot.value.start && !eventsSavedSnapshot.value.end) {
+    loadEvents();
+  }
+});
+
+// Events tab state
+const eventProgramStart = ref('');
+const eventProgramEnd = ref('');
+const eventsSavedSnapshot = ref({ start: '', end: '' });
+const eventsDirty = computed(() =>
+  eventProgramStart.value !== eventsSavedSnapshot.value.start ||
+  eventProgramEnd.value !== eventsSavedSnapshot.value.end
+);
+
+const eventEditorOptions = {
+  minimap: { enabled: false },
+  lineNumbers: 'on',
+  scrollBeyondLastLine: false,
+  wordWrap: 'off',
+  automaticLayout: true,
+  fontSize: 13,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  folding: false,
+  glyphMargin: false,
+  lineDecorationsWidth: 8,
+  lineNumbersMinChars: 3,
+  scrollbar: { vertical: 'auto', horizontal: 'auto', verticalScrollbarSize: 8, horizontalScrollbarSize: 8 }
+};
+
+async function loadEvents() {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/settings`);
+    if (!response.ok) return;
+    const data = await response.json();
+    const events = data?.events || {};
+    eventProgramStart.value = events.programStart || '';
+    eventProgramEnd.value = events.programEnd || '';
+    eventsSavedSnapshot.value = {
+      start: eventProgramStart.value,
+      end: eventProgramEnd.value
+    };
+  } catch { /* ignore */ }
+}
+
+async function saveEvents() {
+  try {
+    await fetch(`${api.baseUrl}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        events: {
+          programStart: eventProgramStart.value,
+          programEnd: eventProgramEnd.value
+        }
+      })
+    });
+    eventsSavedSnapshot.value = {
+      start: eventProgramStart.value,
+      end: eventProgramEnd.value
+    };
+  } catch { /* ignore */ }
+}
 
 // G-Code Modal state
 const showGcodeModal = ref(false);
@@ -2864,6 +2968,77 @@ h2 {
   min-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.events-tab {
+  overflow: hidden;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.event-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+}
+
+.event-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.event-note {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.event-editor-wrap {
+  flex: 1;
+  min-height: 60px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.event-editor-wrap :deep(.monaco-editor) {
+  height: 100% !important;
+}
+
+.event-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.event-save-btn {
+  padding: 6px 20px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: white;
+}
+
+.event-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.event-save-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
 }
 
 .tools-list {

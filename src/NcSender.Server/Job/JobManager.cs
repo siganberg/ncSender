@@ -11,6 +11,7 @@ public class JobManager : IJobManager
     private readonly IServerContext _context;
     private readonly IBroadcaster _broadcaster;
     private readonly IJsPluginEngine _jsEngine;
+    private readonly ISettingsManager _settingsManager;
     private readonly ILogger<JobManager> _logger;
 
     private GcodeJobProcessor? _activeProcessor;
@@ -24,6 +25,7 @@ public class JobManager : IJobManager
         IServerContext context,
         IBroadcaster broadcaster,
         IJsPluginEngine jsEngine,
+        ISettingsManager settingsManager,
         ILogger<JobManager> logger)
     {
         _controller = controller;
@@ -31,6 +33,7 @@ public class JobManager : IJobManager
         _context = context;
         _broadcaster = broadcaster;
         _jsEngine = jsEngine;
+        _settingsManager = settingsManager;
         _logger = logger;
     }
 
@@ -87,11 +90,17 @@ public class JobManager : IJobManager
         _context.UpdateSenderStatus();
         _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
 
+        // Execute Program Start event (only for fresh start, not Start From Line)
+        var isFromLine = startLine > 1 || resumeSequence is not null;
+
         // Run job on background task
         _activeTask = Task.Run(async () =>
         {
             try
             {
+                if (!isFromLine)
+                    await ExecuteEventGcode("programStart");
+
                 await _activeProcessor.ProcessLinesAsync();
                 OnJobCompleted();
             }
@@ -204,6 +213,32 @@ public class JobManager : IJobManager
         _logger.LogInformation("Job force reset");
     }
 
+    private async Task ExecuteEventGcode(string settingsKey)
+    {
+        var gcode = _settingsManager.GetSetting<string>($"events.{settingsKey}");
+        if (string.IsNullOrWhiteSpace(gcode)) return;
+
+        var lines = gcode.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var meta = new CommandOptions { Meta = new CommandMeta { SourceId = "event" } };
+
+        _logger.LogInformation("Executing {Event} event G-code ({Lines} lines)", settingsKey, lines.Length);
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            try
+            {
+                await _controller.SendCommandAsync(line, meta);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Event G-code line failed: {Line}", line);
+                break;
+            }
+        }
+    }
+
     private void NotifyPluginsJobEnded()
     {
         foreach (var pluginId in _jsEngine.GetLoadedPluginIds())
@@ -222,6 +257,9 @@ public class JobManager : IJobManager
 
         _activeProcessor = null;
         _activeTask = null;
+
+        // Execute Program End event G-code
+        _ = ExecuteEventGcode("programEnd");
 
         NotifyPluginsJobEnded();
         _context.UpdateSenderStatus();
