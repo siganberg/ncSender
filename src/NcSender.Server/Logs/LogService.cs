@@ -62,6 +62,40 @@ public class LogService : ILogService
         return reader.ReadToEnd();
     }
 
+    public bool DeleteLog(string filename)
+    {
+        var path = GetFilePath(filename);
+        if (path is null) return false;
+
+        try
+        {
+            // Check if this is the most recent log file (currently being written by Serilog).
+            // Always truncate instead of delete to avoid breaking Serilog's file handle.
+            var latestLog = Directory.GetFiles(_logsDir, "*.log")
+                .Select(f => new FileInfo(f))
+                .OrderByDescending(f => f.Name)
+                .FirstOrDefault();
+
+            if (latestLog is not null && latestLog.Name.Equals(filename, StringComparison.OrdinalIgnoreCase))
+            {
+                // Truncate — Serilog holds the file open
+                using var fs = new FileStream(path, FileMode.Truncate, FileAccess.Write, FileShare.ReadWrite);
+                _logger.LogInformation("Active log file truncated: {Filename}", filename);
+            }
+            else
+            {
+                File.Delete(path);
+                _logger.LogInformation("Log file deleted: {Filename}", filename);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete log file: {Filename}", filename);
+            return false;
+        }
+    }
+
     public string? GetFilePath(string filename)
     {
         // Validate filename to prevent path traversal

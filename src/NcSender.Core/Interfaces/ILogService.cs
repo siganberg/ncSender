@@ -6,5 +6,6 @@ public interface ILogService
 {
     List<LogFileInfo> ListAsync();
     string? ReadAsync(string filename);
+    bool DeleteLog(string filename);
     string? GetFilePath(string filename);
 }

@@ -53,6 +53,30 @@
           </svg>
           Download
         </button>
+        <button
+          class="btn btn-danger"
+          @click="confirmDelete"
+          :disabled="!selectedFile || loading"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+          </svg>
+          Delete
+        </button>
+      </div>
+    </div>
+
+    <!-- Delete confirmation dialog -->
+    <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+      <div class="modal-dialog">
+        <h4>Delete Log File</h4>
+        <p v-if="isCurrentDayLog">This is today's active log. Its contents will be cleared.</p>
+        <p v-else>Are you sure you want to delete <strong>{{ selectedFile }}</strong>?</p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showDeleteConfirm = false">Cancel</button>
+          <button class="btn btn-danger" @click="deleteLog">{{ isCurrentDayLog ? 'Clear' : 'Delete' }}</button>
+        </div>
       </div>
     </div>
 
@@ -122,6 +146,7 @@ const selectedFile = ref('');
 const logContent = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
+const showDeleteConfirm = ref(false);
 const logsDir = ref<string | null>(null);
 const editorInstance = ref<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -355,6 +380,40 @@ function downloadLog() {
   document.body.removeChild(link);
 }
 
+const isCurrentDayLog = computed(() => {
+  if (!selectedFile.value || logFiles.value.length === 0) return false;
+  return selectedFile.value === logFiles.value[0].name;
+});
+
+function confirmDelete() {
+  if (!selectedFile.value) return;
+  showDeleteConfirm.value = true;
+}
+
+async function deleteLog() {
+  if (!selectedFile.value) return;
+  showDeleteConfirm.value = false;
+
+  try {
+    const response = await fetch(`${api.baseUrl}/api/logs/${encodeURIComponent(selectedFile.value)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) throw new Error('Failed to delete log file');
+
+    if (isCurrentDayLog.value) {
+      logContent.value = '';
+    } else {
+      selectedFile.value = '';
+    }
+    await loadLogFiles();
+    if (!selectedFile.value && logFiles.value.length > 0) {
+      selectedFile.value = logFiles.value[0].name;
+    }
+  } catch (err: any) {
+    error.value = err.message || 'Failed to delete log file';
+  }
+}
+
 function handleEditorMount(editor: Monaco.editor.IStandaloneCodeEditor) {
   editorInstance.value = editor;
   // Scroll to bottom on initial mount if content exists
@@ -483,6 +542,54 @@ function formatSize(bytes: number): string {
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--color-surface-hover);
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #c82333;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 340px;
+  max-width: 440px;
+}
+
+.modal-dialog h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+}
+
+.modal-dialog p {
+  margin: 0 0 20px 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .logs-content {

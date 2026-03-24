@@ -23,6 +23,14 @@ public static class LogEndpoints
                 : Results.NotFound(new ApiError($"Log file '{filename}' not found"));
         });
 
+        app.MapDelete("/api/logs/{filename}", (string filename, ILogService svc) =>
+        {
+            var success = svc.DeleteLog(filename);
+            return success
+                ? Results.Ok(new ApiSuccessMessage(true, $"Log file '{filename}' deleted"))
+                : Results.NotFound(new ApiError($"Log file '{filename}' not found"));
+        });
+
         app.MapGet("/api/logs/{filename}/download", (string filename, ILogService svc) =>
         {
             var path = svc.GetFilePath(filename);
