@@ -1021,8 +1021,9 @@ export async function seedInitialState(initData?: any) {
     }
   }
 
-  // If server has a file loaded but we have no content (fresh session / incognito), download via HTTP
-  if (serverState.jobLoaded?.filename && !gcodeContent.value) {
+  // If server has a file loaded but we have no content or a different file cached, download via HTTP
+  const serverFile = serverState.jobLoaded?.filename;
+  if (serverFile && (!gcodeContent.value || gcodeFilename.value !== serverFile)) {
     try {
       debugLog(`[Store] Downloading G-code from server: ${serverState.jobLoaded.filename}`);
       const content = await api.downloadGCodeFile((progress: any) => {
