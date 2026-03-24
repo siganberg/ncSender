@@ -128,7 +128,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    show: false,
+    show: true,
     backgroundColor: '#1a1a2e',
     kiosk: isKiosk,
     autoHideMenuBar: true,
@@ -148,18 +148,15 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(winOptions);
 
-  mainWindow.once('ready-to-show', () => {
-    if (!isKiosk) {
-      try {
-        mainWindow.maximize();
-      } catch {
-        const primaryDisplay = screen.getPrimaryDisplay();
-        const { x, y, width, height } = primaryDisplay.workArea;
-        mainWindow.setBounds({ x, y, width, height });
-      }
+  if (!isKiosk) {
+    try {
+      mainWindow.maximize();
+    } catch {
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { x, y, width, height } = primaryDisplay.workArea;
+      mainWindow.setBounds({ x, y, width, height });
     }
-    mainWindow.show();
-  });
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
