@@ -161,11 +161,26 @@ function createWindow() {
     mainWindow.show();
   });
 
-  mainWindow.loadURL(SERVER_URL);
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function showLoadingScreen() {
+  const loadingHtml = `data:text/html;charset=utf-8,${encodeURIComponent(`
+    <!DOCTYPE html>
+    <html>
+    <head><style>
+      body { margin: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e0e0e0; }
+      .container { text-align: center; }
+      .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #7c5cbf; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .text { font-size: 14px; opacity: 0.7; }
+    </style></head>
+    <body><div class="container"><div class="spinner"></div><div class="text">Starting ncSender...</div></div></body>
+    </html>
+  `)}`;
+  mainWindow.loadURL(loadingHtml);
 }
 
 // ── IPC handlers ────────────────────────────────────────────────────────────
@@ -204,8 +219,11 @@ function registerShortcuts() {
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  startServer();
   registerShortcuts();
+  createWindow();
+  showLoadingScreen();
+
+  startServer();
 
   try {
     await waitForServer();
@@ -215,7 +233,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  createWindow();
+  mainWindow.loadURL(SERVER_URL);
 });
 
 app.on('window-all-closed', () => {
