@@ -64,7 +64,7 @@ export async function clearGCodeIDB() {
   });
 }
 
-export async function saveGCodeToIDB(filename, content) {
+export async function saveGCodeToIDB(filename, content, loadedAt) {
   if (!idbEnabled) throw new Error('IndexedDB disabled');
   const db = await openDB();
 
@@ -91,7 +91,8 @@ export async function saveGCodeToIDB(filename, content) {
       filename: filename || '',
       content: cleanContent,
       lineCount: lineCount,
-      timestamp: timestamp
+      timestamp: timestamp,
+      loadedAt: loadedAt || null
     };
 
     store.put(data);

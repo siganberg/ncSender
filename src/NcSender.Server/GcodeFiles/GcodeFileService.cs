@@ -212,6 +212,7 @@ public class GcodeFileService : IGcodeFileService
         {
             Filename = filename,
             TotalLines = totalLines,
+            LoadedAt = DateTime.UtcNow,
             IsTemporary = isTemporary,
             SourceFile = sourcePath,
             EstimatedSec = estimatedSec

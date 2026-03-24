@@ -25,6 +25,7 @@ public class JobInfo
     public double? RemainingSec { get; set; }
     public string? ProgressProvider { get; set; }
     public double? ActualElapsedSec { get; set; }
+    public DateTime? LoadedAt { get; set; }
     public bool IsTemporary { get; set; }
     public string? SourceFile { get; set; }
     public double? EstimatedSec { get; set; }

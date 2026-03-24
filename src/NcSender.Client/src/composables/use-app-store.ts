@@ -848,7 +848,7 @@ export function initializeStore() {
         });
 
         if (isIDBEnabled()) {
-          saveGCodeToIDB(data.filename || '', content)
+          saveGCodeToIDB(data.filename || '', content, new Date().toISOString())
             .then(({ lineCount }) => {
               gcodeLineCount.value = lineCount;
               gcodeContent.value = content; // Keep in memory for fast virtual scroll access
@@ -1021,9 +1021,12 @@ export async function seedInitialState(initData?: any) {
     }
   }
 
-  // If server has a file loaded but we have no content or a different file cached, download via HTTP
+  // If server has a file loaded but we have no content, a different file, or a newer version, download via HTTP
   const serverFile = serverState.jobLoaded?.filename;
-  if (serverFile && (!gcodeContent.value || gcodeFilename.value !== serverFile)) {
+  const serverLoadedAt = serverState.jobLoaded?.loadedAt;
+  const cachedLoadedAt = (await getGCodeFromIDB().catch(() => null))?.loadedAt;
+  const needsDownload = serverFile && (!gcodeContent.value || gcodeFilename.value !== serverFile || (serverLoadedAt && serverLoadedAt !== cachedLoadedAt));
+  if (needsDownload) {
     try {
       debugLog(`[Store] Downloading G-code from server: ${serverState.jobLoaded.filename}`);
       const content = await api.downloadGCodeFile((progress: any) => {
@@ -1036,7 +1039,7 @@ export async function seedInitialState(initData?: any) {
 
         if (isIDBEnabled()) {
           try {
-            const { lineCount } = await saveGCodeToIDB(serverState.jobLoaded.filename, content);
+            const { lineCount } = await saveGCodeToIDB(serverState.jobLoaded.filename, content, serverLoadedAt);
             gcodeLineCount.value = lineCount;
           } catch {
             const lines = content.split('\n');
