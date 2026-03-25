@@ -1,11 +1,8 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electron');
-const { spawn, execFile } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
 
-// Disable Chromium sandbox on Linux so child processes (server) can use sudo
-// for updates. Without this, app.relaunch() loses --no-sandbox from the
-// wrapper script and PR_SET_NO_NEW_PRIVS blocks sudo in the server process.
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -15,47 +12,47 @@ if (process.platform === 'linux') {
 const SERVER_PORT = 8090;
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 const HEALTH_URL = `${SERVER_URL}/api/health`;
+const SHUTDOWN_URL = `${SERVER_URL}/api/shutdown`;
 
 let mainWindow = null;
 let serverProcess = null;
 let isKiosk = process.argv.includes('--kiosk');
+let weStartedServer = false;
 
 // ── Server lifecycle ────────────────────────────────────────────────────────
 
 function getServerPath() {
   const ext = process.platform === 'win32' ? '.exe' : '';
-
   if (app.isPackaged) {
-    // Packaged: resources/server/NcSender.Server[.exe]
     return path.join(process.resourcesPath, 'server', `NcSender.Server${ext}`);
   }
-
-  // Dev: use dotnet run
   return null;
 }
 
-function startServer() {
+function isServerRunning() {
+  return new Promise((resolve) => {
+    const req = http.get(HEALTH_URL, (res) => {
+      resolve(res.statusCode >= 200 && res.statusCode < 400);
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(1000, () => { req.destroy(); resolve(false); });
+  });
+}
+
+function startServerAsChild() {
   const serverBin = getServerPath();
+  const serverEnv = {
+    ...process.env,
+    ASPNETCORE_URLS: `http://localhost:${SERVER_PORT}`,
+    NCSENDER_PACKAGED: '1',
+  };
 
   if (serverBin) {
-    // Packaged mode — run the binary directly via spawn (not execFile which has
-    // a 1MB maxBuffer limit that can kill the child process)
-    serverProcess = spawn(serverBin, [], {
-      env: {
-        ...process.env,
-        ASPNETCORE_URLS: `http://localhost:${SERVER_PORT}`,
-        NCSENDER_PACKAGED: '1',
-      },
-      stdio: 'ignore',
-    });
+    serverProcess = spawn(serverBin, [], { env: serverEnv, stdio: 'ignore' });
   } else {
-    // Dev mode — use dotnet run
     const serverProject = path.join(__dirname, '..', 'NcSender.Server');
     serverProcess = spawn('dotnet', ['run', '--project', serverProject], {
-      env: {
-        ...process.env,
-        ASPNETCORE_URLS: `http://localhost:${SERVER_PORT}`,
-      },
+      env: { ...process.env, ASPNETCORE_URLS: `http://localhost:${SERVER_PORT}` },
       stdio: 'ignore',
     });
   }
@@ -67,57 +64,66 @@ function startServer() {
   serverProcess.on('exit', (code) => {
     console.log(`Server exited with code ${code}`);
     serverProcess = null;
-
-    // Exit code 42 = update installed, relaunch the app
     if (code === 42) {
       app.relaunch();
       app.exit(0);
     }
   });
+
+  weStartedServer = true;
 }
 
-function waitForServer(timeoutMs = 30000) {
-  const start = Date.now();
-
-  return new Promise((resolve, reject) => {
-    function poll() {
-      if (Date.now() - start > timeoutMs) {
-        return reject(new Error('Server startup timed out'));
-      }
-
-      const req = http.get(HEALTH_URL, (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 400) {
-          resolve();
-        } else {
-          setTimeout(poll, 200);
-        }
-      });
-
-      req.on('error', () => setTimeout(poll, 200));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        setTimeout(poll, 200);
-      });
-    }
-
-    poll();
+function shutdownServer() {
+  return new Promise((resolve) => {
+    const req = http.request(SHUTDOWN_URL, { method: 'POST' }, (res) => {
+      res.resume();
+      resolve();
+    });
+    req.on('error', () => resolve());
+    req.setTimeout(2000, () => { req.destroy(); resolve(); });
+    req.end();
   });
 }
 
 function killServer() {
   if (!serverProcess) return;
-
   try {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', serverProcess.pid.toString(), '/f', '/t']);
     } else {
       serverProcess.kill('SIGTERM');
     }
-  } catch {
-    // already exited
-  }
-
+  } catch { /* already exited */ }
   serverProcess = null;
+}
+
+// Monitor server health — if server dies after being healthy (e.g., after update
+// install with exit code 42), relaunch the app so launch.sh restarts the server.
+let serverWasHealthy = false;
+let isQuitting = false;
+
+function startServerMonitor() {
+  serverWasHealthy = true;
+  const interval = setInterval(() => {
+    if (isQuitting) { clearInterval(interval); return; }
+
+    const req = http.get(HEALTH_URL, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 400) {
+        onServerDied(interval);
+      }
+    });
+    req.on('error', () => { onServerDied(interval); });
+    req.setTimeout(2000, () => { req.destroy(); });
+  }, 3000);
+}
+
+function onServerDied(interval) {
+  if (!serverWasHealthy || isQuitting) return;
+  serverWasHealthy = false;
+  clearInterval(interval);
+  console.log('Server died — relaunching app');
+  app.relaunch();
+  app.exit(0);
 }
 
 // ── Window ──────────────────────────────────────────────────────────────────
@@ -139,7 +145,6 @@ function createWindow() {
     },
   };
 
-  // Only set icon on Windows/Linux — macOS uses .icns from the .app bundle
   if (process.platform === 'win32') {
     winOptions.icon = path.join(__dirname, 'Assets', 'icon.ico');
   } else if (process.platform === 'linux') {
@@ -158,59 +163,31 @@ function createWindow() {
     }
   }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-}
+  mainWindow.on('closed', () => { mainWindow = null; });
 
-function showLoadingScreen() {
-  const loadingHtml = `data:text/html;charset=utf-8,${encodeURIComponent(`
-    <!DOCTYPE html>
-    <html>
-    <head><style>
-      body { margin: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e0e0e0; }
-      .container { text-align: center; }
-      .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #7c5cbf; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      .text { font-size: 14px; opacity: 0.7; }
-    </style></head>
-    <body><div class="container"><div class="spinner"></div><div class="text">Starting ncSender...</div></div></body>
-    </html>
-  `)}`;
-  mainWindow.loadURL(loadingHtml);
+  // When the smart loader redirects to the server URL, start health monitoring
+  mainWindow.webContents.on('did-navigate', (_event, url) => {
+    if (url.startsWith(SERVER_URL) && !serverWasHealthy) {
+      startServerMonitor();
+    }
+  });
 }
 
 // ── IPC handlers ────────────────────────────────────────────────────────────
 
-ipcMain.handle('app:quit', () => {
-  app.quit();
-});
-
-ipcMain.handle('app:isKiosk', () => {
-  return isKiosk;
-});
+ipcMain.handle('app:quit', () => { app.quit(); });
+ipcMain.handle('app:isKiosk', () => isKiosk);
 
 // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
 function registerShortcuts() {
-  // F11 — toggle fullscreen
   globalShortcut.register('F11', () => {
-    if (mainWindow) {
-      mainWindow.setFullScreen(!mainWindow.isFullScreen());
-    }
+    if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
   });
-
-  // F12 — toggle devtools
   globalShortcut.register('F12', () => {
-    if (mainWindow) {
-      mainWindow.webContents.toggleDevTools();
-    }
+    if (mainWindow) mainWindow.webContents.toggleDevTools();
   });
-
-  // Ctrl+Alt+Q — quit kiosk mode
-  globalShortcut.register('CommandOrControl+Alt+Q', () => {
-    app.quit();
-  });
+  globalShortcut.register('CommandOrControl+Alt+Q', () => { app.quit(); });
 }
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
@@ -218,26 +195,51 @@ function registerShortcuts() {
 app.whenReady().then(async () => {
   registerShortcuts();
   createWindow();
-  showLoadingScreen();
 
-  startServer();
-
-  try {
-    await waitForServer();
-  } catch (err) {
-    console.error(err.message);
-    app.quit();
-    return;
+  // Show a loading page that polls the server and redirects when ready.
+  // On Linux, the server is pre-started by launch.sh before Electron to avoid
+  // fork() page table copy overhead that causes 15-20s delays on cold boot.
+  // On Windows/macOS, we start the server as a child process below.
+  const loaderHtml = `data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
+<html><head><style>
+  body { margin: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e0e0e0; }
+  .container { text-align: center; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #7c5cbf; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .text { font-size: 14px; opacity: 0.7; }
+</style></head>
+<body><div class="container"><div class="spinner"></div><div class="text">Starting ncSender...</div></div>
+<script>
+  function poll() {
+    fetch('http://localhost:${SERVER_PORT}/api/health')
+      .then(r => { if (r.ok) window.location.href = 'http://localhost:${SERVER_PORT}'; else setTimeout(poll, 300); })
+      .catch(() => setTimeout(poll, 300));
   }
+  poll();
+</script></body></html>`)}`;
+  mainWindow.loadURL(loaderHtml);
 
-  mainWindow.loadURL(SERVER_URL);
+  // Check if server is already running (started by launch.sh, systemd, or previous session)
+  const alreadyRunning = await isServerRunning();
+
+  if (!alreadyRunning) {
+    startServerAsChild();
+  }
 });
 
-app.on('window-all-closed', () => {
-  app.quit();
-});
+app.on('window-all-closed', () => { app.quit(); });
 
-app.on('will-quit', () => {
+app.on('will-quit', async (e) => {
+  isQuitting = true;
   globalShortcut.unregisterAll();
-  killServer();
+
+  if (weStartedServer) {
+    // We spawned the server as a child — kill it directly
+    killServer();
+  } else {
+    // Server was started externally (launch.sh) — send shutdown via API
+    e.preventDefault();
+    await shutdownServer();
+    app.exit(0);
+  }
 });

@@ -357,6 +357,12 @@ public static class ServerBuilder
     {
         app.MapGet("/api/health", () => Results.Ok(new HealthResponse("ok", DateTime.UtcNow.ToString("o"))));
 
+        app.MapPost("/api/shutdown", (IHostApplicationLifetime lifetime) =>
+        {
+            _ = Task.Run(async () => { await Task.Delay(500); lifetime.StopApplication(); });
+            return Results.Ok(new ApiSuccess(true));
+        });
+
         app.MapGet("/api/server-state", (IServerContext ctx) =>
         {
             ctx.UpdateSenderStatus();

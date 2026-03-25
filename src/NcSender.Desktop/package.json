@@ -57,7 +57,13 @@
       "target": "deb",
       "icon": "Assets/icons",
       "category": "Utility",
-      "executableArgs": ["--no-sandbox"]
+      "executableArgs": ["--no-sandbox"],
+      "extraFiles": [
+        {
+          "from": "resources/launch.sh",
+          "to": "launch.sh"
+        }
+      ]
     },
     "deb": {
       "afterInstall": "scripts/afterInstall.sh"
