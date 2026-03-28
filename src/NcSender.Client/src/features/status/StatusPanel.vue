@@ -27,7 +27,7 @@
           @mousedown="editingAxis !== 'x' && startLongPress('x', $event)"
           @mouseup="endLongPress('x', $event)"
           @mouseleave="cancelLongPress('x')"
-          @touchstart.prevent="editingAxis !== 'x' && startLongPress('x', $event)"
+          @touchstart="editingAxis !== 'x' && (($event.preventDefault()), startLongPress('x', $event))"
           @touchend="endLongPress('x', $event)"
           @touchcancel="cancelLongPress('x')"
         >
@@ -71,7 +71,7 @@
           @mousedown="editingAxis !== 'y' && startLongPress('y', $event)"
           @mouseup="endLongPress('y', $event)"
           @mouseleave="cancelLongPress('y')"
-          @touchstart.prevent="editingAxis !== 'y' && startLongPress('y', $event)"
+          @touchstart="editingAxis !== 'y' && (($event.preventDefault()), startLongPress('y', $event))"
           @touchend="endLongPress('y', $event)"
           @touchcancel="cancelLongPress('y')"
         >
@@ -101,7 +101,7 @@
           @mousedown="editingAxis !== 'z' && startLongPress('z', $event)"
           @mouseup="endLongPress('z', $event)"
           @mouseleave="cancelLongPress('z')"
-          @touchstart.prevent="editingAxis !== 'z' && startLongPress('z', $event)"
+          @touchstart="editingAxis !== 'z' && (($event.preventDefault()), startLongPress('z', $event))"
           @touchend="endLongPress('z', $event)"
           @touchcancel="cancelLongPress('z')"
         >
@@ -135,7 +135,7 @@
           @mousedown="editingAxis !== 'z' && startLongPress('z', $event)"
           @mouseup="endLongPress('z', $event)"
           @mouseleave="cancelLongPress('z')"
-          @touchstart.prevent="editingAxis !== 'z' && startLongPress('z', $event)"
+          @touchstart="editingAxis !== 'z' && (($event.preventDefault()), startLongPress('z', $event))"
           @touchend="endLongPress('z', $event)"
           @touchcancel="cancelLongPress('z')"
         >
