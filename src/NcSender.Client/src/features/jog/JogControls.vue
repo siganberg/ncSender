@@ -426,6 +426,22 @@ const isButtonPressed = (buttonId: string) => {
 
 let unsubscribeJogStopped: (() => void) | null = null;
 
+// Global release handler — catches mouseup/touchend outside the button area.
+// Without this, dragging off a jog button leaves the jog running indefinitely.
+const handleGlobalRelease = () => {
+  if (activeJogId) {
+    pressedButtons.value.clear();
+    if (jogTimer) {
+      clearTimeout(jogTimer);
+      jogTimer = null;
+    }
+    if (isLongPress) {
+      stopJog();
+    }
+    isLongPress = false;
+  }
+};
+
 onMounted(() => {
   unsubscribeJogStopped = api.on('jog:stopped', (data) => {
     if (!data || !data.jogId) {
@@ -436,6 +452,10 @@ onMounted(() => {
       stopHeartbeat();
     }
   });
+
+  window.addEventListener('mouseup', handleGlobalRelease);
+  window.addEventListener('touchend', handleGlobalRelease);
+  window.addEventListener('touchcancel', handleGlobalRelease);
 });
 
 onBeforeUnmount(() => {
@@ -444,6 +464,10 @@ onBeforeUnmount(() => {
     unsubscribeJogStopped = null;
   }
   stopHeartbeat();
+
+  window.removeEventListener('mouseup', handleGlobalRelease);
+  window.removeEventListener('touchend', handleGlobalRelease);
+  window.removeEventListener('touchcancel', handleGlobalRelease);
 });
 </script>
 
