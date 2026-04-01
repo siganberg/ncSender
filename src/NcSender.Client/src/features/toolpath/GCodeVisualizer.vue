@@ -2250,16 +2250,20 @@ const animate = () => {
     const currentRange = gcodeVisualizer.lineDistanceRange.get(ln);
     if (currentRange) {
       // Current line has geometry — project spindle position onto its segments
-      gcodeVisualizer.setExecutionDistance(
-        gcodeVisualizer.getExecutionDistanceForPosition(ln, currentSpindlePosition)
-      );
+      const execDist = gcodeVisualizer.getExecutionDistanceForPosition(ln, currentSpindlePosition);
+      gcodeVisualizer._lastKnownExecDist = execDist;
+      gcodeVisualizer.setExecutionDistance(execDist);
     } else {
-      // Current line has no geometry (comment/empty) — use endDist of nearest preceding line
-      let dist = 0;
-      for (let i = ln - 1; i >= 1; i--) {
-        const prevRange = gcodeVisualizer.lineDistanceRange.get(i);
-        if (prevRange) { dist = prevRange.endDist; break; }
+      // Current line has no geometry (comment/empty) — use cached distance
+      // to avoid expensive backward search every frame
+      let dist = gcodeVisualizer._lastKnownExecDist ?? 0;
+      if (!dist) {
+        for (let i = ln - 1; i >= 1; i--) {
+          const prevRange = gcodeVisualizer.lineDistanceRange.get(i);
+          if (prevRange) { dist = prevRange.endDist; break; }
+        }
       }
+      gcodeVisualizer._lastKnownExecDist = dist;
       gcodeVisualizer.setExecutionDistance(dist);
     }
   }
