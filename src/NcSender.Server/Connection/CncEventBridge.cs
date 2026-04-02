@@ -291,6 +291,13 @@ public class CncEventBridge
         if (cmd.Status == "success" && cmd.Command is not null)
             _ = HandleFirmwareSettingChange(cmd.Command);
 
+        // Refresh tool number after M61 (set tool) — FluidNC only reports tool in [GC:]
+        if (cmd.Status == "success" && cmd.Command is not null &&
+            cmd.Command.Contains("M61", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
+        }
+
         if (cmd.Meta?.SourceId == "system" || cmd.Meta?.Silent == true)
             return;
 
@@ -419,6 +426,10 @@ public class CncEventBridge
                 _context.UpdateSenderStatus();
                 BroadcastStateDelta();
                 _logger.LogInformation("Tool change complete");
+
+                // Refresh G-code modes to pick up new tool number
+                // (FluidNC only reports tool in [GC:] response, not in status report)
+                _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
             }
             return;
         }
