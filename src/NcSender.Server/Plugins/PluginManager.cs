@@ -626,7 +626,7 @@ public class PluginManager : IPluginManager
                     toolSettings["probe"] = sensorStr.Contains("Probe", StringComparison.OrdinalIgnoreCase);
                 }
 
-                toolSettings["manual"] = false;
+                toolSettings["manual"] = true;
             }
 
             toolSettings["source"] = pluginId;

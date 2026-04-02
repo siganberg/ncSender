@@ -430,6 +430,7 @@ public class PendantManager : IPendantManager
                     {
                         try
                         {
+                            // Brief delay for $OTA:OK to finish sending
                             await Task.Delay(500);
                             var port = handler.ConnectedPort;
                             DetachActiveHandler();

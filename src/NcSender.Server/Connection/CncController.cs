@@ -356,42 +356,10 @@ public partial class CncController : ICncController
                     LogCommandSent(entry.RawCommand, isRealTime: false);
 
                     // Wait for the TCS to be completed by HandleCommandOk/HandleCommandError.
-                    // Commands with TimeoutMs > 0 will fail if no response is received in time.
-                    // Commands with TimeoutMs = 0 (default) wait indefinitely — needed for
-                    // M0 (program pause) which holds until ~ (cycle start) is sent.
-                    var timeoutMs = entry.Meta?.TimeoutMs ?? 0;
-                    if (timeoutMs > 0)
-                    {
-                        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                        timeoutCts.CancelAfter(timeoutMs);
-                        try
-                        {
-                            await entry.Tcs.Task.WaitAsync(timeoutCts.Token);
-                        }
-                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                        {
-                            _logger.LogWarning("Command '{Command}' timed out after {Timeout}ms with no response",
-                                entry.RawCommand, timeoutMs);
-                            var result = new CommandResult
-                            {
-                                Id = entry.Id,
-                                Command = entry.RawCommand,
-                                DisplayCommand = entry.DisplayCommand,
-                                Meta = entry.Meta,
-                                Status = "error",
-                                ErrorMessage = "Timed out waiting for controller response",
-                                Timestamp = DateTime.UtcNow.ToString("o")
-                            };
-                            _pendingCommands.TryRemove(entry.Id, out _);
-                            entry.Tcs.TrySetResult(result);
-                            CommandAcknowledged?.Invoke(result);
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        await entry.Tcs.Task.WaitAsync(ct);
-                    }
+                    // No timeout — commands like M0 (program pause) hold until the user
+                    // sends ~ (cycle start), which is a real-time command that bypasses
+                    // the queue. Disconnection cancels via ct.
+                    await entry.Tcs.Task.WaitAsync(ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -945,12 +913,13 @@ public partial class CncController : ICncController
         if (cmd.RawCommand is not null && G10WcoPattern().IsMatch(cmd.RawCommand))
         {
             _logger.LogInformation("G10 L2/L20 detected - refreshing WCO then work offsets");
-            _ = SendCommandAsync("?", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
+            // Use 0x87 (full status request) instead of '?' to guarantee WCO is included in the response
+            if (_transport is not null)
+                _ = Task.Run(async () => { try { await _transport.WriteRawAsync([0x87]); } catch { /* ignore */ } });
             _ = SendCommandAsync("$#", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
         }
 
         // Protocol-specific: refresh G-code parser state after commands that change it
-        // (e.g. FluidNC doesn't report WCS in status reports, so we need $G after G54-G59)
         if (cmd.RawCommand is not null && _activeProtocol?.NeedsGCodeStateRefresh(cmd.RawCommand) == true)
         {
             _ = SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
@@ -1234,7 +1203,6 @@ public partial class CncController : ICncController
         var modes = content.Split(' ');
         var hasChanges = false;
 
-        // Extract active workspace (G54-G59)
         var wcsMode = Array.Find(modes, m => m is "G54" or "G55" or "G56" or "G57" or "G58" or "G59");
         if (wcsMode is not null && _lastStatus.Workspace != wcsMode)
         {
@@ -1242,7 +1210,6 @@ public partial class CncController : ICncController
             hasChanges = true;
         }
 
-        // Extract tool number (T0, T1, etc.)
         var toolMode = Array.Find(modes, m => m.Length >= 2 && m[0] == 'T' && char.IsDigit(m[1]));
         if (toolMode is not null && int.TryParse(toolMode[1..], out var toolNumber))
         {
@@ -1254,9 +1221,7 @@ public partial class CncController : ICncController
         }
 
         if (hasChanges)
-        {
             StatusReportReceived?.Invoke(_lastStatus);
-        }
     }
 
     private void ParseWorkOffset(string data)
@@ -1278,6 +1243,31 @@ public partial class CncController : ICncController
         };
 
         if (prev == value) return;
+
+        // If the active workspace offset changed, update WCO to stay in sync.
+        // WCO = workspaceOffset + G92 + TLO. The G92+TLO portion is unchanged,
+        // so newWCO = newOffset + (oldWCO - oldOffset).
+        // This prevents stale WCO on controllers that don't report WCO every cycle (e.g. FluidNC).
+        if (prev is not null && workspace == _lastStatus.Workspace
+            && !string.IsNullOrEmpty(_lastStatus.WCO))
+        {
+            var prevParts = prev.Split(',');
+            var newParts = value.Split(',');
+            var wcoParts = _lastStatus.WCO.Split(',');
+            var len = Math.Min(Math.Min(prevParts.Length, newParts.Length), wcoParts.Length);
+            var updatedWco = new string[wcoParts.Length];
+            Array.Copy(wcoParts, updatedWco, wcoParts.Length);
+            for (var i = 0; i < len; i++)
+            {
+                if (double.TryParse(prevParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var oldVal)
+                    && double.TryParse(newParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var newVal)
+                    && double.TryParse(wcoParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var wcoVal))
+                {
+                    updatedWco[i] = (wcoVal + (newVal - oldVal)).ToString("F3", CultureInfo.InvariantCulture);
+                }
+            }
+            _lastStatus.WCO = string.Join(",", updatedWco);
+        }
 
         switch (workspace)
         {
