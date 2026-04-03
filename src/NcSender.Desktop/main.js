@@ -128,7 +128,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    show: false,
+    show: true,
     backgroundColor: '#1a1a2e',
     kiosk: isKiosk,
     autoHideMenuBar: true,
@@ -148,20 +148,15 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(winOptions);
 
-  mainWindow.once('ready-to-show', () => {
-    if (!isKiosk) {
-      try {
-        mainWindow.maximize();
-      } catch {
-        const primaryDisplay = screen.getPrimaryDisplay();
-        const { x, y, width, height } = primaryDisplay.workArea;
-        mainWindow.setBounds({ x, y, width, height });
-      }
+  if (!isKiosk) {
+    try {
+      mainWindow.maximize();
+    } catch {
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { x, y, width, height } = primaryDisplay.workArea;
+      mainWindow.setBounds({ x, y, width, height });
     }
-    mainWindow.show();
-  });
-
-  mainWindow.loadURL(SERVER_URL);
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -204,18 +199,40 @@ function registerShortcuts() {
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  startServer();
   registerShortcuts();
-
-  try {
-    await waitForServer();
-  } catch (err) {
-    console.error(err.message);
-    app.quit();
-    return;
-  }
-
   createWindow();
+
+  // Show a loading page that polls the server and redirects when ready.
+  // This shows the window immediately instead of a blank screen for 15+ seconds.
+  // Read the SVG logo and encode it for embedding in the loader page
+  const fs = require('fs');
+  let logoSrc = '';
+  try {
+    const svgPath = path.join(__dirname, 'Assets', 'ncsender-light.svg');
+    const svgData = fs.readFileSync(svgPath);
+    logoSrc = `data:image/svg+xml;base64,${svgData.toString('base64')}`;
+  } catch { /* fall back to text */ }
+
+  const loaderHtml = `data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
+<html><head><style>
+  body { margin: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e0e0e0; }
+  .container { text-align: center; }
+  .logo { width: 120px; height: auto; animation: pulse 2s ease-in-out infinite; margin-bottom: 16px; }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+  .text { font-size: 18px; opacity: 0.5; }
+</style></head>
+<body><div class="container">${logoSrc ? `<img class="logo" src="${logoSrc}" alt="ncSender" />` : '<div style="font-size:28px;font-weight:700;animation:pulse 2s ease-in-out infinite;margin-bottom:16px;">ncSender</div>'}<div class="text">Starting...</div></div>
+<script>
+  function poll() {
+    fetch('http://localhost:${SERVER_PORT}/api/health')
+      .then(r => { if (r.ok) window.location.href = 'http://localhost:${SERVER_PORT}'; else setTimeout(poll, 300); })
+      .catch(() => setTimeout(poll, 300));
+  }
+  poll();
+</script></body></html>`)}`;
+  mainWindow.loadURL(loaderHtml);
+
+  startServer();
 });
 
 app.on('window-all-closed', () => {
