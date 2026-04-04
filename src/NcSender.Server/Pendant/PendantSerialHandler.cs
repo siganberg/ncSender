@@ -67,13 +67,8 @@ public class PendantSerialHandler : IAsyncDisposable
     {
         _readCts?.Cancel();
 
-        if (_readTask is not null)
-        {
-            try { await _readTask; }
-            catch (OperationCanceledException) { }
-            catch { /* best effort */ }
-        }
-
+        // Close port first to unblock ReadAsync (CancellationToken alone
+        // doesn't interrupt serial reads on macOS/Linux)
         var port = _port;
         _port = null;
         var hadPort = port is not null;
@@ -86,6 +81,13 @@ public class PendantSerialHandler : IAsyncDisposable
             }
             catch { /* best effort */ }
             port.Dispose();
+        }
+
+        if (_readTask is not null)
+        {
+            try { await _readTask; }
+            catch (OperationCanceledException) { }
+            catch { /* best effort */ }
         }
 
         _readCts?.Dispose();

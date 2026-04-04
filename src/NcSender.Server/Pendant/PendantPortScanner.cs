@@ -301,7 +301,9 @@ public class PendantPortScanner : IDisposable
                 continue;
 
             var lower = port.ToLowerInvariant();
-            if (!lower.Contains("usbmodem") && !lower.Contains("usbserial") &&
+            // Windows COM ports, macOS /dev/cu.usb*, Linux /dev/ttyUSB* and /dev/ttyACM*
+            var isWindows = lower.StartsWith("com", StringComparison.Ordinal) && lower.Length >= 4 && char.IsDigit(lower[3]);
+            if (!isWindows && !lower.Contains("usbmodem") && !lower.Contains("usbserial") &&
                 !lower.Contains("ttyusb") && !lower.Contains("ttyacm"))
                 continue;
 
