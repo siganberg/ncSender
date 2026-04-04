@@ -58,7 +58,17 @@ public class PendantSerialHandler : IAsyncDisposable
 
         _port.Open();
         _readCts = new CancellationTokenSource();
-        _readTask = ReadLoopAsync(_readCts.Token);
+
+        if (OperatingSystem.IsWindows())
+        {
+            // Windows: use DataReceived event (BaseStream.ReadAsync unreliable with CH340)
+            _port.DataReceived += OnDataReceived;
+        }
+        else
+        {
+            // macOS/Linux: use async read loop
+            _readTask = ReadLoopAsync(_readCts.Token);
+        }
 
         _logger.LogInformation("Pendant serial connected on {Port}", port);
     }
@@ -77,6 +87,7 @@ public class PendantSerialHandler : IAsyncDisposable
         {
             try
             {
+                port.DataReceived -= OnDataReceived;
                 if (port.IsOpen) port.Close();
             }
             catch { /* best effort */ }
@@ -215,6 +226,40 @@ public class PendantSerialHandler : IAsyncDisposable
         // Fire disconnect for any non-cancellation exit (port unplugged, IO error, port closed)
         if (!cancelled && !ct.IsCancellationRequested)
             PortDisconnected?.Invoke();
+    }
+
+    private readonly object _bufferLock = new();
+    private readonly StringBuilder _eventBuffer = new();
+
+    private void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            if (_port is not { IsOpen: true }) return;
+            var data = _port.ReadExisting();
+
+            lock (_bufferLock)
+            {
+                foreach (var ch in data)
+                {
+                    if (ch == '\n')
+                    {
+                        var line = _eventBuffer.ToString().Trim();
+                        _eventBuffer.Clear();
+                        if (line.Length > 0)
+                            ProcessMessage(line);
+                    }
+                    else if (ch != '\r')
+                    {
+                        _eventBuffer.Append(ch);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Pendant DataReceived error: {Error}", ex.Message);
+        }
     }
 
     private void ProcessMessage(string line)
