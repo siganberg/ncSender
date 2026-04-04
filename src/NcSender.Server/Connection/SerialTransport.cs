@@ -32,10 +32,11 @@ public class SerialTransport : IConnectionTransport
     {
         Logger.Debug("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
 
+        var isWindows = OperatingSystem.IsWindows();
         _port = new SerialPort(_portPath, _baudRate)
         {
-            DtrEnable = true,
-            RtsEnable = true,
+            DtrEnable = !isWindows,
+            RtsEnable = !isWindows,
             ReadTimeout = SerialPort.InfiniteTimeout,
             WriteTimeout = 5000
         };
@@ -167,6 +168,12 @@ public class SerialTransport : IConnectionTransport
 
     private void OnErrorReceived(object sender, SerialErrorReceivedEventArgs e)
     {
+        if (e.EventType is SerialError.Overrun or SerialError.RXOver)
+        {
+            Logger.Warning("Serial buffer overrun on {Port} (non-fatal, continuing)", _portPath);
+            return;
+        }
+
         ConnectionLost?.Invoke(new IOException($"Serial error: {e.EventType}"));
     }
 
