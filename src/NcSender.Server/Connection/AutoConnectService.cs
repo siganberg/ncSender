@@ -131,13 +131,13 @@ public class AutoConnectService : BackgroundService
 
         await TryConnectToTarget(probeSettings, target, ct);
 
-        // If connected but no greeting after brief wait, wrong device — disconnect
-        if (_controller.IsConnected && _controller.ActiveProtocol is null)
+        // If transport is open (connected or verifying), wait for greeting
+        if (_controller.IsTransportOpen && _controller.ActiveProtocol is null)
         {
-            // Wait briefly for greeting
-            await Task.Delay(1500, ct);
+            // Wait for controller to send greeting (e-stop/alarm state may delay it)
+            await Task.Delay(3000, ct);
 
-            if (_controller.ActiveProtocol is null)
+            if (_controller.ActiveProtocol is null && !_controller.IsConnected)
             {
                 _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
                 _controller.Disconnect();
@@ -170,14 +170,14 @@ public class AutoConnectService : BackgroundService
     }
 
     // macOS built-in ports that should never be probed during auto-detect
-    private static readonly string[] MacOsExcludedPorts =
+    private static readonly string[] ExcludedPorts =
     [
-        "debug-console", "Bluetooth-Incoming-Port", "wlan-debug"
+        "debug-console", "Bluetooth-Incoming-Port", "Bluetooth", "wlan-debug", "DJI"
     ];
 
-    private static bool IsMacOsBuiltInPort(string port)
+    private static bool IsExcludedPort(string port)
     {
-        foreach (var excluded in MacOsExcludedPorts)
+        foreach (var excluded in ExcludedPorts)
         {
             if (port.Contains(excluded, StringComparison.OrdinalIgnoreCase))
                 return true;
@@ -198,8 +198,8 @@ public class AutoConnectService : BackgroundService
             if (occupiedPorts.Contains(port))
                 continue;
 
-            // Skip macOS built-in ports during auto-detect
-            if (isAutoDetect && IsMacOsBuiltInPort(port))
+            // Skip non-CNC ports (Bluetooth, debug console, DJI, etc.)
+            if (IsExcludedPort(port))
                 continue;
 
             // macOS dedup: prefer /dev/cu.* over /dev/tty.*

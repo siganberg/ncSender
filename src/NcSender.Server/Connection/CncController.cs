@@ -81,6 +81,7 @@ public partial class CncController : ICncController
 
     private volatile bool _isConnecting;
     public bool IsConnected { get; private set; }
+    public bool IsTransportOpen => _transport is not null;
     public string ConnectionStatus { get; private set; } = "disconnected";
     public MachineState LastStatus => _lastStatus;
     public string? RawStatusData => _rawStatusData;
@@ -703,6 +704,15 @@ public partial class CncController : ICncController
         // Status report (<...>)
         if (trimmedData.EndsWith('>'))
         {
+            // If we got a GRBL status report but no greeting yet (e.g., e-stop/alarm active),
+            // cancel the greeting timeout — we know this is a real CNC controller.
+            // The greeting may still arrive and will set the active protocol.
+            if (!_hasReceivedGreeting && trimmedData.StartsWith('<'))
+            {
+                _verificationCts?.Cancel();
+                _logger.LogInformation("Status report received before greeting — controller detected, waiting for protocol identification");
+            }
+
             if (_isVerifying && !_hasReceivedFirstStatus)
             {
                 _hasReceivedFirstStatus = true;

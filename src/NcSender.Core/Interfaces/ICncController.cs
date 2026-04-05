@@ -5,6 +5,7 @@ namespace NcSender.Core.Interfaces;
 public interface ICncController
 {
     bool IsConnected { get; }
+    bool IsTransportOpen { get; }
     string ConnectionStatus { get; }
     MachineState LastStatus { get; }
     string? RawStatusData { get; }
