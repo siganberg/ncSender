@@ -74,7 +74,10 @@ public class PendantManager : IPendantManager
         // Start pendant auto-connect once CNC controller is connected
         _controller.ConnectionStatusChanged += (status, isConnected) =>
         {
-            if (isConnected) StartAutoConnect();
+            if (isConnected)
+                StartAutoConnect();
+            else
+                StopAutoConnect();
         };
     }
 
@@ -630,15 +633,9 @@ public class PendantManager : IPendantManager
 
     public HashSet<string> GetOccupiedPorts()
     {
-        var ports = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (_scanner is not null)
-        {
-            var pendant = _scanner.Pendant;
-            var dongle = _scanner.Dongle;
-            if (pendant is not null) ports.Add(pendant.Port);
-            if (dongle is not null) ports.Add(dongle.Port);
-        }
-        return ports;
+            return _scanner.AllOccupiedPorts;
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public void StartAutoConnect()
@@ -652,6 +649,17 @@ public class PendantManager : IPendantManager
         _scanner.DeviceFound += OnScannerDeviceFound;
         _scanner.DeviceLost += OnScannerDeviceLost;
         _scanner.Start();
+    }
+
+    public void StopAutoConnect()
+    {
+        if (_scanner is null) return;
+        _scanner.Stop();
+        _scanner.DeviceFound -= OnScannerDeviceFound;
+        _scanner.DeviceLost -= OnScannerDeviceLost;
+        _scanner.Dispose();
+        _scanner = null;
+        _logger.LogInformation("Pendant scanner stopped (CNC disconnected)");
     }
 
     private string? GetCncPort()

@@ -45,6 +45,18 @@ public class PendantPortScanner : IDisposable
         get { lock (_tracked) return _tracked.Values.FirstOrDefault(d => d.Type == DeviceType.Dongle); }
     }
 
+    public HashSet<string> AllOccupiedPorts
+    {
+        get
+        {
+            var ports = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            lock (_tracked)
+                foreach (var kv in _tracked) ports.Add(kv.Key);
+            foreach (var kv in _pending) ports.Add(kv.Key);
+            return ports;
+        }
+    }
+
     public PendantPortScanner(ILogger logger, Func<string?> getCncPort)
     {
         _logger = logger;
