@@ -32,11 +32,10 @@ public class SerialTransport : IConnectionTransport
     {
         Logger.Debug("Opening serial port {Path} at {BaudRate} baud", _portPath, _baudRate);
 
-        var isWindows = OperatingSystem.IsWindows();
         _port = new SerialPort(_portPath, _baudRate)
         {
-            DtrEnable = !isWindows,
-            RtsEnable = !isWindows,
+            DtrEnable = false,
+            RtsEnable = false,
             ReadTimeout = SerialPort.InfiniteTimeout,
             WriteTimeout = 5000
         };
@@ -45,6 +44,13 @@ public class SerialTransport : IConnectionTransport
         _port.ErrorReceived += OnErrorReceived;
 
         _port.Open();
+
+        // Enable DTR after open to avoid ESP32 auto-reset on Windows.
+        // Opening with DTR=true triggers DTR transition that resets FluidNC.
+        // Setting DTR after open provides the signal grblHAL needs without
+        // the open-time transition that resets ESP32 boards.
+        _port.DtrEnable = true;
+
         return Task.CompletedTask;
     }
 
