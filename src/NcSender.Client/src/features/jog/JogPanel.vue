@@ -94,10 +94,10 @@
         </Transition>
       </div>
 
-      <!-- Position controls group (X0/Y0/Z0, Corners, Park) - uses rapidControlsDisabled for G0 moves -->
-      <div class="position-controls-group" :class="{ 'motion-disabled': rapidControlsDisabled }">
-        <!-- Column of X0/Y0/Z0 separate from corner/park -->
-        <div class="axis-zero-column" ref="axisZeroGroupRef">
+      <!-- Position controls group (X0/Y0/Z0, Corners, Park) -->
+      <div class="position-controls-group">
+        <!-- Column of X0/Y0/Z0 — enabled when jog is enabled -->
+        <div class="axis-zero-column" :class="{ 'motion-disabled': motionControlsDisabled }" ref="axisZeroGroupRef">
           <div class="axis-zero-xy-container">
             <Transition name="axis-zero-main" mode="out-in">
               <button
@@ -168,8 +168,8 @@
           </button>
         </div>
 
-        <!-- Simple 2x2 corner buttons + Park below -->
-        <div class="corner-simple">
+        <!-- Simple 2x2 corner buttons + Park below — requires homing -->
+        <div class="corner-simple" :class="{ 'motion-disabled': rapidControlsDisabled }">
           <div class="corner-grid">
             <button
               :class="['control', 'corner-btn', { 'long-press-triggered': cornerPress.topLeft.triggered, 'blink-border': cornerPress.topLeft.blinking }]"
@@ -486,7 +486,7 @@ const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() =
 // Computed to check if Home button should be disabled (homingCycle must be > 0)
 const homeDisabled = computed(() => isHoming.value || store.homingCycle.value === 0);
 
-// Computed to check if G0 rapid controls should be disabled (requires homingCycle > 0 AND homed)
+// Rapid controls (corners, park) disabled: requires homing
 const rapidControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || !(store.homingCycle.value > 0 && store.isHomed.value) || store.isProbing.value);
 
 
