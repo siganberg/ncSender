@@ -822,12 +822,21 @@ public partial class CncController : ICncController
         }
         else
         {
-            // If we receive a pendant/dongle ID during verification, we connected to the wrong device
-            if (_isVerifying && !_hasReceivedGreeting && trimmedData.StartsWith("$ID:", StringComparison.OrdinalIgnoreCase))
+            // If we receive a pendant/dongle ID or pendant ping during verification, wrong device
+            if (_isVerifying && !_hasReceivedGreeting)
             {
-                _logger.LogWarning("Connected to {Device} instead of CNC controller, disconnecting", trimmedData);
-                OnConnectionLost(new InvalidOperationException($"Wrong device: {trimmedData}"));
-                return;
+                if (trimmedData.StartsWith("$ID:", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Connected to {Device} instead of CNC controller, disconnecting", trimmedData);
+                    OnConnectionLost(new InvalidOperationException($"Wrong device: {trimmedData}"));
+                    return;
+                }
+                if (trimmedData == "P")
+                {
+                    _logger.LogWarning("Pendant ping detected on CNC port, disconnecting (wrong device)");
+                    OnConnectionLost(new InvalidOperationException("Wrong device: pendant"));
+                    return;
+                }
             }
 
             // Try greeting detection — selects protocol handler and starts polling
