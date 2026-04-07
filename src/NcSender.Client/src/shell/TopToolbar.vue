@@ -102,7 +102,6 @@
       </div>
       <!-- Pendant Button -->
       <button
-        v-if="props.showPendant"
         class="pendant-button"
         :class="{ 'pendant-button--connected': pendantConnectionType }"
         @click="$emit('show-bluetooth')"
@@ -199,7 +198,6 @@ const props = defineProps<{
   lastAlarmCode?: number | string;
   updateState?: TopToolbarUpdateState;
   pendantConnectionType?: 'wifi' | 'bluetooth' | null;
-  showPendant?: boolean;
 }>();
 
 const emit = defineEmits<{

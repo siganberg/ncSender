@@ -33,12 +33,6 @@
             class="search-input"
           />
           <div class="toggle-container">
-            <label class="toggle-label">Show Pendant</label>
-            <ToggleSwitch
-              :model-value="showPendant"
-              @update:modelValue="handleToggleShowPendant"
-            />
-            <span class="toggle-divider"></span>
             <label class="toggle-label">Enable Keyboard</label>
             <ToggleSwitch
               :model-value="shortcutsEnabled"
@@ -227,7 +221,6 @@ import { settingsStore, updateSettings } from '@/lib/settings-store.js';
 
 const shortcutsEnabled = computed(() => keyBindingStore.areShortcutsEnabled.value);
 const featureEnabled = computed(() => keyBindingStore.isFeatureEnabled.value);
-const showPendant = computed(() => settingsStore.data?.showPendant ?? false);
 
 const searchQuery = ref('');
 
@@ -316,14 +309,6 @@ const handleToggleShortcuts = async (value: boolean) => {
   } catch (error: any) {
     console.error('Failed to update keyboard toggle:', error);
     captureError.value = error?.message || 'Failed to update keyboard toggle';
-  }
-};
-
-const handleToggleShowPendant = async (value: boolean) => {
-  try {
-    await updateSettings({ showPendant: value });
-  } catch (error: any) {
-    console.error('Failed to update show pendant setting:', error);
   }
 };
 

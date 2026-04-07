@@ -55,7 +55,6 @@
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
-        :show-pendant="showPendant"
         :workspace="workspace"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
@@ -1139,7 +1138,6 @@ let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showPendantDialog = ref(false);
 const pendantConnectionType = ref<'usb' | 'espnow' | null>(null);
-const showPendant = computed(() => settingsStore.data?.showPendant ?? false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -2866,11 +2864,6 @@ const clearConsole = store.clearConsole;
 let bluetoothPollInterval: ReturnType<typeof setInterval> | null = null;
 
 const pollBluetoothStatus = async () => {
-  // Only poll if pendant feature is enabled
-  if (!showPendant.value) {
-    pendantConnectionType.value = null;
-    return;
-  }
   try {
     const response = await fetch('/api/pendant/status');
     if (response.ok) {
@@ -2883,7 +2876,7 @@ const pollBluetoothStatus = async () => {
 };
 
 onMounted(async () => {
-  // Start polling Bluetooth status (only polls when showPendant is enabled)
+  // Start polling pendant status
   pollBluetoothStatus();
   bluetoothPollInterval = setInterval(pollBluetoothStatus, 5000);
   updateCenter.ensureListeners();
