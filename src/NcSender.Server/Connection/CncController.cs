@@ -728,7 +728,6 @@ public partial class CncController : ICncController
                         _ = SendCommandAsync(cmd, systemMeta);
                 }
 
-                DataReceived?.Invoke(trimmedData, null);
             }
 
             _rawStatusData = trimmedData;
@@ -853,9 +852,14 @@ public partial class CncController : ICncController
                 return;
             }
 
-            LogControllerData(trimmedData);
-            var sid = GetActiveSourceId();
-            DataReceived?.Invoke(trimmedData, sid);
+            // Don't broadcast unrecognized data during verification (boot garbage from
+            // wrong device, ESP32 boot log, etc.). Only broadcast after greeting is confirmed.
+            if (_hasReceivedGreeting)
+            {
+                LogControllerData(trimmedData);
+                var sid = GetActiveSourceId();
+                DataReceived?.Invoke(trimmedData, sid);
+            }
         }
     }
 
