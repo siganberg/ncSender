@@ -185,6 +185,7 @@ class GCodeVisualizer {
             this.group.remove(line);
         });
         this.pathLines = [];
+        this.currentGCode = null;
         this.lineNumberMap.clear();
         this.lineToolNumber.clear();
         this.completedLines.clear();
