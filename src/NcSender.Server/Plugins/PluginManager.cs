@@ -147,8 +147,8 @@ public class PluginManager : IPluginManager
         // Unload command plugin from JS engine
         _jsEngine.UnloadPlugin(pluginId);
 
-        // Reset tool settings
-        SyncToolSettingsOnDisable();
+        // Only reset tool settings if this plugin is the current tool source
+        SyncToolSettingsOnDisable(pluginId);
 
         _ = _broadcaster.Broadcast("plugins:tools-changed",
             new WsPluginToolsChanged(pluginId, false), NcSenderJsonContext.Default.WsPluginToolsChanged);
@@ -560,6 +560,9 @@ public class PluginManager : IPluginManager
                         _logger.LogError(ex, "Failed to load command plugin {PluginId}", plugin.Id);
                     }
                 }
+
+                // Re-sync tool settings from enabled tool-changer plugins on startup
+                SyncToolSettingsOnEnable(plugin.Id);
             }
         }
         catch (Exception ex)
@@ -598,8 +601,17 @@ public class PluginManager : IPluginManager
         try
         {
             var settings = GetSettings(pluginId);
-            var toolSettings = new JsonObject();
+
+            // Only sync if this plugin has tool-changer settings
             var isManual = settings.ContainsKey("numberOfTools");
+            var hasToolChanger = isManual || settings.ContainsKey("pockets");
+            if (!hasToolChanger)
+            {
+                _logger.LogDebug("Plugin {PluginId} has no tool-changer settings, skipping tool sync", pluginId);
+                return;
+            }
+
+            var toolSettings = new JsonObject();
 
             if (isManual)
             {
@@ -642,10 +654,19 @@ public class PluginManager : IPluginManager
         }
     }
 
-    private void SyncToolSettingsOnDisable()
+    private void SyncToolSettingsOnDisable(string pluginId)
     {
         try
         {
+            // Only reset if this plugin is the current tool source
+            var currentSettings = _settingsManager.ReadAll();
+            var currentSource = currentSettings["tool"]?["source"]?.GetValue<string>() ?? "";
+            if (currentSource != pluginId)
+            {
+                _logger.LogDebug("Plugin {PluginId} is not the tool source ({Source}), skipping tool reset", pluginId, currentSource);
+                return;
+            }
+
             var toolSettings = new JsonObject
             {
                 ["count"] = 0,
