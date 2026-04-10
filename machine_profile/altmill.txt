@@ -1,0 +1,5 @@
+$20=1 (Enable soft limit)
+$21=0 (Turn off Hard Limit, just cause some error sometimes, limit switch + soft limit should be enough)
+$40=1 (Limit jog commands, if this is off long press jog might not work)
+$744=15 (Enable motor fault. Since AltMill has close loop stepper motor, we can leverage it to reduce force on crashing and system will autoatically halt and reduce damage)
+$755=15 (Try this value first if it works. If you keep getting motor fault even without collision, then you need to play inverting this values)
