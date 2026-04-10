@@ -215,6 +215,9 @@ public class JobManager : IJobManager
 
     private async Task ExecuteEventGcode(string settingsKey)
     {
+        var enabled = _settingsManager.GetSetting<bool?>($"events.{settingsKey}Enabled");
+        if (enabled == false) return;
+
         var gcode = _settingsManager.GetSetting<string>($"events.{settingsKey}");
         if (string.IsNullOrWhiteSpace(gcode)) return;
 

@@ -139,8 +139,11 @@
     <!-- Events Tab -->
     <div v-if="activeTab === 'events'" class="tab-content events-tab">
       <div class="events-list">
-        <div class="event-item">
-          <label class="event-label">Program Start</label>
+        <div class="event-item" :class="{ 'event-disabled': !eventStartEnabled }">
+          <div class="event-header">
+            <label class="event-label">Program Start</label>
+            <ToggleSwitch v-model="eventStartEnabled" />
+          </div>
           <div class="event-note">Executed before the program runs. Not executed on Start From Line.</div>
           <div class="event-editor-wrap">
             <CodeEditor
@@ -153,8 +156,11 @@
             />
           </div>
         </div>
-        <div class="event-item">
-          <label class="event-label">Program End</label>
+        <div class="event-item" :class="{ 'event-disabled': !eventEndEnabled }">
+          <div class="event-header">
+            <label class="event-label">Program End</label>
+            <ToggleSwitch v-model="eventEndEnabled" />
+          </div>
           <div class="event-note">Executed after the program completes successfully.</div>
           <div class="event-editor-wrap">
             <CodeEditor
@@ -571,6 +577,7 @@ import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
+import ToggleSwitch from '../../components/ToggleSwitch.vue';
 
 const store = useConsoleStore();
 
@@ -615,11 +622,19 @@ watch(activeTab, (tab) => {
 // Events tab state
 const eventProgramStart = ref('');
 const eventProgramEnd = ref('');
-const eventsSavedSnapshot = ref({ start: '', end: '' });
+const eventStartEnabled = ref(true);
+const eventEndEnabled = ref(true);
+const eventsSavedSnapshot = ref({ start: '', end: '', startEnabled: true, endEnabled: true });
 const eventsDirty = computed(() =>
   eventProgramStart.value !== eventsSavedSnapshot.value.start ||
-  eventProgramEnd.value !== eventsSavedSnapshot.value.end
+  eventProgramEnd.value !== eventsSavedSnapshot.value.end ||
+  eventStartEnabled.value !== eventsSavedSnapshot.value.startEnabled ||
+  eventEndEnabled.value !== eventsSavedSnapshot.value.endEnabled
 );
+
+// Auto-save when toggles change
+watch(eventStartEnabled, () => { if (eventsSavedSnapshot.value.start !== undefined) saveEvents(); });
+watch(eventEndEnabled, () => { if (eventsSavedSnapshot.value.start !== undefined) saveEvents(); });
 
 const eventEditorOptions = {
   minimap: { enabled: false },
@@ -644,9 +659,13 @@ async function loadEvents() {
     const events = data?.events || {};
     eventProgramStart.value = events.programStart || '';
     eventProgramEnd.value = events.programEnd || '';
+    eventStartEnabled.value = events.programStartEnabled !== false;
+    eventEndEnabled.value = events.programEndEnabled !== false;
     eventsSavedSnapshot.value = {
       start: eventProgramStart.value,
-      end: eventProgramEnd.value
+      end: eventProgramEnd.value,
+      startEnabled: eventStartEnabled.value,
+      endEnabled: eventEndEnabled.value
     };
   } catch { /* ignore */ }
 }
@@ -659,13 +678,17 @@ async function saveEvents() {
       body: JSON.stringify({
         events: {
           programStart: eventProgramStart.value,
-          programEnd: eventProgramEnd.value
+          programEnd: eventProgramEnd.value,
+          programStartEnabled: eventStartEnabled.value,
+          programEndEnabled: eventEndEnabled.value
         }
       })
     });
     eventsSavedSnapshot.value = {
       start: eventProgramStart.value,
-      end: eventProgramEnd.value
+      end: eventProgramEnd.value,
+      startEnabled: eventStartEnabled.value,
+      endEnabled: eventEndEnabled.value
     };
   } catch { /* ignore */ }
 }
@@ -2993,10 +3016,19 @@ h2 {
   min-height: 0;
 }
 
+.event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 .event-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
+}
+.event-disabled .event-editor-wrap {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .event-note {
