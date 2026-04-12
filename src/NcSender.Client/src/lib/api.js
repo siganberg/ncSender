@@ -139,7 +139,7 @@ class NCClient {
   }
 
   async sendCommandViaWebSocket({ command, displayCommand, commandId, meta, completesCommandId } = {}) {
-    if (typeof command !== 'string' || command.trim() === '') {
+    if (typeof command !== 'string' || (command.length !== 1 && command.trim() === '')) {
       throw new Error('sendCommandViaWebSocket requires a command');
     }
 

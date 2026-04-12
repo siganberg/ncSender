@@ -465,6 +465,12 @@ public partial class CncController : ICncController
             return await SendRealTimeCommand(cleanCommand, commandToSend, commandId, displayCommand, meta);
         }
 
+        // Coolant/aux commands bypass the queue — send immediately so they work during job execution
+        if (IsCoolantOrAuxCommand(normalizedCommand: cleanCommand.ToUpperInvariant()))
+        {
+            return await SendImmediateCommand(cleanCommand, commandToSend, commandId, displayCommand, meta);
+        }
+
         // Regular queued command
         var hasVarSyntax = cleanCommand.StartsWith('%') || cleanCommand.Contains('[');
         var normalizedCommand = hasVarSyntax ? cleanCommand : cleanCommand.ToUpperInvariant();
@@ -586,6 +592,65 @@ public partial class CncController : ICncController
                 Timestamp = DateTime.UtcNow.ToString("o")
             };
 
+            CommandAcknowledged?.Invoke(errorResult);
+            throw;
+        }
+    }
+
+    private static bool IsCoolantOrAuxCommand(string normalizedCommand)
+    {
+        return normalizedCommand is "M7" or "M8" or "M9"
+            || normalizedCommand.StartsWith("M64", StringComparison.Ordinal)
+            || normalizedCommand.StartsWith("M65", StringComparison.Ordinal);
+    }
+
+    private async Task<CommandResult> SendImmediateCommand(string command, string commandToSend, string commandId, string? displayCommand, CommandMeta? meta)
+    {
+        var display = displayCommand ?? command;
+        var normalized = command.ToUpperInvariant();
+
+        TrackOutputPinCommand(normalized);
+
+        var pendingResult = new CommandResult
+        {
+            Id = commandId,
+            Command = normalized,
+            DisplayCommand = display,
+            Meta = meta,
+            Status = "pending",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        CommandQueued?.Invoke(pendingResult);
+
+        try
+        {
+            await _transport!.WriteAsync(commandToSend);
+            LogCommandSent(command, isRealTime: false);
+
+            var ackResult = new CommandResult
+            {
+                Id = commandId,
+                Command = normalized,
+                DisplayCommand = display,
+                Meta = meta,
+                Status = "success",
+                Timestamp = DateTime.UtcNow.ToString("o")
+            };
+            CommandAcknowledged?.Invoke(ackResult);
+            return ackResult;
+        }
+        catch (Exception ex)
+        {
+            var errorResult = new CommandResult
+            {
+                Id = commandId,
+                Command = normalized,
+                DisplayCommand = display,
+                Meta = meta,
+                Status = "error",
+                ErrorMessage = ex.Message,
+                Timestamp = DateTime.UtcNow.ToString("o")
+            };
             CommandAcknowledged?.Invoke(errorResult);
             throw;
         }

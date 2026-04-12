@@ -731,7 +731,7 @@ const canStop = computed(() => {
 
 const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value || store.homingCycle.value === 0 || !store.isHomed.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
-const isCoolantDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 
 // Template refs
 const canvas = ref<HTMLElement>();
@@ -3564,8 +3564,17 @@ const toggleIOSwitch = async (switchKey: string) => {
 
   try {
     const switchConfig = enabledIOSwitches.value[switchKey];
-    const command = newState ? switchConfig.on : switchConfig.off;
+    const onCmd = (switchConfig.on || '').toUpperCase();
 
+    // Use grblHAL realtime toggle bytes for flood/mist — bypasses planner buffer
+    if (onCmd === 'M8' || onCmd === 'M7') {
+      const realtimeByte = onCmd === 'M8' ? 0xA0 : 0xA1;
+      await api.sendCommandViaWebSocket({ command: String.fromCharCode(realtimeByte), displayCommand: newState ? onCmd : 'M9' });
+      return;
+    }
+
+    // Other aux outputs (M64/M65) — send as regular command
+    const command = newState ? switchConfig.on : switchConfig.off;
     if (command) {
       await api.sendCommandViaWebSocket({
         command,
