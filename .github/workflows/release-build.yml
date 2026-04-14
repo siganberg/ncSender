@@ -133,7 +133,7 @@ jobs:
   linux-arm64:
     name: Linux ARM64
     needs: [prepare-release, test]
-    runs-on: [self-hosted, macos]
+    runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -179,25 +179,11 @@ jobs:
           npx electron-builder --linux deb --arm64 --publish never \
             -c.extraMetadata.version="$VERSION"
 
-      # Upload directly to draft release — self-hosted macOS runner has
-      # flaky connectivity to GitHub's artifact blob storage.
-      - name: Upload to draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ needs.prepare-release.outputs.tag }}"
-          DEB=$(find src/NcSender.Desktop/dist-electron -name "*.deb" | head -1)
-          if [ -n "$DEB" ]; then
-            ASSET_NAME="ncSender_${TAG}_linux_arm64.deb"
-            cp "$DEB" "$ASSET_NAME"
-            gh release delete-asset "$TAG" "$ASSET_NAME" --repo "${{ github.repository }}" --yes 2>/dev/null || true
-            for i in 1 2 3; do
-              if gh release upload "$TAG" "$ASSET_NAME" --repo "${{ github.repository }}"; then break; fi
-              echo "Upload attempt $i failed, retrying in 10s..."
-              sleep 10
-              gh release delete-asset "$TAG" "$ASSET_NAME" --repo "${{ github.repository }}" --yes 2>/dev/null || true
-            done
-          fi
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-artifacts
+          path: src/NcSender.Desktop/dist-electron/*.deb
 
   macos:
     name: macOS
@@ -429,8 +415,14 @@ jobs:
             done
           fi
 
-          # Note: Linux ARM64 .deb is uploaded directly by the linux-arm64 job
-          # to work around flaky artifact upload from self-hosted macOS runner.
+          # Linux ARM64 assets (.deb only)
+          if [ -d "artifacts/linux-arm64-artifacts" ]; then
+            for file in artifacts/linux-arm64-artifacts/*.deb; do
+              if [ -f "$file" ]; then
+                cp "$file" "release-assets/ncSender_${TAG}_linux_arm64.deb"
+              fi
+            done
+          fi
 
           echo "Release assets to upload:"
           ls -lh release-assets/
