@@ -82,6 +82,11 @@ public class AutoConnectService : BackgroundService
         if (_controller.IsConnected)
             return;
 
+        // Skip if transport is still open (verifying) — avoids reopening the port which
+        // would trigger FluidNC reset and flood the terminal with boot messages.
+        if (_controller.IsTransportOpen)
+            return;
+
         var type = settings.Type.ToLowerInvariant();
 
         // Ethernet: connect directly to configured IP (no scanning needed)
