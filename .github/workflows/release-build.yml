@@ -128,7 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-x64-artifacts
-          path: src/NcSender.Desktop/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/*.deb
 
   linux-arm64:
     name: Linux ARM64
@@ -183,7 +183,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-arm64-artifacts
-          path: src/NcSender.Desktop/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/*.deb
 
   macos:
     name: macOS
@@ -240,7 +240,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
-          path: src/NcSender.Desktop/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/*.dmg
 
   macos-x64:
     name: macOS x64
@@ -297,7 +297,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-x64-artifacts
-          path: src/NcSender.Desktop/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/*.dmg
 
   windows-x64:
     name: Windows x64
@@ -352,7 +352,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-x64-artifacts
-          path: src/NcSender.Desktop/dist-electron/**
+          path: src/NcSender.Desktop/dist-electron/*.exe
 
   publish-release:
     name: Publish Release
