@@ -266,8 +266,15 @@ const startEditAxis = (axis: 'x' | 'y' | 'z') => {
   editingAxis.value = axis;
   editValue.value = axisValues.value[axis].toFixed(3);
   setTimeout(() => {
-    editInputRef.value?.focus();
-    editInputRef.value?.select();
+    // Z has duplicate inputs (landscape + portrait layouts). Find the visible one.
+    const inputs = document.querySelectorAll<HTMLInputElement>('.axis-edit-input');
+    let target: HTMLInputElement | null = null;
+    inputs.forEach((el) => {
+      if (el.offsetParent !== null) target = el;
+    });
+    target = target || editInputRef.value;
+    target?.focus();
+    target?.select();
   }, 0);
 };
 
