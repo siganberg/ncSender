@@ -45,11 +45,13 @@ public class SerialTransport : IConnectionTransport
 
         _port.Open();
 
-        // Enable DTR after open to avoid ESP32 auto-reset on Windows.
-        // Opening with DTR=true triggers DTR transition that resets FluidNC.
-        // Setting DTR after open provides the signal grblHAL needs without
-        // the open-time transition that resets ESP32 boards.
-        _port.DtrEnable = true;
+        // Only enable DTR on Windows — grblHAL needs it for proper USB CDC communication.
+        // On Linux/macOS, enabling DTR triggers a transition that resets ESP32 boards
+        // (FluidNC), causing a full reboot and flood of boot messages.
+        if (OperatingSystem.IsWindows())
+        {
+            _port.DtrEnable = true;
+        }
 
         return Task.CompletedTask;
     }
