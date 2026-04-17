@@ -13,6 +13,12 @@ public class CommandProcessorContext
     /// When set, uses work coordinates instead of machine coordinates for return.
     /// </summary>
     public XyPosition? NextXYPosition { get; set; }
+
+    /// <summary>
+    /// Safe Z height in machine coordinates (from core app settings).
+    /// Plugins should use this for retraction instead of hardcoded G53 Z0.
+    /// </summary>
+    public double SafeZHeight { get; set; }
 }
 
 public class XyPosition

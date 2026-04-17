@@ -126,6 +126,7 @@ public class JsPluginEngine : IJsPluginEngine
                 jsMachineState.Set("tool", JsValue.FromObject(engine, context.MachineState.Tool));
                 jsContext.Set("machineState", jsMachineState);
                 jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
+                jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
                 jsContext.Set("sourceId", context.Meta?.SourceId is not null
                     ? JsValue.FromObject(engine, context.Meta.SourceId)
                     : JsValue.Null);

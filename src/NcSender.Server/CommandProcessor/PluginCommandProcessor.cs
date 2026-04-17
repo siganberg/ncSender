@@ -96,6 +96,9 @@ public class PluginCommandProcessor : ICommandProcessor
             _ = _broadcaster.Broadcast("server-state-updated", _serverContext.State, NcSenderJsonContext.Default.ServerState);
         }
 
+        // Populate safe Z height from core app settings for plugins
+        context.SafeZHeight = _settingsManager.GetSetting<double>("safeZHeight", -5);
+
         // --- Plugin expansion ---
 
         var commands = new List<ProcessedCommand>
