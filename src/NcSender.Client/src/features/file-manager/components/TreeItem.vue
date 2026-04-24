@@ -79,6 +79,7 @@
         @keydown.enter="confirmRename"
         @keydown.escape="cancelRename"
         @click.stop
+        @dblclick.stop
       />
       <span v-else class="tree-item__name" :title="node.name">
         {{ node.name }}
@@ -296,6 +297,7 @@ const handleClick = () => {
 };
 
 const handleDoubleClick = () => {
+  if (isRenaming.value) return;
   if (props.node.type === 'file' && !props.loadingDisabled) {
     emit('load', props.node as FileNode);
   }
