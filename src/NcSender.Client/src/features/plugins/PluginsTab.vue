@@ -670,7 +670,7 @@
 
         <div v-if="updateInfo.releaseNotes" class="release-notes">
           <h4>Release Notes</h4>
-          <div class="notes-content">{{ updateInfo.releaseNotes }}</div>
+          <div class="notes-content" v-html="renderReleaseNotesMarkdown(updateInfo.releaseNotes)"></div>
         </div>
 
         <div class="update-actions">
@@ -701,6 +701,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import { api } from '@/lib/api';
+import { renderReleaseNotesMarkdown } from '@/lib/release-notes';
 import { settingsStore } from '@/lib/settings-store';
 import {
   fetchPlugins,
@@ -2531,12 +2532,51 @@ onBeforeUnmount(() => {
   background: var(--color-surface-muted);
   border-radius: var(--radius-small);
   border: 1px solid var(--color-border);
-  white-space: pre-wrap;
   max-height: 300px;
   overflow-y: auto;
   font-size: 0.9rem;
   line-height: 1.5;
   color: var(--color-text-primary);
+}
+
+.notes-content :deep(h1),
+.notes-content :deep(h2),
+.notes-content :deep(h3) {
+  margin: 8px 0 4px 0;
+  font-weight: 600;
+}
+
+.notes-content :deep(h1) { font-size: 1.2rem; }
+.notes-content :deep(h2) { font-size: 1.1rem; }
+.notes-content :deep(h3) { font-size: 1rem; }
+
+.notes-content :deep(h1:first-child),
+.notes-content :deep(h2:first-child),
+.notes-content :deep(h3:first-child) {
+  margin-top: 0;
+}
+
+.notes-content :deep(ul) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.notes-content :deep(a) {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.notes-content :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.notes-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  margin: 8px 0;
+  display: block;
 }
 
 .update-actions {

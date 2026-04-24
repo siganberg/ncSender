@@ -142,6 +142,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Dialog from './Dialog.vue';
+import { renderReleaseNotesMarkdown } from '../lib/release-notes';
 
 interface UpdateDialogState {
   supported: boolean;
@@ -237,40 +238,7 @@ const releaseNotesHtml = computed(() => {
   if (!notes || notes === 'No release notes were provided for this update.') {
     return `<p style="color: var(--color-text-secondary);">${notes}</p>`;
   }
-
-  // GitHub emoji shortcode to unicode map
-  const emojiMap: Record<string, string> = {
-    rocket: '🚀', bug: '🐛', wrench: '🔧', sparkles: '✨', fire: '🔥',
-    tada: '🎉', zap: '⚡', boom: '💥', hammer: '🔨', gear: '⚙️',
-    package: '📦', lock: '🔒', warning: '⚠️', bulb: '💡', memo: '📝',
-    construction: '🚧', white_check_mark: '✅', x: '❌', star: '⭐',
-    heavy_check_mark: '✔️', arrow_up: '⬆️', arrow_down: '⬇️',
-    art: '🎨', ambulance: '🚑', pencil2: '✏️', lipstick: '💄',
-    rotating_light: '🚨', triangular_flag_on_post: '🚩',
-  };
-
-  // Simple markdown to HTML conversion
-  return notes
-    // GitHub emoji shortcodes :name:
-    .replace(/:([a-z0-9_]+):/g, (_, name) => emojiMap[name] || `:${name}:`)
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Images ![alt](url)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-    // Bold and italic
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    // Bullet points
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    // Wrap lists
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    // Line breaks - single break for paragraphs
-    .replace(/\n\n/g, '<br>')
-    .replace(/\n/g, ' ');
+  return renderReleaseNotesMarkdown(notes);
 });
 
 const openGitHubRelease = () => {
