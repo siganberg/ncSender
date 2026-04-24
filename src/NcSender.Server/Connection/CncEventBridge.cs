@@ -477,7 +477,10 @@ public class CncEventBridge
         var lastUnderscore = messageCode.LastIndexOf('_');
         if (lastUnderscore > 0 && int.TryParse(messageCode[(lastUnderscore + 1)..], out var toolNum))
         {
-            var styled = $"<strong style=\"color: var(--color-accent);\">T{toolNum}</strong>";
+            var isFailure = messageCode.Contains("FAILED_", StringComparison.OrdinalIgnoreCase);
+            var styled = isFailure
+                ? $"<strong style=\"color: var(--color-accent); font-size: 1.35em;\">T{toolNum}</strong>"
+                : $"<strong style=\"color: var(--color-accent);\">T{toolNum}</strong>";
             dialog.Message = dialog.Message.Replace("{toolNumber}", styled);
         }
         else
