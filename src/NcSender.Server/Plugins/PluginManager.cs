@@ -639,6 +639,10 @@ public class PluginManager : IPluginManager
                     toolSettings["probe"] = sensorStr.Contains("Probe", StringComparison.OrdinalIgnoreCase);
                 }
 
+                // Explicit addProbe setting takes precedence over sensor-derived default
+                if (settings.TryGetValue("addProbe", out var addProbe))
+                    toolSettings["probe"] = addProbe.ValueKind == JsonValueKind.True;
+
                 toolSettings["manual"] = true;
             }
 
