@@ -622,7 +622,15 @@ public class PluginManager : IPluginManager
                 toolSettings["count"] = count;
                 toolSettings["manual"] = true;
                 toolSettings["tls"] = true;
-                toolSettings["probe"] = false;
+                if (settings.TryGetValue("addProbe", out var addProbe))
+                {
+                    toolSettings["probe"] = JsonValue.Create(Convert.ToBoolean(addProbe.ToString()));
+                }
+                else
+                {
+                    toolSettings["probe"] = false;
+                }
+                
             }
             else
             {
