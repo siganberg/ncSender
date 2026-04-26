@@ -458,6 +458,11 @@ public class CncEventBridge
             _context.State.DisplayConfig = !_controller.ActiveProtocol.SupportsSettingEnumeration;
             _ = _broadcaster.Broadcast("initial-greeting",
                 System.Text.Json.JsonSerializer.SerializeToElement(data, NcSenderJsonContext.Default.String));
+
+            // Refresh G-code parser state — soft-reset (0x18) clears modal state
+            // (workspace, units, plane, etc.) and the status report doesn't echo
+            // them, so the client's workspace dropdown would otherwise stay stale.
+            _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
             return;
         }
 
