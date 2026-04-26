@@ -2555,6 +2555,8 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
       gcodeVisualizer.setWCO(props.workOffset);
     }
 
+    gcodeVisualizer.setSafeZHeight(safeZHeightMm.value);
+
     loadingProgress.value = 70;
     gcodeVisualizer.render(content);
     loadingProgress.value = 90;

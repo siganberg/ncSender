@@ -59,6 +59,10 @@ class GCodeVisualizer {
         // WCO snapshot at render time - used to correct spindle position when TLO changes mid-job
         this.renderWCO = { x: 0, y: 0, z: 0 };
 
+        // Safe Z height in machine coords (used to lift currentPos.z on M6 tool changes,
+        // since the tool-changer plugin retracts the spindle before/during the swap).
+        this.safeZHeightMm = -5;
+
         return this;
     }
 
@@ -67,6 +71,12 @@ class GCodeVisualizer {
     setWCO(wco) {
         if (wco) {
             this.wco = { x: wco.x || 0, y: wco.y || 0, z: wco.z || 0 };
+        }
+    }
+
+    setSafeZHeight(z) {
+        if (typeof z === 'number' && Number.isFinite(z)) {
+            this.safeZHeightMm = z;
         }
     }
 
@@ -374,6 +384,13 @@ class GCodeVisualizer {
             // Track tool changes
             if (tMatch) {
                 currentTool = parseInt(tMatch[1]);
+            }
+
+            // M6 tool change: the tool-changer plugin retracts the spindle to safe Z
+            // before swapping bits. Snap currentPos.z so any subsequent XY-only move
+            // is rendered at the post-retract height instead of the pre-cut depth.
+            if (/\bM0?6\b/.test(cleanLine)) {
+                currentPos.z = this.safeZHeightMm - this.wco.z;
             }
 
             if (gMatch) {
