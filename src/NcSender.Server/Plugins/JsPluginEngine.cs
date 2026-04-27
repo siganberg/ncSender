@@ -51,7 +51,10 @@ public class JsPluginEngine : IJsPluginEngine
                 var engine = new Engine(options =>
                 {
                     options.LimitMemory(50_000_000); // 50 MB
-                    options.TimeoutInterval(TimeSpan.FromSeconds(10));
+                    // No TimeoutInterval: showDialog blocks the engine thread waiting
+                    // for the user, and Jint counts that wall-clock wait against the
+                    // budget. The dialog dispatcher has its own 10-min timeout, and
+                    // the memory limit catches runaway loops.
                     options.Strict(false);
                 });
 
