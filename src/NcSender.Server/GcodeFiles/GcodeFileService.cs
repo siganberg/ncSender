@@ -13,6 +13,7 @@ public class GcodeFileService : IGcodeFileService
     private readonly ILogger<GcodeFileService> _logger;
     private readonly IFirmwareService _firmwareService;
     private readonly ISettingsManager _settingsManager;
+    private readonly IPluginManager? _pluginManager;
 
     private string StorageDir => PathUtils.GetGcodeFilesDir();
     private string CacheDir => PathUtils.GetGcodeCacheDir();
@@ -23,13 +24,26 @@ public class GcodeFileService : IGcodeFileService
         IBroadcaster broadcaster,
         ILogger<GcodeFileService> logger,
         IFirmwareService firmwareService,
-        ISettingsManager settingsManager)
+        ISettingsManager settingsManager,
+        IPluginManager? pluginManager = null)
     {
         _context = context;
         _broadcaster = broadcaster;
         _logger = logger;
         _firmwareService = firmwareService;
         _settingsManager = settingsManager;
+        _pluginManager = pluginManager;
+    }
+
+    private string ApplyPluginTransforms(string content, string filename, string? sourcePath)
+    {
+        if (_pluginManager is null) return content;
+        var ctx = new Dictionary<string, object?>
+        {
+            ["filename"] = filename,
+            ["sourcePath"] = sourcePath,
+        };
+        return _pluginManager.ApplyOnGcodeProgramLoad(content, ctx);
     }
 
     public Task<GcodeFileTree> ListFilesAsync()
@@ -57,7 +71,7 @@ public class GcodeFileService : IGcodeFileService
         _logger.LogInformation("Uploaded file: {Filename}", filename);
     }
 
-    public async Task LoadFileAsync(string path)
+    public async Task LoadFileAsync(string path, bool applyPluginTransforms = true)
     {
         var fullPath = SafePath.GetSafePath(StorageDir, path)
             ?? throw new ArgumentException($"Invalid path: {path}");
@@ -65,12 +79,14 @@ public class GcodeFileService : IGcodeFileService
         if (!File.Exists(fullPath))
             throw new FileNotFoundException($"File not found: {path}");
 
-        Directory.CreateDirectory(CacheDir);
-        File.Copy(fullPath, CurrentCachePath, overwrite: true);
-
-        var content = await File.ReadAllTextAsync(CurrentCachePath);
-        var totalLines = content.Split('\n').Length;
         var filename = Path.GetFileName(path);
+        var rawContent = await File.ReadAllTextAsync(fullPath);
+        var content = applyPluginTransforms ? ApplyPluginTransforms(rawContent, filename, path) : rawContent;
+
+        Directory.CreateDirectory(CacheDir);
+        await File.WriteAllTextAsync(CurrentCachePath, content);
+
+        var totalLines = content.Split('\n').Length;
         var estimatedSec = await CalculateEstimateAsync(content);
 
         UpdateJobLoaded(filename, totalLines, isTemporary: false, sourcePath: path, estimatedSec: estimatedSec);
@@ -80,11 +96,13 @@ public class GcodeFileService : IGcodeFileService
 
     public async Task LoadTempContentAsync(string content, string filename, string? sourceFile = null)
     {
-        Directory.CreateDirectory(CacheDir);
-        await File.WriteAllTextAsync(CurrentCachePath, content);
+        var transformed = ApplyPluginTransforms(content, filename, sourceFile);
 
-        var totalLines = content.Split('\n').Length;
-        var estimatedSec = await CalculateEstimateAsync(content);
+        Directory.CreateDirectory(CacheDir);
+        await File.WriteAllTextAsync(CurrentCachePath, transformed);
+
+        var totalLines = transformed.Split('\n').Length;
+        var estimatedSec = await CalculateEstimateAsync(transformed);
 
         UpdateJobLoaded(filename, totalLines, isTemporary: true, sourcePath: sourceFile, estimatedSec: estimatedSec);
         _logger.LogInformation("Loaded temp content as: {Filename} ({Lines} lines, est {Est}s)", filename, totalLines, estimatedSec);

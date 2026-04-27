@@ -6,7 +6,7 @@ public interface IGcodeFileService
 {
     Task<GcodeFileTree> ListFilesAsync();
     Task UploadFileAsync(string filename, Stream content);
-    Task LoadFileAsync(string path);
+    Task LoadFileAsync(string path, bool applyPluginTransforms = true);
     Task LoadTempContentAsync(string content, string filename, string? sourceFile = null);
     Task<Stream?> GetCurrentDownloadStreamAsync();
     Task<string?> GetFileAsync(string path);

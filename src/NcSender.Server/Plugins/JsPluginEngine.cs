@@ -4,14 +4,17 @@ using Jint;
 using Jint.Native;
 using Jint.Native.Array;
 using Jint.Native.Object;
+using Jint.Runtime.Interop;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Server.Infrastructure;
 
 namespace NcSender.Server.Plugins;
 
 public class JsPluginEngine : IJsPluginEngine
 {
     private readonly ILogger<JsPluginEngine> _logger;
+    private readonly PluginDialogDispatcher _dialogs;
     private readonly Dictionary<string, PluginState> _plugins = new();
     private readonly Lock _lock = new();
 
@@ -22,9 +25,10 @@ public class JsPluginEngine : IJsPluginEngine
         public int Priority { get; init; }
     }
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs)
     {
         _logger = logger;
+        _dialogs = dialogs;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -48,6 +52,10 @@ public class JsPluginEngine : IJsPluginEngine
                     options.TimeoutInterval(TimeSpan.FromSeconds(10));
                     options.Strict(false);
                 });
+
+                // Inject pluginContext global with helpers (log, showDialog) — must be set
+                // before engine.Execute so plugin module-level code can capture it.
+                engine.SetValue("pluginContext", BuildPluginContext(engine, pluginId));
 
                 engine.Execute(source);
 
@@ -248,6 +256,98 @@ public class JsPluginEngine : IJsPluginEngine
                 _logger.LogError(ex, "JS plugin {PluginId} onAfterJobEnd failed", pluginId);
             }
         }
+    }
+
+    public string ProcessOnGcodeProgramLoad(string pluginId, string content, IReadOnlyDictionary<string, object?> context)
+    {
+        lock (_lock)
+        {
+            if (!_plugins.TryGetValue(pluginId, out var state))
+                return content;
+
+            try
+            {
+                var fn = state.JintEngine.GetValue("onGcodeProgramLoad");
+                if (fn.IsUndefined()) return content;
+
+                var jsContext = new JsObject(state.JintEngine);
+                foreach (var (k, v) in context)
+                    jsContext.Set(k, v is null ? JsValue.Null : JsValue.FromObject(state.JintEngine, v));
+
+                var result = fn.Call(JsValue.FromObject(state.JintEngine, content), jsContext, state.CachedSettings);
+                return result.IsString() ? result.AsString() : content;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "JS plugin {PluginId} onGcodeProgramLoad failed", pluginId);
+                return content;
+            }
+        }
+    }
+
+    private JsObject BuildPluginContext(Engine engine, string pluginId)
+    {
+        var ctx = new JsObject(engine);
+
+        ctx.Set("log", new ClrFunction(engine, "log", (_, args) =>
+        {
+            var parts = args.Select(a => a.IsUndefined() || a.IsNull() ? "" : a.ToString()).ToArray();
+            _logger.LogInformation("[plugin:{PluginId}] {Message}", pluginId, string.Join(" ", parts));
+            return JsValue.Undefined;
+        }));
+
+        ctx.Set("showDialog", new ClrFunction(engine, "showDialog", (_, args) =>
+        {
+            var title = args.Length > 0 && args[0].IsString() ? args[0].AsString() : "";
+            var content = args.Length > 1 && args[1].IsString() ? args[1].AsString() : "";
+            var options = args.Length > 2 ? JsValueToDialogOptions(args[2]) : null;
+
+            var response = _dialogs.ShowDialog(pluginId, title, content, options);
+            return JsonElementToJsValue(engine, response);
+        }));
+
+        return ctx;
+    }
+
+    private static WsDialogOptions? JsValueToDialogOptions(JsValue v)
+    {
+        if (v.IsUndefined() || v.IsNull() || v is not ObjectInstance obj) return null;
+        string? size = null;
+        bool? closable = null;
+        var sizeProp = obj.Get("size");
+        if (sizeProp.IsString()) size = sizeProp.AsString();
+        var closableProp = obj.Get("closable");
+        if (closableProp.IsBoolean()) closable = closableProp.AsBoolean();
+        return new WsDialogOptions(size, closable);
+    }
+
+    private static JsValue JsonElementToJsValue(Engine engine, JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => JsValue.FromObject(engine, element.GetString()!),
+            JsonValueKind.Number => JsValue.FromObject(engine, element.GetDouble()),
+            JsonValueKind.True => JsValue.FromObject(engine, true),
+            JsonValueKind.False => JsValue.FromObject(engine, false),
+            JsonValueKind.Null or JsonValueKind.Undefined => JsValue.Null,
+            JsonValueKind.Object => JsonObjectElementToJs(engine, element),
+            JsonValueKind.Array => JsonArrayElementToJs(engine, element),
+            _ => JsValue.Undefined
+        };
+    }
+
+    private static JsValue JsonObjectElementToJs(Engine engine, JsonElement element)
+    {
+        var obj = new JsObject(engine);
+        foreach (var prop in element.EnumerateObject())
+            obj.Set(prop.Name, JsonElementToJsValue(engine, prop.Value));
+        return obj;
+    }
+
+    private static JsValue JsonArrayElementToJs(Engine engine, JsonElement element)
+    {
+        var items = element.EnumerateArray().Select(e => JsonElementToJsValue(engine, e)).ToArray();
+        return engine.Intrinsics.Array.Construct(items);
     }
 
     private static List<ProcessedCommand> ConvertResultToCommands(JsValue result)

@@ -15,4 +15,5 @@ public interface IJsPluginEngine
         List<ToolInfo> tools);
     List<string> GetLoadedPluginIds();
     void ProcessOnAfterJobEnd(string pluginId);
+    string ProcessOnGcodeProgramLoad(string pluginId, string content, IReadOnlyDictionary<string, object?> context);
 }

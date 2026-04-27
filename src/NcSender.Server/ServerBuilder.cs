@@ -121,6 +121,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IJogManager, JogManager>();
 
         // Phase 5 DI registrations
+        builder.Services.AddSingleton<NcSender.Server.Plugins.PluginDialogDispatcher>();
         builder.Services.AddSingleton<IJsPluginEngine, JsPluginEngine>();
         builder.Services.AddSingleton<ICommandProcessor>(sp =>
             new NcSender.Server.CommandProcessor.PluginCommandProcessor(
@@ -182,6 +183,8 @@ public static class ServerBuilder
         wsLayer.SetJogManager(jogManager);
         var commandProcessor = app.Services.GetRequiredService<ICommandProcessor>();
         wsLayer.SetCommandProcessor(commandProcessor);
+        var dialogDispatcher = app.Services.GetRequiredService<NcSender.Server.Plugins.PluginDialogDispatcher>();
+        wsLayer.SetDialogDispatcher(dialogDispatcher);
 
         // Eagerly create PluginManager to load enabled command plugins into JsPluginEngine
         _ = app.Services.GetRequiredService<IPluginManager>();
@@ -342,7 +345,9 @@ public static class ServerBuilder
 
         try
         {
-            gcodeService.LoadFileAsync(lastLoadedFile).GetAwaiter().GetResult();
+            // Skip plugin transforms on startup-restore: no clients are connected yet,
+            // so a plugin that calls showDialog would block the server boot indefinitely.
+            gcodeService.LoadFileAsync(lastLoadedFile, applyPluginTransforms: false).GetAwaiter().GetResult();
             logger.LogInformation("Restored last loaded file: {Path}", lastLoadedFile);
         }
         catch (Exception ex)

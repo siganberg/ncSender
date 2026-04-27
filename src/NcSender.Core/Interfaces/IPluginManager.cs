@@ -24,4 +24,5 @@ public interface IPluginManager
     Task<PluginUpdateInfo> CheckUpdateAsync(string pluginId);
     Task UpdateAsync(string pluginId);
     PluginDialogInfo? GetPluginMessageDialog(string normalizedName, string messageCode);
+    string ApplyOnGcodeProgramLoad(string content, IReadOnlyDictionary<string, object?> context);
 }

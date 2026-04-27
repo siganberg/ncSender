@@ -23,6 +23,7 @@ public class WebSocketLayer : IBroadcaster
     private ICommandProcessor? _commandProcessor;
     private IJobManager? _jobManager;
     private IJogManager? _jogManager;
+    private NcSender.Server.Plugins.PluginDialogDispatcher? _dialogDispatcher;
 
     public WebSocketLayer(ILogger<WebSocketLayer> logger, IServerContext context, ISettingsManager settings)
     {
@@ -51,6 +52,11 @@ public class WebSocketLayer : IBroadcaster
     public void SetJogManager(IJogManager jogManager)
     {
         _jogManager = jogManager;
+    }
+
+    public void SetDialogDispatcher(NcSender.Server.Plugins.PluginDialogDispatcher dispatcher)
+    {
+        _dialogDispatcher = dispatcher;
     }
 
     public async Task HandleConnection(HttpContext context)
@@ -239,6 +245,19 @@ public class WebSocketLayer : IBroadcaster
                     {
                         var jogData = root.TryGetProperty("data", out var jogDataProp) ? jogDataProp : root;
                         _ = _jogManager.HandleMessageAsync(client.ClientId, type, jogData);
+                    }
+                    break;
+
+                case "plugin-dialog-response":
+                    if (_dialogDispatcher is not null
+                        && root.TryGetProperty("data", out var dlgData)
+                        && dlgData.TryGetProperty("dialogId", out var dlgIdProp)
+                        && dlgIdProp.GetString() is string dlgId)
+                    {
+                        var resp = dlgData.TryGetProperty("response", out var respProp)
+                            ? respProp
+                            : default;
+                        _dialogDispatcher.Resolve(dlgId, resp);
                     }
                     break;
 

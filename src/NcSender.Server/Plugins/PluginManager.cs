@@ -533,6 +533,30 @@ public class PluginManager : IPluginManager
         return lastDot >= 0 ? pluginId[(lastDot + 1)..] : pluginId;
     }
 
+    public string ApplyOnGcodeProgramLoad(string content, IReadOnlyDictionary<string, object?> context)
+    {
+        try
+        {
+            var current = content;
+            foreach (var plugin in ListLoaded())
+            {
+                if (plugin.Manifest?.Events is null) continue;
+                if (!plugin.Manifest.Events.Any(e => string.Equals(e, "onGcodeProgramLoad", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                if (!_jsEngine.HasPlugin(plugin.Id)) continue;
+
+                _logger.LogInformation("Running onGcodeProgramLoad for plugin {PluginId}", plugin.Id);
+                current = _jsEngine.ProcessOnGcodeProgramLoad(plugin.Id, current, context);
+            }
+            return current;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to apply onGcodeProgramLoad transformations");
+            return content;
+        }
+    }
+
     // --- Command plugin helpers ---
 
     private void LoadEnabledCommandPlugins()
@@ -573,7 +597,10 @@ public class PluginManager : IPluginManager
 
     private void TryLoadCommandPlugin(string pluginId, PluginManifest manifest)
     {
-        if (!manifest.Events.Contains("onBeforeCommand") || string.IsNullOrEmpty(manifest.Commands))
+        var hasJsEvent = manifest.Events.Contains("onBeforeCommand")
+            || manifest.Events.Contains("onGcodeProgramLoad")
+            || manifest.Events.Contains("onAfterJobEnd");
+        if (!hasJsEvent || string.IsNullOrEmpty(manifest.Commands))
         {
             _logger.LogInformation("Plugin {PluginId}: skipping load (events={Events}, commands={Commands})",
                 pluginId, string.Join(",", manifest.Events), manifest.Commands);
