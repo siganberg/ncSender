@@ -15,6 +15,7 @@ public class JsPluginEngine : IJsPluginEngine
 {
     private readonly ILogger<JsPluginEngine> _logger;
     private readonly PluginDialogDispatcher _dialogs;
+    private readonly IToolService _toolService;
     private readonly Dictionary<string, PluginState> _plugins = new();
     private readonly Lock _lock = new();
 
@@ -25,10 +26,11 @@ public class JsPluginEngine : IJsPluginEngine
         public int Priority { get; init; }
     }
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService)
     {
         _logger = logger;
         _dialogs = dialogs;
+        _toolService = toolService;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -304,6 +306,32 @@ public class JsPluginEngine : IJsPluginEngine
 
             var response = _dialogs.ShowDialog(pluginId, title, content, options);
             return JsonElementToJsValue(engine, response);
+        }));
+
+        ctx.Set("getTools", new ClrFunction(engine, "getTools", (_, _) =>
+        {
+            try
+            {
+                var tools = _toolService.GetAllAsync().GetAwaiter().GetResult();
+                var arr = engine.Intrinsics.Array.Construct(
+                    tools.Select(t =>
+                    {
+                        var obj = new JsObject(engine);
+                        obj.Set("id", JsValue.FromObject(engine, t.Id));
+                        obj.Set("toolId", t.ToolId.HasValue ? JsValue.FromObject(engine, t.ToolId.Value) : JsValue.Null);
+                        obj.Set("toolNumber", t.ToolNumber.HasValue ? JsValue.FromObject(engine, t.ToolNumber.Value) : JsValue.Null);
+                        obj.Set("name", JsValue.FromObject(engine, t.Name));
+                        obj.Set("type", JsValue.FromObject(engine, t.Type));
+                        obj.Set("diameter", JsValue.FromObject(engine, t.Diameter));
+                        return (JsValue)obj;
+                    }).ToArray());
+                return arr;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.getTools failed for {PluginId}", pluginId);
+                return engine.Intrinsics.Array.Construct(Array.Empty<JsValue>());
+            }
         }));
 
         return ctx;
