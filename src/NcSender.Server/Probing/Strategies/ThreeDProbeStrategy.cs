@@ -203,7 +203,10 @@ public static class ThreeDProbeStrategy
         code.Add($"G0 X-{bounce}");
         code.Add($"G38.2 X3 F{slowFeed}");
         code.Add("#<X2> = #5061");
-        code.Add("G0 X-[[#<X2>-#<X1>]/2]");
+        // FluidNC rejects "G0 X-[expr]" (leading minus on a bracketed
+        // expression — invalid per LinuxCNC G-code spec). Swap operands so the
+        // result is naturally negative; grblHAL accepts both forms. (issue #55)
+        code.Add("G0 X[[#<X1>-#<X2>]/2]");
 
         if (safeRapidY > 0)
             code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
@@ -221,7 +224,7 @@ public static class ThreeDProbeStrategy
         code.Add($"G0 Y-{bounce}");
         code.Add($"G38.2 Y3 F{slowFeed}");
         code.Add("#<Y2> = #5062");
-        code.Add("G0 Y-[[#<Y2>-#<Y1>]/2]");
+        code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
         code.Add("G10 L20 X0 Y0");
         code.Add($"G0 Z{F(zPlunge + 4)}");
         code.Add("G90");
@@ -284,7 +287,7 @@ public static class ThreeDProbeStrategy
         code.Add($"G0 X{bounce}");
         code.Add($"G0 Z{F(zHop)}");
         code.Add($"G0 X-{bounce}");
-        code.Add("G0 X-[[#<X2>-#<X1>]/2]");
+        code.Add("G0 X[[#<X1>-#<X2>]/2]");
 
         if (safeRapidY > 0)
             code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
@@ -310,7 +313,7 @@ public static class ThreeDProbeStrategy
         code.Add($"G0 Y{bounce}");
         code.Add($"G0 Z{F(zHop)}");
         code.Add($"G0 Y-{bounce}");
-        code.Add("G0 Y-[[#<Y2>-#<Y1>]/2]");
+        code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
         code.Add("G10 L20 X0 Y0");
         code.Add("G90");
         code.Add("G[#<return_units>]");
