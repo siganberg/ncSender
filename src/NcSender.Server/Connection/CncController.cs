@@ -221,7 +221,10 @@ public partial class CncController : ICncController
                     _logger.LogInformation("Soft-reset sent, waiting for greeting...");
             });
 
-        // Start verification timeout — disconnect if no greeting received
+        // Start verification timeout — disconnect if no greeting received.
+        // 15s covers FluidNC's slow boot (config dump + WiFi STA connect +
+        // mDNS) which routinely exceeds 5s before the canonical Grbl
+        // greeting line is emitted. grblHAL is sub-second so this is safe.
         _verificationCts?.Cancel();
         _verificationCts = new CancellationTokenSource();
         var cts = _verificationCts;
@@ -229,10 +232,10 @@ public partial class CncController : ICncController
         {
             try
             {
-                await Task.Delay(5000, cts.Token);
+                await Task.Delay(15000, cts.Token);
                 if (_isVerifying && !_hasReceivedGreeting)
                 {
-                    _logger.LogWarning("No CNC greeting received within 5s, disconnecting (wrong device?)");
+                    _logger.LogWarning("No CNC greeting received within 15s, disconnecting (wrong device?)");
                     OnConnectionLost(new TimeoutException("No CNC greeting received"));
                 }
             }
