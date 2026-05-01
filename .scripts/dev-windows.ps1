@@ -23,8 +23,11 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $ClientSrc = Join-Path $RepoRoot 'src\NcSender.Client'
 $ClientDistSrc = Join-Path $ClientSrc 'dist'
-$ClientDistStaged = Join-Path $RepoRoot 'client\dist'
 $ServerProj = Join-Path $RepoRoot 'src\NcSender.Server'
+# Stage next to the server binary so FindClientDist's BaseDirectory\client\dist
+# candidate resolves regardless of cwd. dotnet run uses the project dir as
+# cwd, so the repo-root staging path doesn't get hit during dev.
+$ClientDistStaged = Join-Path $ServerProj 'bin\Debug\net10.0\client\dist'
 
 function Write-Step([string]$Message) {
     Write-Host "==> $Message" -ForegroundColor Cyan
