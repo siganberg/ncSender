@@ -13,7 +13,18 @@ public class FluidNcProtocol : IProtocolHandler
     public string AlarmFetchCommand => "$A";
 
     public bool MatchesGreeting(string line)
-        => line.Contains("FluidNC", StringComparison.OrdinalIgnoreCase);
+    {
+        // Require the canonical Grbl ready greeting — emitted only after the
+        // controller finishes booting (config dump, WiFi, mDNS). A loose
+        // Contains("FluidNC") used to match the banner "[MSG:INFO: FluidNC ...]"
+        // that arrives ~5s before the controller is actually ready, causing
+        // AutoConnect to lock onto the port before status polling could
+        // succeed and then drop the connection.
+        var trimmed = line.TrimStart();
+        return trimmed.StartsWith("Grbl ", StringComparison.OrdinalIgnoreCase)
+            && trimmed.Contains("FluidNC", StringComparison.OrdinalIgnoreCase)
+            && trimmed.Contains("for help", StringComparison.OrdinalIgnoreCase);
+    }
 
     public string[] GetInitCommands()
         => ["$G", "$I", "$#"];

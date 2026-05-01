@@ -131,13 +131,23 @@ public class AutoConnectService : BackgroundService
 
         await TryConnectToTarget(probeSettings, target, ct);
 
-        // If transport is open (connected or verifying), wait for greeting
-        if (_controller.IsTransportOpen && _controller.ActiveProtocol is null)
+        // Wait for the controller to be fully connected (greeting received +
+        // first status report parsed). Poll rather than fixed delay because
+        // FluidNC over WiFi can take 8-10s to finish booting and emit its
+        // canonical Grbl greeting, while grblHAL is sub-second. Bail early
+        // if the transport drops on its own (e.g. CncController hits its
+        // own greeting timeout).
+        if (_controller.IsTransportOpen && !_controller.IsConnected)
         {
-            // Wait for controller to send greeting (e-stop/alarm state may delay it)
-            await Task.Delay(3000, ct);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(200, ct);
+                if (_controller.IsConnected) break;
+                if (!_controller.IsTransportOpen) break;
+            }
 
-            if (_controller.ActiveProtocol is null && !_controller.IsConnected)
+            if (!_controller.IsConnected)
             {
                 _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
                 _controller.Disconnect();

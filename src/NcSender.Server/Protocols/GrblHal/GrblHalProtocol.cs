@@ -17,8 +17,15 @@ public partial class GrblHalProtocol : IProtocolHandler
     public string? ErrorFetchCommand => "$EE";
 
     public bool MatchesGreeting(string line)
-        => line.StartsWith("grbl", StringComparison.OrdinalIgnoreCase)
-           && !line.Contains("FluidNC", StringComparison.OrdinalIgnoreCase);
+    {
+        // Canonical Grbl ready greeting: "Grbl X.Y... '$' for help" or
+        // "GrblHAL X.Y... '$' or '$HELP' for help". Excludes FluidNC, which
+        // also starts with "Grbl" in its greeting line.
+        var trimmed = line.TrimStart();
+        return trimmed.StartsWith("Grbl", StringComparison.OrdinalIgnoreCase)
+            && trimmed.Contains("for help", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.Contains("FluidNC", StringComparison.OrdinalIgnoreCase);
+    }
 
     public string[] GetInitCommands()
         => ["$G", "$#=_tool_offset", "$I", "$pinstate", "$#"];
