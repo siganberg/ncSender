@@ -359,11 +359,28 @@ public partial class CncController : ICncController
 
                     LogCommandSent(entry.RawCommand, isRealTime: false);
 
-                    // Wait for the TCS to be completed by HandleCommandOk/HandleCommandError.
-                    // No timeout — commands like M0 (program pause) hold until the user
-                    // sends ~ (cycle start), which is a real-time command that bypasses
-                    // the queue. Disconnection cancels via ct.
-                    await entry.Tcs.Task.WaitAsync(ct);
+                    // Per-command timeout (see CommandTimeoutPolicy). null = indefinite
+                    // for user-action holds (M0/M1/M6) and program pauses; the rest get
+                    // tight bounds so a missed "ok" doesn't lock the entire queue.
+                    var timeout = CommandTimeoutPolicy.GetTimeout(entry.RawCommand);
+                    try
+                    {
+                        if (timeout is { } t)
+                            await entry.Tcs.Task.WaitAsync(t, ct);
+                        else
+                            await entry.Tcs.Task.WaitAsync(ct);
+                    }
+                    catch (TimeoutException)
+                    {
+                        var msg = $"No 'ok' from controller within {timeout!.Value.TotalSeconds:0.##}s for: {entry.RawCommand}";
+                        _logger.LogWarning(msg);
+                        var err = new TimeoutException(msg);
+                        entry.Tcs.TrySetException(err);
+                        EmitCommandAck(entry, "error", msg);
+                        // Continue draining the queue — don't soft-reset. If the
+                        // controller is genuinely hung, subsequent commands will
+                        // also time out and the user can hit Stop manually.
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
