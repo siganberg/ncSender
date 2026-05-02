@@ -13,7 +13,7 @@ public static partial class CommandTimeoutPolicy
     private static readonly TimeSpan LongMechanical = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan Probing = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan Motion = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan Default = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan Default = TimeSpan.FromMilliseconds(500);
 
     public static TimeSpan? GetTimeout(string command)
     {

@@ -82,10 +82,10 @@ public class CommandTimeoutPolicyTests
     [InlineData("$J=G91 X10 F1000")]
     [InlineData("$J=G91 Y-1 F500")]
     [InlineData("$J=G53 G90 X100 Y100 F2000")]
-    public void Jog_GetsOneSecond(string command)
+    public void Jog_GetsHalfSecond(string command)
     {
         var timeout = CommandTimeoutPolicy.GetTimeout(command);
-        Assert.Equal(TimeSpan.FromSeconds(1), timeout);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), timeout);
     }
 
     [Theory]
@@ -116,15 +116,15 @@ public class CommandTimeoutPolicyTests
     [InlineData("G10 L20 X0")]
     [InlineData("G92 X0 Y0")]
     [InlineData("$RST=*")]
-    public void Default_GetsOneSecond(string command)
+    public void Default_GetsHalfSecond(string command)
     {
         var timeout = CommandTimeoutPolicy.GetTimeout(command);
-        Assert.Equal(TimeSpan.FromSeconds(1), timeout);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), timeout);
     }
 
     [Fact]
     public void EmptyCommand_GetsDefaultTimeout()
     {
-        Assert.Equal(TimeSpan.FromSeconds(1), CommandTimeoutPolicy.GetTimeout(""));
+        Assert.Equal(TimeSpan.FromMilliseconds(500), CommandTimeoutPolicy.GetTimeout(""));
     }
 }
