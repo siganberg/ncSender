@@ -363,15 +363,14 @@ public partial class CncController : ICncController
                     // for user-action holds (M0/M1/M6) and program pauses; the rest get
                     // tight bounds so a missed "ok" doesn't lock the entire queue.
                     //
-                    // Job-streamed lines (SourceId="job"/"resume") bypass the timeout —
-                    // the controller's planner buffer naturally paces acks during a
-                    // running program, and a slow motion can legitimately delay an
-                    // ack well past the 500ms default. Timeouts are for manual
-                    // commands (jogs, terminal input, panel actions) where a stuck
-                    // queue is what the user perceives as a frozen UI.
+                    // Multi-line streamed sequences (job/resume/macro) bypass the
+                    // timeout — the planner buffer naturally paces acks and a slow
+                    // motion can legitimately delay "ok" past the 500ms default.
+                    // Timeouts are for one-off manual commands (jogs, terminal,
+                    // panel actions) where a stuck queue is the perceived freeze.
                     var sourceId = entry.Meta?.SourceId;
-                    var isJobStream = sourceId is "job" or "resume";
-                    var timeout = isJobStream ? null : CommandTimeoutPolicy.GetTimeout(entry.RawCommand);
+                    var isStreamed = sourceId is "job" or "resume" or "macro";
+                    var timeout = isStreamed ? null : CommandTimeoutPolicy.GetTimeout(entry.RawCommand);
                     try
                     {
                         if (timeout is { } t)
