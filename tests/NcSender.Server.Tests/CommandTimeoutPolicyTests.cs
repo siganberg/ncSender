@@ -89,6 +89,21 @@ public class CommandTimeoutPolicyTests
     }
 
     [Theory]
+    [InlineData("M3 S1000")]
+    [InlineData("M3 S1200")]
+    [InlineData("M03 S5000")]
+    [InlineData("M4 S500")]
+    [InlineData("M04")]
+    [InlineData("M5")]
+    [InlineData("M05")]
+    [InlineData("m3 s10000")]
+    public void Spindle_GetsSixtySeconds(string command)
+    {
+        var timeout = CommandTimeoutPolicy.GetTimeout(command);
+        Assert.Equal(TimeSpan.FromSeconds(60), timeout);
+    }
+
+    [Theory]
     [InlineData("$$")]
     [InlineData("$G")]
     [InlineData("$#")]
@@ -98,9 +113,6 @@ public class CommandTimeoutPolicyTests
     [InlineData("$EA")]
     [InlineData("$EE")]
     [InlineData("$pinstate")]
-    [InlineData("M3 S1000")]
-    [InlineData("M4 S500")]
-    [InlineData("M5")]
     [InlineData("M7")]
     [InlineData("M8")]
     [InlineData("M9")]

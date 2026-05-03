@@ -13,6 +13,7 @@ public static partial class CommandTimeoutPolicy
     private static readonly TimeSpan LongMechanical = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan Probing = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan Motion = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan Spindle = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan Default = TimeSpan.FromMilliseconds(500);
 
     public static TimeSpan? GetTimeout(string command)
@@ -40,6 +41,11 @@ public static partial class CommandTimeoutPolicy
             return TimeSpan.FromSeconds(dwellSec + 2);
         }
 
+        // Spindle on/off: controllers with a configured spin-up/down ramp
+        // (grblHAL $340/$341) hold the ack until the spindle reaches speed.
+        if (SpindleRegex().IsMatch(trimmed))
+            return Spindle;
+
         // Motion: planner buffer can delay the ack on long slow feeds.
         if (MotionRegex().IsMatch(trimmed))
             return Motion;
@@ -64,4 +70,7 @@ public static partial class CommandTimeoutPolicy
 
     [GeneratedRegex(@"\bG0*[0-3]\b", RegexOptions.IgnoreCase)]
     private static partial Regex MotionRegex();
+
+    [GeneratedRegex(@"\bM0*[345]\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SpindleRegex();
 }
