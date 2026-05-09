@@ -535,21 +535,23 @@
           <label class="move-to-label">X</label>
           <input
             type="number"
-            step="0.001"
+            :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
             class="move-to-input"
             v-model.number="moveSpindleX"
             @keydown.enter="executeMoveSpindle"
           />
+          <span class="move-to-unit">{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
         </div>
         <div class="move-to-input-group">
           <label class="move-to-label">Y</label>
           <input
             type="number"
-            step="0.001"
+            :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
             class="move-to-input"
             v-model.number="moveSpindleY"
             @keydown.enter="executeMoveSpindle"
           />
+          <span class="move-to-unit">{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
         </div>
       </div>
       <div class="move-to-actions">
@@ -581,7 +583,7 @@ import TransformContextMenu from './TransformContextMenu.vue';
 import OffsetDialog from './OffsetDialog.vue';
 import { rotateGCode, mirrorGCode, offsetGCode } from './transform/gcode-transformer';
 import { useOverrideControls } from '@/composables/use-override-controls';
-import { formatFeedRate, getFeedRateUnitLabel, formatDistance, getDistanceUnitLabel, mmToInches } from '@/lib/units';
+import { formatFeedRate, getFeedRateUnitLabel, formatDistance, getDistanceUnitLabel, mmToInches, inchesToMm } from '@/lib/units';
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
 // Probing is now handled server-side
 
@@ -2361,19 +2363,27 @@ const showContextMenuAt = (clientX: number, clientY: number) => {
   transformMenuX.value = clientX;
   transformMenuY.value = clientY;
 
-  // Calculate machine coordinates for "Move Spindle Here"
+  // Calculate machine coordinates for "Move Spindle Here". The renderer's
+  // scene world is in machine space (spindle marker is positioned at MPos,
+  // crosshair sits at WCO machine coords). Cast a ray from the camera
+  // through the click and intersect the grid plane (Z = wco.z) — a plain
+  // unproject() gives a point on the camera's mid-clipping plane, which
+  // skews Y when the top view has its small anti-pole-flip tilt applied.
   if (canvas.value && camera) {
     const rect = canvas.value.getBoundingClientRect();
     const mouseX = clientX - rect.left;
     const mouseY = clientY - rect.top;
     const ndcX = (mouseX / rect.width) * 2 - 1;
     const ndcY = -(mouseY / rect.height) * 2 + 1;
-    const vector = new THREE.Vector3(ndcX, ndcY, 0);
-    vector.unproject(camera);
-    const machineX = vector.x + (props.workOffset?.x ?? 0);
-    const machineY = vector.y + (props.workOffset?.y ?? 0);
-    worldCoordX.value = Math.round(machineX * 1000) / 1000;
-    worldCoordY.value = Math.round(machineY * 1000) / 1000;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    const gridZ = props.workOffset?.z ?? 0;
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -gridZ);
+    const target = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(plane, target)) {
+      worldCoordX.value = Math.round(target.x * 1000) / 1000;
+      worldCoordY.value = Math.round(target.y * 1000) / 1000;
+    }
   }
 
   showTransformMenu.value = true;
@@ -2420,8 +2430,11 @@ const handleTransformReset = async () => {
 
 const handleMoveSpindleHere = () => {
   if (!storeIsConnected.value) return;
-  moveSpindleX.value = parseFloat(worldCoordX.value.toFixed(3));
-  moveSpindleY.value = parseFloat(worldCoordY.value.toFixed(3));
+  const isImperial = appStore.unitsPreference.value === 'imperial';
+  const x = isImperial ? mmToInches(worldCoordX.value) : worldCoordX.value;
+  const y = isImperial ? mmToInches(worldCoordY.value) : worldCoordY.value;
+  moveSpindleX.value = parseFloat(x.toFixed(isImperial ? 4 : 3));
+  moveSpindleY.value = parseFloat(y.toFixed(isImperial ? 4 : 3));
   showMoveSpindleDialog.value = true;
 };
 
@@ -2431,10 +2444,18 @@ const executeMoveSpindle = async () => {
   showMoveSpindleDialog.value = false;
 
   try {
-    // First move Z to safe height
-    await api.sendCommand(`G53 G0 Z${safeZHeightMm.value}`);
-    // Then rapid move to target XY in machine coordinates
-    await api.sendCommand(`G53 G0 X${moveSpindleX.value} Y${moveSpindleY.value}`);
+    const isImperial = appStore.unitsPreference.value === 'imperial';
+    const fmt = (mm: number) => {
+      if (isImperial) return parseFloat(mmToInches(mm).toFixed(4));
+      return parseFloat(mm.toFixed(3));
+    };
+    const unitCmd = isImperial ? 'G20' : 'G21';
+    const xMm = isImperial ? inchesToMm(moveSpindleX.value) : moveSpindleX.value;
+    const yMm = isImperial ? inchesToMm(moveSpindleY.value) : moveSpindleY.value;
+
+    await api.sendCommand(unitCmd);
+    await api.sendCommand(`G53 G0 Z${fmt(safeZHeightMm.value)}`);
+    await api.sendCommand(`G53 G0 X${fmt(xMm)} Y${fmt(yMm)}`);
   } catch (error) {
     console.error('Error moving spindle:', error);
   }
@@ -4660,7 +4681,14 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   padding: 4px 8px;
   flex-wrap: wrap;
   gap: 8px;
-  pointer-events: auto; /* Ensure buttons are clickable */
+  /* Toolbar bar itself is transparent to clicks so right-click on the empty
+     space between button groups passes through to the canvas. Children
+     re-enable pointer-events so the buttons stay clickable. */
+  pointer-events: none;
+}
+
+.floating-toolbar > * {
+  pointer-events: auto;
 }
 
 .floating-toolbar--top {
@@ -5909,6 +5937,12 @@ body.theme-light .dot--rapid {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.move-to-unit {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .move-to-actions {
