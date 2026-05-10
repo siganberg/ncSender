@@ -1,7 +1,6 @@
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 using NcSender.Server.Infrastructure;
-using Serilog;
 
 namespace NcSender.Server.Logs;
 
@@ -70,15 +69,11 @@ public class LogService : ILogService
 
         try
         {
+            // The file sink (ResilientRollingFileSink) opens with
+            // FileShare.Delete and re-checks File.Exists before each emit,
+            // so deleting the active log file is safe — the next log entry
+            // recreates the file at the same path.
             File.Delete(path);
-
-            // Serilog's SharedFileSink caches file state and won't recover after
-            // the active log file is deleted. Dispose and recreate the logger so
-            // it opens a fresh file on the next write.
-            var prev = Log.Logger;
-            Log.Logger = RecreateLogger();
-            (prev as IDisposable)?.Dispose();
-
             _logger.LogInformation("Log file cleared: {Filename}", filename);
             return true;
         }
@@ -87,35 +82,6 @@ public class LogService : ILogService
             _logger.LogWarning(ex, "Failed to delete log file: {Filename}", filename);
             return false;
         }
-    }
-
-    private static Serilog.ILogger RecreateLogger()
-    {
-        var logsDir = PathUtils.GetLogsDir();
-        const string outputTemplate = "[{Timestamp:yyyy-MM-ddTHH:mm:ss.fffZ}] [{Level:u4}] [{SourceContext}] {Message:lj}{NewLine}{Exception}";
-
-        var logConfig = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Microsoft.Hosting", Serilog.Events.LogEventLevel.Warning)
-            .Enrich.FromLogContext()
-            .Enrich.With(new ShortSourceContextEnricher());
-
-        if (Environment.GetEnvironmentVariable("NCSENDER_PACKAGED") is null)
-        {
-            logConfig = logConfig.WriteTo.Console(
-                outputTemplate: outputTemplate,
-                theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Literate);
-        }
-
-        return logConfig
-            .WriteTo.File(
-                Path.Combine(logsDir, ".log"),
-                outputTemplate: outputTemplate,
-                rollingInterval: Serilog.RollingInterval.Day,
-                retainedFileCountLimit: 30,
-                shared: true)
-            .CreateLogger();
     }
 
     public string? GetFilePath(string filename)

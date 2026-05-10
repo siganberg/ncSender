@@ -30,6 +30,7 @@ using NcSender.Server.Updates;
 using NcSender.Server.WebSocket;
 using Serilog;
 using Serilog.Events;
+using Serilog.Formatting.Display;
 
 namespace NcSender.Server;
 
@@ -69,12 +70,10 @@ public static class ServerBuilder
         }
 
         Log.Logger = logConfig
-            .WriteTo.File(
+            .WriteTo.Sink(new NcSender.Server.Logs.ResilientRollingFileSink(
                 Path.Combine(logsDir, ".log"),
-                outputTemplate: outputTemplate,
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 30,
-                shared: true)
+                new MessageTemplateTextFormatter(outputTemplate),
+                retainedFileCountLimit: 30))
             .CreateLogger();
 
         var builder = WebApplication.CreateBuilder(args);
