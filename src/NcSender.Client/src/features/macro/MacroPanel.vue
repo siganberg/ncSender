@@ -166,6 +166,9 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
+import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+
+registerNcSenderThemes();
 
 const props = defineProps<{
   connected?: boolean;
@@ -185,7 +188,7 @@ const formData = ref({
 
 // Monaco editor setup
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
 const editorOptions = {
   minimap: { enabled: false },

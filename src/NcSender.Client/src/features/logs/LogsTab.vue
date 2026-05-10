@@ -133,6 +133,7 @@ import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import { api } from '@/lib/api';
+import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
 
 interface LogFile {
   name: string;
@@ -152,7 +153,7 @@ const editorInstance = ref<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
 // Theme detection
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'serverlog-light' : 'serverlog-dark');
+const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
 // Apply theme change to Monaco editor
 watch(monacoTheme, (newTheme) => {
@@ -254,52 +255,7 @@ function registerLogLanguage() {
     }
   });
 
-  // Define themes (wrapped in try-catch to handle re-registration)
-  try {
-    monaco.editor.defineTheme('serverlog-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'log.timestamp', foreground: '6A9955' },
-        { token: 'log.error', foreground: 'F14C4C', fontStyle: 'bold' },
-        { token: 'log.warn', foreground: 'CCA700', fontStyle: 'bold' },
-        { token: 'log.info', foreground: '3794FF', fontStyle: 'bold' },
-        { token: 'log.debug', foreground: '888888', fontStyle: 'bold' },
-        { token: 'log.module', foreground: 'C586C0' },
-        { token: 'log.number', foreground: 'B5CEA8' },
-        { token: 'log.string', foreground: 'CE9178' },
-        { token: 'log.url', foreground: '4EC9B0', fontStyle: 'underline' },
-        { token: 'log.ip', foreground: '569CD6' },
-      ],
-      colors: {
-        'editor.background': '#1e1e1e',
-        'editor.foreground': '#d4d4d4',
-      }
-    });
-
-    monaco.editor.defineTheme('serverlog-light', {
-      base: 'vs',
-      inherit: true,
-      rules: [
-        { token: 'log.timestamp', foreground: '008000' },
-        { token: 'log.error', foreground: 'C41E3A', fontStyle: 'bold' },
-        { token: 'log.warn', foreground: 'B8860B', fontStyle: 'bold' },
-        { token: 'log.info', foreground: '0066CC', fontStyle: 'bold' },
-        { token: 'log.debug', foreground: '808080', fontStyle: 'bold' },
-        { token: 'log.module', foreground: 'AF00DB' },
-        { token: 'log.number', foreground: '098658' },
-        { token: 'log.string', foreground: 'A31515' },
-        { token: 'log.url', foreground: '267F99', fontStyle: 'underline' },
-        { token: 'log.ip', foreground: '0000FF' },
-      ],
-      colors: {
-        'editor.background': '#ffffff',
-        'editor.foreground': '#000000',
-      }
-    });
-  } catch (e) {
-    // Themes may already be defined, ignore error
-  }
+  registerNcSenderThemes();
 }
 
 async function loadLogFiles() {

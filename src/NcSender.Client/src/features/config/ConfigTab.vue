@@ -73,6 +73,9 @@ import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import { api } from '@/lib/api';
 import { useAppStore } from '@/composables/use-app-store';
+import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+
+registerNcSenderThemes();
 
 const store = useAppStore();
 
@@ -91,7 +94,7 @@ const hasChanges = computed(() =>
 
 // Theme detection
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'vs-light' : 'vs-dark');
+const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
 watch(monacoTheme, (newTheme) => {
   monaco.editor.setTheme(newTheme);

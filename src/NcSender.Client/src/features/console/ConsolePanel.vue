@@ -578,6 +578,7 @@ import type * as Monaco from 'monaco-editor';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
+import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
 
 const store = useConsoleStore();
 
@@ -825,97 +826,35 @@ const viewableGcode = computed(() => {
 
 // Computed property for Monaco theme based on app theme
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
-// Register G-code language and themes
+// Register G-code language and the shared ncSender theme
 function registerGcodeLanguage() {
-  // Register the G-code language
   monaco.languages.register({ id: 'gcode' });
 
-  // Define G-code syntax highlighting
   monaco.languages.setMonarchTokensProvider('gcode', {
     tokenizer: {
       root: [
-        // Comments - parentheses style
         [/\(.*?\)/, 'comment'],
-        // Comments - semicolon style
         [/;.*$/, 'comment'],
-        // Rapid motion G0/G00
         [/\b[Gg]0*(?=\s|$|[A-Za-z])/, 'gcode-rapid'],
-        // Linear/Arc motion G1/G2/G3
         [/\b[Gg][1-3]\b/, 'gcode-cutting'],
-        // Other G commands
         [/\b[Gg]\d+\.?\d*/, 'gcode-g'],
-        // M commands
         [/\b[Mm]\d+/, 'gcode-m'],
-        // Tool number
         [/\b[Tt]\d+/, 'gcode-tool'],
-        // Spindle speed
         [/\b[Ss]\d+\.?\d*/, 'gcode-spindle'],
-        // Feed rate
         [/\b[Ff]\d+\.?\d*/, 'gcode-feed'],
-        // Coordinates X Y Z
         [/\b[Xx]-?\d+\.?\d*/, 'gcode-coord-x'],
         [/\b[Yy]-?\d+\.?\d*/, 'gcode-coord-y'],
         [/\b[Zz]-?\d+\.?\d*/, 'gcode-coord-z'],
-        // Other axes A B C I J K
         [/\b[AaBbCcIiJjKk]-?\d+\.?\d*/, 'gcode-coord-other'],
-        // Line numbers
         [/\b[Nn]\d+/, 'gcode-line-number'],
-        // Numbers
         [/-?\d+\.?\d*/, 'number'],
       ]
     }
   });
 
-  // Define dark theme for G-code
-  monaco.editor.defineTheme('gcode-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
-      { token: 'gcode-rapid', foreground: 'FF8C00', fontStyle: 'bold' },  // Orange for rapid
-      { token: 'gcode-cutting', foreground: '569CD6', fontStyle: 'bold' }, // Blue for cutting
-      { token: 'gcode-g', foreground: 'C586C0' },  // Purple for other G codes
-      { token: 'gcode-m', foreground: 'DCDCAA' },  // Yellow for M codes
-      { token: 'gcode-tool', foreground: '4EC9B0' },  // Teal for tools
-      { token: 'gcode-spindle', foreground: 'CE9178' },  // Orange-brown for spindle
-      { token: 'gcode-feed', foreground: 'B5CEA8' },  // Light green for feed
-      { token: 'gcode-coord-x', foreground: 'F14C4C' },  // Red for X
-      { token: 'gcode-coord-y', foreground: '4EC9B0' },  // Teal for Y
-      { token: 'gcode-coord-z', foreground: '569CD6' },  // Blue for Z
-      { token: 'gcode-coord-other', foreground: '9CDCFE' },  // Light blue for other axes
-      { token: 'gcode-line-number', foreground: '858585' },  // Gray for line numbers
-      { token: 'number', foreground: 'B5CEA8' },
-    ],
-    colors: {}
-  });
-
-  // Define light theme for G-code
-  monaco.editor.defineTheme('gcode-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '008000', fontStyle: 'italic' },
-      { token: 'gcode-rapid', foreground: 'E67E22', fontStyle: 'bold' },  // Orange for rapid
-      { token: 'gcode-cutting', foreground: '2E86C1', fontStyle: 'bold' }, // Blue for cutting
-      { token: 'gcode-g', foreground: 'AF00DB' },  // Purple for other G codes
-      { token: 'gcode-m', foreground: '795E26' },  // Brown for M codes
-      { token: 'gcode-tool', foreground: '267F99' },  // Teal for tools
-      { token: 'gcode-spindle', foreground: 'A31515' },  // Red-brown for spindle
-      { token: 'gcode-feed', foreground: '098658' },  // Green for feed
-      { token: 'gcode-coord-x', foreground: 'C72828' },  // Red for X
-      { token: 'gcode-coord-y', foreground: '267F99' },  // Teal for Y
-      { token: 'gcode-coord-z', foreground: '2E86C1' },  // Blue for Z
-      { token: 'gcode-coord-other', foreground: '0070C1' },  // Blue for other axes
-      { token: 'gcode-line-number', foreground: '999999' },  // Gray for line numbers
-      { token: 'number', foreground: '098658' },
-    ],
-    colors: {
-      'editor.background': '#f8f8f8',
-      'editorGutter.background': '#f8f8f8',
-    }
-  });
+  registerNcSenderThemes();
 }
 
 // Register G-code language immediately

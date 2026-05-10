@@ -186,6 +186,9 @@ import Dialog from '@/components/Dialog.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
 import { api } from '@/lib/api';
+import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+
+registerNcSenderThemes();
 
 const props = defineProps({
   show: {
@@ -227,7 +230,7 @@ const lineWasAdjusted = ref(false);
 
 // Theme detection for Monaco
 const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => isLightTheme.value ? 'gcode-light' : 'gcode-dark');
+const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
 // Apply theme change to Monaco editor
 watch(monacoTheme, (newTheme) => {
