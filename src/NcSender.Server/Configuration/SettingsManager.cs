@@ -246,7 +246,8 @@ public class SettingsManager : ISettingsManager
                 "count": 0,
                 "source": null,
                 "tls": false,
-                "manual": false
+                "manual": false,
+                "m6passthrough": false
             },
             "plugins": {
                 "allowPriorityReordering": false

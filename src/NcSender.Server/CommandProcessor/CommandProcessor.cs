@@ -33,6 +33,7 @@ public class CommandProcessor : ICommandProcessor
     public async Task<CommandProcessorResult> ProcessAsync(string command, CommandProcessorContext processorContext)
     {
         var machineState = processorContext.MachineState;
+        var m6Passthrough = _settingsManager.GetSetting<bool>("tool.m6passthrough", false);
 
         // 1. Door state safety checks
         var doorResult = CheckDoorStateSafety(command, processorContext);
@@ -69,7 +70,7 @@ public class CommandProcessor : ICommandProcessor
         // 8. Determine return position for M6 tool change
         XyPosition? m6ReturnPosition = null;
         var m6UseWorkCoordinates = false;
-        if (isValidM6 && !sameToolCheck.IsSameTool)
+        if (isValidM6 && !sameToolCheck.IsSameTool && !m6Passthrough)
         {
             var nextXY = processorContext.NextXYPosition;
             if (nextXY is not null)
@@ -109,14 +110,14 @@ public class CommandProcessor : ICommandProcessor
         }
 
         // 12. Set isToolChanging flag for valid M6 (non-same-tool)
-        if (isValidM6 && !sameToolCheck.IsSameTool && !_context.State.MachineState.IsToolChanging)
+        if (isValidM6 && !sameToolCheck.IsSameTool && !_context.State.MachineState.IsToolChanging && !m6Passthrough)
         {
             _context.State.MachineState.IsToolChanging = true;
             _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
         }
 
         // 13. Same-tool M6 skip
-        if (sameToolCheck.IsSameTool)
+        if (sameToolCheck.IsSameTool && !m6Passthrough)
         {
             var skipMessage = $"M6 T{sameToolCheck.ToolNumber}; Skipped, target tool is the same as the current tool.";
             _logger.LogInformation("Same-tool M6 detected: T{Tool} (current: T{Current}) - skipping",
@@ -159,7 +160,7 @@ public class CommandProcessor : ICommandProcessor
         };
 
         // 15. If valid M6 (non-same-tool), append return-to-position + sentinel
-        if (isValidM6)
+        if (isValidM6 && !m6Passthrough)
         {
             // Return-to-position only for manual invocation (not during program run)
             if (m6ReturnPosition is not null && !m6UseWorkCoordinates)
