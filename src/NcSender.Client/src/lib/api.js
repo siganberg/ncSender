@@ -351,17 +351,20 @@ class NCClient {
       body: formData
     });
     if (!response.ok) {
-      // Try to get error message from response
+      // Pull the server's error message if the body is JSON; fall back to a
+      // status-appropriate generic message otherwise. The previous code
+      // re-threw the JSON.parse error directly, which surfaced
+      // "Unexpected token 'M'..." when the response was the Kestrel dev
+      // exception HTML page.
+      let serverMessage = null;
       try {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload G-code file');
-      } catch (parseError) {
-        // If response isn't JSON, use generic message
-        if (parseError.message && !parseError.message.includes('Failed to upload')) {
-          throw parseError;
-        }
-        throw new Error('Failed to upload G-code file');
-      }
+        serverMessage = errorData?.error || errorData?.message;
+      } catch { /* response wasn't JSON */ }
+
+      if (serverMessage) throw new Error(serverMessage);
+      if (response.status === 413) throw new Error('File is too large for the server to accept.');
+      throw new Error('Failed to upload G-code file');
     }
     return await response.json();
   }
@@ -1118,7 +1121,141 @@ class NCClient {
     return response.json();
   }
 
+  // WiFi management methods (Linux only, localhost only)
+  async getWifiSupported() {
+    const response = await fetch(`${this.baseUrl}/api/wifi/supported`);
+    if (!response.ok) {
+      return { supported: false, error: 'Failed to check WiFi support' };
+    }
+    return response.json();
+  }
 
+  async getWifiStatus() {
+    const response = await fetch(`${this.baseUrl}/api/wifi/status`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to get WiFi status' }));
+      throw new Error(error.error || 'Failed to get WiFi status');
+    }
+    return response.json();
+  }
+
+  async scanWifiNetworks() {
+    const response = await fetch(`${this.baseUrl}/api/wifi/scan`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to scan WiFi networks' }));
+      throw new Error(error.error || 'Failed to scan WiFi networks');
+    }
+    return response.json();
+  }
+
+  async connectWifi(ssid, password = '') {
+    const response = await fetch(`${this.baseUrl}/api/wifi/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, password })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to connect to WiFi' }));
+      throw new Error(error.error || 'Failed to connect to WiFi');
+    }
+    return response.json();
+  }
+
+  async disconnectWifi() {
+    const response = await fetch(`${this.baseUrl}/api/wifi/disconnect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to disconnect WiFi' }));
+      throw new Error(error.error || 'Failed to disconnect WiFi');
+    }
+    return response.json();
+  }
+
+  // License methods
+  async getLicenseStatus() {
+    const response = await fetch(`${this.baseUrl}/api/license`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to get license status' }));
+      throw new Error(error.error || 'Failed to get license status');
+    }
+    return response.json();
+  }
+
+  async getMachineFingerprint() {
+    const response = await fetch(`${this.baseUrl}/api/license/fingerprint`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to get machine fingerprint' }));
+      throw new Error(error.error || 'Failed to get machine fingerprint');
+    }
+    return response.json();
+  }
+
+  async importLicense(licenseData) {
+    const response = await fetch(`${this.baseUrl}/api/license/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(licenseData)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error || 'Failed to import license');
+      error.fingerprint = data.fingerprint;
+      throw error;
+    }
+    return data;
+  }
+
+  async activateOnline(installationId) {
+    const response = await fetch(`${this.baseUrl}/api/license/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ installationId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.licensed) {
+      throw new Error(data.error || 'Activation failed');
+    }
+    return data;
+  }
+
+  async deactivateLicense() {
+    const response = await fetch(`${this.baseUrl}/api/license/deactivate`, {
+      method: 'POST'
+    });
+    const data = await response.json();
+    if (!response.ok || data.licensed) {
+      throw new Error(data.error || 'Deactivation failed');
+    }
+    return data;
+  }
+
+  async validateLicense() {
+    const response = await fetch(`${this.baseUrl}/api/license/validate`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to validate license' }));
+      throw new Error(error.error || 'Failed to validate license');
+    }
+    return response.json();
+  }
+
+  async removeLicense() {
+    const response = await fetch(`${this.baseUrl}/api/license`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to remove license' }));
+      throw new Error(error.error || 'Failed to remove license');
+    }
+    return response.json();
+  }
+
+  onLicenseChanged(callback) {
+    return this.on('license-changed', callback);
+  }
 }
 
 // Create singleton instance

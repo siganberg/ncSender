@@ -11,12 +11,35 @@ public static class GcodeFileEndpoints
     public static void Map(WebApplication app)
     {
         // Upload file
-        app.MapPost("/api/gcode-files", async (HttpContext context, IGcodeFileService svc) =>
+        app.MapPost("/api/gcode-files", async (HttpContext context, IGcodeFileService svc, ILogger<GcodeFileService> logger) =>
         {
-            var form = await context.Request.ReadFormAsync();
+            Microsoft.AspNetCore.Http.IFormCollection form;
+            try
+            {
+                form = await context.Request.ReadFormAsync();
+            }
+            catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex)
+                when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge
+                      || ex.Message.Contains("Request body too large", StringComparison.OrdinalIgnoreCase))
+            {
+                // Kestrel rejects bodies past MaxRequestBodySize before the handler
+                // can read them. Surface a friendly JSON error instead of letting
+                // the dev exception page leak HTML — the client tries JSON.parse
+                // on the response and produces a confusing "Unexpected token 'M'"
+                // alert when it fails.
+                var kestrelLimit = context.RequestServices
+                    .GetService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>>()
+                    ?.Value.Limits.MaxRequestBodySize;
+                var limitMb = kestrelLimit.HasValue ? kestrelLimit.Value / (1024 * 1024) : 200;
+                logger.LogWarning("Upload rejected: request body exceeded the {Limit} MB limit", limitMb);
+                return Results.Json(
+                    new ApiError($"File is too large. Maximum size is {limitMb} MB."),
+                    statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
+
             var file = form.Files.GetFile("file");
             if (file is null || file.Length == 0)
-                return Results.BadRequest("No file provided");
+                return Results.BadRequest(new ApiError("No file provided"));
 
             var filename = file.FileName;
             var folder = form["folder"].FirstOrDefault();
