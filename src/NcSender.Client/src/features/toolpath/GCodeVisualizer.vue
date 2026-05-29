@@ -279,16 +279,37 @@
           :key="key"
           class="spindle-toggle"
         >
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="ioSwitchStates[key]"
-              @change="toggleIOSwitch(key)"
-              :disabled="isCoolantDisabled"
+          <!-- Long-press required to activate, currently OFF -->
+          <template v-if="switchConfig.requireLongPress && !ioSwitchStates[key]">
+            <label
+              :class="['switch switch--long-press', { 'is-holding': getAuxLongPressState(key).active, 'blink-border': getAuxLongPressState(key).blinking }]"
+              @mousedown="startAuxLongPress(key, $event)"
+              @mouseup="endAuxLongPress(key)"
+              @mouseleave="cancelAuxLongPress(key)"
+              @touchstart="startAuxLongPress(key, $event)"
+              @touchend="endAuxLongPress(key)"
+              @touchcancel="cancelAuxLongPress(key)"
             >
-            <span class="slider"></span>
-          </label>
-          <span>{{ switchConfig.label }}</span>
+              <input type="checkbox" :checked="false" :disabled="isCoolantDisabled" @change.prevent @click.prevent>
+              <span class="slider">
+                <span class="long-press-fill" :style="{ width: `${getAuxLongPressState(key).progress || 0}%` }"></span>
+              </span>
+            </label>
+            <span>{{ switchConfig.label }} <span class="hold-hint">(Hold)</span></span>
+          </template>
+          <!-- Normal toggle: no long-press required, or currently ON (instant deactivation) -->
+          <template v-else>
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="ioSwitchStates[key]"
+                @change="toggleIOSwitch(key)"
+                :disabled="isCoolantDisabled"
+              >
+              <span class="slider"></span>
+            </label>
+            <span>{{ switchConfig.label }}</span>
+          </template>
         </div>
       </div>
 
@@ -823,11 +844,14 @@ const enabledIOSwitches = computed(() => {
         enabled[key] = {
           label: output.name || `Output`,
           on: output.on,
-          off: getOffCommand(output.on)
+          off: getOffCommand(output.on),
+          requireLongPress: output.requireLongPress ?? false
         };
-        // Initialize state if not exists
         if (!(key in ioSwitchStates)) {
           ioSwitchStates[key] = false;
+        }
+        if (output.requireLongPress && !(key in auxLongPress)) {
+          auxLongPress[key] = { active: false, progress: 0, triggered: false, blinking: false, start: 0 };
         }
       }
     }
@@ -842,7 +866,8 @@ const enabledIOSwitches = computed(() => {
         enabled[key] = {
           label: switchConfig.name || defaultLabel,
           on: onCommand,
-          off: getOffCommand(onCommand)
+          off: getOffCommand(onCommand),
+          requireLongPress: false
         };
         // Initialize state if not exists
         if (!(key in ioSwitchStates)) {
@@ -3574,6 +3599,79 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
   requestRender();
 });
 
+// Long-press state for AUX IO switches that require hold-to-activate
+const LONG_PRESS_MS_AUX = 1000;
+const DELAY_BEFORE_VISUAL_MS_AUX = 150;
+const auxLongPress = reactive<Record<string, { active: boolean; progress: number; triggered: boolean; blinking: boolean; raf?: number; start: number }>>({});
+
+const getAuxLongPressState = (key: string) => {
+  if (!auxLongPress[key]) {
+    auxLongPress[key] = { active: false, progress: 0, triggered: false, blinking: false, start: 0 };
+  }
+  return auxLongPress[key];
+};
+
+const startAuxLongPress = (key: string, evt?: Event) => {
+  if (evt) evt.preventDefault();
+  const state = getAuxLongPressState(key);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.start = performance.now();
+  state.progress = 0;
+  state.active = true;
+  state.triggered = false;
+
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = performance.now() - state.start;
+
+    if (elapsed < DELAY_BEFORE_VISUAL_MS_AUX) {
+      state.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS_AUX;
+      state.progress = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_AUX - DELAY_BEFORE_VISUAL_MS_AUX)) * 100);
+    }
+
+    if (elapsed >= LONG_PRESS_MS_AUX && !state.triggered) {
+      state.triggered = true;
+      state.progress = 0;
+      state.active = false;
+      toggleIOSwitch(key);
+      return;
+    }
+
+    state.raf = requestAnimationFrame(tick);
+  };
+
+  state.raf = requestAnimationFrame(tick);
+};
+
+const endAuxLongPress = (key: string) => {
+  const state = getAuxLongPressState(key);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+
+  if (!state.triggered && state.active) {
+    state.active = false;
+    state.progress = 0;
+    state.blinking = true;
+    setTimeout(() => { state.blinking = false; }, 400);
+  } else {
+    state.active = false;
+    state.progress = 0;
+  }
+
+  setTimeout(() => { state.triggered = false; }, 100);
+};
+
+const cancelAuxLongPress = (key: string) => {
+  const state = getAuxLongPressState(key);
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = undefined;
+  state.active = false;
+  state.progress = 0;
+  state.triggered = false;
+};
+
 const toggleIOSwitch = async (switchKey: string) => {
   const currentState = ioSwitchStates[switchKey];
   const newState = !currentState;
@@ -5328,6 +5426,48 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.switch--long-press {
+  cursor: pointer;
+  user-select: none;
+}
+
+.hold-hint {
+  font-size: 10px;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.switch--long-press .slider {
+  overflow: hidden;
+}
+
+.switch--long-press .long-press-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  opacity: 0.5;
+  border-radius: 22px;
+  transition: width 0.05s linear;
+}
+
+.switch--long-press.is-holding .slider {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.switch--long-press.blink-border .slider {
+  animation: aux-slider-blink 0.4s ease;
+}
+
+@keyframes aux-slider-blink {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+  25%, 75% { box-shadow: inset 0 0 0 1px var(--color-accent); }
 }
 
 /* Tool indicator - lower right */
