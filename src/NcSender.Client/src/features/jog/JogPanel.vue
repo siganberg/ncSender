@@ -28,6 +28,13 @@
         @update:feedRate="handleFeedRateUpdate"
       />
     </header>
+    <div v-if="joggingUnhomed" class="unhomed-banner">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>Unhomed — jog to clear limit switches, then home</span>
+    </div>
     <div class="jog-layout">
       <!-- Jog Controls -->
       <JogControls
@@ -476,9 +483,24 @@ const handleFeedRateUpdate = (newRate: number) => {
 // Disable the entire panel only when disconnected or explicitly disabled
 const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
+// Limit switches are active (X, Y, or Z in Pn string)
+const hasLimitSwitchActive = computed(() => {
+  const pn = appStore.status.Pn || '';
+  return pn.includes('X') || pn.includes('Y') || pn.includes('Z');
+});
+
 // Disable motion controls when disconnected, explicitly disabled, or probing
-// Only require homing if homingCycle > 0
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || (store.homingCycle.value > 0 && !store.isHomed.value) || store.isProbing.value);
+// Allow jogging when unhomed if limit switches are triggered (stuck on stops)
+const motionControlsDisabled = computed(() => {
+  if (!store.isConnected.value || props.isDisabled || store.isProbing.value) return true;
+  if (store.homingCycle.value > 0 && !store.isHomed.value && !hasLimitSwitchActive.value) return true;
+  return false;
+});
+
+// True when jogging off limit switches before homing
+const joggingUnhomed = computed(() =>
+  store.isConnected.value && store.homingCycle.value > 0 && !store.isHomed.value && hasLimitSwitchActive.value
+);
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
@@ -1157,6 +1179,20 @@ const goToCorner = async (corner: CornerType) => {
 h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.unhomed-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-small);
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  color: #eab308;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .jog-layout {
