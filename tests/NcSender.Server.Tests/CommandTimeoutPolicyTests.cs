@@ -4,11 +4,11 @@ namespace NcSender.Server.Tests;
 
 public class CommandTimeoutPolicyTests
 {
-    // The policy is intentionally minimal: a flat 1s on manual commands so a
-    // genuine controller choke surfaces fast. Long-running ops (homing,
-    // motion, spindle ramp, dwell) are paced by the controller itself; jobs
-    // and macros bypass the timeout via the source-id whitelist in
-    // CncController.
+    // The policy itself is a flat 1s for any input — the WHEN is decided in
+    // CncController, which only applies this timeout to jog commands ($J=...)
+    // so a stuck jog UX surfaces fast. Long-running ops (spindle ramp, homing,
+    // motion, dwell, jobs, macros) bypass the policy entirely and wait as long
+    // as the controller takes.
 
     [Theory]
     [InlineData("$J=G91 X10 F1000")]

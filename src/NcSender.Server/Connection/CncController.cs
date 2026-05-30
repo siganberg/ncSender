@@ -359,16 +359,16 @@ public partial class CncController : ICncController
 
                     LogCommandSent(entry.RawCommand, isRealTime: false);
 
-                    // Per-command timeout (see CommandTimeoutPolicy) only applies to
-                    // direct user-driven sources where a stuck queue feels like a
-                    // frozen UI: terminal/panel input (client), jog buttons,
-                    // pendant. Everything else (job/macro streaming, internal
-                    // system/event/probe/controller-files calls) waits as long as
-                    // the controller takes — the planner buffer paces things
-                    // naturally and a slow motion can legitimately delay "ok".
-                    var sourceId = entry.Meta?.SourceId;
-                    var isManual = sourceId is "client" or "jog" or "usb-pendant";
-                    var timeout = isManual ? CommandTimeoutPolicy.GetTimeout(entry.RawCommand) : null;
+                    // Per-command timeout only applies to jog commands ($J=...),
+                    // whether they come from the UI jog buttons or a pendant jog
+                    // wheel. Jogs need a tight UX-responsiveness fallback if "ok"
+                    // is missed. Everything else — spindle (M3/M4/M5 with VFD
+                    // ramp), homing ($H), motion, dwell, job/macro streaming —
+                    // waits as long as the controller takes. The planner buffer
+                    // paces things naturally and a slow op can legitimately
+                    // delay "ok" well beyond a second.
+                    var isJog = entry.RawCommand.StartsWith("$J=", StringComparison.Ordinal);
+                    var timeout = isJog ? CommandTimeoutPolicy.GetTimeout(entry.RawCommand) : null;
                     try
                     {
                         if (timeout is { } t)
