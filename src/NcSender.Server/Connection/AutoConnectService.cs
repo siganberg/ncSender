@@ -89,7 +89,17 @@ public class AutoConnectService : BackgroundService
         {
             if (string.IsNullOrEmpty(settings.Ip) || settings.Port <= 0)
                 return;
-            await TryConnectToTarget(settings, $"ethernet ({settings.Ip}:{settings.Port})", ct);
+
+            var ethTarget = $"ethernet ({settings.Protocol} {settings.Ip}:{settings.Port})";
+
+            // Log only when target changes (avoid spam on per-second retries)
+            if (ethTarget != _lastLoggedScanPort)
+            {
+                _logger.LogInformation("Auto-connect probing {Target}...", ethTarget);
+                _lastLoggedScanPort = ethTarget;
+            }
+
+            await TryConnectToTarget(settings, ethTarget, ct);
             return;
         }
 
@@ -167,15 +177,29 @@ public class AutoConnectService : BackgroundService
         }
     }
 
+    private string _lastLoggedFailure = "";
+
     private async Task TryConnectToTarget(ConnectionSettings settings, string target, CancellationToken ct)
     {
         try
         {
             await _controller.ConnectAsync(settings, ct);
+            _lastLoggedFailure = "";
         }
         catch (Exception ex)
         {
-            _logger.LogDebug("Auto-connect to {Target} failed: {Error}", target, ex.Message);
+            // Log first failure for a given target at Info; subsequent retries stay Debug
+            // so we don't spam, but the user always sees that auto-connect is failing.
+            var failureKey = $"{target}|{ex.Message}";
+            if (failureKey != _lastLoggedFailure)
+            {
+                _logger.LogInformation("Auto-connect to {Target} failed: {Error}", target, ex.Message);
+                _lastLoggedFailure = failureKey;
+            }
+            else
+            {
+                _logger.LogDebug("Auto-connect to {Target} failed: {Error}", target, ex.Message);
+            }
         }
     }
 
@@ -197,45 +221,30 @@ public class AutoConnectService : BackgroundService
 
     private List<string> GetUsbCandidatePorts(string savedPort)
     {
+        // Auto-Detect is disabled: only probe the user-selected port.
+        // Avoids round-robin probing of Bluetooth devices and other non-CNC ports,
+        // and makes retry-on-disconnect fast (stays on the same port).
+        if (string.IsNullOrEmpty(savedPort))
+            return new List<string>();
+
         var occupiedPorts = _pendantManager.GetOccupiedPorts();
         var allPorts = SerialPort.GetPortNames();
-        var isAutoDetect = string.IsNullOrEmpty(savedPort);
-        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var savedKey = NormalizeMacPort(savedPort);
 
-        foreach (var port in allPorts)
-        {
-            // Skip ports occupied by pendant/dongle
-            if (occupiedPorts.Contains(port))
-                continue;
+        // macOS: prefer /dev/cu.* over /dev/tty.* when both exist. tty.* enforces
+        // POSIX terminal semantics (DCD wait, line discipline) and silently drops
+        // serial data even though the port appears to open successfully.
+        var cuMatch = allPorts.FirstOrDefault(p =>
+            p.StartsWith("/dev/cu.", StringComparison.Ordinal)
+            && string.Equals(NormalizeMacPort(p), savedKey, StringComparison.OrdinalIgnoreCase));
 
-            // Skip non-CNC ports (Bluetooth, debug console, DJI, etc.)
-            if (IsExcludedPort(port))
-                continue;
+        var match = cuMatch ?? allPorts.FirstOrDefault(p =>
+            string.Equals(p, savedPort, StringComparison.OrdinalIgnoreCase));
 
-            // macOS dedup: prefer /dev/cu.* over /dev/tty.*
-            var key = NormalizeMacPort(port);
-            if (!seen.ContainsKey(key))
-                seen[key] = port;
-            else if (port.StartsWith("/dev/cu.", StringComparison.Ordinal))
-                seen[key] = port;
-        }
+        if (match is null || occupiedPorts.Contains(match))
+            return new List<string>();
 
-        var candidates = seen.Values.ToList();
-
-        // Put saved port first if it's available
-        if (!string.IsNullOrEmpty(savedPort))
-        {
-            var idx = candidates.FindIndex(p => string.Equals(p, savedPort, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(NormalizeMacPort(p), NormalizeMacPort(savedPort), StringComparison.OrdinalIgnoreCase));
-            if (idx > 0)
-            {
-                var saved = candidates[idx];
-                candidates.RemoveAt(idx);
-                candidates.Insert(0, saved);
-            }
-        }
-
-        return candidates;
+        return new List<string> { match };
     }
 
     private ConnectionSettings BuildConnectionSettings()
