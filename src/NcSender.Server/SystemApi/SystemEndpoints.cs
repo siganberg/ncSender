@@ -100,10 +100,10 @@ public static class SystemEndpoints
     {
         // Walk HKLM\SYSTEM\CurrentControlSet\Enum\<bus>\<vidpid>\<instance>
         // looking for a child "Device Parameters" key whose PortName value
-        // matches our COM port. When found, read Mfg + DeviceDesc from the
-        // instance key. Most CNC USB-serial devices register under USB
-        // (STM32, ESP32, CP210x, CH340, native CDC); FTDI adapters live
-        // under FTDIBUS; a few older drivers use USBSER.
+        // matches our COM port. When found, read HardwareID + Mfg +
+        // DeviceDesc from the instance key. Most CNC USB-serial devices
+        // register under USB (STM32, ESP32, CP210x, CH340, native CDC);
+        // FTDI adapters live under FTDIBUS; a few older drivers use USBSER.
         try
         {
             using var enumKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum");
@@ -131,16 +131,82 @@ public static class SystemEndpoints
 
                         var mfg = CleanInfReference(instanceKey.GetValue("Mfg") as string);
                         var desc = CleanInfReference(instanceKey.GetValue("DeviceDesc") as string);
+                        var hardwareIds = instanceKey.GetValue("HardwareID") as string[];
+
+                        // When Windows uses the built-in usbser.sys CDC driver
+                        // (no vendor INF installed), Mfg/DeviceDesc come back
+                        // as "Microsoft / USB Serial Device" — hiding what the
+                        // device's own USB descriptors say. The actual vendor
+                        // is encoded in the HardwareID's VID prefix. Override
+                        // the generic Microsoft strings with a known-VID lookup
+                        // so users see what they expect (e.g. "STMicroelectronics
+                        // STM32 Virtual COM Port" for VID_0483&PID_5740).
+                        var vendorFromHwid = LookupVendorFromHardwareIds(hardwareIds);
+                        if (vendorFromHwid is not null
+                            && (string.IsNullOrEmpty(mfg) || mfg.Contains("Microsoft", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            return vendorFromHwid;
+                        }
 
                         if (!string.IsNullOrEmpty(mfg) && !string.IsNullOrEmpty(desc))
                             return $"{mfg} {desc}";
                         if (!string.IsNullOrEmpty(desc)) return desc;
                         if (!string.IsNullOrEmpty(mfg)) return mfg;
+                        return vendorFromHwid;
                     }
                 }
             }
         }
         catch { /* best-effort */ }
+        return null;
+    }
+
+    // Map common USB VID (and a few specific VID&PID pairs) to a friendly
+    // "vendor [+ product]" string. Used to override the generic Microsoft
+    // CDC driver descriptors when no vendor INF is installed.
+    private static readonly Dictionary<string, string> KnownUsbProducts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["VID_0483&PID_5740"] = "STMicroelectronics STM32 Virtual COM Port",
+        ["VID_10C4&PID_EA60"] = "Silicon Labs CP210x USB-to-UART",
+        ["VID_1A86&PID_7523"] = "WCH CH340 USB-Serial",
+        ["VID_1A86&PID_55D4"] = "WCH CH9102 USB-Serial",
+        ["VID_0403&PID_6001"] = "FTDI FT232R USB-UART",
+        ["VID_0403&PID_6014"] = "FTDI FT232H USB-UART",
+        ["VID_303A&PID_1001"] = "Espressif ESP32-S2/S3",
+        ["VID_303A&PID_4001"] = "Espressif ESP32-S3 (native USB)",
+        ["VID_2E8A&PID_000A"] = "Raspberry Pi Pico",
+        ["VID_2341&PID_0043"] = "Arduino Uno",
+    };
+
+    private static readonly Dictionary<string, string> KnownUsbVendors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["VID_0483"] = "STMicroelectronics",
+        ["VID_10C4"] = "Silicon Labs",
+        ["VID_1A86"] = "WCH",
+        ["VID_0403"] = "FTDI",
+        ["VID_303A"] = "Espressif",
+        ["VID_2E8A"] = "Raspberry Pi",
+        ["VID_2341"] = "Arduino",
+        ["VID_2A03"] = "Arduino",
+        ["VID_1B4F"] = "SparkFun",
+    };
+
+    private static string? LookupVendorFromHardwareIds(string[]? hardwareIds)
+    {
+        if (hardwareIds is null) return null;
+        foreach (var id in hardwareIds)
+        {
+            // HardwareID example: "USB\VID_0483&PID_5740&REV_0200"
+            var vidPidMatch = System.Text.RegularExpressions.Regex.Match(
+                id, @"(VID_[0-9A-Fa-f]{4})&(PID_[0-9A-Fa-f]{4})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!vidPidMatch.Success) continue;
+
+            var key = $"{vidPidMatch.Groups[1].Value}&{vidPidMatch.Groups[2].Value}";
+            if (KnownUsbProducts.TryGetValue(key, out var product)) return product;
+
+            if (KnownUsbVendors.TryGetValue(vidPidMatch.Groups[1].Value, out var vendor))
+                return vendor;
+        }
         return null;
     }
 
