@@ -91,7 +91,72 @@ public static class SystemEndpoints
     {
         if (OperatingSystem.IsLinux()) return GetLinuxManufacturer(portPath);
         if (OperatingSystem.IsMacOS()) return GetMacOSManufacturer(portPath);
+        if (OperatingSystem.IsWindows()) return GetWindowsManufacturer(portPath);
         return null;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static string? GetWindowsManufacturer(string portPath)
+    {
+        // Walk HKLM\SYSTEM\CurrentControlSet\Enum\<bus>\<vidpid>\<instance>
+        // looking for a child "Device Parameters" key whose PortName value
+        // matches our COM port. When found, read Mfg + DeviceDesc from the
+        // instance key. Most CNC USB-serial devices register under USB
+        // (STM32, ESP32, CP210x, CH340, native CDC); FTDI adapters live
+        // under FTDIBUS; a few older drivers use USBSER.
+        try
+        {
+            using var enumKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum");
+            if (enumKey is null) return null;
+
+            foreach (var busName in new[] { "USB", "FTDIBUS", "USBSER" })
+            {
+                using var busKey = enumKey.OpenSubKey(busName);
+                if (busKey is null) continue;
+
+                foreach (var deviceClassId in busKey.GetSubKeyNames())
+                {
+                    using var deviceClassKey = busKey.OpenSubKey(deviceClassId);
+                    if (deviceClassKey is null) continue;
+
+                    foreach (var instanceId in deviceClassKey.GetSubKeyNames())
+                    {
+                        using var instanceKey = deviceClassKey.OpenSubKey(instanceId);
+                        if (instanceKey is null) continue;
+
+                        using var paramsKey = instanceKey.OpenSubKey("Device Parameters");
+                        var portName = paramsKey?.GetValue("PortName") as string;
+                        if (!string.Equals(portName, portPath, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var mfg = CleanInfReference(instanceKey.GetValue("Mfg") as string);
+                        var desc = CleanInfReference(instanceKey.GetValue("DeviceDesc") as string);
+
+                        if (!string.IsNullOrEmpty(mfg) && !string.IsNullOrEmpty(desc))
+                            return $"{mfg} {desc}";
+                        if (!string.IsNullOrEmpty(desc)) return desc;
+                        if (!string.IsNullOrEmpty(mfg)) return mfg;
+                    }
+                }
+            }
+        }
+        catch { /* best-effort */ }
+        return null;
+    }
+
+    // Windows registry sometimes stores values as INF-localized references
+    // like "@oem18.inf,%vcomdesc%;STMicroelectronics Virtual COM Port".
+    // The substring after the last ';' is the resolved English form.
+    private static string? CleanInfReference(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        if (value.StartsWith('@'))
+        {
+            var semi = value.LastIndexOf(';');
+            if (semi >= 0 && semi < value.Length - 1)
+                return value[(semi + 1)..].Trim();
+        }
+        return value.Trim();
     }
 
     private static string? GetLinuxManufacturer(string portPath)
