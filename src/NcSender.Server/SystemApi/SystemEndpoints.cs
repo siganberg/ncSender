@@ -70,10 +70,10 @@ public static class SystemEndpoints
             try
             {
                 var ports = global::System.IO.Ports.SerialPort.GetPortNames()
-                    .Where(p => !p.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("WLAN", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("WiFi", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("debug-console", StringComparison.OrdinalIgnoreCase))
+                    .Where(p => !SerialPortFilter.IsExcluded(p))
+                    // macOS exposes every USB-serial as both /dev/cu.* (outgoing) and
+                    // /dev/tty.* (incoming); only show the cu.* form — tty.* enforces
+                    // POSIX terminal semantics that silently drop serial data.
                     .Where(p => !OperatingSystem.IsMacOS() || !p.StartsWith("/dev/tty.", StringComparison.Ordinal))
                     .Select(p => new SerialPortItem(p, GetSerialPortManufacturer(p)))
                     .ToArray();

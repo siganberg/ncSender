@@ -406,10 +406,7 @@ public static class ServerBuilder
             try
             {
                 var ports = System.IO.Ports.SerialPort.GetPortNames()
-                    .Where(p => !p.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("WLAN", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("WiFi", StringComparison.OrdinalIgnoreCase)
-                             && !p.Contains("debug-console", StringComparison.OrdinalIgnoreCase))
+                    .Where(p => !SerialPortFilter.IsExcluded(p))
                     .Where(p => !OperatingSystem.IsMacOS() || !p.StartsWith("/dev/tty.", StringComparison.Ordinal))
                     .Select(p => new SerialPortItem(p, SystemEndpoints.GetSerialPortManufacturer(p)))
                     .ToArray();

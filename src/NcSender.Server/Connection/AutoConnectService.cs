@@ -1,6 +1,7 @@
 using System.IO.Ports;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Server.Infrastructure;
 using NcSender.Server.SystemApi;
 
 namespace NcSender.Server.Connection;
@@ -222,22 +223,6 @@ public class AutoConnectService : BackgroundService
                 _logger.LogDebug("Auto-connect to {Target} failed: {Error}", target, ex.Message);
             }
         }
-    }
-
-    // macOS built-in ports that should never be probed during auto-detect
-    private static readonly string[] ExcludedPorts =
-    [
-        "debug-console", "Bluetooth-Incoming-Port", "Bluetooth", "wlan-debug", "DJI"
-    ];
-
-    private static bool IsExcludedPort(string port)
-    {
-        foreach (var excluded in ExcludedPorts)
-        {
-            if (port.Contains(excluded, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
     }
 
     private List<string> GetUsbCandidatePorts(string savedPort, string savedDescriptor)
