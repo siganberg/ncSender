@@ -1,6 +1,7 @@
 using System.IO.Ports;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Server.SystemApi;
 
 namespace NcSender.Server.Connection;
 
@@ -108,7 +109,8 @@ public class AutoConnectService : BackgroundService
             return;
 
         var savedPort = settings.UsbPort ?? "";
-        var candidatePorts = GetUsbCandidatePorts(savedPort);
+        var savedDescriptor = _settings.GetSetting<string>("connection.usbDescriptor") ?? "";
+        var candidatePorts = GetUsbCandidatePorts(savedPort, savedDescriptor);
 
         if (candidatePorts.Count == 0)
             return;
@@ -164,16 +166,35 @@ public class AutoConnectService : BackgroundService
             }
         }
 
-        // On successful connection with greeting, update saved port if it changed
-        // But only if user selected a specific port (not Auto-Detect)
+        // On successful connection, persist the device's USB descriptor (if the
+        // OS exposes one) so a later renumber — e.g. Linux flipping
+        // /dev/ttyACM0 → /dev/ttyACM1 after $REBOOT — can find the same
+        // device by metadata instead of falling back to slow probe-by-connect.
+        // Also fix up usbPort if the device showed up at a different path
+        // than the saved one.
         if (_controller.IsConnected && _controller.ActiveProtocol is not null
-            && !string.IsNullOrEmpty(savedPort) && port != savedPort)
+            && !string.IsNullOrEmpty(savedPort))
         {
-            _logger.LogInformation("CNC controller found on {Port} (saved port was {SavedPort}), updating settings", port, savedPort);
-            _ = _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
+            var descriptor = SystemEndpoints.GetSerialPortManufacturer(port) ?? "";
+            var portChanged = port != savedPort;
+            var descriptorChanged = descriptor != savedDescriptor;
+
+            if (portChanged || descriptorChanged)
             {
-                ["connection"] = new System.Text.Json.Nodes.JsonObject { ["usbPort"] = port }
-            });
+                if (portChanged)
+                    _logger.LogInformation("CNC controller found on {Port} (saved port was {SavedPort}), updating settings", port, savedPort);
+
+                var connectionPatch = new System.Text.Json.Nodes.JsonObject { ["usbPort"] = port };
+                // Only persist descriptor when the OS gave us one; otherwise
+                // leave whatever was there alone (Windows currently returns null).
+                if (!string.IsNullOrEmpty(descriptor))
+                    connectionPatch["usbDescriptor"] = descriptor;
+
+                _ = _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["connection"] = connectionPatch
+                });
+            }
         }
     }
 
@@ -219,7 +240,7 @@ public class AutoConnectService : BackgroundService
         return false;
     }
 
-    private List<string> GetUsbCandidatePorts(string savedPort)
+    private List<string> GetUsbCandidatePorts(string savedPort, string savedDescriptor)
     {
         // Auto-Detect is disabled: only probe the user-selected port.
         // Avoids round-robin probing of Bluetooth devices and other non-CNC ports,
@@ -240,6 +261,24 @@ public class AutoConnectService : BackgroundService
 
         var match = cuMatch ?? allPorts.FirstOrDefault(p =>
             string.Equals(p, savedPort, StringComparison.OrdinalIgnoreCase));
+
+        // Fallback: saved port no longer exists (e.g. Linux renumbered the
+        // device to ttyACM1 after $REBOOT). If we previously captured the
+        // USB descriptor for this device, find any port whose manufacturer
+        // string matches and use that instead. Avoids slow probe-by-connect.
+        if (match is null && !string.IsNullOrEmpty(savedDescriptor))
+        {
+            match = allPorts.FirstOrDefault(p =>
+                !occupiedPorts.Contains(p)
+                && string.Equals(SystemEndpoints.GetSerialPortManufacturer(p), savedDescriptor, StringComparison.Ordinal));
+
+            if (match is not null)
+            {
+                _logger.LogInformation(
+                    "Saved USB port {SavedPort} not present; matched descriptor '{Descriptor}' to {NewPort}",
+                    savedPort, savedDescriptor, match);
+            }
+        }
 
         if (match is null || occupiedPorts.Contains(match))
             return new List<string>();
