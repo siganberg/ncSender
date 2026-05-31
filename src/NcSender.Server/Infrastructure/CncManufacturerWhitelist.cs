@@ -26,8 +26,11 @@ public static class CncManufacturerWhitelist
         WildcardToRegex("*WCH*CH34*"),
         WildcardToRegex("*CH340*"),
         WildcardToRegex("*CH9102*"),
-        WildcardToRegex("*Espressif*"),
-        WildcardToRegex("*ESP32*"),
+        // ESP32 / Espressif intentionally excluded: the pendant dongle is
+        // also an ESP32 with native USB, so matching here would race the
+        // pendant scanner for the same port. FluidNC controllers that go
+        // through a CP210x or CH340 USB-UART bridge (e.g. PiBot) still
+        // match via the bridge chip's manufacturer string.
         WildcardToRegex("*Arduino*"),
         WildcardToRegex("*SparkFun*"),
     ];
