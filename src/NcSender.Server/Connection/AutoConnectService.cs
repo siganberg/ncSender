@@ -227,14 +227,24 @@ public class AutoConnectService : BackgroundService
 
     private List<string> GetUsbCandidatePorts(string savedPort, string savedDescriptor)
     {
-        // Auto-Detect is disabled: only probe the user-selected port.
-        // Avoids round-robin probing of Bluetooth devices and other non-CNC ports,
-        // and makes retry-on-disconnect fast (stays on the same port).
-        if (string.IsNullOrEmpty(savedPort))
-            return new List<string>();
-
         var occupiedPorts = _pendantManager.GetOccupiedPorts();
         var allPorts = SerialPort.GetPortNames();
+
+        // Auto-Detect mode (no saved port): keep only ports whose manufacturer
+        // matches a known CNC vendor pattern. We don't probe — the OS already
+        // told us which devices are plugged in and who made them. The retry
+        // loop in TryConnectAsync handles a stale port gracefully (open fails
+        // fast → next cycle picks the next match).
+        if (string.IsNullOrEmpty(savedPort))
+        {
+            return allPorts
+                .Where(p => !occupiedPorts.Contains(p))
+                .Where(p => !SerialPortFilter.IsExcluded(p))
+                .Where(p => !OperatingSystem.IsMacOS() || !p.StartsWith("/dev/tty.", StringComparison.Ordinal))
+                .Where(p => CncManufacturerWhitelist.Matches(SystemApi.SystemEndpoints.GetSerialPortManufacturer(p)))
+                .ToList();
+        }
+
         var savedKey = NormalizeMacPort(savedPort);
 
         // macOS: prefer /dev/cu.* over /dev/tty.* when both exist. tty.* enforces

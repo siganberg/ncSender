@@ -813,6 +813,13 @@
             </button>
             <div v-if="setupUsbDropdownOpen" class="dropdown-menu">
               <div
+                class="dropdown-item"
+                @click="selectSetupUsbPort({ path: '' })"
+              >
+                <div class="port-path">Auto-Detect</div>
+                <div class="port-manufacturer">Automatically scan all available USB ports</div>
+              </div>
+              <div
                 v-if="setupUsbPorts.length === 0"
                 class="dropdown-item disabled"
               >

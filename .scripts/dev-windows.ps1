@@ -19,8 +19,29 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Resolve repo root (two levels up from this script).
-$RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
+# Resolve repo root to its actual on-disk casing (two levels up from
+# this script). Get-Item / Resolve-Path / .FullName all preserve the
+# case used to address the path on Windows — they don't query the
+# filesystem for the stored case. Vite's html-inline-proxy plugin
+# normalizes paths through Node, which DOES use the on-disk case, so
+# when the two disagree it fails with
+#   "[vite:html-inline-proxy] Could not load … No matching HTML proxy module"
+# Walk each path component and ask the directory for the actual entry
+# name; that's the only reliable way to get canonical case in PS.
+function Get-CanonicalCasePath([string]$path) {
+    $absolute = [System.IO.Path]::GetFullPath($path)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $parts = $absolute.Split($sep)
+    $current = $parts[0]
+    if (-not $current.EndsWith($sep)) { $current += $sep }
+    for ($i = 1; $i -lt $parts.Length; $i++) {
+        if ([string]::IsNullOrEmpty($parts[$i])) { continue }
+        $entry = [System.IO.Directory]::EnumerateFileSystemEntries($current, $parts[$i]) | Select-Object -First 1
+        if ($entry) { $current = $entry } else { $current = Join-Path $current $parts[$i] }
+    }
+    return $current
+}
+$RepoRoot = Get-CanonicalCasePath (Resolve-Path "$PSScriptRoot\..").Path
 $ClientSrc = Join-Path $RepoRoot 'src\NcSender.Client'
 $ClientDistSrc = Join-Path $ClientSrc 'dist'
 $ServerProj = Join-Path $RepoRoot 'src\NcSender.Server'
