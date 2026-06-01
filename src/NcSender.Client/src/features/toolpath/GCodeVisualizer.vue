@@ -2693,6 +2693,7 @@ const toggleSpindle = () => {
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
   }
+  requestRender();
 };
 
 const updatePointerType = () => {
