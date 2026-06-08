@@ -365,6 +365,7 @@
                   <col class="col-name">
                   <col class="col-on">
                   <col class="col-off">
+                  <col class="col-hold">
                   <col class="col-actions">
                 </colgroup>
                 <thead>
@@ -373,6 +374,7 @@
                     <th>Name</th>
                     <th>On</th>
                     <th>Off</th>
+                    <th>Hold</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -391,6 +393,9 @@
                         </select>
                       </td>
                       <td class="command-cell">{{ getOffCommand(auxEditState.on) }}</td>
+                      <td class="hold-cell">
+                        <ToggleSwitch v-model="auxEditState.requireLongPress" />
+                      </td>
                       <td>
                         <div class="aux-actions-cell">
                           <button class="aux-btn-save" @click="saveAuxEdit" title="Save">
@@ -417,6 +422,12 @@
                       <td>{{ output.name }}</td>
                       <td class="command-cell">{{ output.on }}</td>
                       <td class="command-cell">{{ getOffCommand(output.on) }}</td>
+                      <td class="hold-cell">
+                        <svg v-if="output.requireLongPress" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                      </td>
                       <td>
                         <button class="switch-edit-btn" @click="startAuxEdit(index)" title="Edit">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1560,7 +1571,8 @@ const loadAuxOutputs = () => {
       id: item.id || `aux-${index}`,
       enabled: item.enabled ?? true,
       name: item.name || `Output ${index + 1}`,
-      on: item.on || 'M8'
+      on: item.on || 'M8',
+      requireLongPress: item.requireLongPress ?? false
     }));
   }
   // Migrate from old ioSwitches format
@@ -1572,7 +1584,8 @@ const loadAuxOutputs = () => {
         id: 'flood',
         enabled: oldFormat.flood.enabled ?? true,
         name: oldFormat.flood.name || 'Flood',
-        on: oldFormat.flood.on || 'M8'
+        on: oldFormat.flood.on || 'M8',
+        requireLongPress: false
       });
     }
     if (oldFormat.mist) {
@@ -1580,15 +1593,16 @@ const loadAuxOutputs = () => {
         id: 'mist',
         enabled: oldFormat.mist.enabled ?? true,
         name: oldFormat.mist.name || 'Mist',
-        on: oldFormat.mist.on || 'M7'
+        on: oldFormat.mist.on || 'M7',
+        requireLongPress: false
       });
     }
     if (outputs.length > 0) return outputs;
   }
   // Default outputs
   return [
-    { id: 'flood', enabled: true, name: 'Flood', on: 'M8' },
-    { id: 'mist', enabled: true, name: 'Mist', on: 'M7' }
+    { id: 'flood', enabled: true, name: 'Flood', on: 'M8', requireLongPress: false },
+    { id: 'mist', enabled: true, name: 'Mist', on: 'M7', requireLongPress: false }
   ];
 };
 
@@ -1598,7 +1612,8 @@ const auxOutputs = reactive(loadAuxOutputs());
 const editingAuxIndex = ref<number | null>(null);
 const auxEditState = reactive({
   name: '',
-  on: ''
+  on: '',
+  requireLongPress: false
 });
 
 const availableOnCommands = computed(() => {
@@ -1617,6 +1632,7 @@ const startAuxEdit = (index: number) => {
   editingAuxIndex.value = index;
   auxEditState.name = auxOutputs[index].name;
   auxEditState.on = auxOutputs[index].on;
+  auxEditState.requireLongPress = auxOutputs[index].requireLongPress;
 };
 
 const cancelAuxEdit = () => {
@@ -1630,7 +1646,8 @@ const saveAuxOutputs = async () => {
       id: o.id,
       enabled: o.enabled,
       name: o.name,
-      on: o.on
+      on: o.on,
+      requireLongPress: o.requireLongPress
     }))
   });
 };
@@ -1641,6 +1658,7 @@ const saveAuxEdit = async () => {
 
   auxOutputs[index].name = auxEditState.name.trim() || `Output ${index + 1}`;
   auxOutputs[index].on = auxEditState.on;
+  auxOutputs[index].requireLongPress = auxEditState.requireLongPress;
 
   await saveAuxOutputs();
   editingAuxIndex.value = null;
@@ -1652,7 +1670,8 @@ const addAuxOutput = async () => {
     id: newId,
     enabled: true,
     name: `Output ${auxOutputs.length + 1}`,
-    on: 'M8'
+    on: 'M8',
+    requireLongPress: false
   });
   await saveAuxOutputs();
   // Start editing the new output
@@ -3287,7 +3306,13 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .io-switches-table .col-name { width: auto; }
 .io-switches-table .col-on { width: 160px; }
 .io-switches-table .col-off { width: 160px; }
+.io-switches-table .col-hold { width: 50px; }
 .io-switches-table .col-actions { width: 180px; }
+
+.io-switches-table .hold-cell {
+  text-align: center;
+  color: var(--color-text-secondary);
+}
 
 .io-switches-table th:nth-child(1),
 .io-switches-table td:nth-child(1) {
