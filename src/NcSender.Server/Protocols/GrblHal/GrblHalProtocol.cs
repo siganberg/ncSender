@@ -30,6 +30,15 @@ public partial class GrblHalProtocol : IProtocolHandler
     public string[] GetInitCommands()
         => ["$G", "$#=_tool_offset", "$I", "$pinstate", "$#"];
 
+    public bool IsFireAndForget(string command)
+    {
+        // $REBOOT triggers an immediate MCU reset — no "ok" is ever sent
+        // because the firmware is gone by the time it would have replied.
+        // Waiting on the queue past this point would hang the next command
+        // (and the UI's busy spinner) until the user reloads.
+        return command.Trim().Equals("$REBOOT", StringComparison.OrdinalIgnoreCase);
+    }
+
     public (string Id, string Description)? ParseAlarmLine(string line)
     {
         // grblHAL format: [ALARMCODE:N||description]

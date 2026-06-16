@@ -359,6 +359,25 @@ public partial class CncController : ICncController
 
                     LogCommandSent(entry.RawCommand, isRealTime: false);
 
+                    // Fire-and-forget commands (e.g. grblHAL $REBOOT) never get an
+                    // "ok" — the controller is gone. Complete the entry now so the
+                    // UI's busy state clears instead of spinning until reload.
+                    if (_activeProtocol?.IsFireAndForget(entry.RawCommand) == true)
+                    {
+                        var result = new CommandResult
+                        {
+                            Id = entry.Id,
+                            Command = entry.RawCommand,
+                            DisplayCommand = entry.DisplayCommand,
+                            Meta = entry.Meta,
+                            Status = "success",
+                            Timestamp = DateTime.UtcNow.ToString("o")
+                        };
+                        entry.Tcs.TrySetResult(result);
+                        CommandAcknowledged?.Invoke(result);
+                        continue;
+                    }
+
                     // Per-command timeout only applies to jog commands ($J=...),
                     // whether they come from the UI jog buttons or a pendant jog
                     // wheel. Jogs need a tight UX-responsiveness fallback if "ok"

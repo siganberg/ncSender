@@ -83,4 +83,12 @@ public interface IProtocolHandler
     /// (e.g. workspace switches on protocols that don't report WCS in status reports).
     /// </summary>
     bool NeedsGCodeStateRefresh(string command) => false;
+
+    /// <summary>
+    /// Returns true if the command does NOT send an "ok" reply — the controller
+    /// either reboots, disconnects, or otherwise drops the line into the void
+    /// (e.g. grblHAL $REBOOT). The queue consumer writes the bytes and then
+    /// completes the command immediately instead of waiting forever.
+    /// </summary>
+    bool IsFireAndForget(string command) => false;
 }
