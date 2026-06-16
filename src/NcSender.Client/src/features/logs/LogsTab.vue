@@ -128,12 +128,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import { api } from '@/lib/api';
-import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
 
 interface LogFile {
   name: string;
@@ -151,20 +151,8 @@ const showDeleteConfirm = ref(false);
 const logsDir = ref<string | null>(null);
 const editorInstance = ref<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
-// Theme detection
-const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
-
-// Apply theme change to Monaco editor
-watch(monacoTheme, (newTheme) => {
-  monaco.editor.setTheme(newTheme);
-});
-
 // Track if language is already registered (module-level to persist across mounts)
 let languageRegistered = false;
-
-// Watch for theme changes
-let themeObserver: MutationObserver | null = null;
 
 onMounted(() => {
   if (!languageRegistered) {
@@ -172,18 +160,6 @@ onMounted(() => {
     languageRegistered = true;
   }
   loadLogFiles();
-
-  // Watch for theme changes
-  themeObserver = new MutationObserver(() => {
-    isLightTheme.value = document.body.classList.contains('theme-light');
-  });
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-});
-
-onUnmounted(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-  }
 });
 
 // Editor options - optimized for large log files

@@ -11,7 +11,16 @@ import * as monaco from 'monaco-editor';
  *
  * Token names are scoped per-language, so G-code and log rules co-exist in
  * the same theme without conflict.
+ *
+ * Theme tracking is centralized here: we own the single source of truth for
+ * the current monacoTheme and the single MutationObserver on body.class.
+ * Components import `monacoTheme` and pass it through the editor's :theme
+ * prop — no per-component observers, no per-component setTheme calls, so
+ * nothing races when an unrelated body-class change fires (e.g. the virtual
+ * keyboard adding `virtual-keyboard-open`).
  */
+
+import { computed, ref } from 'vue';
 
 const DARK_THEME: monaco.editor.IStandaloneThemeData = {
   base: 'vs-dark',
@@ -89,13 +98,27 @@ const LIGHT_THEME: monaco.editor.IStandaloneThemeData = {
   },
 };
 
-let registered = false;
+const _isLightTheme = ref(document.body.classList.contains('theme-light'));
+
+export const isLightTheme = computed(() => _isLightTheme.value);
+export const monacoTheme = computed(() => _isLightTheme.value ? 'ncsender-light' : 'ncsender-dark');
+
+let initialized = false;
 
 export function registerNcSenderThemes(): void {
-  if (registered) return;
+  if (initialized) return;
   monaco.editor.defineTheme('ncsender-dark', DARK_THEME);
   monaco.editor.defineTheme('ncsender-light', LIGHT_THEME);
-  registered = true;
+  monaco.editor.setTheme(monacoTheme.value);
+
+  new MutationObserver(() => {
+    const nowLight = document.body.classList.contains('theme-light');
+    if (nowLight === _isLightTheme.value) return;
+    _isLightTheme.value = nowLight;
+    monaco.editor.setTheme(monacoTheme.value);
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+  initialized = true;
 }
 
 export function getNcSenderTheme(isLight: boolean): string {

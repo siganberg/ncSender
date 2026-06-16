@@ -181,12 +181,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
-import * as monaco from 'monaco-editor';
 import { api } from '@/lib/api';
-import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+import { registerNcSenderThemes, isLightTheme, monacoTheme } from '@/lib/monaco-themes';
 
 registerNcSenderThemes();
 
@@ -228,15 +227,6 @@ const warnings = ref([]);
 const lineWasAdjusted = ref(false);
 
 
-// Theme detection for Monaco
-const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
-
-// Apply theme change to Monaco editor
-watch(monacoTheme, (newTheme) => {
-  monaco.editor.setTheme(newTheme);
-});
-
 // Info banner styles - sky blue for both themes
 const warningStyle = computed(() => ({
   background: isLightTheme.value ? 'rgba(14, 165, 233, 0.1)' : 'rgba(56, 189, 248, 0.15)',
@@ -257,8 +247,6 @@ const infoIconStyle = computed(() => ({
 const stateSummaryStyle = computed(() => isLightTheme.value ? {
   background: 'rgba(0, 0, 0, 0.03)'
 } : {});
-
-let themeObserver = null;
 
 // Monaco editor options for resume sequence preview
 const resumeSequenceEditorOptions = {
@@ -436,23 +424,6 @@ watch(() => props.show, (newVal) => {
 onMounted(() => {
   if (props.show) {
     analyzeState();
-  }
-
-  // Watch for theme changes
-  themeObserver = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.attributeName === 'class') {
-        isLightTheme.value = document.body.classList.contains('theme-light');
-      }
-    }
-  });
-  themeObserver.observe(document.body, { attributes: true });
-});
-
-onUnmounted(() => {
-  if (themeObserver) {
-    themeObserver.disconnect();
-    themeObserver = null;
   }
 });
 </script>

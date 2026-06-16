@@ -578,7 +578,7 @@ import type * as Monaco from 'monaco-editor';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
-import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
 
 const store = useConsoleStore();
 
@@ -824,10 +824,6 @@ const viewableGcode = computed(() => {
   return store.gcodeContent.value || '';
 });
 
-// Computed property for Monaco theme based on app theme
-const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
-
 // Register G-code language and the shared ncSender theme
 function registerGcodeLanguage() {
   monaco.languages.register({ id: 'gcode' });
@@ -862,24 +858,6 @@ registerGcodeLanguage();
 
 // Expose Monaco globally for plugins to use
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
-
-// Watch for theme changes
-const themeObserver = new MutationObserver(() => {
-  isLightTheme.value = document.body.classList.contains('theme-light');
-});
-
-// Apply theme change to Monaco editor
-watch(monacoTheme, (newTheme) => {
-  monaco.editor.setTheme(newTheme);
-});
-
-onMounted(() => {
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-});
-
-onBeforeUnmount(() => {
-  themeObserver.disconnect();
-});
 
 // Handle Monaco viewer mount (modal/detached view)
 function handleMonacoViewerMount(editor: Monaco.editor.IStandaloneCodeEditor) {

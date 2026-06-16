@@ -67,13 +67,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { CodeEditor } from 'monaco-editor-vue3';
-import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import { api } from '@/lib/api';
 import { useAppStore } from '@/composables/use-app-store';
-import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
 
 registerNcSenderThemes();
 
@@ -92,29 +91,10 @@ const hasChanges = computed(() =>
   configContent.value !== null && editedContent.value !== configContent.value
 );
 
-// Theme detection
-const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
-
-watch(monacoTheme, (newTheme) => {
-  monaco.editor.setTheme(newTheme);
-});
-
-let themeObserver: MutationObserver | null = null;
-
 onMounted(() => {
-  themeObserver = new MutationObserver(() => {
-    isLightTheme.value = document.body.classList.contains('theme-light');
-  });
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-
   if (store.status.connected) {
     loadConfig();
   }
-});
-
-onUnmounted(() => {
-  themeObserver?.disconnect();
 });
 
 const editorOptions: Monaco.editor.IStandaloneEditorConstructionOptions = {

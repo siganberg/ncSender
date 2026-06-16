@@ -159,14 +159,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useM98MacroStore } from './store';
 import type { M98Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
-import { registerNcSenderThemes, getNcSenderTheme } from '@/lib/monaco-themes';
+import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
 
 registerNcSenderThemes();
 
@@ -185,10 +185,6 @@ const formData = ref({
   description: '',
   content: ''
 });
-
-// Monaco editor setup
-const isLightTheme = ref(document.body.classList.contains('theme-light'));
-const monacoTheme = computed(() => getNcSenderTheme(isLightTheme.value));
 
 const editorOptions = {
   minimap: { enabled: false },
@@ -214,16 +210,6 @@ const editorOptions = {
     verticalScrollbarSize: 6
   }
 };
-
-// Watch for theme changes
-const themeObserver = new MutationObserver(() => {
-  isLightTheme.value = document.body.classList.contains('theme-light');
-});
-
-// Apply theme change to Monaco editor
-watch(monacoTheme, (newTheme) => {
-  monaco.editor.setTheme(newTheme);
-});
 
 const nextIdPlaceholder = computed(() => {
   const info = macroStore.idInfo.value;
@@ -382,11 +368,6 @@ watch(selectedMacroId, (newId) => {
 onMounted(() => {
   macroStore.loadMacros();
   macroStore.loadNextId();
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-});
-
-onUnmounted(() => {
-  themeObserver.disconnect();
 });
 </script>
 
