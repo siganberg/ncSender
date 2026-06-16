@@ -66,9 +66,11 @@ public class ServerContext : IServerContext
         if (machineStatus == "tool")
             return "tool-changing";
 
-        // Homing-required: only if $22 > 0
+        // Homing-required: only if $22 bit 2 (Homing on startup required) is set.
+        // Bit 0 (Enable homing) alone means the homing cycle is configured but not
+        // mandatory — jogs / motion are still allowed without first homing.
         var homingCycle = State.MachineState.HomingCycle;
-        if (machineStatus == "idle" && !homed && homingCycle > 0)
+        if (machineStatus == "idle" && !homed && (homingCycle & 4) != 0)
             return "homing-required";
 
         if (machineStatus == "idle")

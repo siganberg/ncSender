@@ -216,7 +216,7 @@ const viewDisabled = computed(() =>
 
 const motionControlsDisabled = computed(() =>
   !store.isConnected.value ||
-  (store.homingCycle.value > 0 && !store.isHomed.value) ||
+  (store.homingStartupRequired.value && !store.isHomed.value) ||
   isHoming.value ||
   store.isProbing.value ||
   (isJobRunning.value && senderStatus.value !== 'idle')

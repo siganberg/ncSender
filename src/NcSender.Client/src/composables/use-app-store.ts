@@ -257,6 +257,12 @@ const isConnected = computed(() => status.connected && websocketConnected.value)
 const currentJobFilename = computed(() => serverState.jobLoaded?.filename);
 const isHomed = computed(() => status.homed === true);
 const homingCycle = computed(() => serverState.machineState?.homingCycle ?? 0);
+// $22 bit 2 (value 4) = "Homing on startup required". When this bit is OFF
+// the controller allows jogs / motion without first homing — even if bit 0
+// (Enable homing) is on. Use this for "must home before motion" gates;
+// use `homingCycle > 0` only for "does homing exist at all" (e.g. rapids,
+// tool positions, which still need a known reference frame).
+const homingStartupRequired = computed(() => (homingCycle.value & 4) !== 0);
 const isProbing = computed(() => senderStatus.value === 'probing');
 const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
 const unitsPreference = computed<UnitsPreference>(() => {
@@ -1105,6 +1111,7 @@ export function useAppStore() {
     currentJobFilename,
     isHomed,
     homingCycle,
+    homingStartupRequired,
     isProbing,
     isJobRunning,
     unitsPreference,

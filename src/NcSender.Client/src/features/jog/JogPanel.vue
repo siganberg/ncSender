@@ -45,7 +45,7 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
             :disabled="homeDisabled"
             title="Home All (Hold to home, Double-tap to split)"
             @mousedown="startHomePress($event)"
@@ -70,21 +70,21 @@
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('X')"
             >
               HX
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('Y')"
             >
               HY
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingCycle.value > 0 }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('Z')"
             >
@@ -477,8 +477,8 @@ const handleFeedRateUpdate = (newRate: number) => {
 const panelDisabled = computed(() => !store.isConnected.value || props.isDisabled || store.isProbing.value);
 
 // Disable motion controls when disconnected, explicitly disabled, or probing
-// Only require homing if homingCycle > 0
-const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || (store.homingCycle.value > 0 && !store.isHomed.value) || store.isProbing.value);
+// Only require homing if $22 bit 2 (Homing on startup required) is set
+const motionControlsDisabled = computed(() => !store.isConnected.value || props.isDisabled || (store.homingStartupRequired.value && !store.isHomed.value) || store.isProbing.value);
 
 // Computed to check if homing is in progress
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');

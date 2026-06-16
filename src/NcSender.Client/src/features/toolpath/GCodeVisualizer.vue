@@ -378,7 +378,7 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || (store.homingCycle.value > 0 && !store.isHomed.value) || store.isProbing.value }">
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || (store.homingStartupRequired.value && !store.isHomed.value) || store.isProbing.value }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -2809,8 +2809,8 @@ const canStartFromLine = computed(() => {
     return false;
   }
 
-  // Only require homing if homingCycle > 0
-  const homingRequired = store.homingCycle.value > 0 && !store.isHomed.value;
+  // Only require homing if $22 bit 2 (Homing on startup required) is set
+  const homingRequired = store.homingStartupRequired.value && !store.isHomed.value;
 
   return props.jobLoaded?.filename &&
          props.jobLoaded?.totalLines > 0 &&

@@ -218,9 +218,9 @@ const appStore = useAppStore();
 const { isJobRunning } = appStore;
 
 // Computed to check if coordinate zeroing should be disabled (not connected, or homing)
-// Only require homing if homingCycle > 0
+// Only require homing if $22 bit 2 (Homing on startup required) is set
 const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() === 'homing');
-const cardDisabled = computed(() => !store.isConnected.value || (store.homingCycle.value > 0 && !store.isHomed.value) || isHoming.value || store.isProbing.value);
+const cardDisabled = computed(() => !store.isConnected.value || (store.homingStartupRequired.value && !store.isHomed.value) || isHoming.value || store.isProbing.value);
 const axisControlsDisabled = computed(() => cardDisabled.value || isJobRunning.value);
 
 // TLR warning state for Z axis zeroing
