@@ -120,6 +120,15 @@
             <span class="dot dot--spindle" :class="{ 'dot--disabled': !showSpindle }"></span>
             <span class="legend-label">Spindle</span>
           </div>
+          <div
+            v-if="hasFile"
+            class="legend-item"
+            :class="{ 'legend-item--disabled': !showExtents }"
+            @click="toggleExtents"
+          >
+            <span class="dot dot--extents" :class="{ 'dot--disabled': !showExtents }"></span>
+            <span class="legend-label">Extents</span>
+          </div>
         </div>
       </div>
 
@@ -751,6 +760,7 @@ const loadingError = ref(false);
 const showRapids = ref(true); // Default to shown
 const showCutting = ref(true); // Default to shown (includes both feed and arcs)
 const showSpindle = ref(true); // Default to shown
+const showExtents = ref(true); // Wireframe AABB around the program's toolpath; defaults shown
 const spindleViewMode = ref(false); // Spindle view mode - off by default
 const autoFitMode = ref(false); // Auto-fit mode - off by default
 const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]>([]); // Tool colors for legend
@@ -2692,6 +2702,14 @@ const toggleSpindle = () => {
   showSpindle.value = !showSpindle.value;
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
+  }
+  requestRender();
+};
+
+const toggleExtents = () => {
+  showExtents.value = !showExtents.value;
+  if (gcodeVisualizer) {
+    gcodeVisualizer.setProgramBoundsBoxVisible(showExtents.value);
   }
   requestRender();
 };
@@ -5387,6 +5405,10 @@ input:checked + .slider:before {
 
 .dot--spindle {
   background: #9ea3aa;
+}
+
+.dot--extents {
+  background: #e0a040;
 }
 
 /* Light theme: use high-contrast rapid color */

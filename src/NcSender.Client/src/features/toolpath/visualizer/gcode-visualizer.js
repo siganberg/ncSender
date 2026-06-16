@@ -29,6 +29,16 @@ class GCodeVisualizer {
         // Grid boundaries (set via setGridBounds)
         this.gridBounds = null; // { minX, maxX, minY, maxY, minZ?, maxZ? }
 
+        // Wireframe box that hugs the program's actual extent (the bbox of
+        // the parsed toolpath in machine coords). Helps the user eyeball
+        // exactly where the program reaches the machine boundary — far more
+        // legible than the per-fragment red tint that gets averaged across
+        // long transit moves. Built on render(), torn down on clear().
+        this.programBoundsBox = null;
+        // User preference; re-render rebuilds the box, so the preference
+        // must outlive the box itself.
+        this._programBoundsBoxVisible = true;
+
         // Store current G-code for re-rendering
         this.currentGCode = null;
 
@@ -209,6 +219,66 @@ class GCodeVisualizer {
             this.highlightLine = null;
         }
         this.selectedLines.clear();
+        this._removeProgramBoundsBox();
+    }
+
+    _removeProgramBoundsBox() {
+        if (!this.programBoundsBox) return;
+        this.group.remove(this.programBoundsBox);
+        if (this.programBoundsBox.geometry) this.programBoundsBox.geometry.dispose();
+        if (this.programBoundsBox.material) this.programBoundsBox.material.dispose();
+        this.programBoundsBox = null;
+    }
+
+    _buildProgramBoundsBox() {
+        this._removeProgramBoundsBox();
+        if (!this.bounds) return;
+
+        const { min, max, size } = this.bounds;
+        // Skip degenerate / empty bounds (e.g. file with no moves).
+        if (!min || !max || !size || size.lengthSq() < 1e-6) return;
+
+        // 12 edges of the AABB. Hand-rolling avoids THREE.Box3Helper's
+        // default-yellow LineBasicMaterial that we couldn't tune for opacity
+        // without poking at the helper internals.
+        const c = [
+            new THREE.Vector3(min.x, min.y, min.z),
+            new THREE.Vector3(max.x, min.y, min.z),
+            new THREE.Vector3(max.x, max.y, min.z),
+            new THREE.Vector3(min.x, max.y, min.z),
+            new THREE.Vector3(min.x, min.y, max.z),
+            new THREE.Vector3(max.x, min.y, max.z),
+            new THREE.Vector3(max.x, max.y, max.z),
+            new THREE.Vector3(min.x, max.y, max.z),
+        ];
+        const edges = [
+            // bottom
+            c[0], c[1], c[1], c[2], c[2], c[3], c[3], c[0],
+            // top
+            c[4], c[5], c[5], c[6], c[6], c[7], c[7], c[4],
+            // verticals
+            c[0], c[4], c[1], c[5], c[2], c[6], c[3], c[7],
+        ];
+        const geometry = new THREE.BufferGeometry().setFromPoints(edges);
+        const material = new THREE.LineBasicMaterial({
+            color: 0xe0a040, // warm amber — distinct from the cyan machine grid and any toolpath color
+            transparent: true,
+            opacity: 0.45,
+            depthTest: false
+        });
+        const box = new THREE.LineSegments(geometry, material);
+        box.name = 'program-bounds-box';
+        box.renderOrder = 998; // just below the toolpath (999) so the path stays on top when overlapping
+        box.visible = this._programBoundsBoxVisible;
+        this.programBoundsBox = box;
+        this.group.add(box);
+    }
+
+    setProgramBoundsBoxVisible(visible) {
+        this._programBoundsBoxVisible = !!visible;
+        if (this.programBoundsBox) {
+            this.programBoundsBox.visible = this._programBoundsBoxVisible;
+        }
     }
 
     setGridBounds(gridBounds) {
@@ -685,6 +755,11 @@ class GCodeVisualizer {
 
         // Ensure OOB recoloring and axis flags are consistent with current bounds
         this.updateOutOfBoundsColors();
+
+        // Wireframe around the program's actual extent — clearer signal for
+        // "where the toolpath touches the machine boundary" than per-segment
+        // red tinting.
+        this._buildProgramBoundsBox();
 
         return this.group;
     }
