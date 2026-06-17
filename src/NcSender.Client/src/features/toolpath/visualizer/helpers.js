@@ -696,6 +696,47 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     edgeLine.renderOrder = 1;
     group.add(edgeLine);
 
+    // "BASEBOARD (FRONT)" label printed flat on the front-center of the grid
+    // floor — orients the user without the need to remember which edge is
+    // which. Front edge = minY for both yHome conventions (with yHome='max'
+    // the machine spans -size..0 so minY is the far end; with yHome='min'
+    // it spans 0..+size so minY=0 IS the home/front). Sits a hair above
+    // the grid plane so it doesn't z-fight with the grid lines beneath it.
+    {
+        const baseboardCanvas = document.createElement('canvas');
+        const canvasScale = 4;
+        baseboardCanvas.width = 640 * canvasScale; // wider canvas so the longer text fits without squeezing
+        baseboardCanvas.height = 96 * canvasScale;
+        const bctx = baseboardCanvas.getContext('2d');
+        bctx.font = `bold ${56 * canvasScale}px Arial`;
+        bctx.textAlign = 'center';
+        bctx.textBaseline = 'middle';
+        bctx.fillStyle = 'rgba(119, 169, 215, 0.55)'; // same blue as the grid edge, half-transparent
+        bctx.fillText('BASEBOARD (FRONT)', baseboardCanvas.width / 2, baseboardCanvas.height / 2);
+
+        const baseboardTexture = new THREE.CanvasTexture(baseboardCanvas);
+        baseboardTexture.needsUpdate = true;
+        const baseboardMaterial = new THREE.MeshBasicMaterial({
+            map: baseboardTexture,
+            transparent: true,
+            depthWrite: false
+        });
+        // Smaller label — ~18% of X extent, clamped so it stays legible on
+        // tiny machines and doesn't dominate on huge ones. Aspect ratio
+        // follows the canvas (640×96).
+        const baseboardWidth = Math.min(240, Math.max(120, (maxX - minX) * 0.18));
+        const baseboardHeight = baseboardWidth * (96 / 640);
+        const baseboardGeom = new THREE.PlaneGeometry(baseboardWidth, baseboardHeight);
+        const baseboardMesh = new THREE.Mesh(baseboardGeom, baseboardMaterial);
+        baseboardMesh.position.set(
+            (minX + maxX) / 2,
+            minY + baseboardHeight / 2 + 4, // small inset so the text isn't flush with the front edge line
+            crosshairZ + 0.05
+        );
+        baseboardMesh.renderOrder = 2;
+        group.add(baseboardMesh);
+    }
+
     // Label spacing: metric = every 20mm, imperial = every 1in (25.4mm)
     const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
 
@@ -918,8 +959,13 @@ const getHomeIconTexture = () => {
         return cachedHomeIconTexture;
     }
 
+    // Explicit width/height required: Chrome/Chromium loads SVG-data-URL
+    // textures via Image, and an <svg> with only `viewBox` has no intrinsic
+    // size in that codepath — the texture rasterises as 0×0 and the sprite
+    // shows nothing. Safari falls back to the viewBox so it 'just worked'
+    // there. 512px gives plenty of headroom for the sprite's 24-unit scale.
     const svgMarkup = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460.298 460.297">
+    <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 460.298 460.297">
       <path fill="${fillColor}" d="M230.149,120.939L65.986,256.274c0,0.191-0.048,0.472-0.144,0.855c-0.094,0.38-0.144,0.656-0.144,0.852v137.041c0,4.948,1.809,9.236,5.426,12.847c3.616,3.613,7.898,5.431,12.847,5.431h109.63V303.664h73.097v109.64h109.629c4.948,0,9.236-1.814,12.847-5.435c3.617-3.607,5.432-7.898,5.432-12.847V257.981c0-0.76-0.104-1.334-0.288-1.707L230.149,120.939z"/>
       <path fill="${fillColor}" d="M457.122,225.438L394.6,173.476V56.989c0-2.663-0.856-4.853-2.574-6.567c-1.704-1.712-3.894-2.568-6.563-2.568h-54.816c-2.666,0-4.855,0.856-6.57,2.568c-1.711,1.714-2.566,3.905-2.566,6.567v55.673l-69.662-58.245c-6.084-4.949-13.318-7.423-21.694-7.423c-8.375,0-15.608,2.474-21.698,7.423L3.172,225.438c-1.903,1.52-2.946,3.566-3.14,6.136c-0.193,2.568,0.472,4.811,1.997,6.713l17.701,21.128c1.525,1.712,3.521,2.759,5.996,3.142c2.285,0.192,4.57-0.476,6.855-1.998L230.149,95.817l197.57,164.741c1.526,1.328,3.521,1.991,5.996,1.991h0.858c2.471-0.376,4.463-1.43,5.996-3.138l17.703-21.125c1.522-1.906,2.189-4.145,1.991-6.716C460.068,229.007,459.021,226.961,457.122,225.438z"/>
     </svg>`;

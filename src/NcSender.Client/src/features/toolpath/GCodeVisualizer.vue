@@ -1154,6 +1154,11 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
   const crosshairOffset = { x: 0, y: 0, z: gridFloorZ };
   gridZLevel = gridFloorZ;
 
+  // `wco` is still needed below for the things that DO follow the work
+  // offset — the work-zero crosshair (axesGroup) and the axis labels.
+  // Only the grid geometry itself is anchored at machine origin.
+  const wco = props.workOffset || { x: 0, y: 0, z: 0 };
+
   if (viewType === 'front') {
     gridGroup = createSideViewGrid({
       gridSizeX: resolveGridSize(props.gridSizeX),
@@ -1290,14 +1295,11 @@ const disposeHomeIndicator = () => {
 };
 
 const computeMachineOriginPosition = () => {
-  // Machine origin position depends on view type:
-  // - Top/Iso/Split: XY plane at Z = gridZLevel (set when grid is built)
-  // - Front (side view): XZ plane at Y = 0, home at machine origin (0, 0, 0)
-  if (props.view === 'front') {
-    machineOriginPosition.set(0, 0, 0);
-  } else {
-    machineOriginPosition.set(0, 0, gridZLevel);
-  }
+  // Home (machine origin) is Z = 0 by definition. With the new fixed-grid
+  // layout the grid floor sits at minZ (= -$132 when zHome='max'), so we
+  // can no longer borrow `gridZLevel` here — that put the home indicator on
+  // the floor instead of the top of the machine wireframe.
+  machineOriginPosition.set(0, 0, 0);
   return machineOriginPosition;
 };
 
