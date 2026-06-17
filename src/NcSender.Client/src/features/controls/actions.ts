@@ -225,8 +225,17 @@ export function registerCoreKeyboardActions(): void {
     if (!keyBindingStore.isActive.value) {
       return false;
     }
-    const { isConnected, isHomed, isProbing, isJobRunning } = store;
-    return isConnected.value && isHomed.value && !isProbing.value && !isJobRunning.value;
+    // Mirror the jog-button gate (JogPanel.motionControlsDisabled / store.homingStartupRequired):
+    // only require the machine to be homed when $22 bit 2 (Homing on startup
+    // required) is set. Without this, keyboard jogs were silently blocked on
+    // machines that don't enforce homing (e.g. FluidNC with $22=0) even
+    // though the on-screen jog buttons worked.
+    const { isConnected, isHomed, isProbing, isJobRunning, homingStartupRequired } = store;
+    if (!isConnected.value) return false;
+    if (isProbing.value) return false;
+    if (isJobRunning.value) return false;
+    if (homingStartupRequired.value && !isHomed.value) return false;
+    return true;
   };
 
   Object.entries(JOG_ACTIONS).forEach(([id, meta]) => {
