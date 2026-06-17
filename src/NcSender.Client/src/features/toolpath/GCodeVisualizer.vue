@@ -1863,26 +1863,54 @@ let wasMultiTouchGesture = false; // Track if multi-touch gesture occurred
 
 let touchStartedOnCanvas = false;
 
+// Single-finger long-press → context menu. Mouse users right-click; touch
+// users hold for ~500 ms. Two-finger tap was awkward and the midpoint
+// between the two fingers gave the wrong machine coords for "Move To".
+const LONG_PRESS_DURATION_MS = 500;
+const LONG_PRESS_MOVE_THRESHOLD_PX = 12;
+let longPressTimer: number | null = null;
+let longPressFired = false;
+
+const cancelLongPress = () => {
+  if (longPressTimer !== null) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+};
+
 const onTouchStart = (event: TouchEvent) => {
   touchStartedOnCanvas = true;
   if (event.touches.length === 1) {
-    // Only start single-finger tracking if no multi-touch gesture is active
     if (!wasMultiTouchGesture) {
-      // Prevent browser from generating synthetic click events - we handle taps ourselves
       event.preventDefault();
       const touch = event.touches[0];
       touchStartPosition = { x: touch.clientX, y: touch.clientY };
       onMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0 } as MouseEvent);
+
+      cancelLongPress();
+      longPressFired = false;
+      const isValidView = props.view === 'top' || props.view === 'front' || props.view === 'iso' ||
+        props.view === 'split';
+      if (isValidView && !isJobRunning.value) {
+        const startX = touch.clientX;
+        const startY = touch.clientY;
+        longPressTimer = window.setTimeout(() => {
+          longPressTimer = null;
+          longPressFired = true;
+          isDragging = false;
+          isPanning = false;
+          isRotating = false;
+          showContextMenuAt(startX, startY);
+        }, LONG_PRESS_DURATION_MS);
+      }
     }
   } else if (event.touches.length === 2) {
-    // Two fingers - setup for rotation/pinch
-    // Mark as multi-touch gesture to prevent tap detection on release
+    cancelLongPress();
     wasMultiTouchGesture = true;
 
     const touch1 = event.touches[0];
     const touch2 = event.touches[1];
 
-    // Detect split viewport based on center of touch
     const centerX = (touch1.clientX + touch2.clientX) / 2;
     const centerY = (touch1.clientY + touch2.clientY) / 2;
 
@@ -1895,22 +1923,16 @@ const onTouchStart = (event: TouchEvent) => {
     isDragging = true;
     const isOrthographicView = props.view === 'top' || props.view === 'front' ||
       (props.view === 'split' && activeSplitViewport !== 'iso');
-    isRotating = !isOrthographicView; // Rotation only in 3D view
+    isRotating = !isOrthographicView;
     isPanning = false;
 
     lastTwoFingerCenter = { x: centerX, y: centerY };
     previousMousePosition = lastTwoFingerCenter;
 
-    // Track start time/position for two-finger tap detection (context menu)
-    rightClickStartTime = Date.now();
-    rightClickStartPos = { x: centerX, y: centerY };
-
-    // Store distance for pinch zoom
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
     lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
 
-    // Clear tap tracking since this is a multi-touch gesture
     lastTapTime = 0;
     lastTapPosition = { x: 0, y: 0 };
   }
@@ -1920,6 +1942,16 @@ const onTouchMove = (event: TouchEvent) => {
   event.preventDefault();
   if (event.touches.length === 1) {
     const touch = event.touches[0];
+
+    if (longPressTimer !== null) {
+      const dx = touch.clientX - touchStartPosition.x;
+      const dy = touch.clientY - touchStartPosition.y;
+      if (dx * dx + dy * dy > LONG_PRESS_MOVE_THRESHOLD_PX * LONG_PRESS_MOVE_THRESHOLD_PX) {
+        cancelLongPress();
+      }
+    }
+    if (longPressFired) return;
+
     onMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
   } else if (event.touches.length === 2) {
     const touch1 = event.touches[0];
@@ -1998,20 +2030,16 @@ const onTouchEnd = (event: TouchEvent) => {
     const wasMultiTouch = wasMultiTouchGesture;
     wasMultiTouchGesture = false;
 
-    // Check for quick two-finger tap (context menu)
-    if (wasMultiTouch) {
-      const touchDuration = Date.now() - (rightClickStartTime || 0);
-      const isValidView = props.view === 'top' || props.view === 'front' || props.view === 'iso' ||
-        (props.view === 'split' && activeSplitViewport);
+    cancelLongPress();
 
-      // Quick two-finger tap (< 400ms, minimal movement) = context menu
-      if (touchDuration < 400 && isValidView && !isJobRunning.value) {
-        const dx = lastTwoFingerCenter.x - (rightClickStartPos?.x || 0);
-        const dy = lastTwoFingerCenter.y - (rightClickStartPos?.y || 0);
-        if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
-          showContextMenuAt(lastTwoFingerCenter.x, lastTwoFingerCenter.y);
-        }
-      }
+    if (longPressFired) {
+      longPressFired = false;
+      onMouseUp();
+      lastTouchDistance = 0;
+      return;
+    }
+
+    if (wasMultiTouch) {
       onMouseUp();
       lastTouchDistance = 0;
       return;
@@ -2396,7 +2424,16 @@ const showContextMenuAt = (clientX: number, clientY: number) => {
     }
   }
 
-  showTransformMenu.value = true;
+  // Defer the overlay mount one frame so the triggering right-click's
+  // contextmenu event (which Chromium dispatches AFTER mouseup) lands on
+  // the canvas — whose handler preventDefaults — not on the just-mounted
+  // overlay. Otherwise the overlay's @contextmenu="close" handler eats
+  // the same right-click that just opened the menu, closing it instantly.
+  // Reproducible on Windows; Linux/macOS dispatch order made it work by
+  // accident.
+  requestAnimationFrame(() => {
+    showTransformMenu.value = true;
+  });
 };
 
 const closeTransformMenu = () => {
@@ -4468,6 +4505,8 @@ onUnmounted(() => {
     cancelAnimationFrame(pendingResizeFrame);
     pendingResizeFrame = null;
   }
+
+  cancelLongPress();
 
   if (renderer) {
     renderer.dispose();
