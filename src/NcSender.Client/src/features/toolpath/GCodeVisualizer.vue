@@ -1058,6 +1058,37 @@ const applyBoundsAndWarnings = () => {
   outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 };
 
+// Cheap-update path for the things that DO follow WCO:
+//   - the work-zero crosshair (axesGroup)
+//   - the X/Y/Z axis labels (axisLabelsGroup / splitSideAxisLabels)
+//
+// Everything else in rebuildGrid() — the grid lines themselves, the
+// machine-extents wireframe, the per-tick number canvases — is pinned
+// to machine coords now and doesn't change when WCO drifts. Calling
+// the full rebuild on every status update (where WCO is reported) was
+// the main source of jank: it disposes ~44 canvas textures and rebuilds
+// thousands of vertices per frame. This helper does only the work-zero
+// movement instead.
+const updateWorkZeroMarkers = (workOffset = props.workOffset) => {
+  const wco = workOffset || { x: 0, y: 0, z: 0 };
+  if (axesGroup) {
+    axesGroup.position.set(wco.x, wco.y, wco.z + 0.1);
+  }
+  if (scene && axisLabelsGroup) {
+    scene.remove(axisLabelsGroup);
+    axisLabelsGroup = createDynamicAxisLabels(
+      wco,
+      props.view === 'split' ? 'top' : props.view
+    );
+    scene.add(axisLabelsGroup);
+  }
+  if (scene && props.view === 'split' && splitSideAxisLabels) {
+    scene.remove(splitSideAxisLabels);
+    splitSideAxisLabels = createDynamicAxisLabels(wco, 'front');
+    scene.add(splitSideAxisLabels);
+  }
+};
+
 const disposeMachineBoundsBox = () => {
   if (!machineBoundsBoxGroup) return;
   if (scene) scene.remove(machineBoundsBoxGroup);
@@ -1142,7 +1173,11 @@ const getWcoDelta = () => {
   };
 };
 
-const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' | 'split' = props.view, skipCameraFit = false) => {
+// The grid + machine-extents wireframe are pinned to machine coords now,
+// so this no longer takes a workOffset — only view + bookkeeping flags.
+// Callers that just need to move the work-zero crosshair should use
+// updateWorkZeroMarkers() instead of triggering a full rebuild.
+const rebuildGrid = (viewType: 'top' | 'front' | 'iso' | 'split' = props.view, skipCameraFit = false) => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
   }
@@ -3308,7 +3343,7 @@ const updatePointerOpacity = () => {
 watch(() => props.view, (newView) => {
   if (newView === 'split') {
     // For split view, create both XY and XZ grids
-    rebuildGrid(props.workOffset, 'split');
+    rebuildGrid('split');
     updateSplitViewCameras();
     // Create axis labels for Top/3D (with Y) and Side (without Y)
     if (scene) {
@@ -3329,7 +3364,7 @@ watch(() => props.view, (newView) => {
     }
     setCameraView(newView);
     // Rebuild grid for the new view (top/3D uses XY grid, side uses XZ grid)
-    rebuildGrid(props.workOffset, newView);
+    rebuildGrid(newView);
     // Rebuild axis labels (hide Y in side view)
     if (scene && axisLabelsGroup) {
       scene.remove(axisLabelsGroup);
@@ -3435,8 +3470,11 @@ watch(() => props.workOffset, (newOffset) => {
     lastWCO = { x: newOffset.x || 0, y: newOffset.y || 0, z: newOffset.z || 0 };
   }
 
-  // Rebuild grid to move crosshair
-  rebuildGrid(newOffset, props.view, true);
+  // Cheap-path: only the crosshair + axis labels follow WCO now. The grid
+  // and machine-extents wireframe are pinned to machine coords and don't
+  // need rebuilding. (updateWCO below handles the toolpath group shift and
+  // debounced OOB recolor.)
+  updateWorkZeroMarkers(newOffset);
 
   // Fast path: move group position instantly, debounced OOB recolor
   if (gcodeVisualizer && gcodeVisualizer.currentGCode) {
@@ -3449,7 +3487,9 @@ watch(() => props.workOffset, (newOffset) => {
 // Skip camera fit to preserve user's current zoom level
 watch(isToolChanging, (nowChanging, wasChanging) => {
   if (nowChanging === false && wasChanging === true) {
-    rebuildGrid(props.workOffset, props.view, true);
+    // Tool change can shift TLO (and therefore WCO) — only the crosshair +
+    // axis labels need to follow. No full rebuild required.
+    updateWorkZeroMarkers();
 
     // Apply WCO change that was skipped during toolchange (TLO may have changed)
     if (gcodeVisualizer && gcodeVisualizer.currentGCode && props.workOffset) {
@@ -3475,12 +3515,12 @@ watch(() => [normalizedSenderStatus.value, props.jobLoaded?.status], ([senderSta
 
 // Watch for grid size changes to update the grid and bounds
 watch(() => [props.gridSizeX, props.gridSizeY], () => {
-  rebuildGrid(props.workOffset);
+  rebuildGrid();
 });
 
 // Watch for units preference changes to rebuild grid with new spacing/labels
 watch(() => appStore.unitsPreference.value, () => {
-  rebuildGrid(props.workOffset);
+  rebuildGrid();
 });
 
 // Watch for Z travel changes to update limits
@@ -3503,7 +3543,7 @@ watch(() => props.zMaxTravel, () => {
 
 // Watch for machine orientation changes to rebuild the grid and home indicator
 watch(() => props.machineOrientation, () => {
-  rebuildGrid(props.workOffset);
+  rebuildGrid();
   refreshHomeIndicator();
 }, { deep: true });
 

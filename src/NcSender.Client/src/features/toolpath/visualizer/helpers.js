@@ -491,13 +491,14 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             context.clearRect(0, 0, 128, 64);
             context.fillStyle = '#6666cc';
             context.font = 'bold 24px Arial';
-            context.textAlign = 'center';
+            // Right-indented like the Y labels — flush against the grid's left edge (minX).
+            context.textAlign = 'right';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
 
             // Display value relative to crosshair (workspace coordinates)
             const displayValue = units === 'imperial' ? Math.round(relativeZ / MM_PER_INCH).toString() : Math.round(relativeZ).toString();
-            context.fillText(displayValue, 64, 32);
+            context.fillText(displayValue, 124, 32);
 
             const texture = new THREE.CanvasTexture(canvas);
             texture.needsUpdate = true;
@@ -514,8 +515,10 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             });
             const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position to the left of crosshair X position
-            mesh.position.set(crosshairX - 5, -0.01, z);
+            // Right edge of the plane sits 2 units left of the grid's left
+            // edge (minX), matching the Y labels in the top view. Anchored
+            // to the grid edge so it's home-orientation-independent.
+            mesh.position.set(minX - 21, -0.01, z);
             mesh.rotation.x = Math.PI / 2;
             mesh.renderOrder = 2;
             group.add(mesh);
@@ -825,8 +828,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             context.font = 'bold 24px Arial';
             // Right-align so the number sits flush against the right edge of
             // the plane; the plane is then slid so that right edge lands just
-            // outside the Y-axis crosshair line, giving each value a clean
-            // right-indented look against the axis.
+            // outside the grid's LEFT edge (minX). Anchoring to the grid edge
+            // instead of the work-zero crosshair means the labels stay outside
+            // the work area regardless of whether home is back-left, back-right,
+            // front-left, or front-right.
             context.textAlign = 'right';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
@@ -853,9 +858,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
             // Plane half-width is 19 — offset by 21 puts the right edge of the
-            // plane 2 units to the left of the Y-axis crosshair line so the
-            // number reads "indented" up against it without overlapping.
-            mesh.position.set(crosshairX - 21, y, crosshairZ + 0.01);
+            // plane 2 units to the LEFT of the grid's left edge (minX). Y
+            // labels always sit just outside the left side regardless of
+            // home location (back-left, back-right, front-left, front-right).
+            mesh.position.set(minX - 21, y, crosshairZ + 0.01);
             mesh.renderOrder = 2;
             group.add(mesh);
         }
