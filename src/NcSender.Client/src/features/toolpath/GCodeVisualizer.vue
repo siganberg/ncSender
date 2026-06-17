@@ -1117,6 +1117,15 @@ const rebuildMachineBoundsBox = (bounds = computeMachineBounds()) => {
   machineBoundsBoxGroup = new THREE.LineSegments(geometry, material);
   machineBoundsBoxGroup.name = 'machine-bounds-box';
   machineBoundsBoxGroup.renderOrder = 1;
+  // Hide in the dedicated Top view: that camera carries a deliberate ~3°
+  // tilt off the +Z pole (so click-and-drag rotation doesn't gimbal-snap),
+  // which makes the wireframe's back-top edge (z=0) project ~5px above the
+  // back-bottom edge (z=minZ), creating a confusing duplicate horizontal
+  // line right above the X tick labels. The grid's own back edge already
+  // marks the XY extents in top-down. Split Top uses a separate, truly
+  // straight-down camera so its edges overlap cleanly — leave it visible
+  // there.
+  machineBoundsBoxGroup.visible = props.view !== 'top';
   scene.add(machineBoundsBoxGroup);
 };
 

@@ -438,7 +438,7 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             context.scale(scale, scale);
             context.clearRect(0, 0, 128, 64);
             context.fillStyle = '#cc6666';
-            context.font = 'bold 20px Arial';
+            context.font = 'bold 24px Arial';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
@@ -456,14 +456,17 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             const planeMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.9,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
+            const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position below the crosshair Z position
-            mesh.position.set(x, -0.01, crosshairZ - 5);
+            // Pin X labels at the side-view grid's bottom edge (minZ) instead
+            // of next to the X crosshair line so they don't collide with
+            // toolpath geometry. Center sits 7 units past the edge so the
+            // text has a small visible gap from the edge line.
+            mesh.position.set(x, -0.01, minZ - 7);
             mesh.rotation.x = Math.PI / 2;
             mesh.renderOrder = 2;
             group.add(mesh);
@@ -487,7 +490,7 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             context.scale(scale, scale);
             context.clearRect(0, 0, 128, 64);
             context.fillStyle = '#6666cc';
-            context.font = 'bold 20px Arial';
+            context.font = 'bold 24px Arial';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
@@ -505,11 +508,11 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
             const planeMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.9,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
+            const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
             // Position to the left of crosshair X position
             mesh.position.set(crosshairX - 5, -0.01, z);
@@ -696,9 +699,9 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     edgeLine.renderOrder = 1;
     group.add(edgeLine);
 
-    // "BASEBOARD (FRONT)" label printed flat on the front-center of the grid
-    // floor — orients the user without the need to remember which edge is
-    // which. Front edge = minY for both yHome conventions (with yHome='max'
+    // "MACHINE BED (FRONT)" label printed flat on the front-center of the
+    // grid floor — orients the user without the need to remember which edge
+    // is which. Front edge = minY for both yHome conventions (with yHome='max'
     // the machine spans -size..0 so minY is the far end; with yHome='min'
     // it spans 0..+size so minY=0 IS the home/front). Sits a hair above
     // the grid plane so it doesn't z-fight with the grid lines beneath it.
@@ -711,8 +714,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         bctx.font = `bold ${56 * canvasScale}px Arial`;
         bctx.textAlign = 'center';
         bctx.textBaseline = 'middle';
-        bctx.fillStyle = 'rgba(119, 169, 215, 0.55)'; // same blue as the grid edge, half-transparent
-        bctx.fillText('BASEBOARD (FRONT)', baseboardCanvas.width / 2, baseboardCanvas.height / 2);
+        // Brighter than the grid edge so it's clearly legible against the
+        // dark backdrop — lifted toward white and bumped to near-opaque.
+        bctx.fillStyle = 'rgba(190, 220, 245, 0.95)';
+        bctx.fillText('MACHINE BED (FRONT)', baseboardCanvas.width / 2, baseboardCanvas.height / 2);
 
         const baseboardTexture = new THREE.CanvasTexture(baseboardCanvas);
         baseboardTexture.needsUpdate = true;
@@ -764,7 +769,7 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             context.scale(scale, scale);
             context.clearRect(0, 0, 128, 64);
             context.fillStyle = '#cc6666';
-            context.font = 'bold 20px Arial';
+            context.font = 'bold 24px Arial';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
@@ -782,14 +787,19 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             const planeMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.9,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
+            const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position label below the crosshair Y position, at work surface Z level
-            mesh.position.set(x, crosshairY - 5, crosshairZ + 0.01);
+            // Pin the X-axis labels at maxY (back edge) instead of next to
+            // the X crosshair line. The crosshair can sit anywhere inside
+            // the fixed grid as WCO drifts, so anchoring to maxY gives a
+            // stable position that doesn't migrate. Center sits 7 units past
+            // the back edge so the label text has a small visible gap from
+            // the edge line.
+            mesh.position.set(x, maxY + 7, crosshairZ + 0.01);
             mesh.renderOrder = 2;
             group.add(mesh);
         }
@@ -812,14 +822,20 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             context.scale(scale, scale);
             context.clearRect(0, 0, 128, 64);
             context.fillStyle = '#4d994d';
-            context.font = 'bold 20px Arial';
-            context.textAlign = 'center';
+            context.font = 'bold 24px Arial';
+            // Right-align so the number sits flush against the right edge of
+            // the plane; the plane is then slid so that right edge lands just
+            // outside the Y-axis crosshair line, giving each value a clean
+            // right-indented look against the axis.
+            context.textAlign = 'right';
             context.textBaseline = 'middle';
             context.imageSmoothingEnabled = true;
 
             // Display value relative to crosshair (workspace coordinates)
             const displayValue = units === 'imperial' ? Math.round(relativeY / MM_PER_INCH).toString() : Math.round(relativeY).toString();
-            context.fillText(displayValue, 64, 32);
+            // x=124 leaves 4px of canvas padding on the right so glyph hinting
+            // doesn't clip the last character.
+            context.fillText(displayValue, 124, 32);
 
             const texture = new THREE.CanvasTexture(canvas);
             texture.needsUpdate = true;
@@ -830,14 +846,16 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             const planeMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.9,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
+            const planeGeometry = new THREE.PlaneGeometry(38, 22);
             const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position label to the left of crosshair X position, at work surface Z level
-            mesh.position.set(crosshairX - 5, y, crosshairZ + 0.01);
+            // Plane half-width is 19 — offset by 21 puts the right edge of the
+            // plane 2 units to the left of the Y-axis crosshair line so the
+            // number reads "indented" up against it without overlapping.
+            mesh.position.set(crosshairX - 21, y, crosshairZ + 0.01);
             mesh.renderOrder = 2;
             group.add(mesh);
         }
