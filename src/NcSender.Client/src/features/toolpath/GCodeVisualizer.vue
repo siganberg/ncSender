@@ -943,6 +943,7 @@ let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
 let splitSideGridGroup: THREE.Group | null = null; // XZ grid for split view's side viewport
 let splitSideAxisLabels: THREE.Group | null = null; // Axis labels without Y for split view's side viewport
+let machineBoundsBoxGroup: THREE.LineSegments | null = null; // Cyan wireframe AABB hugging the machine extent. Lives in the scene (NOT the path group) so it stays fixed in machine coords regardless of WCO.
 let axesGroup: THREE.Group;
 let homeIndicatorGroup: THREE.Group | null = null;
 let gridZLevel = 0; // Store grid Z level to keep home indicator grounded
@@ -1057,6 +1058,68 @@ const applyBoundsAndWarnings = () => {
   outOfBoundsDirections.value = gcodeVisualizer.getOutOfBoundsDirections();
 };
 
+const disposeMachineBoundsBox = () => {
+  if (!machineBoundsBoxGroup) return;
+  if (scene) scene.remove(machineBoundsBoxGroup);
+  if (machineBoundsBoxGroup.geometry) machineBoundsBoxGroup.geometry.dispose();
+  const mat = machineBoundsBoxGroup.material;
+  if (mat) {
+    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+    else mat.dispose();
+  }
+  machineBoundsBoxGroup = null;
+};
+
+// Build the cyan wireframe that hugs the machine extent (always visible
+// for now — we may add a legend toggle later). Lives in the scene rather
+// than inside gcodeVisualizer.group so it stays fixed in machine coords
+// no matter how WCO drifts.
+const rebuildMachineBoundsBox = (bounds = computeMachineBounds()) => {
+  disposeMachineBoundsBox();
+  if (!scene) return;
+  const { minX, maxX, minY, maxY, minZ, maxZ } = bounds;
+  if (
+    typeof minX !== 'number' || typeof maxX !== 'number' ||
+    typeof minY !== 'number' || typeof maxY !== 'number'
+  ) return;
+
+  const zMin = (typeof minZ === 'number') ? minZ : 0;
+  const zMax = (typeof maxZ === 'number') ? maxZ : 0;
+  const flatZ = zMin === zMax;
+
+  const c = [
+    new THREE.Vector3(minX, minY, zMin),
+    new THREE.Vector3(maxX, minY, zMin),
+    new THREE.Vector3(maxX, maxY, zMin),
+    new THREE.Vector3(minX, maxY, zMin),
+    new THREE.Vector3(minX, minY, zMax),
+    new THREE.Vector3(maxX, minY, zMax),
+    new THREE.Vector3(maxX, maxY, zMax),
+    new THREE.Vector3(minX, maxY, zMax),
+  ];
+  const edges: THREE.Vector3[] = [
+    c[0], c[1], c[1], c[2], c[2], c[3], c[3], c[0],
+  ];
+  if (!flatZ) {
+    edges.push(
+      c[4], c[5], c[5], c[6], c[6], c[7], c[7], c[4],
+      c[0], c[4], c[1], c[5], c[2], c[6], c[3], c[7]
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(edges);
+  const material = new THREE.LineBasicMaterial({
+    color: 0x77a9d7,
+    transparent: true,
+    opacity: 0.55,
+    depthTest: false
+  });
+  machineBoundsBoxGroup = new THREE.LineSegments(geometry, material);
+  machineBoundsBoxGroup.name = 'machine-bounds-box';
+  machineBoundsBoxGroup.renderOrder = 1;
+  scene.add(machineBoundsBoxGroup);
+};
+
 // Delta between current WCO and the WCO used at render time.
 // Vertices are in parse-time machine coords; this delta shifts them to current machine coords.
 const getWcoDelta = () => {
@@ -1081,14 +1144,15 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
     splitSideGridGroup = null;
   }
 
-  // Machine-centric: use WCO for crosshair position
-  // WCO = raw workspace offset + G92 + TLO, which matches where toolpaths are rendered
-  // The crosshair represents the work origin (0,0,0) in machine coordinates
-  const wco = props.workOffset || { x: 0, y: 0, z: 0 };
-  const crosshairOffset = { x: wco.x, y: wco.y, z: wco.z };
-
-  // Store grid Z level for home indicator positioning
-  gridZLevel = wco.z || 0;
+  // Grid is fixed to the machine extent — its origin is the machine origin
+  // (MPos = 0) and its floor sits at the bottom of the machine's Z travel.
+  // It does NOT follow the work offset; the work-coord crosshair (axesGroup)
+  // and the loaded program (gcodeVisualizer.group) are the things that
+  // float against this fixed grid as WCO changes.
+  const machineBoundsForGrid = computeMachineBounds();
+  const gridFloorZ = (typeof machineBoundsForGrid.minZ === 'number') ? machineBoundsForGrid.minZ : 0;
+  const crosshairOffset = { x: 0, y: 0, z: gridFloorZ };
+  gridZLevel = gridFloorZ;
 
   if (viewType === 'front') {
     gridGroup = createSideViewGrid({
@@ -1111,6 +1175,8 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
   if (scene) {
     scene.add(gridGroup);
   }
+
+  rebuildMachineBoundsBox(machineBoundsForGrid);
 
   // For split view, also create the side view grid (XZ plane)
   if (viewType === 'split') {
@@ -1319,16 +1385,18 @@ const initThreeJS = () => {
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
-  // Set initial grid Z level for home indicator positioning
-  const initWorkOffset = props.workOffset || { x: 0, y: 0, z: 0 };
-  gridZLevel = initWorkOffset.z || 0;
+  // Initial grid is fixed to the machine extent — see rebuildGrid() for
+  // the rationale. WCO is intentionally NOT applied here.
+  const initMachineBounds = computeMachineBounds();
+  const initGridFloorZ = (typeof initMachineBounds.minZ === 'number') ? initMachineBounds.minZ : 0;
+  gridZLevel = initGridFloorZ;
+  const initGridCrosshair = { x: 0, y: 0, z: initGridFloorZ };
 
-  // Grid with numbers and major/minor lines (use appropriate grid for initial view)
   if (props.view === 'front') {
     gridGroup = createSideViewGrid({
       gridSizeX: resolveGridSize(props.gridSizeX),
       gridSizeZ: resolveZTravel(props.zMaxTravel),
-      workOffset: props.workOffset,
+      workOffset: initGridCrosshair,
       orientation: resolvedOrientation.value,
       units: appStore.unitsPreference.value
     });
@@ -1337,12 +1405,13 @@ const initThreeJS = () => {
     gridGroup = createGridLines({
       gridSizeX: resolveGridSize(props.gridSizeX),
       gridSizeY: resolveGridSize(props.gridSizeY),
-      workOffset: props.workOffset,
+      workOffset: initGridCrosshair,
       orientation: resolvedOrientation.value,
       units: appStore.unitsPreference.value
     });
   }
   scene.add(gridGroup);
+  rebuildMachineBoundsBox(initMachineBounds);
 
   // For split view, also create the XZ grid for the side viewport
   if (props.view === 'split') {
@@ -2181,6 +2250,7 @@ const animate = () => {
       }
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
+      if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Axes must stay at WCO (crosshair) position, offset by spindle transform
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
@@ -3405,6 +3475,8 @@ watch(() => appStore.unitsPreference.value, () => {
 // Watch for Z travel changes to update limits
 watch(() => props.zMaxTravel, () => {
   applyBoundsAndWarnings();
+  // Z extent of the machine-bounds wireframe depends on this — rebuild it.
+  rebuildMachineBoundsBox();
   if (!autoFitMode.value) {
     if (props.view === 'split') {
       updateSplitViewCameras();
@@ -3482,6 +3554,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
+      if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Axes must stay at WCO (crosshair) position, offset by spindle transform
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
@@ -3540,6 +3613,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     }
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
+    if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(0, 0, 0);
     // Position axes at WCO (crosshair), on the grid surface
     const wco = props.workOffset || { x: 0, y: 0, z: 0 };
     if (axesGroup) axesGroup.position.set(wco.x, wco.y, wco.z + 0.1);
@@ -4491,6 +4565,7 @@ onUnmounted(() => {
     scene.remove(homeIndicatorGroup);
     disposeHomeIndicator();
   }
+  disposeMachineBoundsBox();
 });
 
 // Track which line numbers have been marked as completed
