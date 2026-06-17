@@ -372,9 +372,18 @@ public class WebSocketLayer : IBroadcaster
                     foreach (var cmd in result.Commands)
                     {
                         // V1 parity: unique ID per command, display falls back to
-                        // actual command text, meta merges original with per-command
+                        // actual command text, meta merges original with per-command.
+                        // The client-supplied displayCommand applies to the original
+                        // command only — the IO-switch toggle sends raw realtime
+                        // bytes (e.g. 0xA0 toggle flood) but wants "M8"/"M9" shown
+                        // in the terminal. Without this, the processor's
+                        // pass-through ProcessedCommand has no DisplayCommand and
+                        // we'd fall through to printing the raw byte (¡ for 0xA1,
+                        // a non-breaking space for 0xA0).
                         var cmdId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}"[..24];
-                        var cmdDisplay = cmd.DisplayCommand ?? cmd.Command;
+                        var cmdDisplay = cmd.DisplayCommand
+                            ?? (cmd.IsOriginal ? displayCommand : null)
+                            ?? cmd.Command;
                         var cmdMeta = MergeMeta(meta, cmd.Meta);
 
                         var options = new CommandOptions
