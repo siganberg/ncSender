@@ -2537,7 +2537,16 @@ const showContextMenuAt = (clientX: number, clientY: number) => {
     }
   }
 
-  showTransformMenu.value = true;
+  // Defer the overlay mount one frame so the triggering right-click's
+  // contextmenu event (which Chromium dispatches AFTER mouseup) lands on
+  // the canvas — whose handler preventDefaults — not on the just-mounted
+  // overlay. Otherwise the overlay's @contextmenu="close" handler eats
+  // the same right-click that just opened the menu, closing it instantly.
+  // Reproducible on Windows; Linux/macOS dispatch order made it work by
+  // accident.
+  requestAnimationFrame(() => {
+    showTransformMenu.value = true;
+  });
 };
 
 const closeTransformMenu = () => {
