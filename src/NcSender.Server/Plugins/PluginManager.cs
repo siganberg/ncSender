@@ -699,13 +699,18 @@ public class PluginManager : IPluginManager
                 return;
             }
 
+            // Reset source to null (matches the default state used by
+            // SettingsManager). Using "" here would leave the client's
+            // toolCountDisabled gate (toolSource !== null) stuck in the
+            // disabled state, so the tool-library footer controls stayed
+            // greyed out even with no plugin tool-changer active.
             var toolSettings = new JsonObject
             {
                 ["count"] = 0,
                 ["manual"] = false,
                 ["tls"] = false,
                 ["probe"] = false,
-                ["source"] = ""
+                ["source"] = null
             };
             var patch = new JsonObject { ["tool"] = toolSettings };
             _settingsManager.SaveSettings(patch).GetAwaiter().GetResult();

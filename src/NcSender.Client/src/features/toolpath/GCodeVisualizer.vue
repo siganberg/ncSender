@@ -1978,6 +1978,9 @@ let wasMultiTouchGesture = false; // Track if multi-touch gesture occurred
 
 let touchStartedOnCanvas = false;
 
+// Single-finger long-press → context menu. Mouse users right-click; touch
+// users hold for ~500 ms. Two-finger tap was awkward and the midpoint
+// between the two fingers gave the wrong machine coords for "Move To".
 const LONG_PRESS_DURATION_MS = 500;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 12;
 let longPressTimer: number | null = null;
@@ -2880,6 +2883,10 @@ const updatePointerType = () => {
   cuttingPointer.visible = showSpindle.value;
   if (scene) scene.add(cuttingPointer);
   updatePointerScale();
+  // setBitVisible works both before and after the OBJ load completes
+  // (pre-load it just queues the state). Set the initial visibility
+  // here so the bit reflects the current tool from first paint.
+  updateBitVisibilityFromTool();
 };
 
 const toggleTool = (toolNumber: number) => {
@@ -4144,6 +4151,32 @@ const scrollToCurrentTool = () => {
 watch(() => props.currentTool, () => {
   scrollToCurrentTool();
 }, { flush: 'post' }); // Run after DOM updates
+
+// Hide the cutting bit in the marker model when no tool is loaded. The
+// rule applies only when the user has a tool changer configured (the
+// tool legend shows N tools) or manual-tool mode is enabled — i.e. a
+// setup where "T0" actually means "no tool". For users without any
+// changer/manual config we leave the bit visible (no T0 concept).
+const setMarkerBitVisible = (visible: boolean) => {
+  const setter = (cuttingPointer as any)?.userData?.setBitVisible;
+  if (typeof setter === 'function') setter(visible);
+};
+
+const updateBitVisibilityFromTool = () => {
+  const gated = numberOfToolsToShow.value > 0 || showManualTool.value;
+  const visible = !gated ? true : (props.currentTool ?? 0) > 0;
+  setMarkerBitVisible(visible);
+  // Renderer only redraws on demand — kick it so the bit
+  // appears/disappears immediately instead of waiting for the next
+  // user interaction (drag/zoom).
+  requestRender();
+};
+
+watch(
+  () => [props.currentTool, numberOfToolsToShow.value, showManualTool.value] as const,
+  updateBitVisibilityFromTool,
+  { flush: 'post' }
+);
 
 // Setup scroll and mouse event listeners when container is mounted
 watch(toolsScrollContainer, (container, oldContainer, onCleanup) => {

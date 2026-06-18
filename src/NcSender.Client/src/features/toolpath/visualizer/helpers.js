@@ -31,6 +31,15 @@ export const loadTexture = (url) => new Promise((resolve) => {
 export const generateCuttingPointer = () => {
     const group = new THREE.Group();
 
+    // Pre-OBJ setBitVisible: just records the desired state in
+    // `pendingBitVisible`. The real setter (which iterates the bit
+    // meshes) is installed once the OBJ load completes and reads this
+    // flag to apply the queued state.
+    group.userData.pendingBitVisible = true;
+    group.userData.setBitVisible = (visible) => {
+        group.userData.pendingBitVisible = visible;
+    };
+
     // Get accent color from CSS variable
     const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#1abc9c';
 
@@ -124,6 +133,36 @@ export const generateCuttingPointer = () => {
                     obj.position.z += 10;
 
                     group.add(obj);
+
+                    // The OBJ is structured with named groups (g Bit / g Nut
+                    // / g Spindle / g Logo). Three's OBJLoader collapses
+                    // `g Name` followed by `o meshN` so the "Bit" group name
+                    // doesn't survive on a single mesh — but the bit is
+                    // exactly mesh45..mesh51 by name. Tag each mesh as bit
+                    // or head, and expose setBitVisible() for the visualizer
+                    // to toggle based on the loaded tool (T0 → hide,
+                    // T>0 → show).
+                    const BIT_MESH_NAMES = new Set([
+                        'mesh45', 'mesh46', 'mesh47', 'mesh48', 'mesh49', 'mesh50', 'mesh51'
+                    ]);
+                    const bitMeshes = [];
+                    const headMeshes = [];
+                    meshes.forEach((m) => {
+                        const isBit = BIT_MESH_NAMES.has(m.name);
+                        m.userData.role = isBit ? 'bit' : 'head';
+                        (isBit ? bitMeshes : headMeshes).push(m);
+                    });
+                    group.userData.bitMeshes = bitMeshes;
+                    group.userData.headMeshes = headMeshes;
+                    group.userData.setBitVisible = (visible) => {
+                        group.userData.pendingBitVisible = visible;
+                        bitMeshes.forEach((m) => { m.visible = visible; });
+                    };
+
+                    // Apply any visibility state set before the OBJ loaded.
+                    if (group.userData.pendingBitVisible === false) {
+                        bitMeshes.forEach((m) => { m.visible = false; });
+                    }
 
                     // No shading toggles; rely on scene lighting only
                 },
