@@ -1422,7 +1422,11 @@ const currentGradient = computed(() => {
 // Tool settings
 const toolCount = ref(initialSettings?.tool?.count ?? 0);
 const toolSource = ref(initialSettings?.tool?.source ?? null);
-const toolCountDisabled = computed(() => toolSource.value !== null);
+// Footer controls are gated off only when a plugin tool-changer
+// actively owns the settings. Treat null AND empty string as "no
+// owner" so users whose `tool.source` was reset to "" by an older
+// build aren't stuck with the controls greyed out.
+const toolCountDisabled = computed(() => !!toolSource.value);
 const showManualButton = ref(initialSettings?.tool?.manual ?? true);
 const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
 const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
@@ -1897,9 +1901,15 @@ onMounted(() => {
     // Update tool settings when changed (from server broadcast)
     if (detail?.tool) {
       if (typeof detail.tool.count === 'number') {
-        // Set flag so the toolCount watcher doesn't echo a PATCH back
-        _toolCountFromBroadcast = true;
-        toolCount.value = detail.tool.count;
+        // Only set the suppression flag if the assignment will
+        // actually change the ref — otherwise Vue won't fire the
+        // toolCount watcher, the flag stays set, and the user's NEXT
+        // genuine change gets silently swallowed (which made the
+        // Magazine Size dropdown feel hit-or-miss).
+        if (detail.tool.count !== toolCount.value) {
+          _toolCountFromBroadcast = true;
+          toolCount.value = detail.tool.count;
+        }
       }
       if (detail.tool.source !== undefined) {
         toolSource.value = detail.tool.source;
@@ -2528,7 +2538,10 @@ watch(toolCount, async (newValue) => {
     _toolCountFromBroadcast = false;
     return;
   }
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2542,7 +2555,10 @@ watch(toolCount, async (newValue) => {
 
 // Watch showManualButton and save changes
 watch(showManualButton, async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2555,7 +2571,10 @@ watch(showManualButton, async (newValue) => {
 
 // Watch showTLSButton and save changes
 watch(showTLSButton, async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2568,7 +2587,10 @@ watch(showTLSButton, async (newValue) => {
 
 // Watch showProbeButton and save changes
 watch(showProbeButton, async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   const { updateSettings } = await import('./lib/settings-store.js');
@@ -2581,28 +2603,40 @@ watch(showProbeButton, async (newValue) => {
 
 // Event handlers for Tools tab controls
 const handleToolCountUpdate = async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   toolCount.value = newValue;
 };
 
 const handleShowManualButtonUpdate = async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   showManualButton.value = newValue;
 };
 
 const handleShowTLSButtonUpdate = async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   showTLSButton.value = newValue;
 };
 
 const handleShowProbeButtonUpdate = async (newValue) => {
-  if (toolSource.value !== null) {
+  // Block changes when an active plugin owns the tool source. Treat
+  // both null AND "" as "no owner" — older builds persisted "" on
+  // plugin disable and would otherwise lock the controls forever.
+  if (toolSource.value) {
     return;
   }
   showProbeButton.value = newValue;
