@@ -735,6 +735,49 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     edgeLine.renderOrder = 1;
     group.add(edgeLine);
 
+    // "CURRENT WORKSPACE Z0 (FRONT)" label printed flat on the front-center
+    // of the grid floor — orients the user without the need to remember
+    // which edge is which. Front edge = minY for both yHome conventions
+    // (yHome='max' spans -size..0 so minY is far, yHome='min' spans
+    // 0..+size so minY=0 IS home/front). Sits a hair above the grid plane
+    // so it doesn't z-fight with the grid lines beneath it.
+    {
+        const labelCanvas = document.createElement('canvas');
+        const canvasScale = 4;
+        labelCanvas.width = 640 * canvasScale; // wider canvas so the longer text fits
+        labelCanvas.height = 96 * canvasScale;
+        const lctx = labelCanvas.getContext('2d');
+        lctx.font = `bold ${56 * canvasScale}px Arial`;
+        lctx.textAlign = 'center';
+        lctx.textBaseline = 'middle';
+        // Brighter than the grid edge so it's clearly legible against the
+        // dark backdrop.
+        lctx.fillStyle = 'rgba(190, 220, 245, 0.95)';
+        lctx.fillText('CURRENT WORKSPACE Z0 (FRONT)', labelCanvas.width / 2, labelCanvas.height / 2);
+
+        const labelTexture = new THREE.CanvasTexture(labelCanvas);
+        labelTexture.needsUpdate = true;
+        const labelMaterial = new THREE.MeshBasicMaterial({
+            map: labelTexture,
+            transparent: true,
+            depthWrite: false
+        });
+        // Width ~18% of X extent, clamped so it stays legible on tiny
+        // machines and doesn't dominate on huge ones. Aspect ratio
+        // follows the canvas (640×96).
+        const labelWidth = Math.min(240, Math.max(120, (maxX - minX) * 0.18));
+        const labelHeight = labelWidth * (96 / 640);
+        const labelGeom = new THREE.PlaneGeometry(labelWidth, labelHeight);
+        const labelMesh = new THREE.Mesh(labelGeom, labelMaterial);
+        labelMesh.position.set(
+            (minX + maxX) / 2,
+            minY + labelHeight / 2 + 4, // small inset so the text isn't flush with the front edge
+            crosshairZ + 0.05
+        );
+        labelMesh.renderOrder = 2;
+        group.add(labelMesh);
+    }
+
     // Label spacing: metric = every 20mm, imperial = every 1in (25.4mm)
     const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
 

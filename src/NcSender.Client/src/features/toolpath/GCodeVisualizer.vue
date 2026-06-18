@@ -2291,6 +2291,7 @@ const animate = () => {
       }
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
+      if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Axes must stay at WCO (crosshair) position, offset by spindle transform
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
@@ -3605,6 +3606,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
+      if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Axes must stay at WCO (crosshair) position, offset by spindle transform
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
@@ -3663,6 +3665,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     }
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
+    if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(0, 0, 0);
     // Position axes at WCO (crosshair), on the grid surface
     const wco = props.workOffset || { x: 0, y: 0, z: 0 };
     if (axesGroup) axesGroup.position.set(wco.x, wco.y, wco.z + 0.1);
