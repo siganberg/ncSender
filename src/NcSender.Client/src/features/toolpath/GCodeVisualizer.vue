@@ -943,6 +943,7 @@ let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
 let splitSideGridGroup: THREE.Group | null = null; // XZ grid for split view's side viewport
 let splitSideAxisLabels: THREE.Group | null = null; // Axis labels without Y for split view's side viewport
+let machineBoundsBoxGroup: THREE.LineSegments | null = null; // Cyan wireframe AABB hugging the machine's physical travel ($130/$131/$132). Sits in the scene (not the path group) so it stays fixed in machine coords regardless of WCO.
 let axesGroup: THREE.Group;
 let homeIndicatorGroup: THREE.Group | null = null;
 let gridZLevel = 0; // Store grid Z level to keep home indicator grounded
@@ -1046,6 +1047,81 @@ const computeMachineBounds = () => {
   };
 };
 
+const disposeMachineBoundsBox = () => {
+  if (!machineBoundsBoxGroup) return;
+  if (scene) scene.remove(machineBoundsBoxGroup);
+  if (machineBoundsBoxGroup.geometry) machineBoundsBoxGroup.geometry.dispose();
+  const mat = machineBoundsBoxGroup.material;
+  if (mat) {
+    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+    else mat.dispose();
+  }
+  machineBoundsBoxGroup = null;
+};
+
+// Build the cyan wireframe that hugs the machine's physical travel
+// envelope ($130/$131/$132). Lives in the scene rather than inside
+// gcodeVisualizer.group so it stays fixed in machine coords no matter
+// how WCO drifts.
+const rebuildMachineBoundsBox = (bounds = computeMachineBounds()) => {
+  disposeMachineBoundsBox();
+  if (!scene) return;
+  const { minX, maxX, minY, maxY, minZ, maxZ } = bounds;
+  if (
+    typeof minX !== 'number' || typeof maxX !== 'number' ||
+    typeof minY !== 'number' || typeof maxY !== 'number'
+  ) return;
+
+  const zMin = (typeof minZ === 'number') ? minZ : 0;
+  const zMax = (typeof maxZ === 'number') ? maxZ : 0;
+  // For a 2D (top / split) view where we don't have a Z extent, fall back
+  // to a flat box at the grid floor — still useful as an outline.
+  const flatZ = zMin === zMax;
+
+  const c = [
+    new THREE.Vector3(minX, minY, zMin),
+    new THREE.Vector3(maxX, minY, zMin),
+    new THREE.Vector3(maxX, maxY, zMin),
+    new THREE.Vector3(minX, maxY, zMin),
+    new THREE.Vector3(minX, minY, zMax),
+    new THREE.Vector3(maxX, minY, zMax),
+    new THREE.Vector3(maxX, maxY, zMax),
+    new THREE.Vector3(minX, maxY, zMax),
+  ];
+  const edges: THREE.Vector3[] = [
+    // bottom rectangle
+    c[0], c[1], c[1], c[2], c[2], c[3], c[3], c[0],
+  ];
+  if (!flatZ) {
+    edges.push(
+      // top rectangle
+      c[4], c[5], c[5], c[6], c[6], c[7], c[7], c[4],
+      // verticals
+      c[0], c[4], c[1], c[5], c[2], c[6], c[3], c[7]
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(edges);
+  const material = new THREE.LineBasicMaterial({
+    color: 0x77a9d7, // same cyan family as the machine grid
+    transparent: true,
+    opacity: 0.55,
+    depthTest: false
+  });
+  machineBoundsBoxGroup = new THREE.LineSegments(geometry, material);
+  machineBoundsBoxGroup.name = 'machine-bounds-box';
+  machineBoundsBoxGroup.renderOrder = 1;
+  // Hide in the dedicated Top view: that camera carries a deliberate ~3°
+  // tilt off the +Z pole (so click-and-drag rotation doesn't gimbal-snap),
+  // which makes the wireframe's back-top edge (z=0) project ~5px above the
+  // back-bottom edge (z=minZ), creating a confusing duplicate horizontal
+  // line right above the X tick labels. Split Top uses a separate, truly
+  // straight-down camera so its edges overlap cleanly — leave it visible
+  // there.
+  machineBoundsBoxGroup.visible = props.view !== 'top';
+  scene.add(machineBoundsBoxGroup);
+};
+
 const applyBoundsAndWarnings = () => {
   if (!gcodeVisualizer) return;
   // Use machine-centric bounds for out-of-bounds checking
@@ -1125,6 +1201,11 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
       scene.add(splitSideGridGroup);
     }
   }
+
+  // Cyan wireframe of the machine's physical travel envelope. Sits in
+  // the scene at fixed machine coords — does NOT follow WCO so it
+  // represents the real $130/$131/$132 limits regardless of work zero.
+  rebuildMachineBoundsBox();
 
   // Position axes at crosshair (WCO position), on the grid surface
   if (axesGroup) {
@@ -1224,14 +1305,12 @@ const disposeHomeIndicator = () => {
 };
 
 const computeMachineOriginPosition = () => {
-  // Machine origin position depends on view type:
-  // - Top/Iso/Split: XY plane at Z = gridZLevel (set when grid is built)
-  // - Front (side view): XZ plane at Y = 0, home at machine origin (0, 0, 0)
-  if (props.view === 'front') {
-    machineOriginPosition.set(0, 0, 0);
-  } else {
-    machineOriginPosition.set(0, 0, gridZLevel);
-  }
+  // Machine home (origin) is always at machine z=0 — the top of the
+  // wireframe envelope. Used to be tied to gridZLevel (WCO.z), which
+  // visually placed the home indicator on the work-zero plane rather
+  // than at the actual homed Z. Now anchored to z=0 so it sits at the
+  // wireframe's top edge regardless of which workspace is active.
+  machineOriginPosition.set(0, 0, 0);
   return machineOriginPosition;
 };
 
@@ -1355,6 +1434,9 @@ const initThreeJS = () => {
     });
     scene.add(splitSideGridGroup);
   }
+
+  // Initial machine-bounds wireframe.
+  rebuildMachineBoundsBox();
 
   axesGroup = createCoordinateAxes(50);
   // Position axes at crosshair (WCO position), on the grid surface
@@ -4560,6 +4642,8 @@ onUnmounted(() => {
     scene.remove(homeIndicatorGroup);
     disposeHomeIndicator();
   }
+
+  disposeMachineBoundsBox();
 });
 
 // Track which line numbers have been marked as completed
