@@ -742,18 +742,30 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     // 0..+size so minY=0 IS home/front). Sits a hair above the grid plane
     // so it doesn't z-fight with the grid lines beneath it.
     {
-        const labelCanvas = document.createElement('canvas');
+        const labelText = 'CURRENT WORKSPACE Z0 (FRONT)';
         const canvasScale = 4;
-        labelCanvas.width = 640 * canvasScale; // wider canvas so the longer text fits
-        labelCanvas.height = 96 * canvasScale;
+        const fontPx = 56;
+        const padPx = 20; // breathing room on each side so the glyphs aren't flush with the canvas edge
+        // Measure the text first so the canvas is wide enough — the
+        // previous fixed 640px canvas truncated the longer text to
+        // "ENT WORKSPACE (FR".
+        const measureCanvas = document.createElement('canvas');
+        const mctx = measureCanvas.getContext('2d');
+        mctx.font = `bold ${fontPx}px Arial`;
+        const textWidthLogical = Math.ceil(mctx.measureText(labelText).width) + padPx * 2;
+        const labelCanvas = document.createElement('canvas');
+        const canvasLogicalWidth = textWidthLogical;
+        const canvasLogicalHeight = 96;
+        labelCanvas.width = canvasLogicalWidth * canvasScale;
+        labelCanvas.height = canvasLogicalHeight * canvasScale;
         const lctx = labelCanvas.getContext('2d');
-        lctx.font = `bold ${56 * canvasScale}px Arial`;
+        lctx.font = `bold ${fontPx * canvasScale}px Arial`;
         lctx.textAlign = 'center';
         lctx.textBaseline = 'middle';
         // Brighter than the grid edge so it's clearly legible against the
         // dark backdrop.
         lctx.fillStyle = 'rgba(190, 220, 245, 0.95)';
-        lctx.fillText('CURRENT WORKSPACE Z0 (FRONT)', labelCanvas.width / 2, labelCanvas.height / 2);
+        lctx.fillText(labelText, labelCanvas.width / 2, labelCanvas.height / 2);
 
         const labelTexture = new THREE.CanvasTexture(labelCanvas);
         labelTexture.needsUpdate = true;
@@ -762,11 +774,11 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             transparent: true,
             depthWrite: false
         });
-        // Width ~18% of X extent, clamped so it stays legible on tiny
+        // Width ~22% of X extent, clamped so it stays legible on tiny
         // machines and doesn't dominate on huge ones. Aspect ratio
-        // follows the canvas (640×96).
-        const labelWidth = Math.min(240, Math.max(120, (maxX - minX) * 0.18));
-        const labelHeight = labelWidth * (96 / 640);
+        // follows the measured canvas.
+        const labelWidth = Math.min(300, Math.max(150, (maxX - minX) * 0.22));
+        const labelHeight = labelWidth * (canvasLogicalHeight / canvasLogicalWidth);
         const labelGeom = new THREE.PlaneGeometry(labelWidth, labelHeight);
         const labelMesh = new THREE.Mesh(labelGeom, labelMaterial);
         labelMesh.position.set(
