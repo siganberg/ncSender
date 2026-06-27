@@ -40,7 +40,17 @@ public class ServerContext : IServerContext
             return "hold";
 
         if (machineStatus == "door")
-            return useDoorAsPause ? "hold" : "door";
+        {
+            if (useDoorAsPause) return "hold";
+            // grblHAL keeps Status="Door" through every Door:N substate
+            // (the substate is dropped at parse time). When the door pin
+            // releases (Pn no longer contains 'D') the machine is sitting
+            // in Door:3 waiting for cycle start — promote to "hold" so the
+            // Resume button is enabled instead of leaving the toolbar
+            // stuck on "Door Open" forever.
+            if (!(State.MachineState.Pn ?? "").Contains('D')) return "hold";
+            return "door";
+        }
 
         if (isToolChanging)
             return "tool-changing";
