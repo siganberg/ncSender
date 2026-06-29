@@ -80,8 +80,11 @@ Rules:
 
 Output ONLY the markdown. No preamble. No explanation. Just the markdown."
 
-# Use Claude CLI to generate release notes
-RELEASE_NOTES=$(claude -p "$PROMPT" 2>&1)
+# Use Claude CLI to generate release notes. Capture only stdout — `2>&1`
+# would fold stderr warnings (e.g. "claude.ai connectors disabled …") into
+# the release body that ships to users. Stderr still streams to the
+# operator's terminal so real errors stay visible.
+RELEASE_NOTES=$(claude -p "$PROMPT")
 CLAUDE_EXIT_CODE=$?
 
 if [ $CLAUDE_EXIT_CODE -ne 0 ] || [ -z "$RELEASE_NOTES" ]; then
