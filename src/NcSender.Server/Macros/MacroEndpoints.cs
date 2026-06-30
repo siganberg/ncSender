@@ -57,7 +57,12 @@ public static class MacroEndpoints
             return deleted ? Results.Ok(new ApiSuccess(true)) : Results.NotFound();
         });
 
-        app.MapPost("/api/m98-macros/{id:int}/execute", async (int id, IMacroService svc, ICncController cnc) =>
+        app.MapPost("/api/m98-macros/{id:int}/execute", async (
+            int id,
+            IMacroService svc,
+            ICncController cnc,
+            ICommandProcessor processor,
+            IServerContext serverContext) =>
         {
             var macro = svc.GetMacro(id);
             if (macro is null)
@@ -66,20 +71,32 @@ public static class MacroEndpoints
             if (string.IsNullOrWhiteSpace(macro.Body))
                 return Results.BadRequest(new ApiError("Macro has no body"));
 
-            var lines = macro.Body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
+            // Route through the M98 expansion pipeline so the Play button
+            // gets the same recursion/depth guards and call-stack tracking
+            // as a manual M98 from the terminal. When the "Use controller
+            // macros" toggle is on, this becomes a plain pass-through and
+            // the controller's own subprogram lookup handles it.
+            var command = $"M98 P{id}";
+            var ctx = new CommandProcessorContext
             {
-                var trimmed = line.Trim();
-                if (string.IsNullOrWhiteSpace(trimmed)) continue;
-                if (trimmed.StartsWith("(") && trimmed.EndsWith(")")) continue;
+                Meta = new CommandMeta { SourceId = "macro" },
+                MachineState = serverContext.State.MachineState,
+            };
 
-                await cnc.SendCommandAsync(trimmed, new CommandOptions
+            var result = await processor.ProcessAsync(command, ctx);
+            if (!result.ShouldContinue)
+                return Results.Ok(new MacroExecuteResponse(true, 0));
+
+            foreach (var cmd in result.Commands)
+            {
+                await cnc.SendCommandAsync(cmd.Command, new CommandOptions
                 {
-                    Meta = new CommandMeta { SourceId = "macro" }
+                    DisplayCommand = cmd.DisplayCommand,
+                    Meta = cmd.Meta ?? new CommandMeta { SourceId = "macro" }
                 });
             }
 
-            return Results.Ok(new MacroExecuteResponse(true, lines.Length));
+            return Results.Ok(new MacroExecuteResponse(true, result.Commands.Count));
         });
     }
 }

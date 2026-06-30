@@ -252,6 +252,7 @@ public class SettingsManager : ISettingsManager
                 "allowPriorityReordering": false
             },
             "useDoorAsPause": true,
+            "useControllerMacros": false,
             "remoteControl": {
                 "enabled": false
             },

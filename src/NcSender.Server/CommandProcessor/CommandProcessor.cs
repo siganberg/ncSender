@@ -10,10 +10,16 @@ public class CommandProcessor : ICommandProcessor
 {
     private const double DoorMaxFeedRate = 1000;
 
+    // M98 macro expansion limits — match the V1 reference implementation.
+    private const int MacroIdMin = 9001;
+    private const int MacroIdMax = 9999;
+    private const int MaxM98Depth = 16;
+
     private readonly IServerContext _context;
     private readonly IBroadcaster _broadcaster;
     private readonly IFirmwareService _firmwareService;
     private readonly ISettingsManager _settingsManager;
+    private readonly IMacroService _macroService;
     private readonly ILogger<CommandProcessor> _logger;
 
     public CommandProcessor(
@@ -21,12 +27,14 @@ public class CommandProcessor : ICommandProcessor
         IBroadcaster broadcaster,
         IFirmwareService firmwareService,
         ISettingsManager settingsManager,
+        IMacroService macroService,
         ILogger<CommandProcessor> logger)
     {
         _context = context;
         _broadcaster = broadcaster;
         _firmwareService = firmwareService;
         _settingsManager = settingsManager;
+        _macroService = macroService;
         _logger = logger;
     }
 
@@ -232,17 +240,124 @@ public class CommandProcessor : ICommandProcessor
             });
         }
 
-        // 17. M98 detection — warn and pass through (full expansion deferred)
-        if (GcodePatterns.IsM98Command(command))
+        // 17. M98 detection — by default ncSender intercepts and expands
+        //     inline (the controller never sees the M98). When the
+        //     "Use controller macros" toggle is ON, fall through and pass
+        //     the M98 to the controller so its own subprogram system (e.g.
+        //     grblHAL SD-card subprograms) can handle it. The toggle lives
+        //     on the Macros tab.
+        var useControllerMacros = _settingsManager.GetSetting<bool>("useControllerMacros", false);
+        if (!useControllerMacros && GcodePatterns.IsM98Command(command))
         {
-            _logger.LogWarning("M98 subprogram call detected at line {Line}: {Command}",
-                processorContext.LineNumber, command);
+            var expanded = await ExpandM98Async(command, processorContext);
+            if (expanded is not null)
+            {
+                return new CommandProcessorResult
+                {
+                    ShouldContinue = true,
+                    Commands = expanded
+                };
+            }
         }
 
         return new CommandProcessorResult
         {
             ShouldContinue = true,
             Commands = commands
+        };
+    }
+
+    private async Task<List<ProcessedCommand>?> ExpandM98Async(string command, CommandProcessorContext ctx)
+    {
+        var parsed = GcodePatterns.ParseM98Command(command);
+        if (!parsed.Matched || parsed.MacroId is not int macroId)
+            return null;
+
+        var stack = ctx.Meta?.M98CallStack ?? [];
+
+        if (macroId < MacroIdMin || macroId > MacroIdMax)
+            throw new InvalidOperationException(
+                $"Invalid macro ID P{macroId} — ncSender macros must be in {MacroIdMin}-{MacroIdMax}");
+
+        if (stack.Contains(macroId))
+            throw new InvalidOperationException(
+                $"Macro recursion detected: {string.Join(" → ", stack.Append(macroId))}");
+
+        if (stack.Count >= MaxM98Depth)
+            throw new InvalidOperationException(
+                $"Max macro depth ({MaxM98Depth}) exceeded at P{macroId}");
+
+        var macro = _macroService.GetMacro(macroId)
+            ?? throw new InvalidOperationException($"Macro P{macroId} not found");
+
+        var bodyLines = macro.Body
+            .Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .ToList();
+
+        var newStack = new List<int>(stack) { macroId };
+        var childMeta = CloneMetaWithStack(ctx.Meta, newStack);
+        var displayName = string.IsNullOrWhiteSpace(macro.Name) ? $"P{macroId}" : macro.Name;
+
+        _logger.LogInformation(
+            "Expanding M98 P{Id} ({Name}) — {LineCount} body lines at depth {Depth}",
+            macroId, displayName, bodyLines.Count, newStack.Count);
+
+        var output = new List<ProcessedCommand>
+        {
+            new()
+            {
+                Command = $"(Executing macro: {displayName})",
+                DisplayCommand = $"(Executing macro: {displayName})",
+                IsOriginal = false,
+                Meta = childMeta
+            }
+        };
+
+        foreach (var line in bodyLines)
+        {
+            var childCtx = new CommandProcessorContext
+            {
+                CommandId = ctx.CommandId,
+                Meta = childMeta,
+                MachineState = ctx.MachineState,
+                LineNumber = ctx.LineNumber,
+                Filename = ctx.Filename,
+                NextXYPosition = ctx.NextXYPosition,
+                SafeZHeight = ctx.SafeZHeight,
+            };
+
+            var childResult = await ProcessAsync(line, childCtx);
+            if (!childResult.ShouldContinue)
+                continue;
+            output.AddRange(childResult.Commands);
+        }
+
+        output.Add(new ProcessedCommand
+        {
+            Command = $"(End macro: {displayName})",
+            DisplayCommand = $"(End macro: {displayName})",
+            IsOriginal = false,
+            Meta = childMeta
+        });
+
+        return output;
+    }
+
+    private static CommandMeta CloneMetaWithStack(CommandMeta? source, List<int> stack)
+    {
+        return new CommandMeta
+        {
+            SourceId = source?.SourceId,
+            Silent = source?.Silent ?? false,
+            Continuous = source?.Continuous ?? false,
+            SkipJogCancel = source?.SkipJogCancel ?? false,
+            SilentCompletion = source?.SilentCompletion ?? false,
+            CompletesCommandId = source?.CompletesCommandId,
+            StopReason = source?.StopReason,
+            TimeoutMs = source?.TimeoutMs ?? 0,
+            M98CallStack = stack,
         };
     }
 
