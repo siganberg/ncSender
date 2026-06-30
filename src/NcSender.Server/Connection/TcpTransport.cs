@@ -104,6 +104,8 @@ public class TcpTransport : IConnectionTransport
     {
         var buffer = new byte[4096];
         var lineBuffer = new StringBuilder();
+        var statusBuffer = new StringBuilder();
+        var inStatus = false;
 
         try
         {
@@ -120,32 +122,34 @@ public class TcpTransport : IConnectionTransport
                 var text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
                 foreach (var ch in text)
                 {
-                    if (ch == '\n')
+                    // `?` real-time polls (every 100ms) can splice a <...> status
+                    // report into the middle of a long response like $ES. Keep the
+                    // partial regular line intact across the splice by routing the
+                    // status report into its own buffer rather than flushing what
+                    // was being assembled.
+                    if (inStatus)
+                    {
+                        statusBuffer.Append(ch);
+                        if (ch == '>')
+                        {
+                            LineReceived?.Invoke(statusBuffer.ToString());
+                            statusBuffer.Clear();
+                            inStatus = false;
+                        }
+                        continue;
+                    }
+
+                    if (ch == '<')
+                    {
+                        statusBuffer.Append(ch);
+                        inStatus = true;
+                    }
+                    else if (ch == '\n')
                     {
                         var line = lineBuffer.ToString().TrimEnd('\r');
                         lineBuffer.Clear();
                         if (line.Length > 0)
                             LineReceived?.Invoke(line);
-                    }
-                    else if (ch == '<')
-                    {
-                        // Status reports can be injected mid-line by GRBL real-time commands.
-                        // Flush any partial line before starting the status report.
-                        if (lineBuffer.Length > 0)
-                        {
-                            var partial = lineBuffer.ToString().TrimEnd('\r');
-                            lineBuffer.Clear();
-                            if (partial.Length > 0)
-                                LineReceived?.Invoke(partial);
-                        }
-                        lineBuffer.Append(ch);
-                    }
-                    else if (ch == '>' && lineBuffer.Length > 0 && lineBuffer[0] == '<')
-                    {
-                        lineBuffer.Append(ch);
-                        var line = lineBuffer.ToString();
-                        lineBuffer.Clear();
-                        LineReceived?.Invoke(line);
                     }
                     else
                     {

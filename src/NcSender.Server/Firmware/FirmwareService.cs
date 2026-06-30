@@ -69,8 +69,15 @@ public class FirmwareService : IFirmwareService
             var version = ParseFirmwareVersion(versionResponse);
             _logger.LogInformation("Firmware version: {Version}", version);
 
-            // Check if we need structure update (groups, definitions, HAL details)
-            var needsStructure = force || _cached is null || _cached.FirmwareVersion != version;
+            // Re-query structure when forced, on first run, on version change,
+            // OR when the cache is "metadata-less" (id+value entries with no
+            // names). The latter happens if a prior $ES response was corrupted
+            // by an interleaved status poll — we don't want that cache to
+            // outlive the session.
+            var needsStructure = force
+                || _cached is null
+                || _cached.FirmwareVersion != version
+                || !HasNamedSettings(_cached);
 
             if (needsStructure && (_controller.ActiveProtocol?.SupportsSettingEnumeration ?? true))
             {
@@ -84,25 +91,35 @@ public class FirmwareService : IFirmwareService
                 var settings = ParseSettingDefinitions(esResponse);
                 var halSettings = ParseSettingsHAL(eshResponse);
 
-                var firmware = new FirmwareData
+                if (settings.Count == 0)
                 {
-                    Version = "1.0",
-                    FirmwareVersion = version,
-                    Timestamp = DateTime.UtcNow.ToString("o"),
-                    Groups = groups,
-                    Settings = new Dictionary<string, FirmwareSetting>()
-                };
-
-                foreach (var (id, setting) in settings)
-                {
-                    firmware.Settings[id] = setting;
-                    if (halSettings.TryGetValue(id, out var hal))
-                        setting.HalDetails = hal;
-                    if (setting.GroupId.HasValue && groups.TryGetValue(setting.GroupId.Value.ToString(), out var group))
-                        setting.Group = group;
+                    // Don't overwrite a good cache with an empty one. If $ES
+                    // returned nothing usable, keep whatever was loaded from
+                    // disk (or leave _cached null) so the next refresh retries.
+                    _logger.LogWarning("$ES returned no setting definitions — keeping prior cache instead of writing a metadata-less stub");
                 }
+                else
+                {
+                    var firmware = new FirmwareData
+                    {
+                        Version = "1.0",
+                        FirmwareVersion = version,
+                        Timestamp = DateTime.UtcNow.ToString("o"),
+                        Groups = groups,
+                        Settings = new Dictionary<string, FirmwareSetting>()
+                    };
 
-                _cached = firmware;
+                    foreach (var (id, setting) in settings)
+                    {
+                        firmware.Settings[id] = setting;
+                        if (halSettings.TryGetValue(id, out var hal))
+                            setting.HalDetails = hal;
+                        if (setting.GroupId.HasValue && groups.TryGetValue(setting.GroupId.Value.ToString(), out var group))
+                            setting.Group = group;
+                    }
+
+                    _cached = firmware;
+                }
             }
 
             // Always refresh current values
@@ -135,11 +152,22 @@ public class FirmwareService : IFirmwareService
 
             _cached.Timestamp = DateTime.UtcNow.ToString("o");
 
-            var filePath = GetFilePath();
-            var json = JsonSerializer.Serialize(_cached, NcSenderJsonContext.Default.FirmwareData);
-            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-            await File.WriteAllTextAsync(filePath, json);
-            _logger.LogInformation("Cached {Count} firmware settings to {Path}", _cached.Settings.Count, filePath);
+            // Never persist a cache without setting metadata — if we did,
+            // FirmwareVersion would match on the next launch and the structure
+            // query would be skipped, leaving the panel blank until manual
+            // wipe. Keep this run's in-memory state but skip the disk write.
+            if (HasNamedSettings(_cached))
+            {
+                var filePath = GetFilePath();
+                var json = JsonSerializer.Serialize(_cached, NcSenderJsonContext.Default.FirmwareData);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+                await File.WriteAllTextAsync(filePath, json);
+                _logger.LogInformation("Cached {Count} firmware settings to {Path}", _cached.Settings.Count, filePath);
+            }
+            else
+            {
+                _logger.LogWarning("Firmware structure incomplete — skipping cache save so the next refresh re-queries $ES");
+            }
 
             return _cached;
         }
@@ -294,6 +322,14 @@ public class FirmwareService : IFirmwareService
         {
             _logger.LogWarning(ex, "Failed to save firmware cache");
         }
+    }
+
+    private static bool HasNamedSettings(FirmwareData? data)
+    {
+        if (data?.Settings is null) return false;
+        foreach (var setting in data.Settings.Values)
+            if (!string.IsNullOrEmpty(setting.Name)) return true;
+        return false;
     }
 
     private void Load()

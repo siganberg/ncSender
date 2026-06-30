@@ -13,6 +13,8 @@ public class SerialTransport : IConnectionTransport
     private readonly int _baudRate;
     private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
+    private readonly StringBuilder _statusBuffer = new();
+    private bool _inStatus;
     private readonly object _bufferLock = new();
 
     public bool IsConnected => _port?.IsOpen == true;
@@ -129,32 +131,34 @@ public class SerialTransport : IConnectionTransport
             {
                 foreach (var ch in data)
                 {
-                    if (ch == '\n')
+                    // `?` real-time polls (every 100ms) can splice a <...> status
+                    // report into the middle of a long response like $ES. Keep the
+                    // partial regular line intact across the splice by routing the
+                    // status report into its own buffer rather than flushing what
+                    // was being assembled.
+                    if (_inStatus)
+                    {
+                        _statusBuffer.Append(ch);
+                        if (ch == '>')
+                        {
+                            LineReceived?.Invoke(_statusBuffer.ToString());
+                            _statusBuffer.Clear();
+                            _inStatus = false;
+                        }
+                        continue;
+                    }
+
+                    if (ch == '<')
+                    {
+                        _statusBuffer.Append(ch);
+                        _inStatus = true;
+                    }
+                    else if (ch == '\n')
                     {
                         var line = _lineBuffer.ToString().TrimEnd('\r');
                         _lineBuffer.Clear();
                         if (line.Length > 0)
                             LineReceived?.Invoke(line);
-                    }
-                    else if (ch == '<')
-                    {
-                        // Status reports can be injected mid-line by GRBL real-time commands.
-                        // Flush any partial line before starting the status report.
-                        if (_lineBuffer.Length > 0)
-                        {
-                            var partial = _lineBuffer.ToString().TrimEnd('\r');
-                            _lineBuffer.Clear();
-                            if (partial.Length > 0)
-                                LineReceived?.Invoke(partial);
-                        }
-                        _lineBuffer.Append(ch);
-                    }
-                    else if (ch == '>' && _lineBuffer.Length > 0 && _lineBuffer[0] == '<')
-                    {
-                        _lineBuffer.Append(ch);
-                        var line = _lineBuffer.ToString();
-                        _lineBuffer.Clear();
-                        LineReceived?.Invoke(line);
                     }
                     else
                     {
