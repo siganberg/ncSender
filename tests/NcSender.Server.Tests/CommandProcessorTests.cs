@@ -26,11 +26,14 @@ public class CommandProcessorTests
 
         var settings = new Mock<ISettingsManager>();
 
+        var macros = new Mock<IMacroService>();
+
         var processor = new NcSender.Server.CommandProcessor.CommandProcessor(
             context.Object,
             broadcaster.Object,
             firmware.Object,
             settings.Object,
+            macros.Object,
             NullLogger<NcSender.Server.CommandProcessor.CommandProcessor>.Instance);
 
         return (processor, context, broadcaster, firmware, settings);
