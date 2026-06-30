@@ -16,22 +16,63 @@
 -->
 
 <template>
-  <div class="macro-panel" :class="{ 'editor-open': selectedMacroId !== null }">
+  <div class="macro-panel" :class="{ 'editor-open': selectedMacroId !== null && !useControllerMacros }">
     <div class="macro-list-column">
-      <div class="macro-list-header">
-        <input
-          type="text"
-          v-model="searchQuery"
-          placeholder="Search macros..."
-          class="search-input"
-        />
-        <button class="btn-new" @click="createNewMacro">+ New</button>
+      <div class="macro-mode-bar">
+        <label class="macro-mode-toggle">
+          <span class="macro-mode-label">Use controller macros</span>
+          <ToggleSwitch v-model="useControllerMacros" />
+        </label>
       </div>
-      <div class="macro-list-content">
-        <div v-if="filteredMacros.length === 0" class="empty-state">
-          <p v-if="searchQuery">No macros match your search</p>
-          <p v-else>No macros yet. Click "+ New" to create one.</p>
+
+      <div v-if="useControllerMacros" class="macro-controller-note">
+        <div class="macro-controller-note__inner">
+          <div class="macro-controller-note__icon" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+              <rect x="9" y="9" width="6" height="6" rx="1"/>
+              <line x1="9" y1="3" x2="9" y2="6"/>
+              <line x1="12" y1="3" x2="12" y2="6"/>
+              <line x1="15" y1="3" x2="15" y2="6"/>
+              <line x1="9" y1="18" x2="9" y2="21"/>
+              <line x1="12" y1="18" x2="12" y2="21"/>
+              <line x1="15" y1="18" x2="15" y2="21"/>
+              <line x1="3" y1="9" x2="6" y2="9"/>
+              <line x1="3" y1="12" x2="6" y2="12"/>
+              <line x1="3" y1="15" x2="6" y2="15"/>
+              <line x1="18" y1="9" x2="21" y2="9"/>
+              <line x1="18" y1="12" x2="21" y2="12"/>
+              <line x1="18" y1="15" x2="21" y2="15"/>
+            </svg>
+          </div>
+          <h3 class="macro-controller-note__title">Controller macros mode is ON</h3>
+          <p class="macro-controller-note__body">
+            <code>M98 P&lt;id&gt;</code> is forwarded to your controller as-is —
+            ncSender will not intercept or expand it.
+          </p>
+          <p class="macro-controller-note__hint">
+            To use ncSender's built-in macro library (useful if your grblHAL
+            controller has no SD-card to store sub-programs), turn off
+            <strong>Use controller macros</strong> above.
+          </p>
         </div>
+      </div>
+
+      <template v-else>
+        <div class="macro-list-header">
+          <input
+            type="text"
+            v-model="searchQuery"
+            placeholder="Search macros..."
+            class="search-input"
+          />
+          <button class="btn-new" @click="createNewMacro">+ New</button>
+        </div>
+        <div class="macro-list-content">
+          <div v-if="filteredMacros.length === 0" class="empty-state">
+            <p v-if="searchQuery">No macros match your search</p>
+            <p v-else>No macros yet. Click "+ New" to create one.</p>
+          </div>
         <div
           v-for="macro in filteredMacros"
           :key="macro.id"
@@ -55,10 +96,11 @@
             ▶
           </button>
         </div>
-      </div>
+        </div>
+      </template>
     </div>
 
-    <div class="macro-editor-column">
+    <div v-if="!useControllerMacros" class="macro-editor-column">
       <div v-if="selectedMacroId !== null" class="macro-editor">
         <div class="editor-header">
           <button class="btn-icon btn-close" @click="closeEditor" title="Close">
@@ -164,6 +206,8 @@ import { useM98MacroStore } from './store';
 import type { M98Macro } from './types';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import ToggleSwitch from '../../components/ToggleSwitch.vue';
+import { getSettings, updateSettings } from '@/lib/settings-store.js';
 import { CodeEditor } from 'monaco-editor-vue3';
 import * as monaco from 'monaco-editor';
 import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
@@ -176,6 +220,11 @@ const props = defineProps<{
 
 const macroStore = useM98MacroStore();
 const searchQuery = ref('');
+const useControllerMacros = ref<boolean>(getSettings()?.useControllerMacros ?? false);
+
+watch(useControllerMacros, async (next) => {
+  await updateSettings({ useControllerMacros: next });
+});
 const selectedMacroId = ref<number | 'new' | null>(null);
 const showDeleteConfirm = ref(false);
 const macroToDelete = ref<string>('');
@@ -399,6 +448,97 @@ onMounted(() => {
   .macro-panel.editor-open .macro-list-column {
     width: 35vw !important;
   }
+}
+
+.macro-mode-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: var(--gap-xs);
+}
+
+.macro-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.macro-mode-label {
+  white-space: nowrap;
+}
+
+.macro-controller-note {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.macro-controller-note__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 420px;
+  padding: 32px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.macro-controller-note__icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.macro-controller-note__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.macro-controller-note__body,
+.macro-controller-note__hint {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.macro-controller-note__hint {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  width: 100%;
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.macro-controller-note code {
+  background: var(--color-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.875rem;
+  color: var(--color-accent);
+}
+
+.macro-controller-note strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .macro-list-header {

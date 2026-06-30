@@ -38,6 +38,13 @@ public class CommandMeta
     /// </summary>
     [JsonIgnore]
     public int TimeoutMs { get; set; }
+
+    // M98 macro expansion call stack — server-internal only, never sent
+    // over the wire. Each entry is a macro ID currently being expanded;
+    // CommandProcessor uses this to detect recursion and enforce a max
+    // depth as the M98 lines fan out through nested ProcessAsync calls.
+    [JsonIgnore]
+    public List<int>? M98CallStack { get; set; }
 }
 
 public class CommandResult

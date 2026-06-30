@@ -112,8 +112,22 @@
       <div v-if="loadingTools" class="placeholder-content">
         <p>Loading plugin tools...</p>
       </div>
-      <div v-else-if="toolMenuItems.length === 0" class="placeholder-content">
-        <p>No plugin tools available. Install plugins to add custom tools.</p>
+      <div v-else-if="toolMenuItems.length === 0" class="tools-empty-state">
+        <div class="tools-empty-state__inner">
+          <div class="tools-empty-state__icon" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 7V4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3H7a1 1 0 0 0-1 1v3h3a2 2 0 1 1 0 4H6v3a1 1 0 0 0 1 1h3v-3a2 2 0 1 1 4 0v3h3a1 1 0 0 0 1-1v-3h-3a2 2 0 1 1 0-4h3V8a1 1 0 0 0-1-1z"/>
+            </svg>
+          </div>
+          <h3 class="tools-empty-state__title">No plugin tools yet</h3>
+          <p class="tools-empty-state__body">
+            Install a plugin to add custom tools here. Plugins can register
+            buttons that run G-code, open dialogs, or call your own scripts.
+          </p>
+          <p class="tools-empty-state__hint">
+            Manage plugins from <strong>Settings → Plugins</strong>.
+          </p>
+        </div>
       </div>
       <div v-else class="tools-list">
         <button
@@ -183,8 +197,23 @@
 
     <!-- G-Code Preview Tab -->
     <div v-show="activeTab === 'gcode-preview'" class="tab-content">
-      <div v-if="!totalLines" class="placeholder-content">
-        <p>No G-Code file loaded. Please upload or load it from visualizer.</p>
+      <div v-if="!totalLines" class="gcode-empty-state">
+        <div class="gcode-empty-state__inner">
+          <div class="gcode-empty-state__icon" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 3 14 8 19 8"/>
+              <polyline points="10 13 8 15 10 17"/>
+              <polyline points="14 13 16 15 14 17"/>
+            </svg>
+          </div>
+          <h3 class="gcode-empty-state__title">No G-code loaded</h3>
+          <p class="gcode-empty-state__body">
+            Open the Visualizer to load a file, or drop a <code>.gcode</code> /
+            <code>.nc</code> file onto the window. The preview will show every
+            line as it streams to your controller.
+          </p>
+        </div>
       </div>
       <div v-else class="gcode-preview">
         <!-- Loading Overlay for G-Code Preview -->
@@ -2789,6 +2818,125 @@ h2 {
   color: var(--color-text-secondary);
   font-style: italic;
   font-size: 0.9rem;
+}
+
+.tools-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.tools-empty-state__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 420px;
+  padding: 32px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.tools-empty-state__icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.tools-empty-state__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.tools-empty-state__body,
+.tools-empty-state__hint {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.tools-empty-state__hint {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  width: 100%;
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.tools-empty-state strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.gcode-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gcode-empty-state__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 420px;
+  padding: 32px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.gcode-empty-state__icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.gcode-empty-state__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.gcode-empty-state__body {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.gcode-empty-state code {
+  background: var(--color-background);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: var(--color-accent);
 }
 
 /* G-Code Preview */
