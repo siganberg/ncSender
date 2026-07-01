@@ -100,6 +100,20 @@
           </div>
         </div>
       </div>
+      <!-- AutoDustBoot Button -->
+      <button
+        class="pendant-button"
+        :class="{ 'pendant-button--connected': autodustbootConnected }"
+        @click="$emit('show-autodustboot')"
+        :title="autodustbootConnected ? 'AutoDustBoot connected' : 'AutoDustBoot'"
+      >
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 3h6" />
+          <path d="M8 3l-.5 9h9L16 3" />
+          <path d="M7.5 12v4M12 12v4M16.5 12v4" />
+        </svg>
+      </button>
+
       <!-- Pendant Button -->
       <button
         class="pendant-button"
@@ -198,6 +212,7 @@ const props = defineProps<{
   lastAlarmCode?: number | string;
   updateState?: TopToolbarUpdateState;
   pendantConnectionType?: 'wifi' | 'bluetooth' | null;
+  autodustbootConnected?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -206,6 +221,7 @@ const emit = defineEmits<{
   (e: 'change-workspace', value: string): void;
   (e: 'show-update-dialog'): void;
   (e: 'show-bluetooth'): void;
+  (e: 'show-autodustboot'): void;
 }>();
 
 const isWorkspaceDisabled = computed(() => !isConnected.value || isJobRunning.value);
@@ -221,6 +237,7 @@ const onWorkspaceChange = (e: Event) => {
 };
 
 const pendantConnectionType = computed(() => props.pendantConnectionType ?? null);
+const autodustbootConnected = computed(() => props.autodustbootConnected ?? false);
 
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
 

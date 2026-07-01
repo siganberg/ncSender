@@ -17,6 +17,7 @@ public class PendantManager : IPendantManager
     private readonly IJobManager _jobManager;
     private readonly ICommandProcessor _commandProcessor;
     private readonly ISettingsManager _settingsManager;
+    private readonly IAutoDustBootManager _autoDustBoot;   // shares the dongle; fed @autodustboot lines
     private PendantSerialHandler? _serialHandler;  // Active data handler (dongle preferred, USB fallback)
     private PendantWifiInfo? _lastWifiInfo;
     private CancellationTokenSource? _flashCts;
@@ -58,7 +59,8 @@ public class PendantManager : IPendantManager
         IServerContext serverContext,
         IJobManager jobManager,
         ICommandProcessor commandProcessor,
-        ISettingsManager settingsManager)
+        ISettingsManager settingsManager,
+        IAutoDustBootManager autoDustBoot)
     {
         _logger = logger;
         _controller = controller;
@@ -67,6 +69,12 @@ public class PendantManager : IPendantManager
         _jobManager = jobManager;
         _commandProcessor = commandProcessor;
         _settingsManager = settingsManager;
+        _autoDustBoot = autoDustBoot;
+
+        // Give the AutoDustBoot manager a path to send @autodustboot commands out over
+        // the dongle (read at call-time, so it follows dongle connect/disconnect).
+        _autoDustBoot.SetSender(line =>
+            _dongleHandler is not null ? _dongleHandler.SendRawAsync(line) : Task.CompletedTask);
 
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
@@ -929,6 +937,14 @@ public class PendantManager : IPendantManager
             if (_otaResponseHandler is not null && data.StartsWith("$OTA:"))
             {
                 _otaResponseHandler(data);
+                return;
+            }
+
+            // Addressed device traffic "@name payload" (e.g. "@autodustboot status …")
+            // is routed to its manager, not the pendant command path.
+            if (data.StartsWith('@'))
+            {
+                _autoDustBoot.OnDongleLine(data);
                 return;
             }
 

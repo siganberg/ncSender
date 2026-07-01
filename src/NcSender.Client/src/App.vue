@@ -55,12 +55,14 @@
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
+        :autodustboot-connected="autoDustBootConnected"
         :workspace="workspace"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
         @show-bluetooth="showPendantDialog = true"
+        @show-autodustboot="showAutoDustBootDialog = true"
         :on-show-settings="openSettings"
       />
     </template>
@@ -926,6 +928,12 @@
     @close="showPendantDialog = false"
   />
 
+  <!-- AutoDustBoot Dialog -->
+  <AutoDustBootDialog
+    v-if="showAutoDustBootDialog"
+    @close="showAutoDustBootDialog = false"
+  />
+
     <!-- Plugin Dialog -->
     <PluginDialog />
 
@@ -1069,6 +1077,7 @@ import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import PendantDialog from './components/PendantDialog.vue';
+import AutoDustBootDialog from './components/AutoDustBootDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
@@ -1138,6 +1147,8 @@ let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showPendantDialog = ref(false);
 const pendantConnectionType = ref<'usb' | 'espnow' | null>(null);
+const showAutoDustBootDialog = ref(false);
+const autoDustBootConnected = ref(false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -2906,6 +2917,15 @@ const pollBluetoothStatus = async () => {
     }
   } catch {
     // Silently fail - Bluetooth may not be available
+  }
+  try {
+    const adb = await fetch('/api/autodustboot/status');
+    if (adb.ok) {
+      const data = await adb.json();
+      autoDustBootConnected.value = !!data.connected;
+    }
+  } catch {
+    // Silently fail - AutoDustBoot/dongle may not be present
   }
 };
 

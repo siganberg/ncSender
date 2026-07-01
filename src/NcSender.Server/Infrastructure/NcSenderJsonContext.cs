@@ -40,6 +40,9 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PluginToolMenuItem))]
 [JsonSerializable(typeof(List<PluginToolMenuItem>))]
 [JsonSerializable(typeof(PluginUpdateInfo))]
+// AutoDustBoot
+[JsonSerializable(typeof(AutoDustBootStatus))]
+[JsonSerializable(typeof(AutoDustBootCommandRequest))]
 // Pendant
 [JsonSerializable(typeof(PendantStatus))]
 [JsonSerializable(typeof(PendantFirmwareInfo))]
