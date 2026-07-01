@@ -1440,8 +1440,14 @@ public class PendantManager : IPendantManager
         var maxFeedY = ms.MaxFeedrateY;
         var maxFeedZ = ms.MaxFeedrateZ;
 
+        // Send the app-level SenderStatus (what the toolbar shows), not the raw grblHAL
+        // machine status. They diverge for app-level states: e.g. a door-as-pause / parking
+        // hold reports raw "Door" but the app treats it as "hold", and a job running between
+        // G-code lines momentarily reads raw "Idle" but the app stays "running". Without this
+        // the pendant header showed "DOOR" while ncSender showed "Hold". The pendant parses
+        // this vocabulary via MachineState::parseSenderStatus.
         var current = new PendantDroSnapshot(
-            Status: ms.Status ?? "Unknown",
+            Status: state.SenderStatus ?? ms.Status ?? "Unknown",
             WPos: wpos,
             Overrides: overrides,
             FeedRate: feedRate,
@@ -1473,17 +1479,14 @@ public class PendantManager : IPendantManager
         if (isFull || current.Overrides != prev!.Overrides)
             sb.Append($"|O:{current.Overrides}");
 
+        // Send on any change, including back to 0. The old "> 0" guard suppressed the
+        // zero in delta mode, but the pendant only clears Feedrate/Spindle on a full DRO,
+        // so after a job stopped the jog/job screen kept showing the last non-zero values.
         if (isFull || current.FeedRate != prev!.FeedRate)
-        {
-            if (isFull || current.FeedRate > 0)
-                sb.Append($"|F:{current.FeedRate}");
-        }
+            sb.Append($"|F:{current.FeedRate}");
 
         if (isFull || current.SpindleRpm != prev!.SpindleRpm)
-        {
-            if (isFull || current.SpindleRpm > 0)
-                sb.Append($"|R:{current.SpindleRpm}");
-        }
+            sb.Append($"|R:{current.SpindleRpm}");
 
         // Connected/Homed — always send in full; in delta always send (sticky flags need reset signal)
         if (current.Connected)
