@@ -931,6 +931,7 @@
   <!-- AutoDustBoot Dialog -->
   <AutoDustBootDialog
     v-if="showAutoDustBootDialog"
+    :status="autoDustBootStatus"
     @close="showAutoDustBootDialog = false"
   />
 
@@ -1148,7 +1149,8 @@ const showUpdateDialog = ref(false);
 const showPendantDialog = ref(false);
 const pendantConnectionType = ref<'usb' | 'espnow' | null>(null);
 const showAutoDustBootDialog = ref(false);
-const autoDustBootConnected = ref(false);
+const autoDustBootStatus = ref<{ connected: boolean; state?: string; pos?: number; saved?: number; homed?: boolean; lastSeenMs?: number } | null>(null);
+const autoDustBootConnected = computed(() => autoDustBootStatus.value?.connected ?? false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -1835,6 +1837,15 @@ onMounted(() => {
       });
     }
   });
+
+  // AutoDustBoot device status — pushed over WS (no polling). One initial fetch below.
+  api.on('autodustboot:status-changed', (data: any) => {
+    autoDustBootStatus.value = data;
+  });
+  fetch('/api/autodustboot/status')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d) autoDustBootStatus.value = d; })
+    .catch(() => {});
 
   api.on('plugin:show-modal', (data: any) => {
     showPluginModal.value = true;
@@ -2917,15 +2928,6 @@ const pollBluetoothStatus = async () => {
     }
   } catch {
     // Silently fail - Bluetooth may not be available
-  }
-  try {
-    const adb = await fetch('/api/autodustboot/status');
-    if (adb.ok) {
-      const data = await adb.json();
-      autoDustBootConnected.value = !!data.connected;
-    }
-  } catch {
-    // Silently fail - AutoDustBoot/dongle may not be present
   }
 };
 

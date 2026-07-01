@@ -73,10 +73,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { onUnmounted } from 'vue';
 import Dialog from './Dialog.vue';
-
-defineEmits(['close']);
 
 interface AdbStatus {
   connected: boolean;
@@ -87,17 +85,9 @@ interface AdbStatus {
   homed: boolean;
 }
 
-const status = ref<AdbStatus | null>(null);
-let poll: ReturnType<typeof setInterval> | null = null;
-
-const load = async () => {
-  try {
-    const r = await fetch('/api/autodustboot/status');
-    if (r.ok) status.value = await r.json();
-  } catch {
-    // ignore — device/dongle may be absent
-  }
-};
+// Status is pushed from the parent (App.vue) via the WS event — no polling here.
+defineProps<{ status: AdbStatus | null }>();
+defineEmits(['close']);
 
 const send = async (command: string) => {
   try {
@@ -126,12 +116,7 @@ const stopJog = () => {
   send('stop');
 };
 
-onMounted(() => {
-  load();
-  poll = setInterval(load, 1500);
-});
 onUnmounted(() => {
-  if (poll) clearInterval(poll);
   stopJog();
 });
 </script>

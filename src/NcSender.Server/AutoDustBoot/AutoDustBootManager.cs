@@ -29,6 +29,7 @@ public sealed class AutoDustBootManager : IAutoDustBootManager, IDisposable
     private long _saved;
     private bool _homed;
     private bool _wasConnected;
+    private long _lastBroadcastTicks;
 
     private Func<string, Task>? _sender;
 
@@ -67,14 +68,23 @@ public sealed class AutoDustBootManager : IAutoDustBootManager, IDisposable
         var name = line.Substring(1, sp - 1);           // drop leading '@'
         if (!string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)) return;
 
+        bool justConnected;
         lock (_lock)
         {
-            _lastSeenTicks = Environment.TickCount64;
+            var now = Environment.TickCount64;
+            justConnected = !_wasConnected || _lastSeenTicks == 0 || (now - _lastSeenTicks) >= ConnectedWindowMs;
+            _lastSeenTicks = now;
             _wasConnected = true;
             ParseStatus(line.Substring(sp + 1));
         }
-        // Push a live update (device sends ~2×/sec while linked).
-        Broadcast();
+        // Device pushes ~2×/sec while linked. Throttle live WS updates to ~1/sec, but
+        // always push the connect edge immediately.
+        var t = Environment.TickCount64;
+        if (justConnected || t - _lastBroadcastTicks >= 1000)
+        {
+            _lastBroadcastTicks = t;
+            Broadcast();
+        }
     }
 
     private void ParseStatus(string payload)
@@ -109,6 +119,7 @@ public sealed class AutoDustBootManager : IAutoDustBootManager, IDisposable
         if (transitioned)
         {
             _logger.LogInformation("AutoDustBoot disconnected (no dongle traffic > {Ms}ms)", ConnectedWindowMs);
+            _lastBroadcastTicks = Environment.TickCount64;
             Broadcast();
         }
     }
