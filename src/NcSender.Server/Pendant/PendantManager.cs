@@ -1440,8 +1440,22 @@ public class PendantManager : IPendantManager
         var maxFeedY = ms.MaxFeedrateY;
         var maxFeedZ = ms.MaxFeedrateZ;
 
+        // Keep the pendant in sync with the browser toolbar for Door state:
+        //   • Pn contains 'D' (door pin asserted) → show "Door" regardless of
+        //     the underlying status. This mirrors TopToolbar's isDoorOpenViaPn
+        //     override and covers the grblHAL $61=1 case where the machine
+        //     stays "Idle" while the door pin is high.
+        //   • Status == "Door" with Pn released → promote to "Hold" so Resume
+        //     lights up on the pendant, matching ServerContext.ComputeSenderStatus.
+        var effectiveStatus = ms.Status ?? "Unknown";
+        var pnHasDoor = (ms.Pn ?? "").Contains('D');
+        if (pnHasDoor)
+            effectiveStatus = "Door";
+        else if (string.Equals(effectiveStatus, "Door", StringComparison.OrdinalIgnoreCase))
+            effectiveStatus = "Hold";
+
         var current = new PendantDroSnapshot(
-            Status: ms.Status ?? "Unknown",
+            Status: effectiveStatus,
             WPos: wpos,
             Overrides: overrides,
             FeedRate: feedRate,
@@ -1473,17 +1487,15 @@ public class PendantManager : IPendantManager
         if (isFull || current.Overrides != prev!.Overrides)
             sb.Append($"|O:{current.Overrides}");
 
+        // Always emit F/R on delta — even when the new value is 0.
+        // Previously we skipped 0 in delta packets to save bytes, but that
+        // means a >0 → 0 transition never reaches the pendant and the DRO
+        // stays stuck showing the last non-zero feedrate / RPM.
         if (isFull || current.FeedRate != prev!.FeedRate)
-        {
-            if (isFull || current.FeedRate > 0)
-                sb.Append($"|F:{current.FeedRate}");
-        }
+            sb.Append($"|F:{current.FeedRate}");
 
         if (isFull || current.SpindleRpm != prev!.SpindleRpm)
-        {
-            if (isFull || current.SpindleRpm > 0)
-                sb.Append($"|R:{current.SpindleRpm}");
-        }
+            sb.Append($"|R:{current.SpindleRpm}");
 
         // Connected/Homed — always send in full; in delta always send (sticky flags need reset signal)
         if (current.Connected)
