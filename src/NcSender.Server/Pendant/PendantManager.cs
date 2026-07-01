@@ -17,7 +17,7 @@ public class PendantManager : IPendantManager
     private readonly IJobManager _jobManager;
     private readonly ICommandProcessor _commandProcessor;
     private readonly ISettingsManager _settingsManager;
-    private readonly IAutoDustBootManager _autoDustBoot;   // shares the dongle; fed @autodustboot lines
+    private readonly IDongleDeviceService _dongleDevices;   // shares the dongle; fed "@name" addressed-device lines
     private PendantSerialHandler? _serialHandler;  // Active data handler (dongle preferred, USB fallback)
     private PendantWifiInfo? _lastWifiInfo;
     private CancellationTokenSource? _flashCts;
@@ -60,7 +60,7 @@ public class PendantManager : IPendantManager
         IJobManager jobManager,
         ICommandProcessor commandProcessor,
         ISettingsManager settingsManager,
-        IAutoDustBootManager autoDustBoot)
+        IDongleDeviceService dongleDevices)
     {
         _logger = logger;
         _controller = controller;
@@ -69,11 +69,11 @@ public class PendantManager : IPendantManager
         _jobManager = jobManager;
         _commandProcessor = commandProcessor;
         _settingsManager = settingsManager;
-        _autoDustBoot = autoDustBoot;
+        _dongleDevices = dongleDevices;
 
-        // Give the AutoDustBoot manager a path to send @autodustboot commands out over
-        // the dongle (read at call-time, so it follows dongle connect/disconnect).
-        _autoDustBoot.SetSender(line =>
+        // Give the dongle device service a path to send "@name" commands out over the
+        // dongle (read at call-time, so it follows dongle connect/disconnect).
+        _dongleDevices.SetSender(line =>
             _dongleHandler is not null ? _dongleHandler.SendRawAsync(line) : Task.CompletedTask);
 
         // Subscribe to status reports for DRO broadcasting
@@ -944,7 +944,7 @@ public class PendantManager : IPendantManager
             // is routed to its manager, not the pendant command path.
             if (data.StartsWith('@'))
             {
-                _autoDustBoot.OnDongleLine(data);
+                _dongleDevices.OnDongleLine(data);
                 return;
             }
 

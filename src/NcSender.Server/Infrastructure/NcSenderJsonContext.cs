@@ -40,9 +40,13 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PluginToolMenuItem))]
 [JsonSerializable(typeof(List<PluginToolMenuItem>))]
 [JsonSerializable(typeof(PluginUpdateInfo))]
-// AutoDustBoot
-[JsonSerializable(typeof(AutoDustBootStatus))]
-[JsonSerializable(typeof(AutoDustBootCommandRequest))]
+// Dongle addressed-device bridge (generic; accessory plugins own payload semantics)
+[JsonSerializable(typeof(DongleDeviceInfo))]
+[JsonSerializable(typeof(List<DongleDeviceInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<DongleDeviceInfo>))]
+[JsonSerializable(typeof(DongleSendRequest))]
+[JsonSerializable(typeof(DongleDeviceMessage))]
+[JsonSerializable(typeof(DongleDeviceChanged))]
 // Pendant
 [JsonSerializable(typeof(PendantStatus))]
 [JsonSerializable(typeof(PendantFirmwareInfo))]

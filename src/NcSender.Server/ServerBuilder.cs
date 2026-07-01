@@ -23,7 +23,7 @@ using NcSender.Server.Models;
 using NcSender.Server.ControllerFiles;
 using NcSender.Server.GcodeAnalysis;
 using NcSender.Server.Pendant;
-using NcSender.Server.AutoDustBoot;
+using NcSender.Server.Dongle;
 using NcSender.Server.Plugins;
 using NcSender.Server.Probing;
 using NcSender.Server.Tools;
@@ -137,7 +137,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IGcodeAnalyzer, GcodeStateAnalyzer>();
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
-        builder.Services.AddSingleton<IAutoDustBootManager, AutoDustBootManager>();
+        builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
 
         // Register source-gen JSON context for AOT-compatible serialization.
@@ -320,7 +320,7 @@ public static class ServerBuilder
         GcodeAnalysisEndpoints.Map(app);
         ControllerFileEndpoints.Map(app);
         PendantEndpoints.Map(app);
-        AutoDustBootEndpoints.Map(app);
+        DongleEndpoints.Map(app);
         UpdateEndpoints.Map(app);
         SystemApi.SystemEndpoints.Map(app);
 
@@ -329,9 +329,9 @@ public static class ServerBuilder
         // Auto-connect will fire automatically when the CNC connection is established.
         app.Services.GetRequiredService<IPendantManager>();
 
-        // Eagerly resolve AutoDustBootManager so its disconnect watchdog starts and the
-        // PendantManager (dongle reader) has it wired for @autodustboot traffic.
-        app.Services.GetRequiredService<IAutoDustBootManager>();
+        // Eagerly resolve the dongle device service so its disconnect watchdog starts and the
+        // PendantManager (dongle reader) has it wired for "@name" addressed-device traffic.
+        app.Services.GetRequiredService<IDongleDeviceService>();
 
         // Restore last loaded program from previous session
         RestoreLastLoadedFile(app.Services);

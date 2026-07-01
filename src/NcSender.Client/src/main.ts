@@ -22,6 +22,31 @@ import { loadInitData } from './lib/init';
 import { initializeKeyboardShortcuts } from './features/controls';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
 import { registerWebComponents } from './web-components';
+import { api } from './lib/api.js';
+
+// Additive plugin bridge: expose a minimal server-event subscription on window.ncSender so
+// plugin dialogs (which run in the app page) can react to WS events — e.g. the generic
+// "dongle:device-message" / "dongle:device-changed" broadcasts. Merged onto whatever the
+// Electron preload already provides (getApiBaseUrl, updates); existing keys are untouched.
+{
+  const bridge: any = ((window as any).ncSender = (window as any).ncSender || {});
+  if (typeof bridge.onServerEvent !== 'function') {
+    // onServerEvent(type, cb) -> unsubscribe(); mirrors api.on's contract.
+    const subs = new Map<string, Map<(data: any) => void, () => void>>();
+    bridge.onServerEvent = (type: string, cb: (data: any) => void): (() => void) => {
+      const off = api.on(type, cb);
+      let byCb = subs.get(type);
+      if (!byCb) { byCb = new Map(); subs.set(type, byCb); }
+      byCb.set(cb, off);
+      return () => { off(); subs.get(type)?.delete(cb); };
+    };
+    bridge.offServerEvent = (type: string, cb: (data: any) => void): void => {
+      const off = subs.get(type)?.get(cb);
+      if (off) { off(); subs.get(type)!.delete(cb); }
+    };
+  }
+}
+
 // Disable context menu globally for touch screen compatibility
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();

@@ -55,14 +55,12 @@
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
-        :autodustboot-connected="autoDustBootConnected"
         :workspace="workspace"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
         @show-bluetooth="showPendantDialog = true"
-        @show-autodustboot="showAutoDustBootDialog = true"
         :on-show-settings="openSettings"
       />
     </template>
@@ -928,12 +926,6 @@
     @close="showPendantDialog = false"
   />
 
-  <!-- AutoDustBoot Dialog -->
-  <AutoDustBootDialog
-    v-if="showAutoDustBootDialog"
-    :status="autoDustBootStatus"
-    @close="showAutoDustBootDialog = false"
-  />
 
     <!-- Plugin Dialog -->
     <PluginDialog />
@@ -1078,7 +1070,6 @@ import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import PendantDialog from './components/PendantDialog.vue';
-import AutoDustBootDialog from './components/AutoDustBootDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
@@ -1148,9 +1139,6 @@ let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showPendantDialog = ref(false);
 const pendantConnectionType = ref<'usb' | 'espnow' | null>(null);
-const showAutoDustBootDialog = ref(false);
-const autoDustBootStatus = ref<{ connected: boolean; state?: string; pos?: number; saved?: number; homed?: boolean; lastSeenMs?: number } | null>(null);
-const autoDustBootConnected = computed(() => autoDustBootStatus.value?.connected ?? false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -1837,15 +1825,6 @@ onMounted(() => {
       });
     }
   });
-
-  // AutoDustBoot device status — pushed over WS (no polling). One initial fetch below.
-  api.on('autodustboot:status-changed', (data: any) => {
-    autoDustBootStatus.value = data;
-  });
-  fetch('/api/autodustboot/status')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((d) => { if (d) autoDustBootStatus.value = d; })
-    .catch(() => {});
 
   api.on('plugin:show-modal', (data: any) => {
     showPluginModal.value = true;
