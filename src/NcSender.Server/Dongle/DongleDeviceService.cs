@@ -17,7 +17,9 @@ namespace NcSender.Server.Dongle;
 /// </summary>
 public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 {
-    private const long ConnectedWindowMs = 3000;
+    // A linked device heartbeats a few times/sec, so tolerate several lost lines (the ESP-NOW
+    // dongle link is lossy and can occasionally drop a newline) before declaring it gone.
+    private const long ConnectedWindowMs = 6000;
 
     private sealed class DeviceState
     {
@@ -77,6 +79,11 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         var name = line.Substring(1, sp - 1);
         var payload = line.Substring(sp + 1);
 
+        // Guard against corrupted framing on the lossy serial link (e.g. a dropped newline
+        // merging a fragment into the next line -> "@auto@autodustboot …"). Only accept sane
+        // device names; drop the garbled line and wait for the next clean heartbeat.
+        if (!IsValidDeviceName(name)) return;
+
         var st = _devices.GetOrAdd(name, _ => new DeviceState());
         bool justConnected;
         long now = Environment.TickCount64;
@@ -107,6 +114,18 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         }
     }
 
+    // Accept only [A-Za-z0-9_-], 1-32 chars — enough for real device names, rejects garbled framing.
+    private static bool IsValidDeviceName(string name)
+    {
+        if (name.Length is 0 or > 32) return false;
+        foreach (var c in name)
+        {
+            var ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+            if (!ok) return false;
+        }
+        return true;
+    }
+
     private void CheckDisconnects()
     {
         long now = Environment.TickCount64;
@@ -124,7 +143,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             }
             if (transitioned)
             {
-                _logger.LogInformation("Dongle device '{Name}' disconnected (no traffic > {Ms}ms)", kv.Key, ConnectedWindowMs);
+                _logger.LogDebug("Dongle device '{Name}' disconnected (no traffic > {Ms}ms)", kv.Key, ConnectedWindowMs);
                 _ = _broadcaster.Broadcast("dongle:device-changed",
                     new DongleDeviceChanged { Name = kv.Key, Connected = false },
                     NcSenderJsonContext.Default.DongleDeviceChanged);
