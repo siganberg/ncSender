@@ -272,6 +272,12 @@ public class PendantSerialHandler : IAsyncDisposable
 
     private void ProcessMessage(string line)
     {
+        // The multi-device dongle tags the pendant's frames "@pendant "; strip it so pendant
+        // JSON/line handling is identical to the direct-USB path. Other "@name" (accessory)
+        // frames pass through untouched to the addressed-device bridge.
+        if (line.StartsWith("@pendant ", StringComparison.Ordinal))
+            line = line.Substring("@pendant ".Length);
+
         if (!line.StartsWith('{'))
         {
             RawMessageReceived?.Invoke(line);
