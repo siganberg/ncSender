@@ -52,11 +52,15 @@
         </div>
         <div v-if="isConnected && !loading" class="status-card__badge">
           <span class="pulse"></span>
-          {{ isDongle ? 'ESP-NOW' : 'USB' }}
+          {{ isDongle ? 'Wireless' : 'USB' }}
         </div>
       </div>
 
-      <!-- Dongle Unpair: visible whenever a dongle is on USB, even if pendant is not paired/connected -->
+      <!-- Dongle Pair / Unpair — only one of Pair or Unpair is shown at a
+           time. The dongle only supports one paired pendant, so a Pair
+           button when something is already paired would be misleading.
+           - Pendant connected via dongle → we know it's paired → Unpair.
+           - Dongle plugged in, no pendant on the Wireless side → Pair. -->
       <div v-if="dongleConnected" class="dongle-card">
         <div class="dongle-card__row">
           <div class="dongle-card__info">
@@ -65,14 +69,25 @@
               <path d="M2 17l10 5 10-5"/>
               <path d="M2 12l10 5 10-5"/>
             </svg>
-            <span>{{ isConnected && isDongle ? 'Connected via ESP-NOW dongle' : 'ESP-NOW dongle plugged in' }}</span>
+            <span>{{ isConnected && isDongle ? 'Connected via Wireless dongle' : 'Wireless dongle plugged in' }}</span>
           </div>
           <div class="dongle-card__actions">
-            <button class="dongle-pair-btn" @click="pairDevice" :disabled="pairingDevice" title="Open a 30s window so a new wireless device (pendant, AutoDustBoot, …) can pair">
-              {{ pairingDevice ? 'Pairing window open (30s)…' : 'Pair New Device' }}
-            </button>
-            <button class="dongle-unpair-btn" @click="showUnpairConfirm = true" :disabled="unpairingDongle">
+            <button
+              v-if="isConnected && isDongle"
+              class="dongle-unpair-btn"
+              @click="showUnpairConfirm = true"
+              :disabled="unpairingDongle"
+            >
               {{ unpairingDongle ? 'Unpairing...' : 'Unpair Dongle' }}
+            </button>
+            <button
+              v-else
+              class="dongle-pair-btn"
+              @click="pairDevice"
+              :disabled="pairingDevice"
+              title="Open a 30s window so a new wireless device (pendant, AutoDustBoot, …) can pair"
+            >
+              {{ pairingDevice ? 'Pairing window open (30s)…' : 'Pair New Device' }}
             </button>
           </div>
         </div>
@@ -82,7 +97,7 @@
       <Dialog v-if="showUnpairConfirm" @close="showUnpairConfirm = false" :show-header="false" size="small">
         <ConfirmPanel
           title="Unpair Dongle"
-          message="Are you sure you want to unpair the ESP-NOW dongle? You will need to re-pair it to use wireless communication."
+          message="Are you sure you want to unpair the Wireless dongle? You will need to re-pair it to use wireless communication."
           confirm-text="Unpair"
           cancel-text="Cancel"
           variant="danger"
@@ -975,10 +990,10 @@ onUnmounted(() => {
   align-items: center;
 }
 .dongle-unpair-btn {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ef4444;
+  border: 1px solid #ef4444;
   border-radius: 8px;
-  color: var(--color-text-secondary, rgba(255, 255, 255, 0.55));
+  color: #fff;
   font-size: 14px;
   padding: 8px 14px;
   cursor: pointer;
@@ -999,11 +1014,7 @@ onUnmounted(() => {
 .dongle-pair-btn:hover:not(:disabled) { filter: brightness(1.08); }
 .dongle-pair-btn:disabled { opacity: 0.6; cursor: default; }
 
-.dongle-unpair-btn:hover:not(:disabled) {
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.08);
-}
+.dongle-unpair-btn:hover:not(:disabled) { filter: brightness(1.08); }
 
 .dongle-unpair-btn:disabled {
   opacity: 0.5;
