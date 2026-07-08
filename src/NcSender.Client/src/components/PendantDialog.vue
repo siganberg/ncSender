@@ -67,9 +67,14 @@
             </svg>
             <span>{{ isConnected && isDongle ? 'Connected via ESP-NOW dongle' : 'ESP-NOW dongle plugged in' }}</span>
           </div>
-          <button class="dongle-unpair-btn" @click="showUnpairConfirm = true" :disabled="unpairingDongle">
-            {{ unpairingDongle ? 'Unpairing...' : 'Unpair Dongle' }}
-          </button>
+          <div class="dongle-card__actions">
+            <button class="dongle-pair-btn" @click="pairDevice" :disabled="pairingDevice" title="Open a 30s window so a new wireless device (pendant, AutoDustBoot, …) can pair">
+              {{ pairingDevice ? 'Pairing window open (30s)…' : 'Pair New Device' }}
+            </button>
+            <button class="dongle-unpair-btn" @click="showUnpairConfirm = true" :disabled="unpairingDongle">
+              {{ unpairingDongle ? 'Unpairing...' : 'Unpair Dongle' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -322,6 +327,7 @@ const isConnected = computed(() => !!usbPendant.value);
 const activePendant = computed(() => usbPendant.value);
 const unpairingDongle = ref(false);
 const showUnpairConfirm = ref(false);
+const pairingDevice = ref(false);
 
 const canActivate = computed(() => {
   if (!installationId.value) return false;
@@ -523,6 +529,21 @@ const cancelFirmwareFlash = async () => {
   fwUpdating.value = false;
   fwError.value = 'Firmware update cancelled';
   setTimeout(() => { fwError.value = ''; }, 15000);
+};
+
+let pairWindowTimer: ReturnType<typeof setTimeout> | null = null;
+const pairDevice = async () => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/dongle/pair`, { method: 'POST' });
+    if (!response.ok) throw new Error('Failed to open pairing window');
+    pairingDevice.value = true;
+    if (pairWindowTimer) clearTimeout(pairWindowTimer);
+    // The dongle beacons for ~30s; reflect that in the button state.
+    pairWindowTimer = setTimeout(() => { pairingDevice.value = false; }, 30000);
+  } catch (error) {
+    console.error('Failed to open pairing window:', error);
+  }
 };
 
 const unpairDongle = async () => {
@@ -948,6 +969,11 @@ onUnmounted(() => {
   color: var(--color-text-secondary, rgba(255, 255, 255, 0.55));
 }
 
+.dongle-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 .dongle-unpair-btn {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -959,6 +985,19 @@ onUnmounted(() => {
   transition: all 0.15s;
   white-space: nowrap;
 }
+.dongle-pair-btn {
+  background: var(--color-accent, #4a90e2);
+  border: 1px solid var(--color-accent, #4a90e2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.dongle-pair-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.dongle-pair-btn:disabled { opacity: 0.6; cursor: default; }
 
 .dongle-unpair-btn:hover:not(:disabled) {
   border-color: rgba(239, 68, 68, 0.4);

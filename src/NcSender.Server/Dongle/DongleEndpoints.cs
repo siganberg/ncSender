@@ -37,5 +37,21 @@ public static class DongleEndpoints
             await dongle.SendAsync(name.Trim(), req.Payload.Trim());
             return Results.Ok(new ApiSuccess(true));
         });
+
+        // Open the dongle's pairing window (~30s) so a new device can bind.
+        app.MapPost("/api/dongle/pair", async (IDongleDeviceService dongle) =>
+        {
+            await dongle.OpenPairingAsync();
+            return Results.Ok(new ApiSuccess(true));
+        });
+
+        // Forget one paired device on the dongle.
+        app.MapPost("/api/dongle/devices/{name}/unpair", async (string name, IDongleDeviceService dongle) =>
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return Results.BadRequest(new ApiError("Device name is required"));
+            await dongle.UnpairAsync(name.Trim());
+            return Results.Ok(new ApiSuccess(true));
+        });
     }
 }

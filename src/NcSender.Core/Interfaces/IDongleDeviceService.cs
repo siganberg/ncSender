@@ -27,4 +27,10 @@ public interface IDongleDeviceService
 
     /// <summary>Send a raw payload to a named device (framed as "@name payload").</summary>
     Task SendAsync(string name, string payload);
+
+    /// <summary>Open the dongle's pairing window ("$PAIR") so a new device can join (~30s).</summary>
+    Task OpenPairingAsync();
+
+    /// <summary>Forget a paired device on the dongle ("$UNPAIR &lt;name&gt;") and drop it locally.</summary>
+    Task UnpairAsync(string name);
 }

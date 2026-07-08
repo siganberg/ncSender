@@ -157,5 +157,22 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         return sender is null ? Task.CompletedTask : sender($"@{name} {payload}");
     }
 
+    public Task OpenPairingAsync()
+    {
+        var sender = _sender;
+        return sender is null ? Task.CompletedTask : sender("$PAIR");
+    }
+
+    public Task UnpairAsync(string name)
+    {
+        // Drop it locally so the device list updates immediately; the dongle stops relaying it.
+        if (_devices.TryRemove(name, out _))
+            _ = _broadcaster.Broadcast("dongle:device-changed",
+                new DongleDeviceChanged { Name = name, Connected = false },
+                NcSenderJsonContext.Default.DongleDeviceChanged);
+        var sender = _sender;
+        return sender is null ? Task.CompletedTask : sender($"$UNPAIR {name}");
+    }
+
     public void Dispose() => _watchdog.Dispose();
 }
