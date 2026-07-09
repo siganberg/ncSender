@@ -718,6 +718,15 @@ public class PendantManager : IPendantManager
                 _logger.LogInformation("Setting dongle as active data handler (ESP-NOW priority)");
                 DetachDonglePromotionListener();
                 SetActiveHandler(_dongleHandler);
+                // Seed the paired-device table from the dongle's persistent NVS. Fire
+                // after a short delay so the handler has finished its handshake, and
+                // don't block the attach path on the reply (async fire-and-forget).
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                    try { await _dongleDevices.RequestDevicesAsync().ConfigureAwait(false); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to seed paired-device list from dongle"); }
+                });
                 break;
         }
 
@@ -941,8 +950,9 @@ public class PendantManager : IPendantManager
             }
 
             // Addressed device traffic "@name payload" (e.g. "@autodustboot status …")
-            // is routed to its manager, not the pendant command path.
-            if (data.StartsWith('@'))
+            // is routed to its manager, not the pendant command path. Same route also
+            // catches "$DEVICES:<name>" replies used to seed the paired-device list.
+            if (data.StartsWith('@') || data.StartsWith("$DEVICES:", StringComparison.Ordinal))
             {
                 _dongleDevices.OnDongleLine(data);
                 return;

@@ -33,4 +33,12 @@ public interface IDongleDeviceService
 
     /// <summary>Forget a paired device on the dongle ("$UNPAIR &lt;name&gt;") and drop it locally.</summary>
     Task UnpairAsync(string name);
+
+    /// <summary>
+    /// Ask the dongle for its current paired-devices list ("$DEVICES"). Reply arrives async
+    /// on the same serial channel and is fed back through <see cref="OnDongleLine"/>. Used on
+    /// dongle attach to seed the paired-device table from the dongle's NVS, so the plugin can
+    /// tell a paired-but-offline device apart from an unpaired one after a server restart.
+    /// </summary>
+    Task RequestDevicesAsync();
 }

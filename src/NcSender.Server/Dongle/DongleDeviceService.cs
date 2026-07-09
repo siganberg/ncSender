@@ -71,9 +71,36 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     }
 
     // Line looks like: "@autodustboot status pos=123 …" — everything after "@name " is the raw payload.
+    // Also accepts "$DEVICES:<name>" replies (seed the paired list on dongle attach), which
+    // populate a "known but never seen" entry so the plugin can distinguish a paired-but-
+    // offline device from an unpaired one after a server restart.
     public void OnDongleLine(string line)
     {
-        if (string.IsNullOrEmpty(line) || line[0] != '@') return;
+        if (string.IsNullOrEmpty(line)) return;
+
+        // "$DEVICES:<name>" — dongle reply enumerating currently-paired devices.
+        // Bare "$DEVICES:" (or "$DEVICES:END") is a terminator, no seeding needed.
+        // The multi-device dongle firmware sends one line per active peer.
+        const string devicesPrefix = "$DEVICES:";
+        if (line.StartsWith(devicesPrefix, StringComparison.Ordinal))
+        {
+            var seedName = line.Substring(devicesPrefix.Length).Trim();
+            if (seedName.Equals("END", StringComparison.Ordinal)) return;
+            if (seedName.Length > 0 && IsValidDeviceName(seedName))
+            {
+                // Seed with LastSeenTicks = 0 so Snapshot() reports Connected=false /
+                // LastSeenMs=-1 — the plugin sees "paired but offline" until the device
+                // actually sends a message.
+                _devices.GetOrAdd(seedName, _ => new DeviceState());
+                _logger.LogInformation("Seeded paired device '{Name}' from dongle $DEVICES reply", seedName);
+                _ = _broadcaster.Broadcast("dongle:device-changed",
+                    new DongleDeviceChanged { Name = seedName, Connected = false },
+                    NcSenderJsonContext.Default.DongleDeviceChanged);
+            }
+            return;
+        }
+
+        if (line[0] != '@') return;
         var sp = line.IndexOf(' ');
         if (sp < 2) return;                          // need at least "@x "
         var name = line.Substring(1, sp - 1);
@@ -161,6 +188,16 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     {
         var sender = _sender;
         return sender is null ? Task.CompletedTask : sender("$PAIR");
+    }
+
+    // Ask the dongle for its current paired-devices list. Reply arrives async
+    // as "$DEVICES:<name>" and is handled by OnDongleLine (which seeds _devices).
+    // Called on dongle attach so we know about paired-but-offline devices without
+    // relying on the host's in-memory state.
+    public Task RequestDevicesAsync()
+    {
+        var sender = _sender;
+        return sender is null ? Task.CompletedTask : sender("$DEVICES");
     }
 
     public Task UnpairAsync(string name)
