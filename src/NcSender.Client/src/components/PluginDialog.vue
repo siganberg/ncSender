@@ -22,8 +22,9 @@
         <div class="plugin-dialog-header">
           <h3>{{ dialogData.title }}</h3>
           <button v-if="isClosable" class="close-button" type="button" @click="closeDialog" aria-label="Close dialog">
-            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="6" y1="6" x2="18" y2="18"/>
+              <line x1="18" y1="6" x2="6" y2="18"/>
             </svg>
           </button>
         </div>
@@ -258,7 +259,7 @@ onBeforeUnmount(() => {
 .plugin-dialog-header h3 {
   margin: 0;
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
