@@ -151,6 +151,11 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(WsFlashProgress))]
 [JsonSerializable(typeof(WsFlashMessage))]
 [JsonSerializable(typeof(WsFlashError))]
+// Generic plugin-facing serial / OTA API
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeRequest))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeResult))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaEvent))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaStatus))]
 public partial class NcSenderJsonContext : JsonSerializerContext;
 
 // SSE message types for AOT-safe serialization

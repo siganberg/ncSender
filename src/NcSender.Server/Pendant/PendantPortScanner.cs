@@ -409,6 +409,15 @@ public class PendantPortScanner : IDisposable
                 tcs.TrySetResult(new IdResult(DeviceType.Pendant, false));
             else if (line == "$ID:dongle")
                 tcs.TrySetResult(new IdResult(DeviceType.Dongle, false));
+            // Other ncSender accessories (e.g. $ID:autodustboot) speak the
+            // same handshake but aren't a pendant or dongle. Blacklist so
+            // their plugin can talk to the port instead of us squatting on
+            // it forever in "pending".
+            else if (line.StartsWith("$ID:"))
+            {
+                _logger.LogInformation("Port {Port} identifies as {Id}, releasing from pendant probe", port, line);
+                tcs.TrySetResult(new IdResult(null, true));
+            }
             // The port might already be carrying a CNC controller (e.g. user
             // is on ethernet but USB is also plugged in). Repeated $ID probes
             // crash FluidNC v4.0.3 over wireless. Detect the GRBL/FluidNC

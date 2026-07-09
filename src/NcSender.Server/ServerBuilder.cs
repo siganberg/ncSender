@@ -139,6 +139,8 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
+        builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
+                                     NcSender.Server.Devices.PluginSerialService>();
 
         // Register source-gen JSON context for AOT-compatible serialization.
         // In dev (JIT) mode the default reflection resolver is already present;
@@ -322,6 +324,8 @@ public static class ServerBuilder
         PendantEndpoints.Map(app);
         DongleEndpoints.Map(app);
         UpdateEndpoints.Map(app);
+        NcSender.Server.Devices.PluginSerialEndpoints.Map(app);
+        NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);
         SystemApi.SystemEndpoints.Map(app);
 
         // Eagerly resolve PendantManager so its constructor subscribes to
