@@ -156,6 +156,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeResult))]
 [JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaEvent))]
 [JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaStatus))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaFromUrlRequest))]
 public partial class NcSenderJsonContext : JsonSerializerContext;
 
 // SSE message types for AOT-safe serialization

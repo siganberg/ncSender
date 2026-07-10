@@ -67,6 +67,47 @@ public static class PluginSerialEndpoints
             return Results.Ok(new ApiSuccess(true));
         });
 
+        // Flash from a URL. Body: { downloadUrl, port, deviceId?, baud? }.
+        // The server does the HTTP fetch so the browser doesn't have to —
+        // GitHub Releases assets don't set Access-Control-Allow-Origin, so
+        // a plugin-side fetch() to the asset URL fails with 'Failed to fetch'.
+        // This endpoint offloads the download to the server (no CORS).
+        app.MapPost($"{Base}/ota/flash-from-url",
+            async (PluginOtaFromUrlRequest req, IPluginSerialService svc,
+                   IHttpClientFactory httpFactory, ILogger<PluginSerialService> logger) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.DownloadUrl))
+                return Results.BadRequest(new ApiError("`downloadUrl` is required"));
+            if (string.IsNullOrWhiteSpace(req.Port))
+                return Results.BadRequest(new ApiError("`port` is required"));
+
+            byte[] bytes;
+            try
+            {
+                using var http = httpFactory.CreateClient();
+                http.Timeout = TimeSpan.FromMinutes(2);
+                using var resp = await http.GetAsync(req.DownloadUrl,
+                    HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+                bytes = await resp.Content.ReadAsByteArrayAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to download firmware from {Url}", req.DownloadUrl);
+                return Results.BadRequest(new ApiError("Download failed: " + ex.Message));
+            }
+
+            var port = req.Port;
+            var deviceId = req.DeviceId ?? string.Empty;
+            var baud = req.Baud;
+            _ = Task.Run(async () =>
+            {
+                try { await svc.FlashOtaAsync(port, bytes, baud, deviceId); }
+                catch (Exception ex) { logger.LogError(ex, "Plugin OTA on {Port} failed", port); }
+            });
+            return Results.Ok(new ApiSuccess(true));
+        });
+
         // Best-effort cancel of an in-progress flash.
         app.MapPost($"{Base}/ota/cancel", (IPluginSerialService svc) =>
         {
@@ -84,3 +125,5 @@ public static class PluginSerialEndpoints
 }
 
 public record PluginOtaStatus(bool InProgress, string? Port);
+
+public record PluginOtaFromUrlRequest(string DownloadUrl, string Port, string? DeviceId, int? Baud);

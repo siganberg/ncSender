@@ -141,6 +141,8 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();
+        // For plugin-serial's server-side firmware download (bypasses browser CORS).
+        builder.Services.AddHttpClient();
 
         // Register source-gen JSON context for AOT-compatible serialization.
         // In dev (JIT) mode the default reflection resolver is already present;
