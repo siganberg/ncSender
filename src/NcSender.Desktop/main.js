@@ -207,9 +207,7 @@ app.whenReady().then(async () => {
   // is `#1a1a2e` so the pre-load window matches the app's ground —
   // no white flash, no visible spinner.
   const appUrl = `http://localhost:${SERVER_PORT}`;
-  mainWindow.webContents.on('did-fail-load', () => {
-    setTimeout(() => mainWindow.loadURL(appUrl), 200);
-  });
+
   // `show: false` on the BrowserWindow means it doesn't appear until we
   // call `.show()`. Trigger that on `ready-to-show`, which fires after
   // the renderer has painted its first frame — no white flash.
@@ -226,7 +224,27 @@ app.whenReady().then(async () => {
     mainWindow.show();
   });
 
+  // Wait for the server to accept connections BEFORE calling loadURL —
+  // an earlier version used `did-fail-load` + `setTimeout` retry, but
+  // that let Chromium briefly render its network-error page (which is
+  // white) before the retry succeeded, and `ready-to-show` fired with
+  // that error page as content. Polling here means loadURL only ever
+  // sees a live server.
   startServer();
+  const http = require('http');
+  const waitForServer = () => new Promise((resolve) => {
+    const tryOnce = () => {
+      const req = http.get(`${appUrl}/api/health`, (res) => {
+        res.resume();
+        if (res.statusCode === 200) return resolve();
+        setTimeout(tryOnce, 100);
+      });
+      req.on('error', () => setTimeout(tryOnce, 100));
+      req.setTimeout(1000, () => { req.destroy(); setTimeout(tryOnce, 100); });
+    };
+    tryOnce();
+  });
+  await waitForServer();
   mainWindow.loadURL(appUrl);
 });
 
