@@ -16,22 +16,22 @@
 -->
 
 <template>
-  <!-- Loading screen while determining remote control state -->
-  <div v-if="remoteStateLoading" class="remote-loading">
-    <div class="loading-spinner"></div>
-    <p>Connecting to server...</p>
-  </div>
-
-  <!-- Remote Control Gate (shown when remote client has no control) -->
+  <!-- Remote Control Gate (shown when a remote client has no control).
+       The "Connecting to server..." spinner has been removed — for the
+       kiosk / local Electron path hasFullControl resolves to true
+       immediately, and remote browsers still fall through here once
+       the WebSocket handshake completes. During the brief pre-handshake
+       window nothing renders so the ground color is the Electron
+       BrowserWindow background rather than a spinner card. -->
   <RemoteControlGate
-    v-else-if="!hasFullControl"
+    v-if="remoteStateInitialized && !hasFullControl"
     :mobile="isMobileView"
     @open-file-manager="showGateFileManager = true"
   />
 
   <!-- File Manager Dialog (accessible from Remote Control Gate) -->
   <FileManagerDialog
-    v-if="!remoteStateLoading && !hasFullControl"
+    v-if="remoteStateInitialized && !hasFullControl"
     :show="showGateFileManager"
     :loading-disabled="true"
     @close="showGateFileManager = false"
@@ -1361,7 +1361,7 @@ const handleChannelChange = async (channel: string) => {
 };
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
-const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef, hasFullControl, remoteStateLoading, isLocalClient } = store;
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef, hasFullControl, remoteStateLoading, remoteStateInitialized, isLocalClient } = store;
 
 const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.senderStatus ?? 'connecting');
 

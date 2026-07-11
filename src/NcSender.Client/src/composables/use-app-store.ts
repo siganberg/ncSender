@@ -1117,6 +1117,7 @@ export function useAppStore() {
     unitsPreference,
     hasFullControl,
     remoteStateLoading,
+    remoteStateInitialized: readonly(remoteStateInitialized),
     isLocalClient: readonly(isLocalClient),
     serverVersion: readonly(serverVersion),
 
