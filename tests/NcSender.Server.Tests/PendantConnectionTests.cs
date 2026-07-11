@@ -41,6 +41,7 @@ public class PendantConnectionTests : IDisposable
         _settings = new Mock<ISettingsManager>();
         _settings.Setup(s => s.GetSetting<bool>("pendant.autoConnect", true)).Returns(true);
 
+        var dongleDevices = new Mock<IDongleDeviceService>();
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
             _controller.Object,
@@ -48,7 +49,8 @@ public class PendantConnectionTests : IDisposable
             serverContext.Object,
             jobManager.Object,
             commandProcessor.Object,
-            _settings.Object);
+            _settings.Object,
+            dongleDevices.Object);
     }
 
     public void Dispose()
