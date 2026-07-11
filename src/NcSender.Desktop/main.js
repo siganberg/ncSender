@@ -18,7 +18,13 @@ const HEALTH_URL = `${SERVER_URL}/api/health`;
 
 let mainWindow = null;
 let serverProcess = null;
-let isKiosk = process.argv.includes('--kiosk');
+// Kiosk mode is signalled either by the `--kiosk` CLI flag OR by the
+// `NCSENDER_KIOSK=1` env var. Prefer the env var on the Q6A kiosk so
+// that Chromium's own `--kiosk` switch isn't applied — that switch
+// forces the window fullscreen and visible before its first paint,
+// which reintroduces a bright pre-render flash regardless of the
+// BrowserWindow `show: false`.
+let isKiosk = process.argv.includes('--kiosk') || process.env.NCSENDER_KIOSK === '1';
 
 // ── Server lifecycle ────────────────────────────────────────────────────────
 
