@@ -134,7 +134,11 @@ function createWindow() {
     // window. `ready-to-show` fires after the renderer's first frame.
     show: false,
     backgroundColor: '#1a1a2e',
-    kiosk: isKiosk,
+    // Kiosk is deferred to the `ready-to-show` handler — `kiosk: true`
+    // at construction forces the window fullscreen and visible before
+    // Chromium has painted anything, which reintroduces the white
+    // flash we're trying to prevent.
+    kiosk: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -212,7 +216,9 @@ app.whenReady().then(async () => {
   // call `.show()`. Trigger that on `ready-to-show`, which fires after
   // the renderer has painted its first frame — no white flash.
   mainWindow.once('ready-to-show', () => {
-    if (!isKiosk) {
+    if (isKiosk) {
+      mainWindow.setKiosk(true);
+    } else {
       try {
         mainWindow.maximize();
       } catch {
