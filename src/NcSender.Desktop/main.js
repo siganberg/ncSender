@@ -128,7 +128,11 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    show: true,
+    // Don't show the window until Chromium has actually painted the
+    // page — Electron's backgroundColor is unreliable on Linux and
+    // shows white during the "compositor is up but no page yet"
+    // window. `ready-to-show` fires after the renderer's first frame.
+    show: false,
     backgroundColor: '#1a1a2e',
     kiosk: isKiosk,
     autoHideMenuBar: true,
@@ -147,16 +151,9 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(winOptions);
-
-  if (!isKiosk) {
-    try {
-      mainWindow.maximize();
-    } catch {
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { x, y, width, height } = primaryDisplay.workArea;
-      mainWindow.setBounds({ x, y, width, height });
-    }
-  }
+  // Maximize is deferred to the `ready-to-show` handler in the app
+  // lifecycle block; calling it here would force the window to appear
+  // and defeat the `show: false` flash-suppression.
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -212,6 +209,21 @@ app.whenReady().then(async () => {
   const appUrl = `http://localhost:${SERVER_PORT}`;
   mainWindow.webContents.on('did-fail-load', () => {
     setTimeout(() => mainWindow.loadURL(appUrl), 200);
+  });
+  // `show: false` on the BrowserWindow means it doesn't appear until we
+  // call `.show()`. Trigger that on `ready-to-show`, which fires after
+  // the renderer has painted its first frame — no white flash.
+  mainWindow.once('ready-to-show', () => {
+    if (!isKiosk) {
+      try {
+        mainWindow.maximize();
+      } catch {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { x, y, width, height } = primaryDisplay.workArea;
+        mainWindow.setBounds({ x, y, width, height });
+      }
+    }
+    mainWindow.show();
   });
 
   startServer();
