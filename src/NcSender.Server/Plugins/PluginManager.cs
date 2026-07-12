@@ -300,7 +300,16 @@ public class PluginManager : IPluginManager
         }
     }
 
-    // SaveSettings: write to shared plugin-config dir (V1-compatible)
+    // SaveSettings: write to shared plugin-config dir (V1-compatible).
+    // The engine reload + tool-settings sync are dispatched to a background
+    // task on purpose: both take JsPluginEngine's global _lock, which is
+    // ALSO held during any in-flight plugin JS callback (onBeforeCommand,
+    // onAfterJobEnd, etc.) and during `context.showDialog()` waits (which
+    // can block up to 10 minutes). Doing the reload inline would let the
+    // PUT /api/plugins/{id}/settings request block on that lock — the
+    // plugin's own Save button spins forever waiting for the response.
+    // Running it in the background lets the PUT return immediately after
+    // the config file is on disk; the reload happens when the lock frees.
     public void SaveSettings(string pluginId, Dictionary<string, JsonElement> settings)
     {
         var configDir = Path.Combine(PathUtils.GetPluginConfigDir(), pluginId);
@@ -310,15 +319,22 @@ public class PluginManager : IPluginManager
         var json = JsonSerializer.Serialize(settings, NcSenderJsonContext.Default.DictionaryStringJsonElement);
         File.WriteAllText(configPath, json);
 
-        // Reload JS engine with new settings if plugin is loaded
         if (_jsEngine.HasPlugin(pluginId))
         {
-            var manifest = LoadManifest(pluginId);
-            if (manifest is not null)
-                TryLoadCommandPlugin(pluginId, manifest);
-
-            // Re-sync tool settings
-            SyncToolSettingsOnEnable(pluginId);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var manifest = LoadManifest(pluginId);
+                    if (manifest is not null)
+                        TryLoadCommandPlugin(pluginId, manifest);
+                    SyncToolSettingsOnEnable(pluginId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Deferred plugin reload/tool-sync failed for {PluginId}", pluginId);
+                }
+            });
         }
     }
 
