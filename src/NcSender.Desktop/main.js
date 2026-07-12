@@ -140,14 +140,6 @@ function createWindow() {
     // window. `ready-to-show` fires after the renderer's first frame.
     show: false,
     backgroundColor: '#1a1a2e',
-    // transparent + frame:false makes Chromium clear the WebContents
-    // surface with alpha=0 instead of the default white — so whatever
-    // is behind (swaybg's #1a1a2e Wayland background) shows through
-    // during the tiny window between `show()` and the first React
-    // frame landing. Eliminates the residual white flash that
-    // `show: false + ready-to-show` alone leaves behind.
-    transparent: true,
-    frame: false,
     // Kiosk is deferred to the `ready-to-show` handler — `kiosk: true`
     // at construction forces the window fullscreen and visible before
     // Chromium has painted anything, which reintroduces the white
