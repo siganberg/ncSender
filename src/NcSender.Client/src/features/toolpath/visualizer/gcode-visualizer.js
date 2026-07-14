@@ -443,6 +443,11 @@ class GCodeVisualizer {
             const zMatch = cleanLine.match(/Z([-+]?\d*\.?\d+)/);
             const iMatch = cleanLine.match(/I([-+]?\d*\.?\d+)/);
             const jMatch = cleanLine.match(/J([-+]?\d*\.?\d+)/);
+            // Alternative arc format: G2/G3 X.. Y.. R<radius>. R replaces
+            // I/J — center is derived geometrically from start + end + R.
+            // Sign convention (RS274/NGC): +R = short arc (<= 180°),
+            // -R = long arc (> 180°).
+            const rMatch = cleanLine.match(/\bR([-+]?\d*\.?\d+)/);
             const tMatch = cleanLine.match(/\bT(\d+)\b/);
             const sMatch = cleanLine.match(/S([-+]?\d*\.?\d+)/);
 
@@ -544,13 +549,56 @@ class GCodeVisualizer {
                 const lineStartDist = runningDistance;
 
                 if (lastMoveType === 2 || lastMoveType === 3) {
-                    // Arc move - compute in work coordinates, then transform to machine
-                    const i = iMatch ? parseFloat(iMatch[1]) * unitScale : 0;
-                    const j = jMatch ? parseFloat(jMatch[1]) * unitScale : 0;
-
-                    const centerX = currentPos.x + i;
-                    const centerY = currentPos.y + j;
-                    const radius = Math.sqrt(i * i + j * j);
+                    // Arc move - compute in work coordinates, then transform to machine.
+                    // Two center-specification formats per RS274/NGC:
+                    //   1. I/J: signed offsets from start to arc center.
+                    //   2. R:   signed radius. Center is derived from start + end + R.
+                    //          |R| = radius. R > 0 selects the short arc (<= 180°);
+                    //          R < 0 selects the long arc (> 180°).
+                    let centerX, centerY, radius;
+                    if (!iMatch && !jMatch && rMatch) {
+                        const rSigned = parseFloat(rMatch[1]) * unitScale;
+                        radius = Math.abs(rSigned);
+                        const dx = newPos.x - currentPos.x;
+                        const dy = newPos.y - currentPos.y;
+                        const chord = Math.sqrt(dx * dx + dy * dy);
+                        if (chord > 1e-9 && radius >= chord / 2 - 1e-6) {
+                            // Midpoint of the chord and perpendicular unit vector.
+                            const mx = (currentPos.x + newPos.x) / 2;
+                            const my = (currentPos.y + newPos.y) / 2;
+                            const clampedH = Math.max(0, radius * radius - (chord / 2) * (chord / 2));
+                            const h = Math.sqrt(clampedH);
+                            // Perpendicular to chord: (-dy, dx) / chord.
+                            const px = -dy / chord;
+                            const py = dx / chord;
+                            // Center side relative to the S→E travel vector, given
+                            // perpendicular P = (-dy, dx)/chord (points to the LEFT):
+                            //   G2 + short arc  -> right side  (sign -1)
+                            //   G2 + long arc   -> left side   (sign +1)
+                            //   G3 + short arc  -> left side   (sign +1)
+                            //   G3 + long arc   -> right side  (sign -1)
+                            // I.e. sign = -1 iff (isG2 XOR isLong).
+                            const isG2 = lastMoveType === 2;
+                            const isLong = rSigned < 0;
+                            const xor = isG2 !== isLong;
+                            const sign = xor ? -1 : 1;
+                            centerX = mx + sign * h * px;
+                            centerY = my + sign * h * py;
+                        } else {
+                            // Degenerate: |R| too small to reach endpoint, or start == end.
+                            // Fall back to a straight line by centering at midpoint with
+                            // effective zero radius so ArcCurve renders a near-line segment.
+                            centerX = (currentPos.x + newPos.x) / 2;
+                            centerY = (currentPos.y + newPos.y) / 2;
+                            radius = Math.max(radius, chord / 2);
+                        }
+                    } else {
+                        const i = iMatch ? parseFloat(iMatch[1]) * unitScale : 0;
+                        const j = jMatch ? parseFloat(jMatch[1]) * unitScale : 0;
+                        centerX = currentPos.x + i;
+                        centerY = currentPos.y + j;
+                        radius = Math.sqrt(i * i + j * j);
+                    }
                     const startAngle = Math.atan2(currentPos.y - centerY, currentPos.x - centerX);
                     const endAngle = Math.atan2(newPos.y - centerY, newPos.x - centerX);
 

@@ -18,7 +18,13 @@ const HEALTH_URL = `${SERVER_URL}/api/health`;
 
 let mainWindow = null;
 let serverProcess = null;
-let isKiosk = process.argv.includes('--kiosk');
+// Kiosk mode is signalled either by the `--kiosk` CLI flag OR by the
+// `NCSENDER_KIOSK=1` env var. Prefer the env var on the Q6A kiosk so
+// that Chromium's own `--kiosk` switch isn't applied — that switch
+// forces the window fullscreen and visible before its first paint,
+// which reintroduces a bright pre-render flash regardless of the
+// BrowserWindow `show: false`.
+let isKiosk = process.argv.includes('--kiosk') || process.env.NCSENDER_KIOSK === '1';
 
 // ── Server lifecycle ────────────────────────────────────────────────────────
 
@@ -128,9 +134,17 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    show: true,
+    // Don't show the window until Chromium has actually painted the
+    // page — Electron's backgroundColor is unreliable on Linux and
+    // shows white during the "compositor is up but no page yet"
+    // window. `ready-to-show` fires after the renderer's first frame.
+    show: false,
     backgroundColor: '#1a1a2e',
-    kiosk: isKiosk,
+    // Kiosk is deferred to the `ready-to-show` handler — `kiosk: true`
+    // at construction forces the window fullscreen and visible before
+    // Chromium has painted anything, which reintroduces the white
+    // flash we're trying to prevent.
+    kiosk: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -147,16 +161,9 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(winOptions);
-
-  if (!isKiosk) {
-    try {
-      mainWindow.maximize();
-    } catch {
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { x, y, width, height } = primaryDisplay.workArea;
-      mainWindow.setBounds({ x, y, width, height });
-    }
-  }
+  // Maximize is deferred to the `ready-to-show` handler in the app
+  // lifecycle block; calling it here would force the window to appear
+  // and defeat the `show: false` flash-suppression.
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -202,37 +209,55 @@ app.whenReady().then(async () => {
   registerShortcuts();
   createWindow();
 
-  // Show a loading page that polls the server and redirects when ready.
-  // This shows the window immediately instead of a blank screen for 15+ seconds.
-  // Read the SVG logo and encode it for embedding in the loader page
-  const fs = require('fs');
-  let logoSrc = '';
-  try {
-    const svgPath = path.join(__dirname, 'Assets', 'ncsender-light.svg');
-    const svgData = fs.readFileSync(svgPath);
-    logoSrc = `data:image/svg+xml;base64,${svgData.toString('base64')}`;
-  } catch { /* fall back to text */ }
+  // Server starts fast enough now (~1s from launch to /api/health OK on
+  // the Q6A kiosk) that we can skip the intermediate loader page and
+  // point Chromium at the app URL directly. If Chromium reaches the URL
+  // before the server accepts connections it fires `did-fail-load`; we
+  // retry every 200ms until it succeeds. The BrowserWindow background
+  // is `#1a1a2e` so the pre-load window matches the app's ground —
+  // no white flash, no visible spinner.
+  const appUrl = `http://localhost:${SERVER_PORT}`;
 
-  const loaderHtml = `data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
-<html><head><style>
-  body { margin: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e0e0e0; }
-  .container { text-align: center; }
-  .logo { width: 120px; height: auto; animation: pulse 2s ease-in-out infinite; margin-bottom: 16px; }
-  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
-  .text { font-size: 18px; opacity: 0.5; }
-</style></head>
-<body><div class="container">${logoSrc ? `<img class="logo" src="${logoSrc}" alt="ncSender" />` : '<div style="font-size:28px;font-weight:700;animation:pulse 2s ease-in-out infinite;margin-bottom:16px;">ncSender</div>'}<div class="text">Starting...</div></div>
-<script>
-  function poll() {
-    fetch('http://localhost:${SERVER_PORT}/api/health')
-      .then(r => { if (r.ok) window.location.href = 'http://localhost:${SERVER_PORT}'; else setTimeout(poll, 300); })
-      .catch(() => setTimeout(poll, 300));
-  }
-  poll();
-</script></body></html>`)}`;
-  mainWindow.loadURL(loaderHtml);
+  // `show: false` on the BrowserWindow means it doesn't appear until we
+  // call `.show()`. Trigger that on `ready-to-show`, which fires after
+  // the renderer has painted its first frame — no white flash.
+  mainWindow.once('ready-to-show', () => {
+    if (isKiosk) {
+      mainWindow.setKiosk(true);
+    } else {
+      try {
+        mainWindow.maximize();
+      } catch {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { x, y, width, height } = primaryDisplay.workArea;
+        mainWindow.setBounds({ x, y, width, height });
+      }
+    }
+    mainWindow.show();
+  });
 
+  // Wait for the server to accept connections BEFORE calling loadURL —
+  // an earlier version used `did-fail-load` + `setTimeout` retry, but
+  // that let Chromium briefly render its network-error page (which is
+  // white) before the retry succeeded, and `ready-to-show` fired with
+  // that error page as content. Polling here means loadURL only ever
+  // sees a live server.
   startServer();
+  const http = require('http');
+  const waitForServer = () => new Promise((resolve) => {
+    const tryOnce = () => {
+      const req = http.get(`${appUrl}/api/health`, (res) => {
+        res.resume();
+        if (res.statusCode === 200) return resolve();
+        setTimeout(tryOnce, 100);
+      });
+      req.on('error', () => setTimeout(tryOnce, 100));
+      req.setTimeout(1000, () => { req.destroy(); setTimeout(tryOnce, 100); });
+    };
+    tryOnce();
+  });
+  await waitForServer();
+  mainWindow.loadURL(appUrl);
 });
 
 app.on('window-all-closed', () => {

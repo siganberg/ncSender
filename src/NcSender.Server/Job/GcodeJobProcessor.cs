@@ -210,10 +210,17 @@ internal class GcodeJobProcessor
         job.RuntimeSec = Math.Round(elapsedSec - pausedSec, 2);
         job.ActualElapsedSec = Math.Round(elapsedSec, 2);
 
-        if (executingLine > 0 && totalLines > executingLine)
+        // V1 behavior: Remaining is a straight countdown from the load-time
+        // estimate — EstimatedSec minus non-paused RuntimeSec. It never jumps
+        // around because we do NOT recompute a per-line rate at runtime, and
+        // it is allowed to go negative once the actual run overshoots the
+        // estimate (the client renders "+HH:MM:SS" for negative values).
+        // Recomputing from `RuntimeSec / executingLine * (totalLines - line)`
+        // (the previous V2 formula) makes it swing every time a fast/slow
+        // block runs. Only the estimated total, not the pace, drives Remaining.
+        if (job.EstimatedSec.HasValue)
         {
-            var secPerLine = job.RuntimeSec / executingLine;
-            job.RemainingSec = Math.Round(secPerLine * (totalLines - executingLine), 2);
+            job.RemainingSec = Math.Round(job.EstimatedSec.Value - job.RuntimeSec, 2);
         }
 
         // No explicit broadcast here — CncEventBridge broadcasts state delta on every

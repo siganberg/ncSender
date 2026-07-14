@@ -58,6 +58,9 @@ export function analyzeGCodeBounds(gcodeContent: string): TransformBounds {
     const yMatch = trimmed.match(/Y([+-]?\d*\.?\d+)/);
     const iMatch = trimmed.match(/I([+-]?\d*\.?\d+)/);
     const jMatch = trimmed.match(/J([+-]?\d*\.?\d+)/);
+    // R-format arcs: G2/G3 X.. Y.. R<radius>. Sign of R selects short (+)
+    // vs long (-) arc per RS274/NGC.
+    const rMatch = trimmed.match(/\bR([+-]?\d*\.?\d+)/);
 
     const startX = currentX;
     const startY = currentY;
@@ -75,22 +78,47 @@ export function analyzeGCodeBounds(gcodeContent: string): TransformBounds {
     }
 
     // Handle arcs
-    const isArc = (motionMode === 2 || motionMode === 3) && (iMatch || jMatch);
+    const isArc = (motionMode === 2 || motionMode === 3) && (iMatch || jMatch || rMatch);
 
     if (isArc) {
-      const i = iMatch ? parseFloat(iMatch[1]) : 0;
-      const j = jMatch ? parseFloat(jMatch[1]) : 0;
-
-      let centerX: number, centerY: number;
-      if (isArcAbsolute) {
-        centerX = i;
-        centerY = j;
+      let centerX: number, centerY: number, radius: number;
+      if (!iMatch && !jMatch && rMatch) {
+        const rSigned = parseFloat(rMatch[1]);
+        radius = Math.abs(rSigned);
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const chord = Math.sqrt(dx * dx + dy * dy);
+        if (chord > 1e-9 && radius >= chord / 2 - 1e-6) {
+          const mx = (startX + endX) / 2;
+          const my = (startY + endY) / 2;
+          const clampedH = Math.max(0, radius * radius - (chord / 2) * (chord / 2));
+          const h = Math.sqrt(clampedH);
+          const px = -dy / chord;
+          const py = dx / chord;
+          const isG2 = motionMode === 2;
+          const isLong = rSigned < 0;
+          const xor = isG2 !== isLong;
+          const sign = xor ? -1 : 1;
+          centerX = mx + sign * h * px;
+          centerY = my + sign * h * py;
+        } else {
+          centerX = (startX + endX) / 2;
+          centerY = (startY + endY) / 2;
+          radius = Math.max(radius, chord / 2);
+        }
       } else {
-        centerX = startX + i;
-        centerY = startY + j;
+        const i = iMatch ? parseFloat(iMatch[1]) : 0;
+        const j = jMatch ? parseFloat(jMatch[1]) : 0;
+        if (isArcAbsolute) {
+          centerX = i;
+          centerY = j;
+        } else {
+          centerX = startX + i;
+          centerY = startY + j;
+        }
+        radius = Math.sqrt(Math.pow(startX - centerX, 2) + Math.pow(startY - centerY, 2));
       }
 
-      const radius = Math.sqrt(Math.pow(startX - centerX, 2) + Math.pow(startY - centerY, 2));
       const startAngle = Math.atan2(startY - centerY, startX - centerX);
       const endAngle = Math.atan2(endY - centerY, endX - centerX);
       const isG2 = motionMode === 2;

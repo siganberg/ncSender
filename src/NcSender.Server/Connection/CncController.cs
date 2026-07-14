@@ -600,8 +600,12 @@ public partial class CncController : ICncController
                 FlushQueue("soft-reset");
                 StopReceived?.Invoke();
             }
-            else if (command == "!")
+            else if (command == "!" || command == "\x84")
             {
+                // "!" = feed hold, "\x84" = grblHAL toggle safety-door / park.
+                // Both put the machine into Hold and are how the client's "Pause"
+                // action reaches us (which one depends on the "Park on Pause"
+                // setting). Either should flip job.Status to "paused".
                 PauseReceived?.Invoke();
             }
             else if (command == "~")

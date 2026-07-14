@@ -71,7 +71,7 @@
       <template v-else>
         <div class="meta-item">
           <span class="label">Remaining</span>
-          <span class="value" :class="{ 'time-exceeded': isTimeExceeded }">{{ remainingDisplay }}</span>
+          <span class="value" :class="{ 'time-exceeded': isTimeExceeded, 'time-paused': isPaused }">{{ remainingDisplay }}</span>
         </div>
         <div class="meta-item"></div>
         <div class="meta-item">
@@ -84,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { api } from '@/lib/api.js';
 
@@ -139,11 +139,54 @@ const effectiveElapsedSec = computed(() => Math.max(0, Number(runtimeSecFromServ
 
 const isCompleted = computed(() => statusRaw.value === 'completed');
 const isStopped = computed(() => statusRaw.value === 'stopped');
+const isPaused = computed(() => statusRaw.value === 'paused');
 const isFinished = computed(() => isCompleted.value || isStopped.value);
 
+// Server-reported remaining is a straight countdown (EstimatedSec - RuntimeSec),
+// but server broadcasts land in bursts (~100 ms status reports + WS jitter). If
+// the browser skips a message, the displayed H:MM:SS visibly jumps by 2 s.
+// We interpolate locally on a 500 ms ticker: snapshot the server value + wall-
+// clock at each server update, then subtract the local elapsed since that snap
+// while running. Pause / stop / complete freeze the tick.
+const serverRemainingSnap = ref<number | null>(null);
+const serverRemainingSnapAtMs = ref<number>(0);
+const nowMs = ref<number>(Date.now());
+
+watch(
+  () => store.serverState?.jobLoaded?.remainingSec,
+  (v) => {
+    if (typeof v === 'number') {
+      // Ignore server updates while paused — pause freezes Remaining. The
+      // server's UpdateProgress shouldn't fire during pause, but even if a
+      // stale broadcast lands during the running→paused transition, we hold
+      // the value we had at the moment of pause.
+      if (statusRaw.value === 'paused') return;
+      serverRemainingSnap.value = v;
+      serverRemainingSnapAtMs.value = Date.now();
+      nowMs.value = serverRemainingSnapAtMs.value;
+    } else {
+      serverRemainingSnap.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+// Half-second ticker keeps the display smooth even when the server-state
+// message stream stalls briefly. Only advances while running — pause/stop/
+// complete keep the last snapshot value.
+const tickHandle = window.setInterval(() => {
+  if (statusRaw.value === 'running') {
+    nowMs.value = Date.now();
+  }
+}, 500);
+onBeforeUnmount(() => window.clearInterval(tickHandle));
+
 const currRemainingSec = computed(() => {
-  const v = store.serverState?.jobLoaded?.remainingSec as number | null | undefined;
-  return typeof v === 'number' ? v : null;
+  const snap = serverRemainingSnap.value;
+  if (snap === null) return null;
+  if (statusRaw.value !== 'running') return snap;
+  const deltaSec = (nowMs.value - serverRemainingSnapAtMs.value) / 1000;
+  return snap - deltaSec;
 });
 
 const isTimeExceeded = computed(() => {
@@ -275,6 +318,11 @@ async function handleClose() {
 .label { font-size: 12px; color: var(--color-text-secondary); }
 .value { font-variant-numeric: tabular-nums; color: var(--color-text-primary); white-space: nowrap; }
 .value.time-exceeded { color: #ff6b6b; font-weight: 600; }
+.value.time-paused { animation: value-blink 1s ease-in-out infinite; }
+@keyframes value-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
 
 @media (max-width: 959px) { .progress-card { padding: 10px; } .bar { height: 8px; } }
 </style>

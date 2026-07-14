@@ -15,6 +15,11 @@
     <link rel="stylesheet" href="/assets/styles/fonts.css" />
     <link rel="stylesheet" href="/assets/styles/theme.css" />
     <style>
+      /* Ground color for the HTML skeleton — Chromium's default is
+         white, which shows through as a bright flash between the
+         BrowserWindow becoming visible and Vue's theme.css getting
+         applied. Setting it here keeps the first paint dark. */
+      html, body { background: #1a1a2e; }
       .folder-dark { fill: color-mix(in srgb, var(--color-accent) 70%, black); }
       .folder-light { fill: var(--color-accent); }
       .upload-color { fill: var(--color-accent); }
