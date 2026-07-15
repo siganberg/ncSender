@@ -23,6 +23,7 @@ using NcSender.Server.Models;
 using NcSender.Server.ControllerFiles;
 using NcSender.Server.GcodeAnalysis;
 using NcSender.Server.Pendant;
+using NcSender.Server.Dongle;
 using NcSender.Server.Plugins;
 using NcSender.Server.Probing;
 using NcSender.Server.Tools;
@@ -136,7 +137,12 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IGcodeAnalyzer, GcodeStateAnalyzer>();
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
+        builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
+        builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
+                                     NcSender.Server.Devices.PluginSerialService>();
+        // For plugin-serial's server-side firmware download (bypasses browser CORS).
+        builder.Services.AddHttpClient();
 
         // Register source-gen JSON context for AOT-compatible serialization.
         // In dev (JIT) mode the default reflection resolver is already present;
@@ -318,13 +324,20 @@ public static class ServerBuilder
         GcodeAnalysisEndpoints.Map(app);
         ControllerFileEndpoints.Map(app);
         PendantEndpoints.Map(app);
+        DongleEndpoints.Map(app);
         UpdateEndpoints.Map(app);
+        NcSender.Server.Devices.PluginSerialEndpoints.Map(app);
+        NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);
         SystemApi.SystemEndpoints.Map(app);
 
         // Eagerly resolve PendantManager so its constructor subscribes to
         // CncController.ConnectionStatusChanged before the controller connects.
         // Auto-connect will fire automatically when the CNC connection is established.
         app.Services.GetRequiredService<IPendantManager>();
+
+        // Eagerly resolve the dongle device service so its disconnect watchdog starts and the
+        // PendantManager (dongle reader) has it wired for "@name" addressed-device traffic.
+        app.Services.GetRequiredService<IDongleDeviceService>();
 
         // Restore last loaded program from previous session
         RestoreLastLoadedFile(app.Services);

@@ -926,6 +926,7 @@
     @close="showPendantDialog = false"
   />
 
+
     <!-- Plugin Dialog -->
     <PluginDialog />
 

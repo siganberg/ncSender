@@ -40,6 +40,13 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PluginToolMenuItem))]
 [JsonSerializable(typeof(List<PluginToolMenuItem>))]
 [JsonSerializable(typeof(PluginUpdateInfo))]
+// Dongle addressed-device bridge (generic; accessory plugins own payload semantics)
+[JsonSerializable(typeof(DongleDeviceInfo))]
+[JsonSerializable(typeof(List<DongleDeviceInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<DongleDeviceInfo>))]
+[JsonSerializable(typeof(DongleSendRequest))]
+[JsonSerializable(typeof(DongleDeviceMessage))]
+[JsonSerializable(typeof(DongleDeviceChanged))]
 // Pendant
 [JsonSerializable(typeof(PendantStatus))]
 [JsonSerializable(typeof(PendantFirmwareInfo))]
@@ -144,6 +151,12 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(WsFlashProgress))]
 [JsonSerializable(typeof(WsFlashMessage))]
 [JsonSerializable(typeof(WsFlashError))]
+// Generic plugin-facing serial / OTA API
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeRequest))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeResult))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaEvent))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaStatus))]
+[JsonSerializable(typeof(NcSender.Server.Devices.PluginOtaFromUrlRequest))]
 public partial class NcSenderJsonContext : JsonSerializerContext;
 
 // SSE message types for AOT-safe serialization

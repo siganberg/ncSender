@@ -17,6 +17,7 @@ public class PendantManager : IPendantManager
     private readonly IJobManager _jobManager;
     private readonly ICommandProcessor _commandProcessor;
     private readonly ISettingsManager _settingsManager;
+    private readonly IDongleDeviceService _dongleDevices;   // shares the dongle; fed "@name" addressed-device lines
     private PendantSerialHandler? _serialHandler;  // Active data handler (dongle preferred, USB fallback)
     private PendantWifiInfo? _lastWifiInfo;
     private CancellationTokenSource? _flashCts;
@@ -58,7 +59,8 @@ public class PendantManager : IPendantManager
         IServerContext serverContext,
         IJobManager jobManager,
         ICommandProcessor commandProcessor,
-        ISettingsManager settingsManager)
+        ISettingsManager settingsManager,
+        IDongleDeviceService dongleDevices)
     {
         _logger = logger;
         _controller = controller;
@@ -67,6 +69,12 @@ public class PendantManager : IPendantManager
         _jobManager = jobManager;
         _commandProcessor = commandProcessor;
         _settingsManager = settingsManager;
+        _dongleDevices = dongleDevices;
+
+        // Give the dongle device service a path to send "@name" commands out over the
+        // dongle (read at call-time, so it follows dongle connect/disconnect).
+        _dongleDevices.SetSender(line =>
+            _dongleHandler is not null ? _dongleHandler.SendRawAsync(line) : Task.CompletedTask);
 
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
@@ -710,6 +718,15 @@ public class PendantManager : IPendantManager
                 _logger.LogInformation("Setting dongle as active data handler (ESP-NOW priority)");
                 DetachDonglePromotionListener();
                 SetActiveHandler(_dongleHandler);
+                // Seed the paired-device table from the dongle's persistent NVS. Fire
+                // after a short delay so the handler has finished its handshake, and
+                // don't block the attach path on the reply (async fire-and-forget).
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                    try { await _dongleDevices.RequestDevicesAsync().ConfigureAwait(false); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to seed paired-device list from dongle"); }
+                });
                 break;
         }
 
@@ -929,6 +946,15 @@ public class PendantManager : IPendantManager
             if (_otaResponseHandler is not null && data.StartsWith("$OTA:"))
             {
                 _otaResponseHandler(data);
+                return;
+            }
+
+            // Addressed device traffic "@name payload" (e.g. "@autodustboot status …")
+            // is routed to its manager, not the pendant command path. Same route also
+            // catches "$DEVICES:<name>" replies used to seed the paired-device list.
+            if (data.StartsWith('@') || data.StartsWith("$DEVICES:", StringComparison.Ordinal))
+            {
+                _dongleDevices.OnDongleLine(data);
                 return;
             }
 

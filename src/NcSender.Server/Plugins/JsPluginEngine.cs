@@ -16,6 +16,7 @@ public class JsPluginEngine : IJsPluginEngine
     private readonly ILogger<JsPluginEngine> _logger;
     private readonly PluginDialogDispatcher _dialogs;
     private readonly IToolService _toolService;
+    private readonly IDongleDeviceService _dongleDevices;
     private readonly Dictionary<string, PluginState> _plugins = new();
     private readonly Lock _lock = new();
 
@@ -26,11 +27,12 @@ public class JsPluginEngine : IJsPluginEngine
         public int Priority { get; init; }
     }
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices)
     {
         _logger = logger;
         _dialogs = dialogs;
         _toolService = toolService;
+        _dongleDevices = dongleDevices;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -336,6 +338,40 @@ public class JsPluginEngine : IJsPluginEngine
                 return engine.Intrinsics.Array.Construct(Array.Empty<JsValue>());
             }
         }));
+
+        // Generic bridge to "@name" ESP-NOW accessories reachable through the dongle.
+        // Additive: existing plugins that never touch ctx.dongle are unaffected.
+        var dongle = new JsObject(engine);
+
+        // dongle.send(name, payload) — frame "@name payload" out over the dongle.
+        dongle.Set("send", new ClrFunction(engine, "send", (_, args) =>
+        {
+            var name = args.Length > 0 && args[0].IsString() ? args[0].AsString() : "";
+            var payload = args.Length > 1 && args[1].IsString() ? args[1].AsString() : "";
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(payload))
+                return JsValue.Undefined;
+            _dongleDevices.SendAsync(name.Trim(), payload.Trim());
+            return JsValue.Undefined;
+        }));
+
+        // dongle.getDevices() — array of {name, connected, lastSeenMs, lastMessage}.
+        dongle.Set("getDevices", new ClrFunction(engine, "getDevices", (_, _) =>
+        {
+            var devices = _dongleDevices.GetDevices();
+            var arr = engine.Intrinsics.Array.Construct(
+                devices.Select(d =>
+                {
+                    var obj = new JsObject(engine);
+                    obj.Set("name", JsValue.FromObject(engine, d.Name));
+                    obj.Set("connected", JsValue.FromObject(engine, d.Connected));
+                    obj.Set("lastSeenMs", JsValue.FromObject(engine, d.LastSeenMs));
+                    obj.Set("lastMessage", d.LastMessage is null ? JsValue.Null : JsValue.FromObject(engine, d.LastMessage));
+                    return (JsValue)obj;
+                }).ToArray());
+            return arr;
+        }));
+
+        ctx.Set("dongle", dongle);
 
         return ctx;
     }

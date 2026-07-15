@@ -221,7 +221,6 @@ const onWorkspaceChange = (e: Event) => {
 };
 
 const pendantConnectionType = computed(() => props.pendantConnectionType ?? null);
-
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
 
 // Check if door is open via Pn pin state (even if status is idle)
