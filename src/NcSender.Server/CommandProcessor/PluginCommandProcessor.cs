@@ -109,7 +109,7 @@ public class PluginCommandProcessor : ICommandProcessor
         var tools = await _toolService.GetAllAsync();
         foreach (var pluginId in pluginIds)
         {
-            commands = _jsEngine.ProcessOnBeforeCommand(pluginId, commands, context, tools);
+            commands = await _jsEngine.ProcessOnBeforeCommandAsync(pluginId, commands, context, tools);
         }
 
         // If plugin didn't modify (single original command), use inner processor directly
