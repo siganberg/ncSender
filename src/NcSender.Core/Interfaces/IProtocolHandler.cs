@@ -73,6 +73,14 @@ public interface IProtocolHandler
     bool TryHandleData(string line, MachineState state, out bool stateChanged);
 
     /// <summary>
+    /// Returns true if a line already consumed by TryHandleData should also be
+    /// hidden from the terminal echo (e.g. FluidNC's spindle-sync chatter, which
+    /// only feeds the RPM gauge). Defaults to false so handled lines keep
+    /// appearing in the terminal exactly as before.
+    /// </summary>
+    bool ShouldSuppressEcho(string line) => false;
+
+    /// <summary>
     /// Parse an error line and return the error code and message.
     /// Returns true if this handler recognized the error format.
     /// </summary>

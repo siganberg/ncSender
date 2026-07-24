@@ -153,6 +153,144 @@ public class GrblParserTests
         Assert.True(state.Homed);
     }
 
+    [Theory]
+    [InlineData("[MSG:INFO: Current speed is 4638]", 4638)]
+    [InlineData("[MSG:INFO: Current speed is 5982]", 5982)]
+    public void FluidNC_TryHandleData_CurrentSpeed_UpdatesMeasuredRpm(string line, double expected)
+    {
+        var protocol = new FluidNcProtocol();
+        // Spindle commanded on (target > 0).
+        var state = new MachineState { SpindleRpmTarget = 5000, SpindleRpmActual = 1234 };
+
+        // "Current speed is N" is the VFD's live measured rpm — it drives the gauge.
+        var handled = protocol.TryHandleData(line, state, out var changed);
+
+        Assert.True(handled);
+        Assert.True(changed);
+        Assert.Equal(expected, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_TryHandleData_CurrentSpeed_SameValue_NoStateChange()
+    {
+        var protocol = new FluidNcProtocol();
+        var state = new MachineState { SpindleRpmTarget = 5000, SpindleRpmActual = 4638 };
+
+        var handled = protocol.TryHandleData("[MSG:INFO: Current speed is 4638]", state, out var changed);
+
+        Assert.True(handled);
+        Assert.False(changed);
+        Assert.Equal(4638, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_TryHandleData_CurrentSpeed_SpindleCommandedOff_Ignored()
+    {
+        var protocol = new FluidNcProtocol();
+        // target == 0 => spindle commanded off (M5). Coast-down readings must not
+        // bump the gauge back up.
+        var state = new MachineState { SpindleRpmTarget = 0, SpindleRpmActual = 0 };
+
+        var handled = protocol.TryHandleData("[MSG:INFO: Current speed is 234]", state, out var changed);
+
+        Assert.True(handled);
+        Assert.False(changed);
+        Assert.Equal(0, state.SpindleRpmActual);
+    }
+
+    [Theory]
+    [InlineData("[MSG:INFO: Syncing to 6000]")]
+    [InlineData("[MSG:INFO: Synced speed to 6000]")]
+    public void FluidNC_TryHandleData_DeviceUnitChatter_ConsumedButNeverTouchesRpm(string line)
+    {
+        var protocol = new FluidNcProtocol();
+        var state = new MachineState { SpindleRpmTarget = 5000, SpindleRpmActual = 4638 };
+
+        // These carry raw device units (Hz-based), not rpm — consumed to keep
+        // them out of the terminal, but must never move the gauge.
+        var handled = protocol.TryHandleData(line, state, out var changed);
+
+        Assert.True(handled);
+        Assert.False(changed);
+        Assert.Equal(4638, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_PostProcessStatus_SpindleCommandedOff_GraduallyDrainsToZero()
+    {
+        var protocol = new FluidNcProtocol();
+        // target == 0 (M5, with s0_with_disable) with the spindle still spinning.
+        var state = new MachineState
+        {
+            MPos = "0,0,0",
+            SpindleRpmTarget = 0,
+            SpindleRpmActual = 5982,
+        };
+
+        // One status poll drains partway — not an instant snap to 0.
+        protocol.PostProcessStatus(state, "Run");
+        Assert.True(state.SpindleRpmActual > 0, "should not snap straight to 0");
+        Assert.True(state.SpindleRpmActual < 5982, "should have drained");
+
+        // Successive polls converge to exactly 0.
+        for (var i = 0; i < 30; i++)
+            protocol.PostProcessStatus(state, "Idle");
+        Assert.Equal(0, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_PostProcessStatus_SpindleAlreadyStopped_StaysZero()
+    {
+        var protocol = new FluidNcProtocol();
+        var state = new MachineState { MPos = "0,0,0", SpindleRpmTarget = 0, SpindleRpmActual = 0 };
+
+        protocol.PostProcessStatus(state, "Idle");
+
+        Assert.Equal(0, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_PostProcessStatus_SpindleCommandedOn_KeepsMeasuredRpm()
+    {
+        var protocol = new FluidNcProtocol();
+        var state = new MachineState
+        {
+            MPos = "0,0,0",
+            SpindleRpmTarget = 5000,
+            SpindleRpmActual = 5982,
+        };
+
+        protocol.PostProcessStatus(state, "Run");
+
+        Assert.Equal(5982, state.SpindleRpmActual);
+    }
+
+    [Fact]
+    public void FluidNC_ShouldSuppressEcho_SpindleSyncChatter()
+    {
+        var protocol = new FluidNcProtocol();
+
+        Assert.True(protocol.ShouldSuppressEcho("[MSG:INFO: Syncing to 6000]"));
+        Assert.True(protocol.ShouldSuppressEcho("[MSG:INFO: Current speed is 144]"));
+        Assert.True(protocol.ShouldSuppressEcho("[MSG:INFO: Synced speed to 6000]"));
+
+        // Ordinary controller output must still reach the terminal.
+        Assert.False(protocol.ShouldSuppressEcho("[MSG:INFO: FluidNC v4.0.3]"));
+        Assert.False(protocol.ShouldSuppressEcho("ok"));
+    }
+
+    [Fact]
+    public void FluidNC_TryHandleData_UnrelatedMessage_NotHandled()
+    {
+        var protocol = new FluidNcProtocol();
+        var state = new MachineState();
+
+        var handled = protocol.TryHandleData("[MSG:INFO: FluidNC v4.0.3]", state, out var changed);
+
+        Assert.False(handled);
+        Assert.False(changed);
+    }
+
     [Fact]
     public void ParseStatusReport_ThreePartFS()
     {

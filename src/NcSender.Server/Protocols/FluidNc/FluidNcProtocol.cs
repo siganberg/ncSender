@@ -14,6 +14,12 @@ public class FluidNcProtocol : IProtocolHandler
     public bool SupportsSettingEnumeration => false;
     public string AlarmFetchCommand => "$A";
 
+    // Per-status-poll multiplier for the M5 measured-RPM coast-down, and the rpm
+    // below which the gauge snaps to 0. At ~200ms polls, 0.6 drains ~6000 rpm to
+    // 0 in roughly 2s — a natural friction-like spin-down.
+    private const double SpindleCoastDownFactor = 0.6;
+    private const double SpindleCoastDownFloorRpm = 50;
+
     public bool MatchesGreeting(string line)
     {
         // Require the canonical Grbl ready greeting — emitted only after the
@@ -46,6 +52,21 @@ public class FluidNcProtocol : IProtocolHandler
         // FluidNC has no H: field in status reports — always report as homed
         // so the UI doesn't gate on "homing required". Homing is up to the user.
         state.Homed = true;
+
+        // When the spindle is commanded off (M5 → FS commanded speed 0), drain the
+        // measured gauge to 0 gradually instead of snapping. FluidNC's real VFD
+        // coast-down readings stop early (polling ceases once it "gives up"),
+        // which is why the gauge used to stick — so we decay on each status poll
+        // (~200ms). The exponential shape mirrors friction-driven spin-down; the
+        // floor snaps the last sliver to 0 so it doesn't crawl. The commanded
+        // speed (FS) is the reliable off signal — it reaches 0 on M5 when the
+        // spindle is configured with s0_with_disable. (The A:/SpindleActive field
+        // is not emitted reliably by all FluidNC builds, so we don't use it.)
+        if (state.SpindleRpmTarget <= 0 && state.SpindleRpmActual > 0)
+        {
+            var drained = state.SpindleRpmActual * SpindleCoastDownFactor;
+            state.SpindleRpmActual = drained < SpindleCoastDownFloorRpm ? 0 : Math.Round(drained);
+        }
 
         // FluidNC doesn't send [AXS:...] like grblHAL — detect axes from MPos field count
         if (!string.IsNullOrEmpty(state.MPos))
@@ -124,12 +145,56 @@ public class FluidNcProtocol : IProtocolHandler
         return pn;
     }
 
+    // FluidNC has no measured-RPM field in its status report (FS is only
+    // "feedrate,commanded_speed"). For VFD spindles it instead streams the VFD's
+    // live measured RPM as "[MSG:INFO: Current speed is N]" while the speed is
+    // changing — the ramp up, the ramp down, and down to 0 on M5. That N is true
+    // measured rpm (e.g. H100 get_rpm reads output frequency), so we use it to
+    // drive the actual-RPM gauge.
+    //
+    // Its sibling logs "Syncing to N" / "Synced speed to N" report raw DEVICE
+    // units (Hz-based), not rpm, so they must NOT feed the gauge — they only get
+    // consumed to keep them out of the terminal.
+    //
+    // Notes: these logs require the spindle's `debug` option >= 2 (the default),
+    // and ModbusVFD does no steady-state speed polling (safety_polling=false), so
+    // between speed changes the last measured value is held rather than tracked.
+    private static readonly Regex VfdMeasuredSpeedPattern =
+        new(@"\[MSG:INFO:\s*Current speed is\s+(\d+)\s*\]",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex SpindleSyncMessagePattern =
+        new(@"\[MSG:INFO:\s*(?:Syncing to|Current speed is|Synced speed to)\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public bool TryHandleData(string line, MachineState state, out bool stateChanged)
     {
         stateChanged = false;
-        // TODO: Handle FluidNC-specific messages
-        return false;
+
+        var measured = VfdMeasuredSpeedPattern.Match(line);
+        if (measured.Success)
+        {
+            // Only track measured RPM while the spindle is commanded on. After M5
+            // the VFD emits a few coast-down readings before polling stops;
+            // ignoring them keeps the gauge from flickering off 0 (which
+            // PostProcessStatus also enforces on the next status report).
+            if (state.SpindleRpmTarget > 0
+                && double.TryParse(measured.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var rpm)
+                && state.SpindleRpmActual != rpm)
+            {
+                state.SpindleRpmActual = rpm;
+                stateChanged = true;
+            }
+            return true;
+        }
+
+        // "Syncing to N" / "Synced speed to N" — device units, consume only so
+        // they don't reach the terminal.
+        return SpindleSyncMessagePattern.IsMatch(line);
     }
+
+    public bool ShouldSuppressEcho(string line)
+        => SpindleSyncMessagePattern.IsMatch(line);
 
     // Match G54-G59 (workspace change) or M2/M30 (end-of-program reset) as
     // standalone tokens. Carveco-style files emit compound lines like

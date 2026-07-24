@@ -978,8 +978,11 @@ public partial class CncController : ICncController
             {
                 if (stateChanged)
                     StatusReportReceived?.Invoke(_lastStatus);
-                var sourceId = GetActiveSourceId();
-                DataReceived?.Invoke(trimmedData, sourceId);
+                if (!_activeProtocol.ShouldSuppressEcho(trimmedData))
+                {
+                    var sourceId = GetActiveSourceId();
+                    DataReceived?.Invoke(trimmedData, sourceId);
+                }
                 return;
             }
 
