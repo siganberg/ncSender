@@ -116,64 +116,71 @@ public class JsPluginEngine : IJsPluginEngine
         }
     }
 
-    public List<ProcessedCommand> ProcessOnBeforeCommand(
+    public Task<List<ProcessedCommand>> ProcessOnBeforeCommandAsync(
         string pluginId,
         List<ProcessedCommand> commands,
         CommandProcessorContext context,
         List<ToolInfo> tools)
     {
-        lock (_lock)
+        return Task.Run<List<ProcessedCommand>>(() =>
         {
-            if (!_plugins.TryGetValue(pluginId, out var state))
-                return commands;
-
-            try
+            lock (_lock)
             {
-                var engine = state.JintEngine;
+                if (!_plugins.TryGetValue(pluginId, out var state))
+                    return commands;
 
-                // Build JS-compatible commands array
-                var jsCommands = engine.Intrinsics.Array.Construct(
-                    commands.Select(c => (JsValue)BuildCommandObject(engine, c)).ToArray());
+                try
+                {
+                    var engine = state.JintEngine;
 
-                // Build context object with machineState and tools
-                var jsContext = new JsObject(engine);
-                var jsMachineState = new JsObject(engine);
-                jsMachineState.Set("tool", JsValue.FromObject(engine, context.MachineState.Tool));
-                jsContext.Set("machineState", jsMachineState);
-                jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
-                jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
-                jsContext.Set("sourceId", context.Meta?.SourceId is not null
-                    ? JsValue.FromObject(engine, context.Meta.SourceId)
-                    : JsValue.Null);
+                    // Build JS-compatible commands array
+                    var jsCommands = engine.Intrinsics.Array.Construct(
+                        commands.Select(c => (JsValue)BuildCommandObject(engine, c)).ToArray());
 
-                // Build tools array
-                var jsTools = engine.Intrinsics.Array.Construct(
-                    tools.Select(t =>
-                    {
-                        var jsTool = new JsObject(engine);
-                        jsTool.Set("toolNumber", JsValue.FromObject(engine, t.ToolNumber ?? 0));
-                        var jsOffsets = new JsObject(engine);
-                        jsOffsets.Set("x", JsValue.FromObject(engine, t.Offsets.X));
-                        jsOffsets.Set("y", JsValue.FromObject(engine, t.Offsets.Y));
-                        jsOffsets.Set("z", JsValue.FromObject(engine, t.Offsets.Tlo));
-                        jsOffsets.Set("tlsZ", JsValue.FromObject(engine, t.Offsets.Z));
-                        jsTool.Set("offsets", jsOffsets);
-                        return (JsValue)jsTool;
-                    }).ToArray());
-                jsContext.Set("tools", jsTools);
+                    // Build context object with machineState and tools
+                    var jsContext = new JsObject(engine);
+                    var jsMachineState = new JsObject(engine);
+                    jsMachineState.Set("tool", JsValue.FromObject(engine, context.MachineState.Tool));
+                    jsContext.Set("machineState", jsMachineState);
+                    jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
+                    jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
+                    jsContext.Set("sourceId", context.Meta?.SourceId is not null
+                        ? JsValue.FromObject(engine, context.Meta.SourceId)
+                        : JsValue.Null);
 
-                // Invoke onBeforeCommand(commands, context, settings)
-                var onBeforeCmd = engine.GetValue("onBeforeCommand");
-                var result = onBeforeCmd.Call(jsCommands, jsContext, state.CachedSettings);
+                    // Build tools array
+                    var jsTools = engine.Intrinsics.Array.Construct(
+                        tools.Select(t =>
+                        {
+                            var jsTool = new JsObject(engine);
+                            jsTool.Set("toolNumber", JsValue.FromObject(engine, t.ToolNumber ?? 0));
+                            var jsOffsets = new JsObject(engine);
+                            jsOffsets.Set("x", JsValue.FromObject(engine, t.Offsets.X));
+                            jsOffsets.Set("y", JsValue.FromObject(engine, t.Offsets.Y));
+                            jsOffsets.Set("z", JsValue.FromObject(engine, t.Offsets.Tlo));
+                            jsOffsets.Set("tlsZ", JsValue.FromObject(engine, t.Offsets.Z));
+                            jsTool.Set("offsets", jsOffsets);
+                            return (JsValue)jsTool;
+                        }).ToArray());
+                    jsContext.Set("tools", jsTools);
 
-                return ConvertResultToCommands(result);
+                    // Invoke onBeforeCommand(commands, context, settings)
+                    var onBeforeCmd = engine.GetValue("onBeforeCommand");
+                    var result = onBeforeCmd.Call(jsCommands, jsContext, state.CachedSettings);
+
+                    // If the plugin returned a Promise (e.g. async wireless-device wait),
+                    // pump Jint's microtask queue until it resolves. No-op for sync returns.
+                    result = result.UnwrapIfPromise();
+
+                    return ConvertResultToCommands(result);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "JS plugin {PluginId} onBeforeCommand failed", pluginId);
+                    return commands; // Fall through on error
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "JS plugin {PluginId} onBeforeCommand failed", pluginId);
-                return commands; // Fall through on error
-            }
-        }
+        });
     }
 
     private static ObjectInstance BuildCommandObject(Engine engine, ProcessedCommand cmd)

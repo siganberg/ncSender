@@ -8,7 +8,7 @@ public interface IJsPluginEngine
     void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0);
     void UnloadPlugin(string pluginId);
     bool HasPlugin(string pluginId);
-    List<ProcessedCommand> ProcessOnBeforeCommand(
+    Task<List<ProcessedCommand>> ProcessOnBeforeCommandAsync(
         string pluginId,
         List<ProcessedCommand> commands,
         CommandProcessorContext context,

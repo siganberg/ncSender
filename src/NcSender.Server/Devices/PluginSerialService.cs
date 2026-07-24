@@ -25,6 +25,14 @@ public sealed class PluginSerialService : IPluginSerialService
 {
     private const int DefaultBaud = 115200;
     private const int OtaChunkSize = 4096;
+    // Bytes per BaseStream.Write during OTA. The ESP32-S3 native-USB (HWCDC) RX
+    // can only absorb a few hundred bytes per burst before its 64-byte hardware
+    // FIFO overruns and silently drops bytes (there is no retransmit at this
+    // layer, so one lost byte stalls the flash permanently). A single 4 KB write
+    // bursts too fast on some USB hosts (notably Apple-silicon USB-C) and stalls
+    // mid-stream; flushing per 256 B paces the transfer so the device keeps up.
+    // The $OTA:ACK boundary is unchanged (still every OtaChunkSize bytes).
+    private const int OtaSubWriteSize = 256;
     private const int OtaInactivityTimeoutMs = 20000;
 
     private readonly ILogger<PluginSerialService> _logger;
@@ -86,9 +94,20 @@ public sealed class PluginSerialService : IPluginSerialService
                 if (!string.IsNullOrEmpty(request))
                     sp.Write(request);
 
+                // Native-USB (ESP32-S3) boards RESET when the port is opened, then
+                // take ~1s to boot before they can answer. A single request at t=80ms
+                // is easily missed. Re-send periodically across the window so the
+                // board gets a fresh request once it's up (it also buffers the first
+                // one, but don't rely on that). See ota-usb-pacing-fix notes.
                 var deadline = DateTime.UtcNow.AddMilliseconds(timeout);
+                var nextResend = DateTime.UtcNow.AddMilliseconds(400);
                 while (DateTime.UtcNow < deadline)
                 {
+                    if (!string.IsNullOrEmpty(request) && DateTime.UtcNow >= nextResend)
+                    {
+                        try { sp.Write(request); } catch { }
+                        nextResend = DateTime.UtcNow.AddMilliseconds(400);
+                    }
                     try
                     {
                         var line = sp.ReadLine()?.TrimEnd('\r');
@@ -247,9 +266,16 @@ public sealed class PluginSerialService : IPluginSerialService
             ct.ThrowIfCancellationRequested();
 
             var chunk = Math.Min(OtaChunkSize, data.Length - offset);
-            port.BaseStream.Write(data, offset, chunk);
-            port.BaseStream.Flush();
-            offset += chunk;
+            // Push this chunk in small sub-writes, flushing each, so the device's
+            // USB-Serial RX is never handed a burst larger than it can drain.
+            var chunkEnd = offset + chunk;
+            while (offset < chunkEnd)
+            {
+                var sub = Math.Min(OtaSubWriteSize, chunkEnd - offset);
+                port.BaseStream.Write(data, offset, sub);
+                port.BaseStream.Flush();
+                offset += sub;
+            }
 
             if (!await reader.WaitForAnyAsync(new[] { "$OTA:ACK" }, TimeSpan.FromSeconds(5), ct, allowProgress: true))
                 throw new IOException($"Device did not ACK chunk at byte {offset}");
