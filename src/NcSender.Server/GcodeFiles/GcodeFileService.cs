@@ -80,11 +80,25 @@ public class GcodeFileService : IGcodeFileService
             throw new FileNotFoundException($"File not found: {path}");
 
         var filename = Path.GetFileName(path);
-        var rawContent = await File.ReadAllTextAsync(fullPath);
-        var content = applyPluginTransforms ? ApplyPluginTransforms(rawContent, filename, path) : rawContent;
+        string content;
 
-        Directory.CreateDirectory(CacheDir);
-        await File.WriteAllTextAsync(CurrentCachePath, content);
+        // Restore path (applyPluginTransforms=false, called by RestoreLastLoadedFile
+        // at startup): prefer the existing cache if present. It already holds any
+        // prior plugin-injected content (e.g. AutoDustBoot $ADB_RETRACT/$ADB_EXPAND
+        // markers). Plugins can't run at boot (no clients connected, showDialog
+        // would hang the server), so re-reading raw source with no transforms
+        // would strip the markers and the resumed job would fail with error 71.
+        if (!applyPluginTransforms && File.Exists(CurrentCachePath))
+        {
+            content = await File.ReadAllTextAsync(CurrentCachePath);
+        }
+        else
+        {
+            var rawContent = await File.ReadAllTextAsync(fullPath);
+            content = applyPluginTransforms ? ApplyPluginTransforms(rawContent, filename, path) : rawContent;
+            Directory.CreateDirectory(CacheDir);
+            await File.WriteAllTextAsync(CurrentCachePath, content);
+        }
 
         var totalLines = content.Split('\n').Length;
         var estimatedSec = await CalculateEstimateAsync(content);
