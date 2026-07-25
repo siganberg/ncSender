@@ -256,6 +256,101 @@ public class PendantManager : IPendantManager
         await _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
     }
 
+    private const string DongleProduct = "ncsender-wireless-usb";
+
+    public async Task<DongleLicenseStatus> GetDongleLicenseAsync()
+    {
+        if (_dongleHandler is not { IsConnected: true })
+            return new DongleLicenseStatus(Connected: false, Licensed: false, DeviceId: "");
+
+        // "$LICENSE" -> "$LICENSE:<0|1> <deviceId> ncsender-wireless-usb"
+        var reply = await QueryDongleAsync("$LICENSE",
+            line => line.StartsWith("$LICENSE:", StringComparison.Ordinal), timeoutMs: 2000);
+        var parts = reply["$LICENSE:".Length..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2 && (parts[0] == "0" || parts[0] == "1"))
+            return new DongleLicenseStatus(Connected: true, Licensed: parts[0] == "1", DeviceId: parts[1]);
+        throw new InvalidOperationException("Unexpected $LICENSE reply from dongle");
+    }
+
+    public async Task ActivateDongleAsync(string installationId)
+    {
+        var status = await GetDongleLicenseAsync();
+        if (!status.Connected)
+            throw new InvalidOperationException("Wireless USB not connected");
+        if (string.IsNullOrEmpty(status.DeviceId))
+            throw new InvalidOperationException("Wireless USB device ID not available. Please reconnect it.");
+
+        _logger.LogInformation("Calling activation server for Wireless USB dongle");
+        using var http = new HttpClient();
+        var activationResponse = await http.PostAsync(ActivationApiUrl,
+            new StringContent(
+                $$$"""{"installationId":"{{{installationId}}}","machineHash":"{{{status.DeviceId}}}","product":"{{{DongleProduct}}}"}""",
+                System.Text.Encoding.UTF8, "application/json")
+            { Headers = { { "X-Api-Key", ActivationApiKey } } });
+
+        var activationText = await activationResponse.Content.ReadAsStringAsync();
+        if (!activationResponse.IsSuccessStatusCode)
+        {
+            var error = "Activation failed";
+            try { var doc = System.Text.Json.JsonDocument.Parse(activationText); error = doc.RootElement.GetProperty("error").GetString() ?? error; } catch { }
+            throw new InvalidOperationException(error);
+        }
+
+        // Push the signed license to the dongle. The dongle protocol is line-delimited,
+        // so the license JSON must be a single compact line: "$LICENSE <json>".
+        var compact = CompactJson(activationText);
+        var reply = await QueryDongleAsync($"$LICENSE {compact}",
+            line => line == "$LICENSE:OK" || line.StartsWith("$LICENSE:ERR", StringComparison.Ordinal),
+            timeoutMs: 4000);
+        if (reply != "$LICENSE:OK")
+        {
+            var msg = reply.StartsWith("$LICENSE:ERR", StringComparison.Ordinal)
+                ? reply["$LICENSE:ERR".Length..].Trim()
+                : reply;
+            throw new InvalidOperationException($"Wireless USB rejected license: {msg}");
+        }
+
+        _logger.LogInformation("Wireless USB dongle license activated");
+    }
+
+    /// <summary>
+    /// Sends a raw line to the dongle and awaits the first reply line matching <paramref name="match"/>.
+    /// Attaches a temporary listener directly to the dongle handler (works whether or not the
+    /// dongle is the active data handler).
+    /// </summary>
+    private async Task<string> QueryDongleAsync(string command, Func<string, bool> match, int timeoutMs)
+    {
+        if (_dongleHandler is not { IsConnected: true })
+            throw new InvalidOperationException("Wireless USB not connected");
+
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnLine(string line) { if (match(line)) tcs.TrySetResult(line); }
+
+        _dongleHandler.RawMessageReceived += OnLine;
+        try
+        {
+            await _dongleHandler.SendRawAsync(command);
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
+            if (done != tcs.Task)
+                throw new TimeoutException("Wireless USB did not respond");
+            return await tcs.Task;
+        }
+        finally
+        {
+            _dongleHandler.RawMessageReceived -= OnLine;
+        }
+    }
+
+    /// <summary>Re-serialize a JSON string to a single compact line (AOT-safe, no context needed).</summary>
+    private static string CompactJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        using var ms = new MemoryStream();
+        using (var w = new Utf8JsonWriter(ms))
+            doc.RootElement.WriteTo(w);
+        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+    }
+
     #endregion
 
     #region IPendantManager — Firmware

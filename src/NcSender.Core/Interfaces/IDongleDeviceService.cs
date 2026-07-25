@@ -31,6 +31,9 @@ public interface IDongleDeviceService
     /// <summary>Open the dongle's pairing window ("$PAIR") so a new device can join (~30s).</summary>
     Task OpenPairingAsync();
 
+    /// <summary>Close an open pairing window early ("$PAIR:STOP"). No-op on older firmware.</summary>
+    Task CancelPairingAsync();
+
     /// <summary>Forget a paired device on the dongle ("$UNPAIR &lt;name&gt;") and drop it locally.</summary>
     Task UnpairAsync(string name);
 

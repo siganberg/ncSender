@@ -45,6 +45,13 @@ public static class DongleEndpoints
             return Results.Ok(new ApiSuccess(true));
         });
 
+        // Close an open pairing window early (Cancel).
+        app.MapPost("/api/dongle/pair/cancel", async (IDongleDeviceService dongle) =>
+        {
+            await dongle.CancelPairingAsync();
+            return Results.Ok(new ApiSuccess(true));
+        });
+
         // Forget one paired device on the dongle.
         app.MapPost("/api/dongle/devices/{name}/unpair", async (string name, IDongleDeviceService dongle) =>
         {
@@ -52,6 +59,30 @@ public static class DongleEndpoints
                 return Results.BadRequest(new ApiError("Device name is required"));
             await dongle.UnpairAsync(name.Trim());
             return Results.Ok(new ApiSuccess(true));
+        });
+
+        // The Wireless USB dongle's own license state (read via the "$LICENSE" line command).
+        app.MapGet("/api/dongle/license", async (IPendantManager pendant) =>
+        {
+            try { return Results.Ok(await pendant.GetDongleLicenseAsync()); }
+            catch (Exception ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+        });
+
+        // Activate the dongle with an installation ID: calls the activation server, then
+        // writes the signed license to the dongle over serial.
+        app.MapPost("/api/dongle/activate", async (DongleActivateRequest req, IPendantManager pendant) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.InstallationId))
+                return Results.BadRequest(new ApiError("Installation ID is required"));
+            try
+            {
+                await pendant.ActivateDongleAsync(req.InstallationId.Trim());
+                return Results.Ok(new ApiSuccess(true));
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
         });
     }
 }

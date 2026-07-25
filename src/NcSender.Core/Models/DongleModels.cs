@@ -26,6 +26,15 @@ public class DongleDeviceInfo
 /// <summary>Body for POST /api/dongle/devices/{name}/send.</summary>
 public record DongleSendRequest(string Payload);
 
+/// <summary>
+/// The Wireless USB dongle's own license state, read via the "$LICENSE" line command.
+/// Connected=false when no dongle is present (DeviceId/Licensed then meaningless).
+/// </summary>
+public record DongleLicenseStatus(bool Connected, bool Licensed, string DeviceId);
+
+/// <summary>Body for POST /api/dongle/activate.</summary>
+public record DongleActivateRequest(string InstallationId);
+
 /// <summary>WS event payload: a raw line arrived from an addressed device.</summary>
 public class DongleDeviceMessage
 {

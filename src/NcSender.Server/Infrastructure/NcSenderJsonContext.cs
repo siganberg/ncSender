@@ -47,6 +47,8 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(DongleSendRequest))]
 [JsonSerializable(typeof(DongleDeviceMessage))]
 [JsonSerializable(typeof(DongleDeviceChanged))]
+[JsonSerializable(typeof(DongleLicenseStatus))]
+[JsonSerializable(typeof(DongleActivateRequest))]
 // Pendant
 [JsonSerializable(typeof(PendantStatus))]
 [JsonSerializable(typeof(PendantFirmwareInfo))]

@@ -198,7 +198,9 @@ public static class ServerBuilder
         app.Use(async (context, next) =>
         {
             if (context.Request.Path.StartsWithSegments("/api")
-                && !context.Request.Path.StartsWithSegments("/api/pendant/status"))
+                && !context.Request.Path.StartsWithSegments("/api/pendant/status")
+                && !context.Request.Path.StartsWithSegments("/api/dongle/license")
+                && !context.Request.Path.StartsWithSegments("/api/dongle/devices"))
             {
                 var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiRequest");
 

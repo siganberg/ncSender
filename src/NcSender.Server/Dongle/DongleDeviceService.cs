@@ -190,6 +190,14 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         return sender is null ? Task.CompletedTask : sender("$PAIR");
     }
 
+    // Close an open pairing window early. Ignored by older firmware that predates
+    // the $PAIR:STOP command (the window then just expires on its own).
+    public Task CancelPairingAsync()
+    {
+        var sender = _sender;
+        return sender is null ? Task.CompletedTask : sender("$PAIR:STOP");
+    }
+
     // Ask the dongle for its current paired-devices list. Reply arrives async
     // as "$DEVICES:<name>" and is handled by OnDongleLine (which seeds _devices).
     // Called on dongle attach so we know about paired-but-offline devices without

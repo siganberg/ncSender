@@ -20,6 +20,8 @@ public interface IPendantManager
     Task ConnectSerialAsync(string port);
     Task DisconnectSerialAsync();
     Task UnpairDongleAsync();
+    Task<DongleLicenseStatus> GetDongleLicenseAsync();
+    Task ActivateDongleAsync(string installationId);
     void NotifySettingsChanged();
     void StartAutoConnect();
     HashSet<string> GetOccupiedPorts();

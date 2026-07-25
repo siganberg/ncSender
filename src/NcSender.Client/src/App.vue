@@ -55,12 +55,13 @@
         :last-alarm-code="lastAlarmCode"
         :update-state="updateState"
         :pendant-connection-type="pendantConnectionType"
+        :dongle-connected="dongleConnected"
         :workspace="workspace"
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
         @show-update-dialog="openUpdateDialog"
-        @show-bluetooth="showPendantDialog = true"
+        @show-bluetooth="showWirelessDialog = true"
         :on-show-settings="openSettings"
       />
     </template>
@@ -920,10 +921,10 @@
     @channel-change="handleChannelChange"
   />
 
-  <!-- Pendant Dialog -->
-  <PendantDialog
-    v-if="showPendantDialog"
-    @close="showPendantDialog = false"
+  <!-- Wireless USB Dialog (toolbar icon) -->
+  <WirelessUsbDialog
+    v-if="showWirelessDialog"
+    @close="showWirelessDialog = false"
   />
 
 
@@ -1069,7 +1070,7 @@ import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
-import PendantDialog from './components/PendantDialog.vue';
+import WirelessUsbDialog from './components/WirelessUsbDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
@@ -1137,8 +1138,9 @@ const showSetupDialog = ref(false);
 const setupDismissible = ref(false);
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
-const showPendantDialog = ref(false);
+const showWirelessDialog = ref(false);
 const pendantConnectionType = ref<'usb' | 'espnow' | null>(null);
+const dongleConnected = ref(false);
 const showGateFileManager = ref(false);
 
 // Plugin modal dialog state
@@ -2904,6 +2906,7 @@ const pollBluetoothStatus = async () => {
     if (response.ok) {
       const data = await response.json();
       pendantConnectionType.value = data.pendantConnectionType || null;
+      dongleConnected.value = data.dongleConnected ?? false;
     }
   } catch {
     // Silently fail - Bluetooth may not be available

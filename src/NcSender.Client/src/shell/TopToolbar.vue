@@ -103,9 +103,9 @@
       <!-- Pendant Button -->
       <button
         class="pendant-button"
-        :class="{ 'pendant-button--connected': pendantConnectionType }"
+        :class="{ 'pendant-button--connected': dongleConnected }"
         @click="$emit('show-bluetooth')"
-        :title="pendantConnectionType ? `Pendant connected (${pendantConnectionType})` : 'Pendant'"
+        :title="dongleConnected ? 'Wireless USB connected' : 'Wireless USB — not connected'"
       >
         <svg class="pendant-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <!-- Body - dark charcoal fill -->
@@ -198,6 +198,7 @@ const props = defineProps<{
   lastAlarmCode?: number | string;
   updateState?: TopToolbarUpdateState;
   pendantConnectionType?: 'wifi' | 'bluetooth' | null;
+  dongleConnected?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -221,6 +222,7 @@ const onWorkspaceChange = (e: Event) => {
 };
 
 const pendantConnectionType = computed(() => props.pendantConnectionType ?? null);
+const dongleConnected = computed(() => props.dongleConnected ?? false);
 const resolvedSenderStatus = computed(() => (props.senderStatus || storeSenderStatus.value || 'unknown').toLowerCase());
 
 // Check if door is open via Pn pin state (even if status is idle)
