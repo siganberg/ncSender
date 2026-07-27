@@ -14,6 +14,7 @@ public class PluginCommandProcessor : ICommandProcessor
     private readonly IServerContext _serverContext;
     private readonly IBroadcaster _broadcaster;
     private readonly ISettingsManager _settingsManager;
+    private readonly IToolProjection _toolProjection;
     private readonly ILogger<PluginCommandProcessor> _logger;
 
     public PluginCommandProcessor(
@@ -23,6 +24,7 @@ public class PluginCommandProcessor : ICommandProcessor
         IServerContext serverContext,
         IBroadcaster broadcaster,
         ISettingsManager settingsManager,
+        IToolProjection toolProjection,
         ILogger<PluginCommandProcessor> logger)
     {
         _inner = inner;
@@ -31,6 +33,7 @@ public class PluginCommandProcessor : ICommandProcessor
         _serverContext = serverContext;
         _broadcaster = broadcaster;
         _settingsManager = settingsManager;
+        _toolProjection = toolProjection;
         _logger = logger;
     }
 
@@ -49,7 +52,12 @@ public class PluginCommandProcessor : ICommandProcessor
         var isValidM6 = m6Parse.Matched && m6Parse.ToolNumber is not null;
         var isTLS = GcodePatterns.IsTlsCommand(command);
 
-        var currentTool = machineState.Tool;
+        // Expansion runs ahead of execution — use the projected tool for both
+        // the skip decision and the value handed to plugins, so an ATC plugin
+        // builds its unload half against the tool that will actually be in
+        // the spindle rather than the one that was there when the batch began.
+        var currentTool = _toolProjection.EffectiveToolFor(machineState.Tool);
+        context.ProjectedTool = currentTool;
         var sameToolCheck = GcodePatterns.CheckSameToolChange(command, currentTool);
 
         // Same-tool M6 skip — handled here so plugin never sees it
@@ -145,6 +153,10 @@ public class PluginCommandProcessor : ICommandProcessor
 
         if (isValidM6)
         {
+            // Not a skipped change, so anything expanded after this line will
+            // run with the new tool loaded.
+            _toolProjection.ToolChangeQueued(m6Parse.ToolNumber!.Value);
+
             // Return-to-position only for manual invocation (not during program run)
             if (m6ReturnPosition is not null && !m6UseWorkCoordinates)
             {

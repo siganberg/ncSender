@@ -20,6 +20,7 @@ public class CncEventBridge
     private readonly IJobManager _jobManager;
     private readonly IPluginManager _pluginManager;
     private readonly ISettingsManager _settingsManager;
+    private readonly IToolProjection _toolProjection;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
 
@@ -37,8 +38,10 @@ public class CncEventBridge
         IErrorService errorService,
         IJobManager jobManager,
         IPluginManager pluginManager,
-        ISettingsManager settingsManager)
+        ISettingsManager settingsManager,
+        IToolProjection toolProjection)
     {
+        _toolProjection = toolProjection;
         _controller = controller;
         _context = context;
         _broadcaster = broadcaster;
@@ -112,6 +115,9 @@ public class CncEventBridge
         state.MachineState.Homed = status.Homed;
         state.MachineState.Workspace = status.Workspace;
         state.MachineState.Tool = status.Tool;
+        // Clears the projection once the controller catches up with the last
+        // queued change; intermediate tools in a batch leave it in place.
+        _toolProjection.ActualToolObserved(status.Tool);
         state.MachineState.ToolLengthSet = status.ToolLengthSet;
         state.MachineState.SpindleActive = status.SpindleActive;
         state.MachineState.FloodCoolant = status.FloodCoolant;
@@ -201,6 +207,9 @@ public class CncEventBridge
     {
         var state = _context.State;
         state.MachineState.Connected = isConnected;
+
+        // Anything queued is gone across a connect/disconnect boundary.
+        _toolProjection.Reset();
 
         if (isConnected)
         {
@@ -419,6 +428,11 @@ public class CncEventBridge
         // Detect TOOL_CHANGE_COMPLETE sentinel
         if (data.Contains("TOOL_CHANGE_COMPLETE", StringComparison.OrdinalIgnoreCase))
         {
+            // Retire one queued change. Until the count reaches zero the
+            // projection stays authoritative, because the tool the controller
+            // is reporting belongs to an earlier point in the batch.
+            _toolProjection.ToolChangeCompleted();
+
             var state = _context.State;
             if (state.MachineState.IsToolChanging)
             {
@@ -764,6 +778,11 @@ public class CncEventBridge
         {
             state.MachineState.IsToolChanging = false;
         }
+
+        // A soft reset / stop flushes the queue, so any M6 we projected will
+        // never run. Fall back to observed state instead of staying stuck on
+        // a tool that was never loaded.
+        _toolProjection.Reset();
 
         // Update job state if a job is running/paused
         var job = state.JobLoaded;

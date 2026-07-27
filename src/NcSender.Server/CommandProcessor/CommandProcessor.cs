@@ -20,7 +20,18 @@ public class CommandProcessor : ICommandProcessor
     private readonly IFirmwareService _firmwareService;
     private readonly ISettingsManager _settingsManager;
     private readonly IMacroService _macroService;
+    private readonly IToolProjection _toolProjection;
     private readonly ILogger<CommandProcessor> _logger;
+
+    /// <summary>
+    /// The outermost processor in the pipeline (i.e. PluginCommandProcessor
+    /// wrapping this one). M98 body lines are re-entered here rather than
+    /// through this instance so plugin onBeforeCommand hooks see them — a
+    /// macro line must behave exactly like the same line typed in the
+    /// terminal. Assigned by the DI factory after both halves exist;
+    /// defaults to self so a bare CommandProcessor still works in tests.
+    /// </summary>
+    public ICommandProcessor Pipeline { get; set; }
 
     public CommandProcessor(
         IServerContext context,
@@ -28,6 +39,7 @@ public class CommandProcessor : ICommandProcessor
         IFirmwareService firmwareService,
         ISettingsManager settingsManager,
         IMacroService macroService,
+        IToolProjection toolProjection,
         ILogger<CommandProcessor> logger)
     {
         _context = context;
@@ -35,7 +47,9 @@ public class CommandProcessor : ICommandProcessor
         _firmwareService = firmwareService;
         _settingsManager = settingsManager;
         _macroService = macroService;
+        _toolProjection = toolProjection;
         _logger = logger;
+        Pipeline = this;
     }
 
     public async Task<CommandProcessorResult> ProcessAsync(string command, CommandProcessorContext processorContext)
@@ -71,7 +85,9 @@ public class CommandProcessor : ICommandProcessor
         var isTLS = GcodePatterns.IsTlsCommand(command);
 
         // 7. Same-tool M6 skip
-        var currentTool = machineState.Tool;
+        // Expansion runs ahead of execution, so ask the projection what will
+        // be loaded by the time this line runs — not what is loaded now.
+        var currentTool = _toolProjection.EffectiveToolFor(machineState.Tool);
         var sameToolCheck = GcodePatterns.CheckSameToolChange(command, currentTool);
 
         // 8. Determine return position for M6 tool change
@@ -169,6 +185,10 @@ public class CommandProcessor : ICommandProcessor
         // 15. If valid M6 (non-same-tool), append return-to-position + sentinel
         if (isValidM6)
         {
+            // Reaching here means the change wasn't skipped, so anything
+            // expanded after this line will run with the new tool loaded.
+            _toolProjection.ToolChangeQueued(m6Parse.ToolNumber!.Value);
+
             // Return-to-position only for manual invocation (not during program run)
             if (m6ReturnPosition is not null && !m6UseWorkCoordinates)
             {
@@ -328,7 +348,13 @@ public class CommandProcessor : ICommandProcessor
                 SafeZHeight = ctx.SafeZHeight,
             };
 
-            var childResult = await ProcessAsync(line, childCtx);
+            // Re-enter at the top of the pipeline so plugins get a crack at
+            // each body line — an M6 here must reach the ATC plugin's
+            // onBeforeCommand exactly as it would from the terminal. Each M6
+            // expanded here advances the tool projection, so the next body
+            // line sees the tool this one will have loaded.
+            var childResult = await Pipeline.ProcessAsync(line, childCtx);
+
             if (!childResult.ShouldContinue)
                 continue;
             output.AddRange(childResult.Commands);

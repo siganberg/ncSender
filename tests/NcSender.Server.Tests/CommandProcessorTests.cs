@@ -34,10 +34,14 @@ public class CommandProcessorTests
             firmware.Object,
             settings.Object,
             macros.Object,
+            NewProjection(),
             NullLogger<NcSender.Server.CommandProcessor.CommandProcessor>.Instance);
 
         return (processor, context, broadcaster, firmware, settings);
     }
+
+    private static NcSender.Server.CommandProcessor.ToolProjection NewProjection() =>
+        new(NullLogger<NcSender.Server.CommandProcessor.ToolProjection>.Instance);
 
     private static CommandProcessorContext CreateContext(MachineState? machineState = null) => new()
     {
@@ -300,5 +304,153 @@ public class CommandProcessorTests
         Assert.Single(result.Commands);
         Assert.Equal("G1 X10 Y20 F500", result.Commands[0].Command);
         Assert.True(result.Commands[0].IsOriginal);
+    }
+
+    // --- M98 Macro Expansion ---
+
+    private static NcSender.Server.CommandProcessor.CommandProcessor CreateProcessorWithMacro(
+        int macroId, string name, string body, MachineState machineState)
+    {
+        var context = new Mock<IServerContext>();
+        var state = new ServerState { MachineState = machineState };
+        context.Setup(c => c.State).Returns(state);
+
+        var broadcaster = new Mock<IBroadcaster>();
+        broadcaster.Setup(b => b.Broadcast(It.IsAny<string>(), It.IsAny<JsonElement>()))
+            .Returns(Task.CompletedTask);
+
+        var firmware = new Mock<IFirmwareService>();
+        firmware.Setup(f => f.GetCachedAsync()).ReturnsAsync((FirmwareData?)null);
+
+        var macros = new Mock<IMacroService>();
+        macros.Setup(m => m.GetMacro(macroId))
+            .Returns(new MacroInfo { Id = macroId, Name = name, Body = body });
+
+        return new NcSender.Server.CommandProcessor.CommandProcessor(
+            context.Object,
+            broadcaster.Object,
+            firmware.Object,
+            new Mock<ISettingsManager>().Object,
+            macros.Object,
+            NewProjection(),
+            NullLogger<NcSender.Server.CommandProcessor.CommandProcessor>.Instance);
+    }
+
+    /// <summary>Records every line handed to it, then delegates to the real processor.</summary>
+    private sealed class RecordingPipeline : ICommandProcessor
+    {
+        private readonly ICommandProcessor _inner;
+        public List<string> Seen { get; } = [];
+
+        public RecordingPipeline(ICommandProcessor inner) => _inner = inner;
+
+        public Task<CommandProcessorResult> ProcessAsync(string command, CommandProcessorContext context)
+        {
+            Seen.Add(command);
+            return _inner.ProcessAsync(command, context);
+        }
+    }
+
+    [Fact]
+    public async Task MacroBody_LinesRoutedThroughOuterPipeline()
+    {
+        // Regression: macro body lines used to recurse into CommandProcessor
+        // directly, so plugin onBeforeCommand (e.g. RapidChangeATC's M6
+        // handler) never saw them and the raw M6 hit the controller.
+        var processor = CreateProcessorWithMacro(
+            9005, "Tool Change Test", "M6 T1\nG4 P2", new MachineState { Tool = 0 });
+        var pipeline = new RecordingPipeline(processor);
+        processor.Pipeline = pipeline;
+
+        var result = await processor.ProcessAsync("M98 P9005", CreateContext(new MachineState { Tool = 0 }));
+
+        Assert.True(result.ShouldContinue);
+        Assert.Equal(["M6 T1", "G4 P2"], pipeline.Seen);
+    }
+
+    [Fact]
+    public async Task MacroBody_SecondM6_NotSkippedByExpansionTimeTool()
+    {
+        // Regression: the same-tool check read live MachineState.Tool for
+        // every body line, but expansion is eager — so with T0 loaded the
+        // trailing "M6 T0" was compared against the pre-macro tool and
+        // silently dropped even though "M6 T1" runs before it.
+        var machineState = new MachineState { Tool = 0 };
+        var processor = CreateProcessorWithMacro(
+            9005, "Tool Change Test", "M6 T1\nG4 P2\nM6 T0", machineState);
+
+        var result = await processor.ProcessAsync("M98 P9005", CreateContext(machineState));
+
+        Assert.True(result.ShouldContinue);
+        var sent = result.Commands.Select(c => c.Command).ToList();
+        Assert.Contains("M6 T1", sent);
+        Assert.Contains("M6 T0", sent);
+    }
+
+    [Fact]
+    public async Task MacroBody_GenuineSameToolM6_StillSkipped()
+    {
+        // The projected tool must still suppress a redundant change: the
+        // second "M6 T1" is a no-op because the first one loaded T1.
+        var machineState = new MachineState { Tool = 0 };
+        var processor = CreateProcessorWithMacro(
+            9006, "Double Load", "M6 T1\nM6 T1", machineState);
+
+        var result = await processor.ProcessAsync("M98 P9006", CreateContext(machineState));
+
+        Assert.True(result.ShouldContinue);
+        var sent = result.Commands.Select(c => c.Command).ToList();
+        Assert.Single(sent, c => c == "M6 T1");
+    }
+
+    [Fact]
+    public async Task SeparateDispatches_MiddleM6_NotSkippedAgainstStaleTool()
+    {
+        // Regression (broke a cutter): the console dispatches pasted lines as
+        // fast as the WebSocket accepts them, so all three M6s were expanded
+        // before the first one executed. Against raw MachineState.Tool the
+        // "M6 T0" looked like a same-tool no-op and was dropped, leaving two
+        // consecutive load cycles that drove a tool into an occupied collet.
+        var machineState = new MachineState { Tool = 0 };
+        var (processor, _, _, _, _) = CreateProcessor(machineState);
+
+        var load = await processor.ProcessAsync("M6 T1", CreateContext(machineState));
+        var unload = await processor.ProcessAsync("M6 T0", CreateContext(machineState));
+        var reload = await processor.ProcessAsync("M6 T1", CreateContext(machineState));
+
+        Assert.True(load.ShouldContinue);
+        Assert.True(unload.ShouldContinue);
+        Assert.True(reload.ShouldContinue);
+        Assert.Contains("M6 T0", unload.Commands.Select(c => c.Command));
+    }
+
+    [Fact]
+    public async Task SeparateDispatches_RedundantM6_StillSkipped()
+    {
+        // The projection must not turn every M6 into a real change.
+        var machineState = new MachineState { Tool = 0 };
+        var (processor, _, _, _, _) = CreateProcessor(machineState);
+
+        await processor.ProcessAsync("M6 T1", CreateContext(machineState));
+        var again = await processor.ProcessAsync("M6 T1", CreateContext(machineState));
+
+        Assert.False(again.ShouldContinue);
+    }
+
+    [Fact]
+    public async Task MacroBody_FirstM6MatchingLoadedTool_IsSkipped()
+    {
+        // T1 already in the spindle — the leading "M6 T1" is redundant, but
+        // the trailing "M6 T0" must still go out.
+        var machineState = new MachineState { Tool = 1 };
+        var processor = CreateProcessorWithMacro(
+            9005, "Tool Change Test", "M6 T1\nG4 P2\nM6 T0", machineState);
+
+        var result = await processor.ProcessAsync("M98 P9005", CreateContext(machineState));
+
+        Assert.True(result.ShouldContinue);
+        var sent = result.Commands.Select(c => c.Command).ToList();
+        Assert.DoesNotContain("M6 T1", sent);
+        Assert.Contains("M6 T0", sent);
     }
 }

@@ -140,7 +140,7 @@ public class JsPluginEngine : IJsPluginEngine
                     // Build context object with machineState and tools
                     var jsContext = new JsObject(engine);
                     var jsMachineState = new JsObject(engine);
-                    jsMachineState.Set("tool", JsValue.FromObject(engine, context.MachineState.Tool));
+                    jsMachineState.Set("tool", JsValue.FromObject(engine, context.ProjectedTool ?? context.MachineState.Tool));
                     jsContext.Set("machineState", jsMachineState);
                     jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
                     jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));

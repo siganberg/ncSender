@@ -104,6 +104,7 @@ public static class ServerBuilder
         builder.Services.AddHostedService(sp => sp.GetRequiredService<AutoConnectService>());
 
         // Phase 3 DI registrations
+        builder.Services.AddSingleton<IToolProjection, NcSender.Server.CommandProcessor.ToolProjection>();
         builder.Services.AddSingleton<NcSender.Server.CommandProcessor.CommandProcessor>();
         builder.Services.AddSingleton<IGcodeFileService, GcodeFileService>();
         builder.Services.AddSingleton<IJobManager, JobManager>();
@@ -124,15 +125,25 @@ public static class ServerBuilder
         builder.Services.AddSingleton<NcSender.Server.Plugins.PluginDialogDispatcher>();
         builder.Services.AddSingleton<IJsPluginEngine, JsPluginEngine>();
         builder.Services.AddSingleton<ICommandProcessor>(sp =>
-            new NcSender.Server.CommandProcessor.PluginCommandProcessor(
-                sp.GetRequiredService<NcSender.Server.CommandProcessor.CommandProcessor>(),
+        {
+            var inner = sp.GetRequiredService<NcSender.Server.CommandProcessor.CommandProcessor>();
+            var pipeline = new NcSender.Server.CommandProcessor.PluginCommandProcessor(
+                inner,
                 sp.GetRequiredService<IJsPluginEngine>(),
                 sp.GetRequiredService<IToolService>(),
                 sp.GetRequiredService<IServerContext>(),
                 sp.GetRequiredService<IBroadcaster>(),
                 sp.GetRequiredService<ISettingsManager>(),
+                sp.GetRequiredService<IToolProjection>(),
                 sp.GetRequiredService<ILogger<NcSender.Server.CommandProcessor.PluginCommandProcessor>>()
-            ));
+            );
+
+            // Close the loop: M98 expansion lives in the inner processor but
+            // must dispatch body lines through the full pipeline, otherwise
+            // macro lines skip every plugin onBeforeCommand hook.
+            inner.Pipeline = pipeline;
+            return pipeline;
+        });
         builder.Services.AddSingleton<IPluginManager, PluginManager>();
         builder.Services.AddSingleton<IGcodeAnalyzer, GcodeStateAnalyzer>();
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();

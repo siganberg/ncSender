@@ -19,6 +19,15 @@ public class CommandProcessorContext
     /// Plugins should use this for retraction instead of hardcoded G53 Z0.
     /// </summary>
     public double SafeZHeight { get; set; }
+
+    /// <summary>
+    /// Tool number expected to be in the spindle when this line executes, as
+    /// resolved by IToolProjection. Set by PluginCommandProcessor so plugins
+    /// see execution-time tool state instead of MachineState.Tool, which is
+    /// stale for every line of a batch that was expanded ahead of execution.
+    /// Null when no projection was supplied (falls back to MachineState.Tool).
+    /// </summary>
+    public int? ProjectedTool { get; set; }
 }
 
 public class XyPosition
