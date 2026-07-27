@@ -91,7 +91,11 @@ public static class MacroEndpoints
             {
                 await cnc.SendCommandAsync(cmd.Command, new CommandOptions
                 {
-                    DisplayCommand = cmd.DisplayCommand,
+                    // Fall back to the untrimmed command text like WebSocketLayer
+                    // does. SendCommandAsync trims what goes to the controller but
+                    // keeps DisplayCommand verbatim, so this is what preserves the
+                    // plugin's o-code block indentation in the terminal.
+                    DisplayCommand = cmd.DisplayCommand ?? cmd.Command,
                     Meta = cmd.Meta ?? new CommandMeta { SourceId = "macro" }
                 });
             }
