@@ -162,6 +162,15 @@
     @close="closeEditor"
     @saved="onEditorSaved"
   />
+
+  <FileBrowserDialog
+    v-if="showUploadPicker"
+    title="Select file from external drive"
+    mode="open"
+    :on-submit="uploadFromPath"
+    @close="showUploadPicker = false"
+    @done="showUploadPicker = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -170,6 +179,8 @@ import { api } from '../../toolpath/api';
 import Dialog from '../../../components/Dialog.vue';
 import ConfirmPanel from '../../../components/ConfirmPanel.vue';
 import ControllerFileEditor from './ControllerFileEditor.vue';
+import FileBrowserDialog from '../../../components/FileBrowserDialog.vue';
+import { useKioskDetection } from '../../../composables/useKioskDetection';
 
 interface ControllerFile {
   name: string;
@@ -186,6 +197,8 @@ const editorMode = ref<'view' | 'edit' | 'create' | null>(null);
 const editorFilename = ref('');
 const editorContent = ref('');
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const { isKiosk } = useKioskDetection();
+const showUploadPicker = ref(false);
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
@@ -255,6 +268,10 @@ const openCreateEditor = () => {
 };
 
 const triggerUpload = () => {
+  if (isKiosk.value) {
+    showUploadPicker.value = true;
+    return;
+  }
   fileInputRef.value?.click();
 };
 
@@ -269,6 +286,21 @@ const handleFileSelected = async (event: Event) => {
   editorMode.value = 'create';
 
   input.value = '';
+};
+
+const uploadFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const text = await res.text();
+    editorFilename.value = payload.fullPath.split(/[\\/]/).pop() || 'upload.nc';
+    editorContent.value = text;
+    editorMode.value = 'create';
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to read file' };
+  }
 };
 
 const viewFile = async (file: ControllerFile) => {

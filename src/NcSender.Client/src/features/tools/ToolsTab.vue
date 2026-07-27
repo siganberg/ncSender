@@ -28,7 +28,7 @@
           placeholder="Search tools by ID, name, or type..."
         >
         <button class="import-export-button" @click="importTools">Import</button>
-        <button class="import-export-button" @click="exportTools">Export</button>
+        <button class="import-export-button" @click="exportTools">{{ isKiosk ? 'Save' : 'Export' }}</button>
         <button class="btn btn-primary" @click="addNewTool">Add Tool</button>
       </div>
 
@@ -487,6 +487,29 @@
         @cancel="cancelMagazineSizeChange"
       />
     </Dialog>
+
+    <!-- Save-to-drive picker (kiosk mode) -->
+    <FileBrowserDialog
+      v-if="showDrivePicker"
+      title="Save tool library to external drive"
+      mode="save"
+      :extensions="['.json']"
+      :default-filename="toolsExportFilename"
+      :on-submit="saveToolsToPath"
+      @close="showDrivePicker = false"
+      @done="onToolsSavedToDrive"
+    />
+
+    <!-- Open-from-drive picker (kiosk mode) -->
+    <FileBrowserDialog
+      v-if="showImportPicker"
+      title="Import tool library from external drive"
+      mode="open"
+      :extensions="['.json']"
+      :on-submit="importToolsFromPath"
+      @close="showImportPicker = false"
+      @done="showImportPicker = false"
+    />
   </div>
 </template>
 
@@ -496,8 +519,15 @@ import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
+import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
+import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+
+const { isKiosk } = useKioskDetection();
+const showDrivePicker = ref(false);
+const showImportPicker = ref(false);
+const toolsExportFilename = computed(() => `tool-library-${new Date().toISOString().split('T')[0]}.json`);
 
 interface Tool {
   id: number;
@@ -1221,67 +1251,107 @@ const confirmDeleteTool = async () => {
   }
 };
 
+const buildToolsExportJson = () => JSON.stringify(tools.value, null, 2);
+
 const exportTools = () => {
   if (tools.value.length === 0) {
     showExportWarningDialog.value = true;
     return;
   }
 
-  const json = JSON.stringify(tools.value, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  // Kiosk: open drive picker so the file lands on a USB.
+  if (isKiosk.value) {
+    showDrivePicker.value = true;
+    return;
+  }
+
+  const blob = new Blob([buildToolsExportJson()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `tool-library-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = toolsExportFilename.value;
   a.click();
   URL.revokeObjectURL(url);
 };
 
+const saveToolsToPath = async ({ targetPath, filename }: { targetPath?: string; filename?: string }) => {
+  const res = await fetch(`${(api as any).baseUrl}/api/external-drives/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      targetPath,
+      filename: filename || toolsExportFilename.value,
+      content: buildToolsExportJson(),
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    return { success: false, error: (data && data.error) || `Save failed (HTTP ${res.status})` };
+  }
+  return data;
+};
+
+const onToolsSavedToDrive = () => {
+  showDrivePicker.value = false;
+};
+
 const importTools = () => {
+  if (isKiosk.value) {
+    showImportPicker.value = true;
+    return;
+  }
   importFileInput.value?.click();
+};
+
+const ingestToolsJson = async (jsonText: string) => {
+  try {
+    const importedTools = JSON.parse(jsonText);
+    if (!Array.isArray(importedTools)) {
+      importErrorMessage.value = 'Invalid file format. Expected an array of tools.';
+      showImportErrorDialog.value = true;
+      return;
+    }
+    const conflicts = importedTools.filter(importTool =>
+      tools.value.some(existingTool => existingTool.id === importTool.id)
+    );
+    if (conflicts.length > 0) {
+      const conflictList = conflicts.map(t => `T${t.id}`).join(', ');
+      importConflictMessage.value = `The following tool IDs already exist: ${conflictList}\n\nDo you want to replace existing tools and import?`;
+      importConflictTools.value = importedTools;
+      showImportConflictDialog.value = true;
+      return;
+    }
+    await performImport(importedTools);
+  } catch (error) {
+    importErrorMessage.value = 'Failed to import tools. Invalid JSON file.';
+    showImportErrorDialog.value = true;
+    console.error('Import error:', error);
+  }
 };
 
 const handleImport = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = async (e) => {
-    try {
-      const importedTools = JSON.parse(e.target?.result as string);
-
-      if (!Array.isArray(importedTools)) {
-        importErrorMessage.value = 'Invalid file format. Expected an array of tools.';
-        showImportErrorDialog.value = true;
-        return;
-      }
-
-      // Check for conflicts
-      const conflicts = importedTools.filter(importTool =>
-        tools.value.some(existingTool => existingTool.id === importTool.id)
-      );
-
-      if (conflicts.length > 0) {
-        const conflictList = conflicts.map(t => `T${t.id}`).join(', ');
-        importConflictMessage.value = `The following tool IDs already exist: ${conflictList}\n\nDo you want to replace existing tools and import?`;
-        importConflictTools.value = importedTools;
-        showImportConflictDialog.value = true;
-        return;
-      }
-
-      // No conflicts, proceed with import
-      await performImport(importedTools);
-    } catch (error) {
-      importErrorMessage.value = 'Failed to import tools. Invalid JSON file.';
-      showImportErrorDialog.value = true;
-      console.error('Import error:', error);
-    }
+    await ingestToolsJson(e.target?.result as string);
   };
   reader.readAsText(file);
-
-  // Reset file input
   target.value = '';
+};
+
+const importToolsFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const text = await res.text();
+    await ingestToolsJson(text);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to read file' };
+  }
 };
 
 const performImport = async (importedTools: Tool[]) => {

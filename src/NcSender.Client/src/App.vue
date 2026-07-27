@@ -120,16 +120,26 @@
     <Dialog v-if="showSettings" @close="closeSettings" :show-header="false" size="medium">
     <div class="settings-container">
       <div class="tabs">
-        <button
-          v-for="tab in settingsTabs"
-          :key="tab.id"
-          class="tab-button"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <span class="tab-icon" v-html="tab.icon"></span>
-          <span class="tab-label">{{ tab.label }}</span>
-        </button>
+        <div class="sidebar-header">
+          <span class="sidebar-header__eyebrow">ncSender</span>
+          <span class="sidebar-header__title">Settings</span>
+        </div>
+        <div class="sidebar-nav">
+          <button
+            v-for="tab in settingsTabs"
+            :key="tab.id"
+            class="tab-button"
+            :class="{ active: activeTab === tab.id }"
+            @click="activeTab = tab.id"
+          >
+            <span class="tab-icon" v-html="tab.icon"></span>
+            <span class="tab-label">{{ tab.label }}</span>
+            <span v-if="activeTab === tab.id" class="tab-caret" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <button class="sidebar-close" @click="closeSettings">Close</button>
+        </div>
       </div>
 
       <div class="tab-content">
@@ -480,6 +490,11 @@
           <ConfigTab />
         </div>
 
+        <!-- Backup Tab -->
+        <div v-if="activeTab === 'backup'" class="tab-panel tab-panel--backup">
+          <BackupTab />
+        </div>
+
         <!-- Firmware Tab -->
         <div v-if="activeTab === 'firmware'" class="tab-panel tab-panel--firmware">
           <!-- Loading State -->
@@ -527,10 +542,7 @@
                 Import
               </button>
               <button @click="exportFirmwareSettings" class="import-export-button">
-                Export
-              </button>
-              <button @click="openFirmwareFlasher" class="flash-firmware-button">
-                Flash Firmware
+                {{ isFirmwareKiosk ? 'Save' : 'Export' }}
               </button>
               <button
                 @click="submitFirmwareChanges"
@@ -760,22 +772,44 @@
 
             <!-- Footer info -->
             <div class="firmware-footer">
-              <span v-if="importSummary" class="import-summary">Import: {{ importSummary.changed }} setting(s) changed out of {{ importSummary.total }} total. Settings are not saved until submitted.</span>
-              <span v-else>Last updated: {{ new Date(firmwareData.timestamp).toLocaleString() }}</span>
-              <span>{{ filteredFirmwareSettings.length }} of {{ Object.keys(firmwareData.settings || {}).length }} settings</span>
+              <div class="firmware-footer__info">
+                <span v-if="importSummary" class="import-summary">Import: {{ importSummary.changed }} setting(s) changed out of {{ importSummary.total }} total. Settings are not saved until submitted.</span>
+                <span v-else>Last updated: {{ new Date(firmwareData.timestamp).toLocaleString() }}</span>
+                <span class="firmware-footer__count">{{ filteredFirmwareSettings.length }} of {{ Object.keys(firmwareData.settings || {}).length }} settings</span>
+              </div>
+              <button @click="openFirmwareFlasher" class="flash-firmware-button">
+                Flash Firmware
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Footer with Close Button -->
-      <div class="settings-footer">
-        <button class="close-button" @click="closeSettings">
-          Close
-        </button>
-      </div>
     </div>
   </Dialog>
+
+  <!-- Firmware export save-to-drive picker (kiosk mode) -->
+  <FileBrowserDialog
+    v-if="showFirmwareDrivePicker"
+    title="Save firmware settings to external drive"
+    mode="save"
+    :extensions="['.txt', '.grbl']"
+    :default-filename="firmwareExportFilename"
+    :on-submit="saveFirmwareToPath"
+    @close="showFirmwareDrivePicker = false"
+    @done="onFirmwareSavedToDrive"
+  />
+
+  <!-- Firmware flash open-from-drive picker (kiosk mode) -->
+  <FileBrowserDialog
+    v-if="showFirmwareOpenPicker"
+    title="Select firmware .hex from external drive"
+    mode="open"
+    :extensions="['.hex']"
+    :on-submit="openHexFromPath"
+    @close="showFirmwareOpenPicker = false"
+    @done="showFirmwareOpenPicker = false"
+  />
 
   <!-- Mandatory Setup Dialog (non-dismissible) -->
   <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus" :close-on-backdrop-click="setupDismissible" @close="closeSetupDialog">
@@ -984,7 +1018,7 @@
           <button
             type="button"
             class="flash-file-btn"
-            @click="($refs.hexFileInputRef as HTMLInputElement)?.click()"
+            @click="chooseHexFile"
             :disabled="firmwareFlashState.isFlashing"
           >
             Choose File
@@ -1082,6 +1116,9 @@ import PluginsTab from './features/plugins/PluginsTab.vue';
 import ToolsTab from './features/tools/ToolsTab.vue';
 import LogsTab from './features/logs/LogsTab.vue';
 import ConfigTab from './features/config/ConfigTab.vue';
+import BackupTab from './features/backup/BackupTab.vue';
+import FileBrowserDialog from './components/FileBrowserDialog.vue';
+import { useKioskDetection } from './composables/useKioskDetection';
 import { keyBindingStore } from './features/controls';
 import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 import { mmToInches, inchesToMm } from './lib/units';
@@ -1225,6 +1262,28 @@ const addFlashMessage = (type: string, text: string) => {
   });
 };
 
+const hexFileInputRef = ref<HTMLInputElement | null>(null);
+const showFirmwareOpenPicker = ref(false);
+
+const chooseHexFile = () => {
+  if (isFirmwareKiosk.value) {
+    showFirmwareOpenPicker.value = true;
+    return;
+  }
+  hexFileInputRef.value?.click();
+};
+
+const applyHexContent = (name: string, text: string) => {
+  if (!name.endsWith('.hex')) {
+    addFlashMessage('error', 'Please select a .hex file');
+    return false;
+  }
+  firmwareFlashState.value.hexContent = text;
+  firmwareFlashState.value.hexFileName = name;
+  addFlashMessage('info', `File loaded: ${name}`);
+  return true;
+};
+
 const handleHexFileSelect = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
@@ -1233,21 +1292,29 @@ const handleHexFileSelect = (event: Event) => {
     firmwareFlashState.value.hexFileName = '';
     return;
   }
-
   if (!file.name.endsWith('.hex')) {
     addFlashMessage('error', 'Please select a .hex file');
     target.value = '';
     firmwareFlashState.value.hexFileName = '';
     return;
   }
-
   const reader = new FileReader();
-  reader.onload = (e) => {
-    firmwareFlashState.value.hexContent = e.target?.result as string;
-    firmwareFlashState.value.hexFileName = file.name;
-    addFlashMessage('info', `File loaded: ${file.name}`);
-  };
+  reader.onload = (e) => applyHexContent(file.name, e.target?.result as string);
   reader.readAsText(file);
+};
+
+const openHexFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const text = await res.text();
+    const name = payload.fullPath.split(/[\\/]/).pop() || 'firmware.hex';
+    if (!applyHexContent(name, text)) return { success: false, error: 'Not a .hex file' };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to read file' };
+  }
 };
 
 const startFirmwareFlash = async () => {
@@ -1386,7 +1453,8 @@ const allSettingsTabs = [
   { id: 'firmware', label: 'Firmware', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.496 8a4.5 4.5 0 0 1-1.703 3.526L9.497 8.5l2.959-1.11q.04.3.04.61"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-1 0a7 7 0 1 0-13.202 3.249l1.988-1.657a4.5 4.5 0 0 1 7.537-4.623L7.497 6.5l1 2.5 1.333 3.11c-.56.251-1.18.39-1.833.39a4.5 4.5 0 0 1-1.592-.29L4.747 14.2A7 7 0 0 0 15 8m-8.295.139a.25.25 0 0 0-.288-.376l-1.5.5.159.474.808-.27-.595.894a.25.25 0 0 0 .287.376l.808-.27-.595.894a.25.25 0 0 0 .287.376l1.5-.5-.159-.474-.808.27.596-.894a.25.25 0 0 0-.288-.376l-.808.27z"/></svg>' },
   { id: 'config', label: 'Config', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5zM4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' },
   { id: 'plugins', label: 'Plugins', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.545 6.714 4.11 8H3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1.110l.436 1.286A1 1 0 0 0 5.494 13h.557a1 1 0 0 0 .948-.714L7.435 11h1.130l.436 1.286A1 1 0 0 0 9.949 13h.557a1 1 0 0 0 .948-.714L11.89 11H13a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1.11l-.436-1.286A1 1 0 0 0 10.506 6h-.557a1 1 0 0 0-.948.714L8.565 8H7.435L7 6.714A1 1 0 0 0 6.052 6h-.557a1 1 0 0 0-.948.714M6.724 9.5 6.27 11h-.48L5.335 9.5h1.389m3.553 0h1.389l-.455 1.5h-.479zm-5 1L4.822 9H3.5v1.5zm9 0V9h-1.323l-.455 1.5z"/></svg>' },
-  { id: 'logs', label: 'Logs', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/><path d="M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' }
+  { id: 'logs', label: 'Logs', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/><path d="M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' },
+  { id: 'backup', label: 'Backup', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' }
 ];
 const settingsTabs = computed(() =>
   allSettingsTabs.filter(t => {
@@ -2394,27 +2462,64 @@ const clearFirmwareChanges = () => {
 };
 
 // Export firmware settings to GRBL text format
-const exportFirmwareSettings = () => {
-  if (!firmwareData.value) {
-    return;
-  }
+// Kiosk detection + shared drive picker state (used by firmware export).
+// Kept up here in App.vue since the firmware Export button lives here and
+// the tab isn't its own component.
+const { isKiosk: isFirmwareKiosk } = useKioskDetection();
+const showFirmwareDrivePicker = ref(false);
+const firmwareExportFilename = computed(() => `firmware-settings-${new Date().toISOString().split('T')[0]}.txt`);
 
-  // Create text content with $<id>=<value> format, one per line
+const buildFirmwareExportText = () => {
+  if (!firmwareData.value) return null;
   const lines = [];
   for (const [id, setting] of Object.entries(firmwareData.value.settings)) {
     lines.push(`$${id}=${setting.value}`);
   }
+  return lines.join('\n');
+};
 
-  const textContent = lines.join('\n');
-  const blob = new Blob([textContent], { type: 'text/plain' });
+const exportFirmwareSettings = () => {
+  const text = buildFirmwareExportText();
+  if (text === null) return;
+
+  // Kiosk: no browser download — open picker so it lands on a USB.
+  if (isFirmwareKiosk.value) {
+    showFirmwareDrivePicker.value = true;
+    return;
+  }
+
+  const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `firmware-settings-${new Date().toISOString().split('T')[0]}.txt`;
+  a.download = firmwareExportFilename.value;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+};
+
+const saveFirmwareToPath = async ({ targetPath, filename }) => {
+  const text = buildFirmwareExportText();
+  if (text === null) return { success: false, error: 'Firmware data not loaded' };
+  const res = await fetch(`${window.location.origin}/api/external-drives/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      targetPath,
+      filename: filename || firmwareExportFilename.value,
+      content: text,
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    return { success: false, error: (data && data.error) || `Save failed (HTTP ${res.status})` };
+  }
+  return data;
+};
+
+const onFirmwareSavedToDrive = () => {
+  showFirmwareDrivePicker.value = false;
 };
 
 // Import firmware settings from JSON or GRBL text format
@@ -3069,60 +3174,186 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 /* Settings Container */
 .settings-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   flex: 1;
+  min-height: 0;
+  /* Clip the tab-content's scrollbar to the dialog's rounded shape — otherwise
+     a scrolled tab (like General) shows a squared-off right edge. */
+  border-radius: var(--radius-medium);
+  overflow: hidden;
 }
 
-/* Tabs */
+/* Sidebar (left navigation rail) */
 .tabs {
   display: flex;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
-  padding: var(--gap-sm) var(--gap-md) 0 var(--gap-md);
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 220px;
+  border-right: 1px solid var(--color-border);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-surface-muted) 96%, transparent) 0%,
+    var(--color-surface-muted) 100%);
+  border-radius: var(--radius-medium) 0 0 var(--radius-medium);
+  padding: 22px 14px 14px;
+  gap: 0;
+  overflow-y: auto;
+}
+
+/* Sidebar header — anchors the rail so it doesn't look like a floating list */
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+  padding: 0 12px 18px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.sidebar-header__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0.85;
+}
+.sidebar-header__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* Nav list */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .tab-button {
   display: flex;
   align-items: center;
-  gap: var(--gap-xs);
-  padding: var(--gap-sm) var(--gap-md);
+  gap: 14px;
+  padding: 12px 14px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  border-radius: 8px;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   font-size: 0.95rem;
   font-weight: 500;
-  margin-top: var(--gap-xs);
+  width: 100%;
+  text-align: left;
   position: relative;
 }
 
+/* Icon color follows the button's state via currentColor on the inline SVGs. */
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  transition: color 0.15s ease, opacity 0.15s ease;
+  flex-shrink: 0;
+  padding-top: 0;
+  font-size: unset;
+}
+.tab-icon :deep(svg) {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.tab-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tab-button:hover {
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-text-primary, #fff) 5%, transparent);
   color: var(--color-text-primary);
-  transform: translateY(-1px);
+}
+.tab-button:hover .tab-icon {
+  color: var(--color-accent);
+  opacity: 1;
 }
 
 .tab-button.active {
-  background: var(--color-surface);
+  /* Filled pill in accent tint — much stronger visual anchor than the
+     stock hover state, without dominating the whole rail. */
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--color-accent) 16%, transparent) 0%,
+    color-mix(in srgb, var(--color-accent) 8%, transparent) 100%);
   color: var(--color-text-primary);
-  box-shadow: var(--shadow-elevated);
-  border-bottom: 2px solid var(--color-accent);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+.tab-button.active .tab-icon {
+  color: var(--color-accent);
+  opacity: 1;
+}
+.tab-button.active .tab-label {
+  font-weight: 600;
 }
 
-.tab-button.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--gradient-accent);
-  border-radius: 2px 2px 0 0;
+/* Little right-side caret dot — a signal cue that the panel is
+   "connected" to this menu item. Subtle, doesn't dominate. */
+.tab-caret {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  flex-shrink: 0;
+}
+
+/* Sidebar footer holds the Close action — pushed to the bottom by margin-top: auto. */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 130px;
+  min-height: 44px;
+  padding: 12px 32px;
+  background: var(--gradient-accent, var(--color-accent));
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.sidebar-close svg {
+  color: currentColor;
+  flex-shrink: 0;
+}
+.sidebar-close:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.sidebar-close:active {
+  transform: translateY(1px);
 }
 
 .tab-icon {
@@ -3142,6 +3373,9 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   display: flex;
   flex-direction: column;
   position: relative;
+  /* Mirror the dialog's border-radius on the right edge so the tab-content
+     background doesn't square off the dialog's rounded corners. */
+  border-radius: 0 var(--radius-medium) var(--radius-medium) 0;
 }
 
 .tab-panel {
@@ -3157,6 +3391,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .tab-panel--general .settings-section {
   margin: 15px 20px;
+}
+
+/* Backup tab — child cards handle their own visual style, so we apply the
+   outer padding on the panel itself (rather than per-card margin like General). */
+.tab-panel--backup {
+  padding: 15px 20px;
 }
 
 /* Settings Sections */
@@ -3723,39 +3963,6 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   color: var(--color-accent);
 }
 
-/* Settings Footer */
-.settings-footer {
-  padding: var(--gap-md);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--gap-md);
-  margin-top: auto;
-  flex-shrink: 0;
-}
-
-.close-button {
-  background: var(--gradient-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
-  padding: 12px 32px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
-}
-
-.close-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
-}
-
-.close-button:active {
-  transform: translateY(0);
-}
-
 /* Save Button */
 .setting-item--action {
   justify-content: flex-end;
@@ -3846,25 +4053,16 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
     max-height: 80vh;
   }
 
+  /* Narrow the sidebar on small screens — icons-only would be an option but
+     the current dialog width still gives room for shortened labels. */
   .tabs {
-    flex-direction: column;
-    gap: 0;
-    padding: var(--gap-xs);
+    width: 160px;
+    padding: var(--gap-sm) 4px;
   }
 
   .tab-button {
-    margin-top: 0;
-    margin-bottom: 2px;
-    border-radius: var(--radius-small);
-  }
-
-  .tab-button.active::after {
-    display: none;
-  }
-
-  .tab-button.active {
-    border-left: 3px solid var(--color-accent);
-    border-bottom: none;
+    padding: 8px 10px;
+    font-size: 0.85rem;
   }
 
   .setting-item {
@@ -4569,11 +4767,31 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .firmware-footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: var(--gap-md);
   padding: var(--gap-sm) var(--gap-md);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   font-size: 0.85rem;
   color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.firmware-footer__info {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.firmware-footer__count {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.firmware-footer .flash-firmware-button {
   flex-shrink: 0;
 }
 

@@ -18,54 +18,58 @@
 <template>
   <div class="logs-tab">
     <div class="logs-header">
-      <div class="header-left">
-        <h3>Server Logs</h3>
-        <span class="log-count" v-if="logFiles.length > 0">
-          {{ logFiles.length }} log file{{ logFiles.length !== 1 ? 's' : '' }}
-        </span>
-      </div>
-      <div class="header-right">
-        <select v-model="selectedFile" class="log-select" :disabled="loading || logFiles.length === 0">
-          <option v-if="logFiles.length === 0" value="">No logs available</option>
-          <option v-for="file in logFiles" :key="file.name" :value="file.name">
-            {{ formatDate(file.date) }} ({{ formatSize(file.size) }})
-          </option>
-        </select>
-        <button
-          class="btn btn-secondary"
-          @click="refreshLogs"
-          :disabled="loading"
-          title="Refresh"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" :class="{ spinning: loading }">
-            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
-            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
-          </svg>
-        </button>
-        <button
-          class="btn btn-primary"
-          @click="downloadLog"
-          :disabled="!selectedFile || loading"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
-            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
-          </svg>
-          Download
-        </button>
-        <button
-          class="btn btn-danger"
-          @click="confirmDelete"
-          :disabled="!selectedFile || loading"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-          </svg>
-          Delete
-        </button>
-      </div>
+      <select v-model="selectedFile" class="log-select" :disabled="loading || logFiles.length === 0">
+        <option v-if="logFiles.length === 0" value="">No logs available</option>
+        <option v-for="file in logFiles" :key="file.name" :value="file.name">
+          {{ formatDate(file.date) }} ({{ formatSize(file.size) }})
+        </option>
+      </select>
+      <button
+        class="btn btn-secondary btn-icon"
+        @click="refreshLogs"
+        :disabled="loading"
+        title="Refresh"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" :class="{ spinning: loading }">
+          <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+          <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+        </svg>
+      </button>
+      <button
+        class="btn btn-primary"
+        @click="downloadLog"
+        :disabled="!selectedFile || loading"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+          <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+        </svg>
+        {{ isKiosk ? 'Save' : 'Download' }}
+      </button>
+      <button
+        class="btn btn-danger"
+        @click="confirmDelete"
+        :disabled="!selectedFile || loading"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+          <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+        </svg>
+        Delete
+      </button>
     </div>
+
+    <!-- Save-to-drive picker (kiosk mode) -->
+    <FileBrowserDialog
+      v-if="showDrivePicker"
+      title="Save log to external drive"
+      mode="save"
+      :extensions="['.log']"
+      :default-filename="selectedFile"
+      :on-submit="saveLogToPath"
+      @close="showDrivePicker = false"
+      @done="onSavedToDrive"
+    />
 
     <!-- Delete confirmation dialog -->
     <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
@@ -121,8 +125,12 @@
       </div>
     </div>
 
-    <div v-if="logsDir" class="logs-footer">
-      <span class="logs-path">Log files location: {{ logsDir }}</span>
+    <div v-if="logsDir || logFiles.length > 0" class="logs-footer">
+      <span v-if="logsDir" class="logs-path">Path: {{ logsDir }}</span>
+      <span v-else></span>
+      <span v-if="logFiles.length > 0" class="log-count">
+        {{ logFiles.length }} log file{{ logFiles.length !== 1 ? 's' : '' }}
+      </span>
     </div>
   </div>
 </template>
@@ -134,6 +142,11 @@ import * as monaco from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
 import { api } from '@/lib/api';
 import { registerNcSenderThemes, monacoTheme } from '@/lib/monaco-themes';
+import FileBrowserDialog from '@/components/FileBrowserDialog.vue';
+import { useKioskDetection } from '@/composables/useKioskDetection';
+
+const { isKiosk } = useKioskDetection();
+const showDrivePicker = ref(false);
 
 interface LogFile {
   name: string;
@@ -303,6 +316,12 @@ function refreshLogs() {
 function downloadLog() {
   if (!selectedFile.value) return;
 
+  // Kiosk: no browser download — open picker so the log lands on a USB.
+  if (isKiosk.value) {
+    showDrivePicker.value = true;
+    return;
+  }
+
   const url = `${api.baseUrl}/api/logs/${encodeURIComponent(selectedFile.value)}/download`;
   const link = document.createElement('a');
   link.href = url;
@@ -310,6 +329,24 @@ function downloadLog() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+async function saveLogToPath({ targetPath, filename }: { targetPath?: string; filename?: string }): Promise<{ success: boolean; error?: string; writtenPath?: string }> {
+  if (!selectedFile.value) return { success: false, error: 'No log selected' };
+  const res = await fetch(`${api.baseUrl}/api/logs/${encodeURIComponent(selectedFile.value)}/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetPath, filename }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    return { success: false, error: (data && data.error) || `Save failed (HTTP ${res.status})` };
+  }
+  return data;
+}
+
+function onSavedToDrive() {
+  showDrivePicker.value = false;
 }
 
 const isCurrentDayLog = computed(() => {
@@ -386,51 +423,28 @@ function formatSize(bytes: number): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 4px;
+  gap: 16px;
   padding: 16px;
 }
 
 .logs-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-left h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.log-count {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  background: var(--color-surface-elevated);
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .log-select {
-  padding: 6px 12px;
-  border-radius: 6px;
+  flex: 1;
+  min-width: 220px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 13px;
-  min-width: 200px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -440,16 +454,25 @@ function formatSize(bytes: number): string {
 }
 
 .btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 12px 22px;
+  border-radius: 8px;
   border: none;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-icon {
+  padding: 12px;
+  min-width: 44px;
 }
 
 .btn:disabled {
@@ -581,17 +604,33 @@ function formatSize(bytes: number): string {
 }
 
 .logs-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   flex-shrink: 0;
-  padding: 0 2px;
-  background: var(--color-surface-elevated);
-  border-radius: 6px;
-  font-size: 11px;
+  padding: 8px 4px 0;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
 .logs-path {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   font-style: italic;
-  font-size: 13px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.log-count {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  background: var(--color-surface-elevated);
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 </style>

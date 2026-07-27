@@ -1121,7 +1121,39 @@ class NCClient {
     return response.json();
   }
 
+  // === Backup / restore ===
+  // exportBackup returns the Response so the caller can stream the zip body
+  // through a blob-URL download link (server sets Content-Disposition).
+  async exportBackup(options = {}) {
+    const response = await fetch(`${this.baseUrl}/api/backup/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        includePluginsCode: !!options.includePluginsCode,
+        includeCommandHistory: !!options.includeCommandHistory,
+        includeGcodeFiles: !!options.includeGcodeFiles,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.text().catch(() => 'Backup failed');
+      throw new Error(err || `Backup failed (HTTP ${response.status})`);
+    }
+    return response;
+  }
 
+  async importBackup(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch(`${this.baseUrl}/api/backup/import`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || data.success === false) {
+      throw new Error((data && data.error) || `Restore failed (HTTP ${response.status})`);
+    }
+    return data;
+  }
 }
 
 // Create singleton instance

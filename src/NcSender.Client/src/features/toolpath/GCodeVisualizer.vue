@@ -85,7 +85,7 @@
           <button v-if="hasFile" @click="clearFile" class="clear-button" :disabled="isJobRunning">
             Clear
           </button>
-          <button @click="fileInput?.click()" class="load-button upload-button" title="Upload G-code" :disabled="isJobRunning">
+          <button @click="chooseGcodeFile" class="load-button upload-button" title="Upload G-code" :disabled="isJobRunning">
             <svg width="26" height="26"><use href="#emoji-upload"></use></svg>
           </button>
           <button @click="showFileManager = true" class="load-button folder-button" title="Open Folder" :disabled="isJobRunning">
@@ -570,6 +570,15 @@
     </div>
   </Dialog>
 
+  <FileBrowserDialog
+    v-if="showGcodePicker"
+    title="Load G-code from external drive"
+    mode="open"
+    :extensions="['.nc', '.gcode', '.gc', '.ngc', '.tap', '.txt']"
+    :on-submit="loadGcodeFromPath"
+    @close="showGcodePicker = false"
+    @done="showGcodePicker = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -584,6 +593,8 @@ import { useToolpathStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
+import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
+import { useKioskDetection } from '../../composables/useKioskDetection';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeDialog from '../probe/ProbeDialog.vue';
 import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
@@ -747,6 +758,38 @@ const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || 
 // Template refs
 const canvas = ref<HTMLElement>();
 const fileInput = ref<HTMLInputElement>();
+const { isKiosk } = useKioskDetection();
+const showGcodePicker = ref(false);
+
+const chooseGcodeFile = () => {
+  if (isKiosk.value) {
+    showGcodePicker.value = true;
+    return;
+  }
+  fileInput.value?.click();
+};
+
+const loadGcodeFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const blob = await res.blob();
+    const name = payload.fullPath.split(/[\\/]/).pop() || 'program.nc';
+    const file = new File([blob], name, { type: 'text/plain' });
+    isLoading.value = true;
+    loadingError.value = false;
+    loadingMessage.value = 'Uploading file...';
+    loadingProgress.value = 0;
+    await api.uploadGCodeFile(file);
+    return { success: true };
+  } catch (err: any) {
+    const msg = err?.message || 'Failed to load file';
+    loadingMessage.value = msg;
+    loadingError.value = true;
+    return { success: false, error: msg };
+  }
+};
 
 // Configuration: Enable/disable auto-snap on tool buttons scroll
 const ENABLE_TOOL_BUTTON_SNAP = false;

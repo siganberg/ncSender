@@ -241,6 +241,16 @@
       </div>
     </div>
   </Dialog>
+
+  <FileBrowserDialog
+    v-if="showUploadPicker"
+    title="Upload G-code from external drive"
+    mode="open"
+    :extensions="['.nc', '.gcode', '.gc', '.ngc', '.tap', '.txt']"
+    :on-submit="uploadFromPath"
+    @close="showUploadPicker = false"
+    @done="showUploadPicker = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -252,6 +262,8 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import TreeItem from './components/TreeItem.vue';
 import ControllerFilesTab from './components/ControllerFilesTab.vue';
+import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
+import { useKioskDetection } from '../../composables/useKioskDetection';
 
 const store = useAppStore();
 
@@ -339,8 +351,14 @@ const newFolderInput = ref<HTMLInputElement | null>(null);
 
 // Upload state
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const { isKiosk } = useKioskDetection();
+const showUploadPicker = ref(false);
 
 const triggerUpload = () => {
+  if (isKiosk.value) {
+    showUploadPicker.value = true;
+    return;
+  }
   fileInputRef.value?.click();
 };
 
@@ -357,6 +375,21 @@ const handleFileUpload = async (event: Event) => {
   } finally {
     // Reset input so same file can be uploaded again
     input.value = '';
+  }
+};
+
+const uploadFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const blob = await res.blob();
+    const name = payload.fullPath.split(/[\\/]/).pop() || 'upload.nc';
+    await api.uploadGCodeFile(new File([blob], name, { type: 'text/plain' }));
+    await fetchTree();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to upload file' };
   }
 };
 
