@@ -153,6 +153,22 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(WsFlashProgress))]
 [JsonSerializable(typeof(WsFlashMessage))]
 [JsonSerializable(typeof(WsFlashError))]
+// Backup / restore
+[JsonSerializable(typeof(BackupOptions))]
+[JsonSerializable(typeof(BackupManifest))]
+[JsonSerializable(typeof(BackupImportResult))]
+[JsonSerializable(typeof(BackupSaveRequest))]
+[JsonSerializable(typeof(BackupImportFromPathRequest))]
+// External drives (Save-to-USB / kiosk save target)
+[JsonSerializable(typeof(ExternalDrive))]
+[JsonSerializable(typeof(List<ExternalDrive>))]
+[JsonSerializable(typeof(IReadOnlyList<ExternalDrive>))]
+[JsonSerializable(typeof(ExternalDriveWriteRequest))]
+[JsonSerializable(typeof(ExternalDriveWriteResult))]
+[JsonSerializable(typeof(ExternalDriveEntry))]
+[JsonSerializable(typeof(List<ExternalDriveEntry>))]
+[JsonSerializable(typeof(ExternalDriveBrowseResponse))]
+[JsonSerializable(typeof(NcSender.Server.Logs.LogSaveRequest))]
 // Generic plugin-facing serial / OTA API
 [JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeRequest))]
 [JsonSerializable(typeof(NcSender.Server.Devices.PluginSerialProbeResult))]

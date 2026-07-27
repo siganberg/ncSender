@@ -694,12 +694,25 @@
       </div>
     </div>
   </Dialog>
+
+  <!-- Open-from-drive picker (kiosk mode) -->
+  <FileBrowserDialog
+    v-if="showPluginPicker"
+    title="Select plugin ZIP from external drive"
+    mode="open"
+    :extensions="['.zip']"
+    :on-submit="pickPluginFromPath"
+    @close="showPluginPicker = false"
+    @done="showPluginPicker = false"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
+import FileBrowserDialog from '@/components/FileBrowserDialog.vue';
+import { useKioskDetection } from '@/composables/useKioskDetection';
 import { api } from '@/lib/api';
 import { renderReleaseNotesMarkdown } from '@/lib/release-notes';
 import { settingsStore } from '@/lib/settings-store';
@@ -736,6 +749,8 @@ const installSuccess = ref(false);
 const installCategoryConflict = ref(false);
 const installError = ref<string | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const { isKiosk } = useKioskDetection();
+const showPluginPicker = ref(false);
 const showConfigPanel = ref(false);
 const selectedPluginForConfig = ref<PluginListItem | null>(null);
 const configUIContent = ref('');
@@ -1119,6 +1134,10 @@ const uninstallPlugin = async () => {
 };
 
 const triggerFileSelect = () => {
+  if (isKiosk.value) {
+    showPluginPicker.value = true;
+    return;
+  }
   fileInput.value?.click();
 };
 
@@ -1129,6 +1148,21 @@ const handleFileSelect = (event: Event) => {
   if (file) {
     selectedFile.value = file;
     selectedFileName.value = file.name;
+  }
+};
+
+const pickPluginFromPath = async (payload: { fullPath?: string }) => {
+  if (!payload.fullPath) return { success: false, error: 'No file selected' };
+  try {
+    const res = await fetch(`${api.baseUrl}/api/external-drives/read?path=${encodeURIComponent(payload.fullPath)}`);
+    if (!res.ok) return { success: false, error: `Read failed (${res.status})` };
+    const blob = await res.blob();
+    const name = payload.fullPath.split(/[\\/]/).pop() || 'plugin.zip';
+    selectedFile.value = new File([blob], name, { type: 'application/zip' });
+    selectedFileName.value = name;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to read file' };
   }
 };
 
@@ -1481,6 +1515,20 @@ onBeforeUnmount(() => {
 
 .btn-primary {
   background: var(--color-accent);
+}
+
+/* Touch-friendly Install Plugin button in the header — scoped so it doesn't
+   affect the smaller .btn instances in dialogs, per-row actions, or registry
+   lists elsewhere in this file. */
+.plugins-header .btn {
+  min-height: 44px;
+  padding: 12px 22px;
+  font-size: 0.95rem;
+  gap: 8px;
+}
+.plugins-header .btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .btn-icon {

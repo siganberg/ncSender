@@ -120,6 +120,11 @@ public static class ServerBuilder
         builder.Services.AddSingleton<ILogService, LogService>();
         builder.Services.AddSingleton<IProbeService, ProbeService>();
         builder.Services.AddSingleton<IJogManager, JogManager>();
+        builder.Services.AddSingleton<IBackupService>(sp =>
+            new NcSender.Server.Backup.BackupService(
+                sp.GetRequiredService<ILogger<NcSender.Server.Backup.BackupService>>(),
+                edition: "community"));
+        builder.Services.AddSingleton<IExternalDriveService, NcSender.Server.ExternalDrives.ExternalDriveService>();
 
         // Phase 5 DI registrations
         builder.Services.AddSingleton<NcSender.Server.Plugins.PluginDialogDispatcher>();
@@ -341,6 +346,8 @@ public static class ServerBuilder
         UpdateEndpoints.Map(app);
         NcSender.Server.Devices.PluginSerialEndpoints.Map(app);
         NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);
+        NcSender.Server.Backup.BackupEndpoints.Map(app);
+        NcSender.Server.ExternalDrives.ExternalDriveEndpoints.Map(app);
         SystemApi.SystemEndpoints.Map(app);
 
         // Eagerly resolve PendantManager so its constructor subscribes to

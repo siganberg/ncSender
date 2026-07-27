@@ -18,7 +18,7 @@ public static class GcodeFileEndpoints
             {
                 form = await context.Request.ReadFormAsync();
             }
-            catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex)
+            catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
                 when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge
                       || ex.Message.Contains("Request body too large", StringComparison.OrdinalIgnoreCase))
             {
