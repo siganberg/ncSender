@@ -4444,6 +4444,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .firmware-header {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--gap-xs);
   align-items: center;
   padding: var(--gap-sm);
@@ -4453,7 +4454,8 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .firmware-search-input {
-  flex: 1;
+  flex: 1 1 180px;
+  min-width: 0;
   padding: var(--gap-sm) var(--gap-md);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
@@ -4470,7 +4472,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .clear-search-button,
 .import-export-button {
-  padding: var(--gap-sm) var(--gap-md);
+  padding: var(--gap-sm) 10px;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -4478,6 +4480,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .clear-search-button:hover,
@@ -4489,7 +4492,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: var(--gap-sm) var(--gap-md);
+  padding: var(--gap-sm) 10px;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -4497,6 +4500,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .refresh-firmware-button:hover:not(:disabled) {
@@ -4527,7 +4531,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 .submit-changes-button {
-  padding: var(--gap-sm) var(--gap-lg);
+  padding: var(--gap-sm) var(--gap-md);
   background: var(--color-accent);
   color: white !important;
   border: none;
@@ -4537,6 +4541,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 4px rgba(26, 188, 156, 0.2);
+  flex-shrink: 0;
 }
 
 .submit-changes-button:hover:not(:disabled) {

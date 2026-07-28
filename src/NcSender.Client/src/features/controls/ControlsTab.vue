@@ -681,15 +681,16 @@ onBeforeUnmount(() => {
 }
 
 .bindings-table .col-group {
-  width: 120px;
+  width: 78px;
   vertical-align: middle;
   text-align: center;
 }
 
 .bindings-table td:nth-child(3),
 .bindings-table td:nth-child(4) {
-  width: 220px;
+  width: 140px;
   vertical-align: middle;
+  text-align: center;
 }
 
 .bindings-table thead {
@@ -747,6 +748,12 @@ onBeforeUnmount(() => {
   vertical-align: top;
 }
 
+.bindings-table td:nth-child(3),
+.bindings-table td:nth-child(4) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 
 .bindings-table td:first-child {
   padding-left: var(--gap-md);
@@ -788,17 +795,18 @@ onBeforeUnmount(() => {
 }
 
 .binding-cell {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
 }
 
 .binding-combined {
-  display: inline-flex;
+  display: flex;
   align-items: stretch;
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-small);
   overflow: hidden;
-  width: 190px;
+  width: 100%;
   transition: all 0.2s ease;
 }
 
@@ -806,7 +814,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: 8px 10px;
   font-weight: 600;
   color: white;
   cursor: pointer;
@@ -815,6 +823,9 @@ onBeforeUnmount(() => {
   background: var(--color-accent);
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .binding-combined__value:hover:not(.disabled) {
@@ -904,7 +915,7 @@ onBeforeUnmount(() => {
 }
 
 .binding-empty {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-surface-muted);
@@ -913,7 +924,7 @@ onBeforeUnmount(() => {
   padding: 8px 16px;
   color: var(--color-text-secondary);
   font-style: italic;
-  width: 190px;
+  width: 100%;
 }
 
 .binding-empty-clickable {
@@ -936,7 +947,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 190px;
+  width: 100%;
 }
 
 .capture-message {
