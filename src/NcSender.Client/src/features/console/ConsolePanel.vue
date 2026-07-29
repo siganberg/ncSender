@@ -598,6 +598,7 @@ import { getCommandHistoryFromInit } from '@/lib/init';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
+import { ensureHomed } from '../../composables/useUnhomedGuard';
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 import MacroPanel from '../macro/MacroPanel.vue';
@@ -1605,6 +1606,11 @@ const sendCommand = async () => {
     .filter((line) => line.length > 0);
 
   if (commands.length === 0) {
+    commandToSend.value = '';
+    return;
+  }
+
+  if (!(await ensureHomed(commands))) {
     commandToSend.value = '';
     return;
   }

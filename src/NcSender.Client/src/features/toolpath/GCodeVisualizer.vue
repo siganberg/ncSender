@@ -595,6 +595,7 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
+import { ensureHomed } from '../../composables/useUnhomedGuard';
 import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeDialog from '../probe/ProbeDialog.vue';
 import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
@@ -751,7 +752,7 @@ const canStop = computed(() => {
   return state === 'running' || state === 'hold' || state === 'door' || state === 'tool-changing';
 });
 
-const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value || store.homingCycle.value === 0 || !store.isHomed.value);
+const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 
@@ -3924,6 +3925,7 @@ const endToolPress = (toolNumber: number | string) => {
 };
 
 const sendToolChangeMacro = async (toolNumber: number) => {
+  if (!(await ensureHomed('M6'))) return;
   try {
     await api.triggerToolChange(toolNumber);
   } catch (error) {
@@ -3932,6 +3934,7 @@ const sendToolChangeMacro = async (toolNumber: number) => {
 };
 
 const sendTLSCommand = async () => {
+  if (!(await ensureHomed('$TLS'))) return;
   try {
     await api.triggerTLS();
   } catch (error) {

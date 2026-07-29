@@ -811,6 +811,21 @@
     @done="showFirmwareOpenPicker = false"
   />
 
+  <!-- Unhomed action warning: shown when user tries a motion command
+       (tool button, terminal Send) while the machine hasn't been homed. -->
+  <Dialog v-if="unhomedGuard.open.value" @close="unhomedGuard.abort" :show-header="false" size="small">
+    <ConfirmPanel
+      title="Machine is not homed"
+      message="The machine has not been homed. Running commands without homing can crash the tool. Continue anyway?"
+      :show-cancel="true"
+      confirm-text="Continue"
+      cancel-text="Abort"
+      variant="danger"
+      @confirm="unhomedGuard.confirm"
+      @cancel="unhomedGuard.abort"
+    />
+  </Dialog>
+
   <!-- Mandatory Setup Dialog (non-dismissible) -->
   <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus" :close-on-backdrop-click="setupDismissible" @close="closeSetupDialog">
     <div class="setup-container">
@@ -1119,6 +1134,7 @@ import ConfigTab from './features/config/ConfigTab.vue';
 import BackupTab from './features/backup/BackupTab.vue';
 import FileBrowserDialog from './components/FileBrowserDialog.vue';
 import { useKioskDetection } from './composables/useKioskDetection';
+import { useUnhomedGuardDialog } from './composables/useUnhomedGuard';
 import { keyBindingStore } from './features/controls';
 import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 import { mmToInches, inchesToMm } from './lib/units';
@@ -2466,6 +2482,7 @@ const clearFirmwareChanges = () => {
 // Kept up here in App.vue since the firmware Export button lives here and
 // the tab isn't its own component.
 const { isKiosk: isFirmwareKiosk } = useKioskDetection();
+const unhomedGuard = useUnhomedGuardDialog();
 const showFirmwareDrivePicker = ref(false);
 const firmwareExportFilename = computed(() => `firmware-settings-${new Date().toISOString().split('T')[0]}.txt`);
 
