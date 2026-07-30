@@ -550,6 +550,26 @@ public class CncEventBridge
         }
     }
 
+    private static string BuildHoldHint(int holdMs, int countdownSec, bool chainSteps)
+    {
+        static string SecondsNoun(double n)
+        {
+            var text = n == Math.Floor(n) ? $"{(int)n}" : $"{n:0.#}";
+            return $"{text} {(Math.Abs(n - 1) < 0.001 ? "second" : "seconds")}";
+        }
+        static string SecondsAttr(double n)
+        {
+            var text = n == Math.Floor(n) ? $"{(int)n}" : $"{n:0.#}";
+            return $"{text}-second";
+        }
+        var holdText = SecondsNoun(holdMs / 1000.0);
+        var countdownAttr = SecondsAttr(countdownSec);
+        var chainNote = chainSteps
+            ? $" Chain mode is on. One arm runs every remaining step, each with its own {countdownAttr} countdown."
+            : "";
+        return $"<div class=\"rcs-hold-hint\">Tap to fire it right away. Hold for {holdText} to arm a {countdownAttr} countdown, so you have time to walk to the spindle first.{chainNote}</div>";
+    }
+
     private static string BuildSafetyDialogHtml(PluginDialogInfo dialog)
     {
         var abortGcodeLines = !string.IsNullOrWhiteSpace(dialog.AbortEventGcode)
@@ -560,6 +580,44 @@ public class CncEventBridge
             : Array.Empty<string>();
 
         var abortGcodeJson = System.Text.Json.JsonSerializer.Serialize(abortGcodeLines, NcSenderJsonContext.Default.StringArray);
+
+        // Optional in-sequence action steps (Release → Clamp / etc.).
+        // Rendered as ONE morphing button: its label and gcode advance
+        // through the sequence as the operator taps/holds it. This keeps
+        // the dialog compact and mirrors real hardware — a single
+        // "current action" button that walks the sequence.
+        var extraButtons = dialog.Buttons ?? new List<PluginDialogButton>();
+        var hasExtras = extraButtons.Count > 0;
+        var firstLabel = hasExtras
+            ? System.Net.WebUtility.HtmlEncode(extraButtons[0].Label)
+            : "";
+        var extraButtonsMarkup = hasExtras
+            ? $"<button class=\"rcs-action-button rcs-button-extra\" id=\"rcs-extra-btn\">{firstLabel}</button>"
+            : "";
+
+        // Labels + gcode arrays for each step — serialized manually to
+        // avoid reflection under AOT.
+        var labelSb = new System.Text.StringBuilder("[");
+        var gcodeSb = new System.Text.StringBuilder("[");
+        for (var i = 0; i < extraButtons.Count; i += 1)
+        {
+            if (i > 0) { labelSb.Append(','); gcodeSb.Append(','); }
+            labelSb.Append(System.Text.Json.JsonSerializer.Serialize(
+                extraButtons[i].Label ?? "", NcSenderJsonContext.Default.String));
+            var lines = extraButtons[i].Gcode ?? new List<string>();
+            gcodeSb.Append(System.Text.Json.JsonSerializer.Serialize(
+                lines.ToArray(), NcSenderJsonContext.Default.StringArray));
+        }
+        labelSb.Append(']');
+        gcodeSb.Append(']');
+        var extraLabelsJson = labelSb.ToString();
+        var extraGcodeJson = gcodeSb.ToString();
+
+        // Plugin-configurable dialog timing. Sensible defaults apply if the
+        // plugin hasn't written them into its settings.
+        var holdMs = dialog.HoldMs.GetValueOrDefault(1000);
+        var countdownSec = dialog.CountdownSec.GetValueOrDefault(5);
+        var chainStepsJs = dialog.ChainSteps.GetValueOrDefault(false) ? "true" : "false";
 
         return $$"""
         <style>
@@ -595,21 +653,30 @@ public class CncEventBridge
             padding: 16px;
           }
 
+          .rcs-hold-hint {
+            font-size: 0.85rem;
+            line-height: 1.4;
+            color: var(--color-text-secondary);
+            text-align: center;
+            margin-top: -8px;
+          }
+
           .rcs-safety-actions {
             display: flex;
             justify-content: center;
-            gap: 16px;
+            gap: 12px;
           }
 
           .rcs-action-button {
-            padding: 12px 32px;
+            padding: 12px 24px;
             border: none;
             border-radius: var(--radius-small);
             font-weight: 600;
             font-size: 1rem;
             cursor: pointer;
             transition: all 0.2s ease;
-            min-width: 140px;
+            min-width: 120px;
+            flex: 0 0 auto;
           }
 
           .rcs-action-button:hover {
@@ -630,15 +697,28 @@ public class CncEventBridge
             background: var(--color-success, #16a34a);
             color: white;
           }
+
+          .rcs-button-extra {
+            background-color: var(--color-accent, #2563eb);
+            background-repeat: no-repeat;
+            color: white;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+          }
         </style>
 
         <div class="rcs-safety-container">
           <div class="rcs-safety-header">{{dialog.Title}}</div>
           <div class="rcs-safety-dialog">
             <div class="rcs-safety-message">{{dialog.Message}}</div>
+            {{(hasExtras ? BuildHoldHint(holdMs, countdownSec, dialog.ChainSteps.GetValueOrDefault(false)) : "")}}
             <div class="rcs-safety-actions">
               <button class="rcs-action-button rcs-button-abort" id="rcs-abort-btn">Abort</button>
-              <button class="rcs-action-button rcs-button-continue" id="rcs-continue-btn">{{dialog.ContinueLabel}}</button>
+              {{extraButtonsMarkup}}
+              <button class="rcs-action-button rcs-button-continue" id="rcs-continue-btn" {{(hasExtras ? "disabled" : "")}}>{{dialog.ContinueLabel}}</button>
             </div>
           </div>
         </div>
@@ -646,6 +726,133 @@ public class CncEventBridge
         <script>
           (function() {
             var abortGcodeLines = {{abortGcodeJson}};
+            var extraLabels = {{extraLabelsJson}};
+            var extraGcodeArrays = {{extraGcodeJson}};
+            var extraCount = extraGcodeArrays.length;
+            // A single morphing extra button walks the step sequence
+            // (Release → Clamp / etc.). Two gestures supported:
+            //   - Short tap → immediate action.
+            //   - Hold →     arms a countdown; auto-executes at 0.
+            // The hold gesture lets the operator arm the drawbar release/
+            // clamp on the touch screen, then walk to the spindle before it
+            // fires. Durations come from plugin settings.
+            var HOLD_MS = {{holdMs}};
+            var COUNTDOWN_SEC = {{countdownSec}};
+            var CHAIN_STEPS = {{chainStepsJs}};
+            var nextExtraIdx = 0;
+            var extraBtn = document.getElementById('rcs-extra-btn');
+            var state = {
+              holdTimer: null,
+              countdownTimer: null,
+              armed: false
+            };
+
+            function enableContinue() {
+              var c = document.getElementById('rcs-continue-btn');
+              if (c) c.disabled = false;
+            }
+
+            function currentLabel() {
+              return extraLabels[nextExtraIdx] || '';
+            }
+
+            // Hold-fill overlay: a translucent white layer that grows from
+            // 0% width to 100% width across the button over HOLD_MS. Matches
+            // the long-press feedback used elsewhere in ncSender.
+            var HOLD_FILL_IMAGE = 'linear-gradient(rgba(255,255,255,0.35), rgba(255,255,255,0.35))';
+            function beginHoldFill() {
+              if (!extraBtn) return;
+              extraBtn.style.backgroundImage = HOLD_FILL_IMAGE;
+              extraBtn.style.transition = 'none';
+              extraBtn.style.backgroundSize = '0% 100%';
+              // Force reflow so the transition applies from 0%.
+              void extraBtn.offsetWidth;
+              extraBtn.style.transition = 'background-size ' + HOLD_MS + 'ms linear';
+              extraBtn.style.backgroundSize = '100% 100%';
+            }
+            function clearHoldFill() {
+              if (!extraBtn) return;
+              extraBtn.style.transition = 'none';
+              extraBtn.style.backgroundImage = '';
+              extraBtn.style.backgroundSize = '';
+            }
+
+            function clearExtraTimers() {
+              if (state.holdTimer !== null) { clearTimeout(state.holdTimer); state.holdTimer = null; }
+              if (state.countdownTimer !== null) { clearInterval(state.countdownTimer); state.countdownTimer = null; }
+              state.armed = false;
+            }
+
+            function executeExtra() {
+              if (!extraBtn || nextExtraIdx >= extraCount) return;
+              var gcode = extraGcodeArrays[nextExtraIdx] || [];
+              var justFiredLabel = extraLabels[nextExtraIdx] || '';
+              var wasChained = CHAIN_STEPS && state.armed;
+              clearExtraTimers();
+              clearHoldFill();
+              gcode.forEach(function(line) {
+                window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
+              });
+              nextExtraIdx += 1;
+              if (nextExtraIdx < extraCount) {
+                extraBtn.textContent = currentLabel();
+                // Chain mode: the user armed once; keep the countdown
+                // rolling through every remaining step without another
+                // long-press.
+                if (wasChained) startCountdown();
+              } else {
+                // Strip any trailing "(Ns)" countdown so the disabled
+                // button doesn't freeze on "Clamp (1s)".
+                extraBtn.textContent = justFiredLabel;
+                extraBtn.disabled = true;
+                enableContinue();
+              }
+            }
+
+            function startCountdown() {
+              if (!extraBtn) return;
+              state.armed = true;
+              var label = currentLabel();
+              var remaining = COUNTDOWN_SEC;
+              extraBtn.textContent = label + ' (' + remaining + 's)';
+              state.countdownTimer = setInterval(function() {
+                remaining -= 1;
+                if (remaining <= 0) {
+                  executeExtra();
+                } else {
+                  extraBtn.textContent = label + ' (' + remaining + 's)';
+                }
+              }, 1000);
+            }
+
+            if (extraBtn) {
+              extraBtn.addEventListener('pointerdown', function() {
+                if (extraBtn.disabled || state.armed || nextExtraIdx >= extraCount) return;
+                if (state.holdTimer !== null) return;
+                beginHoldFill();
+                state.holdTimer = setTimeout(function() {
+                  state.holdTimer = null;
+                  startCountdown();
+                }, HOLD_MS);
+              });
+              function cancelHoldAndMaybeTap(fire) {
+                if (state.holdTimer === null) return;
+                clearTimeout(state.holdTimer);
+                state.holdTimer = null;
+                clearHoldFill();
+                if (fire && !extraBtn.disabled && !state.armed && nextExtraIdx < extraCount) {
+                  executeExtra();
+                }
+              }
+              extraBtn.addEventListener('pointerup', function() { cancelHoldAndMaybeTap(true); });
+              extraBtn.addEventListener('pointerleave', function() { cancelHoldAndMaybeTap(false); });
+              extraBtn.addEventListener('pointercancel', function() { cancelHoldAndMaybeTap(false); });
+              // Long-press context menu on touch would swallow pointerup.
+              extraBtn.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+            }
+
+            if (extraCount === 0) enableContinue();
+
             if (window.__rcsClickHandler) {
               document.removeEventListener('click', window.__rcsClickHandler, true);
             }
@@ -656,6 +863,8 @@ public class CncEventBridge
                 t.disabled = true;
                 var c = document.getElementById('rcs-continue-btn');
                 if (c) c.disabled = true;
+                clearExtraTimers();
+                if (extraBtn) extraBtn.disabled = true;
                 if (abortGcodeLines.length > 0) {
                   abortGcodeLines.forEach(function(line) {
                     window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
@@ -665,7 +874,9 @@ public class CncEventBridge
                 window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
                 document.removeEventListener('click', handler, true);
                 delete window.__rcsClickHandler;
-              } else if (t.id === 'rcs-continue-btn') {
+                return;
+              }
+              if (t.id === 'rcs-continue-btn') {
                 t.disabled = true;
                 var a = document.getElementById('rcs-abort-btn');
                 if (a) a.disabled = true;

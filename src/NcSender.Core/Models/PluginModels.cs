@@ -62,6 +62,19 @@ public class PluginMessageConfig
     public string Title { get; set; } = "";
     public string Message { get; set; } = "";
     public string ContinueLabel { get; set; } = "Continue";
+    // Optional in-sequence action buttons rendered between Abort and
+    // Continue. Buttons render sequentially — clicking one enables the
+    // next. Null / empty preserves the legacy Abort + Continue layout,
+    // so plugins that don't opt in aren't affected.
+    public List<PluginDialogButton>? Buttons { get; set; }
+}
+
+public class PluginDialogButton
+{
+    public string Label { get; set; } = "";
+    // G-code lines to send when the button is clicked. Typically `["~"]`
+    // to advance past an M0 pause; can be any string ncSender accepts.
+    public List<string> Gcode { get; set; } = new();
 }
 
 public class PluginDialogInfo
@@ -71,6 +84,14 @@ public class PluginDialogInfo
     public string Message { get; set; } = "";
     public string ContinueLabel { get; set; } = "Continue";
     public string AbortEventGcode { get; set; } = "";
+    public List<PluginDialogButton>? Buttons { get; set; }
+    // Long-press → arm hold duration (milliseconds).
+    public int? HoldMs { get; set; }
+    // Countdown length after arm before auto-execute (seconds).
+    public int? CountdownSec { get; set; }
+    // When true, a single arm cascades through every remaining step
+    // without another user interaction.
+    public bool? ChainSteps { get; set; }
 }
 
 public class PluginToolMenuEntry

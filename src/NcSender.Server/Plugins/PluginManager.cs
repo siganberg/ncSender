@@ -527,13 +527,35 @@ public class PluginManager : IPluginManager
                 ? abort.ToString() ?? ""
                 : "";
 
+            int? holdMs = null;
+            int? countdownSec = null;
+            bool? chainSteps = null;
+            // Generic dialog-timing overrides. Any plugin can add a
+            // `dialogBehavior` object to its settings:
+            //   { holdMs: 1000, countdownSec: 5, chainSteps: false }
+            if (settings.TryGetValue("dialogBehavior", out var mdRaw)
+                && mdRaw is System.Text.Json.JsonElement mdEl
+                && mdEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (mdEl.TryGetProperty("holdMs", out var hMs) && hMs.TryGetInt32(out var hv)) holdMs = hv;
+                if (mdEl.TryGetProperty("countdownSec", out var cSec) && cSec.TryGetInt32(out var cv)) countdownSec = cv;
+                if (mdEl.TryGetProperty("chainSteps", out var ch)
+                    && (ch.ValueKind == System.Text.Json.JsonValueKind.True
+                        || ch.ValueKind == System.Text.Json.JsonValueKind.False))
+                    chainSteps = ch.GetBoolean();
+            }
+
             return new PluginDialogInfo
             {
                 PluginId = plugin.Id,
                 Title = config.Title,
                 Message = config.Message,
                 ContinueLabel = config.ContinueLabel,
-                AbortEventGcode = abortEventGcode
+                AbortEventGcode = abortEventGcode,
+                Buttons = config.Buttons,
+                HoldMs = holdMs,
+                CountdownSec = countdownSec,
+                ChainSteps = chainSteps
             };
         }
         catch (Exception ex)
