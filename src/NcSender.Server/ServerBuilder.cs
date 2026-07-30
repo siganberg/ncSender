@@ -113,6 +113,12 @@ public static class ServerBuilder
         builder.Services.AddSingleton<ICommandHistoryService, CommandHistoryService>();
         builder.Services.AddSingleton<IMacroService, MacroService>();
         builder.Services.AddSingleton<IToolService, ToolService>();
+        // Auto-writeback of TLS probe results into the tool library, gated
+        // by a per-tool "arm" flag set from the plugin via
+        // pluginContext.armTlsWriteback(toolNumber).
+        builder.Services.AddSingleton<NcSender.Server.Tools.IPendingToolTloWriteback,
+            NcSender.Server.Tools.PendingToolTloWriteback>();
+        builder.Services.AddHostedService<NcSender.Server.Tools.TloWritebackListener>();
         builder.Services.AddSingleton<IFirmwareService, FirmwareService>();
         builder.Services.AddSingleton<IConfigService, ConfigService>();
         builder.Services.AddSingleton<IAlarmService, AlarmService>();

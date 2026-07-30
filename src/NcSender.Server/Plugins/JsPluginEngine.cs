@@ -17,6 +17,7 @@ public class JsPluginEngine : IJsPluginEngine
     private readonly PluginDialogDispatcher _dialogs;
     private readonly IToolService _toolService;
     private readonly IDongleDeviceService _dongleDevices;
+    private readonly NcSender.Server.Tools.IPendingToolTloWriteback _pendingTloWriteback;
     private readonly Dictionary<string, PluginState> _plugins = new();
     private readonly Lock _lock = new();
 
@@ -27,12 +28,13 @@ public class JsPluginEngine : IJsPluginEngine
         public int Priority { get; init; }
     }
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback)
     {
         _logger = logger;
         _dialogs = dialogs;
         _toolService = toolService;
         _dongleDevices = dongleDevices;
+        _pendingTloWriteback = pendingTloWriteback;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -379,6 +381,61 @@ public class JsPluginEngine : IJsPluginEngine
         }));
 
         ctx.Set("dongle", dongle);
+
+        // Tool library APIs — let plugins update tool offsets after a probe.
+        //
+        // updateToolOffset(toolNumber, { tlo?, x?, y?, z? }) — synchronous
+        //   patch of a tool's offsets. Missing keys are left untouched.
+        //   Returns true on success, false if no tool with that number
+        //   exists in the library.
+        ctx.Set("updateToolOffset", new ClrFunction(engine, "updateToolOffset", (_, args) =>
+        {
+            try
+            {
+                var toolNumber = args.Length > 0 && args[0].IsNumber() ? (int)args[0].AsNumber() : 0;
+                if (toolNumber <= 0) return JsBoolean.False;
+                var patch = args.Length > 1 && args[1] is ObjectInstance p ? p : null;
+                var tools = _toolService.GetAllAsync().GetAwaiter().GetResult();
+                var tool = tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
+                if (tool is null) return JsBoolean.False;
+
+                if (patch is not null)
+                {
+                    var tloProp = patch.Get("tlo");
+                    if (tloProp.IsNumber()) tool.Offsets.Tlo = tloProp.AsNumber();
+                    var xProp = patch.Get("x");
+                    if (xProp.IsNumber()) tool.Offsets.X = xProp.AsNumber();
+                    var yProp = patch.Get("y");
+                    if (yProp.IsNumber()) tool.Offsets.Y = yProp.AsNumber();
+                    var zProp = patch.Get("z");
+                    if (zProp.IsNumber()) tool.Offsets.Z = zProp.AsNumber();
+                }
+                _toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult();
+                _logger.LogInformation(
+                    "[plugin:{PluginId}] updateToolOffset T{Tool} tlo={Tlo:F4}",
+                    pluginId, toolNumber, tool.Offsets.Tlo);
+                return JsBoolean.True;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.updateToolOffset failed for {PluginId}", pluginId);
+                return JsBoolean.False;
+            }
+        }));
+
+        // armTlsWriteback(toolNumber) — arm a one-shot writeback: the NEXT
+        // [TLO:value] response from the controller will be saved into the
+        // matching tool's Offsets.Tlo in the library. Idempotent per tool.
+        // Plugins call this from onBeforeCommand right before emitting a
+        // TLS probe routine that the tool doesn't yet have a stored TLO
+        // for; the writeback then happens automatically once the probe
+        // completes and the controller replies with [TLO:xxx].
+        ctx.Set("armTlsWriteback", new ClrFunction(engine, "armTlsWriteback", (_, args) =>
+        {
+            var toolNumber = args.Length > 0 && args[0].IsNumber() ? (int)args[0].AsNumber() : 0;
+            _pendingTloWriteback.Arm(toolNumber);
+            return JsValue.Undefined;
+        }));
 
         return ctx;
     }
