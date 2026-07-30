@@ -175,6 +175,13 @@
             @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
+            <!-- Small dot in the top-right corner of the slot button when
+                 the assigned bit has a stored TLO in the tool library. -->
+            <span
+              v-if="hasStoredTlo(t)"
+              class="tools-legend__tlo-dot"
+              :title="`TLO stored (${formatDiameter(toolInventory?.[t]?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
+            ></span>
             <span v-if="showToolInfo !== t" class="tools-legend__label">Slot{{ t }}</span>
             <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
               <span v-if="toolInventory[t].toolId" class="tool-id-label">#{{ toolInventory[t].toolId }}</span>
@@ -4217,6 +4224,14 @@ watch(toolsScrollContainer, (container, oldContainer, onCleanup) => {
   }
 });
 
+// True if slot `t` has a bit assigned whose Tool Library TLO is non-zero —
+// drives the tiny "TLO stored" dot on the slot button.
+const hasStoredTlo = (t: number): boolean => {
+  const tool = toolInventory.value?.[t];
+  const tlo = tool?.offsets?.tlo;
+  return typeof tlo === 'number' && Math.abs(tlo) > 0.0001;
+};
+
 // Load tool inventory from core tools API (uses pre-loaded data if available)
 const loadToolInventory = async () => {
   // Use pre-loaded tools if available
@@ -5149,6 +5164,27 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   min-height: 44px;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* TLO-stored indicator — small accent dot in the top-right corner of a
+   slot button. Signals that the assigned tool has a stored TLO in the
+   library, so a probe on the next M6 can be skipped (library strategy)
+   or the value can be used as a reference. */
+.tools-legend__tlo-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+.tools-legend__item.active .tools-legend__tlo-dot {
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
 }
 
 .tools-legend__item.active {
