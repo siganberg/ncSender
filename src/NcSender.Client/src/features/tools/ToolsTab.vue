@@ -280,8 +280,11 @@
 
             <!-- TLS X/Y/Z Offsets -->
             <div class="form-row form-row-3">
-              <div class="form-group" title="Shifts where the tool-length probe is performed on the X axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle).">
-                <label class="form-label">TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <div class="form-group">
+                <label class="form-label">
+                  TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
+                  <InfoTooltip text="Shifts where the tool-length probe is performed on the X axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle)." />
+                </label>
                 <input
                   type="number"
                   class="form-input"
@@ -290,8 +293,11 @@
                   :placeholder="tloPlaceholder"
                 >
               </div>
-              <div class="form-group" title="Shifts where the tool-length probe is performed on the Y axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle).">
-                <label class="form-label">TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <div class="form-group">
+                <label class="form-label">
+                  TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
+                  <InfoTooltip text="Shifts where the tool-length probe is performed on the Y axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle)." />
+                </label>
                 <input
                   type="number"
                   class="form-input"
@@ -300,8 +306,11 @@
                   :placeholder="tloPlaceholder"
                 >
               </div>
-              <div class="form-group" title="Per-tool adjustment to the probe start height, added on top of the plugin's Seek Start Z. Positive raises the start (further from the toolsetter — safer for long tools). Negative lowers it (closer to the toolsetter — for short tools that wouldn't reach from the default start height).">
-                <label class="form-label">TLS Z Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
+              <div class="form-group">
+                <label class="form-label">
+                  TLS Z Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
+                  <InfoTooltip text="Per-tool adjustment to the probe start height, added on top of the plugin's Seek Start Z. Positive raises the start (further from the toolsetter — safer for long tools). Negative lowers it (closer to the toolsetter — for short tools that wouldn't reach from the default start height)." />
+                </label>
                 <input
                   type="number"
                   class="form-input"
@@ -520,6 +529,7 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import ToggleSwitch from '../../components/ToggleSwitch.vue';
 import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
+import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
@@ -1523,7 +1533,11 @@ onMounted(async () => {
 .tools-table-container {
   flex: 1;
   overflow-y: scroll;
-  overflow-x: hidden;
+  /* Portrait / narrow layouts: allow horizontal swipe so the Actions
+     column (Edit + Delete) isn't clipped when the table is wider than
+     the panel. Desktop stays untouched — the table fits and no scroll
+     bar appears. */
+  overflow-x: auto;
   min-height: 0;
   background: var(--color-surface);
   scrollbar-width: thin;
