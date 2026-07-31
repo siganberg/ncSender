@@ -1602,7 +1602,7 @@ onMounted(async () => {
 }
 
 .tools-table th {
-  padding: var(--gap-sm) var(--gap-md);
+  padding: var(--gap-sm) 10px;
   text-align: left;
   font-weight: 600;
   color: var(--color-text-primary);
@@ -1653,17 +1653,17 @@ onMounted(async () => {
 }
 
 .tools-table td {
-  padding: var(--gap-sm) var(--gap-md);
+  padding: var(--gap-sm) 10px;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
 }
 
 .tools-table td:first-child {
-  padding-left: var(--gap-md);
+  padding-left: var(--gap-sm);
 }
 
 .tools-table td:last-child {
-  padding-right: var(--gap-md);
+  padding-right: var(--gap-sm);
 }
 
 .tools-table tbody tr:nth-child(even) {
@@ -2013,7 +2013,7 @@ onMounted(async () => {
 .modal-content {
   background: var(--color-surface);
   border-radius: var(--radius-medium);
-  max-width: 500px;
+  max-width: 640px;
   width: 90%;
   max-height: 80vh;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
@@ -2061,11 +2061,14 @@ onMounted(async () => {
 }
 
 .form-label {
-  display: block;
+  display: flex;
+  align-items: center;
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--color-text-primary);
   margin-bottom: 6px;
+  /* Keep label text and any inline InfoTooltip icon on one line. */
+  white-space: nowrap;
 }
 
 .form-label.required::after {

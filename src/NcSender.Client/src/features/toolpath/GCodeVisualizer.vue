@@ -6040,7 +6040,10 @@ body.theme-light .dot--rapid {
   min-width: 240px;
   max-width: 240px;
   justify-content: center;
-  overflow: visible;
+  /* Keep overflow: hidden from the base rule — otherwise the
+     long-press fill overlay escapes the rounded corners when the
+     button is expanded. The fadeInFromRight animation only offsets
+     10px so it still reads fine clipped. */
 }
 
 .tool-name-expanded {
