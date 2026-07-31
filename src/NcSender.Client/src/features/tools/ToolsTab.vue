@@ -280,7 +280,7 @@
 
             <!-- TLS X/Y/Z Offsets -->
             <div class="form-row form-row-3">
-              <div class="form-group">
+              <div class="form-group" title="Shifts where the tool-length probe is performed on the X axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle).">
                 <label class="form-label">TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
                 <input
                   type="number"
@@ -290,7 +290,7 @@
                   :placeholder="tloPlaceholder"
                 >
               </div>
-              <div class="form-group">
+              <div class="form-group" title="Shifts where the tool-length probe is performed on the Y axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle).">
                 <label class="form-label">TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
                 <input
                   type="number"
@@ -300,7 +300,7 @@
                   :placeholder="tloPlaceholder"
                 >
               </div>
-              <div class="form-group">
+              <div class="form-group" title="Per-tool adjustment to the probe start height, added on top of the plugin's Seek Start Z. Positive raises the start (further from the toolsetter — safer for long tools). Negative lowers it (closer to the toolsetter — for short tools that wouldn't reach from the default start height).">
                 <label class="form-label">TLS Z Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
                 <input
                   type="number"
