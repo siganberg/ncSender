@@ -567,7 +567,7 @@ public class CncEventBridge
         var chainNote = chainSteps
             ? $" Chain mode is on. One arm runs every remaining step, each with its own {countdownAttr} countdown."
             : "";
-        return $"<div class=\"rcs-hold-hint\">Tap to fire it right away. Hold for {holdText} to arm a {countdownAttr} countdown, so you have time to walk to the spindle first.{chainNote}</div>";
+        return $"<div class=\"rcs-hold-hint\">Tap to arm a {countdownAttr} countdown, so you have time to walk to the spindle first. Press and hold for {holdText} to fire it right away.{chainNote}</div>";
     }
 
     private static string BuildSafetyDialogHtml(PluginDialogInfo dialog)
@@ -826,27 +826,32 @@ public class CncEventBridge
             }
 
             if (extraBtn) {
+              // Gesture mapping — safer default is countdown on short tap,
+              // immediate fire only on deliberate long-press:
+              //   - Short tap (release before HOLD_MS) → arm countdown.
+              //   - Hold ≥ HOLD_MS → immediate execute.
               extraBtn.addEventListener('pointerdown', function() {
                 if (extraBtn.disabled || state.armed || nextExtraIdx >= extraCount) return;
                 if (state.holdTimer !== null) return;
                 beginHoldFill();
                 state.holdTimer = setTimeout(function() {
                   state.holdTimer = null;
-                  startCountdown();
+                  clearHoldFill();
+                  executeExtra();
                 }, HOLD_MS);
               });
-              function cancelHoldAndMaybeTap(fire) {
+              function cancelHoldAndMaybeArm(arm) {
                 if (state.holdTimer === null) return;
                 clearTimeout(state.holdTimer);
                 state.holdTimer = null;
                 clearHoldFill();
-                if (fire && !extraBtn.disabled && !state.armed && nextExtraIdx < extraCount) {
-                  executeExtra();
+                if (arm && !extraBtn.disabled && !state.armed && nextExtraIdx < extraCount) {
+                  startCountdown();
                 }
               }
-              extraBtn.addEventListener('pointerup', function() { cancelHoldAndMaybeTap(true); });
-              extraBtn.addEventListener('pointerleave', function() { cancelHoldAndMaybeTap(false); });
-              extraBtn.addEventListener('pointercancel', function() { cancelHoldAndMaybeTap(false); });
+              extraBtn.addEventListener('pointerup', function() { cancelHoldAndMaybeArm(true); });
+              extraBtn.addEventListener('pointerleave', function() { cancelHoldAndMaybeArm(false); });
+              extraBtn.addEventListener('pointercancel', function() { cancelHoldAndMaybeArm(false); });
               // Long-press context menu on touch would swallow pointerup.
               extraBtn.addEventListener('contextmenu', function(e) { e.preventDefault(); });
             }
@@ -865,13 +870,21 @@ public class CncEventBridge
                 if (c) c.disabled = true;
                 clearExtraTimers();
                 if (extraBtn) extraBtn.disabled = true;
-                if (abortGcodeLines.length > 0) {
-                  abortGcodeLines.forEach(function(line) {
-                    window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
-                  });
-                }
+                // Soft-reset FIRST so any lines still buffered from the
+                // interrupted program (M6 macro, TLS routine, etc.) are
+                // purged. abortGcodeLines would otherwise be discarded
+                // by the reset that follows. Then send the plugin's abort
+                // gcode to the reset-clean machine after a brief pause so
+                // grblHAL is ready to accept commands.
                 window.postMessage({ type: 'send-command', command: '\x18', displayCommand: '\x18 (Soft Reset)' }, '*');
-                window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
+                setTimeout(function() {
+                  if (abortGcodeLines.length > 0) {
+                    abortGcodeLines.forEach(function(line) {
+                      window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
+                    });
+                  }
+                  window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
+                }, 200);
                 document.removeEventListener('click', handler, true);
                 delete window.__rcsClickHandler;
                 return;

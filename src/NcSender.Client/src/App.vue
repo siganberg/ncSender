@@ -3040,6 +3040,13 @@ onMounted(async () => {
   pollBluetoothStatus();
   bluetoothPollInterval = setInterval(pollBluetoothStatus, 5000);
   updateCenter.ensureListeners();
+  // Kick off an initial update check a few seconds after boot so the
+  // header badge is populated without the user having to click the
+  // version number. Fire-and-forget — network failures land as
+  // updateState errors and the UI handles them.
+  setTimeout(() => {
+    updateCenter.checkForUpdates().catch(() => { /* handled via state */ });
+  }, 5000);
   // Settings are already loaded in main.ts, just get them from the store
   const { getSettings } = await import('./lib/settings-store.js');
   const initialSettings = getSettings();

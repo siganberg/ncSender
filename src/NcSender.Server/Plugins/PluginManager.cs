@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using NcSender.Core.Interfaces;
@@ -527,6 +528,26 @@ public class PluginManager : IPluginManager
                 ? abort.ToString() ?? ""
                 : "";
 
+            // Auto-prepend the clamp aux command if the plugin declares a
+            // `clampAuxOutput` setting. Ensures a released drawbar closes
+            // when the user hits Abort mid-swap even if they haven't opened
+            // the plugin config to write it into `abortEventGcode` themselves.
+            // Only prepends if the command isn't already anywhere in the
+            // existing gcode, so duplicate saves don't stack.
+            if (settings.TryGetValue("clampAuxOutput", out var clampRaw))
+            {
+                var clampCmd = ComputeClampAuxCommand(clampRaw);
+                if (!string.IsNullOrEmpty(clampCmd))
+                {
+                    var lines = abortEventGcode.Split('\n')
+                        .Where(l => l.Trim() != clampCmd)
+                        .ToArray();
+                    abortEventGcode = lines.Length > 0
+                        ? clampCmd + "\n" + string.Join("\n", lines)
+                        : clampCmd;
+                }
+            }
+
             int? holdMs = null;
             int? countdownSec = null;
             bool? chainSteps = null;
@@ -563,6 +584,24 @@ public class PluginManager : IPluginManager
             _logger.LogWarning(ex, "Failed to get plugin message dialog for {Name}:{Code}", normalizedName, messageCode);
             return null;
         }
+    }
+
+    // Maps a plugin's `clampAuxOutput` setting (numeric aux port, "M7", or
+    // "M8") to the aux OFF g-code — matches commands.js `auxOnOff().off`.
+    // Returns empty string if not resolvable.
+    private static string ComputeClampAuxCommand(System.Text.Json.JsonElement raw)
+    {
+        if (raw.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var s = raw.GetString();
+            if (s == "M7" || s == "M8") return "M9";
+        }
+        if (raw.ValueKind == System.Text.Json.JsonValueKind.Number
+            && raw.TryGetInt32(out var port) && port >= 0)
+        {
+            return $"M65 P{port}";
+        }
+        return string.Empty;
     }
 
     private static string NormalizePluginId(string pluginId)
