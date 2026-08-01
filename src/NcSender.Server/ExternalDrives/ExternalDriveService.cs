@@ -126,16 +126,28 @@ public sealed class ExternalDriveService : IExternalDriveService
         {
             if (!Directory.Exists(root)) continue;
 
+            // Trust rules per root:
+            //   /media, /run/media — auto-mounted by udisks/systemd from
+            //     unknown sources (users plugging USBs in). Enforce the sysfs
+            //     "removable=1" check so we never accidentally target an
+            //     internal disk or the boot SD.
+            //   /mnt — FHS convention for admin-mounted filesystems (root
+            //     did the mount deliberately). Skip the removable check so
+            //     manually-mounted OS-SD partitions, network shares, loop
+            //     mounts, etc. show up as drop targets for firmware /
+            //     backups without needing physical removable media.
+            var trustMount = root == "/mnt";
+
             // /media/<user>/<label>  — user-level mounts on modern desktops
             // /media/<label>         — mountpoints on servers / older Linux
-            // /mnt/<label>           — manual mounts
+            // /mnt/<label>           — admin-controlled manual mounts
             foreach (var lvl1 in SafeEnumerate(root))
             {
-                if (LooksMounted(lvl1) && IsRemovableMount(lvl1, mountsByPath))
+                if (LooksMounted(lvl1) && (trustMount || IsRemovableMount(lvl1, mountsByPath)))
                     AddIfWritable(results, lvl1);
 
                 foreach (var lvl2 in SafeEnumerate(lvl1))
-                    if (LooksMounted(lvl2) && IsRemovableMount(lvl2, mountsByPath))
+                    if (LooksMounted(lvl2) && (trustMount || IsRemovableMount(lvl2, mountsByPath)))
                         AddIfWritable(results, lvl2);
             }
         }
