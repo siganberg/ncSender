@@ -13,8 +13,6 @@ public class SerialTransport : IConnectionTransport
     private readonly int _baudRate;
     private SerialPort? _port;
     private readonly StringBuilder _lineBuffer = new();
-    private readonly StringBuilder _statusBuffer = new();
-    private bool _inStatus;
     private readonly object _bufferLock = new();
 
     public bool IsConnected => _port?.IsOpen == true;
@@ -125,51 +123,79 @@ public class SerialTransport : IConnectionTransport
 
             var data = _port.ReadExisting();
 
-            // SerialPort.DataReceived can fire concurrently on multiple thread pool threads.
-            // Lock to prevent _lineBuffer corruption which can cause lost ok/error responses.
+            List<string> linesToEmit;
+            // SerialPort.DataReceived can fire concurrently on multiple thread
+            // pool threads. Lock while we mutate the shared buffer, but do the
+            // event dispatch OUTSIDE the lock so downstream handlers don't
+            // hold the framer serialized.
             lock (_bufferLock)
             {
-                foreach (var ch in data)
-                {
-                    // `?` real-time polls (every 100ms) can splice a <...> status
-                    // report into the middle of a long response like $ES. Keep the
-                    // partial regular line intact across the splice by routing the
-                    // status report into its own buffer rather than flushing what
-                    // was being assembled.
-                    if (_inStatus)
-                    {
-                        _statusBuffer.Append(ch);
-                        if (ch == '>')
-                        {
-                            LineReceived?.Invoke(_statusBuffer.ToString());
-                            _statusBuffer.Clear();
-                            _inStatus = false;
-                        }
-                        continue;
-                    }
+                _lineBuffer.Append(data);
 
-                    if (ch == '<')
-                    {
-                        _statusBuffer.Append(ch);
-                        _inStatus = true;
-                    }
-                    else if (ch == '\n')
-                    {
-                        var line = _lineBuffer.ToString().TrimEnd('\r');
-                        _lineBuffer.Clear();
-                        if (line.Length > 0)
-                            LineReceived?.Invoke(line);
-                    }
-                    else
-                    {
-                        _lineBuffer.Append(ch);
-                    }
+                // Strict newline framing. Everything up to the last '\n' is
+                // complete lines to dispatch; anything after stays buffered
+                // for the next read. This avoids the earlier <-as-status-start
+                // trick that would swallow entire bursts (PINSTATE lines,
+                // `ok`s, etc.) into a single "status" buffer whenever a stray
+                // '<' appeared before a distant '>' — the exact framing bug
+                // that hid "ok" responses and made the controller look stuck.
+                var buffered = _lineBuffer.ToString();
+                var lastNewline = buffered.LastIndexOf('\n');
+                if (lastNewline < 0)
+                    return;
+
+                var completeChunk = buffered[..(lastNewline + 1)];
+                var remainder = buffered[(lastNewline + 1)..];
+                _lineBuffer.Clear();
+                _lineBuffer.Append(remainder);
+
+                linesToEmit = new List<string>();
+                foreach (var raw in completeChunk.Split('\n'))
+                {
+                    var line = raw.TrimEnd('\r');
+                    if (line.Length == 0)
+                        continue;
+                    CollectLineWithStatusSplice(line, linesToEmit);
                 }
             }
+
+            foreach (var line in linesToEmit)
+                LineReceived?.Invoke(line);
         }
         catch (Exception ex)
         {
             ConnectionLost?.Invoke(ex);
+        }
+    }
+
+    // Handles the edge case where a `?` realtime status poll splices its
+    // <...> report inline with another response on the same physical line.
+    // Emit the status report as its own event, plus any prefix / suffix
+    // as their own line events so downstream parsers see clean input.
+    private static void CollectLineWithStatusSplice(string line, List<string> sink)
+    {
+        var lt = line.IndexOf('<');
+        var gt = lt >= 0 ? line.IndexOf('>', lt + 1) : -1;
+        if (lt < 0 || gt <= lt)
+        {
+            sink.Add(line);
+            return;
+        }
+
+        if (lt > 0)
+        {
+            var prefix = line[..lt].TrimEnd();
+            if (prefix.Length > 0)
+                sink.Add(prefix);
+        }
+
+        sink.Add(line.Substring(lt, gt - lt + 1));
+
+        if (gt + 1 < line.Length)
+        {
+            var suffix = line[(gt + 1)..].TrimStart();
+            if (suffix.Length > 0)
+                CollectLineWithStatusSplice(suffix, sink);
         }
     }
 

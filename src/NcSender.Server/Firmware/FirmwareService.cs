@@ -194,13 +194,24 @@ public class FirmwareService : IFirmwareService
         _controller.DataReceived += OnData;
         try
         {
-            // SendCommandAsync blocks until the controller responds with "ok" or "error",
-            // by which point all data lines have already been collected via DataReceived.
+            // SendCommandAsync blocks until the controller responds with "ok" or
+            // "error", by which point all data lines have already been collected
+            // via DataReceived. Pass the CTS token through so a missed "ok"
+            // times out cleanly and the send pipeline moves on instead of
+            // wedging (the earlier code created the CTS but never propagated
+            // its token — the timeout was dead code).
             using var cts = new CancellationTokenSource(timeoutMs);
-            await _controller.SendCommandAsync(command, new CommandOptions
+            try
             {
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+                await _controller.SendCommandAsync(command, new CommandOptions
+                {
+                    Meta = new CommandMeta { SourceId = "system", Silent = true }
+                }, cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                _logger.LogWarning("Firmware query '{Command}' timed out after {Timeout}ms — no 'ok' from controller", command, timeoutMs);
+            }
 
             return string.Join("\n", lines);
         }

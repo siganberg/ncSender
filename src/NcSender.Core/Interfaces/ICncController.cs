@@ -13,7 +13,7 @@ public interface ICncController
 
     Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default);
     void Disconnect();
-    Task<CommandResult> SendCommandAsync(string command, CommandOptions? options = null);
+    Task<CommandResult> SendCommandAsync(string command, CommandOptions? options = null, CancellationToken cancellationToken = default);
     Task WriteRawAsync(byte[] data, CancellationToken ct = default);
     void EnterRawMode();
     void ExitRawMode();

@@ -19,7 +19,7 @@ public class JogManagerTests
         _controller = new Mock<ICncController>();
         _controller.SetupGet(c => c.IsConnected).Returns(true);
         _controller.SetupGet(c => c.LastStatus).Returns(new MachineState());
-        _controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
+        _controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CommandResult { Status = "success" });
 
         _commandProcessor = new Mock<ICommandProcessor>();

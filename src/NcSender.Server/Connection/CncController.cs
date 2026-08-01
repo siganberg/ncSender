@@ -437,7 +437,7 @@ public partial class CncController : ICncController
 
     public void ExitRawMode() => _rawMode = false;
 
-    public async Task<CommandResult> SendCommandAsync(string command, CommandOptions? options = null)
+    public async Task<CommandResult> SendCommandAsync(string command, CommandOptions? options = null, CancellationToken cancellationToken = default)
     {
         if ((!IsConnected && !_isVerifying) || _transport is null)
             throw new InvalidOperationException("CNC controller is not connected");
@@ -555,7 +555,7 @@ public partial class CncController : ICncController
         {
             // Queue full or not available — wait for space
             if (_commandChannel is not null)
-                await _commandChannel.Writer.WriteAsync(entry);
+                await _commandChannel.Writer.WriteAsync(entry, cancellationToken);
             else
             {
                 _pendingCommands.TryRemove(commandId, out _);
@@ -563,7 +563,30 @@ public partial class CncController : ICncController
             }
         }
 
-        return await entry.Tcs.Task;
+        // Honor the caller's cancellation token by cancelling the entry's TCS
+        // when it fires. This unblocks both the caller (await below) and the
+        // queue consumer (WaitAsync on the same TCS), so the consumer can
+        // move on to the next command instead of waiting forever for an "ok"
+        // that isn't coming. Without this, any missed "ok" would wedge the
+        // whole send pipeline until soft-reset.
+        CancellationTokenRegistration ctReg = default;
+        if (cancellationToken.CanBeCanceled)
+        {
+            ctReg = cancellationToken.Register(static state =>
+            {
+                var (tcs, ct) = ((TaskCompletionSource<CommandResult>, CancellationToken))state!;
+                tcs.TrySetCanceled(ct);
+            }, (entry.Tcs, cancellationToken));
+        }
+
+        try
+        {
+            return await entry.Tcs.Task;
+        }
+        finally
+        {
+            ctReg.Dispose();
+        }
     }
 
     private async Task<CommandResult> SendRealTimeCommand(

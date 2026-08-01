@@ -32,7 +32,7 @@ public class GcodeJobProcessorTests : IDisposable
         File.WriteAllText(_cachePath, gcodeContent);
 
         var controller = new Mock<ICncController>();
-        controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
+        controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CommandResult { Status = "success" });
 
         var commandProcessor = new Mock<ICommandProcessor>();
@@ -95,7 +95,8 @@ public class GcodeJobProcessorTests : IDisposable
             // All 3 lines should have been sent (with N-number prefixes)
             controller.Verify(c => c.SendCommandAsync(
                 It.IsAny<string>(),
-                It.IsAny<CommandOptions?>()), Times.Exactly(3));
+                It.IsAny<CommandOptions?>(),
+                It.IsAny<CancellationToken>()), Times.Exactly(3));
         }
         finally
         {
@@ -119,7 +120,8 @@ public class GcodeJobProcessorTests : IDisposable
             // Blank lines skipped, comments and G-code sent (4 commands total)
             controller.Verify(c => c.SendCommandAsync(
                 It.IsAny<string>(),
-                It.IsAny<CommandOptions?>()), Times.Exactly(4));
+                It.IsAny<CommandOptions?>(),
+                It.IsAny<CancellationToken>()), Times.Exactly(4));
         }
         finally
         {
@@ -138,8 +140,8 @@ public class GcodeJobProcessorTests : IDisposable
         try
         {
             var controller = new Mock<ICncController>();
-            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
-                .Callback<string, CommandOptions?>((cmd, _) => sentCommands.Add(cmd))
+            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
+                .Callback<string, CommandOptions?, CancellationToken>((cmd, _, _) => sentCommands.Add(cmd))
                 .ReturnsAsync(new CommandResult { Status = "success" });
 
             var commandProcessor = new Mock<ICommandProcessor>();
@@ -192,7 +194,7 @@ public class GcodeJobProcessorTests : IDisposable
         {
             var controller = new Mock<ICncController>();
             // Add small delay to simulate real command processing time
-            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
+            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
                 .Returns(async () =>
                 {
                     await Task.Yield();
@@ -225,7 +227,7 @@ public class GcodeJobProcessorTests : IDisposable
 
             // Use a callback to stop once we've processed some lines
             var stopTriggered = false;
-            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
+            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
                 .Returns(async () =>
                 {
                     var count = Interlocked.Increment(ref commandCount);
@@ -260,7 +262,7 @@ public class GcodeJobProcessorTests : IDisposable
         try
         {
             var controller = new Mock<ICncController>();
-            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
+            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new CommandResult { Status = "success" });
 
             var commandProcessor = new Mock<ICommandProcessor>();
@@ -300,7 +302,8 @@ public class GcodeJobProcessorTests : IDisposable
             // All 100 lines should eventually be processed after resume
             controller.Verify(c => c.SendCommandAsync(
                 It.IsAny<string>(),
-                It.IsAny<CommandOptions?>()), Times.Exactly(100));
+                It.IsAny<CommandOptions?>(),
+                It.IsAny<CancellationToken>()), Times.Exactly(100));
         }
         finally
         {
@@ -319,8 +322,8 @@ public class GcodeJobProcessorTests : IDisposable
         try
         {
             var controller = new Mock<ICncController>();
-            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>()))
-                .Callback<string, CommandOptions?>((cmd, _) => sentCommands.Add(cmd))
+            controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
+                .Callback<string, CommandOptions?, CancellationToken>((cmd, _, _) => sentCommands.Add(cmd))
                 .ReturnsAsync(new CommandResult { Status = "success" });
 
             var commandProcessor = new Mock<ICommandProcessor>();
