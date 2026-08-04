@@ -149,6 +149,10 @@ public class JsPluginEngine : IJsPluginEngine
                     jsContext.Set("sourceId", context.Meta?.SourceId is not null
                         ? JsValue.FromObject(engine, context.Meta.SourceId)
                         : JsValue.Null);
+                    // Edition marker so cross-edition plugins can gate
+                    // Pro-only features (e.g. `$keepout_off` prefix).
+                    // Plugins check `context.edition === "pro"`.
+                    jsContext.Set("edition", JsValue.FromObject(engine, "community"));
 
                     // Build tools array
                     var jsTools = engine.Intrinsics.Array.Construct(

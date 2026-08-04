@@ -400,6 +400,10 @@ public static class ServerBuilder
     {
         app.MapGet("/api/health", () => Results.Ok(new HealthResponse("ok", DateTime.UtcNow.ToString("o"))));
 
+        // Plugins call this to detect the core edition and gate Pro-only
+        // features. Community always returns "community".
+        app.MapGet("/api/app-info", () => Results.Ok(new AppInfoResponse("community")));
+
         app.MapGet("/api/server-state", (IServerContext ctx) =>
         {
             ctx.UpdateSenderStatus();

@@ -103,6 +103,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(ApiSuccessMessage))]
 [JsonSerializable(typeof(ApiError))]
 [JsonSerializable(typeof(HealthResponse))]
+[JsonSerializable(typeof(AppInfoResponse))]
 [JsonSerializable(typeof(SerialPortItem))]
 [JsonSerializable(typeof(SerialPortItem[]))]
 [JsonSerializable(typeof(SettingResponse))]

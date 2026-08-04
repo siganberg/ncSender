@@ -11,6 +11,11 @@ public record ApiError(string Error);
 
 // === ServerBuilder ===
 public record HealthResponse(string Status, string Timestamp);
+// Edition marker consumed by plugins that need to gate Pro-only features
+// (e.g. `$keepout_off` gcode prefix). Community always returns
+// "community" — plugins fall back to community behavior when this
+// endpoint isn't present at all, so the marker is belt-and-braces.
+public record AppInfoResponse(string Edition);
 public record SerialPortItem(string Path, string? Manufacturer = null);
 public record SettingResponse(string Key, JsonNode? Value);
 public record SettingsSaveResponse(bool Success, string Message, JsonObject Settings);
