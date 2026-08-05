@@ -351,7 +351,22 @@ const loadDirectory = async (path: string, silent = false) => {
       throw new Error(body?.error || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const next: Entry[] = data.entries || [];
+    const rawEntries: Entry[] = data.entries || [];
+    // Folders first (alphabetical), then files sorted by modifiedAt
+    // descending so the freshest firmware / gcode shows up at the top —
+    // matches how operators reach for the file they just dropped in.
+    // Falls back to name-alpha within a group when modifiedAt is missing
+    // so the ordering stays deterministic.
+    const dirs = rawEntries.filter(e => e.isDirectory)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const files = rawEntries.filter(e => !e.isDirectory)
+      .sort((a, b) => {
+        const ta = a.modifiedAt ? Date.parse(a.modifiedAt) : 0;
+        const tb = b.modifiedAt ? Date.parse(b.modifiedAt) : 0;
+        if (tb !== ta) return tb - ta;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+    const next: Entry[] = [...dirs, ...files];
     const same = next.length === entries.value.length &&
       next.every((e, i) => e.path === entries.value[i]?.path && e.size === entries.value[i]?.size);
     if (!same) entries.value = next;
