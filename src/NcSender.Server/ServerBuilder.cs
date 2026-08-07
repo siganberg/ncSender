@@ -160,6 +160,10 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
+        // Wireless RCATC probe/TLS: translates @rcatc device frames into the
+        // grblHAL virtual-inputs realtime bytes (0xA5/0xA6). No config surface;
+        // it's a background subscriber.
+        builder.Services.AddHostedService<NcSender.Server.Dongle.RcatcTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();

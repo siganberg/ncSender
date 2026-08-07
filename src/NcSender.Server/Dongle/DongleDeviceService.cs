@@ -36,6 +36,9 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     private Func<string, Task>? _sender;
 
+    public event Action<string, string>? DeviceMessageReceived;
+    public event Action<string, bool>? DeviceConnectivityChanged;
+
     public DongleDeviceService(ILogger<DongleDeviceService> logger, IBroadcaster broadcaster)
     {
         _logger = logger;
@@ -122,6 +125,11 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             st.WasConnected = true;
         }
 
+        // Per-message hook for latency-sensitive consumers (e.g. RcatcTranslator)
+        // that need every payload immediately — the WS relay below is throttled.
+        try { DeviceMessageReceived?.Invoke(name, payload); }
+        catch (Exception ex) { _logger.LogWarning(ex, "DeviceMessageReceived handler threw for '{Name}'", name); }
+
         // Relay every raw message (throttled ~1/sec) so plugins can react; always emit the
         // connect edge immediately, and emit a device-changed edge on (re)connect.
         if (justConnected)
@@ -129,6 +137,8 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             _ = _broadcaster.Broadcast("dongle:device-changed",
                 new DongleDeviceChanged { Name = name, Connected = true },
                 NcSenderJsonContext.Default.DongleDeviceChanged);
+            try { DeviceConnectivityChanged?.Invoke(name, true); }
+            catch (Exception ex) { _logger.LogWarning(ex, "DeviceConnectivityChanged handler threw for '{Name}'", name); }
         }
         long lastBc;
         lock (st) lastBc = st.LastBroadcastTicks;
@@ -174,6 +184,8 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
                 _ = _broadcaster.Broadcast("dongle:device-changed",
                     new DongleDeviceChanged { Name = kv.Key, Connected = false },
                     NcSenderJsonContext.Default.DongleDeviceChanged);
+                try { DeviceConnectivityChanged?.Invoke(kv.Key, false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "DeviceConnectivityChanged handler threw for '{Name}'", kv.Key); }
             }
         }
     }

@@ -31,7 +31,6 @@ public interface IDongleDeviceService
     /// <summary>Open the dongle's pairing window ("$PAIR") so a new device can join (~30s).</summary>
     Task OpenPairingAsync();
 
-    /// <summary>Close an open pairing window early ("$PAIR:STOP"). No-op on older firmware.</summary>
     Task CancelPairingAsync();
 
     /// <summary>Forget a paired device on the dongle ("$UNPAIR &lt;name&gt;") and drop it locally.</summary>
@@ -44,4 +43,19 @@ public interface IDongleDeviceService
     /// tell a paired-but-offline device apart from an unpaired one after a server restart.
     /// </summary>
     Task RequestDevicesAsync();
+
+    /// <summary>
+    /// Fires (name, payload) for every "@name payload" line received, un-throttled — used
+    /// by consumers that need per-message latency (e.g. translating a wireless input to a
+    /// realtime byte). The generic WebSocket relay is throttled ~1/sec and is unsuitable
+    /// for that path.
+    /// </summary>
+    event Action<string, string>? DeviceMessageReceived;
+
+    /// <summary>
+    /// Fires (name, connected) on every connect/disconnect edge for a peer — same instants
+    /// where the generic WebSocket relay emits "dongle:device-changed". Consumers that need
+    /// to re-poll state on reconnect (so a stale host-side cache converges) subscribe here.
+    /// </summary>
+    event Action<string, bool>? DeviceConnectivityChanged;
 }
