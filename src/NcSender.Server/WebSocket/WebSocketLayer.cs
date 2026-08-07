@@ -585,13 +585,29 @@ public class WebSocketLayer : IBroadcaster
         return buffer.WrittenSpan.ToArray();
     }
 
+    // Per-frame timeout so one slow/stalled client can't hold up the whole
+    // Broadcast (which does Task.WhenAll over every client). On a healthy LAN
+    // a WebSocket send completes in single-digit ms; 250 ms is 15× our worst
+    // end-to-end wireless-probe path and still an order of magnitude larger
+    // than any real transient. When it fires we abort the socket — that
+    // triggers the receive loop's disconnect path, browser reconnects fresh.
+    private const int SendTimeoutMs = 250;
+
     private static async Task SendRaw(System.Net.WebSockets.WebSocket ws, byte[] payload)
     {
         if (ws.State != WebSocketState.Open) return;
 
+        using var cts = new CancellationTokenSource(SendTimeoutMs);
         try
         {
-            await ws.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None);
+            await ws.SendAsync(payload, WebSocketMessageType.Text, true, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Slow / stalled client. Abort so subsequent broadcasts don't
+            // queue behind it and starve the endpoint that awaited us. The
+            // receive loop sees the aborted socket and cleans up client state.
+            try { ws.Abort(); } catch { /* best effort */ }
         }
         catch (WebSocketException)
         {

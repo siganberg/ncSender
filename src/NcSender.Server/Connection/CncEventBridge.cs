@@ -425,6 +425,24 @@ public class CncEventBridge
 
     private void OnDataReceived(string data, string? sourceId)
     {
+        // Detect TOOL_CHANGE_START sentinel — prepended to every M6/TLS
+        // expansion (see PluginCommandProcessor). Firing on the controller's
+        // echo means each M6 in a macro batch flips the flag right when its
+        // sub-commands actually start executing, regardless of expansion
+        // batching. Idempotent set so multiple starts don't cause churn.
+        if (data.Contains("TOOL_CHANGE_START", StringComparison.OrdinalIgnoreCase))
+        {
+            var state = _context.State;
+            if (!state.MachineState.IsToolChanging)
+            {
+                state.MachineState.IsToolChanging = true;
+                _context.UpdateSenderStatus();
+                BroadcastStateDelta();
+                _logger.LogInformation("Tool change start");
+            }
+            return;
+        }
+
         // Detect TOOL_CHANGE_COMPLETE sentinel
         if (data.Contains("TOOL_CHANGE_COMPLETE", StringComparison.OrdinalIgnoreCase))
         {

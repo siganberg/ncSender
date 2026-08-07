@@ -97,12 +97,20 @@ public class PluginCommandProcessor : ICommandProcessor
                     tlsReturnPosition.X, tlsReturnPosition.Y);
         }
 
-        // Set isToolChanging flag
-        if ((isValidM6 || isTLS) && !_serverContext.State.MachineState.IsToolChanging)
-        {
-            _serverContext.State.MachineState.IsToolChanging = true;
-            _ = _broadcaster.Broadcast("server-state-updated", _serverContext.State, NcSenderJsonContext.Default.ServerState);
-        }
+        // NOTE: IsToolChanging is intentionally NOT set here. It's toggled at
+        // dispatch time via the TOOL_CHANGE_START / TOOL_CHANGE_COMPLETE
+        // sentinels that bracket the expansion (see below and CncEventBridge
+        // OnDataReceived). Setting the flag here was wrong for macro use:
+        // expansion is a synchronous batch — a macro like
+        //     M6 T1 / G4 P1 / M6 T2 / G4 P1 / M6 T3
+        // expands ALL body lines before ANY command is dispatched to the
+        // controller. With the old expansion-time set + `!IsToolChanging`
+        // guard, only M6 T1 flipped the flag; T2 and T3 saw it still true
+        // (nothing had run yet, TCC hadn't fired) and skipped. Then at
+        // dispatch, T1's TCC cleared the flag mid-macro and T2/T3 executed
+        // with the flag false — the UI flickered Running/Idle through the
+        // plugin's sub-moves. Sentinel-based toggling gets one flip per
+        // actual controller-side execution, so this works for any batch shape.
 
         // Populate safe Z height from core app settings for plugins
         context.SafeZHeight = _settingsManager.GetSetting<double>("safeZHeight", -5);
@@ -121,7 +129,7 @@ public class PluginCommandProcessor : ICommandProcessor
         }
 
         // If plugin didn't modify (single original command), use inner processor directly
-        // Inner processor handles all its own logic (door safety, return-to-position, etc.)
+        // Inner processor handles all its own logic (door safety, laser mode, return-to-position, etc.)
         if (commands.Count == 1 && commands[0].IsOriginal)
             return await _inner.ProcessAsync(commands[0].Command, context);
 
@@ -130,6 +138,23 @@ public class PluginCommandProcessor : ICommandProcessor
         _logger.LogDebug("Plugin expanded {Original} into {Count} commands", command, commands.Count);
 
         var finalCommands = new List<ProcessedCommand>();
+
+        // Prepend TOOL_CHANGE_START — CncEventBridge.OnDataReceived flips
+        // IsToolChanging=true when the controller echoes [MSG:] for this,
+        // so the header shows "Tool Changing" at the moment execution
+        // actually starts (not at expansion time, which for macros is
+        // completely detached from dispatch order). Paired with the
+        // TOOL_CHANGE_COMPLETE sentinel appended below.
+        if (isValidM6 || isTLS)
+        {
+            finalCommands.Add(new ProcessedCommand
+            {
+                Command = "(MSG, TOOL_CHANGE_START)",
+                IsOriginal = false,
+                Meta = new CommandMeta { SourceId = "system", Silent = true }
+            });
+        }
+
         foreach (var cmd in commands)
         {
             var innerResult = await _inner.ProcessAsync(cmd.Command, context);
@@ -137,10 +162,16 @@ public class PluginCommandProcessor : ICommandProcessor
             {
                 foreach (var innerCmd in innerResult.Commands)
                 {
+                    // Plugin-expanded lines are noisy enough on their own —
+                    // strip the "(keepout bypassed)" audit tag so the
+                    // terminal only shows it for user-typed commands where
+                    // the annotation is actually useful. Preserves any
+                    // OTHER inner-added display info (feed-limit tags,
+                    // clamp notes, etc.).
                     finalCommands.Add(new ProcessedCommand
                     {
                         Command = innerCmd.Command,
-                        DisplayCommand = cmd.DisplayCommand ?? innerCmd.DisplayCommand,
+                        DisplayCommand = cmd.DisplayCommand ?? StripBypassAnnotation(innerCmd.DisplayCommand),
                         IsOriginal = cmd.IsOriginal,
                         Meta = cmd.Meta ?? innerCmd.Meta
                     });
@@ -230,6 +261,21 @@ public class PluginCommandProcessor : ICommandProcessor
             ShouldContinue = finalCommands.Count > 0,
             Commands = finalCommands
         };
+    }
+
+    // Suppress the "(keepout bypassed)" audit tag on plugin-expanded lines
+    // — a tool change typically emits a dozen bypassed G53 moves in a row
+    // and each one carrying the tag turns the terminal into wallpaper.
+    // User-typed `$keepout_off` commands never go through this path (they
+    // hit the "single original" branch above and return the inner result
+    // unchanged), so their audit annotation stays intact.
+    private const string BypassSuffix = " (keepout bypassed)";
+    private static string? StripBypassAnnotation(string? display)
+    {
+        if (display is null) return null;
+        return display.EndsWith(BypassSuffix, StringComparison.Ordinal)
+            ? display[..^BypassSuffix.Length]
+            : display;
     }
 
     private static XyPosition? ParseMachinePosition(string? mpos)
