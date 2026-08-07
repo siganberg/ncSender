@@ -3,11 +3,12 @@ using NcSender.Core.Interfaces;
 namespace NcSender.Server.Dongle;
 
 /// <summary>
-/// Translates <c>@rcatc</c> device messages coming off the ESP-NOW dongle into
-/// grblHAL virtual-input realtime bytes on the controller. The compact wire
-/// payload carries channel-source + state + type + seq:
+/// Translates xprobe payloads (from either wired USB or wireless ESP-NOW,
+/// arbitrated by <see cref="IXProbeSource"/>) into grblHAL virtual-input
+/// realtime bytes on the controller. The compact wire payload carries
+/// channel-source + state + type + seq:
 ///
-///   <c>@rcatc &lt;state&gt;:&lt;type&gt;:&lt;seq&gt;:&lt;src&gt;</c>
+///   <c>&lt;state&gt;:&lt;type&gt;:&lt;seq&gt;:&lt;src&gt;</c>
 ///
 ///   e.g.  <c>1:E:42:P</c>  →  <c>0xA5</c>  (assert probe)
 ///         <c>0:E:43:P</c>  →  <c>0xA6</c>  (release probe)
@@ -20,24 +21,23 @@ namespace NcSender.Server.Dongle;
 /// bytes above 0x7F; <see cref="ICncController.WriteRawAsync"/> is the raw-
 /// byte path used elsewhere for feedhold / status request.
 ///
-/// Hooked to <see cref="IDongleDeviceService.DeviceMessageReceived"/> rather
-/// than the WS relay because the WS path is throttled ~1/sec — unusable when
-/// the whole point is minimum edge-to-controller latency.
+/// The translator itself doesn't know which transport (wired or wireless)
+/// delivered a given payload — <see cref="IXProbeSource"/> selects the
+/// authoritative one and suppresses the other while both are up.
 ///
 /// Backward compat: payloads without the trailing <c>:P</c>/<c>:T</c> field
 /// (older firmware) are treated as probe channel.
 /// </summary>
-public sealed class RcatcTranslator : IHostedService
+public sealed class XProbeTranslator : IHostedService
 {
-    private const string DeviceName = "rcatc";
     private const byte ProbeAssert       = 0xA5;
     private const byte ProbeRelease      = 0xA6;
     private const byte ToolsetterAssert  = 0xA7;
     private const byte ToolsetterRelease = 0xA8;
 
-    private readonly IDongleDeviceService _devices;
+    private readonly IXProbeSource _source;
     private readonly ICncController _controller;
-    private readonly ILogger<RcatcTranslator> _logger;
+    private readonly ILogger<XProbeTranslator> _logger;
 
     // Per-channel dedup. '0'|'1' once seen, 0 = unknown. First message after
     // boot / reconnect always writes so a lost edge self-heals to whatever
@@ -45,51 +45,46 @@ public sealed class RcatcTranslator : IHostedService
     private char _lastProbeState;
     private char _lastToolsetterState;
 
-    public RcatcTranslator(
-        IDongleDeviceService devices,
+    public XProbeTranslator(
+        IXProbeSource source,
         ICncController controller,
-        ILogger<RcatcTranslator> logger)
+        ILogger<XProbeTranslator> logger)
     {
-        _devices = devices;
+        _source = source;
         _controller = controller;
         _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _devices.DeviceMessageReceived += OnDeviceMessage;
-        _devices.DeviceConnectivityChanged += OnDeviceConnectivity;
+        _source.MessageReceived += OnMessage;
+        _source.ConnectivityChanged += OnSourceConnectivity;
         _controller.ConnectionStatusChanged += OnControllerConnection;
-        // Initial poll — device may already be paired+connected when the host
-        // starts. Firing "status" makes the XIAO re-emit both channels' current
-        // state; our dedup starts at 0 so whatever it reports writes the byte.
+        // Initial poll — device may already be present when the host starts.
         _ = TryPollAsync("startup");
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _devices.DeviceMessageReceived -= OnDeviceMessage;
-        _devices.DeviceConnectivityChanged -= OnDeviceConnectivity;
+        _source.MessageReceived -= OnMessage;
+        _source.ConnectivityChanged -= OnSourceConnectivity;
         _controller.ConnectionStatusChanged -= OnControllerConnection;
         return Task.CompletedTask;
     }
 
-    // Fires when a peer's link comes up (or drops). We only care about our
-    // device reconnecting: forget last-known state and poll for fresh so the
-    // controller can be re-driven to reality even if the current state
-    // matches what we thought we knew before the disconnect.
-    private void OnDeviceConnectivity(string name, bool connected)
+    // Fires when the router's active transport comes up (or drops). Reset
+    // dedup + poll so the controller is re-driven to the sensor's real state.
+    private void OnSourceConnectivity(bool connected)
     {
-        if (!string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)) return;
         if (!connected) return;
         _lastProbeState = _lastToolsetterState = (char)0;
-        _ = TryPollAsync("device reconnect");
+        _ = TryPollAsync("source reconnect");
     }
 
     // Fires when the controller connection comes up (or drops). A fresh
     // controller has no idea about virtual-input state; on reconnect we clear
-    // our dedup so the next incoming XIAO message re-drives the virtual pins.
+    // our dedup so the next incoming message re-drives the virtual pins.
     private void OnControllerConnection(string status, bool connected)
     {
         if (!connected) return;
@@ -101,18 +96,17 @@ public sealed class RcatcTranslator : IHostedService
     {
         try
         {
-            await _devices.SendAsync(DeviceName, "status");
-            _logger.LogDebug("RCATC state resync polled ({Reason})", reason);
+            await _source.SendAsync("status");
+            _logger.LogDebug("XPROBE state resync polled ({Reason})", reason);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "RcatcTranslator: status poll ({Reason}) failed — device likely offline; heartbeat will self-heal within ~3s", reason);
+            _logger.LogDebug(ex, "XProbeTranslator: status poll ({Reason}) failed — device likely offline; heartbeat will self-heal within ~3s", reason);
         }
     }
 
-    private void OnDeviceMessage(string name, string payload)
+    private void OnMessage(string payload)
     {
-        if (!string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)) return;
         if (string.IsNullOrEmpty(payload)) return;
 
         // Payload starts with '0' or '1' — anything else (control frame,
@@ -146,20 +140,23 @@ public sealed class RcatcTranslator : IHostedService
             _ => (byte)0,
         };
         if (b == 0) return;
-        _ = SendAsync(b, src);
+        _ = SendAsync(b);
     }
 
-    private async Task SendAsync(byte b, char src)
+    private async Task SendAsync(byte b)
     {
         try
         {
             await _controller.WriteRawAsync(new[] { b });
-            _logger.LogInformation("RCATC -> controller 0x{Byte:X2} ({Action})",
+            // Debug-level: one line per probe/TLS edge is fine when triaging
+            // but useless noise in a normal run. Bump the XProbeTranslator
+            // category to Debug when you need to see it again.
+            _logger.LogDebug("XPROBE -> controller 0x{Byte:X2} ({Action})",
                 b, ActionLabel(b));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "RcatcTranslator: failed to write byte 0x{Byte:X2} to controller", b);
+            _logger.LogWarning(ex, "XProbeTranslator: failed to write byte 0x{Byte:X2} to controller", b);
         }
     }
 

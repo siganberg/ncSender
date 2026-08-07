@@ -67,7 +67,7 @@ public partial class CncController : ICncController
     [
         "Status", "Homed", "Workspace", "Tool", "ToolLengthSet",
         "SpindleActive", "FloodCoolant", "MistCoolant",
-        "FeedrateOverride", "RapidOverride", "ActiveProbe"
+        "FeedrateOverride", "RapidOverride", "ActiveProbe", "Pn"
     ];
 
     // Relevant fields for determining if a status report has changes worth emitting
@@ -843,7 +843,6 @@ public partial class CncController : ICncController
         {
             // If we got a GRBL status report but no greeting yet (e.g., e-stop/alarm active),
             // cancel the greeting timeout — we know this is a real CNC controller.
-            // The greeting may still arrive and will set the active protocol.
             if (!_hasReceivedGreeting && trimmedData.StartsWith('<'))
             {
                 _verificationCts?.Cancel();
@@ -1153,9 +1152,15 @@ public partial class CncController : ICncController
         var prevStatus = _lastStatus.Status;
         var hasAccessoryField = false;
 
-        // Reset Pn and ActiveProbe each report
+        // Reset Pn each report — grblHAL omits it when no pins are active, so
+        // absence genuinely means "nothing triggered".
+        //
+        // Do NOT reset ActiveProbe: `|P:<n>` is a one-shot change notification
+        // (grblHAL `report_add_realtime(Report_ProbeId)`, emitted only when the
+        // active probe changes). Absence means "unchanged", not "unknown".
+        // Resetting per report would snap to -1 every tick and force
+        // NormalizePinState into its ambiguous PT fallback.
         _lastStatus.Pn = "";
-        _lastStatus.ActiveProbe = -1;
 
         // First part is always the machine status
         _lastStatus.Status = parts[0].Split(':')[0];
@@ -1430,25 +1435,40 @@ public partial class CncController : ICncController
         // WCO = workspaceOffset + G92 + TLO. The G92+TLO portion is unchanged,
         // so newWCO = newOffset + (oldWCO - oldOffset).
         // This prevents stale WCO on controllers that don't report WCO every cycle (e.g. FluidNC).
+        // Skip if a full status request (0x87) is pending — the real WCO will arrive in
+        // the status report. Recalculating here with stale oldWCO causes a visual bounce.
+        // If the active workspace offset changed, update WCO to stay in sync.
+        // WCO = workspaceOffset + G92 + TLO. The G92+TLO portion is unchanged,
+        // so newWCO = newOffset + (oldWCO - oldOffset).
+        // This prevents stale WCO on controllers that don't report WCO every cycle (e.g. FluidNC).
+        //
+        // Skip recalculation if the current WCO already reflects the new offset
+        // (i.e., a 0x87 status report with the real WCO arrived before $#).
+        // In that case, recalculating would double-apply the delta and overshoot.
         if (prev is not null && workspace == _lastStatus.Workspace
             && !string.IsNullOrEmpty(_lastStatus.WCO))
         {
-            var prevParts = prev.Split(',');
-            var newParts = value.Split(',');
-            var wcoParts = _lastStatus.WCO.Split(',');
-            var len = Math.Min(Math.Min(prevParts.Length, newParts.Length), wcoParts.Length);
-            var updatedWco = new string[wcoParts.Length];
-            Array.Copy(wcoParts, updatedWco, wcoParts.Length);
-            for (var i = 0; i < len; i++)
+            // Check if WCO already matches the new offset (real WCO already arrived)
+            var wcoAlreadyCorrect = _lastStatus.WCO == value;
+            if (!wcoAlreadyCorrect)
             {
-                if (double.TryParse(prevParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var oldVal)
-                    && double.TryParse(newParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var newVal)
-                    && double.TryParse(wcoParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var wcoVal))
+                var prevParts = prev.Split(',');
+                var newParts = value.Split(',');
+                var wcoParts = _lastStatus.WCO.Split(',');
+                var len = Math.Min(Math.Min(prevParts.Length, newParts.Length), wcoParts.Length);
+                var updatedWco = new string[wcoParts.Length];
+                Array.Copy(wcoParts, updatedWco, wcoParts.Length);
+                for (var i = 0; i < len; i++)
                 {
-                    updatedWco[i] = (wcoVal + (newVal - oldVal)).ToString("F3", CultureInfo.InvariantCulture);
+                    if (double.TryParse(prevParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var oldVal)
+                        && double.TryParse(newParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var newVal)
+                        && double.TryParse(wcoParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var wcoVal))
+                    {
+                        updatedWco[i] = (wcoVal + (newVal - oldVal)).ToString("F3", CultureInfo.InvariantCulture);
+                    }
                 }
+                _lastStatus.WCO = string.Join(",", updatedWco);
             }
-            _lastStatus.WCO = string.Join(",", updatedWco);
         }
 
         switch (workspace)

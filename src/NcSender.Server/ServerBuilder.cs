@@ -160,10 +160,16 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
-        // Wireless RCATC probe/TLS: translates @rcatc device frames into the
-        // grblHAL virtual-inputs realtime bytes (0xA5/0xA6). No config surface;
-        // it's a background subscriber.
-        builder.Services.AddHostedService<NcSender.Server.Dongle.RcatcTranslator>();
+        // XPROBE probe/TLS wiring: XProbeRouter arbitrates between the wireless
+        // (ESP-NOW dongle) source and a wired USB source; wired wins when
+        // present. XProbeTranslator subscribes to whichever is authoritative
+        // and emits grblHAL virtual-input realtime bytes (0xA5/A6 probe,
+        // 0xA7/A8 toolsetter) on the controller. Both are background;
+        // no config surface.
+        builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
+        builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
+        builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();

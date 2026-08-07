@@ -125,7 +125,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             st.WasConnected = true;
         }
 
-        // Per-message hook for latency-sensitive consumers (e.g. RcatcTranslator)
+        // Per-message hook for latency-sensitive consumers (e.g. XProbeTranslator)
         // that need every payload immediately — the WS relay below is throttled.
         try { DeviceMessageReceived?.Invoke(name, payload); }
         catch (Exception ex) { _logger.LogWarning(ex, "DeviceMessageReceived handler threw for '{Name}'", name); }

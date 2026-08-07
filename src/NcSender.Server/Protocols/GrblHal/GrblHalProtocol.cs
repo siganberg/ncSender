@@ -14,7 +14,6 @@ public partial class GrblHalProtocol : IProtocolHandler
     public string CacheKey => "grblhal";
     public byte? FullStatusRequestByte => 0x87;
     public string AlarmFetchCommand => "$EA";
-    public string? ErrorFetchCommand => "$EE";
 
     public bool MatchesGreeting(string line)
     {
@@ -53,24 +52,6 @@ public partial class GrblHalProtocol : IProtocolHandler
         return null;
     }
 
-    public (string Id, string Description)? ParseErrorLine(string line)
-    {
-        // grblHAL format: [ERRORCODE:N||description]
-        if (!line.StartsWith("[ERRORCODE:"))
-            return null;
-
-        var inner = line.TrimStart('[').TrimEnd(']');
-        var parts = inner["ERRORCODE:".Length..].Split("||", 2);
-        if (parts.Length == 2)
-        {
-            var desc = parts[1].Trim();
-            if (desc.Length > 0)
-                return (parts[0].Trim(), desc);
-        }
-
-        return null;
-    }
-
     public string NormalizePinState(string pn, int activeProbe, int tlsIndex = 0, int probeCount = 0)
     {
         if (!pn.Contains('P'))
@@ -78,11 +59,13 @@ public partial class GrblHalProtocol : IProtocolHandler
 
         // P:0 = probe → keep P
         // P:1 = TLS   → replace P with T
-        // No P: field (activeProbe = -1) → add T alongside P (both LEDs for single-probe firmware)
+        // activeProbe == -1 (unknown, e.g. right after connect before the first
+        // switch notification) → keep P as-is. Previously we also added T here
+        // as a "single-probe firmware" fallback, but that showed both LEDs on
+        // every status because ActiveProbe is one-shot and re-defaults to -1.
+        // Assert what we know (default probe) rather than what we don't.
         if (activeProbe == 1)
             return pn.Replace("P", "T");
-        if (activeProbe == -1)
-            return pn + "T";
 
         return pn;
     }
