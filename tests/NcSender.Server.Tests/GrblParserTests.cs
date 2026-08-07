@@ -89,11 +89,18 @@ public class GrblParserTests
     }
 
     [Fact]
-    public void GrblHal_NormalizePinState_NoActiveProbe_BothPT()
+    public void GrblHal_NormalizePinState_NoActiveProbe_KeepsProbeOnly()
     {
         var protocol = new GrblHalProtocol();
-        // -1 = no P: field in status report → single-probe firmware, both LEDs
-        Assert.Equal("XPT", protocol.NormalizePinState("XP", -1));
+        // -1 = active probe unknown (haven't seen a |P: change notification
+        // yet, or first status after connect). We used to add "T" alongside
+        // "P" as a "single-probe firmware" fallback — but grblHAL's |P: is a
+        // one-shot notification, not per-report, so activeProbe genuinely
+        // sits at -1 most of the time. Adding T on that basis lit BOTH probe
+        // and toolsetter LEDs on every status update. New behaviour: when we
+        // don't know which probe is active, assume the default (probe) and
+        // show only P.
+        Assert.Equal("XP", protocol.NormalizePinState("XP", -1));
     }
 
     [Fact]
