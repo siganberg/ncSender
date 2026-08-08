@@ -155,7 +155,7 @@ public class SerialTransport : IConnectionTransport
                     var line = raw.TrimEnd('\r');
                     if (line.Length == 0)
                         continue;
-                    CollectLineWithStatusSplice(line, linesToEmit);
+                    TransportLineFramer.CollectLineWithStatusSplice(line, linesToEmit);
                 }
             }
 
@@ -172,33 +172,6 @@ public class SerialTransport : IConnectionTransport
     // <...> report inline with another response on the same physical line.
     // Emit the status report as its own event, plus any prefix / suffix
     // as their own line events so downstream parsers see clean input.
-    private static void CollectLineWithStatusSplice(string line, List<string> sink)
-    {
-        var lt = line.IndexOf('<');
-        var gt = lt >= 0 ? line.IndexOf('>', lt + 1) : -1;
-        if (lt < 0 || gt <= lt)
-        {
-            sink.Add(line);
-            return;
-        }
-
-        if (lt > 0)
-        {
-            var prefix = line[..lt].TrimEnd();
-            if (prefix.Length > 0)
-                sink.Add(prefix);
-        }
-
-        sink.Add(line.Substring(lt, gt - lt + 1));
-
-        if (gt + 1 < line.Length)
-        {
-            var suffix = line[(gt + 1)..].TrimStart();
-            if (suffix.Length > 0)
-                CollectLineWithStatusSplice(suffix, sink);
-        }
-    }
-
     private void OnErrorReceived(object sender, SerialErrorReceivedEventArgs e)
     {
         if (e.EventType is SerialError.Overrun or SerialError.RXOver)

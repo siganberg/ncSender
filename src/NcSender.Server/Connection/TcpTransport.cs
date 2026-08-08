@@ -104,8 +104,6 @@ public class TcpTransport : IConnectionTransport
     {
         var buffer = new byte[4096];
         var lineBuffer = new StringBuilder();
-        var statusBuffer = new StringBuilder();
-        var inStatus = false;
 
         try
         {
@@ -119,43 +117,42 @@ public class TcpTransport : IConnectionTransport
                     return;
                 }
 
-                var text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                foreach (var ch in text)
-                {
-                    // `?` real-time polls (every 100ms) can splice a <...> status
-                    // report into the middle of a long response like $ES. Keep the
-                    // partial regular line intact across the splice by routing the
-                    // status report into its own buffer rather than flushing what
-                    // was being assembled.
-                    if (inStatus)
-                    {
-                        statusBuffer.Append(ch);
-                        if (ch == '>')
-                        {
-                            LineReceived?.Invoke(statusBuffer.ToString());
-                            statusBuffer.Clear();
-                            inStatus = false;
-                        }
-                        continue;
-                    }
+                lineBuffer.Append(Encoding.ASCII.GetString(buffer, 0, bytesRead));
 
-                    if (ch == '<')
-                    {
-                        statusBuffer.Append(ch);
-                        inStatus = true;
-                    }
-                    else if (ch == '\n')
-                    {
-                        var line = lineBuffer.ToString().TrimEnd('\r');
-                        lineBuffer.Clear();
-                        if (line.Length > 0)
-                            LineReceived?.Invoke(line);
-                    }
-                    else
-                    {
-                        lineBuffer.Append(ch);
-                    }
+                // Strict newline framing (same approach as SerialTransport).
+                // Everything up to the last '\n' is complete lines to dispatch;
+                // anything after stays buffered for the next read.
+                //
+                // Do NOT reintroduce the previous "<-as-status-start" state
+                // machine: PINSTATE labels legitimately contain '<-' (e.g.
+                // "P3 <- Laser enable"), and treating that as an open status
+                // frame would swallow the entire startup dump — PINSTATEs,
+                // 'ok's, tool table, coord offsets — into one phantom "status
+                // report" that only closed at the trailing '>' of a real
+                // <Idle|...> minutes later. That was the ethernet-only bug
+                // that made $I / $EG time out and blocked the user's first
+                // Home click at launch.
+                var buffered = lineBuffer.ToString();
+                var lastNewline = buffered.LastIndexOf('\n');
+                if (lastNewline < 0)
+                    continue;
+
+                var completeChunk = buffered[..(lastNewline + 1)];
+                var remainder = buffered[(lastNewline + 1)..];
+                lineBuffer.Clear();
+                lineBuffer.Append(remainder);
+
+                var linesToEmit = new List<string>();
+                foreach (var raw in completeChunk.Split('\n'))
+                {
+                    var line = raw.TrimEnd('\r');
+                    if (line.Length == 0)
+                        continue;
+                    TransportLineFramer.CollectLineWithStatusSplice(line, linesToEmit);
                 }
+
+                foreach (var line in linesToEmit)
+                    LineReceived?.Invoke(line);
             }
         }
         catch (OperationCanceledException)

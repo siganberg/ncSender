@@ -37,7 +37,9 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private readonly List<byte> _usbRxBuf = new(256);
 
     // Ports we've probed recently and want to skip until conditions change.
-    // Cleared aggressively on device disappearance so we don't hang forever.
+    // Cleared on every USB release so a re-enumerated device (unplug/replug,
+    // brownout, or the port coming back with a different number) always gets
+    // freshly probed instead of being remembered as "not xprobe" forever.
     private readonly HashSet<string> _blacklist = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _cts;
@@ -106,8 +108,12 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         {
             try
             {
+                // Check-then-probe in the same tick: if CheckUsbAlive detects
+                // a stale port and closes, ProbeOnce runs immediately instead
+                // of waiting a full ScanIntervalMs. Cuts reclaim latency in
+                // half after a re-enumeration.
+                if (UsbActive) CheckUsbAlive();
                 if (!UsbActive) ProbeOnce();
-                else CheckUsbAlive();
             }
             catch (Exception ex)
             {
@@ -209,10 +215,34 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private void CheckUsbAlive()
     {
-        // SerialPort.IsOpen goes false when the FTDI/CDC device is yanked;
-        // give up and re-probe on next scan tick.
         var sp = _usbPort;
-        if (sp is null || !sp.IsOpen) CloseUsb("port closed");
+        var path = _usbPortPath;
+        if (sp is null || !sp.IsOpen)
+        {
+            CloseUsb("port closed");
+            return;
+        }
+
+        // .NET's SerialPort.IsOpen stays true after the underlying tty is
+        // yanked (unplug, brownout, USB re-enumeration to a different port
+        // number) — the FD only faults on the next read/write. Meanwhile
+        // OnUsbData never fires for a dead device, so the router happily
+        // holds a phantom port and blocks fresh scans forever. Check the
+        // system-level port list, which DOES reflect physical presence.
+        try
+        {
+            var live = SerialPort.GetPortNames();
+            bool present = false;
+            foreach (var p in live)
+            {
+                if (string.Equals(p, path, StringComparison.Ordinal)) { present = true; break; }
+            }
+            if (!present) CloseUsb("device removed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "XProbeRouter GetPortNames failed during liveness check");
+        }
     }
 
     private void CloseUsb(string reason)
@@ -230,6 +260,10 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         try { old.DataReceived -= OnUsbData; } catch { }
         try { if (old.IsOpen) old.Close(); } catch { }
         try { old.Dispose(); } catch { }
+        // Fresh probe cycle after any release — a device that briefly
+        // enumerated wrong (or coincided with a CNC greeting) should get a
+        // second chance now that the state has changed.
+        _blacklist.Clear();
         _logger.LogInformation("XPROBE USB released ({Port}, reason: {Reason}) — falling back to wireless", oldPath, reason);
         FireConnectivity(false);
     }
@@ -304,7 +338,12 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "XProbeRouter USB write failed for '{Cmd}' — falling through to wireless", command);
+                _logger.LogDebug(ex, "XProbeRouter USB write failed for '{Cmd}' — releasing port and falling through to wireless", command);
+                // Write faults are how a physically-gone-but-still-open port
+                // announces itself. Release now so the scan loop can pick up
+                // whatever the device re-enumerated as, and don't spend the
+                // next N ticks pretending the port is fine.
+                CloseUsb("write failed");
             }
         }
         return _devices.SendAsync(DeviceName, command);

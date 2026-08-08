@@ -122,14 +122,34 @@ public class WebSocketTransport : IConnectionTransport
                     return;
                 }
 
-                var text = Encoding.ASCII.GetString(buffer, 0, result.Count);
-                var lines = text.Split('\n');
-                foreach (var rawLine in lines)
+                lineBuffer.Append(Encoding.ASCII.GetString(buffer, 0, result.Count));
+
+                // Buffer partial lines across reads and use the same newline +
+                // status-splice framing as SerialTransport / TcpTransport.
+                // Previous naive split-per-read dropped bytes when a line spanned
+                // multiple frames, and had no way to peel out an inline <...>
+                // status spliced into a long response by a '?' realtime poll.
+                var buffered = lineBuffer.ToString();
+                var lastNewline = buffered.LastIndexOf('\n');
+                if (lastNewline < 0)
+                    continue;
+
+                var completeChunk = buffered[..(lastNewline + 1)];
+                var remainder = buffered[(lastNewline + 1)..];
+                lineBuffer.Clear();
+                lineBuffer.Append(remainder);
+
+                var linesToEmit = new List<string>();
+                foreach (var raw in completeChunk.Split('\n'))
                 {
-                    var line = rawLine.Trim();
-                    if (line.Length > 0)
-                        LineReceived?.Invoke(line);
+                    var line = raw.TrimEnd('\r');
+                    if (line.Length == 0)
+                        continue;
+                    TransportLineFramer.CollectLineWithStatusSplice(line, linesToEmit);
                 }
+
+                foreach (var line in linesToEmit)
+                    LineReceived?.Invoke(line);
             }
         }
         catch (OperationCanceledException)
