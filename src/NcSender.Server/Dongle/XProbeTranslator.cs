@@ -39,11 +39,22 @@ public sealed class XProbeTranslator : IHostedService
     private readonly ICncController _controller;
     private readonly ILogger<XProbeTranslator> _logger;
 
-    // Per-channel dedup. '0'|'1' once seen, 0 = unknown. First message after
-    // boot / reconnect always writes so a lost edge self-heals to whatever
-    // state the device currently reports.
-    private char _lastProbeState;
-    private char _lastToolsetterState;
+    // NOTE: previously kept per-channel dedup (_lastProbeState / _lastTls…)
+    // to skip re-writing bytes when incoming state matched. That was WRONG:
+    // when grblHAL soft-resets (e.g., after $X clear-alarm), the virtual-
+    // inputs plugin zeroes its own state — but this translator's dedup
+    // memory stays "1" from the last edge, so subsequent 1:H heartbeats
+    // match dedup and never re-drive the pin. grblHAL is left believing
+    // the probe is released while the XProbe firmware keeps insisting
+    // "1:H:...:P" (physically triggered).
+    //
+    // Fix follows the HID keyboard/mouse model: every report (edge OR
+    // heartbeat) unconditionally re-drives the controller pin. Idempotent
+    // (a repeated 0xA5 on an already-asserted pin is a no-op in the plugin),
+    // trivial bandwidth (heartbeats at 100ms = 20 B/s to grbl), and the
+    // whole pipeline becomes self-healing — any state drift from any cause
+    // (soft-reset, packet reorder, connection blip) corrects within
+    // HEARTBEAT_MS of the next report.
 
     public XProbeTranslator(
         IXProbeSource source,
@@ -73,22 +84,21 @@ public sealed class XProbeTranslator : IHostedService
         return Task.CompletedTask;
     }
 
-    // Fires when the router's active transport comes up (or drops). Reset
-    // dedup + poll so the controller is re-driven to the sensor's real state.
+    // Fires when the router's active transport comes up (or drops). Just poll
+    // for immediate resync — the always-forward heartbeat model handles
+    // continuous state maintenance from that point on.
     private void OnSourceConnectivity(bool connected)
     {
         if (!connected) return;
-        _lastProbeState = _lastToolsetterState = (char)0;
         _ = TryPollAsync("source reconnect");
     }
 
-    // Fires when the controller connection comes up (or drops). A fresh
-    // controller has no idea about virtual-input state; on reconnect we clear
-    // our dedup so the next incoming message re-drives the virtual pins.
+    // Fires when the controller connection comes up (or drops). Same treatment
+    // as source reconnect — nothing to invalidate here since dedup was removed;
+    // the next heartbeat re-drives virtual pins automatically.
     private void OnControllerConnection(string status, bool connected)
     {
         if (!connected) return;
-        _lastProbeState = _lastToolsetterState = (char)0;
         _ = TryPollAsync("controller reconnect");
     }
 
@@ -125,12 +135,9 @@ public sealed class XProbeTranslator : IHostedService
             if (c == 'P' || c == 'T') src = c;
         }
 
-        // Per-channel dedup — firmware heartbeats re-emit current state every
-        // 3s on each channel, and app-retry may deliver the same seq twice.
-        ref char lastState = ref (src == 'T' ? ref _lastToolsetterState : ref _lastProbeState);
-        if (state == lastState) return;
-        lastState = state;
-
+        // No dedup — every event (edge or heartbeat) unconditionally re-drives
+        // the controller pin. See the "HID model" comment at the top of the
+        // class for the rationale. Idempotent writes at ~20 B/s total.
         byte b = (src, state) switch
         {
             ('P', '1') => ProbeAssert,
