@@ -16,7 +16,8 @@ public class GrblParserTests
         var settings = new Mock<ISettingsManager>();
         settings.Setup(s => s.GetSetting<int>(It.IsAny<string>(), It.IsAny<int>())).Returns(100);
         IProtocolHandler[] handlers = [new GrblHalProtocol(), new FluidNcProtocol()];
-        return new CncController(NullLogger<CncController>.Instance, settings.Object, handlers);
+        var dongle = new Mock<IDongleDeviceService>();
+        return new CncController(NullLogger<CncController>.Instance, settings.Object, handlers, dongle.Object);
     }
 
 

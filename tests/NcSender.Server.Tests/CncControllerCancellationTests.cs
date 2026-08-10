@@ -23,10 +23,12 @@ public class CncControllerCancellationTests : IDisposable
     public CncControllerCancellationTests()
     {
         var settings = new Mock<ISettingsManager>();
+        var dongle = new Mock<IDongleDeviceService>();
         _controller = new CncController(
             NullLogger<CncController>.Instance,
             settings.Object,
-            Array.Empty<IProtocolHandler>());
+            Array.Empty<IProtocolHandler>(),
+            dongle.Object);
 
         _transport = new FakeTransport();
 
@@ -140,6 +142,7 @@ public class CncControllerCancellationTests : IDisposable
         public readonly List<string> WriteLog = new();
         public bool IsConnected { get; private set; } = true;
         public string TransportType => "fake";
+        public string PortPath => "fake://test";
 
         public Task ConnectAsync(CancellationToken ct = default)
         {

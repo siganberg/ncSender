@@ -1184,6 +1184,7 @@ public partial class CncController : ICncController
 
         var prevStatus = _lastStatus.Status;
         var hasAccessoryField = false;
+        var hasFsField = false;
 
         // Reset Pn each report — grblHAL omits it when no pins are active, so
         // absence genuinely means "nothing triggered".
@@ -1228,6 +1229,7 @@ public partial class CncController : ICncController
                     break;
 
                 case "FS":
+                    hasFsField = true;
                     var fsParts = value.Split(',');
                     if (fsParts.Length >= 1 && double.TryParse(fsParts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var feed))
                         _lastStatus.FeedRate = feed;
@@ -1324,10 +1326,20 @@ public partial class CncController : ICncController
             _lastStatus.WPos = string.Join(",", wParts);
         }
 
-        // Preserve accessory states if A: field not present
-        if (!hasAccessoryField)
+        // Derive SpindleActive from FS: RPM readback (always present)
+        // rather than the A: accessory field (which is only re-emitted on
+        // change and thus flip-flops). Check both target and actual —
+        // either non-zero blocks (target = M3/M4 commanded, actual =
+        // physically spinning incl. M5 spin-down). See Pro edition
+        // mirror for full rationale.
+        // Override / correct with the FS: RPM signal — see Pro edition
+        // mirror for full rationale. FS is always present so RPM is
+        // authoritative; force clear only when FS is actually there and
+        // both are 0 (preserve prior state for rare no-FS frames).
+        if (hasFsField)
         {
-            // Keep existing values — they're already in _lastStatus
+            _lastStatus.SpindleActive = _lastStatus.SpindleRpmTarget > 0
+                                      || _lastStatus.SpindleRpmActual > 0;
         }
 
         // Check for changes

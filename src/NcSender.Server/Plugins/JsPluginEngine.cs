@@ -146,6 +146,11 @@ public class JsPluginEngine : IJsPluginEngine
                     var jsContext = new JsObject(engine);
                     var jsMachineState = new JsObject(engine);
                     jsMachineState.Set("tool", JsValue.FromObject(engine, context.ProjectedTool ?? context.MachineState.Tool));
+                    // Spindle running/spinning-down signal — plugins use this
+                    // to gate hazardous commands (e.g. block an unclamp aux
+                    // output when the spindle is active). See Pro edition
+                    // mirror for full rationale.
+                    jsMachineState.Set("spindleActive", JsValue.FromObject(engine, context.MachineState.SpindleActive));
                     jsContext.Set("machineState", jsMachineState);
                     jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
                     jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
