@@ -77,6 +77,7 @@ Rules:
 4. Exclude internal/chore commits unless they impact users
 5. No markdown code blocks, URLs, links, or non-English characters
 6. Keep it concise - this is a beta preview
+7. CRITICAL — INTRA-BRANCH CHURN: The commits below are the WORK done since the last release, not the delta from the user's perspective. It is common for one commit to add a feature and a later commit in the same range to fix a bug in THAT feature. The bug never shipped to users, so it MUST NOT appear as a \"Bug Fix\" entry. Report ONLY the NET user-facing outcome — describe the finished feature, do not list the mid-development fixes to it. A \"Bug Fix\" entry belongs in the release notes ONLY when it fixes a defect that existed in the PREVIOUS release (i.e. a real regression the user could have hit)
 
 Output ONLY the markdown. No preamble. No explanation. Just the markdown."
 
