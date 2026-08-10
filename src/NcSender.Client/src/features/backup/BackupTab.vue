@@ -381,7 +381,11 @@ const prettyBucket = (key) => BUCKET_LABELS[key] || key;
 }
 
 .panel-header {
-  margin-bottom: 4px;
+  /* Match .section-title separator used by other Settings cards for
+     visual consistency across tabs. */
+  margin-bottom: var(--gap-md);
+  padding-bottom: var(--gap-xs);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .panel-title-row {

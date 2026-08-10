@@ -359,6 +359,11 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- Advanced Tab (Auxiliary I/O — moved out of General because it's
+             a wiring-time setup, not a per-session toggle) -->
+        <div v-if="activeTab === 'advanced'" class="tab-panel tab-panel--advanced">
           <div class="settings-section">
             <h3 class="section-title">Auxiliary I/O</h3>
             <div class="settings-group">
@@ -376,6 +381,7 @@
                   <col class="col-name">
                   <col class="col-on">
                   <col class="col-off">
+                  <col class="col-hold">
                   <col class="col-actions">
                 </colgroup>
                 <thead>
@@ -384,6 +390,7 @@
                     <th>Name</th>
                     <th>On</th>
                     <th>Off</th>
+                    <th title="Require 1-second hold to activate — protects against accidental clicks on safety-critical outputs (e.g. pneumatic collet release).">Hold</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -402,6 +409,9 @@
                         </select>
                       </td>
                       <td class="command-cell">{{ getOffCommand(auxEditState.on) }}</td>
+                      <td>
+                        <ToggleSwitch v-model="auxEditState.holdToActivate" />
+                      </td>
                       <td>
                         <div class="aux-actions-cell">
                           <button class="aux-btn-save" @click="saveAuxEdit" title="Save">
@@ -429,6 +439,9 @@
                       <td class="command-cell">{{ output.on }}</td>
                       <td class="command-cell">{{ getOffCommand(output.on) }}</td>
                       <td>
+                        <ToggleSwitch v-model="output.holdToActivate" @update:modelValue="saveAuxOutputs" />
+                      </td>
+                      <td>
                         <button class="switch-edit-btn" @click="startAuxEdit(index)" title="Edit">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -449,8 +462,6 @@
               </button>
             </div>
           </div>
-
-
         </div>
 
         <!-- Tools Tab -->
@@ -1470,7 +1481,8 @@ const allSettingsTabs = [
   { id: 'config', label: 'Config', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5zM4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' },
   { id: 'plugins', label: 'Plugins', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.545 6.714 4.11 8H3a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1.110l.436 1.286A1 1 0 0 0 5.494 13h.557a1 1 0 0 0 .948-.714L7.435 11h1.130l.436 1.286A1 1 0 0 0 9.949 13h.557a1 1 0 0 0 .948-.714L11.89 11H13a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1.11l-.436-1.286A1 1 0 0 0 10.506 6h-.557a1 1 0 0 0-.948.714L8.565 8H7.435L7 6.714A1 1 0 0 0 6.052 6h-.557a1 1 0 0 0-.948.714M6.724 9.5 6.27 11h-.48L5.335 9.5h1.389m3.553 0h1.389l-.455 1.5h-.479zm-5 1L4.822 9H3.5v1.5zm9 0V9h-1.323l-.455 1.5z"/></svg>' },
   { id: 'logs', label: 'Logs', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/><path d="M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' },
-  { id: 'backup', label: 'Backup', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' }
+  { id: 'backup', label: 'Backup', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' },
+  { id: 'advanced', label: 'Advanced', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' }
 ];
 const settingsTabs = computed(() =>
   allSettingsTabs.filter(t => {
@@ -1651,7 +1663,8 @@ const loadAuxOutputs = () => {
       id: item.id || `aux-${index}`,
       enabled: item.enabled ?? true,
       name: item.name || `Output ${index + 1}`,
-      on: item.on || 'M8'
+      on: item.on || 'M8',
+      holdToActivate: item.holdToActivate ?? false,
     }));
   }
   // Migrate from old ioSwitches format
@@ -1663,7 +1676,8 @@ const loadAuxOutputs = () => {
         id: 'flood',
         enabled: oldFormat.flood.enabled ?? true,
         name: oldFormat.flood.name || 'Flood',
-        on: oldFormat.flood.on || 'M8'
+        on: oldFormat.flood.on || 'M8',
+        holdToActivate: false,
       });
     }
     if (oldFormat.mist) {
@@ -1671,15 +1685,16 @@ const loadAuxOutputs = () => {
         id: 'mist',
         enabled: oldFormat.mist.enabled ?? true,
         name: oldFormat.mist.name || 'Mist',
-        on: oldFormat.mist.on || 'M7'
+        on: oldFormat.mist.on || 'M7',
+        holdToActivate: false,
       });
     }
     if (outputs.length > 0) return outputs;
   }
   // Default outputs
   return [
-    { id: 'flood', enabled: true, name: 'Flood', on: 'M8' },
-    { id: 'mist', enabled: true, name: 'Mist', on: 'M7' }
+    { id: 'flood', enabled: true, name: 'Flood', on: 'M8', holdToActivate: false },
+    { id: 'mist', enabled: true, name: 'Mist', on: 'M7', holdToActivate: false },
   ];
 };
 
@@ -1689,7 +1704,8 @@ const auxOutputs = reactive(loadAuxOutputs());
 const editingAuxIndex = ref<number | null>(null);
 const auxEditState = reactive({
   name: '',
-  on: ''
+  on: '',
+  holdToActivate: false,
 });
 
 const availableOnCommands = computed(() => {
@@ -1708,6 +1724,7 @@ const startAuxEdit = (index: number) => {
   editingAuxIndex.value = index;
   auxEditState.name = auxOutputs[index].name;
   auxEditState.on = auxOutputs[index].on;
+  auxEditState.holdToActivate = auxOutputs[index].holdToActivate ?? false;
 };
 
 const cancelAuxEdit = () => {
@@ -1721,7 +1738,8 @@ const saveAuxOutputs = async () => {
       id: o.id,
       enabled: o.enabled,
       name: o.name,
-      on: o.on
+      on: o.on,
+      holdToActivate: o.holdToActivate ?? false,
     }))
   });
 };
@@ -1732,6 +1750,7 @@ const saveAuxEdit = async () => {
 
   auxOutputs[index].name = auxEditState.name.trim() || `Output ${index + 1}`;
   auxOutputs[index].on = auxEditState.on;
+  auxOutputs[index].holdToActivate = auxEditState.holdToActivate;
 
   await saveAuxOutputs();
   editingAuxIndex.value = null;
@@ -1743,7 +1762,8 @@ const addAuxOutput = async () => {
     id: newId,
     enabled: true,
     name: `Output ${auxOutputs.length + 1}`,
-    on: 'M8'
+    on: 'M8',
+    holdToActivate: false,
   });
   await saveAuxOutputs();
   // Start editing the new output
@@ -3413,7 +3433,8 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   gap: 0;
 }
 
-.tab-panel--general .settings-section {
+.tab-panel--general .settings-section,
+.tab-panel--advanced .settings-section {
   margin: 15px 20px;
 }
 
@@ -3589,6 +3610,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .io-switches-table .col-name { width: auto; }
 .io-switches-table .col-on { width: 160px; }
 .io-switches-table .col-off { width: 160px; }
+.io-switches-table .col-hold { width: 70px; }
 .io-switches-table .col-actions { width: 180px; }
 
 .io-switches-table th:nth-child(1),

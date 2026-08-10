@@ -293,9 +293,31 @@
         <div
           v-for="(switchConfig, key) in enabledIOSwitches"
           :key="key"
-          class="spindle-toggle"
+          :class="['spindle-toggle', { 'spindle-toggle--hold': switchConfig.holdToActivate }]"
+          :title="switchConfig.holdToActivate ? `${switchConfig.label} (Hold 1s to ${ioSwitchStates[key] ? 'turn off' : 'turn on'})` : undefined"
+          @mousedown="switchConfig.holdToActivate && !isCoolantDisabled ? startAuxHold(key, $event) : null"
+          @mouseup="switchConfig.holdToActivate ? endAuxHold(key) : null"
+          @mouseleave="switchConfig.holdToActivate ? cancelAuxHold(key) : null"
+          @touchstart.passive="switchConfig.holdToActivate && !isCoolantDisabled ? startAuxHold(key, $event) : null"
+          @touchend="switchConfig.holdToActivate ? endAuxHold(key) : null"
+          @touchcancel="switchConfig.holdToActivate ? cancelAuxHold(key) : null"
         >
-          <label class="switch">
+          <div
+            v-if="switchConfig.holdToActivate"
+            class="long-press-indicator long-press-horizontal aux-hold-fill"
+            :style="{ width: `${auxHoldState[key]?.progress || 0}%` }"
+          ></div>
+          <div
+            v-if="switchConfig.holdToActivate"
+            class="switch switch--hold"
+            :class="{ 'is-on': ioSwitchStates[key], 'is-disabled': isCoolantDisabled }"
+            role="switch"
+            :aria-checked="ioSwitchStates[key]"
+            :aria-disabled="isCoolantDisabled"
+          >
+            <span class="slider"></span>
+          </div>
+          <label v-else class="switch">
             <input
               type="checkbox"
               :checked="ioSwitchStates[key]"
@@ -304,7 +326,9 @@
             >
             <span class="slider"></span>
           </label>
-          <span>{{ switchConfig.label }}</span>
+          <span class="spindle-toggle-name">
+            {{ switchConfig.label }}<sup v-if="switchConfig.holdToActivate" class="hold-sup">Hold</sup>
+          </span>
         </div>
       </div>
 
@@ -884,7 +908,8 @@ const enabledIOSwitches = computed(() => {
         enabled[key] = {
           label: output.name || `Output`,
           on: output.on,
-          off: getOffCommand(output.on)
+          off: getOffCommand(output.on),
+          holdToActivate: output.holdToActivate === true,
         };
         // Initialize state if not exists
         if (!(key in ioSwitchStates)) {
@@ -3800,6 +3825,57 @@ const toggleIOSwitch = async (switchKey: string) => {
   }
 };
 
+// --- Hold-to-activate aux outputs ---
+// See Pro edition mirror for details. 1-second press-and-hold to toggle;
+// filling progress bar shows completion; release before threshold cancels.
+const AUX_HOLD_MS = 1000;
+const auxHoldState = reactive<Record<string, { active: boolean; progress: number }>>({});
+const auxHoldTimers: Record<string, { timeout: any; raf: any; start: number }> = {};
+
+const clearAuxHoldTimers = (switchKey: string) => {
+  const t = auxHoldTimers[switchKey];
+  if (!t) return;
+  if (t.timeout) clearTimeout(t.timeout);
+  if (t.raf) cancelAnimationFrame(t.raf);
+  delete auxHoldTimers[switchKey];
+};
+
+const startAuxHold = (switchKey: string, ev?: Event) => {
+  if (ev && (ev as MouseEvent).button !== undefined && (ev as MouseEvent).button !== 0) return;
+  clearAuxHoldTimers(switchKey);
+  auxHoldState[switchKey] = { active: true, progress: 0 };
+  const start = performance.now();
+  const raf = () => {
+    const t = auxHoldTimers[switchKey];
+    if (!t) return;
+    const elapsed = performance.now() - t.start;
+    auxHoldState[switchKey].progress = Math.min(100, (elapsed / AUX_HOLD_MS) * 100);
+    if (elapsed < AUX_HOLD_MS) {
+      t.raf = requestAnimationFrame(raf);
+    }
+  };
+  auxHoldTimers[switchKey] = {
+    start,
+    raf: requestAnimationFrame(raf),
+    timeout: setTimeout(() => {
+      clearAuxHoldTimers(switchKey);
+      auxHoldState[switchKey] = { active: false, progress: 0 };
+      toggleIOSwitch(switchKey);
+    }, AUX_HOLD_MS),
+  };
+};
+
+const endAuxHold = (switchKey: string) => {
+  if (auxHoldTimers[switchKey]) {
+    clearAuxHoldTimers(switchKey);
+    auxHoldState[switchKey] = { active: false, progress: 0 };
+  }
+};
+
+const cancelAuxHold = (switchKey: string) => {
+  endAuxHold(switchKey);
+};
+
 // Parse tools from G-code content by scanning for lines that include M6 and Tn
 function extractToolsFromGCode(content: string): number[] {
   if (typeof content !== 'string' || !content) return [];
@@ -5455,6 +5531,50 @@ h2 {
 
 .spindle-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* Hold-to-activate aux slider — see Pro edition mirror for details.
+   Accent-color fill sweeps across the whole row (slider + label). */
+.spindle-toggle--hold {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+.spindle-toggle--hold .aux-hold-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  opacity: 0.22;
+  pointer-events: none;
+  border-radius: var(--radius-small);
+  transition: width 40ms linear;
+  z-index: 0;
+}
+.spindle-toggle--hold > .switch,
+.spindle-toggle--hold > .spindle-toggle-name {
+  position: relative;
+  z-index: 1;
+}
+.switch--hold { cursor: pointer; }
+.switch--hold.is-on .slider { background-color: var(--color-accent); }
+.switch--hold.is-on .slider::before { transform: translateX(18px); }
+.switch--hold.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.hold-sup {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  vertical-align: super;
+  margin-left: 3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  line-height: 1;
 }
 
 .switch {
