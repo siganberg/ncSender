@@ -39,6 +39,7 @@ public sealed class PluginSerialService : IPluginSerialService
     private readonly IBroadcaster _broadcaster;
     private readonly ISettingsManager _settings;
     private readonly ICncController _cnc;
+    private readonly IPendantManager _pendant;
 
     private readonly SemaphoreSlim _flashLock = new(1, 1);
     private CancellationTokenSource? _flashCts;
@@ -48,12 +49,14 @@ public sealed class PluginSerialService : IPluginSerialService
         ILogger<PluginSerialService> logger,
         IBroadcaster broadcaster,
         ISettingsManager settings,
-        ICncController cnc)
+        ICncController cnc,
+        IPendantManager pendant)
     {
         _logger = logger;
         _broadcaster = broadcaster;
         _settings = settings;
         _cnc = cnc;
+        _pendant = pendant;
     }
 
     // -------------------------------------------------------------------
@@ -138,11 +141,28 @@ public sealed class PluginSerialService : IPluginSerialService
     private HashSet<string> BuildReservedPorts()
     {
         var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (_cnc.IsConnected)
+
+        // CNC port — read from the live transport, not settings. Serial
+        // enumeration is dynamic (/dev/ttyACM0 today, /dev/ttyACM2 after a
+        // reconnect) and the settings value can go stale, causing the
+        // probe to open the CNC port and reset the controller via DTR
+        // toggle + garbage-write.
+        if (_cnc.IsConnected && _cnc.Transport is { TransportType: "usb" } tr)
         {
-            var cncPort = _settings.GetSetting<string>("connection.usbPort");
-            if (!string.IsNullOrEmpty(cncPort)) reserved.Add(cncPort);
+            var live = tr.PortPath?.Trim();
+            if (!string.IsNullOrEmpty(live)) reserved.Add(live);
         }
+        // Fallback: also reserve whatever the settings last recorded, in
+        // case the transport hasn't finished connecting.
+        var cfgPort = _settings.GetSetting<string>("connection.usbPort");
+        if (!string.IsNullOrEmpty(cfgPort)) reserved.Add(cfgPort);
+
+        // Pendant scanner + dongle handler open USB serial ports too —
+        // probing those with $VERSION + DTR would similarly reset ESP32
+        // boards.
+        foreach (var p in _pendant.GetOccupiedPorts())
+            if (!string.IsNullOrEmpty(p)) reserved.Add(p);
+
         return reserved;
     }
 

@@ -28,13 +28,16 @@ public class JsPluginEngine : IJsPluginEngine
         public int Priority { get; init; }
     }
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback)
+    private readonly IServerContext _serverContext;
+
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
     {
         _logger = logger;
         _dialogs = dialogs;
         _toolService = toolService;
         _dongleDevices = dongleDevices;
         _pendingTloWriteback = pendingTloWriteback;
+        _serverContext = serverContext;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -149,6 +152,15 @@ public class JsPluginEngine : IJsPluginEngine
                     jsContext.Set("sourceId", context.Meta?.SourceId is not null
                         ? JsValue.FromObject(engine, context.Meta.SourceId)
                         : JsValue.Null);
+                    // True while a job is actively executing — including the
+                    // start-from-line preamble that runs before the file
+                    // reader. Set by JobManager.StartAsync/StartJobFromLineAsync
+                    // (Status="running") and cleared on complete/stop/error.
+                    // Plugins use this to decide whether to inject job-start
+                    // side effects that would be wrong in manual contexts.
+                    var jobLoaded = _serverContext.State.JobLoaded;
+                    var jobRunning = jobLoaded is not null && jobLoaded.Status == "running";
+                    jsContext.Set("jobRunning", JsValue.FromObject(engine, jobRunning));
                     // Edition marker so cross-edition plugins can gate
                     // Pro-only features (e.g. `$keepout_off` prefix).
                     // Plugins check `context.edition === "pro"`.
@@ -269,7 +281,10 @@ public class JsPluginEngine : IJsPluginEngine
             {
                 var fn = state.JintEngine.GetValue("onAfterJobEnd");
                 if (fn.IsUndefined()) return;
-                fn.Call();
+                // Pass cached settings so plugins can decide behavior without
+                // needing a separate side-channel; matches onBeforeCommand's
+                // signature (which also gets settings).
+                fn.Call(state.CachedSettings);
             }
             catch (Exception ex)
             {

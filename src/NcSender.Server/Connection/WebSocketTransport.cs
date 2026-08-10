@@ -14,6 +14,7 @@ public class WebSocketTransport : IConnectionTransport
 
     public bool IsConnected => _ws?.State == WebSocketState.Open;
     public string TransportType => "websocket";
+    public string PortPath => $"ws://{_host}:{_port}/";
 
     public event Action<string>? LineReceived;
     public event Action<Exception?>? ConnectionLost;

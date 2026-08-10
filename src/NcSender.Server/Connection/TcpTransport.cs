@@ -15,6 +15,7 @@ public class TcpTransport : IConnectionTransport
 
     public bool IsConnected => _client?.Connected == true;
     public string TransportType => "ethernet";
+    public string PortPath => $"tcp://{_host}:{_port}/";
 
     public event Action<string>? LineReceived;
     public event Action<Exception?>? ConnectionLost;

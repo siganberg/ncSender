@@ -101,11 +101,14 @@ public partial class CncController : ICncController
     public event Action? ResumeReceived;
     public event Action? UnlockReceived;
 
-    public CncController(ILogger<CncController> logger, ISettingsManager settings, IEnumerable<IProtocolHandler> protocolHandlers)
+    private readonly IDongleDeviceService? _dongleDevices;
+
+    public CncController(ILogger<CncController> logger, ISettingsManager settings, IEnumerable<IProtocolHandler> protocolHandlers, IDongleDeviceService dongleDevices)
     {
         _logger = logger;
         _settings = settings;
         _protocolHandlers = protocolHandlers.ToArray();
+        _dongleDevices = dongleDevices;
     }
 
     public async Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default)
@@ -355,6 +358,20 @@ public partial class CncController : ICncController
                     if (entry.PrependJogCancel)
                         await _transport.WriteRawAsync([0x85], ct);
 
+                    // Dongle sentinel — fire ESP-NOW at CNC-serial-write
+                    // time so the packet lands right after grblHAL ack'd
+                    // every prior queued command. Fire-and-forget; the
+                    // comment itself still goes to grblHAL as a no-op.
+                    if (entry.DongleSend is { } ds && _dongleDevices is not null)
+                    {
+                        try { _ = _dongleDevices.SendAsync(ds.Name, ds.Payload); }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Dongle sentinel send failed: {Name}={Payload}",
+                                ds.Name, ds.Payload);
+                        }
+                    }
+
                     await _transport.WriteAsync(entry.CommandToWrite, ct);
 
                     LogCommandSent(entry.RawCommand, isRealTime: false);
@@ -524,6 +541,21 @@ public partial class CncController : ICncController
         TrackOutputPinCommand(normalizedCommand);
         var display = displayCommand ?? cleanCommand;
 
+        // Sentinel parse — case preserved (cleanCommand hasn't been
+        // upper-cased yet). Format: `(DONGLE:<name>:<payload>)`. Payload
+        // may contain colons (e.g. `goto:0`). Fires at write time so
+        // ESP-NOW lands after grblHAL ack'd every prior queued command
+        // — pair with `G4 P0` before this line for physical sync.
+        (string, string)? dongleSend = null;
+        if (cleanCommand.StartsWith("(DONGLE:", StringComparison.OrdinalIgnoreCase)
+            && cleanCommand.EndsWith(")"))
+        {
+            var inner = cleanCommand.Substring(8, cleanCommand.Length - 9);
+            var colon = inner.IndexOf(':');
+            if (colon > 0)
+                dongleSend = (inner.Substring(0, colon).Trim(), inner.Substring(colon + 1).Trim());
+        }
+
         var entry = new CommandEntry
         {
             Id = commandId,
@@ -532,7 +564,8 @@ public partial class CncController : ICncController
             PrependJogCancel = prependJogCancel,
             Meta = meta,
             DisplayCommand = display,
-            Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously)
+            Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously),
+            DongleSend = dongleSend
         };
 
         var pendingPayload = new CommandResult
@@ -1581,5 +1614,8 @@ public partial class CncController : ICncController
         public CommandMeta? Meta { get; init; }
         public string? DisplayCommand { get; init; }
         public TaskCompletionSource<CommandResult> Tcs { get; init; } = null!;
+        // Optional dongle send — see CncController.SendCommandAsync
+        // (Pro edition mirror). `(DONGLE:name:payload)` sentinel comment.
+        public (string Name, string Payload)? DongleSend { get; init; }
     }
 }
