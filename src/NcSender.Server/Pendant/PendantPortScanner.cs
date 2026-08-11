@@ -32,6 +32,10 @@ public class PendantPortScanner : IDisposable
 
     private const int ScanIntervalMs = 1500;
     private const int IdentifyTimeoutMs = 1000;
+    // Passive-listen window after opening a port. Firmware-side auto-
+    // announce fires within a few hundred ms of Serial ready; 1500 ms
+    // gives comfortable margin for a chip that resets on our port-open.
+    private const int PassiveListenMs = 1500;
 
     public event Action<TrackedDevice>? DeviceFound;
     public event Action<TrackedDevice>? DeviceLost;
@@ -291,8 +295,17 @@ public class PendantPortScanner : IDisposable
             handler = new PendantSerialHandler(_logger);
             await handler.ConnectAsync(port);
 
-            // Give USB CDC time to stabilize (device may need to finish boot)
-            await Task.Delay(100);
+            // Step 0 (passive listen): if this port belongs to a pendant or
+            // dongle, the firmware auto-announces `$ID:pendant` or
+            // `$ID:dongle` on Serial ready. Catching that lets us identify
+            // the device without sending anything ourselves — which matters
+            // because sending `$ID` to a FluidNC controller has been linked
+            // to firmware crashes, and the pibot pendant enters a permanent-
+            // blackout state if we send commands during its early boot.
+            // If nothing announces in ~1.5s, fall through to the active
+            // probes below.
+            var passive = await PassiveListenForIdAsync(handler, port);
+            if (passive is not null) return passive;
 
             // Step 1: GRBL/FluidNC always responds to '?' with a status report.
             // Pendants don't. This is the most reliable way to tell them apart
@@ -307,7 +320,9 @@ public class PendantPortScanner : IDisposable
                 return null;
             }
 
-            // Step 2: not a CNC, try identifying as pendant/dongle.
+            // Step 2: not a CNC and didn't announce — send explicit $ID.
+            // Older pendant firmware without auto-announce still identifies
+            // this way.
             var result = await SendIdAndWaitAsync(handler, port);
 
             if (result.IsCnc)
@@ -439,6 +454,60 @@ public class PendantPortScanner : IDisposable
                 return tcs.Task.Result;
 
             return new IdResult(null, false);
+        }
+        finally
+        {
+            handler.RawMessageReceived -= OnRaw;
+        }
+    }
+
+    /// <summary>
+    /// Passively listens for a firmware-side auto-announce after the port
+    /// is opened. Sends nothing — a `$ID:pendant` / `$ID:dongle` printed by
+    /// the device during boot is enough to identify it. Also blacklists the
+    /// port immediately if the boot output looks like a CNC controller so
+    /// the caller can skip the active probe. Returns:
+    ///   * TrackedDevice — device auto-announced (identified).
+    ///   * null (with port blacklisted + handler disposed) — CNC controller signature.
+    ///   * null (no side effect) — nothing heard; caller should fall through to active probe.
+    /// </summary>
+    private async Task<object?> PassiveListenForIdAsync(PendantSerialHandler handler, string port)
+    {
+        var tcs = new TaskCompletionSource<IdResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnRaw(string line)
+        {
+            if (line == "$ID:pendant")
+                tcs.TrySetResult(new IdResult(DeviceType.Pendant, false));
+            else if (line == "$ID:dongle")
+                tcs.TrySetResult(new IdResult(DeviceType.Dongle, false));
+            else if (line.StartsWith("$ID:"))
+            {
+                _logger.LogInformation("Port {Port} passively identified as {Id}, releasing from pendant probe", port, line);
+                tcs.TrySetResult(new IdResult(null, true));
+            }
+            else if (LooksLikeCncController(line))
+            {
+                _logger.LogInformation("Port {Port} passive listen: CNC controller signature, skipping pendant probe", port);
+                tcs.TrySetResult(new IdResult(null, true));
+            }
+        }
+
+        handler.RawMessageReceived += OnRaw;
+        try
+        {
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(PassiveListenMs));
+            if (completed != tcs.Task) return null;                    // silence → fall through
+            var result = tcs.Task.Result;
+            if (result.IsCnc)
+            {
+                _cncBlacklist.Add(port);
+                try { await handler.DisposeAsync(); } catch { /* best effort */ }
+                return null;
+            }
+            if (result.Device is { } deviceType)
+                return new TrackedDevice(port, deviceType, handler);
+            return null;
         }
         finally
         {
