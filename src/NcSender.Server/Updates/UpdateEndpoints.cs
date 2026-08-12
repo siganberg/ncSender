@@ -50,6 +50,44 @@ public static class UpdateEndpoints
             return Results.Ok(updates.GetStatus());
         });
 
+        // Version history — supports the "roll back to a specific
+        // version" UI on kiosks where SSH/dpkg isn't a user-facing
+        // option. `limit` optional (default 30, 0 = uncapped).
+        app.MapGet("/api/updates/versions", async (HttpContext ctx, IUpdateService updates) =>
+        {
+            var limitStr = ctx.Request.Query["limit"].ToString();
+            int limit = 30;
+            if (!string.IsNullOrEmpty(limitStr) && int.TryParse(limitStr, out var parsed))
+                limit = parsed;
+
+            try
+            {
+                var versions = await updates.ListVersionsAsync(limit);
+                return Results.Ok(versions);
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+        });
+
+        app.MapPost("/api/updates/install-version", async (HttpContext ctx, IUpdateService updates) =>
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<InstallVersionRequest>();
+            if (body is null || string.IsNullOrWhiteSpace(body.Tag))
+                return Results.BadRequest(new ApiError("Tag is required"));
+
+            try
+            {
+                await updates.InstallVersionAsync(body.Tag);
+                return Results.Ok(new ApiSuccess(true));
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+        });
+
         app.MapGet("/api/updates/channel", (ISettingsManager settings) =>
         {
             var channel = settings.GetSetting<string>("updateChannel", "stable") ?? "stable";

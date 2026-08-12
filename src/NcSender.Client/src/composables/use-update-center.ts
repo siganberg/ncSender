@@ -19,6 +19,17 @@ import { reactive, readonly } from 'vue';
 import packageJson from '../../../package.json';
 import { api } from '@/lib/api.js';
 
+export interface VersionEntry {
+  tag: string;
+  version: string;
+  publishedAt: string | null;
+  notes: string;
+  isPrerelease: boolean;
+  isCurrent: boolean;
+  canInstall: boolean;
+  releaseUrl: string | null;
+}
+
 const state = reactive({
   supported: typeof window !== 'undefined' ? Boolean(window.ncSender?.updates) : false,
   currentVersion: api.serverVersion || packageJson.version,
@@ -39,7 +50,15 @@ const state = reactive({
   statusMessage: '' as string,
   error: null as string | null,
   canInstall: false,
-  autoInstallRequested: false
+  autoInstallRequested: false,
+  // Version history — separate from the "latest release" summary above.
+  // The kiosk uses this to let users roll back without SSH; loaded on
+  // demand (first time the dialog's Version History section expands).
+  versions: [] as VersionEntry[],
+  versionsLoaded: false,
+  versionsLoading: false,
+  versionsError: null as string | null,
+  installingVersionTag: null as string | null
 });
 
 let initialized = false;
@@ -382,6 +401,62 @@ export const useUpdateCenter = () => {
     return checkForUpdates();
   };
 
+  const loadVersions = async (opts: { force?: boolean } = {}) => {
+    if (state.versionsLoading) return;
+    if (state.versionsLoaded && !opts.force) return;
+    state.versionsLoading = true;
+    state.versionsError = null;
+    try {
+      const res = await fetch('/api/updates/versions');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.error || `Failed to load versions (${res.status})`);
+      }
+      const data: VersionEntry[] = await res.json();
+      state.versions = Array.isArray(data) ? data : [];
+      state.versionsLoaded = true;
+    } catch (err: any) {
+      state.versionsError = err?.message || 'Failed to load versions';
+    } finally {
+      state.versionsLoading = false;
+    }
+  };
+
+  // Kick off a downgrade/reinstall to a specific tag. The server reuses
+  // the same download → install → app-exit(42) pipeline as the normal
+  // update flow, so we drive the same status polling + reload watcher.
+  const installVersion = async (tag: string) => {
+    if (!tag) return;
+    state.installingVersionTag = tag;
+    handleDownloadStarted({ autoInstallRequested: true });
+
+    let statusPoll: ReturnType<typeof setInterval> | null = null;
+    const pollDone = new Promise<void>((resolve) => {
+      statusPoll = pollStatus(resolve);
+    });
+
+    try {
+      const res = await fetch('/api/updates/install-version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (statusPoll) clearInterval(statusPoll);
+        state.installingVersionTag = null;
+        handleError({ message: data?.error || 'Install failed' });
+        return data;
+      }
+      await pollDone;
+      return data;
+    } catch (err: any) {
+      if (statusPoll) clearInterval(statusPoll);
+      state.installingVersionTag = null;
+      handleError({ message: err?.message || 'Install failed' });
+    }
+  };
+
   const clearError = () => {
     state.error = null;
   };
@@ -412,6 +487,8 @@ export const useUpdateCenter = () => {
     downloadAndInstall,
     downloadOnly,
     setChannel,
+    loadVersions,
+    installVersion,
     clearError,
     resetState
   };

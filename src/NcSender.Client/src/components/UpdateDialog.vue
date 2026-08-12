@@ -47,11 +47,20 @@
         </div>
       </section>
 
-      <section class="update-dialog__status" :class="{
-        'update-dialog__status--error': Boolean(props.state.error),
-        'update-dialog__status--installing': props.state.isInstalling
-      }">
-        <div class="status-text">
+      <!-- Status panel only appears when there's something actionable —
+           download progress, install spinner, error, or a downloaded
+           asset waiting. The "Update available" case is signaled by
+           the NEW badge on the Latest Release card instead, so we
+           don't waste vertical space on a static status card. -->
+      <section
+        v-if="showStatusPanel"
+        class="update-dialog__status"
+        :class="{
+          'update-dialog__status--error': Boolean(props.state.error),
+          'update-dialog__status--installing': props.state.isInstalling
+        }"
+      >
+        <div v-if="props.state.error || props.state.isDownloading || props.state.isInstalling" class="status-text">
           <span>{{ statusText }}</span>
           <span v-if="props.state.error" class="status-text__error">{{ props.state.error }}</span>
         </div>
@@ -70,10 +79,61 @@
         </div>
       </section>
 
-      <section class="update-dialog__notes">
-        <header class="notes-header">
+      <section class="dialog-section" :class="{ 'dialog-section--collapsed': !historyOpen }">
+        <header class="section-header section-header--clickable" @click="historyOpen = !historyOpen">
+          <div class="section-header__title">
+            <h3>Version History</h3>
+            <p class="section-subtitle">
+              <span v-if="!historyOpen && selectedVersion">Selected: <strong>{{ selectedVersion.tag }}</strong> — tap to change</span>
+              <span v-else>Select a version — the main action installs the one you pick.</span>
+            </p>
+          </div>
+          <button class="section-toggle" :class="{ 'is-open': historyOpen }" aria-label="Toggle version history">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </header>
+        <div v-if="historyOpen" class="versions-body">
+          <div v-if="props.state.versionsLoading" class="versions-empty">
+            <span class="spinner"></span>
+            <span>Loading versions…</span>
+          </div>
+          <div v-else-if="props.state.versionsError" class="versions-empty versions-empty--error">
+            {{ props.state.versionsError }}
+          </div>
+          <div v-else-if="!channelVersions.length" class="versions-empty">
+            No {{ channelLabel.toLowerCase() }} versions found.
+          </div>
+          <ul v-else class="versions-list">
+            <li
+              v-for="v in channelVersions"
+              :key="v.tag"
+              class="version-row"
+              :class="{
+                'version-row--current': v.isCurrent,
+                'version-row--selected': v.tag === selectedTag
+              }"
+              @click="selectVersion(v)"
+            >
+              <div class="version-row__left">
+                <span class="version-tag">
+                  {{ v.tag }}<sup v-if="v.tag === latestTag" class="new-badge" title="Latest release">NEW</sup>
+                </span>
+                <span v-if="v.publishedAt" class="version-date">{{ formatVersionDate(v.publishedAt) }}</span>
+              </div>
+              <div class="version-row__right">
+                <span v-if="v.isCurrent" class="version-badge version-badge--current">Current</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="dialog-section">
+        <header class="section-header">
           <h3>Release Notes</h3>
-          <p v-if="props.state.releaseName" class="notes-subtitle">{{ props.state.releaseName }}</p>
+          <p v-if="selectedVersion" class="section-subtitle">{{ selectedVersion.tag }}</p>
         </header>
         <div class="notes-body" v-html="releaseNotesHtml"></div>
       </section>
@@ -91,29 +151,20 @@
         </div>
         <div class="actions-right">
           <button class="btn btn-secondary" @click="emit('close')" :disabled="props.state.isInstalling">Close</button>
-          <template v-if="props.state.canInstall">
-            <button
-              class="btn btn-primary"
-              @click="emit('download-install')"
-              :disabled="!props.state.isAvailable || props.state.isChecking || props.state.isDownloading || props.state.isInstalling"
-            >
-              <span v-if="props.state.isDownloading || props.state.isInstalling" class="spinner"></span>
-              <span>{{ props.state.isInstalling ? 'Installing…' : (props.state.isDownloading ? 'Downloading…' : 'Download & Install') }}</span>
-            </button>
-            <button
-              class="btn btn-ghost"
-              v-if="props.state.releaseUrl"
-              @click="openGitHubRelease"
-              :disabled="props.state.isChecking || props.state.isInstalling"
-            >
-              Release Page
-            </button>
-          </template>
+          <button
+            v-if="canInstallHere"
+            class="btn btn-primary"
+            @click="requestInstallSelected"
+            :disabled="!canInstallSelected || props.state.isChecking || props.state.isDownloading || props.state.isInstalling"
+          >
+            <span v-if="props.state.isDownloading || props.state.isInstalling" class="spinner"></span>
+            <span>{{ installButtonLabel }}</span>
+          </button>
           <button
             v-else
             class="btn btn-primary"
             @click="openGitHubRelease"
-            :disabled="!props.state.isAvailable || !props.state.releaseUrl || props.state.isChecking || props.state.isInstalling"
+            :disabled="!selectedVersion?.releaseUrl || props.state.isChecking || props.state.isInstalling"
           >
             <span>Download Update</span>
           </button>
@@ -135,14 +186,47 @@
           </div>
         </div>
       </div>
+
+      <div v-if="pendingInstall" class="channel-confirm-overlay">
+        <div class="channel-confirm">
+          <h3 class="channel-confirm__title">
+            {{ isDowngrade ? `Roll back to ${pendingInstall.tag}?` : `Install ${pendingInstall.tag}?` }}
+          </h3>
+          <p class="channel-confirm__message">
+            You are currently on <strong>v{{ props.state.currentVersion }}</strong>.
+            The application will download {{ pendingInstall.tag }}, install it, and restart automatically.
+          </p>
+          <p v-if="isDowngrade" class="channel-confirm__message">
+            <strong>Note:</strong> rolling back to an older version can leave newer settings unsupported.
+            Existing settings will not be automatically migrated.
+          </p>
+          <div class="channel-confirm__actions">
+            <button class="btn btn-secondary" @click="cancelInstall">Cancel</button>
+            <button class="btn btn-primary" @click="confirmInstall">
+              {{ isDowngrade ? 'Roll back' : 'Install' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import Dialog from './Dialog.vue';
 import { renderReleaseNotesMarkdown } from '../lib/release-notes';
+
+interface VersionEntry {
+  tag: string;
+  version: string;
+  publishedAt: string | null;
+  notes: string;
+  isPrerelease: boolean;
+  isCurrent: boolean;
+  canInstall: boolean;
+  releaseUrl: string | null;
+}
 
 interface UpdateDialogState {
   supported: boolean;
@@ -162,6 +246,11 @@ interface UpdateDialogState {
   canInstall: boolean;
   error: string | null;
   channel: string;
+  versions: VersionEntry[];
+  versionsLoaded: boolean;
+  versionsLoading: boolean;
+  versionsError: string | null;
+  installingVersionTag: string | null;
 }
 
 const props = defineProps<{
@@ -174,6 +263,8 @@ const emit = defineEmits<{
   (e: 'download-install'): void;
   (e: 'download-only'): void;
   (e: 'channel-change', channel: string): void;
+  (e: 'load-versions'): void;
+  (e: 'install-version', tag: string): void;
 }>();
 
 const channelLabel = computed(() => {
@@ -225,29 +316,177 @@ const downloadPercentText = computed(() => {
   return `${percent.toFixed(0)}%`;
 });
 
+// Release notes now derive from whatever version the user has selected
+// in the list — not the "check for updates" latest-release payload.
+// Selection defaults to the latest entry for the current channel on
+// first load (see the watch below).
 const releaseNotesText = computed(() => {
-  const notes = props.state.releaseNotes?.trim();
+  const notes = selectedVersion.value?.notes?.trim();
   if (!notes) {
-    return 'No release notes were provided for this update.';
+    return 'No release notes were provided for this version.';
   }
   return notes;
 });
 
 const releaseNotesHtml = computed(() => {
   const notes = releaseNotesText.value;
-  if (!notes || notes === 'No release notes were provided for this update.') {
+  if (!notes || notes.startsWith('No release notes')) {
     return `<p style="color: var(--color-text-secondary);">${notes}</p>`;
   }
   return renderReleaseNotesMarkdown(notes);
 });
 
 const openGitHubRelease = () => {
-  if (props.state.releaseUrl) {
-    // Open in full browser window (maximized)
+  const url = selectedVersion.value?.releaseUrl || props.state.releaseUrl;
+  if (url) {
     const width = window.screen.availWidth;
     const height = window.screen.availHeight;
-    window.open(props.state.releaseUrl, '_blank', `width=${width},height=${height},left=0,top=0,noopener,noreferrer`);
+    window.open(url, '_blank', `width=${width},height=${height},left=0,top=0,noopener,noreferrer`);
   }
+};
+
+// Whether the primary action can install in-place on this platform.
+// Falls back to the selected version's flag; if nothing's selected yet
+// we look at what the server reported for the check payload.
+const canInstallHere = computed(() => {
+  if (selectedVersion.value) return Boolean(selectedVersion.value.canInstall);
+  return Boolean(props.state.canInstall);
+});
+
+const pendingInstall = ref<VersionEntry | null>(null);
+
+// Version history is filtered per channel: stable = non-prereleases,
+// development = only prereleases. The selection state stays scoped to
+// the visible list — switching channel resets selection to that
+// channel's latest.
+const channelVersions = computed(() => {
+  const channel = props.state.channel || 'stable';
+  const wantPrerelease = channel !== 'stable';
+  return props.state.versions.filter((v) => Boolean(v.isPrerelease) === wantPrerelease);
+});
+
+const latestTag = computed(() => channelVersions.value[0]?.tag ?? null);
+
+const selectedTag = ref<string | null>(null);
+const selectedVersion = computed<VersionEntry | null>(() => {
+  if (!selectedTag.value) return null;
+  return channelVersions.value.find((v) => v.tag === selectedTag.value) ?? null;
+});
+
+// Version history starts collapsed so the release notes get the full
+// vertical space by default. Clicking the header expands the list;
+// picking a version auto-collapses it again.
+const historyOpen = ref(false);
+
+const selectVersion = (v: VersionEntry) => {
+  selectedTag.value = v.tag;
+  historyOpen.value = false;
+};
+
+// Default the selection to the newest release in the visible channel
+// whenever the list changes or the user switches channel.
+watch(
+  () => [channelVersions.value.map((v) => v.tag).join(','), props.state.channel],
+  () => {
+    const visible = channelVersions.value;
+    if (!visible.length) {
+      selectedTag.value = null;
+      return;
+    }
+    const stillVisible = selectedTag.value && visible.some((v) => v.tag === selectedTag.value);
+    if (!stillVisible) selectedTag.value = visible[0].tag;
+  },
+  { immediate: true }
+);
+
+// Load versions lazily the first time the dialog mounts. The user's
+// choice of channel + selection drives everything else in the dialog,
+// so we can't wait for them to click a toggle to fetch the list.
+onMounted(() => {
+  if (!props.state.versionsLoaded && !props.state.versionsLoading) {
+    emit('load-versions');
+  }
+});
+
+const anyInstallInFlight = computed(() => {
+  return props.state.isDownloading || props.state.isInstalling;
+});
+
+// The status card only earns its vertical space when it has something
+// actionable to say. A steady "Update available" is now conveyed by the
+// NEW superscript on the Latest Release card instead.
+const showStatusPanel = computed(() => {
+  return Boolean(
+    props.state.error ||
+    props.state.isDownloading ||
+    props.state.isInstalling ||
+    (props.state.downloadPath && !props.state.isInstalling)
+  );
+});
+
+const isDowngrade = computed(() => {
+  if (!pendingInstall.value) return false;
+  return compareVersions(pendingInstall.value.version, props.state.currentVersion) < 0;
+});
+
+const canInstallSelected = computed(() => {
+  const v = selectedVersion.value;
+  return Boolean(v && v.canInstall && !v.isCurrent);
+});
+
+const installButtonLabel = computed(() => {
+  if (props.state.isInstalling) return 'Installing…';
+  if (props.state.isDownloading) return 'Downloading…';
+  const v = selectedVersion.value;
+  if (v?.isCurrent) return 'Already installed';
+  return 'Download Update';
+});
+
+const requestInstallSelected = () => {
+  const v = selectedVersion.value;
+  if (!v || !canInstallSelected.value || anyInstallInFlight.value) return;
+  pendingInstall.value = v;
+};
+
+// Reasonable semver-ish compare — good enough for x.y.z / x.y.z-beta.N.
+// -1 = a < b, 0 = equal, 1 = a > b.
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => {
+    v = v.replace(/^v/, '');
+    const [base, pre = ''] = v.split('-');
+    const parts = base.split('.').map((n) => parseInt(n, 10) || 0);
+    return { parts, pre };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.parts.length, pb.parts.length);
+  for (let i = 0; i < len; i++) {
+    const av = pa.parts[i] ?? 0;
+    const bv = pb.parts[i] ?? 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+  if (!pa.pre && pb.pre) return 1;
+  if (pa.pre && !pb.pre) return -1;
+  if (pa.pre < pb.pre) return -1;
+  if (pa.pre > pb.pre) return 1;
+  return 0;
+}
+
+const confirmInstall = () => {
+  const target = pendingInstall.value;
+  pendingInstall.value = null;
+  if (target) emit('install-version', target.tag);
+};
+
+const cancelInstall = () => {
+  pendingInstall.value = null;
+};
+
+const formatVersionDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString();
 };
 </script>
 
@@ -256,11 +495,18 @@ const openGitHubRelease = () => {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   padding: 24px;
-  min-width: 480px;
-  max-width: 640px;
+  /* Fixed geometry — don't let expanding release notes push the dialog
+     taller than the viewport. Version list and notes each have their
+     own internal scroll so the outer chrome stays stable. */
+  width: 760px;
+  max-width: 100%;
+  height: 860px;
+  max-height: 95vh;
+  box-sizing: border-box;
 }
+
 
 .update-dialog__header {
   display: flex;
@@ -316,7 +562,11 @@ const openGitHubRelease = () => {
 .update-dialog__summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  /* Current Version + Latest Release share equal width (both hold a
+     short "vX.Y.Z-ish" value). Released gets just enough extra space
+     to fit its full timestamp on one line without stretching wider
+     than necessary. */
+  grid-template-columns: 1fr 1fr 1.35fr;
 }
 
 .summary-card {
@@ -335,6 +585,7 @@ const openGitHubRelease = () => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .summary-value {
@@ -453,29 +704,85 @@ const openGitHubRelease = () => {
   animation: installing-spin 0.8s linear infinite;
 }
 
-.update-dialog__notes {
+/* Both content sections use the same simple card look. Version list is
+   fixed-height + scrollable; release notes stretches to fill the
+   remaining vertical space in the fixed-height dialog and scrolls
+   internally when notes are long. */
+.dialog-section {
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.dialog-section:last-of-type {
+  flex: 1;
+  min-height: 0;
+}
+
+.section-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.notes-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
+.dialog-section--collapsed .section-header {
+  border-bottom: none;
 }
 
-.notes-subtitle {
+.section-header--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-header--clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.section-header__title {
+  min-width: 0;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.section-subtitle {
   margin: 4px 0 0 0;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
 }
 
-.notes-body {
-  background: var(--color-surface-muted);
-  border-radius: 12px;
-  padding: 16px;
+.section-toggle {
+  background: none;
   border: 1px solid var(--color-border);
-  max-height: 400px;
+  color: var(--color-text-secondary);
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.section-toggle.is-open {
+  transform: rotate(180deg);
+}
+
+.notes-body {
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   line-height: 1.6;
 }
@@ -540,6 +847,119 @@ const openGitHubRelease = () => {
   border: 1px solid var(--color-border);
   margin: 8px 0;
   display: block;
+}
+
+.versions-body {
+  padding: 6px 8px;
+  /* ~4 rows visible before scrolling — leaves the notes card taller. */
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.versions-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.versions-empty--error {
+  color: #ff7a7a;
+}
+
+.versions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.version-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.version-row--selected {
+  background: rgba(79, 209, 197, 0.12);
+  border-color: rgba(79, 209, 197, 0.45);
+}
+
+.version-row--current {
+  background: rgba(79, 209, 197, 0.05);
+}
+
+.version-tag .new-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  vertical-align: super;
+  background: var(--color-accent, #4fd1c5);
+  color: #0d1117;
+  line-height: 1.4;
+}
+
+.version-row__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.version-tag {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.version-date {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.version-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.version-badge--pre {
+  background: rgba(255, 200, 79, 0.15);
+  color: #ffc84f;
+  border: 1px solid rgba(255, 200, 79, 0.35);
+}
+
+.version-badge--current {
+  background: rgba(79, 209, 197, 0.15);
+  color: rgb(79, 209, 197);
+  border: 1px solid rgba(79, 209, 197, 0.35);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 8px;
 }
 
 .update-dialog__actions {
@@ -644,9 +1064,8 @@ const openGitHubRelease = () => {
   margin-top: 4px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 620px) {
   .update-dialog {
-    min-width: auto;
     width: 100%;
   }
 }

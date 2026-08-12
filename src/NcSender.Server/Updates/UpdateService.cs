@@ -95,58 +95,7 @@ public class UpdateService : IUpdateService
             if (release is null)
                 throw new InvalidOperationException("No releases found");
 
-            var assetName = GetPlatformAssetName();
-            string? downloadUrl = null;
-
-            if (release.Value.TryGetProperty("assets", out var assets))
-            {
-                foreach (var asset in assets.EnumerateArray())
-                {
-                    var name = asset.GetProperty("name").GetString() ?? "";
-                    if (name.Contains(assetName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        downloadUrl = asset.GetProperty("browser_download_url").GetString();
-                        break;
-                    }
-                }
-            }
-
-            if (downloadUrl is null)
-                throw new InvalidOperationException($"No asset found for platform: {assetName}");
-
-            var tempPath = Path.Combine(Path.GetTempPath(), $"ncsender-update-{Guid.NewGuid():N}{Path.GetExtension(assetName)}");
-
-            using var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-
-            var totalBytes = response.Content.Headers.ContentLength ?? 0;
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
-            await using var fileStream = File.Create(tempPath);
-
-            var buffer = new byte[81920];
-            long bytesRead = 0;
-            int read;
-
-            while ((read = await contentStream.ReadAsync(buffer)) > 0)
-            {
-                await fileStream.WriteAsync(buffer.AsMemory(0, read));
-                bytesRead += read;
-
-                if (totalBytes > 0)
-                {
-                    _status = new UpdateStatus
-                    {
-                        Phase = "downloading",
-                        DownloadPercent = (double)bytesRead / totalBytes * 100
-                    };
-                }
-            }
-
-            _downloadedAssetPath = tempPath;
-            _status = new UpdateStatus { Phase = "downloaded", DownloadPercent = 100 };
-
-            if (install)
-                await InstallAsync();
+            await DownloadReleaseAssetAsync(http, release.Value, install);
         }
         catch (Exception ex)
         {
@@ -154,6 +103,170 @@ public class UpdateService : IUpdateService
             _status = new UpdateStatus { Phase = "error", Error = ex.Message };
             throw;
         }
+    }
+
+    public async Task<List<ReleaseVersion>> ListVersionsAsync(int limit = 30)
+    {
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
+        var json = await http.GetStringAsync(GitHubReleasesUrl);
+        using var doc = JsonDocument.Parse(json);
+
+        var current = GetCurrentVersion();
+        var assetName = GetPlatformAssetName();
+        var canInstallHere = CanInstallOnPlatform();
+        var list = new List<ReleaseVersion>();
+
+        foreach (var release in doc.RootElement.EnumerateArray())
+        {
+            if (release.GetProperty("draft").GetBoolean()) continue;
+
+            var tag = release.GetProperty("tag_name").GetString() ?? "";
+            if (string.IsNullOrEmpty(tag)) continue;
+
+            // Only expose versions that have an installable asset for
+            // this platform — a rollback the UI offers must actually be
+            // executable, otherwise clicking Install just errors.
+            var hasAsset = HasAssetForPlatform(release, assetName);
+            if (!hasAsset) continue;
+
+            var version = tag.TrimStart('v');
+            var entry = new ReleaseVersion
+            {
+                Tag = tag,
+                Version = version,
+                Notes = release.GetProperty("body").GetString() ?? "",
+                IsPrerelease = release.GetProperty("prerelease").GetBoolean(),
+                IsCurrent = string.Equals(version, current, StringComparison.OrdinalIgnoreCase),
+                CanInstall = canInstallHere,
+            };
+
+            if (release.TryGetProperty("published_at", out var pub) &&
+                DateTime.TryParse(pub.GetString(), out var publishedAt))
+            {
+                entry.PublishedAt = publishedAt;
+            }
+
+            if (release.TryGetProperty("html_url", out var htmlUrl))
+                entry.ReleaseUrl = htmlUrl.GetString();
+
+            list.Add(entry);
+            if (limit > 0 && list.Count >= limit) break;
+        }
+
+        return list;
+    }
+
+    public async Task InstallVersionAsync(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+            throw new ArgumentException("Tag is required", nameof(tag));
+
+        _status = new UpdateStatus { Phase = "downloading" };
+
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
+            var json = await http.GetStringAsync(GitHubReleasesUrl);
+            using var doc = JsonDocument.Parse(json);
+
+            JsonElement? match = null;
+            foreach (var release in doc.RootElement.EnumerateArray())
+            {
+                if (release.GetProperty("draft").GetBoolean()) continue;
+                var releaseTag = release.GetProperty("tag_name").GetString() ?? "";
+                if (string.Equals(releaseTag, tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = release;
+                    break;
+                }
+            }
+
+            if (match is null)
+                throw new InvalidOperationException($"Release '{tag}' not found");
+
+            _logger.LogInformation("Installing specific version: {Tag}", tag);
+            await DownloadReleaseAssetAsync(http, match.Value, install: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Install version {Tag} failed", tag);
+            _status = new UpdateStatus { Phase = "error", Error = ex.Message };
+            throw;
+        }
+    }
+
+    // Extracted from the original DownloadAsync so it can be reused by
+    // both the "latest of channel" flow and the explicit-tag flow. The
+    // caller owns HttpClient (already configured with the User-Agent
+    // GitHub demands) and passes the JsonElement for the target release.
+    private async Task DownloadReleaseAssetAsync(HttpClient http, JsonElement release, bool install)
+    {
+        var assetName = GetPlatformAssetName();
+        string? downloadUrl = null;
+
+        if (release.TryGetProperty("assets", out var assets))
+        {
+            foreach (var asset in assets.EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString() ?? "";
+                if (name.Contains(assetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                    break;
+                }
+            }
+        }
+
+        if (downloadUrl is null)
+            throw new InvalidOperationException($"No asset found for platform: {assetName}");
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"ncsender-update-{Guid.NewGuid():N}{Path.GetExtension(assetName)}");
+
+        using var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        var totalBytes = response.Content.Headers.ContentLength ?? 0;
+        await using var contentStream = await response.Content.ReadAsStreamAsync();
+        await using var fileStream = File.Create(tempPath);
+
+        var buffer = new byte[81920];
+        long bytesRead = 0;
+        int read;
+
+        while ((read = await contentStream.ReadAsync(buffer)) > 0)
+        {
+            await fileStream.WriteAsync(buffer.AsMemory(0, read));
+            bytesRead += read;
+
+            if (totalBytes > 0)
+            {
+                _status = new UpdateStatus
+                {
+                    Phase = "downloading",
+                    DownloadPercent = (double)bytesRead / totalBytes * 100
+                };
+            }
+        }
+
+        _downloadedAssetPath = tempPath;
+        _status = new UpdateStatus { Phase = "downloaded", DownloadPercent = 100 };
+
+        if (install)
+            await InstallAsync();
+    }
+
+    private static bool HasAssetForPlatform(JsonElement release, string assetName)
+    {
+        if (!release.TryGetProperty("assets", out var assets)) return false;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = asset.GetProperty("name").GetString() ?? "";
+            if (name.Contains(assetName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     public async Task InstallAsync()

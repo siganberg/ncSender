@@ -27,3 +27,23 @@ public class UpdateDownloadRequest
 {
     public bool Install { get; set; }
 }
+
+// One entry in the /api/updates/versions list. Powers the "roll back to
+// a specific version" UI — kiosk users can't shell in to run dpkg, so
+// the server surfaces the release history and drives the install.
+public class ReleaseVersion
+{
+    public string Tag { get; set; } = "";
+    public string Version { get; set; } = "";
+    public DateTime? PublishedAt { get; set; }
+    public string Notes { get; set; } = "";
+    public bool IsPrerelease { get; set; }
+    public bool IsCurrent { get; set; }
+    public bool CanInstall { get; set; }
+    public string? ReleaseUrl { get; set; }
+}
+
+public class InstallVersionRequest
+{
+    public string Tag { get; set; } = "";
+}

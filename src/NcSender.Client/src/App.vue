@@ -977,6 +977,8 @@
     @download-install="handleDownloadAndInstallUpdate"
     @download-only="handleDownloadUpdateOnly"
     @channel-change="handleChannelChange"
+    @load-versions="handleLoadVersions"
+    @install-version="handleInstallVersion"
   />
 
   <!-- Wireless USB Dialog (toolbar icon) -->
@@ -1452,6 +1454,22 @@ const handleChannelChange = async (channel: string) => {
     await updateCenter.setChannel(channel);
   } catch (error) {
     console.error('Failed to change update channel:', error);
+  }
+};
+
+const handleLoadVersions = async () => {
+  try {
+    await updateCenter.loadVersions();
+  } catch (error) {
+    console.error('Failed to load versions:', error);
+  }
+};
+
+const handleInstallVersion = async (tag: string) => {
+  try {
+    await updateCenter.installVersion(tag);
+  } catch (error) {
+    console.error('Failed to install version:', error);
   }
 };
 

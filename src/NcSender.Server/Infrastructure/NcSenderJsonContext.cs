@@ -63,6 +63,9 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(UpdateCheckResult))]
 [JsonSerializable(typeof(UpdateStatus))]
 [JsonSerializable(typeof(UpdateDownloadRequest))]
+[JsonSerializable(typeof(ReleaseVersion))]
+[JsonSerializable(typeof(List<ReleaseVersion>))]
+[JsonSerializable(typeof(InstallVersionRequest))]
 // Gcode analysis
 [JsonSerializable(typeof(AnalyzeLineRequest))]
 [JsonSerializable(typeof(AnalyzeLineResponse))]
