@@ -343,6 +343,17 @@ public class WebSocketLayer : IBroadcaster
             if (metaProp.TryGetProperty("completesCommandId", out var ccid)) meta.CompletesCommandId = ccid.GetString();
             if (metaProp.TryGetProperty("stopReason", out var sr)) meta.StopReason = sr.GetString();
             if (metaProp.TryGetProperty("silent", out var sl) && sl.GetBoolean()) meta.Silent = true;
+            // Per-command noise control — everything defaults to shown/logged.
+            if (metaProp.TryGetProperty("quiet", out var q) && q.ValueKind == JsonValueKind.Object)
+            {
+                var quiet = new CommandQuiet();
+                if (q.TryGetProperty("terminalCommand", out var tc) && tc.ValueKind == JsonValueKind.True) quiet.TerminalCommand = true;
+                if (q.TryGetProperty("terminalResponse", out var tr) && tr.ValueKind == JsonValueKind.True) quiet.TerminalResponse = true;
+                if (q.TryGetProperty("logCommand", out var lc) && lc.ValueKind == JsonValueKind.True) quiet.LogCommand = true;
+                if (q.TryGetProperty("logResponse", out var lr) && lr.ValueKind == JsonValueKind.True) quiet.LogResponse = true;
+                if (quiet.TerminalCommand || quiet.TerminalResponse || quiet.LogCommand || quiet.LogResponse)
+                    meta.Quiet = quiet;
+            }
             if (metaProp.TryGetProperty("continuous", out var co) && co.GetBoolean()) meta.Continuous = true;
         }
         else

@@ -222,6 +222,15 @@ public class JsPluginEngine : IJsPluginEngine
             meta.Set("sourceId", cmd.Meta.SourceId is not null
                 ? JsValue.FromObject(engine, cmd.Meta.SourceId)
                 : JsValue.Null);
+            if (cmd.Meta.Quiet is not null)
+            {
+                var quiet = new JsObject(engine);
+                quiet.Set("terminalCommand", cmd.Meta.Quiet.TerminalCommand);
+                quiet.Set("terminalResponse", cmd.Meta.Quiet.TerminalResponse);
+                quiet.Set("logCommand", cmd.Meta.Quiet.LogCommand);
+                quiet.Set("logResponse", cmd.Meta.Quiet.LogResponse);
+                meta.Set("quiet", quiet);
+            }
             obj.Set("meta", meta);
         }
         else
@@ -541,6 +550,29 @@ public class JsPluginEngine : IJsPluginEngine
                 var sourceId = metaObj.Get("sourceId");
                 if (!sourceId.IsNull() && !sourceId.IsUndefined())
                     cmd.Meta.SourceId = sourceId.AsString();
+
+                // Per-command noise control, same shape as the HTTP/WS meta:
+                // meta.quiet = { terminalCommand, terminalResponse,
+                //                logCommand, logResponse }. Absent = shown+logged.
+                if (metaObj.Get("quiet") is ObjectInstance quietObj)
+                {
+                    bool Flag(string name)
+                    {
+                        var v = quietObj.Get(name);
+                        return !v.IsUndefined() && !v.IsNull() && v.AsBoolean();
+                    }
+
+                    var quiet = new CommandQuiet
+                    {
+                        TerminalCommand = Flag("terminalCommand"),
+                        TerminalResponse = Flag("terminalResponse"),
+                        LogCommand = Flag("logCommand"),
+                        LogResponse = Flag("logResponse")
+                    };
+                    if (quiet.TerminalCommand || quiet.TerminalResponse
+                        || quiet.LogCommand || quiet.LogResponse)
+                        cmd.Meta.Quiet = quiet;
+                }
             }
 
             commands.Add(cmd);

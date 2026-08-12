@@ -284,7 +284,8 @@ public class CncEventBridge
 
     private void OnCommandQueued(CommandResult cmd)
     {
-        if (cmd.Meta?.SourceId == "system" || cmd.Meta?.Silent == true)
+        if (cmd.Meta?.SourceId == "system" || cmd.Meta?.Silent == true
+            || cmd.Meta?.Quiet?.TerminalCommand == true)
             return;
 
         cmd.DisplayCommand = FormatCommandText(cmd.DisplayCommand ?? cmd.Command);
@@ -307,7 +308,8 @@ public class CncEventBridge
             _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
         }
 
-        if (cmd.Meta?.SourceId == "system" || cmd.Meta?.Silent == true)
+        if (cmd.Meta?.SourceId == "system" || cmd.Meta?.Silent == true
+            || cmd.Meta?.Quiet?.TerminalCommand == true)
             return;
 
         cmd.DisplayCommand = FormatCommandText(cmd.DisplayCommand ?? cmd.Command);
@@ -479,6 +481,12 @@ public class CncEventBridge
         }
 
         if (sourceId == "system")
+            return;
+
+        // Controller output for a command whose sender asked for a quiet
+        // terminal — e.g. a plugin polling an aux input, where every reply
+        // would otherwise scroll the operator's terminal.
+        if (_controller.ActiveCommandMeta?.Quiet?.TerminalResponse == true)
             return;
 
         // When greeting arrives, store it and broadcast to all connected clients

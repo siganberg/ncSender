@@ -22,6 +22,8 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(CommandResult))]
 [JsonSerializable(typeof(SendCommandRequest))]
 [JsonSerializable(typeof(SendCommandMeta))]
+[JsonSerializable(typeof(SendCommandQuiet))]
+[JsonSerializable(typeof(CommandQuiet))]
 // Config
 [JsonSerializable(typeof(ConfigResponse))]
 // Firmware

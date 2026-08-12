@@ -374,7 +374,7 @@ public partial class CncController : ICncController
 
                     await _transport.WriteAsync(entry.CommandToWrite, ct);
 
-                    LogCommandSent(entry.RawCommand, isRealTime: false);
+                    LogCommandSent(entry.RawCommand, isRealTime: false, entry.Meta);
 
                     // Fire-and-forget commands (e.g. grblHAL $REBOOT) never get an
                     // "ok" — the controller is gone. Complete the entry now so the
@@ -435,6 +435,7 @@ public partial class CncController : ICncController
                 }
                 finally
                 {
+                    RememberQuietMeta(entry.Meta);
                     lock (_activeLock) _activeCommand = null;
                 }
             }
@@ -649,7 +650,7 @@ public partial class CncController : ICncController
             else
                 await _transport!.WriteAsync(commandToSend);
 
-            LogCommandSent(command, isRealTime: true);
+            LogCommandSent(command, isRealTime: true, meta);
 
             if (command == "\x18")
             {
@@ -730,7 +731,7 @@ public partial class CncController : ICncController
         try
         {
             await _transport!.WriteAsync(commandToSend);
-            LogCommandSent(command, isRealTime: false);
+            LogCommandSent(command, isRealTime: false, meta);
 
             var ackResult = new CommandResult
             {
@@ -770,6 +771,7 @@ public partial class CncController : ICncController
             active = _activeCommand;
             _activeCommand = null;
         }
+        RememberQuietMeta(active?.Meta);
 
         if (active is not null)
         {
@@ -815,9 +817,11 @@ public partial class CncController : ICncController
         });
     }
 
-    private void LogCommandSent(string command, bool isRealTime)
+    private void LogCommandSent(string command, bool isRealTime, CommandMeta? meta = null)
     {
         if (LogSkipCommands.Contains(command)) return;
+        // Sender asked for this one to stay out of the log.
+        if (meta?.Quiet?.LogCommand == true) return;
 
         var formatted = FormatCommandForLog(command);
 
@@ -852,13 +856,56 @@ public partial class CncController : ICncController
         return string.Join("", parts);
     }
 
+    // A multi-line command is one queue entry but the controller acks every
+    // line, so all the acks after the first arrive once the entry is already
+    // complete and _activeCommand is null. Hold on to the finished command's
+    // noise settings for a moment so its trailing output is still covered.
+    private const int TrailingResponseGraceMs = 500;
+    private CommandMeta? _recentQuietMeta;
+    private long _recentQuietUntil;
+
+    private void RememberQuietMeta(CommandMeta? meta)
+    {
+        lock (_activeLock)
+        {
+            if (meta?.Quiet is null)
+            {
+                _recentQuietMeta = null;
+                _recentQuietUntil = 0;
+                return;
+            }
+            _recentQuietMeta = meta;
+            _recentQuietUntil = Environment.TickCount64 + TrailingResponseGraceMs;
+        }
+    }
+
+    // Controller output belongs to whatever command is in flight, so the
+    // opt-out rides on that command's meta rather than on the line itself.
+    private CommandMeta? EffectiveResponseMeta()
+    {
+        lock (_activeLock)
+        {
+            if (_activeCommand?.Meta is not null) return _activeCommand.Meta;
+            if (_recentQuietMeta is not null && Environment.TickCount64 < _recentQuietUntil)
+                return _recentQuietMeta;
+            return null;
+        }
+    }
+
+    private bool ActiveResponseIsQuietInLog()
+    {
+        return EffectiveResponseMeta()?.Quiet?.LogResponse == true;
+    }
+
     private void LogControllerData(string data)
     {
+        if (ActiveResponseIsQuietInLog()) return;
         _logger.LogInformation("CNC data: {Data}", data);
     }
 
     private void LogControllerResponse(string response)
     {
+        if (ActiveResponseIsQuietInLog()) return;
         _logger.LogInformation("CNC controller responded: {Response}", response);
     }
 
@@ -1171,6 +1218,13 @@ public partial class CncController : ICncController
     {
         lock (_activeLock) return _activeCommand?.Meta?.SourceId;
     }
+
+    /// <summary>
+    /// Meta of the command currently awaiting an ack, if any. Controller output
+    /// arrives while its command is still in flight, so this is what tells the
+    /// event bridge whether that output was asked to stay off the terminal.
+    /// </summary>
+    public CommandMeta? ActiveCommandMeta => EffectiveResponseMeta();
 
     #endregion
 

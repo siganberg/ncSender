@@ -27,14 +27,21 @@ export default defineConfig({
           proxy.on('error', (err, _req, _res) => {
             console.log('proxy error', err);
           });
+          // Callers that opted out of request logging (meta.quiet.logCommand)
+          // send this header so the dev proxy — which can't read bodies — can
+          // skip them too. Background polling would otherwise bury everything
+          // else in this console.
+          const isQuiet = (req: any) => Boolean(req.headers?.['x-ncsender-quiet-log']);
           proxy.on('proxyReq', (proxyReq, req, _res) => {
             // Skip logging for noisy polling endpoints
             if (req.url?.includes('/pendant/status')) return;
+            if (isQuiet(req)) return;
             console.log('Sending Request to the Target:', req.method, req.url);
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
             // Skip logging for noisy polling endpoints
             if (req.url?.includes('/pendant/status')) return;
+            if (isQuiet(req)) return;
             console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
           });
         },

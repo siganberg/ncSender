@@ -9,13 +9,47 @@ public class CommandOptions
     public CommandMeta? Meta { get; set; }
 }
 
+/// <summary>
+/// Per-command noise control. Every flag defaults to false, i.e. everything is
+/// shown and logged unless the sender explicitly opts out — the two channels
+/// (operator terminal, server log) and the two directions (the command we send,
+/// the controller output it produces) are independent, so a caller can e.g.
+/// keep an internal $I query out of the terminal while still recording it in
+/// the log for support.
+/// </summary>
+public class CommandQuiet
+{
+    /// <summary>Hide the command itself from the terminal.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TerminalCommand { get; set; }
+
+    /// <summary>Hide the controller output this command produces from the terminal.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TerminalResponse { get; set; }
+
+    /// <summary>Keep the command out of the server log (including the API request line).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LogCommand { get; set; }
+
+    /// <summary>Keep the controller output this command produces out of the server log.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LogResponse { get; set; }
+}
+
 public class CommandMeta
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SourceId { get; set; }
 
+    /// <summary>
+    /// Legacy shorthand: hides the command and its result from the terminal.
+    /// Kept as-is for existing callers; <see cref="Quiet"/> is additive on top.
+    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Silent { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CommandQuiet? Quiet { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Continuous { get; set; }

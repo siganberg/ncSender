@@ -26,6 +26,13 @@ public interface ICncController
     event Action<CommandResult> CommandQueued;
     event Action<CommandResult> CommandAcknowledged;
     event Action<string, string?> DataReceived; // data, sourceId
+
+    /// <summary>
+    /// Meta of the command currently awaiting an ack, if any. Controller output
+    /// arrives while its command is still in flight, so consumers use this to
+    /// honour the sender's per-command noise settings (see CommandQuiet).
+    /// </summary>
+    CommandMeta? ActiveCommandMeta { get; }
     event Action<CncError> ErrorReceived;
     event Action StopReceived;
     event Action PauseReceived;

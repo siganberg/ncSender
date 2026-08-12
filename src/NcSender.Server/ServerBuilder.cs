@@ -255,7 +255,14 @@ public static class ServerBuilder
                 await next();
                 sw.Stop();
 
-                if (body is not null)
+                // A command the sender asked to keep out of the log shouldn't
+                // reappear here as an API request line quoting its body.
+                var quietHeader = context.Request.Headers.ContainsKey("X-NcSender-Quiet-Log");
+                if (quietHeader || (body is not null && RequestOptsOutOfLog(body)))
+                {
+                    // nothing — caller opted out
+                }
+                else if (body is not null)
                     logger.LogInformation("API {Method} {Path} {Body} responded {StatusCode} in {Elapsed}ms",
                         method, context.Request.Path, body, context.Response.StatusCode, sw.ElapsedMilliseconds);
                 else
@@ -559,12 +566,16 @@ public static class ServerBuilder
             {
                 // Support both flat sourceId and nested meta.sourceId (V1 client sends nested)
                 var sourceId = request.Meta?.SourceId ?? request.SourceId;
-                var meta = sourceId is not null
+                var quiet = ToCommandQuiet(request.Meta?.Quiet);
+                // Quiet settings must survive even when the caller didn't name
+                // itself — noise control is independent of source attribution.
+                var meta = sourceId is not null || quiet is not null
                     ? new CommandMeta
                     {
                         SourceId = sourceId,
                         Silent = request.Meta?.Silent ?? false,
-                        Continuous = request.Meta?.Continuous ?? false
+                        Continuous = request.Meta?.Continuous ?? false,
+                        Quiet = quiet
                     }
                     : null;
 
@@ -641,6 +652,48 @@ public static class ServerBuilder
         await broadcaster.Broadcast("cnc-command-result", new WsCncCommandStatus(
             id, cmd, cmd, "success", DateTime.UtcNow.ToString("o"), "system"
         ), NcSenderJsonContext.Default.WsCncCommandStatus);
+    }
+
+    /// <summary>Wire shape -> core model. Null when nothing was opted out of.</summary>
+    private static CommandQuiet? ToCommandQuiet(SendCommandQuiet? wire)
+    {
+        if (wire is null) return null;
+        var quiet = new CommandQuiet
+        {
+            TerminalCommand = wire.TerminalCommand ?? false,
+            TerminalResponse = wire.TerminalResponse ?? false,
+            LogCommand = wire.LogCommand ?? false,
+            LogResponse = wire.LogResponse ?? false
+        };
+        if (!quiet.TerminalCommand && !quiet.TerminalResponse
+            && !quiet.LogCommand && !quiet.LogResponse) return null;
+        return quiet;
+    }
+
+    /// <summary>
+    /// True when a captured request body carries meta.quiet.logCommand. Callers
+    /// can also send the X-NcSender-Quiet-Log header, which is what the dev
+    /// proxy keys off (it can't read bodies). Parsed
+    /// rather than string-matched so a command that happens to contain the same
+    /// text can't silence its own API log line. Any parse failure means "log it"
+    /// — the noisy default is the safe one.
+    /// </summary>
+    private static bool RequestOptsOutOfLog(string body)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("meta", out var meta)
+                && meta.ValueKind == System.Text.Json.JsonValueKind.Object
+                && meta.TryGetProperty("quiet", out var quiet)
+                && quiet.ValueKind == System.Text.Json.JsonValueKind.Object
+                && quiet.TryGetProperty("logCommand", out var flag)
+                && flag.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? FindClientDist()
