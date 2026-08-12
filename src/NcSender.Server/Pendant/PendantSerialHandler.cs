@@ -63,7 +63,7 @@ public class PendantSerialHandler : IAsyncDisposable
         // sending anything that could bother a CNC controller.
         _port = new SerialPort(port, 460800)
         {
-            DtrEnable = false,
+            DtrEnable = true,
             RtsEnable = false,
             ReadTimeout = SerialPort.InfiniteTimeout,
             WriteTimeout = 5000
