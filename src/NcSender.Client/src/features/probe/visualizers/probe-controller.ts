@@ -169,6 +169,9 @@ export class ProbeController {
   private createStrategy(type: ProbeType): ProbeStrategy {
     switch (type) {
       case 'standard-block':
+      case 'tool-length-setter':
+        // Tool Length Setter is a Z-only probe with the same visual as
+        // Standard Block's Z probe — reuse the strategy for rendering.
         return new StandardBlockStrategy();
       case 'autozero-touch':
         return new AutoZeroTouchStrategy();

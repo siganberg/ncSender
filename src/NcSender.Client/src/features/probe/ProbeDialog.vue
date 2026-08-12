@@ -26,31 +26,30 @@
       <div class="probe-dialog__content">
         <div class="probe-dialog__columns">
           <div class="probe-dialog__column probe-dialog__column--controls">
-            <div class="probe-control-row">
-              <div class="probe-control-group">
-                <label class="probe-label">Probe Type</label>
-                <select v-model="probeType" class="probe-select" :disabled="isProbing">
-                  <option value="3d-probe">3D Probe</option>
-                  <option value="standard-block">Standard Block</option>
-                  <option value="autozero-touch">AutoZero Touch</option>
-                </select>
-              </div>
-
-              <div class="probe-control-group">
-                <label class="probe-label">Probing Axis</label>
-                <select v-model="probingAxis" class="probe-select" :disabled="isProbing">
-                  <option value="Z">Z</option>
-                  <option value="XYZ">XYZ</option>
-                  <option value="XY">XY</option>
-                  <option value="X">X</option>
-                  <option value="Y">Y</option>
-                  <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
-                  <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
-                </select>
-              </div>
+            <div class="probe-control-group">
+              <label class="probe-label">Probe Type</label>
+              <select v-model="probeType" class="probe-select" :disabled="isProbing">
+                <option value="3d-probe">3D Probe</option>
+                <option value="standard-block">Standard Block</option>
+                <option value="autozero-touch">AutoZero Touch</option>
+                <option value="tool-length-setter">Tool Length Setter</option>
+              </select>
             </div>
 
-            <div class="probe-control-group">
+            <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
+              <label class="probe-label">Probing Axis</label>
+              <select v-model="probingAxis" class="probe-select" :disabled="isProbing">
+                <option value="Z">Z</option>
+                <option value="XYZ">XYZ</option>
+                <option value="XY">XY</option>
+                <option value="X">X</option>
+                <option value="Y">Y</option>
+                <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
+                <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
+              </select>
+            </div>
+
+            <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
               <label class="probe-label">Rapid Movement</label>
               <div class="probe-input-with-unit probe-input-wrapper">
                 <input
@@ -254,7 +253,7 @@
                       type="number"
                       step="0.1"
                       min="1"
-                      max="40"
+                      max="80"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zThickness }"
                       :disabled="isProbing"
@@ -391,6 +390,28 @@
               </div>
             </template>
 
+            <template v-if="probeType === 'tool-length-setter'">
+              <div class="probe-control-group">
+                <label class="probe-label">Tool Length Setter Height</label>
+                <div class="probe-input-with-unit probe-input-wrapper">
+                  <input
+                    v-model.number="zThickness"
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="40"
+                    class="probe-input"
+                    :class="{ 'probe-input--error': errors.zThickness }"
+                    :disabled="isProbing"
+                    @input="validateZThickness"
+                    @blur="handleZThicknessBlur"
+                  />
+                  <span class="probe-unit">mm</span>
+                  <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
+                </div>
+              </div>
+            </template>
+
             <!-- Contextual instruction - shown at bottom of controls -->
             <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
               Click on a corner to select where to start probing
@@ -480,7 +501,7 @@ const emit = defineEmits<{
 }>();
 
 // Probe state
-const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch'>('autozero-touch');
+const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch' | 'tool-length-setter'>('autozero-touch');
 const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
@@ -497,6 +518,11 @@ const jogFeedRate = ref(appStore.unitsPreference.value === 'imperial' ? 100 : 30
 const requireConnectionTest = ref(false);
 const connectionTestPassed = ref(false);
 const zThickness = ref(15);
+// Cache of the last-loaded zThickness per probe type. Lets the type
+// watcher swap the input value without re-fetching from the settings
+// store. Populated during initial settings load and kept in sync by
+// handleZThicknessBlur.
+const loadedZThickness = { standardBlock: 15, toolLengthSetter: 15 };
 const xyThickness = ref(10);
 const zProbeDistance = ref(3);
 
@@ -592,8 +618,8 @@ const validateZOffset = () => {
 };
 
 const validateZThickness = () => {
-  if (zThickness.value < 1 || zThickness.value > 40) {
-    errors.value.zThickness = 'Must be between 1 and 40mm';
+  if (zThickness.value < 1 || zThickness.value > 80) {
+    errors.value.zThickness = 'Must be between 1 and 80mm';
   } else {
     errors.value.zThickness = '';
   }
@@ -734,7 +760,19 @@ const handleZThicknessBlur = async () => {
   validateZThickness();
   if (!errors.value.zThickness) {
     try {
-      await updateSettings({ probe: { 'standard-block': { zThickness: zThickness.value } } });
+      // Store per-probe-type so the Tool Length Setter height and the
+      // Standard Block Z Thickness stay independent — same variable in
+      // the UI but different physical measurements.
+      const key = probeType.value === 'tool-length-setter'
+        ? 'tool-length-setter'
+        : 'standard-block';
+      await updateSettings({ probe: { [key]: { zThickness: zThickness.value } } });
+      // Keep the type-swap cache aligned with the just-saved value.
+      if (key === 'tool-length-setter') {
+        loadedZThickness.toolLengthSetter = zThickness.value;
+      } else {
+        loadedZThickness.standardBlock = zThickness.value;
+      }
     } catch (error) {
       console.error('[ProbeDialog] Failed to save Z thickness setting', JSON.stringify({ error: error.message }));
     }
@@ -810,6 +848,18 @@ watch(() => probeType.value, async (value) => {
   // Check if current probing axis is available for the new probe type
   if (value === 'standard-block' && ['Center - Inner', 'Center - Outer'].includes(probingAxis.value)) {
     probingAxis.value = 'XYZ';
+  }
+  // Tool Length Setter only supports Z — no other axis makes sense for a
+  // touchoff to a fixed vertical setter.
+  if (value === 'tool-length-setter') {
+    probingAxis.value = 'Z';
+  }
+  // Swap the zThickness input between namespaces so the two probe types
+  // display and edit their own values.
+  if (value === 'tool-length-setter') {
+    zThickness.value = loadedZThickness.toolLengthSetter;
+  } else if (value === 'standard-block') {
+    zThickness.value = loadedZThickness.standardBlock;
   }
 
   if (!isInitialLoad) {
@@ -1002,6 +1052,20 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['standard-block']?.zThickness === 'number') {
           zThickness.value = settings.probe['standard-block'].zThickness;
         }
+        // Tool Length Setter reuses the zThickness input but keeps its own
+        // value. If the user is on this type at load, that wins over the
+        // standard-block one just applied above.
+        if (probeType.value === 'tool-length-setter'
+            && typeof settings.probe?.['tool-length-setter']?.zThickness === 'number') {
+          zThickness.value = settings.probe['tool-length-setter'].zThickness;
+        }
+        // Cache both so the watcher can swap between them without re-fetch.
+        loadedZThickness.standardBlock = typeof settings.probe?.['standard-block']?.zThickness === 'number'
+          ? settings.probe['standard-block'].zThickness
+          : loadedZThickness.standardBlock;
+        loadedZThickness.toolLengthSetter = typeof settings.probe?.['tool-length-setter']?.zThickness === 'number'
+          ? settings.probe['tool-length-setter'].zThickness
+          : loadedZThickness.toolLengthSetter;
         if (typeof settings.probe?.['standard-block']?.xyThickness === 'number') {
           xyThickness.value = settings.probe['standard-block'].xyThickness;
         }

@@ -46,6 +46,7 @@ public static class ProbeCommandGenerator
             "3d-probe" => Generate3DProbe(probingAxis, options, errors),
             "standard-block" => GenerateStandardBlock(probingAxis, options, errors),
             "autozero-touch" => GenerateAutoZeroTouch(probingAxis, options, errors),
+            "tool-length-setter" => GenerateToolLengthSetter(probingAxis, options, errors),
             _ => null
         };
 
@@ -133,6 +134,23 @@ public static class ProbeCommandGenerator
 
             _ => AddError(errors, "Invalid probing axis for standard block")
         };
+    }
+
+    // Tool Length Setter is a Z-only touchoff to a fixed vertical setter.
+    // Same probe sequence as Standard Block Z — approach + G38.2 seek + backoff
+    // — so we reuse the Standard Block strategy directly. The client-side
+    // "Tool Length Setter height" label just relabels the same zThickness
+    // input; server-side it maps to the same routine parameter.
+    private static List<string>? GenerateToolLengthSetter(
+        string axis, Dictionary<string, JsonElement> opts, List<string> errors)
+    {
+        if (axis != "Z")
+        {
+            errors.Add("Tool Length Setter only supports Z probing");
+            return null;
+        }
+        return StandardBlockStrategy.GetZProbeRoutine(
+            GetDouble(opts, "zThickness", 15));
     }
 
     private static List<string>? GenerateAutoZeroTouch(

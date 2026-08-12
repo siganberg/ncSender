@@ -17,7 +17,7 @@
 
 import type * as THREE from 'three';
 
-export type ProbeType = '3d-probe' | 'standard-block' | 'autozero-touch';
+export type ProbeType = '3d-probe' | 'standard-block' | 'autozero-touch' | 'tool-length-setter';
 export type ProbingAxis =
   | 'Z'
   | 'XYZ'
