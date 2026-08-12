@@ -409,9 +409,7 @@
                         </select>
                       </td>
                       <td class="command-cell">{{ getOffCommand(auxEditState.on) }}</td>
-                      <td>
-                        <ToggleSwitch v-model="auxEditState.holdToActivate" />
-                      </td>
+                      <td></td>
                       <td>
                         <div class="aux-actions-cell">
                           <button class="aux-btn-save" @click="saveAuxEdit" title="Save">
@@ -3568,14 +3566,19 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 /* Auxiliary Outputs Table */
 .io-switches-table-container {
-  overflow: visible;
+  /* Narrow portrait panels (~460px) can't hold all 6 columns at their
+     natural widths — enable horizontal scroll instead of letting the
+     fixed layout crush cells into each other and overlap text. */
+  overflow-x: auto;
 }
 
 .io-switches-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: collapse;
   table-layout: fixed;
 }
+
 
 .io-switches-table thead th {
   text-align: left;
@@ -3605,13 +3608,14 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   vertical-align: middle;
 }
 
-/* Column widths using colgroup in template */
+/* Column widths using colgroup in template. Values tuned so 6 columns
+   fit a ~520px min table width without visual overlap. */
 .io-switches-table .col-enabled { width: 60px; }
 .io-switches-table .col-name { width: auto; }
-.io-switches-table .col-on { width: 160px; }
-.io-switches-table .col-off { width: 160px; }
-.io-switches-table .col-hold { width: 70px; }
-.io-switches-table .col-actions { width: 180px; }
+.io-switches-table .col-on { width: 110px; }
+.io-switches-table .col-off { width: 80px; }
+.io-switches-table .col-hold { width: 60px; }
+.io-switches-table .col-actions { width: 130px; }
 
 .io-switches-table th:nth-child(1),
 .io-switches-table td:nth-child(1) {
@@ -3650,7 +3654,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .aux-inline-select {
   box-sizing: border-box;
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface-muted);
@@ -3678,12 +3682,22 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .aux-actions-cell {
   display: flex;
+  justify-content: center;
   gap: 4px;
   white-space: nowrap;
 }
 
+.io-switches-table td:last-child {
+  text-align: center;
+}
+
+.io-switches-table .switch-edit-btn {
+  display: inline-flex;
+}
+
 .aux-btn-save,
-.aux-btn-cancel {
+.aux-btn-cancel,
+.aux-btn-delete {
   display: flex;
   align-items: center;
   justify-content: center;
