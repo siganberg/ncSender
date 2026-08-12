@@ -111,6 +111,26 @@ export function registerNcSenderThemes(): void {
   monaco.editor.defineTheme('ncsender-light', LIGHT_THEME);
   monaco.editor.setTheme(monacoTheme.value);
 
+  // Disable Monaco's color decorators globally. The gutter/inline color
+  // swatch reads `#100` in a G-code comment (or any 3/6-hex sequence) as
+  // a CSS color and draws a swatch next to it — the intent here is
+  // command text, so the swatch is meaningless clutter. Wrap
+  // `monaco.editor.create` so every editor picks the false default up
+  // without each call site restating it (individual options still win).
+  const originalCreate = monaco.editor.create;
+  monaco.editor.create = function patchedCreate(
+    domElement: HTMLElement,
+    options?: monaco.editor.IStandaloneEditorConstructionOptions,
+    override?: monaco.editor.IEditorOverrideServices,
+  ): monaco.editor.IStandaloneCodeEditor {
+    return originalCreate.call(
+      monaco.editor,
+      domElement,
+      { colorDecorators: false, ...(options ?? {}) },
+      override,
+    );
+  } as typeof monaco.editor.create;
+
   new MutationObserver(() => {
     const nowLight = document.body.classList.contains('theme-light');
     if (nowLight === _isLightTheme.value) return;
