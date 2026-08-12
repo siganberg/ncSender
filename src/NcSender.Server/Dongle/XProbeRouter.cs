@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using NcSender.Core.Interfaces;
+using NcSender.Server.Connection;
 
 namespace NcSender.Server.Dongle;
 
@@ -28,6 +29,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private const int BaudRate = 115200;
 
     private readonly IDongleDeviceService _devices;
+    private readonly ICncController _controller;
     private readonly ILogger<XProbeRouter> _logger;
 
     // Active USB link (null when wireless-only)
@@ -50,9 +52,10 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     public event Action<string>? MessageReceived;
     public event Action<bool>? ConnectivityChanged;
 
-    public XProbeRouter(IDongleDeviceService devices, ILogger<XProbeRouter> logger)
+    public XProbeRouter(IDongleDeviceService devices, ICncController controller, ILogger<XProbeRouter> logger)
     {
         _devices = devices;
+        _controller = controller;
         _logger = logger;
     }
 
@@ -132,10 +135,13 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             SerialPort? sp = null;
             try
             {
+                // DtrEnable/RtsEnable stay FALSE: asserting either on open resets many
+                // CNC controllers (CH340 auto-reset circuit, RP2350 boot pins). If we
+                // accidentally open the CNC port during a scan, we must not reboot it.
                 sp = new SerialPort(port, BaudRate)
                 {
-                    DtrEnable = true,
-                    RtsEnable = true,
+                    DtrEnable = false,
+                    RtsEnable = false,
                     ReadTimeout = 200,
                     WriteTimeout = 500,
                 };
@@ -195,7 +201,9 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         return text.Contains("$ID:", StringComparison.Ordinal)          // some other accessory ($ID:pendant, $ID:dongle, …)
             || text.Contains("Grbl", StringComparison.OrdinalIgnoreCase) // CNC greeting
             || text.Contains("[VER:", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("[OPT:", StringComparison.OrdinalIgnoreCase);
+            || text.Contains("[OPT:", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("error:", StringComparison.OrdinalIgnoreCase) // grblHAL rejects $ID → error:3
+            || text.Contains("ok\r", StringComparison.Ordinal);           // some grbl variants ack $ID silently
     }
 
     private void ClaimUsbPort(SerialPort sp, string path)
@@ -352,12 +360,15 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private IEnumerable<string> EnumerateCandidatePorts()
     {
         var currentUsb = _usbPortPath;
+        var cncPort = GetActiveCncPort();
         var all = SerialPort.GetPortNames();
         var kept = new List<string>();
         foreach (var p in all)
         {
             if (!IsUsbSerial(p)) continue;
             if (p == currentUsb) continue;    // already ours
+            if (cncPort is not null && string.Equals(p, cncPort, StringComparison.Ordinal))
+                continue;                     // never probe the port grblHAL is on
             kept.Add(p);
         }
         // Drop /dev/tty.* twins when /dev/cu.* twin is present (macOS).
@@ -365,6 +376,16 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             kept.Where(p => p.StartsWith("/dev/cu.", StringComparison.Ordinal))
                 .Select(p => "/dev/tty." + p["/dev/cu.".Length..]));
         return kept.Where(p => !cuNames.Contains(p));
+    }
+
+    private string? GetActiveCncPort()
+    {
+        try
+        {
+            if (_controller.Transport is SerialTransport st) return st.PortPath;
+        }
+        catch { /* transport swap race — treat as unknown, worst case we probe once */ }
+        return null;
     }
 
     private static bool IsUsbSerial(string p)
