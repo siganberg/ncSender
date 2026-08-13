@@ -1748,13 +1748,16 @@ public class PendantManager : IPendantManager
             sb.Append($"|M:{current.MaxFeedX:F0},{current.MaxFeedY:F0},{current.MaxFeedZ:F0}");
 
         // Aux state bitmask (hex) — drives the Outputs screen's toggle
-        // states. Absent in delta when unchanged.
-        if (isFull || current.AuxMask != prev!.AuxMask)
-            sb.Append($"|X:{current.AuxMask:X}");
+        // states. Always send (same treatment as WCO): ESP-NOW can drop
+        // packets, and a lost single-shot aux-toggle delta leaves the
+        // pendant stuck on the old state until the value changes again.
+        // Overhead is trivial (~5 bytes) and this makes the screen
+        // self-heal every 1s tick.
+        sb.Append($"|X:{current.AuxMask:X}");
 
-        // Currently-loaded tool number — for the Tools card's badge.
-        if (isFull || current.CurrentTool != prev!.CurrentTool)
-            sb.Append($"|T:{current.CurrentTool}");
+        // Currently-loaded tool — for the Tools card's badge. Same
+        // reasoning as X: above.
+        sb.Append($"|T:{current.CurrentTool}");
 
         _lastSentDro = current;
         await _serialHandler.SendRawAsync(sb.ToString());
