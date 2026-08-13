@@ -97,6 +97,10 @@ public class MachineState
     [JsonIgnore]
     public double Tlo { get; set; }
 
+    // Aux IO counts from [AUX IO:<in>,<out>,..]. Inputs matter to plugins that
+    // let the operator pick a sensor pin — without it they can only guess at a
+    // range and offer ports the board doesn't have.
+    public int InputPins { get; set; }
     public int OutputPins { get; set; }
     public List<int> OutputPinsState { get; set; } = [];
 

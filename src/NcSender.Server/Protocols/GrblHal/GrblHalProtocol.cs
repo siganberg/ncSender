@@ -162,6 +162,15 @@ public partial class GrblHalProtocol : IProtocolHandler
         var content = data[8..^1];
         var parts = content.Split(',');
         if (parts.Length < 2) return;
+
+        // parts[0] = aux inputs, parts[1] = aux outputs. The input count was
+        // being dropped, which left plugins offering a guessed port range.
+        if (int.TryParse(parts[0], out var inputPins) && state.InputPins != inputPins)
+        {
+            state.InputPins = inputPins;
+            changed = true;
+        }
+
         if (!int.TryParse(parts[1], out var outputPins)) return;
 
         if (state.OutputPins != outputPins)
