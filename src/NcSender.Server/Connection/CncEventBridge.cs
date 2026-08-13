@@ -485,9 +485,16 @@ public class CncEventBridge
 
         // Controller output for a command whose sender asked for a quiet
         // terminal — e.g. a plugin polling an aux input, where every reply
-        // would otherwise scroll the operator's terminal.
+        // would otherwise scroll the operator's terminal. It still has to
+        // reach plugin dialogs: the point is to keep the answer off the
+        // operator's screen, not to withhold it from whoever asked. The
+        // terminal only listens to cnc-data, so a separate channel splits
+        // the two without changing either payload.
         if (_controller.ActiveCommandMeta?.Quiet?.TerminalResponse == true)
+        {
+            _ = _broadcaster.Broadcast("cnc-data-quiet", data, NcSenderJsonContext.Default.String);
             return;
+        }
 
         // When greeting arrives, store it and broadcast to all connected clients
         // (WebSocket clients may have connected before the greeting was captured)

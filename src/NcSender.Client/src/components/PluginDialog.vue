@@ -149,6 +149,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 let serverStateUnsubscribe: (() => void) | null = null;
 let cncDataUnsubscribe: (() => void) | null = null;
+let cncDataQuietUnsubscribe: (() => void) | null = null;
 let closeDialogUnsubscribe: (() => void) | null = null;
 
 const forwardServerState = (state: any) => {
@@ -188,6 +189,11 @@ onMounted(() => {
   // Subscribe to cnc-data events and forward to plugin
   cncDataUnsubscribe = api.on('cnc-data', forwardCNCData);
 
+  // Same for output the sender kept off the terminal (meta.quiet
+  // terminalResponse) — plugins asked for it, so they still get it, and
+  // it arrives as an ordinary cnc-data message on their side.
+  cncDataQuietUnsubscribe = api.on('cnc-data-quiet', forwardCNCData);
+
   // Listen for close-dialog events (multi-client sync)
   closeDialogUnsubscribe = api.on('plugin:close-dialog', handleCloseDialog);
 
@@ -202,6 +208,9 @@ onBeforeUnmount(() => {
   }
   if (serverStateUnsubscribe) {
     serverStateUnsubscribe();
+  }
+  if (cncDataQuietUnsubscribe) {
+    cncDataQuietUnsubscribe();
   }
   if (cncDataUnsubscribe) {
     cncDataUnsubscribe();
