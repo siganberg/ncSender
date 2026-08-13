@@ -1111,6 +1111,33 @@ public class PendantManager : IPendantManager
                 return;
             }
 
+            // Outputs screen commands from the pendant. Format:
+            //   "AUX <id> on|off"  — toggle a configured aux output by id
+            //   "SLOT <n>"         — load tool at slot n via M6T<n>
+            //   "MANUAL"           — trigger manual tool change (M6T0)
+            //   "TLS"              — trigger toolsetter probe ($TLS)
+            if (data.StartsWith("AUX ", StringComparison.Ordinal))
+            {
+                _ = HandlePendantAuxAsync(data.Substring(4));
+                return;
+            }
+            if (data.StartsWith("SLOT ", StringComparison.Ordinal))
+            {
+                if (int.TryParse(data.AsSpan(5).Trim(), out var slot) && slot > 0)
+                    _ = HandleCncCommandCoreAsync($"M6T{slot}");
+                return;
+            }
+            if (data == "MANUAL")
+            {
+                _ = HandleCncCommandCoreAsync("M6T0");
+                return;
+            }
+            if (data == "TLS")
+            {
+                _ = HandleCncCommandCoreAsync("$TLS");
+                return;
+            }
+
             // $ID responses handled by scanner — ignore here
             if (data.StartsWith("$ID:"))
                 return;
@@ -1234,6 +1261,7 @@ public class PendantManager : IPendantManager
             {
                 await SendDroAsync(full: true);
                 SendSettings(force: true);
+                SendOutputsConfig(force: true);
 
                 // Request metadata (scanner already classified the port via $ID)
                 await Task.Delay(300);
@@ -1337,6 +1365,35 @@ public class PendantManager : IPendantManager
     #endregion
 
     #region Compact Command
+
+    // Handle "AUX <id> on|off" from the pendant. Looks up the aux id in
+    // the last config we pushed (so we only ever send commands the user
+    // explicitly configured in Settings > Auxiliary I/O), then routes
+    // the matching on/off command through the normal command processor.
+    private async Task HandlePendantAuxAsync(string payload)
+    {
+        try
+        {
+            var parts = payload.Trim().Split(' ', 2);
+            if (parts.Length != 2) return;
+            var id = parts[0];
+            var state = parts[1].Trim().ToLowerInvariant();
+            var aux = _lastSentOutputsCfg?.Aux;
+            if (aux is null) return;
+            foreach (var entry in aux)
+            {
+                if (!string.Equals(entry.Id, id, StringComparison.Ordinal)) continue;
+                var cmd = state == "on" ? entry.On : entry.Off;
+                if (string.IsNullOrEmpty(cmd)) return;
+                await HandleCncCommandCoreAsync(cmd);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pendant AUX command failed: {Payload}", payload);
+        }
+    }
 
     private async Task HandleCompactCommandAsync(string command)
     {
@@ -1575,6 +1632,22 @@ public class PendantManager : IPendantManager
         else if (string.Equals(effectiveStatus, "Door", StringComparison.OrdinalIgnoreCase))
             effectiveStatus = "Hold";
 
+        // Aux output state mask — bit N corresponds to the Nth entry
+        // in the aux list we most recently pushed to the pendant.
+        // Order must match _lastSentOutputsCfg.Aux, so walk that list
+        // and look each row up in MachineState.
+        uint auxMask = 0;
+        var aux = _lastSentOutputsCfg?.Aux;
+        if (aux is not null)
+        {
+            for (int i = 0; i < aux.Length && i < 32; i++)
+            {
+                if (IsAuxOn(aux[i].On, ms)) auxMask |= (1u << i);
+            }
+        }
+
+        var currentTool = ms.Tool;
+
         var current = new PendantDroSnapshot(
             Status: effectiveStatus,
             WPos: wpos,
@@ -1590,7 +1663,9 @@ public class PendantManager : IPendantManager
             Workspace: workspace,
             MaxFeedX: maxFeedX,
             MaxFeedY: maxFeedY,
-            MaxFeedZ: maxFeedZ
+            MaxFeedZ: maxFeedZ,
+            AuxMask: auxMask,
+            CurrentTool: currentTool
         );
 
         var prev = _lastSentDro;
@@ -1653,8 +1728,35 @@ public class PendantManager : IPendantManager
         if (isFull || current.MaxFeedX != prev!.MaxFeedX || current.MaxFeedY != prev!.MaxFeedY || current.MaxFeedZ != prev!.MaxFeedZ)
             sb.Append($"|M:{current.MaxFeedX:F0},{current.MaxFeedY:F0},{current.MaxFeedZ:F0}");
 
+        // Aux state bitmask (hex) — drives the Outputs screen's toggle
+        // states. Absent in delta when unchanged.
+        if (isFull || current.AuxMask != prev!.AuxMask)
+            sb.Append($"|X:{current.AuxMask:X}");
+
+        // Currently-loaded tool number — for the Tools card's badge.
+        if (isFull || current.CurrentTool != prev!.CurrentTool)
+            sb.Append($"|T:{current.CurrentTool}");
+
         _lastSentDro = current;
         await _serialHandler.SendRawAsync(sb.ToString());
+    }
+
+    // Given an aux entry's "on" command (e.g. "M8", "M7", "M64 P2"),
+    // return whether that pin/channel is currently on. Used to build
+    // the aux state bitmask in the DRO push.
+    private static bool IsAuxOn(string onCmd, MachineState ms)
+    {
+        if (string.IsNullOrEmpty(onCmd)) return false;
+        if (onCmd == "M8") return ms.FloodCoolant;
+        if (onCmd == "M7") return ms.MistCoolant;
+        var m = System.Text.RegularExpressions.Regex.Match(onCmd, @"^M64\s+P(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && int.TryParse(m.Groups[1].Value, out var pin))
+        {
+            var pins = ms.OutputPinsState;
+            if (pins is not null && pin >= 0 && pin < pins.Count)
+                return pins[pin] != 0;
+        }
+        return false;
     }
 
     private static string ComputeWorkPosition(MachineState ms)
@@ -1687,7 +1789,9 @@ public class PendantManager : IPendantManager
         string Workspace,
         double MaxFeedX,
         double MaxFeedY,
-        double MaxFeedZ
+        double MaxFeedZ,
+        uint AuxMask,     // bit N = state of the Nth entry in the pendant's aux list
+        int CurrentTool   // 0 = none
     );
 
     #endregion
@@ -1697,6 +1801,86 @@ public class PendantManager : IPendantManager
     public void NotifySettingsChanged()
     {
         SendSettings(force: true);
+        SendOutputsConfig(force: true);
+    }
+
+    // Push aux output definitions + pneumatic ATC slot count to the
+    // pendant's Outputs screen. Sent on pendant connect and whenever
+    // settings change. Live on/off state and current tool ride on the
+    // DRO delta (see SendDroAsync).
+    private PendantOutputsConfigSnapshot? _lastSentOutputsCfg;
+
+    private void SendOutputsConfig(bool force = false)
+    {
+        if (_serialHandler is not { IsConnected: true } || !_pendantConnected)
+            return;
+
+        var auxNode = _settingsManager.GetSetting("auxOutputs");
+        var auxList = new List<PendantAuxOutput>();
+        if (auxNode is System.Text.Json.Nodes.JsonArray arr)
+        {
+            foreach (var item in arr)
+            {
+                if (item is not System.Text.Json.Nodes.JsonObject obj) continue;
+                var enabled = obj["enabled"]?.GetValue<bool>() ?? true;
+                if (!enabled) continue;
+                var id       = obj["id"]?.GetValue<string>() ?? "";
+                var name     = obj["name"]?.GetValue<string>() ?? "";
+                var onCmd    = obj["on"]?.GetValue<string>() ?? "";
+                var offCmd   = obj["off"]?.GetValue<string>() ?? DeriveOffFromOn(onCmd);
+                var hold     = obj["holdToActivate"]?.GetValue<bool>() ?? false;
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name)) continue;
+                auxList.Add(new PendantAuxOutput(id, name, onCmd, offCmd, true, hold));
+            }
+        }
+
+        var slotCount = ReadPneumaticAtcSlotCount();
+
+        var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount);
+        if (!force && _lastSentOutputsCfg is not null && snapshot.Equals(_lastSentOutputsCfg))
+            return;
+        _lastSentOutputsCfg = snapshot;
+
+        var msg = new PendantOutputsConfigMsg(
+            "outputs-config",
+            new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount));
+        _ = _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
+    }
+
+    private static string DeriveOffFromOn(string onCmd)
+    {
+        if (string.IsNullOrEmpty(onCmd)) return "";
+        if (onCmd == "M7" || onCmd == "M8") return "M9";
+        var m = System.Text.RegularExpressions.Regex.Match(onCmd, @"^M64\s+(P\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success) return $"M65 {m.Groups[1].Value}";
+        return "";
+    }
+
+    private int ReadPneumaticAtcSlotCount()
+    {
+        try
+        {
+            var path = Path.Combine(NcSender.Server.Infrastructure.PathUtils.GetPluginConfigDir(),
+                                    "com.ncsender.pneumaticatc", "config.json");
+            if (!File.Exists(path)) return 0;
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty("slots", out var slots) && slots.ValueKind == JsonValueKind.Number)
+                return slots.GetInt32();
+        }
+        catch { /* plugin absent or corrupt config — treat as no slots */ }
+        return 0;
+    }
+
+    private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount)
+    {
+        public bool Equals(PendantOutputsConfigSnapshot? other)
+        {
+            if (other is null || other.SlotCount != SlotCount || other.Aux.Length != Aux.Length) return false;
+            for (int i = 0; i < Aux.Length; i++)
+                if (!Aux[i].Equals(other.Aux[i])) return false;
+            return true;
+        }
+        public override int GetHashCode() => HashCode.Combine(SlotCount, Aux.Length);
     }
 
     private void SendSettings(bool force = false)
