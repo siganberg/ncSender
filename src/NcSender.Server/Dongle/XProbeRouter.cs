@@ -135,13 +135,20 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             SerialPort? sp = null;
             try
             {
-                // DtrEnable/RtsEnable stay FALSE: asserting either on open resets many
-                // CNC controllers (CH340 auto-reset circuit, RP2350 boot pins). If we
-                // accidentally open the CNC port during a scan, we must not reboot it.
+                // DtrEnable/RtsEnable stay TRUE (matches pre-v2.0.85 behavior).
+                // We tried FALSE to avoid resetting the CNC on probe, but the
+                // wireless dongle (T-Dongle-S3, native USB CDC on the ESP32-S3)
+                // reboots its display when a second host opens its port with a
+                // different DTR state than the one PendantSerialHandler already
+                // has asserted (DTR=true). The active CNC port is now excluded
+                // by GetActiveCncPort() below, so we no longer *touch* the CNC
+                // port during probes — meaning we don't need low DTR/RTS to
+                // protect it, and can go back to the state that leaves the
+                // dongle undisturbed.
                 sp = new SerialPort(port, BaudRate)
                 {
-                    DtrEnable = false,
-                    RtsEnable = false,
+                    DtrEnable = true,
+                    RtsEnable = true,
                     ReadTimeout = 200,
                     WriteTimeout = 500,
                 };
