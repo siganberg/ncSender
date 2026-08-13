@@ -1114,6 +1114,7 @@ public class PendantManager : IPendantManager
             // Outputs screen commands from the pendant. Format:
             //   "AUX <id> on|off"  — toggle a configured aux output by id
             //   "SLOT <n>"         — load tool at slot n via M6T<n>
+            //   "UNLOAD"           — drop the loaded tool (M6T0)
             //   "MANUAL"           — trigger manual tool change (M6T0)
             //   "TLS"              — trigger toolsetter probe ($TLS)
             if (data.StartsWith("AUX ", StringComparison.Ordinal))
@@ -1125,6 +1126,11 @@ public class PendantManager : IPendantManager
             {
                 if (int.TryParse(data.AsSpan(5).Trim(), out var slot) && slot > 0)
                     _ = HandleCncCommandCoreAsync($"M6T{slot}");
+                return;
+            }
+            if (data == "UNLOAD")
+            {
+                _ = HandleCncCommandCoreAsync("M6T0");
                 return;
             }
             if (data == "MANUAL")
@@ -1375,19 +1381,34 @@ public class PendantManager : IPendantManager
         try
         {
             var parts = payload.Trim().Split(' ', 2);
-            if (parts.Length != 2) return;
+            if (parts.Length != 2)
+            {
+                _logger.LogWarning("Pendant AUX ignored — bad payload shape: {Payload}", payload);
+                return;
+            }
             var id = parts[0];
             var state = parts[1].Trim().ToLowerInvariant();
             var aux = _lastSentOutputsCfg?.Aux;
-            if (aux is null) return;
+            if (aux is null)
+            {
+                _logger.LogWarning("Pendant AUX '{Id} {State}' dropped — no outputs config sent to pendant yet", id, state);
+                return;
+            }
             foreach (var entry in aux)
             {
                 if (!string.Equals(entry.Id, id, StringComparison.Ordinal)) continue;
                 var cmd = state == "on" ? entry.On : entry.Off;
-                if (string.IsNullOrEmpty(cmd)) return;
+                if (string.IsNullOrEmpty(cmd))
+                {
+                    _logger.LogWarning("Pendant AUX '{Id} {State}' has empty command in config — nothing to send", id, state);
+                    return;
+                }
+                _logger.LogInformation("Pendant AUX '{Id} {State}' → {Cmd}", id, state, cmd);
                 await HandleCncCommandCoreAsync(cmd);
                 return;
             }
+            var known = string.Join(",", aux.Select(a => a.Id));
+            _logger.LogWarning("Pendant AUX '{Id} {State}' dropped — id not in outputs config (known: [{Known}])", id, state, known);
         }
         catch (Exception ex)
         {
@@ -1618,14 +1639,12 @@ public class PendantManager : IPendantManager
         var maxFeedY = ms.MaxFeedrateY;
         var maxFeedZ = ms.MaxFeedrateZ;
 
-        // Keep the pendant in sync with the browser toolbar for Door state:
-        //   • Pn contains 'D' (door pin asserted) → show "Door" regardless of
-        //     the underlying status. This mirrors TopToolbar's isDoorOpenViaPn
-        //     override and covers the grblHAL $61=1 case where the machine
-        //     stays "Idle" while the door pin is high.
-        //   • Status == "Door" with Pn released → promote to "Hold" so Resume
-        //     lights up on the pendant, matching ServerContext.ComputeSenderStatus.
-        var effectiveStatus = ms.Status ?? "Unknown";
+        // Send the DERIVED sender status (ServerContext.ComputeSenderStatus)
+        // rather than the raw grblHAL status. Same signal the browser
+        // toolbar renders — includes "tool-changing", "probing", door/hold
+        // promotion — so the pendant header reads the same as the app.
+        var effectiveStatus = state.SenderStatus;
+        if (string.IsNullOrEmpty(effectiveStatus)) effectiveStatus = ms.Status ?? "Unknown";
         var pnHasDoor = (ms.Pn ?? "").Contains('D');
         if (pnHasDoor)
             effectiveStatus = "Door";
@@ -1752,9 +1771,12 @@ public class PendantManager : IPendantManager
         var m = System.Text.RegularExpressions.Regex.Match(onCmd, @"^M64\s+P(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (m.Success && int.TryParse(m.Groups[1].Value, out var pin))
         {
+            // OutputPinsState is a LIST OF ACTIVE PIN NUMBERS, not an
+            // index-addressed table — a pin-0 aux (e.g. ATC) evaluating
+            // `pins[0] != 0` always yielded false, so the pendant kept
+            // resending "on" instead of alternating.
             var pins = ms.OutputPinsState;
-            if (pins is not null && pin >= 0 && pin < pins.Count)
-                return pins[pin] != 0;
+            return pins is not null && pins.Contains(pin);
         }
         return false;
     }

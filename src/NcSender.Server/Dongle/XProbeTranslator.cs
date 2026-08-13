@@ -152,6 +152,12 @@ public sealed class XProbeTranslator : IHostedService
 
     private async Task SendAsync(byte b)
     {
+        // The xprobe streams heartbeats every ~100 ms, so if the CNC
+        // controller is disconnected (USB unplugged, mid-reconnect) we'd
+        // otherwise spew 10 stack traces per second into the log. Skip
+        // silently — the heartbeat will re-drive the pin the moment the
+        // controller comes back.
+        if (!_controller.IsTransportOpen) return;
         try
         {
             await _controller.WriteRawAsync(new[] { b });
@@ -163,6 +169,9 @@ public sealed class XProbeTranslator : IHostedService
         }
         catch (Exception ex)
         {
+            // Still warn on write failures that survive the gate above —
+            // those are real (mid-write disconnect race, transport
+            // fault) and worth logging.
             _logger.LogWarning(ex, "XProbeTranslator: failed to write byte 0x{Byte:X2} to controller", b);
         }
     }
