@@ -72,18 +72,32 @@ const handleBackdropClick = () => {
   }
 };
 
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    emit('close');
-  }
-};
+// Nested-dialog ESC handling: every Dialog used to attach its own window
+// keydown listener, so one ESC press collapsed the whole stack — parent
+// and child both emitted close simultaneously. Now we keep a shared LIFO
+// registry of "who wants ESC" and only invoke the TOP entry. Each Dialog
+// registers on mount, unregisters on unmount, so the child that opened
+// last handles ESC first and only that one closes.
+const escapeHandlers: Array<() => void> = ((window as any).__ncDialogEscStack ||= []);
+let sharedListenerBound = ((window as any).__ncDialogEscBound as boolean) || false;
+if (!sharedListenerBound) {
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    const top = escapeHandlers[escapeHandlers.length - 1];
+    if (top) top();
+  });
+  (window as any).__ncDialogEscBound = true;
+  sharedListenerBound = true;
+}
+const myHandler = () => emit('close');
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
+  escapeHandlers.push(myHandler);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  const i = escapeHandlers.lastIndexOf(myHandler);
+  if (i !== -1) escapeHandlers.splice(i, 1);
 });
 </script>
 
