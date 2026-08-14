@@ -5293,6 +5293,16 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   opacity: 1;
 }
 
+/* Current-tool slot has a solid accent background, so an accent-colored
+   fill (or even a 35% white fill via :active pseudo) reads as almost
+   nothing — the progress sweep vanishes. Force a high-contrast white
+   fill on the active slot regardless of press state so the long-press
+   indicator stays visible during the whole gesture. */
+.tools-legend__item.active .long-press-indicator {
+  background: rgba(255, 255, 255, 0.55);
+  opacity: 1;
+}
+
 .tools-legend__item.long-press-triggered:not(.active) {
   background: var(--color-surface-muted) !important;
   color: var(--color-text-primary) !important;
