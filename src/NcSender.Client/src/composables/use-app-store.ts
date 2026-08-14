@@ -184,6 +184,11 @@ const gridSizeX = ref(cachedDims.x);
 const gridSizeY = ref(cachedDims.y);
 // Z maximum travel ($132). GRBL convention: Z spans from 0 to -$132
 const zMaxTravel = ref<number | null>(cachedDims.z);
+// Spindle RPM range: $30 = max, $31 = min. Populated from firmware in the
+// same fetch that loads the machine dimensions. Null until firmware settings
+// are available — consumers fall back to a sensible default range.
+const spindleRPMMax = ref<number | null>(null);
+const spindleRPMMin = ref<number | null>(null);
 const machineDimsLoaded = ref(false);
 let machineDimsLoading = false;
 let machineDimsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -570,6 +575,8 @@ const tryLoadMachineDimensionsOnce = async () => {
     const xVal = parseFloat(String(firmware?.settings?.['130']?.value ?? ''));
     const yVal = parseFloat(String(firmware?.settings?.['131']?.value ?? ''));
     const zVal = parseFloat(String(firmware?.settings?.['132']?.value ?? ''));
+    const spindleMaxVal = parseFloat(String(firmware?.settings?.['30']?.value ?? ''));
+    const spindleMinVal = parseFloat(String(firmware?.settings?.['31']?.value ?? ''));
 
     if (!Number.isNaN(xVal) && xVal > 0) {
       gridSizeX.value = xVal;
@@ -579,6 +586,12 @@ const tryLoadMachineDimensionsOnce = async () => {
     }
     if (!Number.isNaN(zVal) && zVal > 0) {
       zMaxTravel.value = zVal;
+    }
+    if (!Number.isNaN(spindleMaxVal) && spindleMaxVal > 0) {
+      spindleRPMMax.value = spindleMaxVal;
+    }
+    if (!Number.isNaN(spindleMinVal) && spindleMinVal >= 0) {
+      spindleRPMMin.value = spindleMinVal;
     }
 
     // Load home location from settings (already loaded via init)
@@ -1097,6 +1110,8 @@ export function useAppStore() {
       gridSizeX: readonly(gridSizeX),
       gridSizeY: readonly(gridSizeY),
       zMaxTravel: readonly(zMaxTravel),
+      spindleRPMMax: readonly(spindleRPMMax),
+      spindleRPMMin: readonly(spindleRPMMin),
       machineOrientation: readonly(machineOrientation),
       gcodeContent: readonly(gcodeContent),
       gcodeFilename: readonly(gcodeFilename),

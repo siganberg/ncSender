@@ -463,7 +463,7 @@
                 <span>Spindle CW</span>
               </button>
               <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
-                <option v-for="rpm in Array.from({length: 24}, (_, i) => (i + 1) * 1000)" :key="rpm" :value="rpm">{{ rpm }}</option>
+                <option v-for="rpm in rpmOptions" :key="rpm" :value="rpm">{{ rpm }}</option>
               </select>
             </div>
             <div class="spindle-control">
@@ -475,7 +475,7 @@
                 <span>Spindle CCW</span>
               </button>
               <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
-                <option v-for="rpm in Array.from({length: 24}, (_, i) => (i + 1) * 1000)" :key="rpm" :value="rpm">{{ rpm }}</option>
+                <option v-for="rpm in rpmOptions" :key="rpm" :value="rpm">{{ rpm }}</option>
               </select>
             </div>
             <button @click="sendQuickCommand('M5')" :disabled="!connected || !isSenderIdle" class="quick-control-btn quick-control-btn--danger" title="Stop spindle (M5)">
@@ -598,6 +598,7 @@ import { getCommandHistoryFromInit } from '@/lib/init';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
+import { useAppStore } from '../../composables/use-app-store';
 import { ensureHomed } from '../../composables/useUnhomedGuard';
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
@@ -734,6 +735,41 @@ const showTerminalModal = ref(false);
 const modalTerminalScrollerRef = ref<any>(null);
 const autoScrollTerminalModal = ref(true);
 const spindleRPM = ref(10000);
+const appStore = useAppStore();
+
+// Spindle RPM dropdown options — derived from firmware $30 (max) and $31 (min).
+// While firmware settings load, fall back to the original 1000..24000 range so
+// the dropdown never renders empty. Step size is fixed at 1000 RPM (matches
+// the previous hardcoded list).
+const RPM_STEP = 1000;
+const RPM_FALLBACK_MIN = 1000;
+const RPM_FALLBACK_MAX = 24000;
+const rpmOptions = computed(() => {
+  const max = appStore.spindleRPMMax.value ?? RPM_FALLBACK_MAX;
+  const rawMin = appStore.spindleRPMMin.value ?? RPM_FALLBACK_MIN;
+  // Never let the list start at 0 — a 0-RPM entry is useless for M3/M4 and
+  // the original hardcoded list started at 1000. If $31 is 0 (common
+  // default), start at RPM_STEP.
+  const min = Math.max(rawMin, RPM_STEP);
+  if (max < min) return [max];
+  const first = Math.ceil(min / RPM_STEP) * RPM_STEP;
+  const last = Math.floor(max / RPM_STEP) * RPM_STEP;
+  const opts: number[] = [];
+  for (let v = first; v <= last; v += RPM_STEP) opts.push(v);
+  return opts.length > 0 ? opts : [max];
+});
+
+// Clamp the selected RPM into the current range when the firmware settings
+// load (e.g. old default 10000 with a $30 of 8000 would leave 10000 selected
+// but invisible in the dropdown). Snap to the nearest option.
+watch(rpmOptions, (opts) => {
+  if (!opts.length) return;
+  if (opts.includes(spindleRPM.value)) return;
+  const nearest = opts.reduce((best, v) => (
+    Math.abs(v - spindleRPM.value) < Math.abs(best - spindleRPM.value) ? v : best
+  ), opts[0]);
+  spindleRPM.value = nearest;
+}, { immediate: true });
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const editableGcode = ref('');
