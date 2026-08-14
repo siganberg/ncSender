@@ -18,6 +18,12 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/styles/base.css';
+// HTML5 drag-and-drop DragEvents don't fire from touch input in any browser,
+// so the file manager tree (TreeItem.vue @dragstart/@dragover/@drop) was
+// mouse-only on touchscreens. This polyfill listens for touch events on
+// [draggable] nodes and dispatches synthetic drag events — the existing
+// handlers work unchanged.
+import 'drag-drop-touch';
 import { loadInitData } from './lib/init';
 import { initializeKeyboardShortcuts } from './features/controls';
 import { initializeStore, seedInitialState } from './composables/use-app-store';
