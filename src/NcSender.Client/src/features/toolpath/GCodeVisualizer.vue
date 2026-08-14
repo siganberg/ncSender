@@ -616,7 +616,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1017,6 +1017,8 @@ let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
+// Machine-coord tick numbers on the grid (opposite-home edges).
+let gridTickLabelsGroup: THREE.Group | null = null;
 // Workspace-Z0 outline layer — border + crosshair axes + label + WCO
 // tick numbers. Geometry bakes in workOffset so we add at (0,0,0) and
 // rebuild on WCO change.
@@ -1234,6 +1236,30 @@ const computeZBottom = () => {
   return resolvedOrientation.value.zHome === 'min' ? 0 : -zMax;
 };
 
+// Machine-coord tick labels on the grid — opposite-home edges,
+// values grow from 0 (at home) outward.
+const rebuildGridTickLabels = () => {
+  if (!scene) return;
+  if (gridTickLabelsGroup) {
+    scene.remove(gridTickLabelsGroup);
+    gridTickLabelsGroup.traverse((obj: any) => {
+      if (obj.geometry) obj.geometry.dispose?.();
+      if (obj.material) obj.material.dispose?.();
+    });
+    gridTickLabelsGroup = null;
+  }
+  if (props.view === 'front') return;
+  gridTickLabelsGroup = createGridTickLabels({
+    gridSizeX: resolveGridSize(props.gridSizeX),
+    gridSizeY: resolveGridSize(props.gridSizeY),
+    orientation: resolvedOrientation.value,
+    units: appStore.unitsPreference.value,
+    zBottom: computeZBottom(),
+  });
+  scene.add(gridTickLabelsGroup);
+  requestRender();
+};
+
 // Rebuild the workspace-Z0 outline (border + red/green axes + label +
 // WCO ticks). Geometry bakes WCO in directly, so we add the group at
 // scene (0, 0, 0) and rebuild on WCO change.
@@ -1315,6 +1341,9 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
       scene.add(splitSideGridGroup);
     }
   }
+
+  // Machine-coord tick labels on the grid's opposite-home edges.
+  rebuildGridTickLabels();
 
   // Workspace outline layer (border + crosshair axes + label + WCO
   // ticks) — everything the old grid rendered except the mesh.
@@ -1540,7 +1569,8 @@ const initThreeJS = () => {
     });
   }
   scene.add(gridGroup);
-  // Workspace outline layer (border + crosshair axes + label + ticks).
+  // Grid tick labels + workspace outline layers.
+  rebuildGridTickLabels();
   rebuildWorkspaceOutline(props.workOffset);
 
   // For split view, also create the XZ grid for the side viewport
@@ -2410,6 +2440,7 @@ const animate = () => {
         gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       }
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (gridTickLabelsGroup) gridTickLabelsGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Workspace outline geometry has WCO baked in — just apply the
@@ -3730,6 +3761,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       const wcoDelta = getWcoDelta();
       gcodeVisualizer.group.position.set(wcoDelta.x + offset.x, wcoDelta.y + offset.y, wcoDelta.z + offset.z);
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
+      if (gridTickLabelsGroup) gridTickLabelsGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
       // Workspace outline geometry has WCO baked in — just apply the
@@ -3791,6 +3823,7 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       gcodeVisualizer.group.position.set(wcoDelta.x, wcoDelta.y, wcoDelta.z);
     }
     if (gridGroup) gridGroup.position.set(0, 0, 0);
+    if (gridTickLabelsGroup) gridTickLabelsGroup.position.set(0, 0, 0);
     if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
     if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(0, 0, 0);
     // Workspace outline geometry has WCO baked in — reset to origin.

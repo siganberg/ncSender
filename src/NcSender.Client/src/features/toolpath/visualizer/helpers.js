@@ -659,6 +659,108 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, orientatio
     return group;
 };
 
+// Machine-coord tick numbers on the grid. Placed on the two edges
+// *opposite* the home corner so they never crowd the crosshair or the
+// workspace-outline ticks that live on the home-side edges. Values
+// grow from 0 at home outward — operator can eyeball a machine
+// coordinate and read straight across to where it lands on the bed.
+// Muted gray so they don't compete visually with the workspace ring.
+export const createGridTickLabels = ({ gridSizeX = 1220, gridSizeY = 1220, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric', zBottom = 0 } = {}) => {
+    const group = new THREE.Group();
+    const MM_PER_INCH = 25.4;
+    const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
+
+    const xBounds = machineBounds(gridSizeX, orientation.xHome || 'min');
+    const yBounds = machineBounds(gridSizeY, orientation.yHome || 'max');
+    const { min: minX, max: maxX } = xBounds;
+    const { min: minY, max: maxY } = yBounds;
+
+    const tickColor = 'rgba(180, 180, 180, 0.75)';
+
+    // Label mesh is 32mm × 20mm. Insets push the label INTO the machine
+    // bounds by (half-extent + a small margin) so the plane never
+    // overhangs the border. Y ticks need the bigger inset because
+    // 4-digit values ("-1260") span the full plane width.
+    const xTickEdgeY = orientation.yHome === 'min' ? maxY : minY;
+    const yTickEdgeX = orientation.xHome === 'max' ? minX : maxX;
+    const xLabelYInset = orientation.yHome === 'min' ? -14 : 14;
+    const yLabelXInset = orientation.xHome === 'max' ? 20 : -20;
+
+    const buildTick = (displayValue) => {
+        const canvas = document.createElement('canvas');
+        const scale = 4;
+        canvas.width = 128 * scale;
+        canvas.height = 64 * scale;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.scale(scale, scale);
+        context.clearRect(0, 0, 128, 64);
+        context.fillStyle = tickColor;
+        context.font = 'bold 20px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.imageSmoothingEnabled = true;
+        context.fillText(displayValue, 64, 32);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 20), material);
+        mesh.renderOrder = 2;
+        return mesh;
+    };
+
+    // Skip the outermost tick in each direction so the corner isn't
+    // crowded and the max-bound label never sits past the border.
+    for (let x = 0; x <= maxX; x += labelStep) {
+        if (x < minX) continue;
+        if (Math.abs(x) < 0.01) continue;
+        if (x + labelStep > maxX + 0.01) continue;
+        const displayValue = units === 'imperial' ? Math.round(x / MM_PER_INCH).toString() : Math.round(x).toString();
+        const mesh = buildTick(displayValue);
+        mesh.position.set(x, xTickEdgeY + xLabelYInset, zBottom + 0.01);
+        group.add(mesh);
+    }
+    for (let x = -labelStep; x >= minX; x -= labelStep) {
+        if (x > maxX) continue;
+        if (x - labelStep < minX - 0.01) continue;
+        const displayValue = units === 'imperial' ? Math.round(x / MM_PER_INCH).toString() : Math.round(x).toString();
+        const mesh = buildTick(displayValue);
+        mesh.position.set(x, xTickEdgeY + xLabelYInset, zBottom + 0.01);
+        group.add(mesh);
+    }
+
+    for (let y = 0; y <= maxY; y += labelStep) {
+        if (y < minY) continue;
+        if (Math.abs(y) < 0.01) continue;
+        if (y + labelStep > maxY + 0.01) continue;
+        const displayValue = units === 'imperial' ? Math.round(y / MM_PER_INCH).toString() : Math.round(y).toString();
+        const mesh = buildTick(displayValue);
+        mesh.position.set(yTickEdgeX + yLabelXInset, y, zBottom + 0.01);
+        group.add(mesh);
+    }
+    for (let y = -labelStep; y >= minY; y -= labelStep) {
+        if (y > maxY) continue;
+        if (y - labelStep < minY - 0.01) continue;
+        const displayValue = units === 'imperial' ? Math.round(y / MM_PER_INCH).toString() : Math.round(y).toString();
+        const mesh = buildTick(displayValue);
+        mesh.position.set(yTickEdgeX + yLabelXInset, y, zBottom + 0.01);
+        group.add(mesh);
+    }
+
+    group.name = 'grid-tick-labels';
+    return group;
+};
+
 // Workspace-Z0 outline layer. Everything the old grid used to render
 // EXCEPT the grid line mesh: outer border, red/green crosshair axes,
 // "CURRENT WORKSPACE Z0 (FRONT)" label, workspace-relative tick
