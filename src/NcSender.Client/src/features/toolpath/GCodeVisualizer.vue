@@ -616,7 +616,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1017,6 +1017,10 @@ let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
 let directionalLight: THREE.DirectionalLight;
 let gridGroup: THREE.Group;
+// Workspace-Z0 outline layer — border + crosshair axes + label + WCO
+// tick numbers. Geometry bakes in workOffset so we add at (0,0,0) and
+// rebuild on WCO change.
+let workspaceOutlineGroup: THREE.Group | null = null;
 let splitSideGridGroup: THREE.Group | null = null; // XZ grid for split view's side viewport
 let splitSideAxisLabels: THREE.Group | null = null; // Axis labels without Y for split view's side viewport
 let machineBoundsBoxGroup: THREE.LineSegments | null = null; // Cyan wireframe AABB hugging the machine's physical travel ($130/$131/$132). Sits in the scene (not the path group) so it stays fixed in machine coords regardless of WCO.
@@ -1222,6 +1226,40 @@ const getWcoDelta = () => {
   };
 };
 
+// Grid-view-grounded model: grid sits at machine bottom, workspace
+// outline floats at WCO. grblHAL Z convention: zHome='max' → Z spans
+// 0 (top) down to -zMax; zHome='min' → 0 (bottom) up to +zMax.
+const computeZBottom = () => {
+  const zMax = resolveZTravel(props.zMaxTravel);
+  return resolvedOrientation.value.zHome === 'min' ? 0 : -zMax;
+};
+
+// Rebuild the workspace-Z0 outline (border + red/green axes + label +
+// WCO ticks). Geometry bakes WCO in directly, so we add the group at
+// scene (0, 0, 0) and rebuild on WCO change.
+const rebuildWorkspaceOutline = (overrideOffset: { x: number; y: number; z: number } | null = null) => {
+  if (!scene) return;
+  if (workspaceOutlineGroup) {
+    scene.remove(workspaceOutlineGroup);
+    workspaceOutlineGroup.traverse((obj: any) => {
+      if (obj.geometry) obj.geometry.dispose?.();
+      if (obj.material) obj.material.dispose?.();
+    });
+    workspaceOutlineGroup = null;
+  }
+  const wco = overrideOffset ?? props.workOffset ?? { x: 0, y: 0, z: 0 };
+  workspaceOutlineGroup = createWorkspaceOutline({
+    gridSizeX: resolveGridSize(props.gridSizeX),
+    gridSizeY: resolveGridSize(props.gridSizeY),
+    workOffset: wco,
+    orientation: resolvedOrientation.value,
+    units: appStore.unitsPreference.value,
+  });
+  workspaceOutlineGroup.position.set(0, 0, 0);
+  scene.add(workspaceOutlineGroup);
+  requestRender();
+};
+
 const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' | 'iso' | 'split' = props.view, skipCameraFit = false) => {
   if (scene && gridGroup) {
     scene.remove(gridGroup);
@@ -1254,9 +1292,9 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
     gridGroup = createGridLines({
       gridSizeX: resolveGridSize(props.gridSizeX),
       gridSizeY: resolveGridSize(props.gridSizeY),
-      workOffset: crosshairOffset,
       orientation: resolvedOrientation.value,
-      units: appStore.unitsPreference.value
+      units: appStore.unitsPreference.value,
+      zBottom: computeZBottom(),
     });
   }
 
@@ -1277,6 +1315,10 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
       scene.add(splitSideGridGroup);
     }
   }
+
+  // Workspace outline layer (border + crosshair axes + label + WCO
+  // ticks) — everything the old grid rendered except the mesh.
+  rebuildWorkspaceOutline(_workOffset);
 
   // Cyan wireframe of the machine's physical travel envelope. Sits in
   // the scene at fixed machine coords — does NOT follow WCO so it
@@ -1492,12 +1534,14 @@ const initThreeJS = () => {
     gridGroup = createGridLines({
       gridSizeX: resolveGridSize(props.gridSizeX),
       gridSizeY: resolveGridSize(props.gridSizeY),
-      workOffset: props.workOffset,
       orientation: resolvedOrientation.value,
-      units: appStore.unitsPreference.value
+      units: appStore.unitsPreference.value,
+      zBottom: computeZBottom(),
     });
   }
   scene.add(gridGroup);
+  // Workspace outline layer (border + crosshair axes + label + ticks).
+  rebuildWorkspaceOutline(props.workOffset);
 
   // For split view, also create the XZ grid for the side viewport
   if (props.view === 'split') {
@@ -2368,8 +2412,10 @@ const animate = () => {
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
-      // Axes must stay at WCO (crosshair) position, offset by spindle transform
+      // Workspace outline geometry has WCO baked in — just apply the
+      // spindle offset (same as the grid) to keep it glued to the bed.
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
+      if (workspaceOutlineGroup) workspaceOutlineGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
       // Labels are positioned based on bounds - only apply spindle offset
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
@@ -3605,6 +3651,9 @@ watch(() => appStore.unitsPreference.value, () => {
 // Watch for Z travel changes to update limits
 watch(() => props.zMaxTravel, () => {
   applyBoundsAndWarnings();
+  // Grid Z and tick labels read zBottom from zMaxTravel — rebuild so
+  // they land at the new bed level.
+  rebuildGrid(props.workOffset, props.view, true);
   if (!autoFitMode.value) {
     if (props.view === 'split') {
       updateSplitViewCameras();
@@ -3683,8 +3732,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       if (gridGroup) gridGroup.position.set(offset.x, offset.y, offset.z);
       if (splitSideGridGroup) splitSideGridGroup.position.set(offset.x, offset.y, offset.z);
       if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(offset.x, offset.y, offset.z);
-      // Axes must stay at WCO (crosshair) position, offset by spindle transform
+      // Workspace outline geometry has WCO baked in — just apply the
+      // spindle offset (same as the grid) to keep it glued to the bed.
       const wco = props.workOffset || { x: 0, y: 0, z: 0 };
+      if (workspaceOutlineGroup) workspaceOutlineGroup.position.set(offset.x, offset.y, offset.z);
       if (axesGroup) axesGroup.position.set(wco.x + offset.x, wco.y + offset.y, wco.z + offset.z + 0.1);
       // Labels are positioned based on bounds - only apply spindle offset
       if (axisLabelsGroup) axisLabelsGroup.position.set(offset.x, offset.y, offset.z);
@@ -3742,8 +3793,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
     if (gridGroup) gridGroup.position.set(0, 0, 0);
     if (splitSideGridGroup) splitSideGridGroup.position.set(0, 0, 0);
     if (machineBoundsBoxGroup) machineBoundsBoxGroup.position.set(0, 0, 0);
-    // Position axes at WCO (crosshair), on the grid surface
+    // Workspace outline geometry has WCO baked in — reset to origin.
     const wco = props.workOffset || { x: 0, y: 0, z: 0 };
+    if (workspaceOutlineGroup) workspaceOutlineGroup.position.set(0, 0, 0);
+    // Position axes at WCO (crosshair), on the grid surface
     if (axesGroup) axesGroup.position.set(wco.x, wco.y, wco.z + 0.1);
     // Labels are positioned dynamically based on bounds - reset to origin
     if (axisLabelsGroup) axisLabelsGroup.position.set(0, 0, 0);

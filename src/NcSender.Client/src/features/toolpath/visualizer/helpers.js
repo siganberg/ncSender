@@ -562,7 +562,19 @@ export const createSideViewGrid = ({ gridSizeX = 1220, gridSizeZ = 100, workOffs
     return group;
 };
 
-export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric' } = {}) => {
+// ── Grid-view-grounded model ─────────────────────────────────────────
+//
+// The grid is now a stable *physical-reference* frame: pinned to machine
+// coords in XY and to the machine floor in Z. WCO shifts don't move it.
+// Grid lines step from machine origin (0) outward — major lines at
+// multiples of `majorStep`, tick numbers on the two edges opposite the
+// home corner (see createGridTickLabels below).
+//
+// The "current workspace Z0" concept — border + "CURRENT WORKSPACE Z0
+// (FRONT)" label + WCO-relative tick numbers — lives in its own layer
+// (createWorkspaceOutline) that floats at WCO in all three axes.
+
+export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric', zBottom = 0 } = {}) => {
     const group = new THREE.Group();
 
     // Grid spacing based on units
@@ -570,18 +582,12 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     const step = units === 'imperial' ? MM_PER_INCH / 2 : 10; // 0.5in or 10mm
     const majorStep = units === 'imperial' ? MM_PER_INCH * 5 : 100; // 5in or 100mm
 
-    // Machine-centric: fixed bounds based on gridSize and home position only
-    // WCO determines crosshair position, NOT machine limits
+    // Machine-centric bounds: pure function of size + home position.
+    // Grid sits in machine coords — WCO never enters this calculation.
     const xBounds = machineBounds(gridSizeX, orientation.xHome || 'min');
     const yBounds = machineBounds(gridSizeY, orientation.yHome || 'max');
     const { min: minX, max: maxX } = xBounds;
     const { min: minY, max: maxY } = yBounds;
-
-    // Crosshair position = WCO (workspace origin in machine coordinates)
-    // Grid Z level follows WCO.z to show work surface relative to machine
-    const crosshairX = workOffset.x || 0;
-    const crosshairY = workOffset.y || 0;
-    const crosshairZ = workOffset.z || 0;
 
     // Regular grid lines
     const material = new THREE.LineBasicMaterial({
@@ -597,101 +603,39 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         opacity: 0.4
     });
 
-    // X-axis (crosshair horizontal) line material - Red
-    const xAxisLineMaterial = new THREE.LineBasicMaterial({
-        color: 0xff0000,
-        transparent: true,
-        opacity: 1.0
-    });
-
-    // Y-axis (crosshair vertical) line material - Green
-    const yAxisLineMaterial = new THREE.LineBasicMaterial({
-        color: 0x00ff00,
-        transparent: true,
-        opacity: 1.0
-    });
-
-
     const points = [];
     const majorPoints = [];
 
-    // Helper to check if a value is close to a multiple of majorStep relative to crosshair
-    const isMajorLine = (value, crosshairPos) => {
-        const relativeValue = value - crosshairPos;
-        const remainder = Math.abs(relativeValue % majorStep);
+    // Major-line test: value is a multiple of majorStep from machine 0.
+    const isMajorLine = (value) => {
+        const remainder = Math.abs(value % majorStep);
         return remainder < 0.01 || remainder > majorStep - 0.01;
     };
 
-    // Create horizontal lines (parallel to X axis) from crosshair extending to machine limits
-    // Lines are positioned relative to crosshair position, at work surface Z level
-    for (let offset = 0; offset <= Math.max(Math.abs(maxY - crosshairY), Math.abs(crosshairY - minY)); offset += step) {
-        // Lines above crosshair
-        if (crosshairY + offset <= maxY) {
-            const y = crosshairY + offset;
+    // Horizontal lines (parallel to X axis) — step from machine origin
+    // (y=0) outward to the machine Y bounds.
+    for (let offset = 0; offset <= Math.max(Math.abs(maxY), Math.abs(minY)); offset += step) {
+        const candidates = offset === 0 ? [0] : [offset, -offset];
+        for (const y of candidates) {
+            if (y < minY || y > maxY) continue;
             const linePoints = [
-                new THREE.Vector3(minX, y, crosshairZ),
-                new THREE.Vector3(maxX, y, crosshairZ)
+                new THREE.Vector3(minX, y, zBottom),
+                new THREE.Vector3(maxX, y, zBottom)
             ];
-            if (offset === 0) {
-                // This is the crosshair X-axis line (red)
-                const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
-                const xAxisLine = new THREE.Line(axisGeom, xAxisLineMaterial);
-                xAxisLine.renderOrder = 1;
-                group.add(xAxisLine);
-            } else if (isMajorLine(y, crosshairY)) {
-                majorPoints.push(...linePoints);
-            } else {
-                points.push(...linePoints);
-            }
-        }
-        // Lines below crosshair (skip offset 0 since we already did it)
-        if (offset > 0 && crosshairY - offset >= minY) {
-            const y = crosshairY - offset;
-            const linePoints = [
-                new THREE.Vector3(minX, y, crosshairZ),
-                new THREE.Vector3(maxX, y, crosshairZ)
-            ];
-            if (isMajorLine(y, crosshairY)) {
-                majorPoints.push(...linePoints);
-            } else {
-                points.push(...linePoints);
-            }
+            (isMajorLine(y) ? majorPoints : points).push(...linePoints);
         }
     }
 
-    // Create vertical lines (parallel to Y axis) from crosshair extending to machine limits
-    for (let offset = 0; offset <= Math.max(Math.abs(maxX - crosshairX), Math.abs(crosshairX - minX)); offset += step) {
-        // Lines to the right of crosshair
-        if (crosshairX + offset <= maxX) {
-            const x = crosshairX + offset;
+    // Vertical lines (parallel to Y axis) — same idea for X.
+    for (let offset = 0; offset <= Math.max(Math.abs(maxX), Math.abs(minX)); offset += step) {
+        const candidates = offset === 0 ? [0] : [offset, -offset];
+        for (const x of candidates) {
+            if (x < minX || x > maxX) continue;
             const linePoints = [
-                new THREE.Vector3(x, minY, crosshairZ),
-                new THREE.Vector3(x, maxY, crosshairZ)
+                new THREE.Vector3(x, minY, zBottom),
+                new THREE.Vector3(x, maxY, zBottom)
             ];
-            if (offset === 0) {
-                // This is the crosshair Y-axis line (green)
-                const axisGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
-                const yAxisLine = new THREE.Line(axisGeom, yAxisLineMaterial);
-                yAxisLine.renderOrder = 1;
-                group.add(yAxisLine);
-            } else if (isMajorLine(x, crosshairX)) {
-                majorPoints.push(...linePoints);
-            } else {
-                points.push(...linePoints);
-            }
-        }
-        // Lines to the left of crosshair (skip offset 0)
-        if (offset > 0 && crosshairX - offset >= minX) {
-            const x = crosshairX - offset;
-            const linePoints = [
-                new THREE.Vector3(x, minY, crosshairZ),
-                new THREE.Vector3(x, maxY, crosshairZ)
-            ];
-            if (isMajorLine(x, crosshairX)) {
-                majorPoints.push(...linePoints);
-            } else {
-                points.push(...linePoints);
-            }
+            (isMajorLine(x) ? majorPoints : points).push(...linePoints);
         }
     }
 
@@ -711,14 +655,62 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         group.add(majorLines);
     }
 
-    // Add edge lines (machine limit border - at work surface Z level)
-    // Use Line2 for consistent line width regardless of zoom/angle
+    group.name = 'grid';
+    return group;
+};
+
+// Workspace-Z0 outline layer. Everything the old grid used to render
+// EXCEPT the grid line mesh: outer border, red/green crosshair axes,
+// "CURRENT WORKSPACE Z0 (FRONT)" label, workspace-relative tick
+// numbers. Geometry bakes in workOffset; caller adds at (0, 0, 0) and
+// rebuilds on WCO change.
+export const createWorkspaceOutline = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset = { x: 0, y: 0, z: 0 }, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric' } = {}) => {
+    const group = new THREE.Group();
+
+    const MM_PER_INCH = 25.4;
+    const step = units === 'imperial' ? MM_PER_INCH / 2 : 10;
+    const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
+
+    const xBounds = machineBounds(gridSizeX, orientation.xHome || 'min');
+    const yBounds = machineBounds(gridSizeY, orientation.yHome || 'max');
+    const { min: minX, max: maxX } = xBounds;
+    const { min: minY, max: maxY } = yBounds;
+
+    const crosshairX = workOffset.x || 0;
+    const crosshairY = workOffset.y || 0;
+    const crosshairZ = workOffset.z || 0;
+
+    // Red X-axis line (horizontal through crosshair Y).
+    if (crosshairY >= minY && crosshairY <= maxY) {
+        const axisGeom = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(minX, crosshairY, crosshairZ),
+            new THREE.Vector3(maxX, crosshairY, crosshairZ),
+        ]);
+        const axisMat = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 1.0 });
+        const axisLine = new THREE.Line(axisGeom, axisMat);
+        axisLine.renderOrder = 1;
+        group.add(axisLine);
+    }
+
+    // Green Y-axis line (vertical through crosshair X).
+    if (crosshairX >= minX && crosshairX <= maxX) {
+        const axisGeom = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(crosshairX, minY, crosshairZ),
+            new THREE.Vector3(crosshairX, maxY, crosshairZ),
+        ]);
+        const axisMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 1.0 });
+        const axisLine = new THREE.Line(axisGeom, axisMat);
+        axisLine.renderOrder = 1;
+        group.add(axisLine);
+    }
+
+    // Outer border — matches the machine-bounds footprint, at WCO Z.
     const edgePositions = [
         minX, minY, crosshairZ,
         maxX, minY, crosshairZ,
         maxX, maxY, crosshairZ,
         minX, maxY, crosshairZ,
-        minX, minY, crosshairZ  // close the loop
+        minX, minY, crosshairZ,
     ];
     const edgeLineGeometry = new LineGeometry();
     edgeLineGeometry.setPositions(edgePositions);
@@ -727,7 +719,7 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         linewidth: 2,
         worldUnits: false,
         transparent: true,
-        opacity: 1.0
+        opacity: 1.0,
     });
     edgeLineMaterial.resolution.set(window.innerWidth, window.innerHeight);
     const edgeLine = new Line2(edgeLineGeometry, edgeLineMaterial);
@@ -735,22 +727,13 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
     edgeLine.renderOrder = 1;
     group.add(edgeLine);
 
-    // "CURRENT WORKSPACE Z0 (FRONT)" label printed flat on the front-center
-    // of the grid floor — orients the user without the need to remember
-    // which edge is which. Front edge = minY for both yHome conventions
-    // (yHome='max' spans -size..0 so minY is far, yHome='min' spans
-    // 0..+size so minY=0 IS home/front). Sits a hair above the grid plane
-    // so it doesn't z-fight with the grid lines beneath it.
     {
         const labelText = 'CURRENT WORKSPACE Z0 (FRONT)';
         const canvasScale = 4;
         const fontPx = 56;
-        const padPx = 20; // breathing room on each side so the glyphs aren't flush with the canvas edge
-        // Measure the text first so the canvas is wide enough — the
-        // previous fixed 640px canvas truncated the longer text to
-        // "ENT WORKSPACE (FR".
+        const padPx = 20;
         const measureCanvas = document.createElement('canvas');
-        const mctx = measureCanvas.getContext('2d');
+        const mctx = measureCanvas.getContext('2d', { willReadFrequently: true });
         mctx.font = `bold ${fontPx}px Arial`;
         const textWidthLogical = Math.ceil(mctx.measureText(labelText).width) + padPx * 2;
         const labelCanvas = document.createElement('canvas');
@@ -758,12 +741,10 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
         const canvasLogicalHeight = 96;
         labelCanvas.width = canvasLogicalWidth * canvasScale;
         labelCanvas.height = canvasLogicalHeight * canvasScale;
-        const lctx = labelCanvas.getContext('2d');
+        const lctx = labelCanvas.getContext('2d', { willReadFrequently: true });
         lctx.font = `bold ${fontPx * canvasScale}px Arial`;
         lctx.textAlign = 'center';
         lctx.textBaseline = 'middle';
-        // Brighter than the grid edge so it's clearly legible against the
-        // dark backdrop.
         lctx.fillStyle = 'rgba(190, 220, 245, 0.95)';
         lctx.fillText(labelText, labelCanvas.width / 2, labelCanvas.height / 2);
 
@@ -774,129 +755,89 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, workOffset
             transparent: true,
             depthWrite: false
         });
-        // Width ~22% of X extent, clamped so it stays legible on tiny
-        // machines and doesn't dominate on huge ones. Aspect ratio
-        // follows the measured canvas.
         const labelWidth = Math.min(300, Math.max(150, (maxX - minX) * 0.22));
         const labelHeight = labelWidth * (canvasLogicalHeight / canvasLogicalWidth);
         const labelGeom = new THREE.PlaneGeometry(labelWidth, labelHeight);
         const labelMesh = new THREE.Mesh(labelGeom, labelMaterial);
         labelMesh.position.set(
             (minX + maxX) / 2,
-            minY + labelHeight / 2 + 4, // small inset so the text isn't flush with the front edge
+            minY + labelHeight / 2 + 4,
             crosshairZ + 0.05
         );
         labelMesh.renderOrder = 2;
         group.add(labelMesh);
     }
 
-    // Label spacing: metric = every 20mm, imperial = every 1in (25.4mm)
-    const labelStep = units === 'imperial' ? MM_PER_INCH : 20;
-
-    // Helper to check if a value should have a label (relative to crosshair)
+    // Workspace-relative tick labels — same placement as the pre-refactor grid.
     const shouldLabel = (value, crosshairPos) => {
-        const relativeValue = value - crosshairPos;
-        const remainder = Math.abs(relativeValue % labelStep);
+        const relative = value - crosshairPos;
+        const remainder = Math.abs(relative % labelStep);
         return remainder < 0.01 || remainder > labelStep - 0.01;
     };
 
-    // Add X-axis numbers (relative to crosshair position)
+    const buildTick = (displayValue, fillStyle) => {
+        const canvas = document.createElement('canvas');
+        const scale = 4;
+        canvas.width = 128 * scale;
+        canvas.height = 64 * scale;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.scale(scale, scale);
+        context.clearRect(0, 0, 128, 64);
+        context.fillStyle = fillStyle;
+        context.font = 'bold 20px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.imageSmoothingEnabled = true;
+        context.fillText(displayValue, 64, 32);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+        const planeGeometry = new THREE.PlaneGeometry(32, 20);
+        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        mesh.renderOrder = 2;
+        return mesh;
+    };
+
     for (let offset = 0; offset <= Math.max(Math.abs(maxX - crosshairX), Math.abs(crosshairX - minX)); offset += step) {
         const positions = offset === 0 ? [crosshairX] : [crosshairX + offset, crosshairX - offset];
         for (const x of positions) {
             if (x < minX || x > maxX) continue;
             const relativeX = x - crosshairX;
-            if (Math.abs(relativeX) < 0.01) continue; // Skip crosshair center
+            if (Math.abs(relativeX) < 0.01) continue;
             if (!shouldLabel(x, crosshairX)) continue;
-
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            const scale = 4;
-            canvas.width = 128 * scale;
-            canvas.height = 64 * scale;
-            context.scale(scale, scale);
-            context.clearRect(0, 0, 128, 64);
-            context.fillStyle = '#cc6666';
-            context.font = 'bold 20px Arial';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.imageSmoothingEnabled = true;
-
-            // Display value relative to crosshair (workspace coordinates)
             const displayValue = units === 'imperial' ? Math.round(relativeX / MM_PER_INCH).toString() : Math.round(relativeX).toString();
-            context.fillText(displayValue, 64, 32);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            texture.generateMipmaps = false;
-            texture.minFilter = THREE.LinearFilter;
-            texture.magFilter = THREE.LinearFilter;
-
-            const planeMaterial = new THREE.MeshBasicMaterial({
-                map: texture,
-                transparent: true,
-                opacity: 0.5,
-                side: THREE.DoubleSide,
-                depthWrite: false
-            });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
-            const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position label below the crosshair Y position, at work surface Z level
+            const mesh = buildTick(displayValue, '#cc6666');
             mesh.position.set(x, crosshairY - 5, crosshairZ + 0.01);
-            mesh.renderOrder = 2;
             group.add(mesh);
         }
     }
 
-    // Add Y-axis numbers (relative to crosshair position)
     for (let offset = 0; offset <= Math.max(Math.abs(maxY - crosshairY), Math.abs(crosshairY - minY)); offset += step) {
         const positions = offset === 0 ? [crosshairY] : [crosshairY + offset, crosshairY - offset];
         for (const y of positions) {
             if (y < minY || y > maxY) continue;
             const relativeY = y - crosshairY;
-            if (Math.abs(relativeY) < 0.01) continue; // Skip crosshair center
+            if (Math.abs(relativeY) < 0.01) continue;
             if (!shouldLabel(y, crosshairY)) continue;
-
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            const scale = 4;
-            canvas.width = 128 * scale;
-            canvas.height = 64 * scale;
-            context.scale(scale, scale);
-            context.clearRect(0, 0, 128, 64);
-            context.fillStyle = '#4d994d';
-            context.font = 'bold 20px Arial';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.imageSmoothingEnabled = true;
-
-            // Display value relative to crosshair (workspace coordinates)
             const displayValue = units === 'imperial' ? Math.round(relativeY / MM_PER_INCH).toString() : Math.round(relativeY).toString();
-            context.fillText(displayValue, 64, 32);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            texture.generateMipmaps = false;
-            texture.minFilter = THREE.LinearFilter;
-            texture.magFilter = THREE.LinearFilter;
-
-            const planeMaterial = new THREE.MeshBasicMaterial({
-                map: texture,
-                transparent: true,
-                opacity: 0.5,
-                side: THREE.DoubleSide,
-                depthWrite: false
-            });
-            const planeGeometry = new THREE.PlaneGeometry(32, 20);
-            const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-            // Position label to the left of crosshair X position, at work surface Z level
+            const mesh = buildTick(displayValue, '#4d994d');
             mesh.position.set(crosshairX - 5, y, crosshairZ + 0.01);
-            mesh.renderOrder = 2;
             group.add(mesh);
         }
     }
 
-    group.name = 'grid-with-numbers';
+    group.name = 'workspace-outline';
     return group;
 };
 
