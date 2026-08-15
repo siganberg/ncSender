@@ -90,6 +90,15 @@ public partial class CncController : ICncController
     public IConnectionTransport? Transport => _transport;
     public IProtocolHandler? ActiveProtocol => _activeProtocol;
 
+    // Snapshot of WCO taken at G10 L2/L20 detection. ParseWorkOffset
+    // uses it to distinguish "WCO still stale, apply the workspace-
+    // offset delta" from "WCO already updated by an auto status report
+    // that beat the $# response, don't apply the delta again." The
+    // existing wcoAlreadyCorrect string-compare fails when WCO and G54
+    // differ (TLO or G92 nonzero on any axis) and double-applies the
+    // delta, producing a wrong intermediate WCO in the next broadcast.
+    private string? _wcoBeforeG10Refresh;
+
     public event Action<string, bool>? ConnectionStatusChanged;
     public event Action<MachineState>? StatusReportReceived;
     public event Action<CommandResult>? CommandQueued;
@@ -1172,6 +1181,11 @@ public partial class CncController : ICncController
         if (cmd.RawCommand is not null && G10WcoPattern().IsMatch(cmd.RawCommand))
         {
             _logger.LogInformation("G10 L2/L20 detected - refreshing WCO then work offsets");
+            // Snapshot WCO BEFORE the refresh so ParseWorkOffset can tell
+            // whether an intervening auto status report already updated
+            // WCO (skip delta) or WCO is still stale (apply delta). See
+            // _wcoBeforeG10Refresh field comment for the underlying bug.
+            _wcoBeforeG10Refresh = _lastStatus.WCO;
             // Use 0x87 (full status request) instead of '?' to guarantee WCO is included in the response
             if (_transport is not null)
                 _ = Task.Run(async () => { try { await _transport.WriteRawAsync([0x87]); } catch { /* ignore */ } });
@@ -1547,8 +1561,17 @@ public partial class CncController : ICncController
         if (prev is not null && workspace == _lastStatus.Workspace
             && !string.IsNullOrEmpty(_lastStatus.WCO))
         {
-            // Check if WCO already matches the new offset (real WCO already arrived)
-            var wcoAlreadyCorrect = _lastStatus.WCO == value;
+            // Skip the delta recompute when an auto status report already
+            // updated WCO between G10 detection and this $# response
+            // arriving. The existing string-compare below can't catch it
+            // (WCO includes TLO/G92 offsets that raw G54 doesn't, so the
+            // strings never match on those axes) and applying delta on
+            // top of an already-updated WCO doubles it — the "wrong
+            // intermediate frame" during G10 L2/L20. Snapshot taken in
+            // the G10 handler above.
+            var wcoUpdatedSinceG10 = _wcoBeforeG10Refresh is not null
+                && _lastStatus.WCO != _wcoBeforeG10Refresh;
+            var wcoAlreadyCorrect = wcoUpdatedSinceG10 || _lastStatus.WCO == value;
             if (!wcoAlreadyCorrect)
             {
                 var prevParts = prev.Split(',');
@@ -1579,6 +1602,10 @@ public partial class CncController : ICncController
             case "G58": _lastStatus.G58 = value; break;
             case "G59": _lastStatus.G59 = value; break;
         }
+
+        // Snapshot has served its purpose for this workspace line — clear
+        // so the next unrelated ParseWorkOffset doesn't reuse it.
+        _wcoBeforeG10Refresh = null;
 
         StatusReportReceived?.Invoke(_lastStatus);
     }
