@@ -105,8 +105,9 @@ const handleNotAvailable = (payload: any) => {
   state.channel = payload?.channel ?? state.channel;
   state.releaseUrl = null;
   state.releaseName = null;
-  state.releaseDate = null;
   state.releaseNotes = '';
+  // Keep releaseDate/latestVersion so the summary cards remain populated
+  // when the user is already on the newest release.
   resetDownloadState();
 };
 
@@ -288,6 +289,8 @@ export const useUpdateCenter = () => {
       const res = await fetch('/api/updates/check');
       const data = await res.json();
       if (data.currentVersion) state.currentVersion = data.currentVersion;
+      if (data.latestVersion) state.latestVersion = data.latestVersion;
+      if (data.publishedAt) state.releaseDate = data.publishedAt;
       if (data.updateAvailable) {
         handleAvailable({
           version: data.latestVersion,
