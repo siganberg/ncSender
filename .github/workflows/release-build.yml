@@ -79,7 +79,7 @@ jobs:
   linux-x64:
     name: Linux x64
     needs: [prepare-release, test]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,7 +99,6 @@ jobs:
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
           DOCKER_BUILDKIT=1 docker build \
-            --platform linux/amd64 \
             --build-arg RID=linux-x64 \
             --build-arg VERSION=$VERSION \
             -f .scripts/DockerfileServerDebian \
