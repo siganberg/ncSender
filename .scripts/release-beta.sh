@@ -2,8 +2,8 @@
 
 set -e
 
-# Get the latest stable v2+ tag (exclude beta tags and v0/v1)
-LATEST_STABLE_TAG=$(git tag --sort=-version:refname | grep -E '^v[2-9]\.' | grep -v "beta" | head -1)
+# Get the latest stable v2+ tag (exclude pre-release tags: -beta, -internal, etc.)
+LATEST_STABLE_TAG=$(git tag --sort=-version:refname | grep -E '^v[2-9]\.[0-9]+\.[0-9]+$' | head -1)
 HAS_STABLE_TAG=true
 if [ -z "$LATEST_STABLE_TAG" ]; then
     HAS_STABLE_TAG=false
