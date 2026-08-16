@@ -109,6 +109,7 @@ jobs:
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
           DOCKER_BUILDKIT=1 docker build \
+            --platform linux/amd64 \
             --build-arg RID=linux-x64 \
             --build-arg VERSION=$VERSION \
             -f .scripts/DockerfileServerDebian \
