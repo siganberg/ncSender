@@ -926,8 +926,18 @@ public class CncEventBridge
                 t.disabled = true;
                 var a = document.getElementById('rcs-abort-btn');
                 if (a) a.disabled = true;
+                // Send `~` to resume. If a safety door was opened while
+                // the M0 pause was active, grblHAL stacks Door on top of
+                // Hold — one ~ only clears the Door state, leaving the
+                // underlying M0 Hold in place. Send a second ~ after a
+                // short delay so the M0 also releases. When only one
+                // pause was active the second ~ is a harmless no-op
+                // (grblHAL ignores ~ in Idle/Run).
                 window.postMessage({ type: 'send-command', command: '~', displayCommand: '~ (Cycle Start)' }, '*');
                 window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
+                setTimeout(function() {
+                  window.postMessage({ type: 'send-command', command: '~', displayCommand: '~ (Cycle Start)' }, '*');
+                }, 500);
                 document.removeEventListener('click', handler, true);
                 delete window.__rcsClickHandler;
               }
