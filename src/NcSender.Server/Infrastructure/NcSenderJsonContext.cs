@@ -97,6 +97,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(WsShowDialog))]
 [JsonSerializable(typeof(WsShowModal))]
 [JsonSerializable(typeof(WsDialogOptions))]
+[JsonSerializable(typeof(WsCloseDialog))]
 [JsonSerializable(typeof(WsRemoteControlState))]
 [JsonSerializable(typeof(WsFirmwareSettingChanged))]
 [JsonSerializable(typeof(WsCommandHistoryAppended))]

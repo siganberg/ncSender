@@ -249,15 +249,23 @@ public class WebSocketLayer : IBroadcaster
                     break;
 
                 case "plugin-dialog-response":
-                    if (_dialogDispatcher is not null
-                        && root.TryGetProperty("data", out var dlgData)
+                    if (root.TryGetProperty("data", out var dlgData)
                         && dlgData.TryGetProperty("dialogId", out var dlgIdProp)
                         && dlgIdProp.GetString() is string dlgId)
                     {
+                        // Resolve the blocking JS-plugin TCS if one is
+                        // pending. toolMenu-invoked config dialogs have
+                        // no TCS — Resolve returns false silently.
                         var resp = dlgData.TryGetProperty("response", out var respProp)
                             ? respProp
                             : default;
-                        _dialogDispatcher.Resolve(dlgId, resp);
+                        _dialogDispatcher?.Resolve(dlgId, resp);
+                        // Multi-session sync: tell every client to close
+                        // this dialog so remote sessions don't stay open
+                        // after another session closed the same dialog.
+                        _ = this.Broadcast("plugin:close-dialog",
+                            new NcSender.Server.Infrastructure.WsCloseDialog(dlgId),
+                            NcSenderJsonContext.Default.WsCloseDialog);
                     }
                     break;
 

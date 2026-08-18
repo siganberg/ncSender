@@ -32,6 +32,10 @@ public record WsPluginToolsChanged(string PluginId, bool Enabled);
 public record WsShowDialog(string PluginId, string Title, string Content, string? DialogId = null, WsDialogOptions? Options = null);
 public record WsDialogOptions(string? Size = null, bool? Closable = null);
 
+// WebSocketLayer: plugin:close-dialog — broadcast to close a dialog on every
+// client (multi-session sync). Fires after any client closes the dialog.
+public record WsCloseDialog(string DialogId);
+
 // CncEventBridge: plugin:show-modal (V1 parity — self-contained HTML rendered by ModalDialog)
 public record WsShowModal(string PluginId, string Content, bool Closable);
 
