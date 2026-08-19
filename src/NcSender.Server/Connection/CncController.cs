@@ -1251,7 +1251,6 @@ public partial class CncController : ICncController
         var parts = inner.Split('|');
 
         var prevStatus = _lastStatus.Status;
-        var hasAccessoryField = false;
         var hasFsField = false;
 
         // Reset Pn each report — grblHAL omits it when no pins are active, so
@@ -1308,7 +1307,6 @@ public partial class CncController : ICncController
                     break;
 
                 case "A":
-                    hasAccessoryField = true;
                     if (!string.IsNullOrEmpty(value))
                     {
                         _lastStatus.SpindleActive = value.Contains('S') || value.Contains('C');
