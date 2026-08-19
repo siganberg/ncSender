@@ -40,10 +40,17 @@ public class ThreeDProbeStrategyTests
         // The routine must capture two probe points per axis into named
         // parameters #<X1>/#<X2>/#<Y1>/#<Y2>. Don't change the variable
         // contract without coordinating with the midpoint move expression.
-        Assert.Contains(routine, line => line.Contains("#<X1> = #5061"));
-        Assert.Contains(routine, line => line.Contains("#<X2> = #5061"));
-        Assert.Contains(routine, line => line.Contains("#<Y1> = #5062"));
-        Assert.Contains(routine, line => line.Contains("#<Y2> = #5062"));
+        AssertCaptures(routine, "#<X1> = #5061", label);
+        AssertCaptures(routine, "#<X2> = #5061", label);
+        AssertCaptures(routine, "#<Y1> = #5062", label);
+        AssertCaptures(routine, "#<Y2> = #5062", label);
+    }
+
+    private static void AssertCaptures(List<string> routine, string needle, string label)
+    {
+        foreach (var line in routine)
+            if (line.Contains(needle)) return;
+        Assert.Fail($"{label}: routine is missing capture `{needle}`");
     }
 
     [Theory]
