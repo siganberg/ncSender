@@ -127,12 +127,14 @@
                     @click="plugin.repository && showUpdateInfo(plugin)"
                   >
                     v{{ plugin.version }}
-                    <span v-if="plugin.updateInfo?.hasUpdate" class="update-badge" title="Update available">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg>
-                    </span>
+                  </span>
+                  <span
+                    v-if="plugin.updateInfo?.hasUpdate"
+                    class="update-badge"
+                    :title="`v${plugin.updateInfo.latestVersion} available — click to update`"
+                    @click="showUpdateInfo(plugin)"
+                  >
+                    Update available
                   </span>
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
@@ -231,12 +233,14 @@
                     @click="plugin.repository && showUpdateInfo(plugin)"
                   >
                     v{{ plugin.version }}
-                    <span v-if="plugin.updateInfo?.hasUpdate" class="update-badge" title="Update available">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg>
-                    </span>
+                  </span>
+                  <span
+                    v-if="plugin.updateInfo?.hasUpdate"
+                    class="update-badge"
+                    :title="`v${plugin.updateInfo.latestVersion} available — click to update`"
+                    @click="showUpdateInfo(plugin)"
+                  >
+                    Update available
                   </span>
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
@@ -996,6 +1000,54 @@ const closeConfigPanel = () => {
   configUIContent.value = '';
 };
 
+// Session-level cache for per-plugin update-check results, keyed by
+// `<pluginId>@<currentVersion>`. Cleared automatically when a plugin
+// version changes (successful update, manual install of newer zip).
+// Prevents hammering GitHub's rate-limited API on every list refresh —
+// each plugin+version is checked at most once per session.
+const updateInfoCache = new Map<string, PluginUpdateInfo>();
+
+const applyCachedUpdateInfo = () => {
+  plugins.value.forEach(plugin => {
+    if (plugin.updateInfo) return;
+    const cached = updateInfoCache.get(`${plugin.id}@${plugin.version}`);
+    if (cached) plugin.updateInfo = cached;
+  });
+};
+
+// Auto-check for updates across all installed plugins that declare a
+// repository. Runs after fetchPlugins() so cards render immediately;
+// badges appear later as each check resolves. Uses a small concurrency
+// cap since each check hits the GitHub REST API. Errors are swallowed
+// per-plugin — the user can still open the update dialog to see them.
+let autoUpdateCheckInFlight = false;
+const runAutoUpdateChecks = async () => {
+  if (autoUpdateCheckInFlight) return;
+  autoUpdateCheckInFlight = true;
+  try {
+    const targets = plugins.value.filter(p => p.repository && !p.updateInfo);
+    if (targets.length === 0) return;
+
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
+      while (cursor < targets.length) {
+        const plugin = targets[cursor++];
+        try {
+          const info = await checkPluginUpdate(plugin.id);
+          plugin.updateInfo = info;
+          updateInfoCache.set(`${plugin.id}@${plugin.version}`, info);
+        } catch {
+          // Silent — the update dialog surfaces the real error on demand.
+        }
+      }
+    });
+    await Promise.all(workers);
+  } finally {
+    autoUpdateCheckInFlight = false;
+  }
+};
+
 const loadPlugins = async () => {
   if (loading.value) {
     refreshPending = true;
@@ -1017,6 +1069,9 @@ const loadPlugins = async () => {
       }
     });
     brokenIcons.value = filteredMap;
+    applyCachedUpdateInfo();
+    // Fire-and-forget: don't block the initial render on GitHub API calls.
+    void runAutoUpdateChecks();
   } catch (error: any) {
     loadError.value = error.message || 'Failed to load plugins';
     console.error('Error loading plugins:', error);
@@ -2472,11 +2527,30 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+/* "Update" superscript badge — sits slightly above baseline next to
+   the version link, styled as a solid amber pill so it reads as an
+   attention affordance without competing with the row's primary
+   status chip. Rendered as a sibling of .plugin-version-text (not a
+   child) so the version link's underline doesn't bleed into it. */
 .update-badge {
   display: inline-flex;
   align-items: center;
-  color: var(--color-accent);
-  animation: pulse 2s ease-in-out infinite;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1;
+  vertical-align: super;
+  margin-left: -2px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.update-badge:hover {
+  filter: brightness(1.05);
 }
 
 @keyframes pulse {
