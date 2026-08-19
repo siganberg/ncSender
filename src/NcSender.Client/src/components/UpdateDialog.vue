@@ -39,7 +39,7 @@
         </div>
         <div class="summary-card" v-if="props.state.latestVersion">
           <span class="summary-label">Latest Release</span>
-          <span class="summary-value">v{{ props.state.latestVersion }}</span>
+          <span class="summary-value">v{{ props.state.latestVersion }}<sup v-if="showLatestBadge" class="new-badge" title="Different from installed version">NEW</sup></span>
         </div>
         <div class="summary-card" v-if="formattedReleaseDate">
           <span class="summary-label">Released</span>
@@ -366,6 +366,17 @@ const channelVersions = computed(() => {
 });
 
 const latestTag = computed(() => channelVersions.value[0]?.tag ?? null);
+
+// NEW badge on the Latest Release card: shown whenever the installed
+// version differs from what the server considers latest — covers both
+// "update available" and "user is on a newer/beta build than the
+// current channel's latest". Falls back to false if either string is
+// missing (dialog opened before the check completed).
+const showLatestBadge = computed(() => {
+  const cur = props.state.currentVersion;
+  const latest = props.state.latestVersion;
+  return Boolean(cur && latest && cur !== latest);
+});
 
 const selectedTag = ref<string | null>(null);
 const selectedVersion = computed<VersionEntry | null>(() => {
@@ -904,7 +915,8 @@ const formatVersionDate = (iso: string) => {
   background: rgba(79, 209, 197, 0.05);
 }
 
-.version-tag .new-badge {
+.version-tag .new-badge,
+.summary-value .new-badge {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
