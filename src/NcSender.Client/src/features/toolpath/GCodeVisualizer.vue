@@ -2032,53 +2032,93 @@ const updateAxisLabelsScale = (targetCamera?: THREE.OrthographicCamera) => {
   }
 };
 
+// Compute mouse/touch position in normalized device coordinates within
+// the given split viewport (or the whole canvas when viewport is null).
+// NDC: x/y in [-1, 1], y up. Used for zoom-to-cursor so the world point
+// under the pointer stays put as the frustum scales.
+const ndcInViewport = (clientX: number, clientY: number,
+                       viewport: SplitViewport): { x: number; y: number } | null => {
+  if (!canvas.value) return null;
+  const rect = canvas.value.getBoundingClientRect();
+  let x0 = 0, y0 = 0, w = rect.width, h = rect.height;
+  if (viewport === 'top')        { x0 = 0;              y0 = 0;               w = rect.width / 2; h = rect.height / 2; }
+  else if (viewport === 'front') { x0 = rect.width / 2; y0 = 0;               w = rect.width / 2; h = rect.height / 2; }
+  else if (viewport === 'iso')   { x0 = 0;              y0 = rect.height / 2; w = rect.width;     h = rect.height / 2; }
+  if (w <= 0 || h <= 0) return null;
+  const cx = clientX - rect.left - x0;
+  const cy = clientY - rect.top  - y0;
+  return { x: (cx / w) * 2 - 1, y: -((cy / h) * 2 - 1) };
+};
+
+// Scale the orthographic frustum by `zoomFactor` and shift the camera
+// so the world point under (clientX, clientY) stays under the pointer.
+// Applies range clamping (matches the original 1 / 2000 frustum-width
+// limits) so pointer-anchored zoom can't sneak past them.
+const zoomAroundPoint = (activeCamera: THREE.OrthographicCamera,
+                         activeTarget: THREE.Vector3 | null,
+                         viewport: SplitViewport,
+                         clientX: number, clientY: number,
+                         zoomFactor: number) => {
+  const ndc = ndcInViewport(clientX, clientY, viewport);
+  const before = ndc
+    ? new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(activeCamera)
+    : null;
+
+  activeCamera.left   *= zoomFactor;
+  activeCamera.right  *= zoomFactor;
+  activeCamera.top    *= zoomFactor;
+  activeCamera.bottom *= zoomFactor;
+
+  const frustumWidth = activeCamera.right - activeCamera.left;
+  if (frustumWidth < 1) {
+    const scale = 1 / frustumWidth;
+    activeCamera.left   *= scale;
+    activeCamera.right  *= scale;
+    activeCamera.top    *= scale;
+    activeCamera.bottom *= scale;
+  } else if (frustumWidth > 2000) {
+    const scale = 2000 / frustumWidth;
+    activeCamera.left   *= scale;
+    activeCamera.right  *= scale;
+    activeCamera.top    *= scale;
+    activeCamera.bottom *= scale;
+  }
+  activeCamera.updateProjectionMatrix();
+
+  if (before) {
+    const after = new THREE.Vector3(ndc!.x, ndc!.y, 0.5).unproject(activeCamera);
+    const delta = new THREE.Vector3().subVectors(before, after);
+    activeCamera.position.add(delta);
+    if (activeTarget) activeTarget.add(delta);
+    activeCamera.updateProjectionMatrix();
+  }
+};
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault();
 
-  // Determine which camera to zoom
+  // Determine which camera + target the pointer is over.
   let activeCamera: THREE.OrthographicCamera | null = camera;
+  let activeTarget: THREE.Vector3 | null = cameraTarget;
+  let viewport: SplitViewport = null;
 
   if (props.view === 'split') {
-    const viewport = getSplitViewportAtPoint(event.clientX, event.clientY);
+    viewport = getSplitViewportAtPoint(event.clientX, event.clientY);
     if (viewport) {
-      const { camera: splitCam } = getSplitCameraAndTarget(viewport);
+      const { camera: splitCam, target: splitTgt } = getSplitCameraAndTarget(viewport);
       if (splitCam) {
         activeCamera = splitCam;
+        activeTarget = splitTgt;
       }
     }
   }
 
   if (!activeCamera) return;
 
-  // For orthographic camera, zoom by adjusting the frustum size
   const zoomFactor = event.deltaY > 0 ? 1.1 : 0.9;
+  zoomAroundPoint(activeCamera, activeTarget, viewport,
+                  event.clientX, event.clientY, zoomFactor);
 
-  activeCamera.left *= zoomFactor;
-  activeCamera.right *= zoomFactor;
-  activeCamera.top *= zoomFactor;
-  activeCamera.bottom *= zoomFactor;
-
-  // Limit zoom range
-  const frustumWidth = activeCamera.right - activeCamera.left;
-  if (frustumWidth < 1) {
-    // Prevent zooming in too far
-    const scale = 1 / frustumWidth;
-    activeCamera.left *= scale;
-    activeCamera.right *= scale;
-    activeCamera.top *= scale;
-    activeCamera.bottom *= scale;
-  } else if (frustumWidth > 2000) {
-    // Prevent zooming out too far
-    const scale = 2000 / frustumWidth;
-    activeCamera.left *= scale;
-    activeCamera.right *= scale;
-    activeCamera.top *= scale;
-    activeCamera.bottom *= scale;
-  }
-
-  activeCamera.updateProjectionMatrix();
-  // In split view, pointer scale is updated per-viewport in render loop
-  // For single view, update immediately
   if (props.view !== 'split') {
     updatePointerScale();
     updateAxisLabelsScale();
@@ -2198,47 +2238,31 @@ const onTouchMove = (event: TouchEvent) => {
     // Pan based on center movement
     onMouseMove({ clientX: newCenter.x, clientY: newCenter.y } as MouseEvent);
 
-    // Determine which camera to use for pinch zoom
+    // Determine which camera + target to use for pinch zoom
     let activeCamera: THREE.OrthographicCamera | null = camera;
+    let activeTarget: THREE.Vector3 | null = cameraTarget;
+    let pinchViewport: SplitViewport = null;
     if (props.view === 'split' && activeSplitViewport) {
-      const { camera: splitCam } = getSplitCameraAndTarget(activeSplitViewport);
+      pinchViewport = activeSplitViewport;
+      const { camera: splitCam, target: splitTgt } = getSplitCameraAndTarget(activeSplitViewport);
       if (splitCam) {
         activeCamera = splitCam;
+        activeTarget = splitTgt;
       }
     }
 
     if (!activeCamera) return;
 
-    // Handle pinch zoom
+    // Handle pinch zoom — anchored on the midpoint between the two
+    // fingers so the world point under the pinch stays put.
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (lastTouchDistance > 0) {
       const zoomFactor = lastTouchDistance / distance;
-
-      activeCamera.left *= zoomFactor;
-      activeCamera.right *= zoomFactor;
-      activeCamera.top *= zoomFactor;
-      activeCamera.bottom *= zoomFactor;
-
-      // Limit zoom range
-      const frustumWidth = activeCamera.right - activeCamera.left;
-      if (frustumWidth < 1) {
-        const scale = 1 / frustumWidth;
-        activeCamera.left *= scale;
-        activeCamera.right *= scale;
-        activeCamera.top *= scale;
-        activeCamera.bottom *= scale;
-      } else if (frustumWidth > 2000) {
-        const scale = 2000 / frustumWidth;
-        activeCamera.left *= scale;
-        activeCamera.right *= scale;
-        activeCamera.top *= scale;
-        activeCamera.bottom *= scale;
-      }
-
-      activeCamera.updateProjectionMatrix();
+      zoomAroundPoint(activeCamera, activeTarget, pinchViewport,
+                      newCenter.x, newCenter.y, zoomFactor);
       updatePointerScale();
       updateAxisLabelsScale();
       requestRender();
