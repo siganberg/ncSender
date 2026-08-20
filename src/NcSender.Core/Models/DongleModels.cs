@@ -48,3 +48,20 @@ public class DongleDeviceChanged
     public string Name { get; set; } = "";
     public bool Connected { get; set; }
 }
+
+/// <summary>Body for POST /api/dongle/devices/{name}/ota-from-url.</summary>
+public record DongleOtaFromUrlRequest(string DownloadUrl, string? DeviceId);
+
+/// <summary>
+/// WS event payload for plugin-ota:progress|message|error|done. Mirrors the
+/// PluginOtaEvent used by USB OTA so plugins can consume both transports with
+/// one subscription.
+/// </summary>
+public class DongleOtaEvent
+{
+    public string DeviceId { get; set; } = "";
+    public string Device { get; set; } = "";  // the addressed @name
+    public int? Percent { get; set; }
+    public string? Type { get; set; }         // "info" | "warn" | "error"
+    public string? Message { get; set; }
+}

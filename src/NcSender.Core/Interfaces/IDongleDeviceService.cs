@@ -28,6 +28,13 @@ public interface IDongleDeviceService
     /// <summary>Send a raw payload to a named device (framed as "@name payload").</summary>
     Task SendAsync(string name, string payload);
 
+    /// <summary>
+    /// Send a raw dongle line verbatim (no "@name " wrapping). Used for
+    /// commands the dongle firmware itself parses — $PAIR, $UNPAIR, $OTA:*,
+    /// etc. — where wrapping would defeat the dongle's own line parser.
+    /// </summary>
+    Task SendRawLineAsync(string line);
+
     /// <summary>Open the dongle's pairing window ("$PAIR") so a new device can join (~30s).</summary>
     Task OpenPairingAsync();
 

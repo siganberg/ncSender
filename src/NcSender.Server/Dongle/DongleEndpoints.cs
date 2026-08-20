@@ -61,6 +61,59 @@ public static class DongleEndpoints
             return Results.Ok(new ApiSuccess(true));
         });
 
+        // -------- Generic wireless OTA (any dongle-attached ESP-NOW device) --------
+        //
+        // Multipart flash: browser uploads a .bin, server streams it to the
+        // device over ESP-NOW via the dongle. Progress + errors surface on the
+        // same "plugin-ota:*" WS topics as the USB flash path, so plugins can
+        // handle both transports with one subscription (deviceId filter).
+        app.MapPost("/api/dongle/devices/{name}/ota",
+            async (string name, HttpRequest req, DongleOtaService ota, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return Results.BadRequest(new ApiError("Device name is required"));
+            if (!req.HasFormContentType)
+                return Results.BadRequest(new ApiError("multipart/form-data required"));
+            var form = await req.ReadFormAsync(ct);
+            var file = form.Files["file"];
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new ApiError("A 'file' field is required"));
+            var deviceId = form["deviceId"].ToString();
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, ct);
+            _ = Task.Run(async () => {
+                try { await ota.FlashAsync(name, ms.ToArray(), deviceId, CancellationToken.None); }
+                catch { /* already broadcast */ }
+            });
+            return Results.Ok(new ApiSuccess(true));
+        }).DisableAntiforgery();
+
+        // URL flash: server downloads the firmware itself (bypasses browser
+        // CORS on GitHub release-asset URLs), then flashes.
+        app.MapPost("/api/dongle/devices/{name}/ota-from-url",
+            (string name, DongleOtaFromUrlRequest body, DongleOtaService ota) =>
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return Results.BadRequest(new ApiError("Device name is required"));
+            if (string.IsNullOrWhiteSpace(body?.DownloadUrl))
+                return Results.BadRequest(new ApiError("downloadUrl is required"));
+            _ = Task.Run(async () => {
+                try { await ota.FlashFromUrlAsync(name, body!.DownloadUrl, body.DeviceId, CancellationToken.None); }
+                catch { /* already broadcast */ }
+            });
+            return Results.Ok(new ApiSuccess(true));
+        });
+
+        // Abort an in-flight session for this device (idempotent).
+        app.MapPost("/api/dongle/devices/{name}/ota/cancel",
+            (string name, DongleOtaService ota) =>
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return Results.BadRequest(new ApiError("Device name is required"));
+            ota.Cancel(name);
+            return Results.Ok(new ApiSuccess(true));
+        });
+
         // The Wireless USB dongle's own license state (read via the "$LICENSE" line command).
         app.MapGet("/api/dongle/license", async (IPendantManager pendant) =>
         {

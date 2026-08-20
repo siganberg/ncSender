@@ -196,6 +196,12 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         return sender is null ? Task.CompletedTask : sender($"@{name} {payload}");
     }
 
+    public Task SendRawLineAsync(string line)
+    {
+        var sender = _sender;
+        return sender is null ? Task.CompletedTask : sender(line);
+    }
+
     public Task OpenPairingAsync()
     {
         var sender = _sender;
