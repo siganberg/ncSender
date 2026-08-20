@@ -39,7 +39,8 @@ public sealed class DongleOtaService : IDisposable
     private const int WindowSize = 4;
     private const int PerChunkAckTimeoutMs = 800;
     private const int MaxRetriesPerChunk = 6;
-    private const int BeginAckTimeoutMs = 3000;
+    private const int BeginAckTimeoutMs = 1500;   // per-attempt; retried up to BeginRetries times
+    private const int BeginRetries = 4;           // 4 × 1.5 s = 6 s total budget for the handshake
     private const int EndAckTimeoutMs = 15000;
 
     private readonly ILogger<DongleOtaService> _logger;
@@ -129,10 +130,33 @@ public sealed class DongleOtaService : IDisposable
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(outerCt, s.Cts.Token);
         var ct = linkedCts.Token;
 
-        // 1. BEGIN
+        // 1. BEGIN — retry a few times. A single BEGIN packet can be lost
+        // on the shared ESP-NOW channel (especially if pendant traffic
+        // contends with it), and the device drains its RX queue quickly
+        // enough that resending is safe: it either sees the first packet
+        // and ACKs (later BEGINs cancel-and-restart the same session id)
+        // or it sees only the retry.
         await BroadcastMessageAsync(s, "info", $"Starting wireless flash ({s.Firmware.Length:N0} bytes)");
-        await SendAsync(s, $"$OTA:BEGIN @{s.DeviceName} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}");
-        var beginAck = await AwaitAckAsync(s, 0, BeginAckTimeoutMs, ct);
+        var beginLine = $"$OTA:BEGIN @{s.DeviceName} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
+        OtaStatus? beginAck = null;
+        for (var attempt = 0; attempt < BeginRetries; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await SendAsync(s, beginLine);
+            try
+            {
+                beginAck = await AwaitAckAsync(s, 0, BeginAckTimeoutMs, ct);
+                break;
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("[OTA {Name}] BEGIN ack timeout (attempt {N}/{Max})",
+                    s.DeviceName, attempt + 1, BeginRetries);
+                if (attempt == BeginRetries - 1)
+                    throw new TimeoutException(
+                        $"No BEGIN ack after {BeginRetries} attempts. Device may be offline, on a firmware older than v1.0.4, or the wireless link is unusable.");
+            }
+        }
         if (beginAck != OtaStatus.Ok)
             throw new InvalidOperationException($"Device rejected BEGIN (status={beginAck})");
 
