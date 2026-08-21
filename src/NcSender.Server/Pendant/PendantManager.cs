@@ -1313,12 +1313,17 @@ public class PendantManager : IPendantManager
 
             if (_serialHandler?.IsConnected == true)
             {
+                // Space the initial handshake sends. Over ESP-NOW, each JSON
+                // (settings + outputs-config) fragments into 3-4 packets;
+                // firing them back-to-back after the DRO overwhelms the
+                // dongle's radio queue and the second/third payload drops,
+                // which is why the Outputs screen used to open empty.
                 await SendDroAsync(full: true);
-                SendSettings(force: true);
-                SendOutputsConfig(force: true);
-
-                // Request metadata (scanner already classified the port via $ID)
-                await Task.Delay(300);
+                await Task.Delay(200);
+                await SendSettings(force: true);
+                await Task.Delay(200);
+                await SendOutputsConfig(force: true);
+                await Task.Delay(200);
                 await _serialHandler.SendMessageAsync(
                     new PendantTypeMsg("request:metadata"),
                     PendantJsonContext.Default.PendantTypeMsg);
@@ -1870,8 +1875,14 @@ public class PendantManager : IPendantManager
 
     public void NotifySettingsChanged()
     {
-        SendSettings(force: true);
-        SendOutputsConfig(force: true);
+        // Same spacing rule as the initial handshake: back-to-back JSON
+        // sends over ESP-NOW lose the second/third payload.
+        _ = Task.Run(async () =>
+        {
+            await SendSettings(force: true);
+            await Task.Delay(200);
+            await SendOutputsConfig(force: true);
+        });
     }
 
     // Push aux output definitions + pneumatic ATC slot count to the
@@ -1880,10 +1891,10 @@ public class PendantManager : IPendantManager
     // DRO delta (see SendDroAsync).
     private PendantOutputsConfigSnapshot? _lastSentOutputsCfg;
 
-    private void SendOutputsConfig(bool force = false)
+    private Task SendOutputsConfig(bool force = false)
     {
         if (_serialHandler is not { IsConnected: true } || !_pendantConnected)
-            return;
+            return Task.CompletedTask;
 
         var auxNode = _settingsManager.GetSetting("auxOutputs");
         var auxList = new List<PendantAuxOutput>();
@@ -1908,13 +1919,13 @@ public class PendantManager : IPendantManager
 
         var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount);
         if (!force && _lastSentOutputsCfg is not null && snapshot.Equals(_lastSentOutputsCfg))
-            return;
+            return Task.CompletedTask;
         _lastSentOutputsCfg = snapshot;
 
         var msg = new PendantOutputsConfigMsg(
             "outputs-config",
             new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount));
-        _ = _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
+        return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
     }
 
     private static string DeriveOffFromOn(string onCmd)
@@ -1953,10 +1964,10 @@ public class PendantManager : IPendantManager
         public override int GetHashCode() => HashCode.Combine(SlotCount, Aux.Length);
     }
 
-    private void SendSettings(bool force = false)
+    private Task SendSettings(bool force = false)
     {
         if (_serialHandler is not { IsConnected: true } || !_pendantConnected)
-            return;
+            return Task.CompletedTask;
 
         var theme = _settingsManager.GetSetting<string>("theme") ?? "dark";
         var snapshot = new PendantSettingsSnapshot(
@@ -1967,7 +1978,7 @@ public class PendantManager : IPendantManager
         );
 
         if (!force && _lastSentSettings is not null && snapshot == _lastSentSettings)
-            return;
+            return Task.CompletedTask;
 
         _lastSentSettings = snapshot;
 
@@ -1978,7 +1989,7 @@ public class PendantManager : IPendantManager
             snapshot.DarkMode
         ));
 
-        _ = _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantSettingsMsg);
+        return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantSettingsMsg);
     }
 
     private record PendantSettingsSnapshot(
