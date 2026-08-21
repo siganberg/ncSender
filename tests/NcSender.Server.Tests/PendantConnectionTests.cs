@@ -42,6 +42,10 @@ public class PendantConnectionTests : IDisposable
         _settings.Setup(s => s.GetSetting<bool>("pendant.autoConnect", true)).Returns(true);
 
         var dongleDevices = new Mock<IDongleDeviceService>();
+        var dongleOta = new NcSender.Server.Dongle.DongleOtaService(
+            NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
+            dongleDevices.Object,
+            _broadcaster.Object);
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
             _controller.Object,
@@ -50,7 +54,8 @@ public class PendantConnectionTests : IDisposable
             jobManager.Object,
             commandProcessor.Object,
             _settings.Object,
-            dongleDevices.Object);
+            dongleDevices.Object,
+            dongleOta);
     }
 
     public void Dispose()
