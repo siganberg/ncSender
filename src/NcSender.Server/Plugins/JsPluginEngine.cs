@@ -24,8 +24,10 @@ public class JsPluginEngine : IJsPluginEngine
     private sealed class PluginState
     {
         public required Engine JintEngine { get; init; }
-        public required JsValue CachedSettings { get; init; }
+        public JsValue CachedSettings { get; set; } = JsValue.Undefined;
         public int Priority { get; init; }
+        public Dictionary<int, Timer> Timers { get; } = new();
+        public int NextTimerId;
     }
 
     private readonly IServerContext _serverContext;
@@ -65,6 +67,16 @@ public class JsPluginEngine : IJsPluginEngine
                     options.Strict(false);
                 });
 
+                // Register the plugin state BEFORE running its module code so that
+                // pluginContext.setInterval (called from module-level init) can find
+                // its own entry to record timers against. CachedSettings is patched
+                // in after buildInitialConfig has run.
+                _plugins[pluginId] = new PluginState
+                {
+                    JintEngine = engine,
+                    Priority = priority
+                };
+
                 // Inject pluginContext global with helpers (log, showDialog) — must be set
                 // before engine.Execute so plugin module-level code can capture it.
                 engine.SetValue("pluginContext", BuildPluginContext(engine, pluginId));
@@ -78,19 +90,17 @@ public class JsPluginEngine : IJsPluginEngine
                 engine.SetValue("__rawSettings", rawSettings);
                 var cachedSettings = engine.Evaluate("buildInitialConfig(__rawSettings)");
                 engine.SetValue("__rawSettings", JsValue.Undefined);
-
-                _plugins[pluginId] = new PluginState
-                {
-                    JintEngine = engine,
-                    CachedSettings = cachedSettings,
-                    Priority = priority
-                };
+                _plugins[pluginId].CachedSettings = cachedSettings;
 
                 _logger.LogInformation("JS plugin {PluginId} loaded from {Path}", pluginId, commandsFilePath);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load JS plugin {PluginId} from {Path}", pluginId, commandsFilePath);
+                if (_plugins.Remove(pluginId, out var partial))
+                {
+                    foreach (var t in partial.Timers.Values) t.Dispose();
+                }
                 throw;
             }
         }
@@ -100,8 +110,12 @@ public class JsPluginEngine : IJsPluginEngine
     {
         lock (_lock)
         {
-            if (_plugins.Remove(pluginId))
+            if (_plugins.Remove(pluginId, out var state))
+            {
+                foreach (var t in state.Timers.Values) t.Dispose();
+                state.Timers.Clear();
                 _logger.LogInformation("JS plugin {PluginId} unloaded", pluginId);
+            }
         }
     }
 
@@ -189,6 +203,9 @@ public class JsPluginEngine : IJsPluginEngine
 
                     // Invoke onBeforeCommand(commands, context, settings)
                     var onBeforeCmd = engine.GetValue("onBeforeCommand");
+                    // Background-only plugins (e.g. status pushers) never define this;
+                    // pass the batch through untouched instead of throwing.
+                    if (onBeforeCmd.IsUndefined() || onBeforeCmd.IsNull()) return commands;
                     var result = onBeforeCmd.Call(jsCommands, jsContext, state.CachedSettings);
 
                     // If the plugin returned a Promise (e.g. async wireless-device wait),
@@ -454,6 +471,65 @@ public class JsPluginEngine : IJsPluginEngine
                 _logger.LogWarning(ex, "pluginContext.updateToolOffset failed for {PluginId}", pluginId);
                 return JsBoolean.False;
             }
+        }));
+
+        // getServerState() — snapshot of the fields most accessory plugins
+        // need to react to (senderStatus, jobStatus). Kept minimal on
+        // purpose; extend as consumers ask, not preemptively.
+        ctx.Set("getServerState", new ClrFunction(engine, "getServerState", (_, _) =>
+        {
+            var state = _serverContext.State;
+            var obj = new JsObject(engine);
+            obj.Set("senderStatus", JsValue.FromObject(engine, state.SenderStatus ?? ""));
+            obj.Set("jobStatus", state.JobLoaded?.Status is string js
+                ? JsValue.FromObject(engine, js) : JsValue.Null);
+            return obj;
+        }));
+
+        // setInterval(fn, ms) / clearInterval(id) — background timer for
+        // plugins that need a heartbeat (e.g. status keepalive to an ESP-NOW
+        // accessory). Callback runs under the engine lock, so it can safely
+        // touch Jint state. Timers are disposed on plugin unload.
+        ctx.Set("setInterval", new ClrFunction(engine, "setInterval", (_, args) =>
+        {
+            if (args.Length < 2 || args[0] is not ObjectInstance fn || !args[1].IsNumber())
+                return JsValue.FromObject(engine, 0);
+            var period = TimeSpan.FromMilliseconds(Math.Max(50, args[1].AsNumber()));
+            int id;
+            Timer timer = null!;
+            lock (_lock)
+            {
+                if (!_plugins.TryGetValue(pluginId, out var state))
+                    return JsValue.FromObject(engine, 0);
+                id = ++state.NextTimerId;
+                timer = new Timer(_ =>
+                {
+                    lock (_lock)
+                    {
+                        if (!_plugins.TryGetValue(pluginId, out var s) || !s.Timers.ContainsKey(id))
+                            return;
+                        try { ((JsValue)fn).Call(); }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "plugin {PluginId} setInterval callback threw", pluginId);
+                        }
+                    }
+                }, null, period, period);
+                state.Timers[id] = timer;
+            }
+            return JsValue.FromObject(engine, id);
+        }));
+
+        ctx.Set("clearInterval", new ClrFunction(engine, "clearInterval", (_, args) =>
+        {
+            if (args.Length < 1 || !args[0].IsNumber()) return JsValue.Undefined;
+            var id = (int)args[0].AsNumber();
+            lock (_lock)
+            {
+                if (_plugins.TryGetValue(pluginId, out var state) && state.Timers.Remove(id, out var t))
+                    t.Dispose();
+            }
+            return JsValue.Undefined;
         }));
 
         // armTlsWriteback(toolNumber) — arm a one-shot writeback: the NEXT

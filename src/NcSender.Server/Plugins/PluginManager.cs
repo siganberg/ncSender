@@ -635,9 +635,13 @@ public class PluginManager : IPluginManager
 
     private void TryLoadCommandPlugin(string pluginId, PluginManifest manifest)
     {
+        // Load the commands module if any JS-driven event OR the "background"
+        // marker is declared. Accessory plugins that only need setInterval
+        // (e.g. status-driven LED accessories) use ["background"] alone.
         var hasJsEvent = manifest.Events.Contains("onBeforeCommand")
             || manifest.Events.Contains("onGcodeProgramLoad")
-            || manifest.Events.Contains("onAfterJobEnd");
+            || manifest.Events.Contains("onAfterJobEnd")
+            || manifest.Events.Contains("background");
         if (!hasJsEvent || string.IsNullOrEmpty(manifest.Commands))
         {
             _logger.LogInformation("Plugin {PluginId}: skipping load (events={Events}, commands={Commands})",
