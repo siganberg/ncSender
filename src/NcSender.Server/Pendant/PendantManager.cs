@@ -18,6 +18,7 @@ public class PendantManager : IPendantManager
     private readonly ICommandProcessor _commandProcessor;
     private readonly ISettingsManager _settingsManager;
     private readonly IDongleDeviceService _dongleDevices;   // shares the dongle; fed "@name" addressed-device lines
+    private readonly NcSender.Server.Dongle.DongleOtaService _dongleOta;   // wireless firmware push via the dongle
     private PendantSerialHandler? _serialHandler;  // Active data handler (dongle preferred, USB fallback)
     private PendantWifiInfo? _lastWifiInfo;
     private CancellationTokenSource? _flashCts;
@@ -50,6 +51,11 @@ public class PendantManager : IPendantManager
     );
 
     private const int PingIntervalMs = 1000;
+    // Every N keep-alive ticks send a full-frame ($!) DRO instead of a delta ($),
+    // so any missed delta on the lossy broadcast path self-corrects. 5s cadence
+    // is small enough to keep MPos accurate and large enough to be free airtime.
+    private const int FullDroEveryNTicks = 5;
+    private long _droFrameCounter;
     private const int PingTimeoutMs = 3000;
 
     public PendantManager(
@@ -60,7 +66,8 @@ public class PendantManager : IPendantManager
         IJobManager jobManager,
         ICommandProcessor commandProcessor,
         ISettingsManager settingsManager,
-        IDongleDeviceService dongleDevices)
+        IDongleDeviceService dongleDevices,
+        NcSender.Server.Dongle.DongleOtaService dongleOta)
     {
         _logger = logger;
         _controller = controller;
@@ -70,6 +77,7 @@ public class PendantManager : IPendantManager
         _commandProcessor = commandProcessor;
         _settingsManager = settingsManager;
         _dongleDevices = dongleDevices;
+        _dongleOta = dongleOta;
 
         // Give the dongle device service a path to send "@name" commands out over the
         // dongle (read at call-time, so it follows dongle connect/disconnect).
@@ -428,13 +436,48 @@ public class PendantManager : IPendantManager
 
     public async Task FlashFileAsync(Stream firmware, Func<double, Task>? onProgress = null)
     {
+        // Direct USB is always preferred (fastest + simplest). If it's not
+        // available, fall through to wireless via the dongle. A pendant paired
+        // to the dongle registers as "pendant" in the dongle device table once
+        // it sends anything tagged (OTA_ACKs are tagged, so it registers as
+        // soon as the first BEGIN goes out).
+        var isDongleActive = _dongleHandler is not null && _serialHandler == _dongleHandler;
+        var haveDirectUsb = _pendantUsbHandler is { IsConnected: true };
+        var haveDongle    = _dongleHandler is { IsConnected: true };
+
+        if (!haveDirectUsb && haveDongle)
+        {
+            using var wms = new MemoryStream();
+            await firmware.CopyToAsync(wms);
+            var bytes = wms.ToArray();
+            _logger.LogInformation("OTA: wireless firmware push over dongle ({Size} bytes)", bytes.Length);
+            _otaInProgress = true;
+            try
+            {
+                await _dongleOta.FlashAsync(
+                    deviceName: "pendant",
+                    firmware: bytes,
+                    deviceId: "pendant",
+                    ct: CancellationToken.None,
+                    onProgress: pct =>
+                    {
+                        if (onProgress is null) return;
+                        _ = onProgress((double)pct);
+                    });
+            }
+            finally
+            {
+                _otaInProgress = false;
+            }
+            return;
+        }
+
         if (_serialHandler is not { IsConnected: true })
             throw new InvalidOperationException("Pendant not connected via USB");
 
         // OTA always goes through direct USB to pendant.
         // If active handler is dongle, use the pendant USB handler instead.
         PendantSerialHandler? otaHandler = null;
-        var isDongleActive = _dongleHandler is not null && _serialHandler == _dongleHandler;
         if (isDongleActive)
         {
             if (_pendantUsbHandler is { IsConnected: true })
@@ -1001,10 +1044,15 @@ public class PendantManager : IPendantManager
                 ResetClientMeta();
             }
 
-            // Always send DRO if port is open — pendant treats DRO as connection proof
+            // Always send DRO if port is open — pendant treats DRO as connection proof.
+            // Emit a FULL frame every ~5 s so any delta lost in flight (broadcast DRO
+            // has no ACK/retry) self-corrects within that window. Otherwise a missed
+            // "P:" or "W:" leaves the pendant's cached copy stale until the next
+            // job/pair event, showing up as an occasional wildly-wrong MPos while idle.
+            var fullDro = (++_droFrameCounter % FullDroEveryNTicks) == 0;
             if (_serialHandler?.IsConnected == true)
             {
-                _ = SendDroAsync(full: false);
+                _ = SendDroAsync(full: fullDro);
 
                 // Retry request:metadata until pendant responds — first attempt may be
                 // dropped by dongle due to back-to-back ESP-NOW sends

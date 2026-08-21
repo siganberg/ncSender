@@ -39,8 +39,15 @@ public sealed class DongleOtaService : IDisposable
     private const int WindowSize = 4;
     private const int PerChunkAckTimeoutMs = 800;
     private const int MaxRetriesPerChunk = 6;
-    private const int BeginAckTimeoutMs = 1500;   // per-attempt; retried up to BeginRetries times
-    private const int BeginRetries = 4;           // 4 × 1.5 s = 6 s total budget for the handshake
+    // Devices ACK BEGIN synchronously AFTER their Update.begin() call returns,
+    // and Update.begin() has to erase the target OTA partition — that's a
+    // multi-second flash operation. Small-partition devices (AutoDustBoot,
+    // RGB LED ~1 MB) come back in <2 s; pendants (3 MB OTA slot) can take
+    // 8-10 s. The budget below is set for the worst offender so BEGIN doesn't
+    // spuriously fail on the largest device; a device that's genuinely offline
+    // still fails in a few seconds because the ACK simply never arrives.
+    private const int BeginAckTimeoutMs = 12000;  // per-attempt
+    private const int BeginRetries = 2;           // 2 × 12 s = 24 s total budget for the handshake
     private const int EndAckTimeoutMs = 15000;
 
     private readonly ILogger<DongleOtaService> _logger;
@@ -61,7 +68,11 @@ public sealed class DongleOtaService : IDisposable
         _dongle.DeviceMessageReceived += OnDongleMessage;
     }
 
-    public async Task FlashAsync(string deviceName, byte[] firmware, string? deviceId, CancellationToken ct)
+    public Task FlashAsync(string deviceName, byte[] firmware, string? deviceId, CancellationToken ct)
+        => FlashAsync(deviceName, firmware, deviceId, ct, onProgress: null);
+
+    public async Task FlashAsync(string deviceName, byte[] firmware, string? deviceId,
+                                 CancellationToken ct, Action<int>? onProgress)
     {
         if (firmware is null || firmware.Length == 0)
             throw new ArgumentException("Firmware payload is empty");
@@ -72,7 +83,7 @@ public sealed class DongleOtaService : IDisposable
         if (_sessions.TryRemove(deviceName, out var prev))
             prev.Abort("Superseded by a new flash request");
 
-        var s = new Session(deviceName, firmware, deviceId ?? deviceName);
+        var s = new Session(deviceName, firmware, deviceId ?? deviceName) { OnProgress = onProgress };
         _sessions[deviceName] = s;
 
         try
@@ -207,6 +218,7 @@ public sealed class DongleOtaService : IDisposable
                         {
                             lastPctBroadcast = pct;
                             await BroadcastProgressAsync(s, pct);
+                            try { s.OnProgress?.Invoke(pct); } catch { /* caller's problem */ }
                         }
                     }
                 }
@@ -368,6 +380,13 @@ public sealed class DongleOtaService : IDisposable
         public CancellationTokenSource Cts { get; } = new();
         public AckChannel AckChannel { get; } = new();
         public int TotalChunks;
+
+        // Optional inline progress callback — fires on every percentage
+        // advance in addition to the WS broadcast. Used when the caller
+        // wants progress to flow through its own channel (e.g. the pendant
+        // firmware SSE endpoint bridges wireless progress back into the
+        // same event stream the USB flow uses).
+        public Action<int>? OnProgress;
 
         public Session(string deviceName, byte[] firmware, string deviceId)
         {

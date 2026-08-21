@@ -280,8 +280,18 @@ public class PendantSerialHandler : IAsyncDisposable
         // The multi-device dongle tags the pendant's frames "@pendant "; strip it so pendant
         // JSON/line handling is identical to the direct-USB path. Other "@name" (accessory)
         // frames pass through untouched to the addressed-device bridge.
+        //
+        // Exception: lines the dongle forwards as `@pendant $OTA:ACK …` (wireless OTA
+        // acks from the pendant back to the host) need to REACH DongleDeviceService
+        // .OnDongleLine to unblock DongleOtaService. Stripping the prefix here turns
+        // them into a bare "$OTA:ACK …" line that OnRawMessage no longer recognises
+        // as addressed traffic. Only strip when the remainder is JSON.
         if (line.StartsWith("@pendant ", StringComparison.Ordinal))
-            line = line.Substring("@pendant ".Length);
+        {
+            var rest = line.AsSpan("@pendant ".Length);
+            if (rest.Length > 0 && rest[0] == '{')
+                line = line.Substring("@pendant ".Length);
+        }
 
         if (!line.StartsWith('{'))
         {
