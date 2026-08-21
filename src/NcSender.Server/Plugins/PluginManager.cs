@@ -659,10 +659,104 @@ public class PluginManager : IPluginManager
             return;
         }
 
+        // Quarantine gate. A plugin whose engine.Execute(source) SIGABRTs
+        // the .NET AOT runtime is uncatchable — the whole server dies and
+        // systemd restarts it into the same crash on the same plugin,
+        // forever. To survive that, we drop a marker on disk BEFORE the
+        // load and remove it after a successful load. If the same marker
+        // is still there on the next startup, that plugin@version killed
+        // us last boot; skip it and warn.
+        //
+        // The marker records the version so a fixed upgrade automatically
+        // clears quarantine; a re-install of the same broken version does
+        // not. Manual recovery: delete the file under plugin-quarantine/.
+        var version = manifest.Version;
+        if (IsQuarantined(pluginId, version))
+        {
+            _logger.LogWarning(
+                "Plugin {PluginId}@{Version} is QUARANTINED — the previous startup died while loading it. Skipping. Delete {Path} to retry.",
+                pluginId, version, GetQuarantineMarkerPath(pluginId));
+            return;
+        }
+
         var settings = GetSettings(pluginId);
         _logger.LogInformation("Plugin {PluginId}: settings keys = [{Keys}]",
             pluginId, string.Join(", ", settings.Keys));
-        _jsEngine.LoadPlugin(pluginId, commandsPath, settings, manifest.Priority);
+
+        MarkLoading(pluginId, version);
+        try
+        {
+            _jsEngine.LoadPlugin(pluginId, commandsPath, settings, manifest.Priority);
+            ClearLoadingMarker(pluginId);
+        }
+        catch
+        {
+            // Managed exception — the load failed, but we know it wasn't a
+            // native crash (or we wouldn't be here). Clear the marker so
+            // the next boot retries. Native SIGABRT bypasses this catch,
+            // which is exactly what leaves the marker in place.
+            ClearLoadingMarker(pluginId);
+            throw;
+        }
+    }
+
+    private static string GetQuarantineDir()
+        => Path.Combine(PathUtils.GetUserDataDir(), "plugin-quarantine");
+
+    private static string GetQuarantineMarkerPath(string pluginId)
+        => Path.Combine(GetQuarantineDir(), pluginId);
+
+    private bool IsQuarantined(string pluginId, string version)
+    {
+        try
+        {
+            var path = GetQuarantineMarkerPath(pluginId);
+            if (!File.Exists(path)) return false;
+            var marked = File.ReadAllText(path).Trim();
+            // Match on version so a plugin upgrade auto-clears quarantine.
+            // An empty marker matches anything (defensive: assume old crash
+            // if we can't read the version).
+            return marked.Length == 0 || marked == version;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read quarantine marker for {PluginId}", pluginId);
+            return false;
+        }
+    }
+
+    private void MarkLoading(string pluginId, string version)
+    {
+        try
+        {
+            var dir = GetQuarantineDir();
+            Directory.CreateDirectory(dir);
+            var path = GetQuarantineMarkerPath(pluginId);
+            // WriteThrough + Flush(true) forces the write past OS buffers
+            // so the marker survives a SIGABRT in the very next moment.
+            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write,
+                FileShare.None, 4096, FileOptions.WriteThrough);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(version);
+            fs.Write(bytes, 0, bytes.Length);
+            fs.Flush(flushToDisk: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write quarantine marker for {PluginId}", pluginId);
+        }
+    }
+
+    private void ClearLoadingMarker(string pluginId)
+    {
+        try
+        {
+            var path = GetQuarantineMarkerPath(pluginId);
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear quarantine marker for {PluginId}", pluginId);
+        }
     }
 
     private void SyncToolSettingsOnEnable(string pluginId)
