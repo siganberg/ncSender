@@ -90,6 +90,17 @@ public class CncEventBridge
             if (maxX is > 0) _context.State.MachineState.MaxFeedrateX = maxX.Value;
             if (maxY is > 0) _context.State.MachineState.MaxFeedrateY = maxY.Value;
             if (maxZ is > 0) _context.State.MachineState.MaxFeedrateZ = maxZ.Value;
+
+            // $120/$121/$122 = max acceleration for X/Y/Z (mm/s²). Feed into
+            // MachineState so accessories (currently the pendant's Z jog
+            // cap) can size behaviour to actual machine kinematics via the
+            // DRO L: field.
+            double? accX = firmware.Settings.TryGetValue("120", out var s120) && double.TryParse(s120.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ax) ? ax : null;
+            double? accY = firmware.Settings.TryGetValue("121", out var s121) && double.TryParse(s121.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ay) ? ay : null;
+            double? accZ = firmware.Settings.TryGetValue("122", out var s122) && double.TryParse(s122.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var az) ? az : null;
+            if (accX is > 0) _context.State.MachineState.MaxAccelerationX = accX.Value;
+            if (accY is > 0) _context.State.MachineState.MaxAccelerationY = accY.Value;
+            if (accZ is > 0) _context.State.MachineState.MaxAccelerationZ = accZ.Value;
         }
         catch (Exception ex)
         {
@@ -255,6 +266,14 @@ public class CncEventBridge
                         if (maxY is > 0) state.MachineState.MaxFeedrateY = maxY.Value;
                         if (maxZ is > 0) state.MachineState.MaxFeedrateZ = maxZ.Value;
 
+                        // $120/$121/$122 = per-axis max acceleration (mm/s²)
+                        double? accX = firmware.Settings.TryGetValue("120", out var s120) && double.TryParse(s120.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ax) ? ax : null;
+                        double? accY = firmware.Settings.TryGetValue("121", out var s121) && double.TryParse(s121.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ay) ? ay : null;
+                        double? accZ = firmware.Settings.TryGetValue("122", out var s122) && double.TryParse(s122.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var az) ? az : null;
+                        if (accX is > 0) state.MachineState.MaxAccelerationX = accX.Value;
+                        if (accY is > 0) state.MachineState.MaxAccelerationY = accY.Value;
+                        if (accZ is > 0) state.MachineState.MaxAccelerationZ = accZ.Value;
+
                         // Broadcast key settings so client updates reactively
                         foreach (var id in new[] { "32", "130", "131", "132" })
                         {
@@ -409,6 +428,18 @@ public class CncEventBridge
                 if (maxX is > 0) _context.State.MachineState.MaxFeedrateX = maxX.Value;
                 if (maxY is > 0) _context.State.MachineState.MaxFeedrateY = maxY.Value;
                 if (maxZ is > 0) _context.State.MachineState.MaxFeedrateZ = maxZ.Value;
+                BroadcastStateDelta();
+            }
+
+            // $120/$121/$122 → update machineState.maxAcceleration (per-axis)
+            if (id is "120" or "121" or "122")
+            {
+                double? accX = firmware.Settings.TryGetValue("120", out var s120a) && double.TryParse(s120a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ax) ? ax : null;
+                double? accY = firmware.Settings.TryGetValue("121", out var s121a) && double.TryParse(s121a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ay) ? ay : null;
+                double? accZ = firmware.Settings.TryGetValue("122", out var s122a) && double.TryParse(s122a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var az) ? az : null;
+                if (accX is > 0) _context.State.MachineState.MaxAccelerationX = accX.Value;
+                if (accY is > 0) _context.State.MachineState.MaxAccelerationY = accY.Value;
+                if (accZ is > 0) _context.State.MachineState.MaxAccelerationZ = accZ.Value;
                 BroadcastStateDelta();
             }
 

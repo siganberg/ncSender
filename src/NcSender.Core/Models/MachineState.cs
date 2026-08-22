@@ -13,6 +13,13 @@ public class MachineState
     public double MaxFeedrateY { get; set; }
     public double MaxFeedrateZ { get; set; }
 
+    // Per-axis max acceleration (mm/s²) from $120/$121/$122. Exposed to
+    // accessories via the DRO A: field so they can size jog behaviour to
+    // the real machine kinematics instead of a compile-time guess.
+    public double MaxAccelerationX { get; set; }
+    public double MaxAccelerationY { get; set; }
+    public double MaxAccelerationZ { get; set; }
+
     // GRBL status report fields
     public string Status { get; set; } = "Unknown";
     public bool Homed { get; set; }

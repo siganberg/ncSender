@@ -1697,6 +1697,9 @@ public class PendantManager : IPendantManager
         var maxFeedX = ms.MaxFeedrateX;
         var maxFeedY = ms.MaxFeedrateY;
         var maxFeedZ = ms.MaxFeedrateZ;
+        var maxAccelX = ms.MaxAccelerationX;
+        var maxAccelY = ms.MaxAccelerationY;
+        var maxAccelZ = ms.MaxAccelerationZ;
 
         // Send the DERIVED sender status (ServerContext.ComputeSenderStatus)
         // rather than the raw grblHAL status. Same signal the browser
@@ -1742,6 +1745,9 @@ public class PendantManager : IPendantManager
             MaxFeedX: maxFeedX,
             MaxFeedY: maxFeedY,
             MaxFeedZ: maxFeedZ,
+            MaxAccelX: maxAccelX,
+            MaxAccelY: maxAccelY,
+            MaxAccelZ: maxAccelZ,
             AuxMask: auxMask,
             CurrentTool: currentTool
         );
@@ -1805,6 +1811,13 @@ public class PendantManager : IPendantManager
         // Per-axis max feedrate
         if (isFull || current.MaxFeedX != prev!.MaxFeedX || current.MaxFeedY != prev!.MaxFeedY || current.MaxFeedZ != prev!.MaxFeedZ)
             sb.Append($"|M:{current.MaxFeedX:F0},{current.MaxFeedY:F0},{current.MaxFeedZ:F0}");
+
+        // Per-axis max acceleration (mm/s²) from $120/$121/$122. Prefix "L"
+        // for acceleration Limit — "A" is already claimed by the alarm-
+        // code field. Consumers use this to size jog behaviour to real
+        // machine kinematics (e.g. pendant Z jog feed cap = 60·√(2·a·s)).
+        if (isFull || current.MaxAccelX != prev!.MaxAccelX || current.MaxAccelY != prev!.MaxAccelY || current.MaxAccelZ != prev!.MaxAccelZ)
+            sb.Append($"|L:{current.MaxAccelX:F0},{current.MaxAccelY:F0},{current.MaxAccelZ:F0}");
 
         // Aux state bitmask (hex) — drives the Outputs screen's toggle
         // states. Absent in delta when unchanged.
@@ -1871,6 +1884,9 @@ public class PendantManager : IPendantManager
         double MaxFeedX,
         double MaxFeedY,
         double MaxFeedZ,
+        double MaxAccelX,
+        double MaxAccelY,
+        double MaxAccelZ,
         uint AuxMask,     // bit N = state of the Nth entry in the pendant's aux list
         int CurrentTool   // 0 = none
     );
