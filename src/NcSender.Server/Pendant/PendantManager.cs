@@ -30,6 +30,12 @@ public class PendantManager : IPendantManager
     private Timer? _keepAliveTimer;
     private Action<string>? _otaResponseHandler;
     private bool _otaInProgress;
+    // Held so OtaCleanup can detach the subscription installed in FlashFileAsync.
+    // Without this, each OTA attempt leaks a handler on the pendant USB port; on
+    // the Nth attempt every $OTA:ACK fires N handlers, calling SendNextChunk N
+    // times per ack and overrunning the pendant UART mid-flash.
+    private Action<string>? _otaHandlerSubscription;
+    private PendantSerialHandler? _otaSubscribedHandler;
     private PendantSettingsSnapshot? _lastSentSettings;
     private PendantDroSnapshot? _lastSentDro;
 
@@ -632,14 +638,19 @@ public class PendantManager : IPendantManager
             }
         };
 
-        // If using dedicated OTA handler, listen for responses on it instead of main handler
+        // If using dedicated OTA handler, listen for responses on it instead of main handler.
+        // Hold the delegate so OtaCleanup can detach it — otherwise every attempt leaks a
+        // subscription and doubles the chunks sent per ACK on the next flash.
         if (otaHandler is not null)
         {
-            otaHandler.RawMessageReceived += (line) =>
+            Action<string> sub = (line) =>
             {
                 if (line.StartsWith("$OTA:"))
                     _otaResponseHandler?.Invoke(line);
             };
+            _otaHandlerSubscription = sub;
+            _otaSubscribedHandler = otaHandler;
+            otaHandler.RawMessageReceived += sub;
         }
 
         // Send OTA init command using raw protocol (not JSON)
@@ -678,6 +689,13 @@ public class PendantManager : IPendantManager
     {
         _otaResponseHandler = null;
         _otaInProgress = false;
+        if (_otaSubscribedHandler is not null && _otaHandlerSubscription is not null)
+        {
+            try { _otaSubscribedHandler.RawMessageReceived -= _otaHandlerSubscription; }
+            catch { /* handler already gone */ }
+        }
+        _otaSubscribedHandler = null;
+        _otaHandlerSubscription = null;
     }
 
     private void StartKeepAliveTimerDelayed(int delayMs)
@@ -1700,6 +1718,9 @@ public class PendantManager : IPendantManager
         var maxAccelX = ms.MaxAccelerationX;
         var maxAccelY = ms.MaxAccelerationY;
         var maxAccelZ = ms.MaxAccelerationZ;
+        var maxTravelX = ms.MaxTravelX;
+        var maxTravelY = ms.MaxTravelY;
+        var maxTravelZ = ms.MaxTravelZ;
 
         // Send the DERIVED sender status (ServerContext.ComputeSenderStatus)
         // rather than the raw grblHAL status. Same signal the browser
@@ -1748,6 +1769,9 @@ public class PendantManager : IPendantManager
             MaxAccelX: maxAccelX,
             MaxAccelY: maxAccelY,
             MaxAccelZ: maxAccelZ,
+            MaxTravelX: maxTravelX,
+            MaxTravelY: maxTravelY,
+            MaxTravelZ: maxTravelZ,
             AuxMask: auxMask,
             CurrentTool: currentTool
         );
@@ -1819,6 +1843,12 @@ public class PendantManager : IPendantManager
         if (isFull || current.MaxAccelX != prev!.MaxAccelX || current.MaxAccelY != prev!.MaxAccelY || current.MaxAccelZ != prev!.MaxAccelZ)
             sb.Append($"|L:{current.MaxAccelX:F0},{current.MaxAccelY:F0},{current.MaxAccelZ:F0}");
 
+        // Per-axis max travel (mm) from $130/$131/$132. Prefix "E" for
+        // Extent. The RGB strip mirrors E:x into its own xmax NVS so the
+        // X-follower auto-sizes to the machine without a manual entry.
+        if (isFull || current.MaxTravelX != prev!.MaxTravelX || current.MaxTravelY != prev!.MaxTravelY || current.MaxTravelZ != prev!.MaxTravelZ)
+            sb.Append($"|E:{current.MaxTravelX:F0},{current.MaxTravelY:F0},{current.MaxTravelZ:F0}");
+
         // Aux state bitmask (hex) — drives the Outputs screen's toggle
         // states. Absent in delta when unchanged.
         if (isFull || current.AuxMask != prev!.AuxMask)
@@ -1887,6 +1917,9 @@ public class PendantManager : IPendantManager
         double MaxAccelX,
         double MaxAccelY,
         double MaxAccelZ,
+        double MaxTravelX,
+        double MaxTravelY,
+        double MaxTravelZ,
         uint AuxMask,     // bit N = state of the Nth entry in the pendant's aux list
         int CurrentTool   // 0 = none
     );
