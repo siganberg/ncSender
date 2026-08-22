@@ -99,7 +99,13 @@ public class PendantManager : IPendantManager
 
     private void OnStatusReportReceived(MachineState state)
     {
-        if (_serialHandler?.IsConnected == true && _pendantConnected && !_otaInProgress)
+        // Push a delta DRO on every status change whenever the dongle is up.
+        // Not gated on `_pendantConnected`: the dongle broadcasts DRO to every
+        // paired peer (v0.3.2+), so accessories like the RGB strip ride this
+        // same stream. Requiring the pendant to be online used to strand the
+        // accessories on the 1 s keep-alive cadence and show up as ~500 ms
+        // lag on state changes when the pendant was offline.
+        if (_serialHandler?.IsConnected == true && !_otaInProgress)
         {
             _ = SendDroAsync(full: false);
         }
