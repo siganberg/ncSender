@@ -101,6 +101,16 @@ public class CncEventBridge
             if (accX is > 0) _context.State.MachineState.MaxAccelerationX = accX.Value;
             if (accY is > 0) _context.State.MachineState.MaxAccelerationY = accY.Value;
             if (accZ is > 0) _context.State.MachineState.MaxAccelerationZ = accZ.Value;
+
+            // $130/$131/$132 = per-axis max travel (mm). Emitted via the DRO
+            // E: field so accessories (currently the RGB strip's X-follower)
+            // can size their overlays to real machine travel.
+            double? trvX = firmware.Settings.TryGetValue("130", out var s130) && double.TryParse(s130.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tx) ? tx : null;
+            double? trvY = firmware.Settings.TryGetValue("131", out var s131) && double.TryParse(s131.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ty) ? ty : null;
+            double? trvZ = firmware.Settings.TryGetValue("132", out var s132) && double.TryParse(s132.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tz) ? tz : null;
+            if (trvX is > 0) _context.State.MachineState.MaxTravelX = trvX.Value;
+            if (trvY is > 0) _context.State.MachineState.MaxTravelY = trvY.Value;
+            if (trvZ is > 0) _context.State.MachineState.MaxTravelZ = trvZ.Value;
         }
         catch (Exception ex)
         {
@@ -274,6 +284,14 @@ public class CncEventBridge
                         if (accY is > 0) state.MachineState.MaxAccelerationY = accY.Value;
                         if (accZ is > 0) state.MachineState.MaxAccelerationZ = accZ.Value;
 
+                        // $130/$131/$132 = per-axis max travel (mm)
+                        double? trvX = firmware.Settings.TryGetValue("130", out var s130) && double.TryParse(s130.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tx) ? tx : null;
+                        double? trvY = firmware.Settings.TryGetValue("131", out var s131) && double.TryParse(s131.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ty) ? ty : null;
+                        double? trvZ = firmware.Settings.TryGetValue("132", out var s132t) && double.TryParse(s132t.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tz) ? tz : null;
+                        if (trvX is > 0) state.MachineState.MaxTravelX = trvX.Value;
+                        if (trvY is > 0) state.MachineState.MaxTravelY = trvY.Value;
+                        if (trvZ is > 0) state.MachineState.MaxTravelZ = trvZ.Value;
+
                         // Broadcast key settings so client updates reactively
                         foreach (var id in new[] { "32", "130", "131", "132" })
                         {
@@ -440,6 +458,18 @@ public class CncEventBridge
                 if (accX is > 0) _context.State.MachineState.MaxAccelerationX = accX.Value;
                 if (accY is > 0) _context.State.MachineState.MaxAccelerationY = accY.Value;
                 if (accZ is > 0) _context.State.MachineState.MaxAccelerationZ = accZ.Value;
+                BroadcastStateDelta();
+            }
+
+            // $130/$131/$132 → update machineState.maxTravel (per-axis)
+            if (id is "130" or "131" or "132")
+            {
+                double? trvX = firmware.Settings.TryGetValue("130", out var s130a) && double.TryParse(s130a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tx) ? tx : null;
+                double? trvY = firmware.Settings.TryGetValue("131", out var s131a) && double.TryParse(s131a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ty) ? ty : null;
+                double? trvZ = firmware.Settings.TryGetValue("132", out var s132a) && double.TryParse(s132a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var tz) ? tz : null;
+                if (trvX is > 0) _context.State.MachineState.MaxTravelX = trvX.Value;
+                if (trvY is > 0) _context.State.MachineState.MaxTravelY = trvY.Value;
+                if (trvZ is > 0) _context.State.MachineState.MaxTravelZ = trvZ.Value;
                 BroadcastStateDelta();
             }
 

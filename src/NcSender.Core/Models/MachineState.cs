@@ -20,6 +20,13 @@ public class MachineState
     public double MaxAccelerationY { get; set; }
     public double MaxAccelerationZ { get; set; }
 
+    // Per-axis max travel (mm) from $130/$131/$132. Exposed to accessories
+    // via the DRO E: field so the RGB strip's X-follower auto-sizes to the
+    // machine instead of requiring a manual mm entry in the plugin.
+    public double MaxTravelX { get; set; }
+    public double MaxTravelY { get; set; }
+    public double MaxTravelZ { get; set; }
+
     // GRBL status report fields
     public string Status { get; set; } = "Unknown";
     public bool Homed { get; set; }
