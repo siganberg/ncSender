@@ -2120,7 +2120,18 @@ public class PendantManager : IPendantManager
             }
         }
 
-        var slotCount = ReadPneumaticAtcSlotCount();
+        // Seed the pendant with Flood/Mist when the user hasn't configured
+        // any aux outputs — matches what the desktop client shows in that
+        // case (see GCodeVisualizer.vue's ioSwitchesConfig fallback). Without
+        // this the pendant Outputs screen is blank for anyone who never
+        // added a custom aux, even though M7/M8 are always available.
+        if (auxList.Count == 0)
+        {
+            auxList.Add(new PendantAuxOutput("flood", "Flood", "M8", "M9", true, false));
+            auxList.Add(new PendantAuxOutput("mist",  "Mist",  "M7", "M9", true, false));
+        }
+
+        var slotCount = ReadAtcSlotCount();
 
         var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount);
         if (!force && _lastSentOutputsCfg is not null && snapshot.Equals(_lastSentOutputsCfg))
@@ -2142,19 +2153,17 @@ public class PendantManager : IPendantManager
         return "";
     }
 
-    private int ReadPneumaticAtcSlotCount()
+    // The pendant's Outputs screen renders "T?/N" where N is the tool
+    // magazine size. Rather than sniffing one specific plugin's config
+    // file (which broke for RapidChangeATC — its slots live under a
+    // different key), read the canonical `tool.count` setting that
+    // every ATC-shaped plugin writes when it saves (see the PATCH
+    // /api/settings call in pneumaticatc / rapidchangeatc config.html,
+    // and ToolService.cs uses the same key to gate magazine bounds).
+    private int ReadAtcSlotCount()
     {
-        try
-        {
-            var path = Path.Combine(NcSender.Server.Infrastructure.PathUtils.GetPluginConfigDir(),
-                                    "com.ncsender.pneumaticatc", "config.json");
-            if (!File.Exists(path)) return 0;
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            if (doc.RootElement.TryGetProperty("slots", out var slots) && slots.ValueKind == JsonValueKind.Number)
-                return slots.GetInt32();
-        }
-        catch { /* plugin absent or corrupt config — treat as no slots */ }
-        return 0;
+        try { return _settingsManager.GetSetting<int>("tool.count", 0); }
+        catch { return 0; }
     }
 
     private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount)
