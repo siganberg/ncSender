@@ -169,8 +169,17 @@ public static class ServerBuilder
         // no config surface.
         builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
         builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
-        builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
+        // XProbeRouter/Translator are DISABLED by default. XProbeRouter's USB
+        // scanner opens every unclaimed USB serial port every 4 s to send a
+        // "$ID" probe — that toggles DTR on the target device, which resets
+        // Arduinos and other benign USB-serial peripherals, and on Windows
+        // makes the port appear "in use" to other apps. Until the scanner
+        // learns to leave unknown devices strictly alone (and only opens
+        // ports it has reason to think are xprobe), the feature is off by
+        // default. Re-enable by uncommenting the two AddHostedService lines
+        // below. See docs/xprobe.md for the plan to make it safe.
+        // builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
+        // builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();

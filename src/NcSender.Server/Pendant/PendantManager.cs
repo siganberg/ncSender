@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -530,15 +531,37 @@ public class PendantManager : IPendantManager
             tcs.TrySetException(new TimeoutException("Firmware update timed out"));
         }, null, 15000, Timeout.Infinite);
 
-        var chunkSize = 4096;
+        const int chunkSize = 4096;
+        const int chunkAckTimeoutMs = 2500;   // per-chunk ACK wait before resend
+        const int chunkMaxRetries = 4;        // fail hard past this
         var offset = 0;
+
+        // V2 protocol state (populated when pendant reports READY:V2).
+        var useV2 = false;
+        var currentSeq = 0;
+        var currentChunkOffset = 0;
+        var currentChunkLen = 0;
+        var currentRetries = 0;
+        Timer? chunkAckTimer = null;
 
         void ResetTimeout()
         {
-            try { inactivityTimer.Change(15000, Timeout.Infinite); } catch { /* disposed */ }
+            try { inactivityTimer.Change(30000, Timeout.Infinite); } catch { /* disposed */ }
         }
 
-        void SendNextChunk()
+        void CancelChunkAckTimer()
+        {
+            try { chunkAckTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { /* disposed */ }
+        }
+
+        void ArmChunkAckTimer()
+        {
+            try { chunkAckTimer?.Change(chunkAckTimeoutMs, Timeout.Infinite); } catch { /* disposed */ }
+        }
+
+        // V1 (legacy raw-stream) chunk sender — sends up to chunkSize bytes and
+        // waits for a plain "$OTA:ACK" line.
+        void SendNextChunkV1()
         {
             if (offset >= data.Length) return;
             var end = Math.Min(offset + chunkSize, data.Length);
@@ -546,22 +569,104 @@ public class PendantManager : IPendantManager
             offset = end;
         }
 
+        // V2 chunk sender — writes a header line + raw body, then arms the
+        // per-chunk ACK timer. Retries live in currentRetries so a resend from
+        // NAK or timeout uses identical bytes without re-computing offsets.
+        void SendChunkV2(bool isRetry)
+        {
+            if (currentChunkOffset >= data.Length) return;
+            if (!isRetry)
+            {
+                currentChunkLen = Math.Min(chunkSize, data.Length - currentChunkOffset);
+                currentRetries = 0;
+            }
+            var crc = Crc32(data, currentChunkOffset, currentChunkLen);
+            var header = $"$C:{currentSeq}:{currentChunkLen}:{crc:x8}\n";
+            var headerBytes = Encoding.ASCII.GetBytes(header);
+            handler.WriteRawBytes(headerBytes, 0, headerBytes.Length);
+            handler.WriteRawBytes(data, currentChunkOffset, currentChunkLen);
+            ArmChunkAckTimer();
+        }
+
+        void RetryChunkV2(string reason)
+        {
+            CancelChunkAckTimer();
+            currentRetries++;
+            if (currentRetries > chunkMaxRetries)
+            {
+                var msg = $"Chunk {currentSeq} {reason} after {chunkMaxRetries} retries";
+                _logger.LogError("OTA: {Msg}", msg);
+                OtaCleanup();
+                inactivityTimer.Dispose();
+                StartKeepAliveTimer();
+                progressSignal.Release();
+                tcs.TrySetException(new InvalidOperationException(msg));
+                return;
+            }
+            _logger.LogWarning("OTA: chunk {Seq} {Reason} — retry {N}/{Max}", currentSeq, reason, currentRetries, chunkMaxRetries);
+            SendChunkV2(isRetry: true);
+        }
+
+        // Fires when the pendant hasn't ACKed the outstanding chunk in time
+        // (bytes probably dropped on the Pi's USB CDC OUT queue). Resend same
+        // seq — pendant dedups if it already wrote it.
+        chunkAckTimer = new Timer(_ =>
+        {
+            if (!useV2) return;
+            RetryChunkV2("timeout");
+        }, null, Timeout.Infinite, Timeout.Infinite);
+
         _otaResponseHandler = (line) =>
         {
             try
             {
                 _logger.LogDebug("OTA response: {Line}", line);
 
-                if (line == "$OTA:READY")
+                if (line == "$OTA:READY:V2")
                 {
-                    _logger.LogInformation("OTA: pendant ready, sending first chunk");
+                    _logger.LogInformation("OTA: pendant ready (V2), sending first chunk");
+                    useV2 = true;
                     ResetTimeout();
-                    SendNextChunk();
+                    currentChunkOffset = offset;
+                    currentSeq = 0;
+                    SendChunkV2(isRetry: false);
+                }
+                else if (line == "$OTA:READY")
+                {
+                    _logger.LogInformation("OTA: pendant ready (V1 legacy), sending first chunk");
+                    useV2 = false;
+                    ResetTimeout();
+                    SendNextChunkV1();
                 }
                 else if (line == "$OTA:ACK")
                 {
+                    // V1 legacy — pendant ACK'd a raw-stream chunk.
                     ResetTimeout();
-                    SendNextChunk();
+                    SendNextChunkV1();
+                }
+                else if (useV2 && line.StartsWith("$A:"))
+                {
+                    // $A:<seq> — chunk seq accepted by pendant.
+                    if (int.TryParse(line.AsSpan(3), out var ackedSeq) && ackedSeq == currentSeq)
+                    {
+                        CancelChunkAckTimer();
+                        ResetTimeout();
+                        offset = currentChunkOffset + currentChunkLen;
+                        currentChunkOffset = offset;
+                        currentSeq++;
+                        if (currentChunkOffset < data.Length)
+                            SendChunkV2(isRetry: false);
+                    }
+                    // Stale ACK for an earlier seq (we already advanced past it) — ignore.
+                }
+                else if (useV2 && line.StartsWith("$N:"))
+                {
+                    // $N:<seq>:<reason> — pendant rejected the current chunk (CRC/LEN/SEQ).
+                    // Resend same seq.
+                    ResetTimeout();
+                    var colon = line.IndexOf(':', 3);
+                    var reason = colon > 0 ? line[(colon + 1)..] : "nak";
+                    RetryChunkV2(reason);
                 }
                 else if (line.StartsWith("$OTA:PROGRESS:"))
                 {
@@ -575,6 +680,8 @@ public class PendantManager : IPendantManager
                 }
                 else if (line == "$OTA:OK")
                 {
+                    CancelChunkAckTimer();
+                    chunkAckTimer?.Dispose();
                     OtaCleanup();
                     inactivityTimer.Dispose();
                     // Reset connection state — pendant is rebooting
@@ -616,6 +723,8 @@ public class PendantManager : IPendantManager
                 else if (line.StartsWith("$OTA:ERROR:"))
                 {
                     _logger.LogError("OTA error from pendant: {Error}", line[11..]);
+                    CancelChunkAckTimer();
+                    chunkAckTimer?.Dispose();
                     OtaCleanup();
                     inactivityTimer.Dispose();
                     StartKeepAliveTimer();
@@ -630,6 +739,8 @@ public class PendantManager : IPendantManager
             catch (Exception ex)
             {
                 _logger.LogError(ex, "OTA handler error");
+                CancelChunkAckTimer();
+                chunkAckTimer?.Dispose();
                 OtaCleanup();
                 inactivityTimer.Dispose();
                 StartKeepAliveTimer();
@@ -641,11 +752,12 @@ public class PendantManager : IPendantManager
         // If using dedicated OTA handler, listen for responses on it instead of main handler.
         // Hold the delegate so OtaCleanup can detach it — otherwise every attempt leaks a
         // subscription and doubles the chunks sent per ACK on the next flash.
+        // Filter accepts $OTA:, $A:, $N: (V2 ACK/NAK prefixes).
         if (otaHandler is not null)
         {
             Action<string> sub = (line) =>
             {
-                if (line.StartsWith("$OTA:"))
+                if (line.StartsWith("$OTA:") || line.StartsWith("$A:") || line.StartsWith("$N:"))
                     _otaResponseHandler?.Invoke(line);
             };
             _otaHandlerSubscription = sub;
@@ -653,9 +765,16 @@ public class PendantManager : IPendantManager
             otaHandler.RawMessageReceived += sub;
         }
 
-        // Send OTA init command using raw protocol (not JSON)
-        _logger.LogInformation("Sending OTA init: $OTA:{Size} ({Chunks} chunks)", data.Length, (data.Length + chunkSize - 1) / chunkSize);
-        await handler.SendRawAsync($"$OTA:{data.Length}");
+        // Send OTA init command using raw protocol (not JSON).
+        // Include the firmware MD5 so the pendant can call Update.setMD5() and
+        // detect byte-level corruption at Update.end() with a specific error
+        // ("MD5 Failed…") instead of the vague "End failed" that only means
+        // "image header didn't validate." Older pendant firmware (pre-1.0.40)
+        // stops parsing at the ':' and just ignores the extra field, so this
+        // stays backward compatible.
+        var md5Hex = Convert.ToHexString(MD5.HashData(data)).ToLowerInvariant();
+        _logger.LogInformation("Sending OTA init: $OTA:{Size}:{Md5} ({Chunks} chunks)", data.Length, md5Hex, (data.Length + chunkSize - 1) / chunkSize);
+        await handler.SendRawAsync($"$OTA:{data.Length}:{md5Hex}");
 
         try
         {
@@ -696,6 +815,32 @@ public class PendantManager : IPendantManager
         }
         _otaSubscribedHandler = null;
         _otaHandlerSubscription = null;
+    }
+
+    // Standard IEEE 802.3 CRC-32 (poly 0xEDB88320). Matches the pendant's
+    // table so per-chunk verification agrees on both sides. Table built
+    // once at first use; single-byte hot loop is fine for the ~1 MB
+    // firmware payloads we push.
+    private static readonly uint[] _crc32Table = BuildCrc32Table();
+
+    private static uint[] BuildCrc32Table()
+    {
+        var t = new uint[256];
+        for (uint i = 0; i < 256; i++)
+        {
+            uint c = i;
+            for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (uint)-(int)(c & 1u));
+            t[i] = c;
+        }
+        return t;
+    }
+
+    private static uint Crc32(byte[] data, int offset, int count)
+    {
+        uint crc = 0xFFFFFFFFu;
+        for (int i = 0; i < count; i++)
+            crc = (crc >> 8) ^ _crc32Table[(crc ^ data[offset + i]) & 0xFFu];
+        return ~crc;
     }
 
     private void StartKeepAliveTimerDelayed(int delayMs)
@@ -1110,7 +1255,12 @@ public class PendantManager : IPendantManager
         try
         {
             // Intercept $OTA responses during firmware flashing
-            if (_otaResponseHandler is not null && data.StartsWith("$OTA:"))
+            // Intercept OTA responses during firmware flashing. V2 protocol
+            // uses $A:/$N: ACK-and-NAK lines in addition to the classic $OTA:*
+            // frames — dispatch all three so a route through the main handler
+            // (e.g. USB pendant running dongle-active mode) still sees them.
+            if (_otaResponseHandler is not null
+                && (data.StartsWith("$OTA:") || data.StartsWith("$A:") || data.StartsWith("$N:")))
             {
                 _otaResponseHandler(data);
                 return;

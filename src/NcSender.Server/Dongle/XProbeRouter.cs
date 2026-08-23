@@ -30,6 +30,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private readonly IDongleDeviceService _devices;
     private readonly ICncController _controller;
+    private readonly IServiceProvider _sp;   // lazy-resolved to break the DI cycle with IPendantManager
     private readonly ILogger<XProbeRouter> _logger;
 
     // Active USB link (null when wireless-only)
@@ -52,10 +53,11 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     public event Action<string>? MessageReceived;
     public event Action<bool>? ConnectivityChanged;
 
-    public XProbeRouter(IDongleDeviceService devices, ICncController controller, ILogger<XProbeRouter> logger)
+    public XProbeRouter(IDongleDeviceService devices, ICncController controller, IServiceProvider sp, ILogger<XProbeRouter> logger)
     {
         _devices = devices;
         _controller = controller;
+        _sp = sp;
         _logger = logger;
     }
 
@@ -368,6 +370,13 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     {
         var currentUsb = _usbPortPath;
         var cncPort = GetActiveCncPort();
+        // Anything the PendantPortScanner has claimed (pendant + dongle) is
+        // strictly off-limits. Writing "$ID\n" to the pendant's USB port
+        // during a firmware OTA injects the identity bytes into the raw
+        // chunk stream — that was the source of every mid-flash corruption
+        // seen on the kiosk (MD5 mismatch, mid-transfer stalls, and the V2
+        // "Bad header ($ID)" fault).
+        var occupied = GetOccupiedPorts();
         var all = SerialPort.GetPortNames();
         var kept = new List<string>();
         foreach (var p in all)
@@ -376,6 +385,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             if (p == currentUsb) continue;    // already ours
             if (cncPort is not null && string.Equals(p, cncPort, StringComparison.Ordinal))
                 continue;                     // never probe the port grblHAL is on
+            if (occupied.Contains(p)) continue; // never probe pendant/dongle ports
             kept.Add(p);
         }
         // Drop /dev/tty.* twins when /dev/cu.* twin is present (macOS).
@@ -383,6 +393,17 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             kept.Where(p => p.StartsWith("/dev/cu.", StringComparison.Ordinal))
                 .Select(p => "/dev/tty." + p["/dev/cu.".Length..]));
         return kept.Where(p => !cuNames.Contains(p));
+    }
+
+    // Resolves lazily — IPendantManager is registered as a singleton and
+    // constructs on first request, but at StartAsync-time the DI graph
+    // may not yet have wired it. GetService (not Required) returns null
+    // if resolution fails, so probing keeps working when the pendant
+    // subsystem is disabled or misconfigured.
+    private HashSet<string> GetOccupiedPorts()
+    {
+        try { return _sp.GetService<IPendantManager>()?.GetOccupiedPorts() ?? new HashSet<string>(); }
+        catch { return new HashSet<string>(); }
     }
 
     private string? GetActiveCncPort()
