@@ -153,6 +153,28 @@ public static class PendantEndpoints
             return Results.Ok(new ApiSuccess(true));
         });
 
+        // GET /api/pendant/screenshot[?screen=home|outputs|control|info|config|pair|activation]
+        // Returns image/png of the pendant's current screen. When `screen` is
+        // set, the pendant is asked to switch there first (via $SCR:<name>)
+        // so docs automation can grab every screen without asking the operator
+        // to navigate. Requires pendant firmware 1.0.42+ for the switch to
+        // work; older firmware still returns the current screen.
+        app.MapGet("/api/pendant/screenshot", async (HttpContext context, IPendantManager pendant, string? screen) =>
+        {
+            try
+            {
+                var png = await pendant.CaptureScreenAsync(screen, context.RequestAborted);
+                context.Response.ContentType = "image/png";
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.Body.WriteAsync(png);
+                return Results.Empty;
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+        });
+
         app.MapGet("/api/pendant/wifi-info", (IPendantManager pendant) =>
         {
             var info = pendant.GetWifiInfo();

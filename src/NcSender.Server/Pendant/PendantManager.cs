@@ -856,6 +856,184 @@ public class PendantManager : IPendantManager
         StartKeepAliveTimerDelayed(7000);
     }
 
+    // Send $SCR:<name> if a screen was requested, then $SS to snapshot the
+    // pendant's framebuffer. The pendant streams:
+    //   $SCR:OK                                (only when a switch was asked)
+    //   $SS:BEGIN <w> <h> <bytesPerPixel> <byteSwap>
+    //   $SS:D<hex...>                          (repeated)
+    //   $SS:END
+    // Both requests share the direct-USB handler (the dongle can't move a
+    // 300 KB framebuffer). Result is a PNG-encoded byte array.
+    public async Task<byte[]> CaptureScreenAsync(string? screen, CancellationToken ct)
+    {
+        var handler = _pendantUsbHandler is { IsConnected: true } ? _pendantUsbHandler : _serialHandler;
+        if (handler is not { IsConnected: true })
+            throw new InvalidOperationException("Pendant not connected via USB — screenshot requires the direct USB link.");
+
+        var lines = new System.Collections.Concurrent.BlockingCollection<string>(new System.Collections.Concurrent.ConcurrentQueue<string>());
+        void OnLine(string line)
+        {
+            if (line.StartsWith("$SS:", StringComparison.Ordinal) || line.StartsWith("$SCR:", StringComparison.Ordinal))
+                lines.Add(line);
+        }
+
+        handler.RawMessageReceived += OnLine;
+        try
+        {
+            async Task<string> ReadLine(int timeoutMs)
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(timeoutMs);
+                try { return await Task.Run(() => lines.Take(cts.Token), cts.Token); }
+                catch (OperationCanceledException) { throw new TimeoutException("Pendant did not respond within " + timeoutMs + " ms"); }
+            }
+
+            if (!string.IsNullOrEmpty(screen))
+            {
+                await handler.SendRawAsync($"$SCR:{screen}");
+                var reply = await ReadLine(2000);
+                if (reply.StartsWith("$SCR:ERROR:", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Screen switch failed: " + reply["$SCR:ERROR:".Length..]);
+                if (reply != "$SCR:OK")
+                    throw new InvalidOperationException("Unexpected screen-switch reply: " + reply);
+                await Task.Delay(300, ct);
+            }
+
+            await handler.SendRawAsync("$SS");
+            string begin;
+            do { begin = await ReadLine(3000); }
+            while (!begin.StartsWith("$SS:BEGIN", StringComparison.Ordinal) && !begin.StartsWith("$SS:ERROR:", StringComparison.Ordinal));
+            if (begin.StartsWith("$SS:ERROR:", StringComparison.Ordinal))
+                throw new InvalidOperationException("Pendant screenshot failed: " + begin["$SS:ERROR:".Length..]);
+
+            var parts = begin.Split(' ');
+            if (parts.Length < 5) throw new InvalidOperationException("Malformed $SS:BEGIN: " + begin);
+            int w = int.Parse(parts[1], CultureInfo.InvariantCulture);
+            int h = int.Parse(parts[2], CultureInfo.InvariantCulture);
+            int bpp = int.Parse(parts[3], CultureInfo.InvariantCulture);
+            int swap = int.Parse(parts[4], CultureInfo.InvariantCulture);
+            if (bpp != 2) throw new InvalidOperationException("Unsupported bpp=" + bpp + " (need 2)");
+
+            var raw = new byte[w * h * 2];
+            int written = 0;
+            while (true)
+            {
+                var line = await ReadLine(5000);
+                if (line == "$SS:END") break;
+                if (!line.StartsWith("$SS:D", StringComparison.Ordinal)) continue;
+                var hex = line.AsSpan(5);
+                for (int i = 0; i + 1 < hex.Length && written < raw.Length; i += 2)
+                {
+                    raw[written++] = (byte)((HexNibble(hex[i]) << 4) | HexNibble(hex[i + 1]));
+                }
+            }
+
+            if (written != raw.Length)
+                throw new InvalidOperationException($"Short framebuffer: got {written}/{raw.Length} bytes");
+
+            return EncodePngFromRgb565(raw, w, h, swap != 0);
+        }
+        finally
+        {
+            handler.RawMessageReceived -= OnLine;
+            lines.CompleteAdding();
+        }
+    }
+
+    private static int HexNibble(char c)
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return 0;
+    }
+
+    // RGB565 (with optional byte-swap) → 8-bit RGB → minimal PNG. The tiny
+    // encoder here writes uncompressed IDAT deflate blocks (BTYPE 00) so we
+    // don't drag zlib/DeflateStream into the AOT surface. Output is a valid
+    // PNG that any image tool decodes; file size is roughly framebuffer * 1.
+    private static byte[] EncodePngFromRgb565(byte[] src, int w, int h, bool byteSwap)
+    {
+        int rowStride = 1 + w * 3;
+        var filtered = new byte[rowStride * h];
+        int pi = 0;
+        for (int y = 0; y < h; y++)
+        {
+            int rowStart = y * rowStride;
+            filtered[rowStart] = 0;
+            int dst = rowStart + 1;
+            for (int x = 0; x < w; x++)
+            {
+                byte lo = src[pi++];
+                byte hi = src[pi++];
+                ushort px = byteSwap ? (ushort)((lo << 8) | hi) : (ushort)((hi << 8) | lo);
+                int r5 = (px >> 11) & 0x1F;
+                int g6 = (px >> 5) & 0x3F;
+                int b5 = px & 0x1F;
+                filtered[dst++] = (byte)((r5 << 3) | (r5 >> 2));
+                filtered[dst++] = (byte)((g6 << 2) | (g6 >> 4));
+                filtered[dst++] = (byte)((b5 << 3) | (b5 >> 2));
+            }
+        }
+
+        var deflate = new List<byte>(filtered.Length + 12);
+        deflate.Add(0x78); deflate.Add(0x01);
+        const int block = 65535;
+        for (int off = 0; off < filtered.Length; off += block)
+        {
+            int len = Math.Min(block, filtered.Length - off);
+            bool last = (off + len) >= filtered.Length;
+            deflate.Add(last ? (byte)0x01 : (byte)0x00);
+            deflate.Add((byte)(len & 0xFF));
+            deflate.Add((byte)((len >> 8) & 0xFF));
+            deflate.Add((byte)(~len & 0xFF));
+            deflate.Add((byte)((~len >> 8) & 0xFF));
+            for (int i = 0; i < len; i++) deflate.Add(filtered[off + i]);
+        }
+        uint adler = Adler32(filtered, 0, filtered.Length);
+        deflate.Add((byte)((adler >> 24) & 0xFF));
+        deflate.Add((byte)((adler >> 16) & 0xFF));
+        deflate.Add((byte)((adler >> 8) & 0xFF));
+        deflate.Add((byte)(adler & 0xFF));
+
+        using var ms = new MemoryStream();
+        void W(byte[] b) => ms.Write(b, 0, b.Length);
+        void WU32(uint v) { ms.WriteByte((byte)((v >> 24) & 0xFF)); ms.WriteByte((byte)((v >> 16) & 0xFF)); ms.WriteByte((byte)((v >> 8) & 0xFF)); ms.WriteByte((byte)(v & 0xFF)); }
+        void Chunk(string type, byte[] data)
+        {
+            WU32((uint)data.Length);
+            var typeBytes = Encoding.ASCII.GetBytes(type);
+            var crcBuf = new byte[typeBytes.Length + data.Length];
+            Buffer.BlockCopy(typeBytes, 0, crcBuf, 0, typeBytes.Length);
+            Buffer.BlockCopy(data, 0, crcBuf, typeBytes.Length, data.Length);
+            W(typeBytes); W(data);
+            WU32(Crc32(crcBuf, 0, crcBuf.Length));
+        }
+        W(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        var ihdr = new byte[13];
+        ihdr[0] = (byte)((w >> 24) & 0xFF); ihdr[1] = (byte)((w >> 16) & 0xFF); ihdr[2] = (byte)((w >> 8) & 0xFF); ihdr[3] = (byte)(w & 0xFF);
+        ihdr[4] = (byte)((h >> 24) & 0xFF); ihdr[5] = (byte)((h >> 16) & 0xFF); ihdr[6] = (byte)((h >> 8) & 0xFF); ihdr[7] = (byte)(h & 0xFF);
+        ihdr[8] = 8;
+        ihdr[9] = 2;
+        ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+        Chunk("IHDR", ihdr);
+        Chunk("IDAT", deflate.ToArray());
+        Chunk("IEND", Array.Empty<byte>());
+        return ms.ToArray();
+    }
+
+    private static uint Adler32(byte[] data, int offset, int count)
+    {
+        const uint MOD = 65521;
+        uint a = 1, b = 0;
+        for (int i = 0; i < count; i++)
+        {
+            a = (a + data[offset + i]) % MOD;
+            b = (b + a) % MOD;
+        }
+        return (b << 16) | a;
+    }
+
     #endregion
 
     #region IPendantManager — WiFi
