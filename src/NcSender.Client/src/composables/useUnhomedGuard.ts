@@ -7,12 +7,12 @@
  * (at your option) any later version.
  */
 
-import { ref } from 'vue';
 import { useAppStore } from './use-app-store';
+import { getApiBaseUrl } from '../lib/api-base';
 
 // Commands that require the machine to be homed before running. Kept as a
-// list so we can easily add more triggers later. Patterns match the token
-// anywhere in the line, so "T1 M6" and "M6 T1" both trip.
+// client-side fast-path — the server has an authoritative copy of the same
+// list and will re-check on POST /api/gate/ensure-homed.
 const UNHOMED_BLACKLIST: RegExp[] = [
   /\bM0*6\b/i,   // tool change (M6, M06)
   /\$TLS\b/i,    // tool length setter
@@ -22,52 +22,34 @@ function needsHoming(command: string): boolean {
   return UNHOMED_BLACKLIST.some((re) => re.test(command));
 }
 
-// Module-scoped state so the dialog is a singleton — the same open flag drives
-// the mount in App.vue regardless of who called ensureHomed().
-const open = ref(false);
-let resolver: ((ok: boolean) => void) | null = null;
-
 // Ask the user to confirm running an action while the machine is unhomed.
-// - Returns true immediately if the machine is homed.
-// - If `commands` is provided, only prompts when at least one command is on
-//   the blacklist. Callers that always want the prompt when unhomed can omit
-//   the argument (e.g. wrap tool-button clicks that fire an implicit M6).
-// - Returns true if the user chose Continue, false if they chose Abort.
-// Every call re-prompts — no session memory.
+// - Returns true immediately if the machine is homed (client-side fast path).
+// - If `commands` is provided, only prompts when at least one is blacklisted.
+// - Otherwise defers to the server: opens a GateDialog broadcast to every
+//   connected client (browser tabs + pendant), and returns true iff the user
+//   chose "Continue" on any client.
+//
+// Concurrent callers share one gate on the server (Key: "safety.unhomed")
+// so two fast M6 clicks show one prompt, not two.
 export async function ensureHomed(commands?: string | string[]): Promise<boolean> {
   const store = useAppStore();
   if (store.isHomed.value) return true;
-  if (commands !== undefined) {
-    const list = Array.isArray(commands) ? commands : [commands];
-    if (!list.some(needsHoming)) return true;
-  }
-  if (open.value && resolver) {
-    // A dialog is already up from a concurrent action; wait on its result.
-    return new Promise<boolean>((res) => {
-      const prev = resolver!;
-      resolver = (ok) => { prev(ok); res(ok); };
-    });
-  }
-  return new Promise<boolean>((res) => {
-    resolver = res;
-    open.value = true;
-  });
-}
 
-export function useUnhomedGuardDialog() {
-  return {
-    open,
-    confirm: () => {
-      const r = resolver;
-      resolver = null;
-      open.value = false;
-      r?.(true);
-    },
-    abort: () => {
-      const r = resolver;
-      resolver = null;
-      open.value = false;
-      r?.(false);
-    },
-  };
+  const list = commands === undefined
+    ? undefined
+    : (Array.isArray(commands) ? commands : [commands]);
+  if (list && !list.some(needsHoming)) return true;
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/gate/ensure-homed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: list ?? null }),
+    });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return !!body?.proceed;
+  } catch {
+    return false;                     // network failure = don't run the command
+  }
 }

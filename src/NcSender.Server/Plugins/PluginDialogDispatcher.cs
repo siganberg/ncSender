@@ -10,6 +10,15 @@ namespace NcSender.Server.Plugins;
 /// JS plugins call <c>pluginContext.showDialog(...)</c>; that synchronously blocks
 /// until the client posts back a response via the <c>plugin-dialog-response</c>
 /// WebSocket message, at which point the TCS resolves and the JS engine continues.
+///
+/// DEPRECATED — superseded by <see cref="NcSender.Core.Interfaces.IGateService"/>.
+/// Structured GateDialog carries typed buttons instead of raw HTML, is server-
+/// authoritative (survives page refresh), and renders identically across every
+/// client (browser, pendant, future surfaces). New plugin work should use
+/// <c>pluginContext.askGate({title, message, buttons})</c>. This dispatcher
+/// stays in place until every shipped plugin migrates, at which point the
+/// dispatcher, the <c>plugin-dialog-response</c> WS case, PluginDialog.vue,
+/// and the WsShowDialog records can all be deleted together.
 /// </summary>
 public class PluginDialogDispatcher
 {
@@ -25,6 +34,7 @@ public class PluginDialogDispatcher
 
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
 
+    [Obsolete("Superseded by IGateService.AskAsync — pass a GateOptions with structured buttons instead of raw HTML. See PluginDialogDispatcher class remarks.")]
     public JsonElement ShowDialog(string pluginId, string title, string content, WsDialogOptions? options)
     {
         var dialogId = Guid.NewGuid().ToString("N");

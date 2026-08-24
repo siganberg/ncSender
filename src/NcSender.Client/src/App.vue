@@ -820,20 +820,9 @@
     @done="showFirmwareOpenPicker = false"
   />
 
-  <!-- Unhomed action warning: shown when user tries a motion command
-       (tool button, terminal Send) while the machine hasn't been homed. -->
-  <Dialog v-if="unhomedGuard.open.value" @close="unhomedGuard.abort" :show-header="false" size="small">
-    <ConfirmPanel
-      title="Machine is not homed"
-      message="The machine has not been homed. Running commands without homing can crash the tool. Continue anyway?"
-      :show-cancel="true"
-      confirm-text="Continue"
-      cancel-text="Abort"
-      variant="danger"
-      @confirm="unhomedGuard.confirm"
-      @cancel="unhomedGuard.abort"
-    />
-  </Dialog>
+  <!-- Unhomed action warning migrated to server-owned GateDialog
+       (POST /api/gate/ensure-homed). Rendered by GateHost with the same
+       Continue/Abort buttons; visible on every client (browser + pendant). -->
 
   <!-- Mandatory Setup Dialog (non-dismissible) -->
   <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus" :close-on-backdrop-click="setupDismissible" @close="closeSetupDialog">
@@ -991,6 +980,9 @@
     <!-- Plugin Dialog -->
     <PluginDialog />
 
+  <!-- Gate Dialog Host (server-owned blocking prompts) -->
+  <GateHost />
+
   <!-- Plugin Modal Dialog -->
   <ModalDialog
     :isOpen="showPluginModal"
@@ -1126,6 +1118,7 @@ import UtilityBar from './components/UtilityBar.vue';
 import Dialog from './components/Dialog.vue';
 import ConfirmPanel from './components/ConfirmPanel.vue';
 import PluginDialog from './components/PluginDialog.vue';
+import GateHost from './components/GateHost.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
@@ -1145,7 +1138,7 @@ import ConfigTab from './features/config/ConfigTab.vue';
 import BackupTab from './features/backup/BackupTab.vue';
 import FileBrowserDialog from './components/FileBrowserDialog.vue';
 import { useKioskDetection } from './composables/useKioskDetection';
-import { useUnhomedGuardDialog } from './composables/useUnhomedGuard';
+import { installGateDialogListeners } from './composables/useGateDialog';
 import { keyBindingStore } from './features/controls';
 import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 import { mmToInches, inchesToMm } from './lib/units';
@@ -1933,6 +1926,8 @@ const handleClickOutside = (event) => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
 
+  installGateDialogListeners();
+
   window.addEventListener('message', (event) => {
     if (event.data.type === 'show-modal') {
       showPluginModal.value = true;
@@ -2518,7 +2513,6 @@ const clearFirmwareChanges = () => {
 // Kept up here in App.vue since the firmware Export button lives here and
 // the tab isn't its own component.
 const { isKiosk: isFirmwareKiosk } = useKioskDetection();
-const unhomedGuard = useUnhomedGuardDialog();
 const showFirmwareDrivePicker = ref(false);
 const firmwareExportFilename = computed(() => `firmware-settings-${new Date().toISOString().split('T')[0]}.txt`);
 

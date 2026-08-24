@@ -15,6 +15,7 @@ public class JsPluginEngine : IJsPluginEngine
 {
     private readonly ILogger<JsPluginEngine> _logger;
     private readonly PluginDialogDispatcher _dialogs;
+    private readonly IGateService _gates;
     private readonly IToolService _toolService;
     private readonly IDongleDeviceService _dongleDevices;
     private readonly NcSender.Server.Tools.IPendingToolTloWriteback _pendingTloWriteback;
@@ -32,10 +33,11 @@ public class JsPluginEngine : IJsPluginEngine
 
     private readonly IServerContext _serverContext;
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
     {
         _logger = logger;
         _dialogs = dialogs;
+        _gates = gates;
         _toolService = toolService;
         _dongleDevices = dongleDevices;
         _pendingTloWriteback = pendingTloWriteback;
@@ -362,6 +364,9 @@ public class JsPluginEngine : IJsPluginEngine
             return JsValue.Undefined;
         }));
 
+        // DEPRECATED — new plugins should use askGate() (below). Kept for
+        // shipped plugins that still call pluginContext.showDialog(html).
+#pragma warning disable CS0618
         ctx.Set("showDialog", new ClrFunction(engine, "showDialog", (_, args) =>
         {
             var title = args.Length > 0 && args[0].IsString() ? args[0].AsString() : "";
@@ -370,6 +375,27 @@ public class JsPluginEngine : IJsPluginEngine
 
             var response = _dialogs.ShowDialog(pluginId, title, content, options);
             return JsonElementToJsValue(engine, response);
+        }));
+#pragma warning restore CS0618
+
+        // askGate({title, message, variant, buttons: [{value, label, style, isDefault}]})
+        // Blocks the Jint thread until any client responds; returns the chosen
+        // button value as a string (or null if cancelled). See IGateService.
+        ctx.Set("askGate", new ClrFunction(engine, "askGate", (_, args) =>
+        {
+            var options = args.Length > 0 ? JsValueToGateOptions(args[0], pluginId) : null;
+            if (options is null) return JsValue.Null;
+
+            try
+            {
+                var chosen = _gates.AskAsync(options).GetAwaiter().GetResult();
+                return chosen is null ? JsValue.Null : (JsValue)chosen;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[plugin:{PluginId}] askGate failed", pluginId);
+                return JsValue.Null;
+            }
         }));
 
         ctx.Set("getTools", new ClrFunction(engine, "getTools", (_, _) =>
@@ -559,6 +585,39 @@ public class JsPluginEngine : IJsPluginEngine
         var closableProp = obj.Get("closable");
         if (closableProp.IsBoolean()) closable = closableProp.AsBoolean();
         return new WsDialogOptions(size, closable);
+    }
+
+    private static GateOptions? JsValueToGateOptions(JsValue v, string pluginId)
+    {
+        if (v.IsUndefined() || v.IsNull() || v is not ObjectInstance obj) return null;
+
+        var title = obj.Get("title");
+        if (!title.IsString()) return null;
+
+        string? message = obj.Get("message") is { } m && m.IsString() ? m.AsString() : null;
+        var variant = obj.Get("variant") is { } vp && vp.IsString() ? vp.AsString() : "info";
+
+        List<GateButton>? buttons = null;
+        var btnProp = obj.Get("buttons");
+        if (btnProp is ArrayInstance arr)
+        {
+            var length = (int)arr.Get("length").AsNumber();
+            buttons = new List<GateButton>(length);
+            for (var i = 0; i < length; i++)
+            {
+                if (arr[i] is not ObjectInstance btn) continue;
+                var val = btn.Get("value");
+                var label = btn.Get("label");
+                if (!val.IsString() || !label.IsString()) continue;
+                var style = btn.Get("style") is { } sp && sp.IsString() ? sp.AsString() : "secondary";
+                var isDefault = btn.Get("isDefault") is { } dp && dp.IsBoolean() && dp.AsBoolean();
+                buttons.Add(new GateButton(val.AsString(), label.AsString(), style, isDefault));
+            }
+        }
+
+        var persist = obj.Get("persist") is { } pp && pp.IsBoolean() && pp.AsBoolean();
+
+        return new GateOptions(title.AsString(), message, variant, buttons, $"plugin:{pluginId}", persist);
     }
 
     private static JsValue JsonElementToJsValue(Engine engine, JsonElement element)

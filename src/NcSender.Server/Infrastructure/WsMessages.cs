@@ -39,6 +39,27 @@ public record WsCloseDialog(string DialogId);
 // CncEventBridge: plugin:show-modal (V1 parity — self-contained HTML rendered by ModalDialog)
 public record WsShowModal(string PluginId, string Content, bool Closable);
 
+// GateDialogService: server-owned blocking prompt broadcast to every client.
+// First responder wins; server broadcasts gate:close to everyone. Survives page
+// refresh — fresh clients receive gate:active on connect handshake.
+public record WsGateShow(
+    string GateId,
+    string Title,
+    string? Message,
+    string Variant,
+    IReadOnlyList<WsGateButton> Buttons,
+    string? Source = null);
+
+public record WsGateButton(
+    string Value,
+    string Label,
+    string Style = "secondary",
+    bool IsDefault = false);
+
+public record WsGateClose(string GateId, string? Value = null);
+
+public record WsGateActive(IReadOnlyList<WsGateShow> Gates);
+
 // ServerBuilder: remote-control-state
 public record WsRemoteControlState(bool Enabled);
 

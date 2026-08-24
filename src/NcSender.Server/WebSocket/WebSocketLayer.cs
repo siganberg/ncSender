@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Server.GateDialog;
 using NcSender.Server.Infrastructure;
 
 namespace NcSender.Server.WebSocket;
@@ -24,6 +25,7 @@ public class WebSocketLayer : IBroadcaster
     private IJobManager? _jobManager;
     private IJogManager? _jogManager;
     private NcSender.Server.Plugins.PluginDialogDispatcher? _dialogDispatcher;
+    private IGateService? _gateService;
 
     public WebSocketLayer(ILogger<WebSocketLayer> logger, IServerContext context, ISettingsManager settings)
     {
@@ -57,6 +59,11 @@ public class WebSocketLayer : IBroadcaster
     public void SetDialogDispatcher(NcSender.Server.Plugins.PluginDialogDispatcher dispatcher)
     {
         _dialogDispatcher = dispatcher;
+    }
+
+    public void SetGateService(IGateService gateService)
+    {
+        _gateService = gateService;
     }
 
     public async Task HandleConnection(HttpContext context)
@@ -115,6 +122,21 @@ public class WebSocketLayer : IBroadcaster
                 await SendMessage(ws, "gcode-updated", JsonSerializer.SerializeToElement(
                     new WsGcodeUpdated(_context.State.JobLoaded.Filename, _context.State.JobLoaded.TotalLines),
                     NcSenderJsonContext.Default.WsGcodeUpdated));
+            }
+
+            // Catch-up any currently-open gates so a fresh client (or one that
+            // reconnected) shows the same prompt every other client is seeing.
+            if (_gateService is not null)
+            {
+                var active = _gateService.Active();
+                if (active.Count > 0)
+                {
+                    var payload = new WsGateActive(active
+                        .Select(GateDialogService.ToWsShow)
+                        .ToList());
+                    await SendMessage(ws, "gate:active", JsonSerializer.SerializeToElement(
+                        payload, NcSenderJsonContext.Default.WsGateActive));
+                }
             }
 
             await ReceiveLoop(client);
@@ -245,6 +267,19 @@ public class WebSocketLayer : IBroadcaster
                     {
                         var jogData = root.TryGetProperty("data", out var jogDataProp) ? jogDataProp : root;
                         _ = _jogManager.HandleMessageAsync(client.ClientId, type, jogData);
+                    }
+                    break;
+
+                case "gate:respond":
+                    if (_gateService is not null
+                        && root.TryGetProperty("data", out var gateData)
+                        && gateData.TryGetProperty("gateId", out var gateIdProp)
+                        && gateIdProp.GetString() is string gateId)
+                    {
+                        var value = gateData.TryGetProperty("value", out var valProp)
+                            ? valProp.GetString()
+                            : null;
+                        _gateService.Resolve(gateId, value);
                     }
                     break;
 
