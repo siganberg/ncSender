@@ -65,6 +65,8 @@ public class PendantManager : IPendantManager
     private long _droFrameCounter;
     private const int PingTimeoutMs = 3000;
 
+    private readonly IGateService _gates;
+
     public PendantManager(
         ILogger<PendantManager> logger,
         ICncController controller,
@@ -74,7 +76,8 @@ public class PendantManager : IPendantManager
         ICommandProcessor commandProcessor,
         ISettingsManager settingsManager,
         IDongleDeviceService dongleDevices,
-        NcSender.Server.Dongle.DongleOtaService dongleOta)
+        NcSender.Server.Dongle.DongleOtaService dongleOta,
+        IGateService gates)
     {
         _logger = logger;
         _controller = controller;
@@ -85,6 +88,13 @@ public class PendantManager : IPendantManager
         _settingsManager = settingsManager;
         _dongleDevices = dongleDevices;
         _dongleOta = dongleOta;
+        _gates = gates;
+
+        // Mirror gate lifecycle to the pendant. Gate events broadcast on the
+        // browser channel also need to reach the pendant so it can render the
+        // same prompt and respond. Filters by type so we don't ship every
+        // broadcast down the serial pipe.
+        _broadcaster.MessageBroadcast += OnBroadcastToPendant;
 
         // Give the dongle device service a path to send "@name" commands out over the
         // dongle (read at call-time, so it follows dongle connect/disconnect).
@@ -1601,6 +1611,25 @@ public class PendantManager : IPendantManager
                 case "client:metadata":
                     HandleClientMetadata(root);
                     break;
+                case "gate:respond":
+                    if (root.TryGetProperty("data", out var grData)
+                        && grData.TryGetProperty("gateId", out var grIdEl)
+                        && grIdEl.GetString() is string grId)
+                    {
+                        var val = grData.TryGetProperty("value", out var vEl) ? vEl.GetString() : null;
+                        _gates.Resolve(grId, val);
+                    }
+                    break;
+                case "gate:step-fire":
+                    if (root.TryGetProperty("data", out var gsData)
+                        && gsData.TryGetProperty("gateId", out var gsIdEl)
+                        && gsIdEl.GetString() is string gsId
+                        && gsData.TryGetProperty("stepIndex", out var gsIdxEl)
+                        && gsIdxEl.TryGetInt32(out var gsIdx))
+                    {
+                        _ = _gates.FireStepAsync(gsId, gsIdx);
+                    }
+                    break;
             }
         }
         catch (Exception ex)
@@ -1679,6 +1708,11 @@ public class PendantManager : IPendantManager
                 await _serialHandler.SendMessageAsync(
                     new PendantTypeMsg("request:metadata"),
                     PendantJsonContext.Default.PendantTypeMsg);
+
+                // Catch-up: mirror any currently-open gate to a fresh pendant
+                // (server may have opened it before pendant connected, or the
+                // pendant just booted mid-flow).
+                await PushGatesActiveAsync();
             }
         }
         else
@@ -2013,6 +2047,64 @@ public class PendantManager : IPendantManager
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Pendant job:stop failed");
+        }
+    }
+
+    #endregion
+
+    #region Gate Dialog Mirroring
+
+    // Fires from IBroadcaster.MessageBroadcast (posted by WebSocketLayer.Broadcast).
+    // Forward gate:show and gate:close to the pendant as-is; the JsonElement
+    // was already serialised in the browser-facing camelCase shape, so the
+    // pendant's ArduinoJson parse can key off `gateId`, `title`, etc. directly.
+    // We intentionally ignore step-update broadcasts too (they arrive as
+    // fresh gate:show frames with an incremented stepProgress — the pendant
+    // treats gate:show as an upsert).
+    private void OnBroadcastToPendant(string type, JsonElement data)
+    {
+        if (type is not ("gate:show" or "gate:close")) return;
+        if (_serialHandler is not { IsConnected: true }) return;
+
+        _ = ForwardToPendantAsync(type, data);
+    }
+
+    private async Task ForwardToPendantAsync(string type, JsonElement data)
+    {
+        try
+        {
+            await _serialHandler!.SendMessageAsync(
+                new PendantTypeDataMsg(type, data),
+                PendantJsonContext.Default.PendantTypeDataMsg);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to forward {Type} to pendant", type);
+        }
+    }
+
+    private async Task PushGatesActiveAsync()
+    {
+        if (_serialHandler is not { IsConnected: true }) return;
+        var active = _gates.Active();
+        if (active.Count == 0) return;
+
+        try
+        {
+            // Serialise the WsGateActive payload using the main JSON context —
+            // the pendant treats gate:active as an array of gate:show payloads.
+            var payload = new NcSender.Server.Infrastructure.WsGateActive(active
+                .Select(NcSender.Server.GateDialog.GateDialogService.ToWsShow)
+                .ToList());
+            var el = System.Text.Json.JsonSerializer.SerializeToElement(
+                payload, NcSender.Server.Infrastructure.NcSenderJsonContext.Default.WsGateActive);
+            await _serialHandler.SendMessageAsync(
+                new PendantTypeDataMsg("gate:active", el),
+                PendantJsonContext.Default.PendantTypeDataMsg);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to push gate:active to pendant");
         }
     }
 

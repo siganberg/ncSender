@@ -134,6 +134,7 @@ public static class ServerBuilder
 
         // Phase 5 DI registrations
         builder.Services.AddSingleton<NcSender.Server.Plugins.PluginDialogDispatcher>();
+        builder.Services.AddSingleton<IGateService, NcSender.Server.GateDialog.GateDialogService>();
         builder.Services.AddSingleton<IJsPluginEngine, JsPluginEngine>();
         builder.Services.AddSingleton<ICommandProcessor>(sp =>
         {
@@ -232,6 +233,8 @@ public static class ServerBuilder
         wsLayer.SetCommandProcessor(commandProcessor);
         var dialogDispatcher = app.Services.GetRequiredService<NcSender.Server.Plugins.PluginDialogDispatcher>();
         wsLayer.SetDialogDispatcher(dialogDispatcher);
+        var gateService = app.Services.GetRequiredService<IGateService>();
+        wsLayer.SetGateService(gateService);
 
         // Eagerly create PluginManager to load enabled command plugins into JsPluginEngine
         _ = app.Services.GetRequiredService<IPluginManager>();
@@ -381,6 +384,7 @@ public static class ServerBuilder
         NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);
         NcSender.Server.Backup.BackupEndpoints.Map(app);
         NcSender.Server.ExternalDrives.ExternalDriveEndpoints.Map(app);
+        NcSender.Server.GateDialog.GateEndpoints.Map(app);
         SystemApi.SystemEndpoints.Map(app);
 
         // Eagerly resolve PendantManager so its constructor subscribes to

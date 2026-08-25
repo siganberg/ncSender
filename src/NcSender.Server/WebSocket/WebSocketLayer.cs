@@ -24,6 +24,7 @@ public class WebSocketLayer : IBroadcaster
     private IJobManager? _jobManager;
     private IJogManager? _jogManager;
     private NcSender.Server.Plugins.PluginDialogDispatcher? _dialogDispatcher;
+    private IGateService? _gateService;
 
     public WebSocketLayer(ILogger<WebSocketLayer> logger, IServerContext context, ISettingsManager settings)
     {
@@ -52,6 +53,11 @@ public class WebSocketLayer : IBroadcaster
     public void SetJogManager(IJogManager jogManager)
     {
         _jogManager = jogManager;
+    }
+
+    public void SetGateService(IGateService gateService)
+    {
+        _gateService = gateService;
     }
 
     public void SetDialogDispatcher(NcSender.Server.Plugins.PluginDialogDispatcher dispatcher)
@@ -117,6 +123,21 @@ public class WebSocketLayer : IBroadcaster
                     NcSenderJsonContext.Default.WsGcodeUpdated));
             }
 
+            // Catch-up: send any currently-open gates so a fresh client (or a
+            // reconnected one) sees the same prompt every other client is on.
+            if (_gateService is not null)
+            {
+                var active = _gateService.Active();
+                if (active.Count > 0)
+                {
+                    var payload = new WsGateActive(active
+                        .Select(NcSender.Server.GateDialog.GateDialogService.ToWsShow)
+                        .ToList());
+                    await SendMessage(ws, "gate:active", JsonSerializer.SerializeToElement(
+                        payload, NcSenderJsonContext.Default.WsGateActive));
+                }
+            }
+
             await ReceiveLoop(client);
         }
         catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
@@ -153,6 +174,8 @@ public class WebSocketLayer : IBroadcaster
         }
     }
 
+    public event Action<string, JsonElement>? MessageBroadcast;
+
     public async Task Broadcast(string type, JsonElement data)
     {
         var payload = SerializeMessage(type, data);
@@ -160,6 +183,9 @@ public class WebSocketLayer : IBroadcaster
         var tasks = _clients.Values
             .Where(c => c.Socket.State == WebSocketState.Open)
             .Select(c => SendRaw(c.Socket, payload));
+
+        try { MessageBroadcast?.Invoke(type, data); }
+        catch (Exception ex) { _logger.LogWarning(ex, "MessageBroadcast subscriber threw"); }
 
         await Task.WhenAll(tasks);
     }
@@ -245,6 +271,29 @@ public class WebSocketLayer : IBroadcaster
                     {
                         var jogData = root.TryGetProperty("data", out var jogDataProp) ? jogDataProp : root;
                         _ = _jogManager.HandleMessageAsync(client.ClientId, type, jogData);
+                    }
+                    break;
+
+                case "gate:respond":
+                    if (_gateService is not null
+                        && root.TryGetProperty("data", out var grData)
+                        && grData.TryGetProperty("gateId", out var grIdProp)
+                        && grIdProp.GetString() is string grGateId)
+                    {
+                        var val = grData.TryGetProperty("value", out var vp) ? vp.GetString() : null;
+                        _gateService.Resolve(grGateId, val);
+                    }
+                    break;
+
+                case "gate:step-fire":
+                    if (_gateService is not null
+                        && root.TryGetProperty("data", out var gsData)
+                        && gsData.TryGetProperty("gateId", out var gsIdProp)
+                        && gsIdProp.GetString() is string gsGateId
+                        && gsData.TryGetProperty("stepIndex", out var siProp)
+                        && siProp.TryGetInt32(out var stepIdx))
+                    {
+                        _ = _gateService.FireStepAsync(gsGateId, stepIdx);
                     }
                     break;
 

@@ -21,6 +21,7 @@ public class CncEventBridge
     private readonly IPluginManager _pluginManager;
     private readonly ISettingsManager _settingsManager;
     private readonly IToolProjection _toolProjection;
+    private readonly IGateService _gates;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
 
@@ -39,8 +40,10 @@ public class CncEventBridge
         IJobManager jobManager,
         IPluginManager pluginManager,
         ISettingsManager settingsManager,
-        IToolProjection toolProjection)
+        IToolProjection toolProjection,
+        IGateService gates)
     {
+        _gates = gates;
         _toolProjection = toolProjection;
         _controller = controller;
         _context = context;
@@ -537,7 +540,7 @@ public class CncEventBridge
             {
                 var normalizedName = pluginMatch.Groups[1].Value;
                 var messageCode = pluginMatch.Groups[2].Value;
-                HandlePluginMessage(normalizedName, messageCode, data);
+                _ = HandlePluginMessageAsync(normalizedName, messageCode);
             }
         }
 
@@ -577,7 +580,7 @@ public class CncEventBridge
         _ = _broadcaster.Broadcast("cnc-data", data, NcSenderJsonContext.Default.String);
     }
 
-    private void HandlePluginMessage(string normalizedName, string messageCode, string rawData)
+    private async Task HandlePluginMessageAsync(string normalizedName, string messageCode)
     {
         var dialog = _pluginManager.GetPluginMessageDialog(normalizedName, messageCode);
         if (dialog is null)
@@ -586,7 +589,7 @@ public class CncEventBridge
             return;
         }
 
-        // Extract tool number from suffix (e.g. LOAD_MESSAGE_MANUAL_5 → "5")
+        // Substitute {toolNumber} placeholder — same styling the old HTML modal used.
         var lastUnderscore = messageCode.LastIndexOf('_');
         if (lastUnderscore > 0 && int.TryParse(messageCode[(lastUnderscore + 1)..], out var toolNum))
         {
@@ -601,413 +604,122 @@ public class CncEventBridge
             dialog.Message = dialog.Message.Replace("{toolNumber}", "the tool");
         }
 
-        _logger.LogInformation("Plugin message {Name}:{Code} — showing dialog: {Title}",
+        _logger.LogInformation("Plugin message {Name}:{Code} — opening gate: {Title}",
             normalizedName, messageCode, dialog.Title);
 
-        var html = BuildSafetyDialogHtml(dialog);
+        // Manifest "buttons" array becomes GateSteps (one morphing button in
+        // browser, one full-width tap-to-fire button per step on pendant).
+        // The Continue button is disabled until every step has fired.
+        var extras = dialog.Buttons ?? new List<PluginDialogButton>();
+        var steps = extras.Count > 0
+            ? extras.Select(b => new GateStep(
+                b.Label ?? "",
+                b.Label ?? "",
+                (IReadOnlyList<string>)(b.Gcode?.ToList() ?? new List<string>()))).ToList()
+            : null;
 
-        // Broadcast via plugin:show-modal (V1 parity — renders in ModalDialog, not PluginDialog)
-        _ = _broadcaster.Broadcast("plugin:show-modal",
-            new WsShowModal(dialog.PluginId, html, Closable: false),
-            NcSenderJsonContext.Default.WsShowModal);
-
-        // Persist dialog payload so it survives page refresh / server restart (V1 parity)
-        PersistPluginMessageAsync(normalizedName, messageCode, rawData, dialog, html);
-
-        async void PersistPluginMessageAsync(string pluginCode, string msgCode, string raw,
-            PluginDialogInfo dlg, string htmlContent)
+        var buttons = new List<GateButton>
         {
-            try
+            new("abort", "Abort", "danger"),
+            new("continue", dialog.ContinueLabel ?? "Continue", "primary",
+                IsDefault: true,
+                RequiresStepsComplete: extras.Count > 0),
+        };
+
+        GateStepConfig? stepConfig = steps is null ? null : new GateStepConfig(
+            HoldMs: dialog.HoldMs.GetValueOrDefault(1000),
+            CountdownSec: dialog.CountdownSec.GetValueOrDefault(5),
+            ChainSteps: dialog.ChainSteps.GetValueOrDefault(false));
+
+        // Key ensures duplicate MSG codes (controller re-emit) latch onto the
+        // same open gate instead of stacking. Persist so the prompt survives a
+        // browser refresh and a server restart.
+        // Persist: false — the gate is only meaningful while the controller
+        // holds the M0 that this plugin macro paused on. Server restart
+        // triggers CncController's soft-reset (line 224 of CncController.cs),
+        // which wipes the hold — sending `~` afterwards would be a no-op and
+        // the user would think the tool change resumed when it didn't. Page
+        // refresh alone is safe: server memory intact, M0 still held, gate:active
+        // catches the refreshed client up. Server restart drops the gate; the
+        // operator re-triggers the tool change.
+        var chosen = await _gates.AskAsync(new GateOptions(
+            Title: dialog.Title,
+            Message: dialog.Message,
+            Variant: "warning",
+            Buttons: buttons,
+            Source: $"plugin:{normalizedName}",
+            Persist: false,
+            Key: $"plugin:{normalizedName}:{messageCode}",
+            Steps: (IReadOnlyList<GateStep>?)steps,
+            StepConfig: stepConfig,
+            MessageHtml: true));
+
+        if (chosen == "abort")
+            await DispatchGateAbortAsync(dialog);
+        else if (chosen == "continue")
+            await DispatchGateContinueAsync();
+        // null — rehydrated orphan after restart with no live caller — nothing to dispatch.
+    }
+
+    // Abort: soft-reset FIRST so any lines still buffered from the interrupted
+    // program (M6 macro, TLS routine, etc.) are purged. abortEventGcode would
+    // otherwise be discarded by the reset. 200 ms lets grblHAL settle before
+    // we send the plugin's post-abort gcode.
+    private async Task DispatchGateAbortAsync(PluginDialogInfo dialog)
+    {
+        try
+        {
+            await _controller.SendCommandAsync("\x18", new CommandOptions
             {
-                await _settingsManager.SaveSettings(new JsonObject
+                DisplayCommand = "0x18 (Soft Reset)",
+                Meta = new CommandMeta { SourceId = "system", Silent = true }
+            });
+            await Task.Delay(200);
+
+            if (!string.IsNullOrWhiteSpace(dialog.AbortEventGcode))
+            {
+                foreach (var line in dialog.AbortEventGcode.Trim().Split('\n'))
                 {
-                    ["pluginMessage"] = new JsonObject
+                    var trimmed = line.Trim();
+                    if (trimmed.Length == 0) continue;
+                    await _controller.SendCommandAsync(trimmed, new CommandOptions
                     {
-                        ["pluginCode"] = pluginCode,
-                        ["messageId"] = msgCode,
-                        ["rawData"] = raw,
-                        ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        ["modalPayload"] = new JsonObject
-                        {
-                            ["pluginId"] = dlg.PluginId,
-                            ["content"] = htmlContent,
-                            ["closable"] = false
-                        }
-                    }
-                });
-                _logger.LogInformation("Persisted pluginMessage to settings.json");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to persist pluginMessage to settings.json");
-            }
-        }
-    }
-
-    private static string BuildHoldHint(int holdMs, int countdownSec, bool chainSteps)
-    {
-        static string SecondsNoun(double n)
-        {
-            var text = n == Math.Floor(n) ? $"{(int)n}" : $"{n:0.#}";
-            return $"{text} {(Math.Abs(n - 1) < 0.001 ? "second" : "seconds")}";
-        }
-        static string SecondsAttr(double n)
-        {
-            var text = n == Math.Floor(n) ? $"{(int)n}" : $"{n:0.#}";
-            return $"{text}-second";
-        }
-        var holdText = SecondsNoun(holdMs / 1000.0);
-        var countdownAttr = SecondsAttr(countdownSec);
-        var chainNote = chainSteps
-            ? $" Chain mode is on. One arm runs every remaining step, each with its own {countdownAttr} countdown."
-            : "";
-        return $"<div class=\"rcs-hold-hint\">Tap to arm a {countdownAttr} countdown, so you have time to walk to the spindle first. Press and hold for {holdText} to fire it right away.{chainNote}</div>";
-    }
-
-    private static string BuildSafetyDialogHtml(PluginDialogInfo dialog)
-    {
-        var abortGcodeLines = !string.IsNullOrWhiteSpace(dialog.AbortEventGcode)
-            ? dialog.AbortEventGcode.Trim().Split('\n')
-                .Select(line => line.Trim())
-                .Where(line => line.Length > 0)
-                .ToArray()
-            : Array.Empty<string>();
-
-        var abortGcodeJson = System.Text.Json.JsonSerializer.Serialize(abortGcodeLines, NcSenderJsonContext.Default.StringArray);
-
-        // Optional in-sequence action steps (Release → Clamp / etc.).
-        // Rendered as ONE morphing button: its label and gcode advance
-        // through the sequence as the operator taps/holds it. This keeps
-        // the dialog compact and mirrors real hardware — a single
-        // "current action" button that walks the sequence.
-        var extraButtons = dialog.Buttons ?? new List<PluginDialogButton>();
-        var hasExtras = extraButtons.Count > 0;
-        var firstLabel = hasExtras
-            ? System.Net.WebUtility.HtmlEncode(extraButtons[0].Label)
-            : "";
-        var extraButtonsMarkup = hasExtras
-            ? $"<button class=\"rcs-action-button rcs-button-extra\" id=\"rcs-extra-btn\">{firstLabel}</button>"
-            : "";
-
-        // Labels + gcode arrays for each step — serialized manually to
-        // avoid reflection under AOT.
-        var labelSb = new System.Text.StringBuilder("[");
-        var gcodeSb = new System.Text.StringBuilder("[");
-        for (var i = 0; i < extraButtons.Count; i += 1)
-        {
-            if (i > 0) { labelSb.Append(','); gcodeSb.Append(','); }
-            labelSb.Append(System.Text.Json.JsonSerializer.Serialize(
-                extraButtons[i].Label ?? "", NcSenderJsonContext.Default.String));
-            var lines = extraButtons[i].Gcode ?? new List<string>();
-            gcodeSb.Append(System.Text.Json.JsonSerializer.Serialize(
-                lines.ToArray(), NcSenderJsonContext.Default.StringArray));
-        }
-        labelSb.Append(']');
-        gcodeSb.Append(']');
-        var extraLabelsJson = labelSb.ToString();
-        var extraGcodeJson = gcodeSb.ToString();
-
-        // Plugin-configurable dialog timing. Sensible defaults apply if the
-        // plugin hasn't written them into its settings.
-        var holdMs = dialog.HoldMs.GetValueOrDefault(1000);
-        var countdownSec = dialog.CountdownSec.GetValueOrDefault(5);
-        var chainStepsJs = dialog.ChainSteps.GetValueOrDefault(false) ? "true" : "false";
-
-        return $$"""
-        <style>
-          .rcs-safety-container {
-            background: var(--color-surface);
-            border-radius: var(--radius-medium);
-            padding: 32px;
-            max-width: 500px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          }
-
-          .rcs-safety-header {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--color-text-primary);
-            margin-bottom: 24px;
-            text-align: center;
-          }
-
-          .rcs-safety-dialog {
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-          }
-
-          .rcs-safety-message {
-            font-size: 1rem;
-            line-height: 1.5;
-            color: var(--color-text-primary);
-            background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-            border: 2px solid var(--color-warning);
-            border-radius: var(--radius-small);
-            padding: 16px;
-          }
-
-          .rcs-hold-hint {
-            font-size: 0.85rem;
-            line-height: 1.4;
-            color: var(--color-text-secondary);
-            text-align: center;
-            margin-top: -8px;
-          }
-
-          .rcs-safety-actions {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-          }
-
-          .rcs-action-button {
-            padding: 12px 24px;
-            border: none;
-            border-radius: var(--radius-small);
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            min-width: 120px;
-            flex: 0 0 auto;
-          }
-
-          .rcs-action-button:hover {
-            opacity: 0.9;
-          }
-
-          .rcs-action-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-          }
-
-          .rcs-button-abort {
-            background: var(--color-error, #dc2626);
-            color: white;
-          }
-
-          .rcs-button-continue {
-            background: var(--color-success, #16a34a);
-            color: white;
-          }
-
-          .rcs-button-extra {
-            background-color: var(--color-accent, #2563eb);
-            background-repeat: no-repeat;
-            color: white;
-            overflow: hidden;
-            -webkit-user-select: none;
-            user-select: none;
-            -webkit-touch-callout: none;
-            touch-action: manipulation;
-          }
-        </style>
-
-        <div class="rcs-safety-container">
-          <div class="rcs-safety-header">{{dialog.Title}}</div>
-          <div class="rcs-safety-dialog">
-            <div class="rcs-safety-message">{{dialog.Message}}</div>
-            {{(hasExtras ? BuildHoldHint(holdMs, countdownSec, dialog.ChainSteps.GetValueOrDefault(false)) : "")}}
-            <div class="rcs-safety-actions">
-              <button class="rcs-action-button rcs-button-abort" id="rcs-abort-btn">Abort</button>
-              {{extraButtonsMarkup}}
-              <button class="rcs-action-button rcs-button-continue" id="rcs-continue-btn" {{(hasExtras ? "disabled" : "")}}>{{dialog.ContinueLabel}}</button>
-            </div>
-          </div>
-        </div>
-
-        <script>
-          (function() {
-            var abortGcodeLines = {{abortGcodeJson}};
-            var extraLabels = {{extraLabelsJson}};
-            var extraGcodeArrays = {{extraGcodeJson}};
-            var extraCount = extraGcodeArrays.length;
-            // A single morphing extra button walks the step sequence
-            // (Release → Clamp / etc.). Two gestures supported:
-            //   - Short tap → immediate action.
-            //   - Hold →     arms a countdown; auto-executes at 0.
-            // The hold gesture lets the operator arm the drawbar release/
-            // clamp on the touch screen, then walk to the spindle before it
-            // fires. Durations come from plugin settings.
-            var HOLD_MS = {{holdMs}};
-            var COUNTDOWN_SEC = {{countdownSec}};
-            var CHAIN_STEPS = {{chainStepsJs}};
-            var nextExtraIdx = 0;
-            var extraBtn = document.getElementById('rcs-extra-btn');
-            var state = {
-              holdTimer: null,
-              countdownTimer: null,
-              armed: false
-            };
-
-            function enableContinue() {
-              var c = document.getElementById('rcs-continue-btn');
-              if (c) c.disabled = false;
-            }
-
-            function currentLabel() {
-              return extraLabels[nextExtraIdx] || '';
-            }
-
-            // Hold-fill overlay: a translucent white layer that grows from
-            // 0% width to 100% width across the button over HOLD_MS. Matches
-            // the long-press feedback used elsewhere in ncSender.
-            var HOLD_FILL_IMAGE = 'linear-gradient(rgba(255,255,255,0.35), rgba(255,255,255,0.35))';
-            function beginHoldFill() {
-              if (!extraBtn) return;
-              extraBtn.style.backgroundImage = HOLD_FILL_IMAGE;
-              extraBtn.style.transition = 'none';
-              extraBtn.style.backgroundSize = '0% 100%';
-              // Force reflow so the transition applies from 0%.
-              void extraBtn.offsetWidth;
-              extraBtn.style.transition = 'background-size ' + HOLD_MS + 'ms linear';
-              extraBtn.style.backgroundSize = '100% 100%';
-            }
-            function clearHoldFill() {
-              if (!extraBtn) return;
-              extraBtn.style.transition = 'none';
-              extraBtn.style.backgroundImage = '';
-              extraBtn.style.backgroundSize = '';
-            }
-
-            function clearExtraTimers() {
-              if (state.holdTimer !== null) { clearTimeout(state.holdTimer); state.holdTimer = null; }
-              if (state.countdownTimer !== null) { clearInterval(state.countdownTimer); state.countdownTimer = null; }
-              state.armed = false;
-            }
-
-            function executeExtra() {
-              if (!extraBtn || nextExtraIdx >= extraCount) return;
-              var gcode = extraGcodeArrays[nextExtraIdx] || [];
-              var justFiredLabel = extraLabels[nextExtraIdx] || '';
-              var wasChained = CHAIN_STEPS && state.armed;
-              clearExtraTimers();
-              clearHoldFill();
-              gcode.forEach(function(line) {
-                window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
-              });
-              nextExtraIdx += 1;
-              if (nextExtraIdx < extraCount) {
-                extraBtn.textContent = currentLabel();
-                // Chain mode: the user armed once; keep the countdown
-                // rolling through every remaining step without another
-                // long-press.
-                if (wasChained) startCountdown();
-              } else {
-                // Strip any trailing "(Ns)" countdown so the disabled
-                // button doesn't freeze on "Clamp (1s)".
-                extraBtn.textContent = justFiredLabel;
-                extraBtn.disabled = true;
-                enableContinue();
-              }
-            }
-
-            function startCountdown() {
-              if (!extraBtn) return;
-              state.armed = true;
-              var label = currentLabel();
-              var remaining = COUNTDOWN_SEC;
-              extraBtn.textContent = label + ' (' + remaining + 's)';
-              state.countdownTimer = setInterval(function() {
-                remaining -= 1;
-                if (remaining <= 0) {
-                  executeExtra();
-                } else {
-                  extraBtn.textContent = label + ' (' + remaining + 's)';
-                }
-              }, 1000);
-            }
-
-            if (extraBtn) {
-              // Gesture mapping — safer default is countdown on short tap,
-              // immediate fire only on deliberate long-press:
-              //   - Short tap (release before HOLD_MS) → arm countdown.
-              //   - Hold ≥ HOLD_MS → immediate execute.
-              extraBtn.addEventListener('pointerdown', function() {
-                if (extraBtn.disabled || state.armed || nextExtraIdx >= extraCount) return;
-                if (state.holdTimer !== null) return;
-                beginHoldFill();
-                state.holdTimer = setTimeout(function() {
-                  state.holdTimer = null;
-                  clearHoldFill();
-                  executeExtra();
-                }, HOLD_MS);
-              });
-              function cancelHoldAndMaybeArm(arm) {
-                if (state.holdTimer === null) return;
-                clearTimeout(state.holdTimer);
-                state.holdTimer = null;
-                clearHoldFill();
-                if (arm && !extraBtn.disabled && !state.armed && nextExtraIdx < extraCount) {
-                  startCountdown();
-                }
-              }
-              extraBtn.addEventListener('pointerup', function() { cancelHoldAndMaybeArm(true); });
-              extraBtn.addEventListener('pointerleave', function() { cancelHoldAndMaybeArm(false); });
-              extraBtn.addEventListener('pointercancel', function() { cancelHoldAndMaybeArm(false); });
-              // Long-press context menu on touch would swallow pointerup.
-              extraBtn.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-            }
-
-            if (extraCount === 0) enableContinue();
-
-            if (window.__rcsClickHandler) {
-              document.removeEventListener('click', window.__rcsClickHandler, true);
-            }
-            function handler(e) {
-              var t = e.target;
-              if (!t || t.disabled) return;
-              if (t.id === 'rcs-abort-btn') {
-                t.disabled = true;
-                var c = document.getElementById('rcs-continue-btn');
-                if (c) c.disabled = true;
-                clearExtraTimers();
-                if (extraBtn) extraBtn.disabled = true;
-                // Soft-reset FIRST so any lines still buffered from the
-                // interrupted program (M6 macro, TLS routine, etc.) are
-                // purged. abortGcodeLines would otherwise be discarded
-                // by the reset that follows. Then send the plugin's abort
-                // gcode to the reset-clean machine after a brief pause so
-                // grblHAL is ready to accept commands.
-                window.postMessage({ type: 'send-command', command: '\x18', displayCommand: '\x18 (Soft Reset)' }, '*');
-                setTimeout(function() {
-                  if (abortGcodeLines.length > 0) {
-                    abortGcodeLines.forEach(function(line) {
-                      window.postMessage({ type: 'send-command', command: line, displayCommand: line }, '*');
+                        Meta = new CommandMeta { SourceId = "system" }
                     });
-                  }
-                  window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
-                }, 200);
-                document.removeEventListener('click', handler, true);
-                delete window.__rcsClickHandler;
-                return;
-              }
-              if (t.id === 'rcs-continue-btn') {
-                t.disabled = true;
-                var a = document.getElementById('rcs-abort-btn');
-                if (a) a.disabled = true;
-                // Send `~` to resume. If a safety door was opened while
-                // the M0 pause was active, grblHAL stacks Door on top of
-                // Hold — one ~ only clears the Door state, leaving the
-                // underlying M0 Hold in place. Send a second ~ after a
-                // short delay so the M0 also releases. When only one
-                // pause was active the second ~ is a harmless no-op
-                // (grblHAL ignores ~ in Idle/Run).
-                window.postMessage({ type: 'send-command', command: '~', displayCommand: '~ (Cycle Start)' }, '*');
-                window.postMessage({ type: 'send-command', command: '$NCSENDER_CLEAR_MSG', displayCommand: '$NCSENDER_CLEAR_MSG' }, '*');
-                setTimeout(function() {
-                  window.postMessage({ type: 'send-command', command: '~', displayCommand: '~ (Cycle Start)' }, '*');
-                }, 500);
-                document.removeEventListener('click', handler, true);
-                delete window.__rcsClickHandler;
-              }
+                }
             }
-            window.__rcsClickHandler = handler;
-            document.addEventListener('click', handler, true);
-          })();
-        </script>
-        """;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gate abort dispatch failed");
+        }
+    }
+
+    // Continue: send `~` (cycle resume). If a safety door was opened while
+    // the M0 pause was active, grblHAL stacks Door on top of Hold — one `~`
+    // clears the Door state; the underlying M0 Hold releases on a second `~`
+    // after a short delay. When only one pause was active the second `~` is
+    // a harmless no-op (grblHAL ignores `~` in Idle/Run).
+    private async Task DispatchGateContinueAsync()
+    {
+        try
+        {
+            await _controller.SendCommandAsync("~", new CommandOptions
+            {
+                DisplayCommand = "~ (Cycle Start)",
+                Meta = new CommandMeta { SourceId = "system", Silent = true }
+            });
+            await Task.Delay(500);
+            await _controller.SendCommandAsync("~", new CommandOptions
+            {
+                DisplayCommand = "~ (Cycle Start)",
+                Meta = new CommandMeta { SourceId = "system", Silent = true }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gate continue dispatch failed");
+        }
     }
 
     // Matches V1's formatCommandText: map known realtime commands, escape control chars

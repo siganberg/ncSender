@@ -15,6 +15,7 @@ public class JsPluginEngine : IJsPluginEngine
 {
     private readonly ILogger<JsPluginEngine> _logger;
     private readonly PluginDialogDispatcher _dialogs;
+    private readonly IGateService _gates;
     private readonly IToolService _toolService;
     private readonly IDongleDeviceService _dongleDevices;
     private readonly NcSender.Server.Tools.IPendingToolTloWriteback _pendingTloWriteback;
@@ -32,10 +33,11 @@ public class JsPluginEngine : IJsPluginEngine
 
     private readonly IServerContext _serverContext;
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
     {
         _logger = logger;
         _dialogs = dialogs;
+        _gates = gates;
         _toolService = toolService;
         _dongleDevices = dongleDevices;
         _pendingTloWriteback = pendingTloWriteback;
@@ -372,6 +374,26 @@ public class JsPluginEngine : IJsPluginEngine
             return JsonElementToJsValue(engine, response);
         }));
 
+        // askGate({title, message, variant, buttons: [{value, label, style, isDefault}],
+        //          persist?, key?, steps?: [{value, label, commands: []}], stepConfig?})
+        // Blocks the Jint thread; returns chosen button value (string) or null.
+        ctx.Set("askGate", new ClrFunction(engine, "askGate", (_, args) =>
+        {
+            var options = args.Length > 0 ? JsValueToGateOptions(args[0], pluginId) : null;
+            if (options is null) return JsValue.Null;
+
+            try
+            {
+                var chosen = _gates.AskAsync(options).GetAwaiter().GetResult();
+                return chosen is null ? JsValue.Null : (JsValue)chosen;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[plugin:{PluginId}] askGate failed", pluginId);
+                return JsValue.Null;
+            }
+        }));
+
         ctx.Set("getTools", new ClrFunction(engine, "getTools", (_, _) =>
         {
             try
@@ -547,6 +569,77 @@ public class JsPluginEngine : IJsPluginEngine
         }));
 
         return ctx;
+    }
+
+    private static GateOptions? JsValueToGateOptions(JsValue v, string pluginId)
+    {
+        if (v.IsUndefined() || v.IsNull() || v is not ObjectInstance obj) return null;
+
+        var title = obj.Get("title");
+        if (!title.IsString()) return null;
+
+        string? message = obj.Get("message") is { } m && m.IsString() ? m.AsString() : null;
+        var variant = obj.Get("variant") is { } vp && vp.IsString() ? vp.AsString() : "info";
+
+        List<GateButton>? buttons = null;
+        if (obj.Get("buttons") is ArrayInstance btnArr)
+        {
+            var length = (int)btnArr.Get("length").AsNumber();
+            buttons = new List<GateButton>(length);
+            for (var i = 0; i < length; i++)
+            {
+                if (btnArr[i] is not ObjectInstance btn) continue;
+                var val = btn.Get("value");
+                var label = btn.Get("label");
+                if (!val.IsString() || !label.IsString()) continue;
+                var style = btn.Get("style") is { } sp && sp.IsString() ? sp.AsString() : "secondary";
+                var isDefault = btn.Get("isDefault") is { } dp && dp.IsBoolean() && dp.AsBoolean();
+                var requiresSteps = btn.Get("requiresStepsComplete") is { } rp && rp.IsBoolean() && rp.AsBoolean();
+                buttons.Add(new GateButton(val.AsString(), label.AsString(), style, isDefault, requiresSteps));
+            }
+        }
+
+        List<GateStep>? steps = null;
+        if (obj.Get("steps") is ArrayInstance stepArr)
+        {
+            var length = (int)stepArr.Get("length").AsNumber();
+            steps = new List<GateStep>(length);
+            for (var i = 0; i < length; i++)
+            {
+                if (stepArr[i] is not ObjectInstance st) continue;
+                var val = st.Get("value");
+                var label = st.Get("label");
+                if (!val.IsString() || !label.IsString()) continue;
+                var cmds = new List<string>();
+                if (st.Get("commands") is ArrayInstance cArr)
+                {
+                    var cLen = (int)cArr.Get("length").AsNumber();
+                    for (var j = 0; j < cLen; j++)
+                    {
+                        var c = cArr[j];
+                        if (c.IsString()) cmds.Add(c.AsString());
+                    }
+                }
+                steps.Add(new GateStep(val.AsString(), label.AsString(), cmds));
+            }
+        }
+
+        GateStepConfig? stepConfig = null;
+        if (obj.Get("stepConfig") is ObjectInstance sc)
+        {
+            var holdMs = sc.Get("holdMs") is { } h && h.IsNumber() ? (int)h.AsNumber() : 1000;
+            var countdown = sc.Get("countdownSec") is { } cd && cd.IsNumber() ? (int)cd.AsNumber() : 5;
+            var chain = sc.Get("chainSteps") is { } ch && ch.IsBoolean() && ch.AsBoolean();
+            stepConfig = new GateStepConfig(holdMs, countdown, chain);
+        }
+
+        var persist = obj.Get("persist") is { } pp && pp.IsBoolean() && pp.AsBoolean();
+        var key = obj.Get("key") is { } kp && kp.IsString() ? kp.AsString() : null;
+        var messageHtml = obj.Get("messageHtml") is { } mh && mh.IsBoolean() && mh.AsBoolean();
+
+        return new GateOptions(
+            title.AsString(), message, variant, buttons, $"plugin:{pluginId}",
+            persist, key, steps, stepConfig, messageHtml);
     }
 
     private static WsDialogOptions? JsValueToDialogOptions(JsValue v)
