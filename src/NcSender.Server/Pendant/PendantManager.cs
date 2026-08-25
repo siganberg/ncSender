@@ -1770,6 +1770,32 @@ public class PendantManager : IPendantManager
 
         // Broadcast updated status so UI picks up version/licensed
         _ = _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
+
+        // Pendant sent us metadata unprompted → it just booted (post-OTA,
+        // hard-reset, brown-out, etc.). Over ESP-NOW the serial link to the
+        // dongle stays open through a pendant reboot, so the usual PortDisconnected
+        // → _pendantConnected=false → HandlePingAsync full-handshake path
+        // never fires. Result: pendant comes back with empty aux/tool state
+        // until the operator re-saves settings. Force a re-push here to
+        // rehydrate: reset the dedup caches, then re-send outputs + settings
+        // (SendDroAsync is already covered by the periodic push).
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                _lastSentOutputsCfg = null;
+                _lastSentSettings = null;
+                // Space the sends so ESP-NOW fragmentation doesn't drop the
+                // second frame (same reason HandlePingAsync uses 200 ms gaps).
+                await SendOutputsConfig(force: true);
+                await Task.Delay(200);
+                await SendSettings(force: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Post-metadata re-push failed");
+            }
+        });
     }
 
     #endregion
