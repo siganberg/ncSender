@@ -46,6 +46,7 @@ public class PendantConnectionTests : IDisposable
             NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
             dongleDevices.Object,
             _broadcaster.Object);
+        var gates = new Mock<IGateService>();
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
             _controller.Object,
@@ -55,7 +56,8 @@ public class PendantConnectionTests : IDisposable
             commandProcessor.Object,
             _settings.Object,
             dongleDevices.Object,
-            dongleOta);
+            dongleOta,
+            gates.Object);
     }
 
     public void Dispose()
