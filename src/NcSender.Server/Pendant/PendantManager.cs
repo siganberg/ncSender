@@ -1525,7 +1525,10 @@ public class PendantManager : IPendantManager
             //   "AUX <id> on|off"  — toggle a configured aux output by id
             //   "SLOT <n>"         — load tool at slot n via M6T<n>
             //   "UNLOAD"           — drop the loaded tool (M6T0)
-            //   "MANUAL"           — trigger manual tool change (M6T0)
+            //   "MANUAL"           — load the manual tool: M6 T(slotCount+1),
+            //                       i.e. a tool number just past the ATC
+            //                       magazine so tool-changer plugins fall
+            //                       through to their manual-load path.
             //   "TLS"              — trigger toolsetter probe ($TLS)
             if (data.StartsWith("AUX ", StringComparison.Ordinal))
             {
@@ -1545,7 +1548,11 @@ public class PendantManager : IPendantManager
             }
             if (data == "MANUAL")
             {
-                _ = HandleCncCommandCoreAsync("M6T0");
+                // Manual tool sits at slotCount + 1 — the same target
+                // ncSender's Outputs screen Manual long-press uses.
+                var slots = ReadAtcSlotCount();
+                var manualTool = (slots > 0 ? slots : 0) + 1;
+                _ = HandleCncCommandCoreAsync($"M6T{manualTool}");
                 return;
             }
             if (data == "TLS")
