@@ -765,9 +765,15 @@ public class PluginManager : IPluginManager
         {
             var settings = GetSettings(pluginId);
 
-            // Only sync if this plugin has tool-changer settings
+            // Only sync if this plugin has tool-changer settings.
+            // Field aliases across shipped plugins:
+            //   ManualToolChange  → numberOfTools
+            //   RapidChangeATC    → pockets
+            //   Pneumatic ATC     → slots
             var isManual = settings.ContainsKey("numberOfTools");
-            var hasToolChanger = isManual || settings.ContainsKey("pockets");
+            var hasToolChanger = isManual
+                || settings.ContainsKey("pockets")
+                || settings.ContainsKey("slots");
             if (!hasToolChanger)
             {
                 _logger.LogDebug("Plugin {PluginId} has no tool-changer settings, skipping tool sync", pluginId);
@@ -790,16 +796,29 @@ public class PluginManager : IPluginManager
             }
             else
             {
-                // RapidChangeATC-style: pockets for count, toolSensor for tls/probe
+                // ATC-style: RapidChange uses `pockets`, Pneumatic uses `slots`.
+                // Read either — first found wins.
                 if (settings.TryGetValue("pockets", out var pockets))
                     toolSettings["count"] = JsonValue.Create(Convert.ToInt32(pockets.ToString()));
+                else if (settings.TryGetValue("slots", out var slots))
+                    toolSettings["count"] = JsonValue.Create(Convert.ToInt32(slots.ToString()));
 
                 if (settings.TryGetValue("toolSensor", out var toolSensor))
                 {
+                    // RapidChange convention: single dropdown enumerates
+                    // "TLS" / "Probe" / etc; parse the string.
                     var sensorStr = toolSensor.ToString() ?? "";
                     toolSettings["tls"] = sensorStr.Contains("TLS", StringComparison.OrdinalIgnoreCase)
                         || sensorStr.Contains("Probe", StringComparison.OrdinalIgnoreCase);
                     toolSettings["probe"] = sensorStr.Contains("Probe", StringComparison.OrdinalIgnoreCase);
+                }
+                else if (settings.ContainsKey("tlsMode"))
+                {
+                    // Pneumatic-style: no toolSensor key; TLS presence is
+                    // implicit — plugin always defines a toolsetter routine
+                    // gated by `tlsMode` (library/always). Surface the TLS
+                    // button; probe stays default (not exposed by Pneumatic).
+                    toolSettings["tls"] = true;
                 }
 
                 // Explicit addProbe setting takes precedence over sensor-derived default
