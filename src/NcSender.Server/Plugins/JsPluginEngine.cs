@@ -32,8 +32,14 @@ public class JsPluginEngine : IJsPluginEngine
     }
 
     private readonly IServerContext _serverContext;
+    private readonly IFirmwareService _firmwareService;
+    private readonly ICncController _cncController;
+    // JobManager already depends on IJsPluginEngine (through the command
+    // pipeline), so we can't take an IJobManager constructor dep without
+    // a DI cycle. Resolve it lazily on demand from the service provider.
+    private readonly IServiceProvider _serviceProvider;
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext, IFirmwareService firmwareService, ICncController cncController, IServiceProvider serviceProvider)
     {
         _logger = logger;
         _dialogs = dialogs;
@@ -42,6 +48,9 @@ public class JsPluginEngine : IJsPluginEngine
         _dongleDevices = dongleDevices;
         _pendingTloWriteback = pendingTloWriteback;
         _serverContext = serverContext;
+        _firmwareService = firmwareService;
+        _cncController = cncController;
+        _serviceProvider = serviceProvider;
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)
@@ -493,6 +502,84 @@ public class JsPluginEngine : IJsPluginEngine
                 _logger.LogWarning(ex, "pluginContext.updateToolOffset failed for {PluginId}", pluginId);
                 return JsBoolean.False;
             }
+        }));
+
+        // getFirmwareSetting(idOrKey) — return a firmware setting's
+        // current value as a number, or null if unknown / not numeric.
+        // Accepts "$31", "31", or 31 — plugins commonly want to guard
+        // hazardous macros against dangerous $-setting values (e.g.
+        // ATC plugins verifying $31 min-RPM stays below their load /
+        // unload RPMs). Cached read; no controller round-trip.
+        ctx.Set("getFirmwareSetting", new ClrFunction(engine, "getFirmwareSetting", (_, args) =>
+        {
+            if (args.Length == 0) return JsValue.Null;
+            string? key = null;
+            if (args[0].IsString()) key = args[0].AsString();
+            else if (args[0].IsNumber()) key = ((int)args[0].AsNumber()).ToString();
+            if (string.IsNullOrEmpty(key)) return JsValue.Null;
+            if (key.StartsWith('$')) key = key[1..];
+            try
+            {
+                var firmware = _firmwareService.GetCachedAsync().GetAwaiter().GetResult();
+                if (firmware?.Settings is null) return JsValue.Null;
+                if (!firmware.Settings.TryGetValue(key, out var setting)) return JsValue.Null;
+                if (string.IsNullOrWhiteSpace(setting.Value)) return JsValue.Null;
+                if (!double.TryParse(setting.Value, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var num))
+                    return JsValue.Null;
+                return JsValue.FromObject(engine, num);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.getFirmwareSetting failed for {PluginId} key {Key}", pluginId, key);
+                return JsValue.Null;
+            }
+        }));
+
+        // stopJob() — safety hard-stop: feed hold, brief pause, then
+        // soft reset, and mark the active job stopped. Mirrors the
+        // pendant's job:stop and gate-abort dispatch. Plugins call
+        // this from safety checks that decide it's dangerous to
+        // continue (e.g. detected firmware misconfiguration). No-op
+        // when nothing is running. Fire-and-forget from the plugin's
+        // perspective; returns undefined.
+        ctx.Set("stopJob", new ClrFunction(engine, "stopJob", (_, _) =>
+        {
+            try
+            {
+                // Stop the job's dispatch loop FIRST so no more lines get pumped
+                // to the controller while we're tearing down. Otherwise any
+                // fallback commands the plugin returned (e.g. an M0 pause) will
+                // beat the async feed-hold and leave the machine in Hold.
+                var jobManager = _serviceProvider.GetService(typeof(IJobManager)) as IJobManager;
+                if (jobManager?.HasActiveJob == true) jobManager.Stop();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _cncController.SendCommandAsync("!", new NcSender.Core.Models.CommandOptions
+                        {
+                            DisplayCommand = "! (Feed Hold)",
+                            Meta = new NcSender.Core.Models.CommandMeta { SourceId = $"plugin:{pluginId}", Silent = true }
+                        });
+                        await Task.Delay(200);
+                        await _cncController.SendCommandAsync("\x18", new NcSender.Core.Models.CommandOptions
+                        {
+                            DisplayCommand = "\\x18 (Soft Reset)",
+                            Meta = new NcSender.Core.Models.CommandMeta { SourceId = $"plugin:{pluginId}", Silent = true }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "pluginContext.stopJob dispatch failed for {PluginId}", pluginId);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.stopJob failed for {PluginId}", pluginId);
+            }
+            return JsValue.Undefined;
         }));
 
         // getServerState() — snapshot of the fields most accessory plugins
