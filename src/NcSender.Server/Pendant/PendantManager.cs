@@ -2174,6 +2174,11 @@ public class PendantManager : IPendantManager
         var maxTravelX = ms.MaxTravelX;
         var maxTravelY = ms.MaxTravelY;
         var maxTravelZ = ms.MaxTravelZ;
+        // Units: send "in" only when the app is in imperial mode; the
+        // pendant defaults to mm when U: is absent (backward compat).
+        var units = string.Equals(
+            _settingsManager.GetSetting<string>("unitsPreference", "metric"),
+            "imperial", StringComparison.OrdinalIgnoreCase) ? "in" : "mm";
 
         // Send the DERIVED sender status (ServerContext.ComputeSenderStatus)
         // rather than the raw grblHAL status. Same signal the browser
@@ -2226,7 +2231,8 @@ public class PendantManager : IPendantManager
             MaxTravelY: maxTravelY,
             MaxTravelZ: maxTravelZ,
             AuxMask: auxMask,
-            CurrentTool: currentTool
+            CurrentTool: currentTool,
+            Units: units
         );
 
         var prev = _lastSentDro;
@@ -2311,6 +2317,15 @@ public class PendantManager : IPendantManager
         if (isFull || current.CurrentTool != prev!.CurrentTool)
             sb.Append($"|T:{current.CurrentTool}");
 
+        // Units preference — "in" only when imperial. Omitted for mm
+        // so the packet stays compact and old pendants keep working
+        // (absence = mm on the pendant parser).
+        if (isFull || current.Units != prev!.Units)
+        {
+            if (current.Units == "in") sb.Append("|U:in");
+            else if (isFull) sb.Append("|U:mm");
+        }
+
         _lastSentDro = current;
         await _serialHandler.SendRawAsync(sb.ToString());
     }
@@ -2374,7 +2389,8 @@ public class PendantManager : IPendantManager
         double MaxTravelY,
         double MaxTravelZ,
         uint AuxMask,     // bit N = state of the Nth entry in the pendant's aux list
-        int CurrentTool   // 0 = none
+        int CurrentTool,  // 0 = none
+        string Units      // "mm" or "in" — drives the pendant DRO display unit
     );
 
     #endregion
