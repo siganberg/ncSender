@@ -1152,9 +1152,10 @@ public class PendantManager : IPendantManager
         if (!_controller.IsConnected) return;
         if (_scanner is not null) return; // Already running
 
-        _scanner = new PendantPortScanner(_logger, GetCncPort, _usbCatalog);
+        _scanner = new PendantPortScanner(_logger, _usbCatalog);
         _scanner.DeviceFound += OnScannerDeviceFound;
         _scanner.DeviceLost += OnScannerDeviceLost;
+        _scanner.LegacyCandidateDetected += OnLegacyCandidateDetected;
         _scanner.Start();
     }
 
@@ -1164,22 +1165,26 @@ public class PendantManager : IPendantManager
         _scanner.Stop();
         _scanner.DeviceFound -= OnScannerDeviceFound;
         _scanner.DeviceLost -= OnScannerDeviceLost;
+        _scanner.LegacyCandidateDetected -= OnLegacyCandidateDetected;
         _scanner.Dispose();
         _scanner = null;
         _logger.LogInformation("Pendant scanner stopped (CNC disconnected)");
     }
 
-    private string? GetCncPort()
+    // Fired when the USB catalog surfaces a VID=0x303A / PID=0x1001 device
+    // that doesn't match any known iProduct string — almost certainly an
+    // ncSender pendant or wireless dongle running legacy firmware. The
+    // scanner does NOT open the port; instead we ask the UI to prompt
+    // the user to update firmware. One broadcast per new port per session.
+    private void OnLegacyCandidateDetected(NcSenderUsbDevice device)
     {
-        // Only exclude the port that's currently held by a live serial transport.
-        // Don't fall back to the saved connection.usbPort setting: if the user
-        // previously had USB CNC at /dev/ttyACM0 and now has a pendant there,
-        // the saved setting would lock the pendant out of detection forever.
-        // The scanner's '?' probe already detects active CNC controllers and
-        // blacklists those ports without sending $ID.
-        if (_controller.Transport is Connection.SerialTransport serialTransport)
-            return serialTransport.PortPath;
-        return null;
+        var notice = new LegacyFirmwareNotice(
+            device.PortName,
+            "0x" + device.Vid.ToString("X4"),
+            "0x" + device.Pid.ToString("X4"),
+            "An ESP32 USB device was detected but is not identified as an ncSender accessory. If this is your pendant or wireless USB on legacy firmware, update it from Settings → Pendant Firmware / Wireless USB.");
+        _ = _broadcaster.Broadcast("accessory:legacy-firmware-detected", notice,
+            NcSenderJsonContext.Default.LegacyFirmwareNotice);
     }
 
     // Internal for testing — called by scanner events and tests

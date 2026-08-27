@@ -62,6 +62,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PendantActivateWifiRequest))]
 [JsonSerializable(typeof(PendantActivateUsbRequest))]
 [JsonSerializable(typeof(PendantDeactivateWifiRequest))]
+[JsonSerializable(typeof(LegacyFirmwareNotice))]
 [JsonSerializable(typeof(NcSender.Server.Pendant.PendantClientMeta))]
 // Updates
 [JsonSerializable(typeof(UpdateCheckResult))]

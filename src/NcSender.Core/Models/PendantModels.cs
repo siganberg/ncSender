@@ -80,3 +80,17 @@ public class PendantDeactivateWifiRequest
 {
     public string PendantIp { get; set; } = "";
 }
+
+/// <summary>
+/// Broadcast payload for <c>accessory:legacy-firmware-detected</c>. Fired
+/// once per session per port when a USB device with the Espressif default
+/// identity (VID 0x303A / PID 0x1001) shows up without one of our custom
+/// iProduct strings — almost certainly an ncSender pendant or wireless
+/// dongle on firmware that predates the USB-descriptor rework. The client
+/// surfaces this as a "please update" prompt.
+/// </summary>
+public sealed record LegacyFirmwareNotice(
+    string Port,
+    string Vid,
+    string Pid,
+    string Message);

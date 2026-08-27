@@ -38,6 +38,14 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     // with a unique PID.
     private const ushort NcSenderVid = 0x303A;
 
+    // Espressif's default USB Serial/JTAG PID used by every ESP32-S3
+    // running the HW USB peripheral OR TinyUSB with the stock
+    // pins_arduino.h. Devices matching (NcSenderVid, EspressifDefaultPid)
+    // that we DIDN'T identify by iProduct string are surfaced as
+    // legacy-firmware candidates — likely ncSender accessories on old
+    // firmware that lacks our USB descriptors.
+    private const ushort EspressifDefaultPid = 0x1001;
+
     // The single source of truth for VID/PID → kind mapping. Adding a
     // new accessory: put its PID here, add a matching NcSenderUsbKind
     // enum value, done. Wiring lives at the consumer.
@@ -78,6 +86,18 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
         if (vid == NcSenderVid && !string.IsNullOrEmpty(productString)
             && KnownProductStrings.TryGetValue(productString, out var byProduct)) return byProduct;
         return NcSenderUsbKind.Unknown;
+    }
+
+    // Decide whether a device belongs in the catalog output. Known kinds
+    // always emit. Espressif VID with the default USB-JTAG PID also
+    // emits (with Kind == Unknown) so the pendant scanner can surface it
+    // as a legacy-firmware candidate and prompt the user to update.
+    // Every other Unknown is silent — we do not touch third-party USB
+    // serial devices at all.
+    private static bool ShouldEmit(NcSenderUsbKind kind, ushort vid, ushort pid)
+    {
+        if (kind != NcSenderUsbKind.Unknown) return true;
+        return vid == NcSenderVid && pid == EspressifDefaultPid;
     }
 
     private readonly ILogger<NcSenderUsbCatalog> _logger;
@@ -157,7 +177,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                 var serial = ReadStringAttr(usbNode, "serial");
                 var product = ReadStringAttr(usbNode, "product");
                 var kind = ResolveKind(vid.Value, pid.Value, product);
-                if (kind == NcSenderUsbKind.Unknown) continue;
+                if (!ShouldEmit(kind, vid.Value, pid.Value)) continue;
                 results.Add(new NcSenderUsbDevice(port, kind, vid.Value, pid.Value, serial, product));
             }
             catch (Exception ex)
@@ -327,7 +347,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     {
         if (p.Vid == 0 || p.CalloutDevice is null) return;
         var kind = ResolveKind(p.Vid, p.Pid, p.Product);
-        if (kind == NcSenderUsbKind.Unknown) return;
+        if (!ShouldEmit(kind, p.Vid, p.Pid)) return;
         results.Add(new NcSenderUsbDevice(p.CalloutDevice, kind, p.Vid, p.Pid, p.Serial, p.Product));
     }
 
@@ -396,7 +416,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                 }
 
                 var kind = ResolveKind(vid, pid, product);
-                if (kind == NcSenderUsbKind.Unknown) continue;
+                if (!ShouldEmit(kind, vid, pid)) continue;
                 results.Add(new NcSenderUsbDevice(port, kind, vid, pid, serial, product));
             }
         }
