@@ -1216,14 +1216,27 @@ public class PendantManager : IPendantManager
                 _logger.LogInformation("Setting dongle as active data handler (ESP-NOW priority)");
                 DetachDonglePromotionListener();
                 SetActiveHandler(_dongleHandler);
-                // Seed the paired-device table from the dongle's persistent NVS. Fire
-                // after a short delay so the handler has finished its handshake, and
-                // don't block the attach path on the reply (async fire-and-forget).
+                // Seed the paired-device table from the dongle's persistent NVS.
+                // Fire-and-forget with a small retry loop: on the USB-catalog
+                // fast path the port was opened milliseconds ago and TinyUSB
+                // CDC on ESP32-S3 doesn't always deliver the first write to
+                // firmware on Windows (the slow path effectively hid this
+                // behind its 1.5 s passive-listen window). $DEVICES is
+                // idempotent — retry until the device list seeds or we
+                // exhaust attempts.
                 _ = Task.Run(async () =>
                 {
-                    await Task.Delay(500).ConfigureAwait(false);
-                    try { await _dongleDevices.RequestDevicesAsync().ConfigureAwait(false); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to seed paired-device list from dongle"); }
+                    for (int attempt = 0; attempt < 4; attempt++)
+                    {
+                        await Task.Delay(attempt == 0 ? 500 : 1000).ConfigureAwait(false);
+                        try { await _dongleDevices.RequestDevicesAsync().ConfigureAwait(false); }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to seed paired-device list from dongle (attempt {N})", attempt + 1);
+                        }
+                        // Bail as soon as the reply landed and seeded something.
+                        if (_dongleDevices.GetDevices().Count > 0) return;
+                    }
                 });
                 break;
         }
