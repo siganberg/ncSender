@@ -51,6 +51,35 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             [(NcSenderVid, 0x8214)] = NcSenderUsbKind.RgbController,
         };
 
+    // Fallback identification by USB iProduct string. The Arduino ESP32
+    // core's variant/pins_arduino.h hard-defines USB_VID/USB_PID
+    // unconditionally, so a compile-time `-DUSB_PID=...` override is
+    // silently ignored — every S3 accessory ends up sharing PID 0x1001
+    // regardless of what we set. USB_PRODUCT (iProduct string) DOES
+    // survive that, so we key off the product string when PID matches
+    // the default. Comparisons are ordinal/case-insensitive.
+    private static readonly Dictionary<string, NcSenderUsbKind> KnownProductStrings =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ncSender XProbe"]           = NcSenderUsbKind.XProbe,
+            ["ncSender Wireless USB"]     = NcSenderUsbKind.WirelessDongle,
+            ["ncSender Pendant"]          = NcSenderUsbKind.Pendant,
+            ["ncSender AutoDustBoot"]     = NcSenderUsbKind.AutoDustBoot,
+            ["ncSender RGB Controller"]   = NcSenderUsbKind.RgbController,
+        };
+
+    // Resolve the ncSender kind for a device by VID/PID first (the
+    // "correct" path once firmware can advertise custom PIDs), then
+    // by iProduct string as the fallback described above. Non-ncSender
+    // devices always return Unknown so we never surface them.
+    private static NcSenderUsbKind ResolveKind(ushort vid, ushort pid, string? productString)
+    {
+        if (KnownPids.TryGetValue((vid, pid), out var byPid)) return byPid;
+        if (vid == NcSenderVid && !string.IsNullOrEmpty(productString)
+            && KnownProductStrings.TryGetValue(productString, out var byProduct)) return byProduct;
+        return NcSenderUsbKind.Unknown;
+    }
+
     private readonly ILogger<NcSenderUsbCatalog> _logger;
     private readonly object _cacheLock = new();
     private IReadOnlyList<NcSenderUsbDevice>? _cached;
@@ -125,10 +154,10 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                 var pid = ReadHexAttr(usbNode, "idProduct");
                 if (vid is null || pid is null) continue;
 
-                if (!KnownPids.TryGetValue((vid.Value, pid.Value), out var kind)) continue;
-
                 var serial = ReadStringAttr(usbNode, "serial");
                 var product = ReadStringAttr(usbNode, "product");
+                var kind = ResolveKind(vid.Value, pid.Value, product);
+                if (kind == NcSenderUsbKind.Unknown) continue;
                 results.Add(new NcSenderUsbDevice(port, kind, vid.Value, pid.Value, serial, product));
             }
             catch (Exception ex)
@@ -183,14 +212,26 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
 
     // ---------- macOS ----------
     //
-    // `system_profiler SPUSBDataType -json` returns the entire USB tree.
-    // Each leaf carries vendor_id "0x303a", product_id "0x8210", serial_num,
-    // _name (the product string), and — critically — _properties.location_id
-    // that we don't need, plus (for CDC devices) sometimes an implicit
-    // /dev/tty.usbmodemNNNN device name that we can only pattern-match by
-    // walking SerialPort.GetPortNames() and matching by product_id +
-    // serial_num where present. For our devices (ESP32 native USB CDC),
-    // the OS names the port /dev/tty.usbmodem<serial>.
+    // `system_profiler SPUSBDataType -json` returns an EMPTY array on
+    // macOS Sequoia+ (verified on 15.x — output is literally
+    // `{"SPUSBDataType":[]}` from both terminal and dotnet processes).
+    // `ioreg -c IOUSBHostDevice -r -l -w 0` returns the same descriptor
+    // data reliably, so that's what we parse. The output is text, tree-
+    // structured by indentation, with fields like:
+    //
+    //   +-o ncSender Pendant@... <class IOUSBHostDevice, ...>
+    //   | | | { "idVendor" = 12346  "idProduct" = 4097
+    //   | | |   "USB Product Name" = "ncSender Pendant"
+    //   | | |   "USB Serial Number" = "441BF685D114" ... }
+    //   | | +-o AppleUSBCDCCompositeDevice <class ...>
+    //   | | | ... nested serial machinery ...
+    //   | | +-o IOSerialBSDClient <class ...>
+    //   | |     "IOCalloutDevice" = "/dev/cu.usbmodem441BF685D1141"
+    //
+    // We track a stack of open USB host devices by indent depth, harvest
+    // their fields, and when we see an IOCalloutDevice in a descendant,
+    // attach it to the closest ancestor host device. idVendor/idProduct
+    // are DECIMAL integers in ioreg (unlike system_profiler's hex).
     private IReadOnlyList<NcSenderUsbDevice> EnumerateMac()
     {
         var results = new List<NcSenderUsbDevice>();
@@ -199,8 +240,8 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "/usr/sbin/system_profiler",
-                ArgumentList = { "SPUSBDataType", "-json" },
+                FileName = "/usr/sbin/ioreg",
+                ArgumentList = { "-c", "IOUSBHostDevice", "-r", "-l", "-w", "0" },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -213,105 +254,104 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "system_profiler invocation failed");
+            _logger.LogDebug(ex, "ioreg invocation failed");
             return results;
         }
 
-        List<(ushort Vid, ushort Pid, string? Serial, string? Product)> matches;
         try
         {
-            matches = ExtractMacUsbMatches(stdout);
+            ParseIoregTree(stdout, results);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "system_profiler JSON parse failed");
-            return results;
-        }
-        if (matches.Count == 0) return results;
-
-        var ports = SerialPort.GetPortNames();
-        foreach (var m in matches)
-        {
-            if (!KnownPids.TryGetValue((m.Vid, m.Pid), out var kind)) continue;
-            var port = ResolveMacPort(ports, m.Serial);
-            if (port is null) continue;
-            results.Add(new NcSenderUsbDevice(port, kind, m.Vid, m.Pid, m.Serial, m.Product));
+            _logger.LogDebug(ex, "ioreg output parse failed");
         }
         return results;
     }
 
-    private static List<(ushort Vid, ushort Pid, string? Serial, string? Product)> ExtractMacUsbMatches(string json)
+    private sealed class MacPending
     {
-        var found = new List<(ushort, ushort, string?, string?)>();
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("SPUSBDataType", out var root)) return found;
-        WalkMacUsbTree(root, found);
-        return found;
-
-        static void WalkMacUsbTree(JsonElement node, List<(ushort, ushort, string?, string?)> acc)
-        {
-            if (node.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var child in node.EnumerateArray()) WalkMacUsbTree(child, acc);
-                return;
-            }
-            if (node.ValueKind != JsonValueKind.Object) return;
-
-            // Recurse first — hubs contain child items under "_items".
-            if (node.TryGetProperty("_items", out var items)) WalkMacUsbTree(items, acc);
-
-            if (!node.TryGetProperty("vendor_id", out var vidEl)) return;
-            if (!node.TryGetProperty("product_id", out var pidEl)) return;
-
-            var vid = ParseMacHex(vidEl.GetString());
-            var pid = ParseMacHex(pidEl.GetString());
-            if (vid is null || pid is null) return;
-
-            string? serial = null;
-            if (node.TryGetProperty("serial_num", out var sEl)) serial = sEl.GetString();
-
-            string? product = null;
-            if (node.TryGetProperty("_name", out var pEl)) product = pEl.GetString();
-
-            acc.Add((vid.Value, pid.Value, serial, product));
-        }
+        public int Depth;
+        public ushort Vid;
+        public ushort Pid;
+        public string? Product;
+        public string? Serial;
+        public string? CalloutDevice;
     }
 
-    private static ushort? ParseMacHex(string? raw)
+    private void ParseIoregTree(string stdout, List<NcSenderUsbDevice> results)
     {
-        if (string.IsNullOrEmpty(raw)) return null;
-        // system_profiler writes vendor_id like "0x303a  (Espressif Systems)" —
-        // trim any suffix and strip 0x.
-        var s = raw.Trim();
-        var space = s.IndexOf(' ');
-        if (space > 0) s = s.Substring(0, space);
-        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s.Substring(2);
-        if (ushort.TryParse(s, System.Globalization.NumberStyles.HexNumber,
-                System.Globalization.CultureInfo.InvariantCulture, out var v)) return v;
-        return null;
+        var stack = new Stack<MacPending>();
+
+        foreach (var rawLine in stdout.Split('\n'))
+        {
+            // Header line: "  | | +-o NAME@ADDR  <class CLASS, id ...>"
+            var plus = rawLine.IndexOf("+-o ", StringComparison.Ordinal);
+            if (plus >= 0)
+            {
+                int depth = plus;
+                // Sibling / ancestor scopes close before we enter the new one.
+                while (stack.Count > 0 && stack.Peek().Depth >= depth)
+                    EmitIfMatch(stack.Pop(), results);
+
+                var classIdx = rawLine.IndexOf("<class ", StringComparison.Ordinal);
+                if (classIdx < 0) continue;
+                var classStart = classIdx + "<class ".Length;
+                var classEnd = rawLine.IndexOf(',', classStart);
+                if (classEnd < 0) continue;
+                var cls = rawLine.Substring(classStart, classEnd - classStart);
+                if (cls == "IOUSBHostDevice")
+                    stack.Push(new MacPending { Depth = depth });
+                continue;
+            }
+
+            if (stack.Count == 0) continue;
+            var top = stack.Peek();
+
+            if (TryParseIoregInt(rawLine, "idVendor", out var vid))
+                top.Vid = (ushort)vid;
+            else if (TryParseIoregInt(rawLine, "idProduct", out var pid))
+                top.Pid = (ushort)pid;
+            else if (TryParseIoregQuoted(rawLine, "USB Product Name", out var product))
+                top.Product ??= product;
+            else if (TryParseIoregQuoted(rawLine, "USB Serial Number", out var serial))
+                top.Serial ??= serial;
+            else if (TryParseIoregQuoted(rawLine, "IOCalloutDevice", out var callout))
+                top.CalloutDevice ??= callout;
+        }
+
+        while (stack.Count > 0) EmitIfMatch(stack.Pop(), results);
     }
 
-    private static string? ResolveMacPort(string[] ports, string? serial)
+    private void EmitIfMatch(MacPending p, List<NcSenderUsbDevice> results)
     {
-        // ESP32 native USB CDC surfaces as /dev/tty.usbmodem<serial>N where
-        // <serial> is the descriptor iSerialNumber. Match by serial suffix
-        // when we know the serial; fall back to any lone usbmodem port
-        // (best-effort — collisions are rare because we only get here for
-        // matched VID/PIDs).
-        if (!string.IsNullOrEmpty(serial))
-        {
-            foreach (var p in ports)
-            {
-                if (p.Contains(serial, StringComparison.Ordinal) &&
-                    p.StartsWith("/dev/tty.", StringComparison.Ordinal))
-                    return p;
-            }
-        }
-        foreach (var p in ports)
-        {
-            if (p.StartsWith("/dev/tty.usbmodem", StringComparison.Ordinal)) return p;
-        }
-        return null;
+        if (p.Vid == 0 || p.CalloutDevice is null) return;
+        var kind = ResolveKind(p.Vid, p.Pid, p.Product);
+        if (kind == NcSenderUsbKind.Unknown) return;
+        results.Add(new NcSenderUsbDevice(p.CalloutDevice, kind, p.Vid, p.Pid, p.Serial, p.Product));
+    }
+
+    private static bool TryParseIoregInt(string line, string key, out int value)
+    {
+        value = 0;
+        var idx = line.IndexOf('"' + key + "\" = ", StringComparison.Ordinal);
+        if (idx < 0) return false;
+        var start = idx + key.Length + 5;   // 5 = 2 quotes + " = "
+        var tail = line.Substring(start).Trim();
+        return int.TryParse(tail, System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryParseIoregQuoted(string line, string key, out string value)
+    {
+        value = "";
+        var idx = line.IndexOf('"' + key + "\" = \"", StringComparison.Ordinal);
+        if (idx < 0) return false;
+        var start = idx + key.Length + 6;   // 6 = 2 key-quotes + " = " + 1 value-quote
+        var end = line.IndexOf('"', start);
+        if (end < 0) return false;
+        value = line.Substring(start, end - start);
+        return true;
     }
 
     // ---------- Windows ----------
@@ -336,7 +376,6 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                 var hwid = GetRegistryString(h, ref did, SPDRP_HARDWAREID);
                 if (string.IsNullOrEmpty(hwid)) continue;
                 if (!TryParseWindowsHardwareId(hwid, out var vid, out var pid, out var serial)) continue;
-                if (!KnownPids.TryGetValue((vid, pid), out var kind)) continue;
 
                 var friendly = GetRegistryString(h, ref did, SPDRP_FRIENDLYNAME);
                 var port = ParseWindowsComPort(friendly);
@@ -351,6 +390,8 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                     else product = friendly;
                 }
 
+                var kind = ResolveKind(vid, pid, product);
+                if (kind == NcSenderUsbKind.Unknown) continue;
                 results.Add(new NcSenderUsbDevice(port, kind, vid, pid, serial, product));
             }
         }

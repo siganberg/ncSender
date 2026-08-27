@@ -1,3 +1,6 @@
+using NcSender.Core.Interfaces;
+using NcSender.Core.Models;
+
 namespace NcSender.Server.Pendant;
 
 /// <summary>
@@ -23,6 +26,7 @@ public class PendantPortScanner : IDisposable
 
     private readonly ILogger _logger;
     private readonly Func<string?> _getCncPort;
+    private readonly INcSenderUsbCatalog? _usbCatalog;
     private Timer? _scanTimer;
     private readonly Dictionary<string, TrackedDevice> _tracked = new();
     private readonly Dictionary<string, PendingPort> _pending = new();  // Open but not yet identified
@@ -62,10 +66,39 @@ public class PendantPortScanner : IDisposable
         }
     }
 
-    public PendantPortScanner(ILogger logger, Func<string?> getCncPort)
+    public PendantPortScanner(ILogger logger, Func<string?> getCncPort, INcSenderUsbCatalog? usbCatalog = null)
     {
         _logger = logger;
         _getCncPort = getCncPort;
+        _usbCatalog = usbCatalog;
+    }
+
+    // Fast identification from the USB descriptor catalog. Returns the
+    // device type when the port's USB VID/PID (or iProduct fallback)
+    // matches a known ncSender accessory, otherwise null. Consuming
+    // this in OpenAndProbeAsync skips the ~1.5 s passive listen + up
+    // to two 1 s probe rounds — modern firmware attaches in one tick.
+    private DeviceType? FastIdentifyFromCatalog(string port)
+    {
+        if (_usbCatalog is null) return null;
+        NcSenderUsbDevice? match;
+        try
+        {
+            match = _usbCatalog.GetDevices()
+                .FirstOrDefault(d => string.Equals(d.PortName, port, StringComparison.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "USB catalog lookup for {Port} threw", port);
+            return null;
+        }
+        if (match is null) return null;
+        return match.Kind switch
+        {
+            NcSenderUsbKind.Pendant => DeviceType.Pendant,
+            NcSenderUsbKind.WirelessDongle => DeviceType.Dongle,
+            _ => (DeviceType?)null,
+        };
     }
 
     public void Start()
@@ -294,6 +327,13 @@ public class PendantPortScanner : IDisposable
         {
             handler = new PendantSerialHandler(_logger);
             await handler.ConnectAsync(port);
+
+            var fast = FastIdentifyFromCatalog(port);
+            if (fast is { } fastType)
+            {
+                _logger.LogInformation("{Type} identified on {Port} via USB catalog (no probe)", fastType, port);
+                return new TrackedDevice(port, fastType, handler);
+            }
 
             // Step 0 (passive listen): if this port belongs to a pendant or
             // dongle, the firmware auto-announces `$ID:pendant` or

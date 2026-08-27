@@ -66,6 +66,7 @@ public class PendantManager : IPendantManager
     private const int PingTimeoutMs = 3000;
 
     private readonly IGateService _gates;
+    private readonly INcSenderUsbCatalog _usbCatalog;
 
     public PendantManager(
         ILogger<PendantManager> logger,
@@ -77,7 +78,8 @@ public class PendantManager : IPendantManager
         ISettingsManager settingsManager,
         IDongleDeviceService dongleDevices,
         NcSender.Server.Dongle.DongleOtaService dongleOta,
-        IGateService gates)
+        IGateService gates,
+        INcSenderUsbCatalog usbCatalog)
     {
         _logger = logger;
         _controller = controller;
@@ -89,6 +91,7 @@ public class PendantManager : IPendantManager
         _dongleDevices = dongleDevices;
         _dongleOta = dongleOta;
         _gates = gates;
+        _usbCatalog = usbCatalog;
 
         // Mirror gate lifecycle to the pendant. Gate events broadcast on the
         // browser channel also need to reach the pendant so it can render the
@@ -1149,7 +1152,7 @@ public class PendantManager : IPendantManager
         if (!_controller.IsConnected) return;
         if (_scanner is not null) return; // Already running
 
-        _scanner = new PendantPortScanner(_logger, GetCncPort);
+        _scanner = new PendantPortScanner(_logger, GetCncPort, _usbCatalog);
         _scanner.DeviceFound += OnScannerDeviceFound;
         _scanner.DeviceLost += OnScannerDeviceLost;
         _scanner.Start();
