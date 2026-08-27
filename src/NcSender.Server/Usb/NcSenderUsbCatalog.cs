@@ -381,13 +381,18 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
                 var port = ParseWindowsComPort(friendly);
                 if (port is null) continue;
 
-                string? product = null;
-                if (!string.IsNullOrEmpty(friendly))
+                // The child port device's FRIENDLYNAME is Microsoft's driver
+                // label ("USB Serial Device (COMN)") — not the USB iProduct
+                // string we advertise. Walk to the parent USB device and read
+                // its DEVPKEY_Device_BusReportedDeviceDesc, which IS the real
+                // iProduct string ("ncSender Pendant", "ncSender Wireless
+                // USB", etc.). Falls back to the friendly-name-based product
+                // if the parent walk fails, keeping the old behaviour.
+                string? product = GetWindowsParentBusReportedDeviceDesc(did.DevInst);
+                if (string.IsNullOrEmpty(product) && !string.IsNullOrEmpty(friendly))
                 {
-                    // "USB Serial Device (COM5)" -> "USB Serial Device"
                     var paren = friendly.IndexOf(" (", StringComparison.Ordinal);
-                    if (paren > 0) product = friendly.Substring(0, paren);
-                    else product = friendly;
+                    product = paren > 0 ? friendly.Substring(0, paren) : friendly;
                 }
 
                 var kind = ResolveKind(vid, pid, product);
@@ -490,4 +495,63 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
         }
         finally { Marshal.FreeHGlobal(buf); }
     }
+
+    // Read the USB iProduct string ("ncSender Pendant" etc.) by walking
+    // from the PORTS-class child devnode up to its USB parent and asking
+    // for DEVPKEY_Device_BusReportedDeviceDesc. The child devnode's own
+    // friendly name / bus-reported descriptor is populated from usbser.sys
+    // / TinyUSB CDC (generic strings), not our top-level iProduct.
+    // Returns null on any failure so the caller falls back to friendly.
+    private static string? GetWindowsParentBusReportedDeviceDesc(uint childDevInst)
+    {
+        try
+        {
+            if (CM_Get_Parent(out var parentDevInst, childDevInst, 0) != 0) return null;
+            uint bufBytes = 0;
+            var propKey = DEVPKEY_Device_BusReportedDeviceDesc;
+            // First call sizes the buffer; expected CR_BUFFER_SMALL (26)
+            _ = CM_Get_DevNode_PropertyW(parentDevInst, ref propKey, out _, null, ref bufBytes, 0);
+            if (bufBytes < 2) return null;
+            var buf = new byte[bufBytes];
+            if (CM_Get_DevNode_PropertyW(parentDevInst, ref propKey, out var propType, buf, ref bufBytes, 0) != 0) return null;
+            if (propType != DEVPROP_TYPE_STRING) return null;
+            // UTF-16 with trailing NUL — trim it.
+            var s = System.Text.Encoding.Unicode.GetString(buf, 0, (int)bufBytes);
+            var nul = s.IndexOf('\0');
+            return nul >= 0 ? s.Substring(0, nul) : s;
+        }
+        catch { return null; }
+    }
+
+    // ---- cfgmgr32 P/Invoke for parent walk + modern property read ----
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DEVPROPKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+    }
+
+    // {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4 = BusReportedDeviceDesc.
+    // Vista+; returns the raw USB iProduct string (or the equivalent for
+    // other buses) as advertised by the device, not by the driver.
+    private static readonly DEVPROPKEY DEVPKEY_Device_BusReportedDeviceDesc = new()
+    {
+        fmtid = new Guid(0x540B947E, 0x8B40, 0x45BC, 0xA8, 0xA2, 0x6A, 0x0B, 0x89, 0x4C, 0xBD, 0xA2),
+        pid = 4,
+    };
+
+    private const uint DEVPROP_TYPE_STRING = 0x12;
+
+    [DllImport("cfgmgr32.dll", SetLastError = true)]
+    private static extern int CM_Get_Parent(out uint pdnDevInst, uint dnDevInst, uint ulFlags);
+
+    [DllImport("cfgmgr32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern int CM_Get_DevNode_PropertyW(
+        uint dnDevInst,
+        ref DEVPROPKEY propertyKey,
+        out uint propertyType,
+        byte[]? propertyBuffer,
+        ref uint propertyBufferSize,
+        uint ulFlags);
 }
