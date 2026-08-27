@@ -261,6 +261,9 @@ public class SettingsManager : ISettingsManager
                 "serialPort": "auto",
                 "baudRate": 115200,
                 "autoConnect": true
+            },
+            "xprobe": {
+                "enabled": false
             }
         }
         """;

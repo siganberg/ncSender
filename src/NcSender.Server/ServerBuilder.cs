@@ -168,19 +168,18 @@ public static class ServerBuilder
         // and emits grblHAL virtual-input realtime bytes (0xA5/A6 probe,
         // 0xA7/A8 toolsetter) on the controller. Both are background;
         // no config surface.
+        builder.Services.AddSingleton<INcSenderUsbCatalog, NcSender.Server.Usb.NcSenderUsbCatalog>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
         builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
-        // XProbeRouter/Translator are DISABLED by default. XProbeRouter's USB
-        // scanner opens every unclaimed USB serial port every 4 s to send a
-        // "$ID" probe — that toggles DTR on the target device, which resets
-        // Arduinos and other benign USB-serial peripherals, and on Windows
-        // makes the port appear "in use" to other apps. Until the scanner
-        // learns to leave unknown devices strictly alone (and only opens
-        // ports it has reason to think are xprobe), the feature is off by
-        // default. Re-enable by uncommenting the two AddHostedService lines
-        // below. See docs/xprobe.md for the plan to make it safe.
-        // builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
-        // builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
+        // XProbe hosted services are ALWAYS registered but internally gated
+        // on the `xprobe.enabled` setting (default false). Users who own an
+        // XProbe flip it on; nobody else pays any cost. The router itself
+        // now filters candidate ports through INcSenderUsbCatalog, so even
+        // when enabled it only touches devices whose USB descriptors match
+        // the XProbe VID/PID — no more resets or lock-ups on random USB
+        // serial peripherals. See docs/xprobe.md.
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
+        builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();

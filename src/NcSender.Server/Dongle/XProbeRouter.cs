@@ -1,6 +1,6 @@
 using System.IO.Ports;
 using NcSender.Core.Interfaces;
-using NcSender.Server.Connection;
+using NcSender.Core.Models;
 
 namespace NcSender.Server.Dongle;
 
@@ -29,8 +29,8 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private const int BaudRate = 115200;
 
     private readonly IDongleDeviceService _devices;
-    private readonly ICncController _controller;
-    private readonly IServiceProvider _sp;   // lazy-resolved to break the DI cycle with IPendantManager
+    private readonly INcSenderUsbCatalog _usbCatalog;
+    private readonly ISettingsManager _settings;
     private readonly ILogger<XProbeRouter> _logger;
 
     // Active USB link (null when wireless-only)
@@ -38,12 +38,6 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private string? _usbPortPath;
     private readonly object _usbLock = new();
     private readonly List<byte> _usbRxBuf = new(256);
-
-    // Ports we've probed recently and want to skip until conditions change.
-    // Cleared on every USB release so a re-enumerated device (unplug/replug,
-    // brownout, or the port coming back with a different number) always gets
-    // freshly probed instead of being remembered as "not xprobe" forever.
-    private readonly HashSet<string> _blacklist = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _cts;
     private Task? _scanTask;
@@ -53,16 +47,27 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     public event Action<string>? MessageReceived;
     public event Action<bool>? ConnectivityChanged;
 
-    public XProbeRouter(IDongleDeviceService devices, ICncController controller, IServiceProvider sp, ILogger<XProbeRouter> logger)
+    public XProbeRouter(
+        IDongleDeviceService devices,
+        INcSenderUsbCatalog usbCatalog,
+        ISettingsManager settings,
+        ILogger<XProbeRouter> logger)
     {
         _devices = devices;
-        _controller = controller;
-        _sp = sp;
+        _usbCatalog = usbCatalog;
+        _settings = settings;
         _logger = logger;
     }
 
+    // Opt-in — off by default. Evaluated inside StartAsync + at scan time
+    // so a user flipping the setting via the API takes effect on the next
+    // tick without a server restart.
+    private bool XProbeEnabled => _settings.GetSetting<bool>("xprobe.enabled", false);
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // Wireless subscription is cheap and adds no side-effects, so we
+        // always hook it — the enable gate only guards the USB scanner.
         _devices.DeviceMessageReceived += OnWirelessMessage;
         _devices.DeviceConnectivityChanged += OnWirelessConnectivity;
         _cts = new CancellationTokenSource();
@@ -113,12 +118,10 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         {
             try
             {
-                // Check-then-probe in the same tick: if CheckUsbAlive detects
-                // a stale port and closes, ProbeOnce runs immediately instead
-                // of waiting a full ScanIntervalMs. Cuts reclaim latency in
-                // half after a re-enumeration.
                 if (UsbActive) CheckUsbAlive();
-                if (!UsbActive) ProbeOnce();
+                // Skip the USB scan entirely when the feature is off — the
+                // wireless path still works via the dongle subscription.
+                if (!UsbActive && XProbeEnabled) ProbeOnce();
             }
             catch (Exception ex)
             {
@@ -132,25 +135,17 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     {
         foreach (var port in EnumerateCandidatePorts())
         {
-            if (_blacklist.Contains(port)) continue;
-
             SerialPort? sp = null;
             try
             {
-                // DtrEnable/RtsEnable stay TRUE (matches pre-v2.0.85 behavior).
-                // We tried FALSE to avoid resetting the CNC on probe, but the
-                // wireless dongle (T-Dongle-S3, native USB CDC on the ESP32-S3)
-                // reboots its display when a second host opens its port with a
-                // different DTR state than the one PendantSerialHandler already
-                // has asserted (DTR=true). The active CNC port is now excluded
-                // by GetActiveCncPort() below, so we no longer *touch* the CNC
-                // port during probes — meaning we don't need low DTR/RTS to
-                // protect it, and can go back to the state that leaves the
-                // dongle undisturbed.
+                // With the catalog filter every candidate is already a
+                // known-VID/PID XProbe — no third-party device can appear
+                // here. Open with DTR/RTS FALSE anyway so we never toggle
+                // reset lines on the XProbe itself during identification.
                 sp = new SerialPort(port, BaudRate)
                 {
-                    DtrEnable = true,
-                    RtsEnable = true,
+                    DtrEnable = false,
+                    RtsEnable = false,
                     ReadTimeout = 200,
                     WriteTimeout = 500,
                 };
@@ -176,11 +171,6 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
                         matched = true;
                         break;
                     }
-                    if (LooksLikeSomeoneElse(text))
-                    {
-                        _blacklist.Add(port);
-                        break;
-                    }
                     Thread.Sleep(50);
                 }
 
@@ -203,16 +193,6 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
                 }
             }
         }
-    }
-
-    private static bool LooksLikeSomeoneElse(string text)
-    {
-        return text.Contains("$ID:", StringComparison.Ordinal)          // some other accessory ($ID:pendant, $ID:dongle, …)
-            || text.Contains("Grbl", StringComparison.OrdinalIgnoreCase) // CNC greeting
-            || text.Contains("[VER:", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("[OPT:", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("error:", StringComparison.OrdinalIgnoreCase) // grblHAL rejects $ID → error:3
-            || text.Contains("ok\r", StringComparison.Ordinal);           // some grbl variants ack $ID silently
     }
 
     private void ClaimUsbPort(SerialPort sp, string path)
@@ -277,10 +257,6 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         try { old.DataReceived -= OnUsbData; } catch { }
         try { if (old.IsOpen) old.Close(); } catch { }
         try { old.Dispose(); } catch { }
-        // Fresh probe cycle after any release — a device that briefly
-        // enumerated wrong (or coincided with a CNC greeting) should get a
-        // second chance now that the state has changed.
-        _blacklist.Clear();
         _logger.LogInformation("XPROBE USB released ({Port}, reason: {Reason}) — falling back to wireless", oldPath, reason);
         FireConnectivity(false);
     }
@@ -368,62 +344,24 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private IEnumerable<string> EnumerateCandidatePorts()
     {
+        // Only devices whose USB descriptors match the XProbe VID/PID are
+        // candidates. No probing arbitrary serial devices, no reset kicks,
+        // no port lock-ups. The catalog reads sysfs / ioreg / SetupAPI and
+        // never opens the port itself.
         var currentUsb = _usbPortPath;
-        var cncPort = GetActiveCncPort();
-        // Anything the PendantPortScanner has claimed (pendant + dongle) is
-        // strictly off-limits. Writing "$ID\n" to the pendant's USB port
-        // during a firmware OTA injects the identity bytes into the raw
-        // chunk stream — that was the source of every mid-flash corruption
-        // seen on the kiosk (MD5 mismatch, mid-transfer stalls, and the V2
-        // "Bad header ($ID)" fault).
-        var occupied = GetOccupiedPorts();
-        var all = SerialPort.GetPortNames();
         var kept = new List<string>();
-        foreach (var p in all)
+        foreach (var dev in _usbCatalog.GetDevices())
         {
-            if (!IsUsbSerial(p)) continue;
-            if (p == currentUsb) continue;    // already ours
-            if (cncPort is not null && string.Equals(p, cncPort, StringComparison.Ordinal))
-                continue;                     // never probe the port grblHAL is on
-            if (occupied.Contains(p)) continue; // never probe pendant/dongle ports
-            kept.Add(p);
+            if (dev.Kind != NcSenderUsbKind.XProbe) continue;
+            if (string.Equals(dev.PortName, currentUsb, StringComparison.Ordinal)) continue;
+            kept.Add(dev.PortName);
         }
-        // Drop /dev/tty.* twins when /dev/cu.* twin is present (macOS).
+        // Drop /dev/tty.* twins when the /dev/cu.* twin is also visible
+        // (macOS surfaces both call-in and dial-out nodes for the same
+        // physical port).
         var cuNames = new HashSet<string>(
             kept.Where(p => p.StartsWith("/dev/cu.", StringComparison.Ordinal))
                 .Select(p => "/dev/tty." + p["/dev/cu.".Length..]));
         return kept.Where(p => !cuNames.Contains(p));
-    }
-
-    // Resolves lazily — IPendantManager is registered as a singleton and
-    // constructs on first request, but at StartAsync-time the DI graph
-    // may not yet have wired it. GetService (not Required) returns null
-    // if resolution fails, so probing keeps working when the pendant
-    // subsystem is disabled or misconfigured.
-    private HashSet<string> GetOccupiedPorts()
-    {
-        try { return _sp.GetService<IPendantManager>()?.GetOccupiedPorts() ?? new HashSet<string>(); }
-        catch { return new HashSet<string>(); }
-    }
-
-    private string? GetActiveCncPort()
-    {
-        try
-        {
-            if (_controller.Transport is SerialTransport st) return st.PortPath;
-        }
-        catch { /* transport swap race — treat as unknown, worst case we probe once */ }
-        return null;
-    }
-
-    private static bool IsUsbSerial(string p)
-    {
-        if (p.StartsWith("COM", StringComparison.OrdinalIgnoreCase)) return true;
-        if (p.StartsWith("/dev/ttyUSB", StringComparison.Ordinal)) return true;
-        if (p.StartsWith("/dev/ttyACM", StringComparison.Ordinal)) return true;
-        if (p.StartsWith("/dev/cu.usb", StringComparison.Ordinal)) return true;
-        if (p.StartsWith("/dev/cu.wch", StringComparison.Ordinal)) return true;
-        if (p.StartsWith("/dev/cu.SLAB", StringComparison.Ordinal)) return true;
-        return false;
     }
 }
