@@ -104,6 +104,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private readonly object _cacheLock = new();
     private IReadOnlyList<NcSenderUsbDevice>? _cached;
     private long _cachedAtMs;
+    private string? _lastSummary;
 
     public NcSenderUsbCatalog(ILogger<NcSenderUsbCatalog> logger)
     {
@@ -121,10 +122,18 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             try
             {
                 devices = Enumerate();
+                var summary = devices.Count == 0
+                    ? "(none)"
+                    : string.Join(", ", devices.Select(d => $"{d.Kind}({d.PortName})"));
+                if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
+                {
+                    _logger.LogInformation("USB catalog: {N} device(s) — {Names}", devices.Count, summary);
+                    _lastSummary = summary;
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "NcSenderUsbCatalog enumeration threw — returning empty");
+                _logger.LogWarning(ex, "NcSenderUsbCatalog enumeration threw — returning empty");
                 devices = Array.Empty<NcSenderUsbDevice>();
             }
 
@@ -152,7 +161,29 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private IReadOnlyList<NcSenderUsbDevice> EnumerateLinux()
     {
         var results = new List<NcSenderUsbDevice>();
-        var ports = SerialPort.GetPortNames();
+        // .NET's SerialPort.GetPortNames() on Linux relies on parsing
+        // /proc/tty/drivers + probing /dev; historically flaky for
+        // ttyACM/ttyUSB (missed entries on some runtimes). Combine the
+        // three known USB-serial device prefixes directly from /dev so
+        // we always see every attached ACM/USB-serial port, then dedup.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var ports = new List<string>();
+        try
+        {
+            foreach (var p in SerialPort.GetPortNames())
+                if (seen.Add(p)) ports.Add(p);
+        }
+        catch { /* GetPortNames can throw on odd sysfs states; fall through */ }
+        try
+        {
+            foreach (var pattern in new[] { "ttyACM*", "ttyUSB*", "ttyAMA*" })
+            {
+                foreach (var p in Directory.EnumerateFiles("/dev", pattern))
+                    if (seen.Add(p)) ports.Add(p);
+            }
+        }
+        catch { /* /dev not readable — leave whatever GetPortNames returned */ }
+
         foreach (var port in ports)
         {
             var basename = Path.GetFileName(port);
@@ -162,11 +193,14 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
 
             try
             {
-                // /sys/class/tty/ttyACM0 -> ../../devices/.../ttyACM0
-                // /sys/class/tty/ttyACM0/device -> ../../.../usbN/N-1/N-1:1.0
-                // idVendor / idProduct live on the parent USB device node.
+                // /sys/class/tty/ttyACM0 is a symlink AND so is its /device
+                // subnode. .NET's Directory.ResolveLinkTarget only resolves
+                // the final component, and Path.GetFullPath doesn't follow
+                // symlinks at all — so walking up from either never reaches
+                // the USB device node. Shell out to `readlink -f` (POSIX
+                // canonicalize, follows every symlink in the chain).
                 var deviceDir = Path.Combine(sysLink, "device");
-                var real = Path.GetFullPath(deviceDir);
+                var real = ResolveRealPath(deviceDir) ?? Path.GetFullPath(deviceDir);
                 var usbNode = FindLinuxUsbNode(real);
                 if (usbNode is null) continue;
 
@@ -186,6 +220,33 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             }
         }
         return results;
+    }
+
+    // Canonicalize a path by shelling out to /usr/bin/readlink -f. Follows
+    // every symlink in the chain, unlike Path.GetFullPath (no follow) or
+    // Directory.ResolveLinkTarget (final component only). Returns null on
+    // any failure so the caller can fall back.
+    private static string? ResolveRealPath(string path)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "/usr/bin/readlink",
+                ArgumentList = { "-f", path },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null) return null;
+            var stdout = proc.StandardOutput.ReadToEnd();
+            if (!proc.WaitForExit(1000)) { try { proc.Kill(); } catch { } return null; }
+            var trimmed = stdout.Trim();
+            return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+        }
+        catch { return null; }
     }
 
     private static string? FindLinuxUsbNode(string startDir)
