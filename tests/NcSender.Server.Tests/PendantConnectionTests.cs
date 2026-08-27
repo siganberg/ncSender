@@ -47,6 +47,8 @@ public class PendantConnectionTests : IDisposable
             dongleDevices.Object,
             _broadcaster.Object);
         var gates = new Mock<IGateService>();
+        var usbCatalog = new Mock<INcSenderUsbCatalog>();
+        usbCatalog.Setup(c => c.GetDevices()).Returns(Array.Empty<NcSenderUsbDevice>());
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
             _controller.Object,
@@ -57,7 +59,8 @@ public class PendantConnectionTests : IDisposable
             _settings.Object,
             dongleDevices.Object,
             dongleOta,
-            gates.Object);
+            gates.Object,
+            usbCatalog.Object);
     }
 
     public void Dispose()
