@@ -102,7 +102,12 @@ public class PendantManager : IPendantManager
         // Give the dongle device service a path to send "@name" commands out over the
         // dongle (read at call-time, so it follows dongle connect/disconnect).
         _dongleDevices.SetSender(line =>
-            _dongleHandler is not null ? _dongleHandler.SendRawAsync(line) : Task.CompletedTask);
+        {
+            // Snapshot the field: it is cleared from another thread when the
+            // dongle drops, so testing and dereferencing it separately can NPE.
+            var h = _dongleHandler;
+            return h is not null ? h.SendRawAsync(line) : Task.CompletedTask;
+        });
 
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
@@ -354,16 +359,23 @@ public class PendantManager : IPendantManager
     /// </summary>
     private async Task<string> QueryDongleAsync(string command, Func<string, bool> match, int timeoutMs)
     {
-        if (_dongleHandler is not { IsConnected: true })
+        // Bind the handler ONCE. _dongleHandler is cleared from OnPortDisconnected
+        // on another thread when the dongle drops, so re-reading the field here
+        // meant a dongle that vanished mid-query threw NullReferenceException out
+        // of the finally — masking the real TimeoutException with a bogus one.
+        // Unsubscribing from the same object we subscribed to is also simply
+        // correct, whatever the field points at by the time we unwind.
+        var handler = _dongleHandler;
+        if (handler is not { IsConnected: true })
             throw new InvalidOperationException("Wireless USB not connected");
 
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnLine(string line) { if (match(line)) tcs.TrySetResult(line); }
 
-        _dongleHandler.RawMessageReceived += OnLine;
+        handler.RawMessageReceived += OnLine;
         try
         {
-            await _dongleHandler.SendRawAsync(command);
+            await handler.SendRawAsync(command);
             var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
             if (done != tcs.Task)
                 throw new TimeoutException("Wireless USB did not respond");
@@ -371,7 +383,7 @@ public class PendantManager : IPendantManager
         }
         finally
         {
-            _dongleHandler.RawMessageReceived -= OnLine;
+            handler.RawMessageReceived -= OnLine;
         }
     }
 
@@ -1108,10 +1120,11 @@ public class PendantManager : IPendantManager
         _pendantConnected = false;
 
         // Close all handlers
-        if (_dongleHandler is not null)
+        var dongle = _dongleHandler;
+        if (dongle is not null)
         {
-            await _dongleHandler.DisconnectAsync();
             _dongleHandler = null;
+            await dongle.DisconnectAsync();
         }
         if (_pendantUsbHandler is not null)
         {
@@ -1125,11 +1138,12 @@ public class PendantManager : IPendantManager
 
     public async Task UnpairDongleAsync()
     {
-        if (_dongleHandler is not { IsConnected: true })
+        var handler = _dongleHandler;
+        if (handler is not { IsConnected: true })
             throw new InvalidOperationException("Dongle not connected");
 
         _logger.LogInformation("Sending $UNPAIR to dongle");
-        await _dongleHandler.SendRawAsync("$UNPAIR");
+        await handler.SendRawAsync("$UNPAIR");
         await Task.Delay(500);
         _logger.LogInformation("Dongle unpair command sent");
     }

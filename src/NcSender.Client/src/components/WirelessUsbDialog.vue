@@ -176,10 +176,20 @@ const deviceRows = computed(() => {
   return rows;
 });
 
+// Devices that can pair but aren't in the store catalog yet. They still need
+// their real capitalisation — the generic fallback below title-cases the routing
+// tag, turning 'xprobe' into 'Xprobe'. Keeping them out of CATALOG matters:
+// catalog entries render a row with a "Get One" link even when unpaired, which
+// would advertise hardware that isn't on sale.
+const DISPLAY_NAMES: Record<string, string> = {
+  xprobe: 'xProbe',
+};
+
 function prettyName(name: string): string {
-  const hit = CATALOG.find(c => c.key === name.toLowerCase());
+  const key = name.toLowerCase();
+  const hit = CATALOG.find(c => c.key === key);
   if (hit) return hit.label;
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  return DISPLAY_NAMES[key] ?? name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 async function loadStatus() {

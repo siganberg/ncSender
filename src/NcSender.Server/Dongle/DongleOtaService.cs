@@ -36,7 +36,14 @@ public sealed class DongleOtaService : IDisposable
     private const int ChunkSize = 200;
     // 4 chunks in flight matches the design decision; increase if bandwidth
     // is left on the table but watch for out-of-order thrash first.
-    private const int WindowSize = 4;
+    // ONE chunk in flight, deliberately. A deeper window overruns the dongle:
+    // it relays every chunk to ESP-NOW as it arrives over USB, and at 4 (and
+    // even at 2) the sustained load starved interrupts long enough to trip the
+    // ESP32-S3 interrupt watchdog — the dongle silently reset mid-transfer and
+    // the host just saw "No ACK for chunk N". Measured on an 821 KB payload:
+    // window 4 died at ~chunk 300-770, window 2 at ~chunk 41, window 1 completed
+    // in 51s. Raise this only with a dongle-side fix and a full-size test flash.
+    private const int WindowSize = 1;
     private const int PerChunkAckTimeoutMs = 800;
     private const int MaxRetriesPerChunk = 6;
     // Devices ACK BEGIN synchronously AFTER their Update.begin() call returns,
@@ -88,7 +95,13 @@ public sealed class DongleOtaService : IDisposable
 
         try
         {
+            // Log start/finish, not just failures. Without these the log goes
+            // silent mid-transfer and a stall is indistinguishable from success.
+            var startedMs = NowMs();
+            _logger.LogInformation("[OTA {Name}] start — {Bytes} bytes", deviceName, firmware.Length);
             await FlashInternalAsync(s, ct);
+            _logger.LogInformation("[OTA {Name}] COMPLETE in {Secs:F1}s",
+                deviceName, (NowMs() - startedMs) / 1000.0);
             await BroadcastDoneAsync(s);
         }
         catch (OperationCanceledException)
@@ -147,7 +160,7 @@ public sealed class DongleOtaService : IDisposable
         // enough that resending is safe: it either sees the first packet
         // and ACKs (later BEGINs cancel-and-restart the same session id)
         // or it sees only the retry.
-        await BroadcastMessageAsync(s, "info", $"Starting wireless flash ({s.Firmware.Length:N0} bytes)");
+        await BroadcastMessageAsync(s, "info", $"Starting wireless flash ({s.Firmware.Length / 1024.0:N1} KB)");
         var beginLine = $"$OTA:BEGIN @{s.DeviceName} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
         OtaStatus? beginAck = null;
         for (var attempt = 0; attempt < BeginRetries; attempt++)
@@ -212,6 +225,11 @@ public sealed class DongleOtaService : IDisposable
                         // marker when the LOWEST in-flight is acked.
                         while (nextExpectedAck < nextToSend && !inFlight.ContainsKey(nextExpectedAck))
                             nextExpectedAck++;
+                        // Roughly every 10% — enough to see where a stall lands
+                        // without flooding a 3000-chunk transfer.
+                        if (totalChunks > 0 && nextExpectedAck % Math.Max(1, totalChunks / 10) == 0)
+                            _logger.LogInformation("[OTA {Name}] {Done}/{Total} chunks",
+                                s.DeviceName, nextExpectedAck, totalChunks);
 
                         var pct = (int)(100L * nextExpectedAck / totalChunks);
                         if (pct != lastPctBroadcast)
