@@ -18,17 +18,22 @@ public static class StandardBlockStrategy
     /// </summary>
     private const double ZTraverseMinimum = 10;
 
-    public static List<string> GetZProbeRoutine(double zThickness = 15)
+    public static List<string> GetZProbeRoutine(
+        double zThickness = 15,
+        double secondProbeDelay = 0.1,
+        double retractDistance = 4,
+        double firstProbeFeedrate = 200,
+        double secondProbeFeedrate = 75)
     {
         return
         [
             "(Probe Z - Standard Block)",
             "#<return_units> = [20 + #<_metric>]",
             "G21 G91",
-            "G38.2 Z-30 F200",
-            "G0 Z4",
-            "G4 P0.1",
-            "G38.2 Z-5 F75",
+            $"G38.2 Z-30 F{F(firstProbeFeedrate)}",
+            $"G0 Z{F(retractDistance)}",
+            $"G4 P{F(secondProbeDelay)}",
+            $"G38.2 Z-{F(retractDistance + 1)} F{F(secondProbeFeedrate)}",
             $"G10 L20 Z{F(zThickness)}",
             $"G0 Z{F(ZParkHeight)}",
             "G90",
