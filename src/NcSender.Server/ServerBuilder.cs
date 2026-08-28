@@ -283,7 +283,20 @@ public static class ServerBuilder
             }
             else
             {
+                // Poll endpoints stay out of the log on success — they'd bury
+                // everything else. A *failure* on one still needs to be visible:
+                // /api/dongle/license returning 400 is exactly how a wedged
+                // Wireless USB dongle presents, and it used to leave no trace at
+                // all. Throttled per path so a dialog polling every 3s doesn't
+                // flood the log while the user looks at the error.
                 await next();
+                if (context.Response.StatusCode >= 400 && ShouldLogQuietFailure(context.Request.Path))
+                {
+                    context.RequestServices.GetRequiredService<ILoggerFactory>()
+                        .CreateLogger("ApiRequest")
+                        .LogWarning("API {Method} {Path} responded {StatusCode}",
+                            context.Request.Method, context.Request.Path, context.Response.StatusCode);
+                }
             }
         });
         app.UseWebSockets();
@@ -691,6 +704,20 @@ public static class ServerBuilder
     /// text can't silence its own API log line. Any parse failure means "log it"
     /// — the noisy default is the safe one.
     /// </summary>
+    // Last time a failure on a given quiet path was logged, so a 3s poll against
+    // a broken endpoint yields one line a minute instead of twenty.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _quietFailureLogged = new();
+    private const long QuietFailureLogIntervalMs = 60_000;
+
+    private static bool ShouldLogQuietFailure(PathString path)
+    {
+        var key = path.Value ?? "";
+        var now = Environment.TickCount64;
+        var last = _quietFailureLogged.GetOrAdd(key, _ => long.MinValue);
+        if (last != long.MinValue && now - last < QuietFailureLogIntervalMs) return false;
+        return _quietFailureLogged.TryUpdate(key, now, last);
+    }
+
     private static bool RequestOptsOutOfLog(string body)
     {
         try

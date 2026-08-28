@@ -14,6 +14,9 @@ namespace NcSender.Server.Dongle;
 [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Request Delegate Generator handles endpoint AOT compatibility")]
 public static class DongleEndpoints
 {
+    // Last "$LICENSE" failure reported, so repeat polls of the same fault stay quiet.
+    private static string? _lastLicenseError;
+
     public static void Map(WebApplication app)
     {
         // All devices seen this session (presence + raw last payload).
@@ -115,10 +118,27 @@ public static class DongleEndpoints
         });
 
         // The Wireless USB dongle's own license state (read via the "$LICENSE" line command).
-        app.MapGet("/api/dongle/license", async (IPendantManager pendant) =>
+        app.MapGet("/api/dongle/license", async (IPendantManager pendant, ILoggerFactory loggerFactory) =>
         {
-            try { return Results.Ok(await pendant.GetDongleLicenseAsync()); }
-            catch (Exception ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+            try
+            {
+                var status = await pendant.GetDongleLicenseAsync();
+                _lastLicenseError = null;   // so the next fault logs even if it repeats an old one
+                return Results.Ok(status);
+            }
+            catch (Exception ex)
+            {
+                // The dialog polls this every 3s and renders any failure as a flat
+                // "Not connected", so the reason has to reach the log or the whole
+                // failure is invisible. A timeout here means the dongle handle is
+                // open but nothing is answering behind it.
+                // Deduped on the message so a 3s poll against a wedged dongle
+                // logs once, not twenty times a minute.
+                if (Interlocked.Exchange(ref _lastLicenseError, ex.Message) != ex.Message)
+                    loggerFactory.CreateLogger("DongleEndpoints")
+                        .LogWarning(ex, "Wireless USB license query failed");
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
         });
 
         // Activate the dongle with an installation ID: calls the activation server, then
