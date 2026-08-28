@@ -460,6 +460,58 @@ public class PendantConnectionTests : IDisposable
         Assert.Equal("connected", status.ConnectionState);
         Assert.Equal("usb", status.ActiveConnectionType);
     }
+
+    // ──────────────────────────────────────────────────────────
+    // A dongle whose read loop dies must stop reporting connected,
+    // even while its port handle still claims to be open.
+    // ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DongleReadLoopDies_ClearsDongleConnected()
+    {
+        var pendant = MakePendantDevice();
+        _manager.HandleDeviceFound(pendant);
+        SimulatePendantPing();
+
+        var dongle = MakeDongleDevice();
+        _manager.HandleDeviceFound(dongle);
+        SimulatePendantPing();
+
+        Assert.True(GetStatus().DongleConnected);
+
+        // The dongle self-resets and re-enumerates. Its read loop fails, but the
+        // mock keeps reporting IsConnected — exactly like a real SerialPort whose
+        // handle stays open over a dead device. The manager must not keep serving
+        // DongleConnected off that stale reference: doing so lit the toolbar icon
+        // while every $LICENSE query timed out and the dialog said "not connected".
+        ((MockSerialHandler)dongle.Handler).SimulateDisconnect();
+
+        Assert.False(GetStatus().DongleConnected);
+    }
+
+    [Fact]
+    public void DongleReadLoopDies_ThenRediscovered_ReportsConnectedAgain()
+    {
+        var pendant = MakePendantDevice();
+        _manager.HandleDeviceFound(pendant);
+        SimulatePendantPing();
+
+        var dongle = MakeDongleDevice();
+        _manager.HandleDeviceFound(dongle);
+        SimulatePendantPing();
+        ((MockSerialHandler)dongle.Handler).SimulateDisconnect();
+        Assert.False(GetStatus().DongleConnected);
+
+        // Scanner reopens the port and hands over a fresh handler — the state must
+        // recover without a restart.
+        var reopened = MakeDongleDevice();
+        _manager.HandleDeviceFound(reopened);
+        SimulatePendantPing();
+
+        var status = GetStatus();
+        Assert.True(status.DongleConnected);
+        Assert.Equal("espnow", status.ActiveConnectionType);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

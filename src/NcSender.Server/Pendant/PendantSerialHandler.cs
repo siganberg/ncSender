@@ -22,7 +22,15 @@ public class PendantSerialHandler : IAsyncDisposable
         ("0403", "6001", "FTDI")
     ];
 
-    public virtual bool IsConnected => _port?.IsOpen == true;
+    // A port handle can stay "open" long after the device behind it is gone: on
+    // Linux an unplug (or a self-reset + re-enumeration) fails the read with an
+    // IOException but leaves SerialPort.IsOpen true. Reporting connected on a
+    // dead handle is what let a re-enumerated dongle sit behind a stale fd
+    // forever — green icon, no traffic, only a restart clearing it. The read
+    // loop owns this flag: once it exits on error, the handle is not connected.
+    private volatile bool _readLoopDead;
+
+    public virtual bool IsConnected => _port?.IsOpen == true && !_readLoopDead;
     public virtual string? ConnectedPort => _port?.PortName;
     public string? DeviceVersion { get; internal set; }
     public string? DeviceId { get; internal set; }
@@ -70,6 +78,7 @@ public class PendantSerialHandler : IAsyncDisposable
         };
 
         _port.Open();
+        _readLoopDead = false;
         _readCts = new CancellationTokenSource();
 
         if (OperatingSystem.IsWindows())
@@ -238,7 +247,21 @@ public class PendantSerialHandler : IAsyncDisposable
 
         // Fire disconnect for any non-cancellation exit (port unplugged, IO error, port closed)
         if (!cancelled && !ct.IsCancellationRequested)
+        {
+            // Mark dead before closing so IsConnected flips false the instant the
+            // loop gives up, whatever the close does. Then release the handle:
+            // holding a dead fd keeps the kernel's /dev/ttyACMn node alive, which
+            // is why a self-resetting device re-enumerates onto a *different*
+            // number instead of reclaiming its own. Not DisconnectAsync — that
+            // awaits this very task and would deadlock.
+            _readLoopDead = true;
+            var port = _port;
+            if (port is not null)
+            {
+                try { if (port.IsOpen) port.Close(); } catch { /* best effort */ }
+            }
             PortDisconnected?.Invoke();
+        }
     }
 
     private readonly object _bufferLock = new();

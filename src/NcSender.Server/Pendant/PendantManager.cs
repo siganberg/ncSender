@@ -1686,8 +1686,25 @@ public class PendantManager : IPendantManager
         }
 
         // Detach events from the disconnected handler
+        var dead = _serialHandler;
         DetachActiveHandler();
         _serialHandler = null;
+
+        // Drop every other reference to the same dead handler. Clearing only
+        // _serialHandler used to leave _dongleHandler pointing at it, so
+        // GetStatus kept reporting DongleConnected: true while $LICENSE queries
+        // went to a fd nothing would ever answer — the toolbar icon stayed lit
+        // and the Wireless USB dialog said "not connected" until a restart.
+        if (dead is not null)
+        {
+            if (ReferenceEquals(_dongleHandler, dead))
+            {
+                DetachDonglePromotionListener();
+                _dongleHandler = null;
+            }
+            if (ReferenceEquals(_pendantUsbHandler, dead))
+                _pendantUsbHandler = null;
+        }
 
         // Scanner will detect the disappeared port and fire DeviceLost,
         // which handles fallback logic (dongle → USB or vice versa).
