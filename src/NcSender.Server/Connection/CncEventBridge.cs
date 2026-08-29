@@ -21,6 +21,7 @@ public class CncEventBridge
     private readonly IPluginManager _pluginManager;
     private readonly ISettingsManager _settingsManager;
     private readonly IToolProjection _toolProjection;
+    private readonly IToolService _toolService;
     private readonly IGateService _gates;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
@@ -41,10 +42,12 @@ public class CncEventBridge
         IPluginManager pluginManager,
         ISettingsManager settingsManager,
         IToolProjection toolProjection,
+        IToolService toolService,
         IGateService gates)
     {
         _gates = gates;
         _toolProjection = toolProjection;
+        _toolService = toolService;
         _controller = controller;
         _context = context;
         _broadcaster = broadcaster;
@@ -580,6 +583,37 @@ public class CncEventBridge
         _ = _broadcaster.Broadcast("cnc-data", data, NcSenderJsonContext.Default.String);
     }
 
+
+    /// <summary>
+    /// Description of the tool the operator is being asked to fit, or null.
+    ///
+    /// The number in the message is whatever the controller was told, and that
+    /// depends on the setup. With slot-mapping in play the G-code has been
+    /// rewritten to address magazine slots, so the number is a slot and the
+    /// library entry to match is the one assigned to it (ToolNumber is the
+    /// pocket). Without slot-mapping the number is the tool's own id. Try the
+    /// slot first, fall back to the id, and return null if neither matches —
+    /// an empty slot then reads exactly as it does today.
+    /// </summary>
+    private async Task<string?> DescribeToolAsync(int number)
+    {
+        try
+        {
+            var tools = await _toolService.GetAllAsync();
+            var match = tools.FirstOrDefault(t => t.ToolNumber == number)
+                     ?? tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == number);
+            var name = match?.Name?.Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch (Exception ex)
+        {
+            // A tool-change prompt that cannot be dismissed is far worse than
+            // one without a description, so this never propagates.
+            _logger.LogDebug(ex, "Could not read tool library for tool-change prompt");
+            return null;
+        }
+    }
+
     private async Task HandlePluginMessageAsync(string normalizedName, string messageCode)
     {
         var dialog = _pluginManager.GetPluginMessageDialog(normalizedName, messageCode);
@@ -597,6 +631,12 @@ public class CncEventBridge
             var styled = isFailure
                 ? $"<strong style=\"color: var(--color-accent); font-size: 1.35em;\">T{toolNum}</strong>"
                 : $"<strong style=\"color: var(--color-accent);\">T{toolNum}</strong>";
+            // With slot mapping the number alone is meaningless to the operator —
+            // it is a magazine slot, not the tool number they know from their CAM
+            // job. Name the tool when the library knows it.
+            var description = await DescribeToolAsync(toolNum);
+            if (description is not null)
+                styled += $" <strong style=\"color: var(--color-accent);\">({System.Net.WebUtility.HtmlEncode(description)})</strong>";
             dialog.Message = dialog.Message.Replace("{toolNumber}", styled);
         }
         else
