@@ -52,11 +52,13 @@ public interface IDongleDeviceService
     Task RequestDevicesAsync();
 
     /// <summary>
-    /// Forget every device. The paired list belongs to the dongle's NVS, not to
-    /// this process, so swapping in different hardware invalidates all of it.
-    /// Call before re-seeding from a newly attached dongle.
+    /// Mark the start of a fresh $DEVICES enumeration. Devices the reply does not
+    /// mention are dropped when it completes — the paired list belongs to the
+    /// dongle's NVS, not to this process, so different hardware invalidates it.
+    /// Nothing is removed up front: the handler re-attaches routinely with the
+    /// same dongle, and clearing on attach emptied the list every time it did.
     /// </summary>
-    void Reset();
+    void BeginEnumeration();
 
     /// <summary>
     /// True once a dongle has answered a $DEVICES query with its terminating

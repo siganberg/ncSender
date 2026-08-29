@@ -37,6 +37,12 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     private Func<string, Task>? _sender;
     private bool _enumerated;
 
+    // Names reported by the enumeration currently in flight. Reconciling against
+    // this at "$DEVICES:END" is what lets a swap drop the old dongle's devices
+    // without a reattach of the SAME dongle emptying the list on the way past.
+    private readonly HashSet<string> _seen = new(StringComparer.OrdinalIgnoreCase);
+    private bool _enumerating;
+
     public event Action<string, string>? DeviceMessageReceived;
     public event Action<string, bool>? DeviceConnectivityChanged;
 
@@ -93,6 +99,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             // this - not a non-empty list - is what proves it answered us.
             if (seedName.Equals("END", StringComparison.Ordinal))
             {
+                FinishEnumeration();
                 Volatile.Write(ref _enumerated, true);
                 return;
             }
@@ -101,6 +108,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
                 // Seed with LastSeenTicks = 0 so Snapshot() reports Connected=false /
                 // LastSeenMs=-1 — the plugin sees "paired but offline" until the device
                 // actually sends a message.
+                lock (_seen) { if (_enumerating) _seen.Add(seedName); }
                 _devices.GetOrAdd(seedName, _ => new DeviceState());
                 _logger.LogInformation("Seeded paired device '{Name}' from dongle $DEVICES reply", seedName);
                 _ = _broadcaster.Broadcast("dongle:device-changed",
@@ -235,19 +243,47 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     public bool DevicesEnumerated => Volatile.Read(ref _enumerated);
 
-    public void Reset()
+    public void BeginEnumeration()
     {
         Volatile.Write(ref _enumerated, false);
-        var names = _devices.Keys.ToArray();
-        _devices.Clear();
-        // Tell the UI each row is gone; otherwise the previous dongle's peers
-        // sit there looking paired until something else happens to refresh.
-        foreach (var name in names)
+        lock (_seen)
+        {
+            _seen.Clear();
+            _enumerating = true;
+        }
+        // Deliberately does NOT clear here. Clearing on attach emptied the list
+        // every time the dongle handler flapped — and on Windows it flaps: the
+        // port drops and is reopened within milliseconds, several times a
+        // session, with the same dongle on the same COM port. Each flap wiped
+        // four devices out of the UI and put them back a second later. The list
+        // is instead reconciled when the reply lands, so a re-attach of the same
+        // dongle is invisible and only a genuine swap removes anything.
+    }
+
+    /// <summary>
+    /// Drop devices the just-completed enumeration did not mention. They belong
+    /// to a dongle that is no longer the one plugged in.
+    /// </summary>
+    private void FinishEnumeration()
+    {
+        string[] stale;
+        lock (_seen)
+        {
+            if (!_enumerating) return;
+            _enumerating = false;
+            stale = _devices.Keys.Where(k => !_seen.Contains(k)).ToArray();
+        }
+
+        foreach (var name in stale)
+        {
+            if (!_devices.TryRemove(name, out _)) continue;
             _ = _broadcaster.Broadcast("dongle:device-changed",
                 new DongleDeviceChanged { Name = name, Connected = false },
                 NcSenderJsonContext.Default.DongleDeviceChanged);
-        if (names.Length > 0)
-            _logger.LogInformation("Cleared {Count} paired device(s) — dongle changed", names.Length);
+        }
+        if (stale.Length > 0)
+            _logger.LogInformation("Dropped {Count} device(s) not paired to this dongle: {Names}",
+                stale.Length, string.Join(", ", stale));
     }
 
     public Task UnpairAsync(string name)
