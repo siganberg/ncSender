@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Ports;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -59,6 +60,8 @@ public sealed class DongleOtaService : IDisposable
 
     private readonly ILogger<DongleOtaService> _logger;
     private readonly IDongleDeviceService _dongle;
+    private readonly INcSenderUsbCatalog _usbCatalog;
+    private readonly XProbeRouter _xprobe;
     private readonly IBroadcaster _broadcaster;
     private readonly ConcurrentDictionary<string, Session> _sessions
         = new(StringComparer.OrdinalIgnoreCase);
@@ -67,10 +70,14 @@ public sealed class DongleOtaService : IDisposable
     public DongleOtaService(
         ILogger<DongleOtaService> logger,
         IDongleDeviceService dongle,
+        INcSenderUsbCatalog usbCatalog,
+        XProbeRouter xprobe,
         IBroadcaster broadcaster)
     {
         _logger = logger;
         _dongle = dongle;
+        _usbCatalog = usbCatalog;
+        _xprobe = xprobe;
         _broadcaster = broadcaster;
         _dongle.DeviceMessageReceived += OnDongleMessage;
     }
@@ -98,7 +105,16 @@ public sealed class DongleOtaService : IDisposable
             // Log start/finish, not just failures. Without these the log goes
             // silent mid-transfer and a stall is indistinguishable from success.
             var startedMs = NowMs();
-            _logger.LogInformation("[OTA {Name}] start — {Bytes} bytes", deviceName, firmware.Length);
+            // Make the updater the device's only owner for the duration. The
+            // XProbe router otherwise holds the cable, which both blocked the
+            // wired path and let a wireless flash compete with live USB traffic
+            // — that combination reset the dongle mid-transfer.
+            using var _hold = string.Equals(deviceName, "xprobe", StringComparison.OrdinalIgnoreCase)
+                ? _xprobe.SuspendForFlash()
+                : null;
+            var viaUsb = TryAttachUsb(s);
+            _logger.LogInformation("[OTA {Name}] start — {Bytes} bytes over {Transport}",
+                deviceName, firmware.Length, viaUsb ? "USB" : "wireless");
             await FlashInternalAsync(s, ct);
             _logger.LogInformation("[OTA {Name}] COMPLETE in {Secs:F1}s",
                 deviceName, (NowMs() - startedMs) / 1000.0);
@@ -111,12 +127,16 @@ public sealed class DongleOtaService : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Wireless OTA failed for '{Name}'", deviceName);
+            _logger.LogError(ex, "Firmware update failed for '{Name}'", deviceName);
             await BroadcastErrorAsync(s, ex.Message);
             throw;
         }
         finally
         {
+            // Never hold the accessory's port past the flash — the scanner and
+            // XProbeRouter both want it back, and a device that reboots into new
+            // firmware re-enumerates underneath us anyway.
+            DetachUsb(s);
             _sessions.TryRemove(deviceName, out _);
         }
     }
@@ -149,6 +169,96 @@ public sealed class DongleOtaService : IDisposable
     // Internals
     // ---------------------------------------------------------------
 
+    // Accessory name -> the USB identity it advertises. Only devices whose
+    // firmware carries a custom iProduct string can be found this way; anything
+    // else simply falls through to the dongle.
+    private static NcSenderUsbKind KindFor(string deviceName) => deviceName.ToLowerInvariant() switch
+    {
+        "xprobe"       => NcSenderUsbKind.XProbe,
+        "autodustboot" => NcSenderUsbKind.AutoDustBoot,
+        "rgbled"       => NcSenderUsbKind.RgbController,
+        "pendant"      => NcSenderUsbKind.Pendant,
+        _              => NcSenderUsbKind.Unknown,
+    };
+
+    // Prefer the cable. The device speaks the identical "$OTA:" protocol on its
+    // own CDC, so this is the same flash over a faster, quieter pipe — it does
+    // not touch the radio, and it keeps working when no dongle is present.
+    // Any failure to claim the port is not an error: we just use the dongle.
+    private bool TryAttachUsb(Session s)
+    {
+        var kind = KindFor(s.DeviceName);
+        if (kind == NcSenderUsbKind.Unknown) return false;
+
+        string? port = null;
+        try
+        {
+            foreach (var d in _usbCatalog.GetDevices())
+                if (d.Kind == kind) { port = d.PortName; break; }
+        }
+        catch (Exception ex) { _logger.LogDebug(ex, "[OTA {Name}] USB catalog lookup failed", s.DeviceName); }
+        if (port is null) return false;
+
+        try
+        {
+            var sp = new SerialPort(port, 115200)
+            {
+                ReadTimeout = 500,
+                WriteTimeout = 5000,
+                DtrEnable = true,
+                RtsEnable = false,
+                NewLine = "\n",
+            };
+            sp.Open();
+            s.UsbPort = sp;
+            s.SendLine = line =>
+            {
+                sp.Write(line + "\n");
+                return Task.CompletedTask;
+            };
+            _ = Task.Run(() => PumpUsbAcksAsync(s, sp));
+            _logger.LogInformation("[OTA {Name}] using USB {Port} (wired preferred)", s.DeviceName, port);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation("[OTA {Name}] USB {Port} unavailable ({Err}) — falling back to wireless",
+                s.DeviceName, port, ex.Message);
+            return false;
+        }
+    }
+
+    // Reads "$OTA:ACK <session> <seq> <status>" off the cable and feeds the same
+    // AckChannel the dongle path uses, so the sliding-window logic is shared.
+    private void PumpUsbAcksAsync(Session s, SerialPort sp)
+    {
+        while (!s.Cts.IsCancellationRequested && sp.IsOpen)
+        {
+            string line;
+            try { line = sp.ReadLine(); }
+            catch (TimeoutException) { continue; }
+            catch { break; }
+            var t = line.Trim();
+            if (!t.StartsWith("$OTA:ACK ", StringComparison.Ordinal)) continue;
+            var parts = t["$OTA:ACK ".Length..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3) continue;
+            if (!uint.TryParse(parts[0], out var sess) || sess != s.SessionId) continue;
+            if (!uint.TryParse(parts[1], out var seq)) continue;
+            if (!byte.TryParse(parts[2], out var st)) continue;
+            s.AckChannel.Push((seq, (OtaStatus)st));
+        }
+    }
+
+    private static void DetachUsb(Session s)
+    {
+        var sp = s.UsbPort;
+        s.UsbPort = null;
+        s.SendLine = null;
+        if (sp is null) return;
+        try { if (sp.IsOpen) sp.Close(); } catch { }
+        try { sp.Dispose(); } catch { }
+    }
+
     private async Task FlashInternalAsync(Session s, CancellationToken outerCt)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(outerCt, s.Cts.Token);
@@ -161,7 +271,7 @@ public sealed class DongleOtaService : IDisposable
         // and ACKs (later BEGINs cancel-and-restart the same session id)
         // or it sees only the retry.
         await BroadcastMessageAsync(s, "info", $"Starting wireless flash ({s.Firmware.Length / 1024.0:N1} KB)");
-        var beginLine = $"$OTA:BEGIN @{s.DeviceName} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
+        var beginLine = $"$OTA:BEGIN{s.Tag} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
         OtaStatus? beginAck = null;
         for (var attempt = 0; attempt < BeginRetries; attempt++)
         {
@@ -276,7 +386,7 @@ public sealed class DongleOtaService : IDisposable
 
         // 3. END + verify.
         await BroadcastMessageAsync(s, "info", "All chunks delivered — verifying MD5…");
-        await SendAsync(s, $"$OTA:END @{s.DeviceName} {s.SessionId} {s.Firmware.Length} {s.Md5Hex}");
+        await SendAsync(s, $"$OTA:END{s.Tag} {s.SessionId} {s.Firmware.Length} {s.Md5Hex}");
         var endStatus = await AwaitAckAsync(s, EndAckSeq, EndAckTimeoutMs, ct);
         if (endStatus != OtaStatus.Ok)
             throw new InvalidOperationException($"Device rejected END (status={endStatus})");
@@ -290,13 +400,14 @@ public sealed class DongleOtaService : IDisposable
         int len = Math.Min(ChunkSize, s.Firmware.Length - offset);
         var slice = new ArraySegment<byte>(s.Firmware, offset, len);
         var b64 = Convert.ToBase64String(slice.Array!, slice.Offset, slice.Count);
-        await SendAsync(s, $"$OTA:CHUNK @{s.DeviceName} {s.SessionId} {seq} {len} {b64}");
+        await SendAsync(s, $"$OTA:CHUNK{s.Tag} {s.SessionId} {seq} {len} {b64}");
     }
 
     // OTA lines are dongle-parser commands ($OTA:BEGIN/CHUNK/END) — they
     // must arrive on USB verbatim, not wrapped in "@name". Use the raw
     // sender bypass rather than SendAsync (which would prepend @name).
-    private Task SendAsync(Session s, string line) => _dongle.SendRawLineAsync(line);
+    private Task SendAsync(Session s, string line)
+        => s.SendLine is not null ? s.SendLine(line) : _dongle.SendRawLineAsync(line);
 
     private async Task<OtaStatus> AwaitAckAsync(Session s, uint seq, int timeoutMs, CancellationToken ct)
     {
@@ -405,6 +516,14 @@ public sealed class DongleOtaService : IDisposable
         // firmware SSE endpoint bridges wireless progress back into the
         // same event stream the USB flow uses).
         public Action<int>? OnProgress;
+
+        // Transport for this flash. Null = relay through the dongle, where every
+        // line is addressed "@name". A direct USB cable is point-to-point, so it
+        // sends the same protocol WITHOUT the tag and reads ACKs off the port.
+        public Func<string, Task>? SendLine;
+        public SerialPort? UsbPort;
+        public bool ViaUsb => SendLine is not null;
+        public string Tag => ViaUsb ? "" : " @" + DeviceName;
 
         public Session(string deviceName, byte[] firmware, string deviceId)
         {

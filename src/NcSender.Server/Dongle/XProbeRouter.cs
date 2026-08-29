@@ -30,7 +30,6 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private readonly IDongleDeviceService _devices;
     private readonly INcSenderUsbCatalog _usbCatalog;
-    private readonly ISettingsManager _settings;
     private readonly ILogger<XProbeRouter> _logger;
 
     // Active USB link (null when wireless-only)
@@ -50,19 +49,12 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     public XProbeRouter(
         IDongleDeviceService devices,
         INcSenderUsbCatalog usbCatalog,
-        ISettingsManager settings,
         ILogger<XProbeRouter> logger)
     {
         _devices = devices;
         _usbCatalog = usbCatalog;
-        _settings = settings;
         _logger = logger;
     }
-
-    // Opt-in — off by default. Evaluated inside StartAsync + at scan time
-    // so a user flipping the setting via the API takes effect on the next
-    // tick without a server restart.
-    private bool XProbeEnabled => _settings.GetSetting<bool>("xprobe.enabled", false);
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -119,9 +111,8 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             try
             {
                 if (UsbActive) CheckUsbAlive();
-                // Skip the USB scan entirely when the feature is off — the
-                // wireless path still works via the dongle subscription.
-                if (!UsbActive && XProbeEnabled) ProbeOnce();
+                // Don't re-grab the port underneath an in-flight update.
+                if (!UsbActive && Volatile.Read(ref _flashHold) == 0) ProbeOnce();
             }
             catch (Exception ex)
             {
@@ -144,7 +135,13 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
                 // reset lines on the XProbe itself during identification.
                 sp = new SerialPort(port, BaudRate)
                 {
-                    DtrEnable = false,
+                    // DTR HIGH. It was low to avoid kicking the auto-reset
+                    // circuit on a CH340-bridged board, but the XProbe is a
+                    // native-USB S3: there is no reset circuit to protect, and
+                    // TinyUSB CDC only transmits once the host asserts DTR — so
+                    // with it low the device never answered "$ID" and wired
+                    // identification could never succeed.
+                    DtrEnable = true,
                     RtsEnable = false,
                     ReadTimeout = 200,
                     WriteTimeout = 500,
@@ -239,6 +236,33 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "XProbeRouter GetPortNames failed during liveness check");
+        }
+    }
+
+    // Held while a firmware update is in flight. The router owns the XProbe's
+    // USB port, which blocked the updater from claiming it ("Access denied")
+    // AND kept the device busy on two transports at once — a wireless flash
+    // then died mid-stream and took the dongle's watchdog with it. A flash must
+    // own the device exclusively, whichever transport it picks.
+    private int _flashHold;
+
+    public IDisposable SuspendForFlash()
+    {
+        Interlocked.Increment(ref _flashHold);
+        CloseUsb("firmware update in progress");
+        return new FlashHold(this);
+    }
+
+    private sealed class FlashHold : IDisposable
+    {
+        private XProbeRouter? _r;
+        public FlashHold(XProbeRouter r) => _r = r;
+        public void Dispose()
+        {
+            var r = _r; _r = null;
+            if (r is null) return;
+            // The next scan tick re-probes and re-claims on its own.
+            Interlocked.Decrement(ref r._flashHold);
         }
     }
 
