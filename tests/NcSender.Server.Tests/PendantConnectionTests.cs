@@ -42,13 +42,22 @@ public class PendantConnectionTests : IDisposable
         _settings.Setup(s => s.GetSetting<bool>("pendant.autoConnect", true)).Returns(true);
 
         var dongleDevices = new Mock<IDongleDeviceService>();
-        var dongleOta = new NcSender.Server.Dongle.DongleOtaService(
-            NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
-            dongleDevices.Object,
-            _broadcaster.Object);
         var gates = new Mock<IGateService>();
         var usbCatalog = new Mock<INcSenderUsbCatalog>();
         usbCatalog.Setup(c => c.GetDevices()).Returns(Array.Empty<NcSenderUsbDevice>());
+        // The OTA service holds the XProbe router so it can park the port scan
+        // for the duration of a firmware push. A real router over the same
+        // no-device catalog mock never opens anything, so it needs no stubbing.
+        var xprobeRouter = new NcSender.Server.Dongle.XProbeRouter(
+            dongleDevices.Object,
+            usbCatalog.Object,
+            NullLogger<NcSender.Server.Dongle.XProbeRouter>.Instance);
+        var dongleOta = new NcSender.Server.Dongle.DongleOtaService(
+            NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
+            dongleDevices.Object,
+            usbCatalog.Object,
+            xprobeRouter,
+            _broadcaster.Object);
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
             _controller.Object,
