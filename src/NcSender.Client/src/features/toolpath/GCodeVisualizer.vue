@@ -4492,6 +4492,21 @@ const toggleToolInfo = (toolNumber: number) => {
   }
 };
 
+// Unsubscribe handles for the api event listeners registered in onMounted.
+//
+// These have to live at setup scope, not inside onMounted. They are called from
+// onUnmounted, and a `const` declared inside the mount callback is not in scope
+// there — the teardown threw "offToolsUpdated is not defined" before it could
+// remove a single listener. Nothing unmounts this component in normal use, so
+// the fault stayed hidden until a lost WebGL context forced a teardown mid-probe
+// and took the whole app down with it. An uncaught throw in onUnmounted breaks
+// Vue's render cycle, which is why the result was a white screen rather than a
+// leaked listener.
+let offToolsUpdated: (() => void) | undefined;
+let offGcodeUpdated: (() => void) | undefined;
+let offGcodeContentReady: (() => void) | undefined;
+let offGcodeDownloadProgress: (() => void) | undefined;
+
 onMounted(async () => {
   // Load settings from store (already loaded in main.ts)
   const settings = getSettings();
@@ -4682,7 +4697,7 @@ onMounted(async () => {
   }, { deep: true });
 
   // Listen for tools updates via WebSocket
-  const offToolsUpdated = api.on('tools-updated', (tools: any[]) => {
+  offToolsUpdated = api.on('tools-updated', (tools: any[]) => {
     showToolInfo.value = null;
     if (Array.isArray(tools)) {
       const inventory: Record<number, any> = {};
@@ -4708,11 +4723,11 @@ onMounted(async () => {
   }
 
   // Set up WebSocket listeners for G-code events
-  const offGcodeUpdated = api.onGCodeUpdated(handleGCodeUpdate);
-  const offGcodeContentReady = api.on('gcode-content-ready', handleGCodeUpdate);
+  offGcodeUpdated = api.onGCodeUpdated(handleGCodeUpdate);
+  offGcodeContentReady = api.on('gcode-content-ready', handleGCodeUpdate);
 
   // Listen for download progress
-  const offGcodeDownloadProgress = api.on('gcode-download-progress', (progress: { percent: number }) => {
+  offGcodeDownloadProgress = api.on('gcode-download-progress', (progress: { percent: number }) => {
     if (isLoading.value && loadingMessage.value === 'Downloading G-code...') {
       loadingProgress.value = Math.min(Math.round(progress.percent * 0.5), 50); // 0-50%
     }
