@@ -52,6 +52,20 @@ public interface IDongleDeviceService
     Task RequestDevicesAsync();
 
     /// <summary>
+    /// Forget every device. The paired list belongs to the dongle's NVS, not to
+    /// this process, so swapping in different hardware invalidates all of it.
+    /// Call before re-seeding from a newly attached dongle.
+    /// </summary>
+    void Reset();
+
+    /// <summary>
+    /// True once a dongle has answered a $DEVICES query with its terminating
+    /// "$DEVICES:END". Distinguishes "this dongle has no peers" from "we never
+    /// got an answer" — a count alone cannot.
+    /// </summary>
+    bool DevicesEnumerated { get; }
+
+    /// <summary>
     /// Fires (name, payload) for every "@name payload" line received, un-throttled — used
     /// by consumers that need per-message latency (e.g. translating a wireless input to a
     /// realtime byte). The generic WebSocket relay is throttled ~1/sec and is unsuitable

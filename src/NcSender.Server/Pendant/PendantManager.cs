@@ -1235,6 +1235,11 @@ public class PendantManager : IPendantManager
                 _logger.LogInformation("Setting dongle as active data handler (ESP-NOW priority)");
                 DetachDonglePromotionListener();
                 SetActiveHandler(_dongleHandler);
+                // The paired list lives in the dongle's own NVS, so it belongs to
+                // that piece of hardware and not to this process. Swap dongles and
+                // every entry we hold is about a device the new one has never
+                // heard of, so drop them all before asking this one what it has.
+                _dongleDevices.Reset();
                 // Seed the paired-device table from the dongle's persistent NVS.
                 // Fire-and-forget with a small retry loop: on the USB-catalog
                 // fast path the port was opened milliseconds ago and TinyUSB
@@ -1253,8 +1258,12 @@ public class PendantManager : IPendantManager
                         {
                             _logger.LogWarning(ex, "Failed to seed paired-device list from dongle (attempt {N})", attempt + 1);
                         }
-                        // Bail as soon as the reply landed and seeded something.
-                        if (_dongleDevices.GetDevices().Count > 0) return;
+                        // Bail once the dongle has actually answered. Testing the
+                        // device count instead would be wrong twice over: a dongle
+                        // with no peers yet would look like a failure and burn every
+                        // retry, and stale entries from a previous dongle would look
+                        // like success and skip the query altogether.
+                        if (_dongleDevices.DevicesEnumerated) return;
                     }
                 });
                 break;

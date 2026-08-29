@@ -35,6 +35,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     private readonly ConcurrentDictionary<string, DeviceState> _devices = new(StringComparer.OrdinalIgnoreCase);
 
     private Func<string, Task>? _sender;
+    private bool _enumerated;
 
     public event Action<string, string>? DeviceMessageReceived;
     public event Action<string, bool>? DeviceConnectivityChanged;
@@ -88,7 +89,13 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         if (line.StartsWith(devicesPrefix, StringComparison.Ordinal))
         {
             var seedName = line.Substring(devicesPrefix.Length).Trim();
-            if (seedName.Equals("END", StringComparison.Ordinal)) return;
+            // The dongle always sends the terminator, even with zero peers, so
+            // this - not a non-empty list - is what proves it answered us.
+            if (seedName.Equals("END", StringComparison.Ordinal))
+            {
+                Volatile.Write(ref _enumerated, true);
+                return;
+            }
             if (seedName.Length > 0 && IsValidDeviceName(seedName))
             {
                 // Seed with LastSeenTicks = 0 so Snapshot() reports Connected=false /
@@ -224,6 +231,23 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     {
         var sender = _sender;
         return sender is null ? Task.CompletedTask : sender("$DEVICES");
+    }
+
+    public bool DevicesEnumerated => Volatile.Read(ref _enumerated);
+
+    public void Reset()
+    {
+        Volatile.Write(ref _enumerated, false);
+        var names = _devices.Keys.ToArray();
+        _devices.Clear();
+        // Tell the UI each row is gone; otherwise the previous dongle's peers
+        // sit there looking paired until something else happens to refresh.
+        foreach (var name in names)
+            _ = _broadcaster.Broadcast("dongle:device-changed",
+                new DongleDeviceChanged { Name = name, Connected = false },
+                NcSenderJsonContext.Default.DongleDeviceChanged);
+        if (names.Length > 0)
+            _logger.LogInformation("Cleared {Count} paired device(s) — dongle changed", names.Length);
     }
 
     public Task UnpairAsync(string name)
