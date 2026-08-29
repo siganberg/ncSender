@@ -270,7 +270,12 @@ public sealed class DongleOtaService : IDisposable
         // enough that resending is safe: it either sees the first packet
         // and ACKs (later BEGINs cancel-and-restart the same session id)
         // or it sees only the retry.
-        await BroadcastMessageAsync(s, "info", $"Starting wireless flash ({s.Firmware.Length / 1024.0:N1} KB)");
+        // Name the transport that is actually being used. This said "wireless"
+        // unconditionally, which is wrong the moment the cable is preferred and
+        // actively misleading: it is the only signal anyone has for which path a
+        // flash took, so a USB flash reported itself as a wireless one.
+        var via = s.ViaUsb ? "USB" : "wireless";
+        await BroadcastMessageAsync(s, "info", $"Starting {via} flash ({s.Firmware.Length / 1024.0:N1} KB)");
         var beginLine = $"$OTA:BEGIN{s.Tag} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
         OtaStatus? beginAck = null;
         for (var attempt = 0; attempt < BeginRetries; attempt++)
