@@ -53,18 +53,18 @@
               <label class="probe-label">Rapid Movement</label>
               <div class="probe-input-with-unit probe-input-wrapper">
                 <input
-                  v-model.number="rapidMovement"
+                  v-model.number="rapidMovementInput"
                   type="number"
-                  step="100"
-                  min="1000"
-                  max="5000"
+                  :step="feedStep"
+                  :min="feedLim(1000)"
+                  :max="feedLim(5000)"
                   class="probe-input"
                   :class="{ 'probe-input--error': errors.rapidMovement }"
                   :disabled="isProbing"
                   @input="validateRapidMovement"
                   @blur="handleRapidMovementBlur"
                 />
-                <span class="probe-unit">mm/min</span>
+                <span class="probe-unit">{{ feedUnit }}</span>
                 <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
               </div>
             </div>
@@ -75,17 +75,17 @@
                   <label class="probe-label">Diameter</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="ballPointDiameter"
+                      v-model.number="ballPointDiameterInput"
                       type="number"
-                      step="0.1"
-                      min="0.1"
+                      :step="lengthStep"
+                      :min="lim(0.1)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.ballPointDiameter }"
                       :disabled="isProbing"
                       @input="validateBallPointDiameter"
                       @blur="handleBallPointDiameterBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.ballPointDiameter" class="probe-error-tooltip">{{ errors.ballPointDiameter }}</span>
                   </div>
                 </div>
@@ -94,18 +94,18 @@
                   <label class="probe-label">Z-Plunge</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="zPlunge"
+                      v-model.number="zPlungeInput"
                       type="number"
-                      step="0.1"
-                      min="1"
-                      max="15"
+                      :step="lengthStep"
+                      :min="lim(1)"
+                      :max="lim(15)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zPlunge }"
                       :disabled="isProbing"
                       @input="validateZPlunge"
                       @blur="handleZPlungeBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.zPlunge" class="probe-error-tooltip">{{ errors.zPlunge }}</span>
                   </div>
                 </div>
@@ -116,18 +116,18 @@
                   <label class="probe-label">X Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="xDimension"
+                      v-model.number="xDimensionInput"
                       type="number"
-                      step="0.1"
-                      min="3"
-                      max="1000"
+                      :step="lengthStep"
+                      :min="lim(3)"
+                      :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.xDimension }"
                       :disabled="isProbing"
                       @input="validateXDimension"
                       @blur="handleXDimensionBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.xDimension" class="probe-error-tooltip">{{ errors.xDimension }}</span>
                   </div>
                 </div>
@@ -136,18 +136,18 @@
                   <label class="probe-label">Y Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="yDimension"
+                      v-model.number="yDimensionInput"
                       type="number"
-                      step="0.1"
-                      min="3"
-                      max="1000"
+                      :step="lengthStep"
+                      :min="lim(3)"
+                      :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.yDimension }"
                       :disabled="isProbing"
                       @input="validateYDimension"
                       @blur="handleYDimensionBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.yDimension" class="probe-error-tooltip">{{ errors.yDimension }}</span>
                   </div>
                 </div>
@@ -158,18 +158,18 @@
                   <label class="probe-label">Z-Offset</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="zOffset"
+                      v-model.number="zOffsetInput"
                       type="number"
-                      step="0.01"
-                      min="-2"
-                      max="2"
+                      :step="fineLengthStep"
+                      :min="lim(-2)"
+                      :max="lim(2)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zOffset }"
                       :disabled="isProbing"
                       @input="validateZOffset"
                       @blur="handleZOffsetBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.zOffset" class="probe-error-tooltip">{{ errors.zOffset }}</span>
                   </div>
                 </div>
@@ -213,7 +213,7 @@
                       >
                         ×
                       </button>
-                      <span class="custom-dropdown__item-text">{{ diameter }}mm</span>
+                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
                     </div>
 
                     <!-- Divider before custom input -->
@@ -224,11 +224,11 @@
                       <input
                         v-model.number="newStandardBlockDiameter"
                         type="number"
-                        step="0.01"
-                        min="0.1"
-                        max="50"
+                        :step="fineLengthStep"
+                        :min="lim(0.1)"
+                        :max="lim(50)"
                         class="custom-dropdown__input"
-                        placeholder="Custom diameter (mm)"
+                        :placeholder="`Custom diameter (${lengthUnit})`"
                         @click.stop
                         @keyup.enter="addStandardBlockDiameter"
                       />
@@ -249,18 +249,18 @@
                   <label class="probe-label">Z Thickness</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="zThickness"
+                      v-model.number="zThicknessInput"
                       type="number"
-                      step="0.1"
-                      min="1"
-                      max="80"
+                      :step="lengthStep"
+                      :min="lim(1)"
+                      :max="lim(80)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.zThickness }"
                       :disabled="isProbing"
                       @input="validateZThickness"
                       @blur="handleZThicknessBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
                   </div>
                 </div>
@@ -269,18 +269,18 @@
                   <label class="probe-label">XY Thickness</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
-                      v-model.number="xyThickness"
+                      v-model.number="xyThicknessInput"
                       type="number"
-                      step="0.1"
-                      min="1"
-                      max="100"
+                      :step="lengthStep"
+                      :min="lim(1)"
+                      :max="lim(100)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.xyThickness }"
                       :disabled="isProbing"
                       @input="validateXYThickness"
                       @blur="handleXYThicknessBlur"
                     />
-                    <span class="probe-unit">mm</span>
+                    <span class="probe-unit">{{ lengthUnit }}</span>
                     <span v-if="errors.xyThickness" class="probe-error-tooltip">{{ errors.xyThickness }}</span>
                   </div>
                 </div>
@@ -290,18 +290,18 @@
                 <label class="probe-label">Z Probe Distance</label>
                 <div class="probe-input-with-unit probe-input-wrapper">
                   <input
-                    v-model.number="zProbeDistance"
+                    v-model.number="zProbeDistanceInput"
                     type="number"
-                    step="0.1"
-                    min="1"
-                    max="30"
+                    :step="lengthStep"
+                    :min="lim(1)"
+                    :max="lim(30)"
                     class="probe-input"
                     :class="{ 'probe-input--error': errors.zProbeDistance }"
                     :disabled="isProbing"
                     @input="validateZProbeDistance"
                     @blur="handleZProbeDistanceBlur"
                   />
-                  <span class="probe-unit">mm</span>
+                  <span class="probe-unit">{{ lengthUnit }}</span>
                   <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
                 </div>
               </div>
@@ -358,7 +358,7 @@
                       >
                         ×
                       </button>
-                      <span class="custom-dropdown__item-text">{{ diameter }}mm</span>
+                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
                     </div>
 
                     <!-- Divider before custom input -->
@@ -369,11 +369,11 @@
                       <input
                         v-model.number="newCustomDiameter"
                         type="number"
-                        step="0.001"
-                        min="0.1"
-                        max="50"
+                        :step="fineLengthStep"
+                        :min="lim(0.1)"
+                        :max="lim(50)"
                         class="custom-dropdown__input"
-                        placeholder="Custom diameter (mm)"
+                        :placeholder="`Custom diameter (${lengthUnit})`"
                         @click.stop
                         @keyup.enter="addCustomDiameter"
                       />
@@ -395,18 +395,18 @@
                 <label class="probe-label">Tool Length Setter Height</label>
                 <div class="probe-input-with-unit probe-input-wrapper">
                   <input
-                    v-model.number="zThickness"
+                    v-model.number="zThicknessInput"
                     type="number"
-                    step="0.1"
-                    min="1"
-                    max="40"
+                    :step="lengthStep"
+                    :min="lim(1)"
+                    :max="lim(80)"
                     class="probe-input"
                     :class="{ 'probe-input--error': errors.zThickness }"
                     :disabled="isProbing"
                     @input="validateZThickness"
                     @blur="handleZThicknessBlur"
                   />
-                  <span class="probe-unit">mm</span>
+                  <span class="probe-unit">{{ lengthUnit }}</span>
                   <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
                 </div>
               </div>
@@ -477,6 +477,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
+import type { Ref } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
 import StepControl from '../jog/StepControl.vue';
@@ -485,6 +486,10 @@ import { api } from '../../lib/api.js';
 import { updateSettings } from '../../lib/settings-store.js';
 import { startProbe as startProbeOperation, stopProbe } from './api';
 import { useAppStore } from '../../composables/use-app-store';
+import {
+  mmToInches, inchesToMm, mmPerMinToInPerMin, inPerMinToMmPerMin,
+  getDistanceUnitLabel, getFeedRateUnitLabel,
+} from '../../lib/units';
 
 // Props
 interface Props {
@@ -525,6 +530,86 @@ const zThickness = ref(15);
 const loadedZThickness = { standardBlock: 15, toolLengthSetter: 15 };
 const xyThickness = ref(10);
 const zProbeDistance = ref(3);
+
+// ── Unit display ────────────────────────────────────────────────────────
+// Everything below the surface stays metric: these refs are what gets sent to
+// the controller and written to settings, and they are always mm / mm-per-min.
+// Only what the operator reads and types is converted, which is why each field
+// is bound to a proxy rather than to the ref itself — the proxy converts on the
+// way out and converts straight back on the way in, so an imperial session and
+// a metric session persist byte-identical values.
+const units = computed(() => appStore.unitsPreference.value as 'metric' | 'imperial');
+const isImperial = computed(() => units.value === 'imperial');
+const lengthUnit = computed(() => getDistanceUnitLabel(units.value));
+const feedUnit = computed(() => getFeedRateUnitLabel(units.value));
+
+/** Round for display only — never for the stored value. */
+const showLength = (mm: number) => Number(mmToInches(mm).toFixed(4));
+const showFeed = (mmPerMin: number) => Number(mmPerMinToInPerMin(mmPerMin).toFixed(2));
+
+function lengthProxy(source: Ref<number>) {
+  return computed<number>({
+    get: () => (isImperial.value ? showLength(source.value) : source.value),
+    set: (v) => {
+      const n = typeof v === 'number' ? v : parseFloat(v as any);
+      if (!Number.isFinite(n)) return;
+      if (!isImperial.value) { source.value = n; return; }
+      // Converting mm -> 4dp inches -> mm does not land back on the same
+      // number: 15mm displays as 0.5906in, which is 15.00124mm. Writing that
+      // back would let a stored value drift every time an imperial user so much
+      // as touched the field. If the displayed number has not actually changed,
+      // the underlying value has not either — leave it exactly as it was, and
+      // only convert when the operator really typed something new.
+      if (showLength(source.value) === n) return;
+      source.value = inchesToMm(n);
+    },
+  });
+}
+
+function feedProxy(source: Ref<number>) {
+  return computed<number>({
+    get: () => (isImperial.value ? showFeed(source.value) : source.value),
+    set: (v) => {
+      const n = typeof v === 'number' ? v : parseFloat(v as any);
+      if (!Number.isFinite(n)) return;
+      if (!isImperial.value) { source.value = n; return; }
+      if (showFeed(source.value) === n) return;   // see lengthProxy
+      source.value = inPerMinToMmPerMin(n);
+    },
+  });
+}
+
+/** Input attributes in the displayed unit. Imperial needs a finer step. */
+const lengthStep = computed(() => (isImperial.value ? '0.001' : '0.1'));
+const fineLengthStep = computed(() => (isImperial.value ? '0.0005' : '0.01'));
+const feedStep = computed(() => (isImperial.value ? '5' : '100'));
+const lim = (mm: number) => (isImperial.value ? showLength(mm) : mm);
+const feedLim = (mmPerMin: number) => (isImperial.value ? showFeed(mmPerMin) : mmPerMin);
+
+/** Range text for validation messages, in whatever unit is on screen. */
+const lengthRange = (minMm: number, maxMm: number) =>
+  isImperial.value
+    ? `${showLength(minMm)} and ${showLength(maxMm)}in`
+    : `${minMm} and ${maxMm}mm`;
+const feedRange = (minMm: number, maxMm: number) =>
+  isImperial.value
+    ? `${showFeed(minMm)} and ${showFeed(maxMm)} in/min`
+    : `${minMm} and ${maxMm} mm/min`;
+
+const ballPointDiameterInput = lengthProxy(ballPointDiameter);
+const zPlungeInput = lengthProxy(zPlunge);
+const zOffsetInput = lengthProxy(zOffset);
+const xDimensionInput = lengthProxy(xDimension);
+const yDimensionInput = lengthProxy(yDimension);
+const zThicknessInput = lengthProxy(zThickness);
+const xyThicknessInput = lengthProxy(xyThickness);
+const zProbeDistanceInput = lengthProxy(zProbeDistance);
+const rapidMovementInput = feedProxy(rapidMovement);
+
+/** Bit diameters are stored in mm; the picker shows them converted. */
+const formatDiameter = (mm: number) =>
+  isImperial.value ? `${showLength(mm)}"` : `${mm}mm`;
+
 
 // AutoZero Touch probe state
 const selectedBitDiameter = ref<string>('Auto');
@@ -601,7 +686,7 @@ const validateBallPointDiameter = () => {
 
 const validateZPlunge = () => {
   if (zPlunge.value < 1 || zPlunge.value > 15) {
-    errors.value.zPlunge = 'Must be between 1 and 15mm';
+    errors.value.zPlunge = `Must be between ${lengthRange(1, 15)}`;
   } else {
     errors.value.zPlunge = '';
   }
@@ -611,7 +696,7 @@ const validateZOffset = () => {
   if (isNaN(zOffset.value)) {
     errors.value.zOffset = 'Must be a valid number';
   } else if (zOffset.value < -10 || zOffset.value > 10) {
-    errors.value.zOffset = 'Must be between -10 and 10mm';
+    errors.value.zOffset = `Must be between ${lengthRange(-10, 10)}`;
   } else {
     errors.value.zOffset = '';
   }
@@ -619,7 +704,7 @@ const validateZOffset = () => {
 
 const validateZThickness = () => {
   if (zThickness.value < 1 || zThickness.value > 80) {
-    errors.value.zThickness = 'Must be between 1 and 80mm';
+    errors.value.zThickness = `Must be between ${lengthRange(1, 80)}`;
   } else {
     errors.value.zThickness = '';
   }
@@ -627,7 +712,7 @@ const validateZThickness = () => {
 
 const validateXYThickness = () => {
   if (xyThickness.value < 1 || xyThickness.value > 100) {
-    errors.value.xyThickness = 'Must be between 1 and 100mm';
+    errors.value.xyThickness = `Must be between ${lengthRange(1, 100)}`;
   } else {
     errors.value.xyThickness = '';
   }
@@ -635,7 +720,7 @@ const validateXYThickness = () => {
 
 const validateZProbeDistance = () => {
   if (zProbeDistance.value < 1 || zProbeDistance.value > 30) {
-    errors.value.zProbeDistance = 'Must be between 1 and 30mm';
+    errors.value.zProbeDistance = `Must be between ${lengthRange(1, 30)}`;
   } else {
     errors.value.zProbeDistance = '';
   }
@@ -643,7 +728,7 @@ const validateZProbeDistance = () => {
 
 const validateRapidMovement = () => {
   if (rapidMovement.value < 1000 || rapidMovement.value > 5000) {
-    errors.value.rapidMovement = 'Must be between 1000 and 5000 mm/min';
+    errors.value.rapidMovement = `Must be between ${feedRange(1000, 5000)}`;
   } else {
     errors.value.rapidMovement = '';
   }
@@ -651,7 +736,7 @@ const validateRapidMovement = () => {
 
 const validateXDimension = () => {
   if (xDimension.value < 3 || xDimension.value > 1000) {
-    errors.value.xDimension = 'Must be between 3 and 1000mm';
+    errors.value.xDimension = `Must be between ${lengthRange(3, 1000)}`;
   } else {
     errors.value.xDimension = '';
   }
@@ -659,7 +744,7 @@ const validateXDimension = () => {
 
 const validateYDimension = () => {
   if (yDimension.value < 3 || yDimension.value > 1000) {
-    errors.value.yDimension = 'Must be between 3 and 1000mm';
+    errors.value.yDimension = `Must be between ${lengthRange(3, 1000)}`;
   } else {
     errors.value.yDimension = '';
   }
@@ -1179,7 +1264,7 @@ const getDisplayValue = () => {
   if (selectedBitDiameter.value === 'Auto' || selectedBitDiameter.value === 'Tip') {
     return selectedBitDiameter.value;
   }
-  return `${selectedBitDiameter.value}mm`;
+  return formatDiameter(Number(selectedBitDiameter.value));
 };
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -1206,7 +1291,11 @@ onBeforeUnmount(() => {
 });
 
 const addCustomDiameter = async () => {
+  // Typed in whatever unit is on screen; the list itself is always mm.
   if (newCustomDiameter.value && newCustomDiameter.value > 0) {
+    newCustomDiameter.value = isImperial.value
+      ? Number(inchesToMm(newCustomDiameter.value).toFixed(4))
+      : newCustomDiameter.value;
     if (!customBitDiameters.value.includes(newCustomDiameter.value)) {
       customBitDiameters.value.push(newCustomDiameter.value);
       customBitDiameters.value.sort((a, b) => a - b);
@@ -1260,11 +1349,15 @@ const selectStandardBlockDiameter = (value: string) => {
 };
 
 const getStandardBlockDisplayValue = () => {
-  return `${selectedStandardBlockBitDiameter.value}mm`;
+  return formatDiameter(Number(selectedStandardBlockBitDiameter.value));
 };
 
 const addStandardBlockDiameter = async () => {
+  // Typed in whatever unit is on screen; the list itself is always mm.
   if (newStandardBlockDiameter.value && newStandardBlockDiameter.value > 0) {
+    newStandardBlockDiameter.value = isImperial.value
+      ? Number(inchesToMm(newStandardBlockDiameter.value).toFixed(4))
+      : newStandardBlockDiameter.value;
     if (!standardBlockBitDiameters.value.includes(newStandardBlockDiameter.value)) {
       standardBlockBitDiameters.value.push(newStandardBlockDiameter.value);
       standardBlockBitDiameters.value.sort((a, b) => a - b);
