@@ -135,12 +135,32 @@ public class PendantSerialHandler : IAsyncDisposable
             _logger.LogDebug("Serial handler disconnected");
     }
 
+    // NOTE: neither write calls BaseStream.Flush().
+    //
+    // Write() hands the bytes to the driver and honours WriteTimeout; Flush() is
+    // a tcdrain, which waits for the hardware to finish sending and honours no
+    // timeout at all. When the dongle stops draining its USB CDC — which happens
+    // when a peer floods the radio and the relay saturates the link — that wait
+    // never returns. Caught on the kiosk with a thread parked in
+    // tty_wait_until_sent while holding _sendLock, so every later "$LICENSE"
+    // query queued behind it forever: the Wireless USB dialog sat on
+    // "Checking…" indefinitely, and nothing was logged because nothing threw.
+    // The flush bought nothing — the bytes are already on their way without it.
+
+    /// <summary>
+    /// How long to wait for another writer before giving up. Bounded so one
+    /// stuck write cannot silently queue every later command behind it.
+    /// </summary>
+    private const int SendLockTimeoutMs = 3000;
+
     public virtual async Task SendRawAsync(string message)
     {
         if (_port is not { IsOpen: true })
             return;
 
-        await _sendLock.WaitAsync();
+        if (!await _sendLock.WaitAsync(SendLockTimeoutMs))
+            throw new TimeoutException("Serial port is busy and did not accept the write");
+
         try
         {
             if (_port is not { IsOpen: true })
@@ -148,7 +168,6 @@ public class PendantSerialHandler : IAsyncDisposable
 
             var data = Encoding.UTF8.GetBytes(message + "\n");
             _port.Write(data, 0, data.Length);
-            _port.BaseStream.Flush();
         }
         finally
         {
@@ -171,7 +190,6 @@ public class PendantSerialHandler : IAsyncDisposable
             return;
 
         _port.Write(data, offset, count);
-        _port.BaseStream.Flush();
     }
 
     public static List<string> GetAvailablePorts()
