@@ -1106,6 +1106,8 @@
   </Dialog>
   </template>
 
+  <LinkQrOverlay />
+
 </template>
 
 <script setup lang="ts">
@@ -1141,6 +1143,8 @@ import ConfigTab from './features/config/ConfigTab.vue';
 import BackupTab from './features/backup/BackupTab.vue';
 import FileBrowserDialog from './components/FileBrowserDialog.vue';
 import { useKioskDetection } from './composables/useKioskDetection';
+import LinkQrOverlay from './components/LinkQrOverlay.vue';
+import { installKioskLinkInterceptor } from './lib/kiosk-links';
 import { keyBindingStore } from './features/controls';
 import { initDebugLogger, setDebugEnabled } from './lib/debug-logger';
 import { mmToInches, inchesToMm } from './lib/units';
@@ -1615,6 +1619,11 @@ const saveSafeZHeight = async () => {
 // Screen rotation (kiosk only)
 const kioskInitData = getInitData();
 const isKiosk = ref(kioskInitData?.isKiosk ?? false);
+// On the kiosk there is no browser to hand a link to and no way to dismiss a
+// window that opens over the controls, so every outbound link — anchors,
+// window.open, and anchors generated later from release notes — is turned into
+// a QR code instead. Installed once here rather than per call site.
+if (isKiosk.value) installKioskLinkInterceptor();
 const screenRotation = ref(kioskInitData?.screenRotation ?? 'normal');
 const selectedRotation = ref(kioskInitData?.screenRotation ?? 'normal');
 const rotationApplying = ref(false);
