@@ -328,6 +328,41 @@ public class PendantManager : IPendantManager
         }
     }
 
+    public async Task ImportDongleLicenseAsync(string compactLicenseJson)
+    {
+        // The dongle protocol is line-delimited, so the licence has to arrive as
+        // a single line: "$LICENSE <json>".
+        var reply = await QueryDongleAsync($"$LICENSE {compactLicenseJson}",
+            line => line == "$LICENSE:OK" || line.StartsWith("$LICENSE:ERR", StringComparison.Ordinal),
+            timeoutMs: 6000);
+        if (reply != "$LICENSE:OK")
+        {
+            var msg = reply.StartsWith("$LICENSE:ERR", StringComparison.Ordinal)
+                ? reply["$LICENSE:ERR".Length..].Trim()
+                : reply;
+            throw new InvalidOperationException($"Wireless USB rejected license: {msg}");
+        }
+        _logger.LogInformation("Wireless USB dongle license imported");
+    }
+
+    public async Task ImportPendantLicenseAsync(string licenseJson)
+    {
+        if (_serialHandler is not { IsConnected: true })
+            throw new InvalidOperationException("Pendant not connected");
+
+        var licenseData = JsonDocument.Parse(licenseJson).RootElement;
+        await _serialHandler.SendMessageAsync(
+            new PendantTypeDataMsg($"plugin:{PendantPluginId}:license-data", licenseData),
+            PendantJsonContext.Default.PendantTypeDataMsg);
+
+        // The pendant does not send client:metadata back after an import, so the
+        // local view of it has to be corrected here or the row stays stale.
+        _serialHandler.Licensed = true;
+        _clientMeta = _clientMeta with { Licensed = true };
+        _logger.LogInformation("Pendant license imported");
+        await _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
+    }
+
     public async Task ActivateDongleAsync(string installationId)
     {
         var status = await GetDongleLicenseAsync();

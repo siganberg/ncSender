@@ -36,11 +36,21 @@ public sealed class AccessoryService
     // cleared when it disconnects, so a reconnect re-asks.
     private readonly Dictionary<string, string> _versionCache = new(StringComparer.OrdinalIgnoreCase);
 
+    // Licence state for relayed peers, cached on the same terms as the version
+    // above and for the same reason: it changes only on activation, removal or
+    // a reboot, and every uncached miss costs a full radio timeout.
+    private readonly Dictionary<string, (bool? Licensed, string DeviceId)> _licenceCache
+        = new(StringComparer.OrdinalIgnoreCase);
+
     // Short on purpose. This is a local cable or a one-hop radio link; a device
     // that is going to answer answers in tens of milliseconds. Anything longer
     // is a device that will not answer at all, and the view should not stall
     // for it.
     private const int VersionQueryTimeoutMs = 700;
+
+    // A licence import crosses the radio and then writes NVS on the device, so
+    // it is nothing like the quick status queries above and needs a real budget.
+    private const int LicenceImportTimeoutMs = 6000;
 
     public AccessoryService(IDongleDeviceService dongle, IPendantManager pendant,
                             ILogger<AccessoryService> logger)
@@ -53,7 +63,23 @@ public sealed class AccessoryService
         // never from a previous session — a device can come back updated.
         _dongle.DeviceConnectivityChanged += (name, connected) =>
         {
-            if (!connected) lock (_versionCache) _versionCache.Remove(name);
+            if (!connected)
+            {
+                lock (_versionCache) _versionCache.Remove(name);
+                lock (_licenceCache) _licenceCache.Remove(name);
+            }
+        };
+
+        // A licence can change by routes this service never sees — a raw
+        // $LICENSE:REMOVE, activation from a plugin, the device being handed a
+        // licence over its cable. Any $LICENSE line from a device is proof its
+        // state may have moved, so drop what we cached and ask again next time.
+        // Without this the view keeps reporting the old answer until the device
+        // happens to disconnect.
+        _dongle.DeviceMessageReceived += (name, line) =>
+        {
+            if (line.StartsWith("$LICENSE:", StringComparison.Ordinal))
+                lock (_licenceCache) _licenceCache.Remove(name);
         };
     }
 
@@ -61,6 +87,12 @@ public sealed class AccessoryService
     public void InvalidateVersion(string name)
     {
         lock (_versionCache) _versionCache.Remove(name);
+    }
+
+    /// <summary>Forget a cached licence state, e.g. straight after activating.</summary>
+    public void InvalidateLicence(string name)
+    {
+        lock (_licenceCache) _licenceCache.Remove(name);
     }
 
     public async Task<List<AccessoryInfo>> ListAsync(bool checkUpdates, CancellationToken ct)
@@ -121,7 +153,15 @@ public sealed class AccessoryService
                 info.Transport = "wireless";
                 info.Connected = peer?.Connected ?? false;
                 if (info.Connected)
+                {
                     info.CurrentVersion = await PeerVersionAsync(def.PeerName, ct).ConfigureAwait(false);
+                    // Without this the row reports no licence at all, which the
+                    // view cannot tell apart from "licensed" — so an unlicensed
+                    // accessory showed a dash and never offered activation.
+                    var lic = await PeerLicenceAsync(def.PeerName, ct).ConfigureAwait(false);
+                    info.Licensed = lic.Licensed;
+                    info.DeviceId = lic.DeviceId;
+                }
             }
 
             if (checkUpdates && info.Connected)
@@ -156,6 +196,87 @@ public sealed class AccessoryService
         // list take two seconds.
         lock (_versionCache) _versionCache[peerName] = version;
         return version;
+    }
+
+    /// <summary>
+    /// Push a signed licence to an accessory. Fetching it is identical for
+    /// every device; only this last hop differs, so it is the only part that
+    /// branches on which accessory we are talking to.
+    /// </summary>
+    public async Task ImportLicenceAsync(AccessoryDefinition def, string licenceJson, CancellationToken ct)
+    {
+        var compact = LicenseClient.Compact(licenceJson);
+
+        if (def.Id == AccessoryCatalog.WirelessUsbId)
+        {
+            await _pendant.ImportDongleLicenseAsync(compact).ConfigureAwait(false);
+            return;
+        }
+
+        if (def.Id == "pendant")
+        {
+            await _pendant.ImportPendantLicenseAsync(licenceJson).ConfigureAwait(false);
+            return;
+        }
+
+        if (def.PeerName is null)
+            throw new InvalidOperationException($"{def.Name} cannot be activated");
+
+        // The relayed peers all speak the same line protocol.
+        var reply = await _dongle.QueryAsync(def.PeerName, $"$LICENSE:SET {compact}",
+            l => l == "$LICENSE:OK" || l.StartsWith("$LICENSE:ERR", StringComparison.Ordinal),
+            LicenceImportTimeoutMs).ConfigureAwait(false);
+
+        if (reply is null)
+            throw new InvalidOperationException($"{def.Name} did not answer the licence import");
+        if (reply != "$LICENSE:OK")
+            throw new InvalidOperationException(
+                $"{def.Name} rejected the licence: {reply["$LICENSE:ERR".Length..].TrimStart(':', ' ')}");
+    }
+
+    /// <summary>
+    /// Ask a relayed peer whether it is licensed, and for its device id.
+    /// Null licence means it never answered — firmware without the licence
+    /// commands, or a device that has gone quiet. That is deliberately distinct
+    /// from false, which is a device that answered "unlicensed" and can be
+    /// activated.
+    /// </summary>
+    private async Task<(bool? Licensed, string DeviceId)> PeerLicenceAsync(string peerName, CancellationToken ct)
+    {
+        lock (_licenceCache)
+            if (_licenceCache.TryGetValue(peerName, out var cached)) return cached;
+
+        bool? licensed = null;
+        var deviceId = "";
+        try
+        {
+            var status = await _dongle.QueryAsync(peerName, "$LICENSE:STATUS",
+                l => l.StartsWith("$LICENSE:STATUS:", StringComparison.Ordinal),
+                VersionQueryTimeoutMs).ConfigureAwait(false);
+            if (status is not null)
+            {
+                var value = status["$LICENSE:STATUS:".Length..].Trim();
+                licensed = value.Equals("LICENSED", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // Only worth asking when the device is talking; the id is what the
+            // activation call binds the licence to.
+            if (licensed is not null)
+            {
+                var id = await _dongle.QueryAsync(peerName, "$LICENSE:ID",
+                    l => l.StartsWith("$LICENSE:ID:", StringComparison.Ordinal),
+                    VersionQueryTimeoutMs).ConfigureAwait(false);
+                deviceId = id is null ? "" : id["$LICENSE:ID:".Length..].Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "No licence state from {Peer}", peerName);
+        }
+
+        var result = (licensed, deviceId);
+        lock (_licenceCache) _licenceCache[peerName] = result;
+        return result;
     }
 
     private async Task ApplyReleaseAsync(AccessoryDefinition def, AccessoryInfo info, CancellationToken ct)

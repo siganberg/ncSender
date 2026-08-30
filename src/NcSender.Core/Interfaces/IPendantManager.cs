@@ -34,6 +34,12 @@ public interface IPendantManager
     /// </summary>
     Task<string?> GetDongleVersionAsync();
     Task ActivateDongleAsync(string installationId);
+
+    /// <summary>Push an already-signed licence to the dongle. Fetching it is the caller's job.</summary>
+    Task ImportDongleLicenseAsync(string compactLicenseJson);
+
+    /// <summary>Push an already-signed licence to the pendant, over whichever link it is on.</summary>
+    Task ImportPendantLicenseAsync(string licenseJson);
     void NotifySettingsChanged();
     void StartAutoConnect();
     HashSet<string> GetOccupiedPorts();

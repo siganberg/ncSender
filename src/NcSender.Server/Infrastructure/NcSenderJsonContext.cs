@@ -49,6 +49,8 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(List<DongleDeviceInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<DongleDeviceInfo>))]
 [JsonSerializable(typeof(DongleSendRequest))]
+[JsonSerializable(typeof(AccessoryActivateRequest))]
+[JsonSerializable(typeof(AccessoryActivateResponse))]
 [JsonSerializable(typeof(DongleDeviceMessage))]
 [JsonSerializable(typeof(DongleDeviceChanged))]
 [JsonSerializable(typeof(DongleLicenseStatus))]

@@ -65,3 +65,16 @@ public class DongleOtaEvent
     public string? Type { get; set; }         // "info" | "warn" | "error"
     public string? Message { get; set; }
 }
+
+/// <summary>
+/// Activation request for an accessory. The Installation ID is optional: with
+/// it absent the server reactivates from the device fingerprint, which is what
+/// a device already known to the store needs.
+/// </summary>
+public record AccessoryActivateRequest(string? InstallationId);
+
+/// <summary>
+/// <paramref name="NeedsInstallationId"/> means the store has never seen this
+/// device, so the view should ask for an Installation ID and try again.
+/// </summary>
+public record AccessoryActivateResponse(bool Success, bool NeedsInstallationId, string? Error);

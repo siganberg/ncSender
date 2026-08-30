@@ -58,5 +58,52 @@ public static class AccessoryEndpoints
             });
             return Results.Ok(new ApiSuccess(true));
         });
+
+        // POST /api/accessories/{id}/activate   { installationId? }
+        //
+        // One activation path for every accessory. Omitting the Installation ID
+        // asks the store to reactivate from the device fingerprint; that is the
+        // normal case for hardware it has seen before, and it asks the user for
+        // nothing. Only a device the store does not recognise comes back with
+        // needsInstallationId, and only then does the view prompt.
+        app.MapPost("/api/accessories/{id}/activate",
+            async (string id, AccessoryActivateRequest? req, AccessoryService svc,
+                   IHttpClientFactory httpFactory, CancellationToken ct) =>
+        {
+            var def = AccessoryCatalog.ById(id);
+            if (def is null) return Results.NotFound(new ApiError($"Unknown accessory '{id}'"));
+            if (def.LicenseProduct is null)
+                return Results.BadRequest(new ApiError($"{def.Name} cannot be activated"));
+
+            var list = await svc.ListAsync(checkUpdates: false, ct);
+            var info = list.FirstOrDefault(a => a.Id == def.Id);
+            if (info is null || !info.Connected)
+                return Results.BadRequest(new ApiError($"{def.Name} is not connected"));
+            if (string.IsNullOrEmpty(info.DeviceId))
+                return Results.BadRequest(new ApiError(
+                    $"{def.Name} did not report a device ID. Please reconnect it."));
+
+            var http = httpFactory.CreateClient();
+            var fetched = await LicenseClient.FetchAsync(
+                req?.InstallationId, info.DeviceId, def.LicenseProduct, http, ct);
+            if (!fetched.Ok)
+            {
+                if (fetched.NeedsInstallationId)
+                    return Results.Ok(new AccessoryActivateResponse(false, true, fetched.Error));
+                return Results.BadRequest(new ApiError(fetched.Error ?? "Activation failed"));
+            }
+
+            try
+            {
+                await svc.ImportLicenceAsync(def, fetched.Json, ct);
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+
+            svc.InvalidateLicence(def.PeerName ?? def.Id);
+            return Results.Ok(new AccessoryActivateResponse(true, false, null));
+        });
     }
 }

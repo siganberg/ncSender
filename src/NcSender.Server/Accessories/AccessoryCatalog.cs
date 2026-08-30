@@ -34,7 +34,15 @@ public sealed record AccessoryDefinition(
     /// configured to DO lives in its plugin, and saying so beats leaving the
     /// reader to wonder where those controls went.
     /// </summary>
-    string? PluginName = null);
+    string? PluginName = null,
+    /// <summary>
+    /// Product name the activation server knows this device by. Must match
+    /// LICENSE_PRODUCT in the firmware exactly, case and punctuation included —
+    /// the signed licence is bound to it, and a mismatch is rejected by the
+    /// device rather than by the store. Null means the device cannot be
+    /// activated from here.
+    /// </summary>
+    string? LicenseProduct = null);
 
 public static class AccessoryCatalog
 {
@@ -46,26 +54,30 @@ public static class AccessoryCatalog
         // Always reached over USB: it is the radio, so it can never be on the
         // far side of one.
         new AccessoryDefinition(WirelessUsbId, "Wireless USB",
-            "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_dongle_v", null),
+            "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_dongle_v", null,
+            LicenseProduct: "ncsender-wireless-usb"),
 
         // The pendant's asset name depends on which board it is (pibot vs
         // ncsender), so its version and download are resolved by the pendant
         // manager, which knows the model, rather than by this prefix.
         new AccessoryDefinition("pendant", "Pendant",
-            "siganberg/ncSender.pendant.releases", "firmware_ncsender_pendant_v", "pendant"),
+            "siganberg/ncSender.pendant.releases", "firmware_ncsender_pendant_v", "pendant",
+            LicenseProduct: "ncSenderPendant"),
 
         new AccessoryDefinition("autodustboot", "AutoDustBoot",
             "siganberg/ncSender.autodustboot.releases", "firmware_autodustboot_v", "autodustboot",
-            Availability: "Coming Soon", PluginName: "AutoDustboot"),
+            Availability: "Coming Soon", PluginName: "AutoDustboot",
+            LicenseProduct: "AutoDustBoot"),
 
         new AccessoryDefinition("rgbled", "RGB LED",
             "siganberg/ncSender.rgb.releases", "firmware_rgb_v", "rgbled",
-            Availability: "Coming Soon", PluginName: "RGB LED"),
+            Availability: "Coming Soon", PluginName: "RGB LED",
+            LicenseProduct: "ncsender.rgb"),
 
         // Prototype, not a product yet.
         new AccessoryDefinition("xprobe", "xProbe",
             "siganberg/ncSender.xprobe.releases", "firmware_xprobe_v", "xprobe",
-            Availability: "Not available"),
+            Availability: "Not available", LicenseProduct: "ncsender.xprobe"),
     };
 
     /// <summary>
