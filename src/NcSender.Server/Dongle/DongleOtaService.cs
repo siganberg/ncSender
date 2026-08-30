@@ -31,6 +31,13 @@ namespace NcSender.Server.Dongle;
 /// </summary>
 public sealed class DongleOtaService : IDisposable
 {
+    /// <summary>
+    /// Device name that means "the Wireless USB itself". Matches the product id
+    /// so the same string works from the API, and is deliberately not a peer
+    /// name — the dongle never appears in its own $DEVICES list.
+    /// </summary>
+    public const string SelfDeviceName = "wireless-usb";
+
     // Chunk sizing: 200 B data + 10 B header = 210 B, well under the 246 B
     // ESP-NOW payload cap (leaves room for future header growth). 766 KB
     // firmware = ~3830 chunks.
@@ -187,6 +194,10 @@ public sealed class DongleOtaService : IDisposable
     // Any failure to claim the port is not an error: we just use the dongle.
     private bool TryAttachUsb(Session s)
     {
+        // The dongle is not reachable as a separate cable — it is the cable.
+        // Its own updates go out over the link the host already holds.
+        if (s.IsSelf) return false;
+
         var kind = KindFor(s.DeviceName);
         if (kind == NcSenderUsbKind.Unknown) return false;
 
@@ -528,7 +539,15 @@ public sealed class DongleOtaService : IDisposable
         public Func<string, Task>? SendLine;
         public SerialPort? UsbPort;
         public bool ViaUsb => SendLine is not null;
-        public string Tag => ViaUsb ? "" : " @" + DeviceName;
+
+        /// <summary>The dongle updating itself, rather than relaying to a peer.</summary>
+        public bool IsSelf => string.Equals(DeviceName, SelfDeviceName, StringComparison.OrdinalIgnoreCase);
+
+        // No "@tag" when the line is not being relayed anywhere: a direct USB
+        // cable is point-to-point, and the dongle updating itself is too. The
+        // dongle firmware reads an untagged "$OTA:" as addressed to itself,
+        // which is exactly what this produces.
+        public string Tag => (ViaUsb || IsSelf) ? "" : " @" + DeviceName;
 
         public Session(string deviceName, byte[] firmware, string deviceId)
         {

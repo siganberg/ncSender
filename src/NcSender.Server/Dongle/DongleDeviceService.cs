@@ -34,6 +34,9 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     private readonly Timer _watchdog;
     private readonly ConcurrentDictionary<string, DeviceState> _devices = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Mirrors <see cref="DongleOtaService.SelfDeviceName"/>.</summary>
+    private const string SelfDeviceName = "wireless-usb";
+
     private Func<string, Task>? _sender;
     private bool _enumerated;
 
@@ -115,6 +118,15 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
                     new DongleDeviceChanged { Name = seedName, Connected = false },
                     NcSenderJsonContext.Default.DongleDeviceChanged);
             }
+            return;
+        }
+
+        // An untagged "$OTA:ACK" is the dongle answering about its OWN update.
+        // Everything else it says untagged is either a command reply (handled by
+        // whoever asked) or pendant traffic, so only the ack is claimed here.
+        if (line.StartsWith("$OTA:ACK ", StringComparison.Ordinal))
+        {
+            DeviceMessageReceived?.Invoke(SelfDeviceName, line);
             return;
         }
 

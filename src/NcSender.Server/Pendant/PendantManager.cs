@@ -1507,7 +1507,13 @@ public class PendantManager : IPendantManager
             // Addressed device traffic "@name payload" (e.g. "@autodustboot status …")
             // is routed to its manager, not the pendant command path. Same route also
             // catches "$DEVICES:<name>" replies used to seed the paired-device list.
-            if (data.StartsWith('@') || data.StartsWith("$DEVICES:", StringComparison.Ordinal))
+            // "$OTA:ACK …" with no "@name" is the dongle answering about its OWN
+            // firmware update. It only reaches here when no pendant flash owns
+            // the OTA handler above, so the pendant path keeps priority and this
+            // claims the untagged remainder.
+            if (data.StartsWith('@')
+                || data.StartsWith("$DEVICES:", StringComparison.Ordinal)
+                || data.StartsWith("$OTA:ACK ", StringComparison.Ordinal))
             {
                 _dongleDevices.OnDongleLine(data);
                 return;
