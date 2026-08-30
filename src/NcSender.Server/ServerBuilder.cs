@@ -162,6 +162,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.DongleOtaService>();
+        builder.Services.AddSingleton<NcSender.Server.Accessories.AccessoryService>();
         // XPROBE probe/TLS wiring: XProbeRouter arbitrates between the wireless
         // (ESP-NOW dongle) source and a wired USB source; wired wins when
         // present. XProbeTranslator subscribes to whichever is authoritative
@@ -390,6 +391,7 @@ public static class ServerBuilder
         ControllerFileEndpoints.Map(app);
         PendantEndpoints.Map(app);
         DongleEndpoints.Map(app);
+        NcSender.Server.Accessories.AccessoryEndpoints.Map(app);
         UpdateEndpoints.Map(app);
         NcSender.Server.Devices.PluginSerialEndpoints.Map(app);
         NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);

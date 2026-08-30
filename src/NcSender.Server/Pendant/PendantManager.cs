@@ -311,6 +311,23 @@ public class PendantManager : IPendantManager
         throw new InvalidOperationException("Unexpected $LICENSE reply from dongle");
     }
 
+    public async Task<string?> GetDongleVersionAsync()
+    {
+        if (_dongleHandler is not { IsConnected: true }) return null;
+        try
+        {
+            var reply = await QueryDongleAsync("$VERSION",
+                line => line.StartsWith("$VERSION:", StringComparison.Ordinal), timeoutMs: 2000);
+            return reply["$VERSION:".Length..].Trim();
+        }
+        catch
+        {
+            // Firmware predating $VERSION just says nothing. That is not an
+            // error worth surfacing — the caller shows "unknown" and moves on.
+            return null;
+        }
+    }
+
     public async Task ActivateDongleAsync(string installationId)
     {
         var status = await GetDongleLicenseAsync();

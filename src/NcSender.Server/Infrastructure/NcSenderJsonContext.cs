@@ -43,6 +43,8 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(List<PluginToolMenuItem>))]
 [JsonSerializable(typeof(PluginUpdateInfo))]
 // Dongle addressed-device bridge (generic; accessory plugins own payload semantics)
+[JsonSerializable(typeof(AccessoryInfo))]
+[JsonSerializable(typeof(List<AccessoryInfo>))]
 [JsonSerializable(typeof(DongleDeviceInfo))]
 [JsonSerializable(typeof(List<DongleDeviceInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<DongleDeviceInfo>))]

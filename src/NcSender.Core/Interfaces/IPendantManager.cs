@@ -26,6 +26,13 @@ public interface IPendantManager
     Task DisconnectSerialAsync();
     Task UnpairDongleAsync();
     Task<DongleLicenseStatus> GetDongleLicenseAsync();
+
+    /// <summary>
+    /// Firmware version the Wireless USB reports, or null if it does not answer.
+    /// Null means "did not say" rather than "old": a dongle on firmware from
+    /// before $VERSION existed simply stays quiet.
+    /// </summary>
+    Task<string?> GetDongleVersionAsync();
     Task ActivateDongleAsync(string installationId);
     void NotifySettingsChanged();
     void StartAutoConnect();

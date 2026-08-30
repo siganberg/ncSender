@@ -29,6 +29,16 @@ public interface IDongleDeviceService
     Task SendAsync(string name, string payload);
 
     /// <summary>
+    /// Ask a device something and wait for the first reply matching
+    /// <paramref name="match"/>, or null on timeout.
+    ///
+    /// Devices are chatty — a peer emits status lines several times a second —
+    /// so a caller cannot simply take the next line it sees and must say what
+    /// it is actually waiting for.
+    /// </summary>
+    Task<string?> QueryAsync(string name, string payload, Func<string, bool> match, int timeoutMs);
+
+    /// <summary>
     /// Send a raw dongle line verbatim (no "@name " wrapping). Used for
     /// commands the dongle firmware itself parses — $PAIR, $UNPAIR, $OTA:*,
     /// etc. — where wrapping would defeat the dongle's own line parser.

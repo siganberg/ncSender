@@ -247,6 +247,32 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     // as "$DEVICES:<name>" and is handled by OnDongleLine (which seeds _devices).
     // Called on dongle attach so we know about paired-but-offline devices without
     // relying on the host's in-memory state.
+    public async Task<string?> QueryAsync(string name, string payload,
+                                         Func<string, bool> match, int timeoutMs)
+    {
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnMessage(string from, string line)
+        {
+            if (!string.Equals(from, name, StringComparison.OrdinalIgnoreCase)) return;
+            if (match(line)) tcs.TrySetResult(line);
+        }
+
+        // Subscribe BEFORE sending: a device can answer faster than the await
+        // that follows, and a reply that lands first would otherwise be missed.
+        DeviceMessageReceived += OnMessage;
+        try
+        {
+            await SendAsync(name, payload).ConfigureAwait(false);
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs)).ConfigureAwait(false);
+            return done == tcs.Task ? await tcs.Task.ConfigureAwait(false) : null;
+        }
+        finally
+        {
+            DeviceMessageReceived -= OnMessage;
+        }
+    }
+
     public Task RequestDevicesAsync()
     {
         var sender = _sender;
