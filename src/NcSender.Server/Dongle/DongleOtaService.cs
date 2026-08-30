@@ -152,8 +152,11 @@ public sealed class DongleOtaService : IDisposable
     {
         // Server-side download bypasses browser CORS on GitHub Release assets —
         // same reason the USB flow has a /flash-from-url variant.
+        // The URL goes to the log, not to the status line: it is a ~110-character
+        // unbreakable token, and the dialog shows this message in a narrow card.
+        _logger.LogInformation("Downloading {Device} firmware from {Url}", deviceName, downloadUrl);
         await BroadcastMessageAsync(deviceName, deviceId ?? deviceName, "info",
-            $"Downloading firmware from {downloadUrl}…");
+            "Downloading firmware…");
         byte[] bytes;
         try
         {
