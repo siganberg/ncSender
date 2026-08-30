@@ -2731,7 +2731,8 @@ public class PendantManager : IPendantManager
             Theme: theme,
             AccentColor: _settingsManager.GetSetting<string>("accentColor") ?? _settingsManager.GetSetting<string>("primaryColor"),
             GradientColor: _settingsManager.GetSetting<string>("gradientColor"),
-            DarkMode: string.Equals(theme, "dark", StringComparison.OrdinalIgnoreCase)
+            DarkMode: string.Equals(theme, "dark", StringComparison.OrdinalIgnoreCase),
+            RequireConnectionTest: _settingsManager.GetSetting<bool>("probe.requireConnectionTest", false)
         );
 
         if (!force && _lastSentSettings is not null && snapshot == _lastSentSettings)
@@ -2743,7 +2744,8 @@ public class PendantManager : IPendantManager
             snapshot.Theme,
             snapshot.AccentColor,
             snapshot.GradientColor,
-            snapshot.DarkMode
+            snapshot.DarkMode,
+            snapshot.RequireConnectionTest
         ));
 
         return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantSettingsMsg);
@@ -2753,7 +2755,8 @@ public class PendantManager : IPendantManager
         string? Theme,
         string? AccentColor,
         string? GradientColor,
-        bool DarkMode
+        bool DarkMode,
+        bool RequireConnectionTest
     );
 
     #endregion

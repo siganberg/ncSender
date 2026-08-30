@@ -10,7 +10,10 @@ public record PendantFlashInitMsg(string Type, int Size);
 public record PendantFlashDataMsg(string Type, string Data);
 public record PendantWifiConfigMsg(string Type, string Ssid, string Password, string Ip, int Port);
 public record PendantSettingsMsg(string Type, PendantSettingsData Data);
-public record PendantSettingsData(string? Theme, string? AccentColor, string? GradientColor, bool DarkMode);
+public record PendantSettingsData(string? Theme, string? AccentColor, string? GradientColor, bool DarkMode,
+    // Mirrors the app's probe connection test. When on, the pendant keeps its
+    // Start Probe control locked until the probe has actually closed once.
+    bool RequireConnectionTest = false);
 public record PendantClientMeta(string ClientId, string Ip, bool IsLocal, string Product, string? DeviceId, string? Version, bool Licensed);
 
 // Pushed to the pendant when the aux I/O config changes or the
