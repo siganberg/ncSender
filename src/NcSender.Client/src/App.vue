@@ -972,7 +972,9 @@
   />
 
   <!-- Wireless USB Dialog (toolbar icon) -->
-  <WirelessUsbDialog
+  <!-- ncSender Accessories (toolbar icon) — firmware and activation for every
+       accessory, wired or wireless, in one place. -->
+  <AccessoriesDialog
     v-if="showWirelessDialog"
     @close="showWirelessDialog = false"
   />
@@ -1124,7 +1126,7 @@ import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
-import WirelessUsbDialog from './components/WirelessUsbDialog.vue';
+import AccessoriesDialog from './components/AccessoriesDialog.vue';
 import { api } from './lib/api.js';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';

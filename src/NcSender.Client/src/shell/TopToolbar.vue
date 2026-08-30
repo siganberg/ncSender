@@ -105,7 +105,7 @@
         class="pendant-button"
         :class="{ 'pendant-button--connected': dongleConnected }"
         @click="$emit('show-bluetooth')"
-        :title="dongleConnected ? 'Wireless USB connected' : 'Wireless USB — not connected'"
+        :title="dongleConnected ? 'ncSender Accessories — Wireless USB connected' : 'ncSender Accessories — Wireless USB not connected'"
       >
         <svg class="pendant-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <!-- Body - dark charcoal fill -->
