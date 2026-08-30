@@ -164,15 +164,34 @@
 
           <!-- Activation -->
           <section class="acc-card" v-if="selected.connected && selected.licensed === false">
-            <div class="acc-card-header"><h3 class="acc-card-title">Activation</h3></div>
-            <p class="acc-note">Enter the Installation ID that came with your {{ selected.name }}.</p>
-            <div class="acc-activate-row">
-              <input v-model="installationId" class="text-input" type="text" placeholder="Installation ID"
-                     :disabled="activating" @keyup.enter="activate" />
-              <button class="btn btn--primary" :disabled="!installationId || activating" @click="activate">
+            <div class="acc-card-header">
+              <h3 class="acc-card-title">Activation</h3>
+              <button v-if="!needsInstallationId" class="btn btn--primary"
+                      :disabled="activating" @click="activate">
                 {{ activating ? 'Activating…' : 'Activate' }}
               </button>
             </div>
+
+            <!-- The common case asks for nothing: hardware the store has seen
+                 before is reactivated from its own fingerprint. -->
+            <p v-if="!needsInstallationId" class="acc-note">
+              This {{ selected.name }} is not activated.
+              <span class="acc-note-dim">If it has been activated before, this needs nothing from you.</span>
+            </p>
+
+            <template v-else>
+              <p class="acc-note">
+                This {{ selected.name }} is new to the store. Enter the Installation ID that came with it.
+              </p>
+              <div class="acc-activate-row">
+                <input v-model="installationId" class="text-input" type="text" placeholder="Installation ID"
+                       :disabled="activating" @keyup.enter="activate" />
+                <button class="btn btn--primary" :disabled="!installationId || activating" @click="activate">
+                  {{ activating ? 'Activating…' : 'Activate' }}
+                </button>
+              </div>
+            </template>
+
             <p v-if="activationError" class="msg msg--error">{{ activationError }}</p>
           </section>
 
@@ -205,6 +224,23 @@
                  : 'Not paired. Use “Pair Device” and put it into pairing mode.' }}
             </p>
           </section>
+
+          <!-- Get one. Shown for every accessory we actually sell, whether or
+               not one is already attached — people buy a second pendant. On the
+               kiosk the global link interceptor turns this into a scannable QR
+               rather than opening a window nobody can close. -->
+          <section class="acc-card" v-if="storeUrl">
+            <div class="acc-card-header">
+              <h3 class="acc-card-title">Get one</h3>
+              <a class="btn btn--primary" :href="storeUrl"
+                 target="_blank" rel="noopener noreferrer">Get One</a>
+            </div>
+            <p class="acc-note">
+              {{ isKiosk
+                 ? 'Scan the code with your phone to open the store page.'
+                 : 'Opens the ncSender store in your browser.' }}
+            </p>
+          </section>
         </div>
       </div>
     </div>
@@ -231,14 +267,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
 import { getApiBaseUrl } from '../lib/api-base';
 import { api } from '../lib/api.js';
+import { useKioskDetection } from '../composables/useKioskDetection';
 
 defineEmits(['close']);
 const baseUrl = getApiBaseUrl();
+
+// Where to buy each accessory. Presentation only, so it lives here rather than
+// in the server catalogue. The AutoDustBoot is a search rather than a product
+// page on purpose: it ships in machine-specific variants (Alt-Mill, Onefinity,
+// Creator Kit) and picking one would be wrong for most readers. The xProbe is
+// absent because it is not sold yet — no entry means no button.
+const STORE_URLS: Record<string, string> = {
+  'wireless-usb': 'https://franciscreation.com/p/ncsender-wireless-usb',
+  pendant: 'https://franciscreation.com/p/ncsender-pendant-usb-or-optional-wireless',
+  autodustboot: 'https://franciscreation.com/search?q=autodustboot',
+  rgbled: 'https://franciscreation.com/p/ncsender-rgb-led-controller-pre-order',
+};
+
+const { isKiosk } = useKioskDetection();
+const storeUrl = computed(() => (selected.value ? STORE_URLS[selected.value.id] ?? null : null));
+
+
 
 interface Accessory {
   id: string; name: string; transport: string;
@@ -271,6 +325,8 @@ const selectedId = ref<string>('wireless-usb');
 const installationId = ref('');
 const activating = ref(false);
 const activationError = ref('');
+// Only true once the store has told us it does not recognise this device.
+const needsInstallationId = ref(false);
 
 const offs: Array<() => void> = [];
 
@@ -294,6 +350,14 @@ const rows = computed(() => {
 });
 
 const selected = computed(() => rows.value.find(a => a.id === selectedId.value) ?? rows.value[0]);
+
+// Activation state belongs to one device. Carrying a half-typed Installation ID
+// or another device's error across a selection change is just confusing.
+watch(selectedId, () => {
+  installationId.value = '';
+  activationError.value = '';
+  needsInstallationId.value = false;
+});
 
 const subtitle = computed(() => {
   const a = selected.value;
@@ -506,30 +570,36 @@ async function update(a: Accessory) {
 }
 
 async function activate() {
-  // The activation card only renders for the accessory currently selected, so
-  // that is the target. It used to consult a separate ref set by a per-row
-  // button that no longer exists after the layout change — leaving this
-  // function returning immediately and the button doing nothing at all.
   const target = selected.value;
-  if (!target || !installationId.value) return;
+  if (!target) return;
+  // With no Installation ID the server reactivates from the device fingerprint.
+  // Only if the store has never seen this device does it come back asking for
+  // one, and only then does the field appear.
+  if (needsInstallationId.value && !installationId.value) return;
   activating.value = true;
   activationError.value = '';
   try {
-    // Only the Wireless USB has an activation endpoint today; the wireless
-    // peers report no licence state yet, so their rows never offer this.
-    const res = await fetch(`${baseUrl}/api/dongle/activate`, {
+    const res = await fetch(`${baseUrl}/api/accessories/${target.id}/activate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ installationId: installationId.value.trim() }),
+      body: JSON.stringify({ installationId: installationId.value.trim() || null }),
     });
-    if (res.ok) { installationId.value = ''; await load(true); }
-    else {
-      const err = await res.json().catch(() => ({}));
-      activationError.value = err.error || 'Activation failed';
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      installationId.value = '';
+      needsInstallationId.value = false;
+      await load(true);
+    } else if (res.ok && data.needsInstallationId) {
+      needsInstallationId.value = true;
+      activationError.value = '';
+    } else {
+      activationError.value = data.error || 'Activation failed';
     }
   } catch (e: any) {
     activationError.value = e?.message || 'Activation failed';
-  } finally { activating.value = false; }
+  } finally {
+    activating.value = false;
+  }
 }
 
 function stopPairTicker() {
@@ -582,7 +652,17 @@ onMounted(() => {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   const refreshSoon = () => {
     if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => { refreshTimer = null; load(false); }, 400);
+    refreshTimer = setTimeout(async () => {
+      refreshTimer = null;
+      await load(false);
+      // The open-time check ran before these devices had reported in, so the
+      // server skipped their release lookup and their latest version is still
+      // blank. Now that they are up, ask once more. The server caches the
+      // GitHub answer, and this condition goes false as soon as the versions
+      // land, so it settles after a single extra call rather than looping.
+      if (accessories.value.some((a) => a.connected && !a.latestVersion && !a.updateCheckError))
+        await load(true);
+    }, 400);
   };
   offs.push(() => { if (refreshTimer) clearTimeout(refreshTimer); });
 
@@ -846,6 +926,9 @@ onUnmounted(() => {
 .acc-flash-msg {
   font-size: 0.82rem; color: var(--color-text-primary); margin-bottom: 8px;
   font-variant-numeric: tabular-nums;   /* the percentage must not jitter */
+  /* Status text comes from the server, so it can carry a long unbreakable
+     token (a URL, a filename). Wrap it rather than let it escape the card. */
+  overflow-wrap: anywhere;
 }
 
 .acc-progress {
@@ -901,7 +984,7 @@ onUnmounted(() => {
   border: 1px solid transparent; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
 }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.btn--primary { background: var(--md-primary-fg-color, #1abc9c); color: #fff; }
+.btn--primary { background: var(--color-accent); color: #fff; }
 .btn--ghost { background: transparent; border-color: rgba(128,128,128,0.35); color: inherit; }
 .btn--danger-ghost { background: transparent; border-color: rgba(220,53,69,0.5); color: #dc3545; }
 .text-input {
@@ -910,7 +993,7 @@ onUnmounted(() => {
   background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.25);
   color: inherit;
 }
-.text-input:focus { outline: none; border-color: var(--md-primary-fg-color, #1abc9c); }
+.text-input:focus { outline: none; border-color: var(--color-accent); }
 .msg { font-size: 0.82rem; padding: 8px 10px; border-radius: 6px; }
 .msg--error { color: #dc3545; background: rgba(220,53,69,0.1); }
 </style>
