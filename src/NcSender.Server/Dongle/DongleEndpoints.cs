@@ -84,8 +84,34 @@ public static class DongleEndpoints
             var deviceId = form["deviceId"].ToString();
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
+            var image = ms.ToArray();
+
+            // Refuse an image that says it belongs to a different accessory.
+            //
+            // Every ncSender firmware carries an "NCSENDER-FW-ID:<id>:" marker.
+            // This check exists because the dongle, pendant, xProbe and
+            // AutoDustBoot are all ESP32-S3: a mismatched image passes the
+            // header check the DEVICE makes and boots as the wrong product,
+            // leaving — for instance — a Wireless USB that relays nothing and
+            // reports no error. A filename cannot be trusted for this; the
+            // image's own content can.
+            //
+            // An image with NO marker is allowed through: firmware built before
+            // markers existed is legitimate, and refusing it would block the
+            // very recovery path this feature is for. Only a marker naming a
+            // DIFFERENT accessory is a refusal.
+            var claims = NcSender.Server.Accessories.AccessoryCatalog.IdentifyImage(image);
+            var expected = string.Equals(name, DongleOtaService.SelfDeviceName,
+                                         StringComparison.OrdinalIgnoreCase)
+                ? NcSender.Server.Accessories.AccessoryCatalog.WirelessUsbId
+                : name;
+            if (claims is not null && !string.Equals(claims, expected, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new ApiError(
+                    $"That firmware is for the {claims}, not the {expected}. " +
+                    "Flashing it would leave this device running the wrong product."));
+
             _ = Task.Run(async () => {
-                try { await ota.FlashAsync(name, ms.ToArray(), deviceId, CancellationToken.None); }
+                try { await ota.FlashAsync(name, image, deviceId, CancellationToken.None); }
                 catch { /* already broadcast */ }
             });
             return Results.Ok(new ApiSuccess(true));

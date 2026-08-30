@@ -15,12 +15,26 @@ namespace NcSender.Server.Accessories;
 /// Update.h rejects an image carrying a bootloader and partition table.
 /// </param>
 /// <param name="PeerName">Radio peer name, or null for a device reached over USB.</param>
+/// <param name="Availability">
+/// Short label for hardware that is not on sale yet ("Coming Soon", "Not
+/// available"), or null once it ships. The row still works for anyone holding
+/// one — it is labelled, not hidden — but it must not read as something a
+/// customer could go and buy today.
+/// </param>
 public sealed record AccessoryDefinition(
     string Id,
     string Name,
     string ReleaseRepo,
     string AssetPrefix,
-    string? PeerName);
+    string? PeerName,
+    string? Availability = null,
+    /// <summary>
+    /// Companion plugin that carries this device's settings, if it has one.
+    /// This view owns firmware and activation; anything the device can be
+    /// configured to DO lives in its plugin, and saying so beats leaving the
+    /// reader to wonder where those controls went.
+    /// </summary>
+    string? PluginName = null);
 
 public static class AccessoryCatalog
 {
@@ -41,14 +55,52 @@ public static class AccessoryCatalog
             "siganberg/ncSender.pendant.releases", "firmware_ncsender_pendant_v", "pendant"),
 
         new AccessoryDefinition("autodustboot", "AutoDustBoot",
-            "siganberg/ncSender.autodustboot.releases", "firmware_autodustboot_v", "autodustboot"),
+            "siganberg/ncSender.autodustboot.releases", "firmware_autodustboot_v", "autodustboot",
+            Availability: "Coming Soon", PluginName: "AutoDustboot"),
 
         new AccessoryDefinition("rgbled", "RGB LED",
-            "siganberg/ncSender.rgb.releases", "firmware_rgb_v", "rgbled"),
+            "siganberg/ncSender.rgb.releases", "firmware_rgb_v", "rgbled",
+            Availability: "Coming Soon", PluginName: "RGB LED"),
 
+        // Prototype, not a product yet.
         new AccessoryDefinition("xprobe", "xProbe",
-            "siganberg/ncSender.xprobe.releases", "firmware_xprobe_v", "xprobe"),
+            "siganberg/ncSender.xprobe.releases", "firmware_xprobe_v", "xprobe",
+            Availability: "Not available"),
     };
+
+    /// <summary>
+    /// Marker every ncSender firmware image carries, identifying what it is.
+    /// Checked before a hand-picked file is flashed: these accessories share a
+    /// processor, so a mismatched image passes the device's own header check
+    /// and boots as the wrong product. Filenames can be renamed; this cannot.
+    /// </summary>
+    public static string FirmwareIdMarker(string accessoryId) => $"NCSENDER-FW-ID:{accessoryId}:";
+
+    /// <summary>
+    /// What this image claims to be, or null if it carries no marker at all
+    /// (firmware built before markers existed — allowed, but unverified).
+    /// </summary>
+    public static string? IdentifyImage(byte[] image)
+    {
+        foreach (var def in All)
+        {
+            var marker = System.Text.Encoding.ASCII.GetBytes(FirmwareIdMarker(def.Id));
+            if (IndexOf(image, marker) >= 0) return def.Id;
+        }
+        return null;
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle)
+    {
+        for (var i = 0; i + needle.Length <= haystack.Length; i++)
+        {
+            var hit = true;
+            for (var j = 0; j < needle.Length; j++)
+                if (haystack[i + j] != needle[j]) { hit = false; break; }
+            if (hit) return i;
+        }
+        return -1;
+    }
 
     public static AccessoryDefinition? ById(string id)
         => All.FirstOrDefault(a => string.Equals(a.Id, id, StringComparison.OrdinalIgnoreCase));

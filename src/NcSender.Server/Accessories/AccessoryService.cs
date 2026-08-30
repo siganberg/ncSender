@@ -29,12 +29,38 @@ public sealed class AccessoryService
 
     private sealed record ReleaseInfo(string Version, string DownloadUrl, string? Error);
 
+    // A device's firmware version changes only when it reboots or is updated,
+    // so asking on every list call is wasted time — and time is the problem
+    // here: a device that does not implement $VERSION never answers, and the
+    // query costs its full timeout on every single call. Cached per device and
+    // cleared when it disconnects, so a reconnect re-asks.
+    private readonly Dictionary<string, string> _versionCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // Short on purpose. This is a local cable or a one-hop radio link; a device
+    // that is going to answer answers in tens of milliseconds. Anything longer
+    // is a device that will not answer at all, and the view should not stall
+    // for it.
+    private const int VersionQueryTimeoutMs = 700;
+
     public AccessoryService(IDongleDeviceService dongle, IPendantManager pendant,
                             ILogger<AccessoryService> logger)
     {
         _dongle = dongle;
         _pendant = pendant;
         _logger = logger;
+
+        // Forget a device's version the moment it drops, so the value shown is
+        // never from a previous session — a device can come back updated.
+        _dongle.DeviceConnectivityChanged += (name, connected) =>
+        {
+            if (!connected) lock (_versionCache) _versionCache.Remove(name);
+        };
+    }
+
+    /// <summary>Forget a cached version, e.g. after flashing that device.</summary>
+    public void InvalidateVersion(string name)
+    {
+        lock (_versionCache) _versionCache.Remove(name);
     }
 
     public async Task<List<AccessoryInfo>> ListAsync(bool checkUpdates, CancellationToken ct)
@@ -43,10 +69,29 @@ public sealed class AccessoryService
         var dongleLicence = await SafeDongleLicenceAsync().ConfigureAwait(false);
         var pendantStatus = _pendant.GetStatus();
 
-        var result = new List<AccessoryInfo>();
-        foreach (var def in AccessoryCatalog.All)
+        // Built in parallel. Sequentially, every device that does not answer
+        // costs its own timeout and they add up — five accessories could stall
+        // the view for the sum of all of them. Concurrently the worst case is
+        // one timeout total, and the release lookups overlap too.
+        var tasks = AccessoryCatalog.All.Select(def => BuildAsync(
+            def, peers, dongleLicence, pendantStatus, checkUpdates, ct));
+        var built = await Task.WhenAll(tasks).ConfigureAwait(false);
+        // Catalogue order, not completion order.
+        return built.ToList();
+    }
+
+    private async Task<AccessoryInfo> BuildAsync(
+        AccessoryDefinition def,
+        Dictionary<string, DongleDeviceInfo> peers,
+        DongleLicenseStatus? dongleLicence,
+        PendantStatus pendantStatus,
+        bool checkUpdates,
+        CancellationToken ct)
+    {
         {
-            var info = new AccessoryInfo { Id = def.Id, Name = def.Name };
+            var info = new AccessoryInfo { Id = def.Id, Name = def.Name, Availability = def.Availability,
+                                            PluginName = def.PluginName,
+                                            AssetPrefix = def.AssetPrefix };
 
             if (def.Id == AccessoryCatalog.WirelessUsbId)
             {
@@ -82,25 +127,35 @@ public sealed class AccessoryService
             if (checkUpdates && info.Connected)
                 await ApplyReleaseAsync(def, info, ct).ConfigureAwait(false);
 
-            result.Add(info);
+            return info;
         }
-        return result;
     }
 
     /// <summary>Ask a relayed peer its version. Empty when it does not answer.</summary>
     private async Task<string> PeerVersionAsync(string peerName, CancellationToken ct)
     {
+        lock (_versionCache)
+            if (_versionCache.TryGetValue(peerName, out var cached)) return cached;
+
+        string version;
         try
         {
             var reply = await _dongle.QueryAsync(peerName, "$VERSION",
-                l => l.StartsWith("$VERSION:", StringComparison.Ordinal), 2000).ConfigureAwait(false);
-            return reply is null ? "" : reply["$VERSION:".Length..].Trim();
+                l => l.StartsWith("$VERSION:", StringComparison.Ordinal),
+                VersionQueryTimeoutMs).ConfigureAwait(false);
+            version = reply is null ? "" : reply["$VERSION:".Length..].Trim();
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "No version from {Peer}", peerName);
-            return "";
+            version = "";
         }
+
+        // Cache the silence too. Firmware that does not implement $VERSION will
+        // never answer, and re-asking it on every call is exactly what made the
+        // list take two seconds.
+        lock (_versionCache) _versionCache[peerName] = version;
+        return version;
     }
 
     private async Task ApplyReleaseAsync(AccessoryDefinition def, AccessoryInfo info, CancellationToken ct)

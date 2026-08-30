@@ -8,7 +8,10 @@
           <span class="acc-eyebrow">ncSender</span>
           <span class="acc-title">Accessories</span>
         </div>
-        <nav class="acc-nav">
+        <nav class="acc-nav" v-if="loading">
+          <div v-for="n in 5" :key="n" class="acc-skel-row"><span class="acc-skel-bar"></span></div>
+        </nav>
+        <nav class="acc-nav" v-else>
           <button v-for="a in rows" :key="a.id" type="button" class="acc-nav-btn"
                   :class="{ active: selectedId === a.id }" @click="selectedId = a.id">
             <span class="dot" :class="dotClass(a)"></span>
@@ -21,7 +24,7 @@
           </button>
         </nav>
         <div class="acc-sidebar-actions">
-          <button class="acc-pair-btn" v-if="!pairing" :disabled="!dongleReady"
+          <button class="acc-pair-btn" v-if="!pairing" :disabled="!dongleReady || busy"
                   :title="dongleReady ? `Open a ${PAIR_WINDOW_SECONDS}s pairing window`
                                       : 'Requires an activated Wireless USB'"
                   @click="pairDevice">
@@ -43,12 +46,24 @@
 
       <!-- Detail panel -->
       <div class="acc-main">
-        <div class="acc-panel-header">
-          <h2 class="acc-panel-title">{{ selected?.name || 'Accessories' }}</h2>
+        <div class="acc-panel-header" v-if="loading">
+          <h2 class="acc-panel-title">Accessories</h2>
+          <p class="acc-panel-sub">Checking what is connected…</p>
+        </div>
+        <div class="acc-panel-header" v-else>
+          <h2 class="acc-panel-title">
+            {{ selected?.name || 'Accessories' }}
+            <sup v-if="selected?.availability" class="acc-avail-inline">{{ selected.availability }}</sup>
+          </h2>
           <p class="acc-panel-sub">{{ subtitle }}</p>
         </div>
 
-        <div class="acc-panel" v-if="selected">
+        <div class="acc-panel" v-if="loading">
+          <section class="acc-card"><div class="acc-skel-bar acc-skel-bar--wide"></div></section>
+          <section class="acc-card"><div class="acc-skel-bar acc-skel-bar--wide"></div></section>
+        </div>
+
+        <div class="acc-panel" v-else-if="selected">
           <!-- Connection -->
           <section class="acc-card">
             <div class="acc-card-header">
@@ -93,10 +108,24 @@
           <section class="acc-card">
             <div class="acc-card-header">
               <h3 class="acc-card-title">Firmware</h3>
-              <button v-if="selected.connected && selected.updateAvailable && !flashing[selected.id]"
-                      class="btn btn--primary" @click="update(selected)">
-                Update to v{{ selected.latestVersion }}
+              <button v-if="selected.connected && !flashing[selected.id]"
+                      class="btn btn--primary"
+                      :class="{ 'btn--idle': !selected.updateAvailable, 'btn--blocked': busy }"
+                      :aria-disabled="!selected.updateAvailable"
+                      :title="selected.updateAvailable
+                                ? `Install v${selected.latestVersion}`
+                                : 'Up to date — press and hold to flash a local .bin'"
+                      @click="update(selected)"
+                      @pointerdown="holdStart(selected)"
+                      @pointerup="holdCancel" @pointerleave="holdCancel"
+                      @contextmenu.prevent>
+                <div class="long-press-indicator long-press-horizontal"
+                     :style="{ width: `${holdProgress}%` }"></div>
+                <span class="acc-btn-label">
+                  {{ selected.updateAvailable ? `Update to v${selected.latestVersion}` : 'Update' }}
+                </span>
               </button>
+              <input ref="fileInput" type="file" accept=".bin" class="acc-file" @change="onFilePicked" />
             </div>
             <div class="acc-grid">
               <div class="acc-field">
@@ -110,6 +139,14 @@
             </div>
             <div v-if="flashing[selected.id]" class="acc-flash">
               <div class="acc-flash-msg">{{ flashing[selected.id].message }}</div>
+              <p class="acc-flash-warn">
+                Keep {{ selected.name }} powered and connected until this finishes.
+                <span class="acc-note-dim">
+                  It writes to a spare slot and only switches over once verified, so an
+                  interrupted update leaves the current firmware working — but you will
+                  have to start again.
+                </span>
+              </p>
               <div class="acc-progress">
                 <div class="acc-progress__bar" :style="{ width: (flashing[selected.id].percent || 0) + '%' }"></div>
               </div>
@@ -121,7 +158,7 @@
               Connect this accessory to see its firmware.
             </p>
             <p v-else-if="!selected.updateAvailable && selected.latestVersion" class="acc-note">
-              Up to date.
+              Up to date. <span class="acc-note-dim">Press and hold Update to flash a local .bin.</span>
             </p>
           </section>
 
@@ -139,13 +176,25 @@
             <p v-if="activationError" class="msg msg--error">{{ activationError }}</p>
           </section>
 
+          <!-- Configuration lives in the device's own plugin. This view owns
+               firmware and activation; what the device is set up to DO is the
+               plugin's business, and pointing at it is better than leaving the
+               reader hunting for settings that were never here. -->
+          <section class="acc-card" v-if="selected.pluginName">
+            <div class="acc-card-header"><h3 class="acc-card-title">Configuration</h3></div>
+            <p class="acc-note">
+              Install the <strong>{{ selected.pluginName }}</strong> plugin to configure this
+              {{ selected.name }}. Firmware and activation stay here.
+            </p>
+          </section>
+
           <!-- Pairing — never offered for the Wireless USB: it is the radio,
                so it cannot be paired to itself. -->
           <section class="acc-card" v-if="selected.id !== 'wireless-usb'">
             <div class="acc-card-header">
               <h3 class="acc-card-title">Pairing</h3>
               <button v-if="selected.paired" class="btn btn--danger-ghost"
-                      :disabled="pairing || unpairing === selected.id"
+                      :disabled="pairing || busy || unpairing === selected.id"
                       @click="unpairTarget = selected.id">
                 {{ unpairing === selected.id ? 'Unpairing…' : 'Unpair' }}
               </button>
@@ -159,6 +208,17 @@
         </div>
       </div>
     </div>
+
+    <Dialog v-if="mismatch" @close="mismatch = null" :show-header="false" size="small">
+      <ConfirmPanel
+        title="This does not look like the right firmware"
+        :message="`&quot;${mismatch.file.name}&quot; is not named like ${mismatch.target.name} firmware ` +
+                  `(expected ${mismatch.target.assetPrefix}…). These accessories share the same ` +
+                  `processor, so the wrong image will install and run — leaving the device working ` +
+                  `as something else. Flash it anyway?`"
+        confirm-text="Flash anyway" cancel-text="Cancel" variant="danger"
+        @confirm="confirmMismatch" @cancel="mismatch = null" />
+    </Dialog>
 
     <Dialog v-if="unpairTarget" @close="unpairTarget = null" :show-header="false" size="small">
       <ConfirmPanel
@@ -185,6 +245,9 @@ interface Accessory {
   connected: boolean; licensed: boolean | null;
   deviceId: string; currentVersion: string; latestVersion: string;
   updateAvailable: boolean; downloadUrl: string; updateCheckError?: string | null;
+  availability?: string | null;
+  pluginName?: string | null;
+  assetPrefix?: string;
   paired?: boolean;
 }
 
@@ -211,9 +274,10 @@ const activationError = ref('');
 
 const offs: Array<() => void> = [];
 
-// Connected first, then paired-but-offline, then the rest — so whatever needs
-// attention is nearest the top rather than wherever the catalogue happens to
-// list it.
+// Catalogue order, always: Wireless USB, Pendant, AutoDustBoot, RGB LED,
+// xProbe. This used to sort by connection state, which meant rows swapped
+// places whenever a device came or went — you would reach for one and press
+// another. A device's position is now something you can learn.
 const rows = computed(() => {
   const paired = new Set(pairedNames.value.map(n => n.toLowerCase()));
   return accessories.value
@@ -226,9 +290,7 @@ const rows = computed(() => {
       paired: a.id === 'wireless-usb'
         ? a.connected
         : paired.has(a.id) || (a.connected && a.transport === 'wireless'),
-    }))
-    .sort((x, y) => Number(y.connected) - Number(x.connected)
-                 || Number(!!y.paired) - Number(!!x.paired));
+    }));
 });
 
 const selected = computed(() => rows.value.find(a => a.id === selectedId.value) ?? rows.value[0]);
@@ -280,6 +342,12 @@ function shortId(id: string) {
   return id.length > 20 ? `${id.slice(0, 10)}…${id.slice(-6)}` : id;
 }
 
+// True while ANY accessory is being flashed. Actions are withheld across the
+// whole dialog, not just the busy row: pairing, unpairing and a second flash
+// all contend for the same radio and the same dongle, and starting one mid
+// transfer is how a good push turns into a failed one.
+const busy = computed(() => Object.keys(flashing).length > 0);
+
 const dongleReady = computed(() => {
   const d = accessories.value.find(a => a.id === 'wireless-usb');
   return !!d?.connected && d?.licensed === true;
@@ -322,7 +390,108 @@ async function load(checkUpdates = false) {
   }
 }
 
+// Press-and-hold opens a file picker, so a local .bin can be flashed even when
+// the device reports itself up to date. Carried over from the per-device
+// plugins this dialog replaces, where it is how a build gets onto hardware
+// before it has been released. Held rather than clicked precisely because it
+// bypasses the version check.
+const fileInput = ref<HTMLInputElement | null>(null);
+const holdTarget = ref<Accessory | null>(null);
+const holdProgress = ref(0);
+const HOLD_MS = 1000;
+let holdRaf: number | null = null;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let holdStartAt = 0;
+let holdFired = false;
+
+// Fills left-to-right as the press is held, matching the jog panel's Home and
+// zero buttons — same indicator element, same accent-at-0.22. A hold that
+// gives no feedback is indistinguishable from a button that does not work.
+function holdStart(a: Accessory) {
+  if (busy.value) return;          // no second flash while one is running
+  holdFired = false;
+  holdTarget.value = a;
+  holdStartAt = performance.now();
+  holdProgress.value = 0;
+
+  // The fill is animated with rAF, but completion is driven by a timer.
+  // rAF is throttled to nothing when the window is occluded, and a hold that
+  // silently fails to fire because the user glanced at another window is a
+  // worse bug than a fill that pauses.
+  const tick = () => {
+    const elapsed = performance.now() - holdStartAt;
+    holdProgress.value = Math.min(100, (elapsed / HOLD_MS) * 100);
+    if (holdRaf !== null) holdRaf = requestAnimationFrame(tick);
+  };
+  holdRaf = requestAnimationFrame(tick);
+
+  holdTimer = setTimeout(() => {
+    holdFired = true;               // suppress the click that follows the release
+    holdCancel();
+    fileInput.value?.click();
+  }, HOLD_MS);
+}
+
+function holdCancel() {
+  if (holdRaf !== null) { cancelAnimationFrame(holdRaf); holdRaf = null; }
+  if (holdTimer !== null) { clearTimeout(holdTimer); holdTimer = null; }
+  holdProgress.value = 0;
+}
+
+async function onFilePicked(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const target = holdTarget.value;
+  input.value = '';                 // so picking the same file twice still fires
+  if (!file || !target) return;
+
+  // Check the file looks like this device's firmware before sending it.
+  // Most of these accessories are the same ESP32-S3, so a mismatched image
+  // passes the header check the device itself makes and boots as the wrong
+  // product — an xProbe build on the Wireless USB leaves you with a dongle
+  // that no longer relays anything. The device cannot catch this; only the
+  // name can.
+  const prefix = target.assetPrefix || '';
+  if (prefix && !file.name.toLowerCase().startsWith(prefix.toLowerCase())) {
+    mismatch.value = { file, target };
+    return;
+  }
+  await sendFirmware(target, file);
+}
+
+const mismatch = ref<{ file: File; target: Accessory } | null>(null);
+
+function confirmMismatch() {
+  const m = mismatch.value;
+  mismatch.value = null;
+  if (m) sendFirmware(m.target, m.file);
+}
+
+async function sendFirmware(target: Accessory, file: File) {
+  flashing[target.id] = { percent: 0, message: `Flashing ${file.name}…` };
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    if (target.deviceId) form.append('deviceId', target.deviceId);
+    // The dongle addresses itself by product id; peers by their radio name.
+    const name = target.id === 'wireless-usb' ? 'wireless-usb' : target.id;
+    const res = await fetch(`${baseUrl}/api/dongle/devices/${name}/ota`, {
+      method: 'POST', body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      flashing[target.id] = { percent: 0, message: err.error || 'Flash failed' };
+      setTimeout(() => delete flashing[target.id], 5000);
+    }
+  } catch {
+    delete flashing[target.id];
+  }
+}
+
 async function update(a: Accessory) {
+  // A click that arrives because a hold just fired is not a click.
+  if (holdFired) { holdFired = false; return; }
+  if (busy.value || !a.updateAvailable) return;
   flashing[a.id] = { percent: 0, message: 'Starting…' };
   try {
     const res = await fetch(`${baseUrl}/api/accessories/${a.id}/update`, { method: 'POST' });
@@ -478,7 +647,20 @@ onUnmounted(() => {
 .acc-title { font-size: 1.05rem; font-weight: 600; color: var(--color-text-primary); }
 
 .acc-nav { display: flex; flex-direction: column; gap: 6px; }
+
+/* A shape to look at while the first query runs. The list is queried live
+   from the devices, so the first call is not instant — showing the layout
+   immediately reads as loading rather than as a dialog that failed to open. */
+.acc-skel-row { padding: 10px 12px; }
+.acc-skel-bar {
+  display: block; height: 10px; width: 70%; border-radius: 4px;
+  background: var(--color-surface-raised);
+  animation: acc-pulse 1.2s ease-in-out infinite;
+}
+.acc-skel-bar--wide { width: 100%; height: 14px; }
+@keyframes acc-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.8; } }
 .acc-nav-btn {
+  position: relative;
   appearance: none; display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; background: transparent; border: none; border-radius: 8px;
   color: var(--color-text-secondary); font-size: 0.9rem; text-align: left; cursor: pointer;
@@ -492,6 +674,12 @@ onUnmounted(() => {
   color: var(--color-text-primary);
 }
 .acc-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Lifted out of the flow and floated over the row's top-right corner.
+   In-flow it competed with the name for width and truncated it —
+   "AutoDustBoot" became "AutoDust…", which is worse than the badge is
+   valuable. Overlapping costs nothing here because the names are short and
+   the badge sits above their x-height. */
 
 /* A one-glyph badge, so the list answers "which of these wants something?"
    without the reader parsing five rows of prose. */
@@ -568,6 +756,15 @@ onUnmounted(() => {
   padding: 16px 20px; border-bottom: 1px solid var(--color-border);
 }
 .acc-panel-title { font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); margin: 0; }
+/* The heading has room to spare, so here it can stay in the flow. */
+.acc-avail-inline {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 14px; padding: 0 7px; border-radius: 7px;
+  margin-left: 6px; transform: translateY(-4px);
+  background: #e67e22; color: #14141f;
+  font-size: 0.5rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; line-height: 1; vertical-align: middle;
+}
 .acc-panel-sub { font-size: 0.85rem; color: var(--color-text-secondary); margin: 0; }
 
 .acc-panel {
@@ -611,11 +808,81 @@ onUnmounted(() => {
 
 .acc-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
 .acc-note--warn { color: #e0a030; }
+.acc-note-dim { opacity: 0.65; }
+
+.acc-flash-warn {
+  margin: 10px 0 0; font-size: 0.78rem; line-height: 1.45; color: #e0a030;
+}
+.acc-flash-warn .acc-note-dim { color: var(--color-text-secondary); }
+
+/* Visibly withheld rather than merely inert, so it is clear the dialog is
+   busy rather than broken. */
+.btn--blocked { opacity: 0.4; pointer-events: none; }
+
+.acc-file { display: none; }
+
+/* Same indicator the jog panel uses for its hold buttons. */
+.long-press-indicator {
+  position: absolute; background: var(--color-accent);
+  opacity: 0.22; pointer-events: none;
+}
+.long-press-horizontal { left: 0; top: 0; width: 0%; height: 100%; }
+/* The button becomes the positioning context, and its label must sit above
+   the fill rather than under it. */
+.acc-card-header .btn { position: relative; overflow: hidden; }
+.acc-btn-label { position: relative; z-index: 1; }
+/* Looks disabled but is NOT the disabled attribute: a disabled button fires
+   no pointer events, so the press-and-hold — the one gesture that matters
+   when there is no update to offer — would never reach it. The click is
+   refused in script instead. */
+.btn--idle {
+  opacity: 0.5;
+  background: var(--color-surface-raised);
+  box-shadow: none;
+}
+.btn--idle:hover { opacity: 0.65; }
 
 .acc-flash { margin-top: 12px; }
-.acc-flash-msg { font-size: 0.82rem; color: var(--color-text-primary); margin-bottom: 6px; }
-.acc-progress { height: 5px; border-radius: 3px; background: var(--color-surface-raised); overflow: hidden; }
-.acc-progress__bar { height: 100%; background: var(--color-accent); transition: width 0.25s ease; }
+.acc-flash-msg {
+  font-size: 0.82rem; color: var(--color-text-primary); margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;   /* the percentage must not jitter */
+}
+
+.acc-progress {
+  position: relative; height: 10px; border-radius: 5px; overflow: hidden;
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+}
+.acc-progress__bar {
+  position: relative; height: 100%; border-radius: 5px;
+  background: var(--color-accent);
+  /* Eased rather than linear: chunk acks arrive in bursts, and a linear
+     transition makes that look like stuttering rather than progress. */
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+/* A sheen travelling along the filled portion. The percentage already says how
+   far along it is; this says the transfer is still alive — which matters most
+   during the long quiet stretch in the middle of a 900 KB push. */
+.acc-progress__bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.28) 50%,
+    transparent 80%);
+  background-size: 220% 100%;
+  animation: acc-sheen 1.4s ease-in-out infinite;
+}
+@keyframes acc-sheen {
+  from { background-position: 160% 0; }
+  to   { background-position: -60% 0; }
+}
+/* Respect a reduced-motion preference: the bar still fills, it just stops
+   shimmering. */
+@media (prefers-reduced-motion: reduce) {
+  .acc-progress__bar::after { animation: none; }
+}
 
 .acc-activate-row { display: flex; gap: 8px; margin-top: 10px; }
 .acc-activate-row .text-input { flex: 1; }
