@@ -43,6 +43,9 @@ public class PendantConnectionTests : IDisposable
 
         var dongleDevices = new Mock<IDongleDeviceService>();
         var gates = new Mock<IGateService>();
+        // Pendant-started probes go through the same service the app uses; these
+        // tests never fire one, so an unconfigured mock is enough.
+        var probeService = new Mock<IProbeService>();
         var usbCatalog = new Mock<INcSenderUsbCatalog>();
         usbCatalog.Setup(c => c.GetDevices()).Returns(Array.Empty<NcSenderUsbDevice>());
         // The OTA service holds the XProbe router so it can park the port scan
@@ -69,7 +72,9 @@ public class PendantConnectionTests : IDisposable
             dongleDevices.Object,
             dongleOta,
             gates.Object,
-            usbCatalog.Object);
+            usbCatalog.Object,
+            probeService.Object
+        );
     }
 
     public void Dispose()

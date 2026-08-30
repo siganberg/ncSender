@@ -18,6 +18,7 @@ public class PendantManager : IPendantManager
     private readonly IJobManager _jobManager;
     private readonly ICommandProcessor _commandProcessor;
     private readonly ISettingsManager _settingsManager;
+    private readonly IProbeService _probeService;
     private readonly IDongleDeviceService _dongleDevices;   // shares the dongle; fed "@name" addressed-device lines
     private readonly NcSender.Server.Dongle.DongleOtaService _dongleOta;   // wireless firmware push via the dongle
     private PendantSerialHandler? _serialHandler;  // Active data handler (dongle preferred, USB fallback)
@@ -79,7 +80,8 @@ public class PendantManager : IPendantManager
         IDongleDeviceService dongleDevices,
         NcSender.Server.Dongle.DongleOtaService dongleOta,
         IGateService gates,
-        INcSenderUsbCatalog usbCatalog)
+        INcSenderUsbCatalog usbCatalog,
+        IProbeService probeService)
     {
         _logger = logger;
         _controller = controller;
@@ -88,6 +90,7 @@ public class PendantManager : IPendantManager
         _jobManager = jobManager;
         _commandProcessor = commandProcessor;
         _settingsManager = settingsManager;
+        _probeService = probeService;
         _dongleDevices = dongleDevices;
         _dongleOta = dongleOta;
         _gates = gates;
@@ -1668,6 +1671,11 @@ public class PendantManager : IPendantManager
                 _ = HandleCncCommandCoreAsync("$TLS");
                 return;
             }
+            if (data.StartsWith("PROBE ", StringComparison.Ordinal))
+            {
+                _ = HandlePendantProbeAsync(data.Substring(6));
+                return;
+            }
 
             // $ID responses handled by scanner — ignore here
             if (data.StartsWith("$ID:"))
@@ -2357,7 +2365,8 @@ public class PendantManager : IPendantManager
             MaxTravelZ: maxTravelZ,
             AuxMask: auxMask,
             CurrentTool: currentTool,
-            Units: units
+            Units: units,
+            Pins: ms.Pn ?? ""
         );
 
         var prev = _lastSentDro;
@@ -2442,6 +2451,17 @@ public class PendantManager : IPendantManager
         if (isFull || current.CurrentTool != prev!.CurrentTool)
             sb.Append($"|T:{current.CurrentTool}");
 
+        // Triggered pins. The pendant's probe screen gates its Start button on
+        // the probe having actually fired, so this has to track live rather than
+        // only on a full DRO. Sent whenever it changes, and omitted entirely when
+        // nothing is triggered — absence means "no pins", which is why the
+        // pendant clears it before parsing each frame.
+        if (isFull || current.Pins != prev!.Pins)
+        {
+            if (current.Pins.Length > 0) sb.Append($"|N:{current.Pins}");
+            else if (!isFull) sb.Append("|N:");
+        }
+
         // Units preference — "in" only when imperial. Omitted for mm
         // so the packet stays compact and old pendants keep working
         // (absence = mm on the pendant parser).
@@ -2515,7 +2535,10 @@ public class PendantManager : IPendantManager
         double MaxTravelZ,
         uint AuxMask,     // bit N = state of the Nth entry in the pendant's aux list
         int CurrentTool,  // 0 = none
-        string Units      // "mm" or "in" — drives the pendant DRO display unit
+        string Units,     // "mm" or "in" — drives the pendant DRO display unit
+        string Pins       // normalized triggered-pin string, e.g. "XYZP" — "P" is
+                          // the probe and "T" the toolsetter, whichever protocol
+                          // the controller speaks (see IProtocolHandler.NormalizePinState)
     );
 
     #endregion
@@ -2604,6 +2627,82 @@ public class PendantManager : IPendantManager
     // every ATC-shaped plugin writes when it saves (see the PATCH
     // /api/settings call in pneumaticatc / rapidchangeatc config.html,
     // and ToolService.cs uses the same key to gate magazine bounds).
+    /// <summary>
+    /// Start a probe on behalf of the pendant. Payload is
+    /// "&lt;type&gt; &lt;axis&gt; &lt;corner-or-side&gt;", e.g. "3d-probe XYZ BottomLeft".
+    ///
+    /// The pendant chooses only those three. Everything else — plunge, offsets,
+    /// block dimensions, feeds — is read from the settings the user already
+    /// configured in the app, because the pendant has no room to present them and
+    /// no business holding a second copy that could drift from the one on screen.
+    /// </summary>
+    private async Task HandlePendantProbeAsync(string payload)
+    {
+        try
+        {
+            var parts = payload.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                _logger.LogWarning("Pendant PROBE ignored — expected '<type> <axis> [corner]', got '{Payload}'", payload);
+                return;
+            }
+
+            var probeType = parts[0];
+            var axis = parts[1];
+            var placement = parts.Length > 2 ? parts[2] : null;
+
+            // X and Y probe a single face, so their placement is a side; every
+            // other axis mode starts from a corner. Sending the wrong one leaves
+            // the generator without a reference and it refuses the operation.
+            var isSide = axis is "X" or "Y";
+
+            static JsonElement Str(string? v) => v is null
+                ? JsonDocument.Parse("null").RootElement
+                : JsonDocument.Parse(JsonSerializer.Serialize(v)).RootElement;
+            static JsonElement Num(double v)
+                => JsonDocument.Parse(v.ToString(CultureInfo.InvariantCulture)).RootElement;
+            static JsonElement Bool(bool v)
+                => JsonDocument.Parse(v ? "true" : "false").RootElement;
+
+            double Setting(string key, double fallback)
+            {
+                try { return _settingsManager.GetSetting<double>(key, fallback); }
+                catch { return fallback; }
+            }
+
+            var options = new Dictionary<string, JsonElement>
+            {
+                ["probeType"]   = Str(probeType),
+                ["probingAxis"] = Str(axis),
+                ["selectedCorner"] = Str(isSide ? null : placement),
+                ["selectedSide"]   = Str(isSide ? placement : null),
+
+                // Defaults mirror the app's probe dialog so a pendant-started
+                // probe behaves the same as one started on screen.
+                ["toolDiameter"]  = Num(Setting("probe.selectedBitDiameter", 6)),
+                ["zPlunge"]       = Num(Setting("probe.zPlunge", 3)),
+                ["zOffset"]       = Num(Setting("probe.zOffset", -0.1)),
+                ["xDimension"]    = Num(Setting("probe.xDimension", 100)),
+                ["yDimension"]    = Num(Setting("probe.yDimension", 100)),
+                ["rapidMovement"] = Num(Setting("probe.rapidMovement", 2000)),
+                ["zThickness"]    = Num(Setting("probe.zThickness", 15)),
+                ["xyThickness"]   = Num(Setting("probe.xyThickness", 10)),
+                ["zProbeDistance"] = Num(Setting("probe.zProbeDistance", 3)),
+                ["selectedBitDiameter"] = Num(Setting("probe.selectedBitDiameter", 6)),
+                ["standardBlockBitDiameter"] = Num(Setting("probe.standardBlockBitDiameter", 6)),
+                ["probeZFirst"] = Bool(false),
+            };
+
+            _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement}",
+                probeType, axis, placement ?? "-");
+            await _probeService.StartAsync(options, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pendant probe request failed: {Payload}", payload);
+        }
+    }
+
     private int ReadAtcSlotCount()
     {
         try { return _settingsManager.GetSetting<int>("tool.count", 0); }
