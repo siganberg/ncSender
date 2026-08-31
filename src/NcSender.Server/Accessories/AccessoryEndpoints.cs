@@ -10,6 +10,10 @@ namespace NcSender.Server.Accessories;
 /// The Accessories view's API: one list covering every accessory, wired or
 /// wireless, with firmware state — and one way to update any of them.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode",
+    Justification = "Request Delegate Generator handles endpoint AOT compatibility")]
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode",
+    Justification = "Request Delegate Generator handles endpoint AOT compatibility")]
 public static class AccessoryEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
