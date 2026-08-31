@@ -2648,7 +2648,14 @@ public class PendantManager : IPendantManager
             }
 
             var probeType = parts[0];
-            var axis = parts[1];
+            // The pendant sends the centre modes hyphenated because its intent
+            // line is space-delimited; the app's vocabulary has the spaces.
+            var axis = parts[1] switch
+            {
+                "Center-Inner" => "Center - Inner",
+                "Center-Outer" => "Center - Outer",
+                var other      => other,
+            };
             var placement = parts.Length > 2 ? parts[2] : null;
 
             // X and Y probe a single face, so their placement is a side; every
