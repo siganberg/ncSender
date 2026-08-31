@@ -2656,13 +2656,27 @@ public class PendantManager : IPendantManager
             // the generator without a reference and it refuses the operation.
             var isSide = axis is "X" or "Y";
 
-            static JsonElement Str(string? v) => v is null
-                ? JsonDocument.Parse("null").RootElement
-                : JsonDocument.Parse(JsonSerializer.Serialize(v)).RootElement;
+            // Built with Utf8JsonWriter rather than JsonSerializer.Serialize: the
+            // reflection overload is not trim- or AOT-safe, and this server is
+            // published AOT. Cloned because the element must outlive its document.
+            static JsonElement Str(string? v)
+            {
+                if (v is null) return JsonDocument.Parse("null").RootElement.Clone();
+                using var ms = new MemoryStream();
+                using (var w = new Utf8JsonWriter(ms)) w.WriteStringValue(v);
+                using var doc = JsonDocument.Parse(ms.ToArray());
+                return doc.RootElement.Clone();
+            }
             static JsonElement Num(double v)
-                => JsonDocument.Parse(v.ToString(CultureInfo.InvariantCulture)).RootElement;
+            {
+                using var doc = JsonDocument.Parse(v.ToString(CultureInfo.InvariantCulture));
+                return doc.RootElement.Clone();
+            }
             static JsonElement Bool(bool v)
-                => JsonDocument.Parse(v ? "true" : "false").RootElement;
+            {
+                using var doc = JsonDocument.Parse(v ? "true" : "false");
+                return doc.RootElement.Clone();
+            }
 
             double Setting(string key, double fallback)
             {
