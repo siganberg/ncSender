@@ -1416,7 +1416,14 @@ let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
 let pendingResizeFrame: number | null = null;
 
+// True between webglcontextlost and webglcontextrestored. Every GL call in that
+// window is rejected by the driver, which is how a single GPU blip turned into
+// an endless "glTexStorage2D: Texture is immutable" flood and a blank canvas
+// that only a page reload cleared.
+let contextLost = false;
+
 const requestRender = () => {
+  if (contextLost) return;
   renderDirty = true;
   idleFrameCount = 0;
   if (animationId === null) {
@@ -1531,6 +1538,28 @@ const initThreeJS = () => {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   canvas.value.appendChild(renderer.domElement);
+
+  // A lost GL context is recoverable, but only if the event is cancelled —
+  // without preventDefault the browser never follows up with a restore, and the
+  // viewport stays white until the page is reloaded. Seen in the field on one
+  // machine whose driver dropped the context while the probe dialog had a
+  // second renderer open.
+  renderer.domElement.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    contextLost = true;
+    if (animationId !== null) { cancelAnimationFrame(animationId); animationId = null; }
+    console.warn('[Visualizer] WebGL context lost — pausing render until it is restored');
+  }, false);
+
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    contextLost = false;
+    console.warn('[Visualizer] WebGL context restored — resuming');
+    // three re-uploads its own GL resources on the next frame; we just need to
+    // ask for one, and to redraw rather than sit on a clean-but-empty canvas.
+    renderDirty = true;
+    idleFrameCount = 0;
+    requestRender();
+  }, false);
 
   // Lighting
   const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
@@ -2416,6 +2445,9 @@ let lastSpindleUpdateTime = 0;
 const spindleUpdateInterval = 1000 / 30; // 30 fps for spindle animation
 
 const animate = () => {
+  // Nothing may touch GL until the context comes back.
+  if (contextLost) { animationId = null; return; }
+
   // Check if spindle is still converging (smoothing not settled)
   const isSmoothing = cuttingPointer && (
     Math.abs(targetSpindlePosition.x - currentSpindlePosition.x) > 0.001 ||

@@ -42,11 +42,10 @@ public static class LicenseClient
 
         var byDevice = string.IsNullOrWhiteSpace(installationId);
         var url  = byDevice ? ActivateByDeviceUrl : ActivateUrl;
-        var body = byDevice
-            ? JsonSerializer.Serialize(new Dictionary<string, string>
-                { ["machineHash"] = machineHash, ["product"] = product })
-            : JsonSerializer.Serialize(new Dictionary<string, string>
-                { ["installationId"] = installationId!.Trim(), ["machineHash"] = machineHash, ["product"] = product });
+        // Written by hand rather than serialized from a Dictionary: the
+        // reflection-based overload is not AOT-safe, and registering a type for
+        // three string fields would cost more than writing them.
+        var body = WriteBody(byDevice ? null : installationId!.Trim(), machineHash, product);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -86,8 +85,29 @@ public static class LicenseClient
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(doc.RootElement);
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = false }))
+                doc.RootElement.WriteTo(w);
+            return Encoding.UTF8.GetString(ms.ToArray());
         }
         catch { return json.Replace("\n", "").Replace("\r", ""); }
+    }
+
+    /// <summary>
+    /// The activation request body. Utf8JsonWriter escapes the values properly
+    /// and needs no type metadata, so this stays correct under trimming and AOT.
+    /// </summary>
+    private static string WriteBody(string? installationId, string machineHash, string product)
+    {
+        using var ms = new MemoryStream();
+        using (var w = new Utf8JsonWriter(ms))
+        {
+            w.WriteStartObject();
+            if (installationId is not null) w.WriteString("installationId", installationId);
+            w.WriteString("machineHash", machineHash);
+            w.WriteString("product", product);
+            w.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 }

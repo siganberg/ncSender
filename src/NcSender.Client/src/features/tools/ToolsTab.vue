@@ -1196,9 +1196,8 @@ const saveTool = async () => {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          console.log('Tool update error:', JSON.stringify(error));
-          const errorMsg = error.errors ? JSON.stringify(error.errors) : (error.error || 'Unknown error');
+          const errorMsg = await readError(response);
+          console.log('Tool update error:', errorMsg);
           saveErrorMessage.value = 'Failed to update tool: ' + errorMsg;
           showSaveErrorDialog.value = true;
           return;
@@ -1213,8 +1212,7 @@ const saveTool = async () => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        saveErrorMessage.value = 'Failed to add tool: ' + (error.error || 'Unknown error');
+        saveErrorMessage.value = 'Failed to add tool: ' + await readError(response);
         showSaveErrorDialog.value = true;
         return;
       }
@@ -1228,6 +1226,28 @@ const saveTool = async () => {
     showSaveErrorDialog.value = true;
   }
 };
+
+/**
+ * Read an error response without assuming it has a JSON body.
+ *
+ * Several server paths answer with no body at all — Results.NotFound(), and the
+ * 400 the framework produces when a request fails model binding before the
+ * handler runs. Calling .json() on those throws "Unexpected end of JSON input",
+ * which lands in the catch and reports a generic failure, hiding the status
+ * code that would have said what actually went wrong.
+ */
+async function readError(response: Response): Promise<string> {
+  let body = '';
+  try { body = await response.text(); } catch { /* nothing to read */ }
+  if (body) {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed?.errors) return JSON.stringify(parsed.errors);
+      if (parsed?.error)  return parsed.error;
+    } catch { return body.slice(0, 200); }
+  }
+  return `HTTP ${response.status}${response.statusText ? ' ' + response.statusText : ''}`;
+}
 
 const deleteTool = (tool: Tool) => {
   deleteToolRef.value = tool;
