@@ -61,6 +61,7 @@ let camera: THREE.PerspectiveCamera | null = null;
 let renderer: THREE.WebGLRenderer | null = null;
 let controls: OrbitControls | null = null;
 let animationFrame = 0;
+let contextLost = false;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -191,7 +192,24 @@ const initScene = () => {
   renderer.domElement.addEventListener('click', handleCanvasClick);
   renderer.domElement.addEventListener('mousemove', handleCanvasHover);
 
+  // Same recovery the main visualizer needs, and this one matters more: opening
+  // the probe dialog puts a SECOND live GL context on the page, which is the
+  // pressure that provoked the loss in the first place.
+  renderer.domElement.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();   // without this the browser never restores
+    contextLost = true;
+    if (animationFrame !== null) { cancelAnimationFrame(animationFrame); animationFrame = null; }
+    console.warn('[ProbeVisualizer] WebGL context lost — pausing render');
+  }, false);
+
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    contextLost = false;
+    console.warn('[ProbeVisualizer] WebGL context restored — resuming');
+    if (animationFrame === null) animate();
+  }, false);
+
   const animate = () => {
+    if (contextLost) { animationFrame = null; return; }
     animationFrame = requestAnimationFrame(animate);
     controls?.update();
     renderScene();
@@ -211,7 +229,15 @@ const destroyScene = () => {
 
   cancelAnimationFrame(animationFrame);
   controls?.dispose();
+
+  // dispose() frees three's own objects but leaves the GL context attached to
+  // the canvas until GC gets round to it. Every open/close of this dialog
+  // therefore leaked a live context, and browsers cap them at roughly 16 — past
+  // that the oldest is killed, which surfaces as CONTEXT_LOST_WEBGL in a
+  // completely unrelated viewport. Hand the context back explicitly.
+  try { renderer?.forceContextLoss(); } catch { /* already gone */ }
   renderer?.dispose();
+  renderer?.domElement?.remove();
 
   if (scene) {
     scene.clear();
