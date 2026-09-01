@@ -60,6 +60,7 @@ public class PendantConnectionTests : IDisposable
             dongleDevices.Object,
             usbCatalog.Object,
             xprobeRouter,
+            new NcSender.Server.Usb.UsbPortLeases(),
             _broadcaster.Object);
         _manager = new PendantManager(
             NullLogger<PendantManager>.Instance,
@@ -73,6 +74,7 @@ public class PendantConnectionTests : IDisposable
             dongleOta,
             gates.Object,
             usbCatalog.Object,
+            new NcSender.Server.Usb.UsbPortLeases(),
             probeService.Object
         );
     }
@@ -114,8 +116,16 @@ public class PendantConnectionTests : IDisposable
 
     private MockSerialHandler? GetActiveHandler()
     {
-        // Check which handler has event subscribers (is the active one)
-        return _handlers.FirstOrDefault(h => h.HasRawMessageSubscribers);
+        // Read the manager's actual active handler rather than inferring it from
+        // event subscriptions. The old version returned the first handler with
+        // any RawMessageReceived subscriber, which only coincided with "active"
+        // while nothing else subscribed. The dongle now keeps a permanent
+        // subscription so peer traffic is read whichever transport the pendant
+        // is on, so that proxy reports the dongle even when a cable holds the
+        // link — testing the helper's assumption rather than the manager.
+        var field = typeof(PendantManager).GetField("_serialHandler",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return field?.GetValue(_manager) as MockSerialHandler;
     }
 
     private PendantStatus GetStatus() => _manager.GetStatus();
@@ -167,7 +177,7 @@ public class PendantConnectionTests : IDisposable
     // ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void WiredThenDongle_SwitchesToDongle()
+    public void WiredThenDongle_StaysOnWired()
     {
         // Connect wired first
         var pendant = MakePendantDevice();
@@ -180,18 +190,19 @@ public class PendantConnectionTests : IDisposable
         var dongle = MakeDongleDevice();
         _manager.HandleDeviceFound(dongle);
 
-        // Active handler should switch to dongle
+        // The cable keeps the link — wired outranks the radio for every
+        // accessory, the pendant included. The dongle stays available as the
+        // fallback rather than taking over.
         var active = GetActiveHandler();
         Assert.NotNull(active);
-        Assert.Equal("/dev/cu.usbmodem201201", active.ConnectedPort);
+        Assert.Equal("/dev/cu.usbmodem21201", active.ConnectedPort);
 
-        // Simulate ping through dongle to complete handshake
         SimulatePendantPing();
 
         var status = GetStatus();
         Assert.Equal("connected", status.ConnectionState);
-        Assert.Equal("espnow", status.ActiveConnectionType);
-        Assert.True(status.OtaReady); // USB still connected for OTA
+        Assert.Equal("usb", status.ActiveConnectionType);
+        Assert.True(status.OtaReady);
     }
 
     // ──────────────────────────────────────────────────────────
@@ -210,7 +221,8 @@ public class PendantConnectionTests : IDisposable
         _manager.HandleDeviceFound(dongle);
         SimulatePendantPing();
 
-        Assert.Equal("espnow", GetStatus().ActiveConnectionType);
+        // Wired holds the link while the cable is present.
+        Assert.Equal("usb", GetStatus().ActiveConnectionType);
 
         // Dongle removed
         _manager.HandleDeviceLost(dongle);
@@ -245,9 +257,10 @@ public class PendantConnectionTests : IDisposable
         _manager.HandleDeviceFound(dongle);
         SimulatePendantPing();
 
-        Assert.Equal("espnow", GetStatus().ActiveConnectionType);
+        // Wired wins while the cable is there.
+        Assert.Equal("usb", GetStatus().ActiveConnectionType);
 
-        // Wired USB removed — should NOT disrupt dongle
+        // Wired USB removed — the dongle takes over as the fallback
         _manager.HandleDeviceLost(pendant);
 
         var active = GetActiveHandler();
@@ -265,7 +278,7 @@ public class PendantConnectionTests : IDisposable
     // ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void DongleFirst_ThenWired_DongleStaysActive()
+    public void DongleFirst_ThenWired_SwitchesToWired()
     {
         var dongle = MakeDongleDevice();
         _manager.HandleDeviceFound(dongle);
@@ -274,18 +287,17 @@ public class PendantConnectionTests : IDisposable
         Assert.Equal("espnow", GetStatus().ActiveConnectionType);
         Assert.False(GetStatus().OtaReady); // No USB yet
 
-        // Wired USB appears
+        // Wired USB appears — it takes the link off the dongle
         var pendant = MakePendantDevice();
         _manager.HandleDeviceFound(pendant);
 
-        // Dongle should remain active
         var active = GetActiveHandler();
         Assert.NotNull(active);
-        Assert.Equal("/dev/cu.usbmodem201201", active.ConnectedPort);
+        Assert.Equal("/dev/cu.usbmodem21201", active.ConnectedPort);
 
         var status = GetStatus();
-        Assert.Equal("espnow", status.ActiveConnectionType);
-        Assert.True(status.OtaReady); // USB now available for OTA
+        Assert.Equal("usb", status.ActiveConnectionType);
+        Assert.True(status.OtaReady);
     }
 
     // ──────────────────────────────────────────────────────────
@@ -328,19 +340,21 @@ public class PendantConnectionTests : IDisposable
         _manager.HandleDeviceFound(dongle);
         SimulatePendantPing();
 
-        Assert.Equal("espnow", GetStatus().ActiveConnectionType);
+        // The cable is present the whole way through, so it holds the link
+        // regardless of what the dongle does.
+        Assert.Equal("usb", GetStatus().ActiveConnectionType);
 
-        // Dongle lost → falls back to USB
         _manager.HandleDeviceLost(dongle);
         SimulatePendantPing();
         Assert.Equal("usb", GetStatus().ActiveConnectionType);
 
-        // Dongle comes back → switches back
+        // Dongle comes back — still the fallback, still not the active link
         var dongle2 = MakeDongleDevice("/dev/cu.usbmodem201202");
         _manager.HandleDeviceFound(dongle2);
         SimulatePendantPing();
 
-        Assert.Equal("espnow", GetStatus().ActiveConnectionType);
+        Assert.Equal("usb", GetStatus().ActiveConnectionType);
+        Assert.True(GetStatus().DongleConnected);
     }
 
     // ──────────────────────────────────────────────────────────
@@ -426,7 +440,8 @@ public class PendantConnectionTests : IDisposable
         _manager.HandleDeviceFound(pendant2);
 
         Assert.True(GetStatus().OtaReady);
-        Assert.Equal("espnow", GetStatus().ActiveConnectionType); // Still on dongle
+        // The regained cable takes the link back off the dongle.
+        Assert.Equal("usb", GetStatus().ActiveConnectionType);
     }
 
     // ──────────────────────────────────────────────────────────
@@ -462,7 +477,8 @@ public class PendantConnectionTests : IDisposable
             var dongle = MakeDongleDevice($"/dev/cu.usbmodem20120{i}");
             _manager.HandleDeviceFound(dongle);
             SimulatePendantPing();
-            Assert.Equal("espnow", GetStatus().ActiveConnectionType);
+            // A flapping dongle must not disturb a pendant that is on a cable.
+            Assert.Equal("usb", GetStatus().ActiveConnectionType);
 
             _manager.HandleDeviceLost(dongle);
             SimulatePendantPing();
@@ -524,7 +540,8 @@ public class PendantConnectionTests : IDisposable
 
         var status = GetStatus();
         Assert.True(status.DongleConnected);
-        Assert.Equal("espnow", status.ActiveConnectionType);
+        // Recovered as the fallback — the cabled pendant still owns the link.
+        Assert.Equal("usb", status.ActiveConnectionType);
     }
 }
 

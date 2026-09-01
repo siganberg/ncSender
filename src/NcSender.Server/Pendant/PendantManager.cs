@@ -68,6 +68,7 @@ public class PendantManager : IPendantManager
 
     private readonly IGateService _gates;
     private readonly INcSenderUsbCatalog _usbCatalog;
+    private readonly NcSender.Server.Usb.UsbPortLeases _portLeases;
 
     public PendantManager(
         ILogger<PendantManager> logger,
@@ -81,6 +82,7 @@ public class PendantManager : IPendantManager
         NcSender.Server.Dongle.DongleOtaService dongleOta,
         IGateService gates,
         INcSenderUsbCatalog usbCatalog,
+        NcSender.Server.Usb.UsbPortLeases portLeases,
         IProbeService probeService)
     {
         _logger = logger;
@@ -95,6 +97,7 @@ public class PendantManager : IPendantManager
         _dongleOta = dongleOta;
         _gates = gates;
         _usbCatalog = usbCatalog;
+        _portLeases = portLeases;
 
         // Mirror gate lifecycle to the pendant. Gate events broadcast on the
         // browser channel also need to reach the pendant so it can render the
@@ -527,6 +530,19 @@ public class PendantManager : IPendantManager
         await FlashFileAsync(stream, onProgress);
     }
 
+    /// <summary>
+    /// DEPRECATED SOON — the pendant's private wired OTA dialect
+    /// ("$OTA:&lt;size&gt;:&lt;md5&gt;" / "$OTA:READY:V2" / raw chunked binary).
+    ///
+    /// Superseded by the shared "$OTA:BEGIN|CHUNK|END" dialect that every other
+    /// accessory speaks, which pendant firmware 1.0.31+ answers on its cable and
+    /// DongleOtaService drives for all devices over either transport. Kept only
+    /// so a pendant on older firmware can still be updated far enough to speak
+    /// it — you cannot deliver the new protocol using the new protocol.
+    ///
+    /// Remove once the field has migrated, together with the firmware's
+    /// ota/ota-update.* and the legacy branch in USBSerialClient::handleMessage.
+    /// </summary>
     public async Task FlashFileAsync(Stream firmware, Func<double, Task>? onProgress = null)
     {
         // Direct USB is always preferred (fastest + simplest). If it's not
@@ -1221,10 +1237,11 @@ public class PendantManager : IPendantManager
         if (!_controller.IsConnected) return;
         if (_scanner is not null) return; // Already running
 
-        _scanner = new PendantPortScanner(_logger, _usbCatalog);
+        _scanner = new PendantPortScanner(_logger, _usbCatalog, _portLeases);
         _scanner.DeviceFound += OnScannerDeviceFound;
         _scanner.DeviceLost += OnScannerDeviceLost;
         _scanner.LegacyCandidateDetected += OnLegacyCandidateDetected;
+        _scanner.UsbInventoryChanged += OnUsbInventoryChanged;
         _scanner.Start();
     }
 
@@ -1235,6 +1252,7 @@ public class PendantManager : IPendantManager
         _scanner.DeviceFound -= OnScannerDeviceFound;
         _scanner.DeviceLost -= OnScannerDeviceLost;
         _scanner.LegacyCandidateDetected -= OnLegacyCandidateDetected;
+        _scanner.UsbInventoryChanged -= OnUsbInventoryChanged;
         _scanner.Dispose();
         _scanner = null;
         _logger.LogInformation("Pendant scanner stopped (CNC disconnected)");
@@ -1245,6 +1263,16 @@ public class PendantManager : IPendantManager
     // ncSender pendant or wireless dongle running legacy firmware. The
     // scanner does NOT open the port; instead we ask the UI to prompt
     // the user to update firmware. One broadcast per new port per session.
+    // A cable moving between accessories changes which transport each is reached
+    // over without changing anyone's connectivity, so none of the usual events
+    // fire. Reuse the one the Accessories panel already refreshes on.
+    private void OnUsbInventoryChanged()
+    {
+        _ = _broadcaster.Broadcast("dongle:device-changed",
+            new DongleDeviceChanged { Name = "", Connected = false },
+            NcSenderJsonContext.Default.DongleDeviceChanged);
+    }
+
     private void OnLegacyCandidateDetected(NcSenderUsbDevice device)
     {
         var notice = new LegacyFirmwareNotice(
@@ -1268,28 +1296,38 @@ public class PendantManager : IPendantManager
         {
             case PendantPortScanner.DeviceType.Pendant:
                 _pendantUsbHandler = device.Handler;
-                // Use pendant USB if dongle isn't connected or hasn't established
-                // communication with the pendant (e.g., dongle plugged in but not paired)
-                if (_dongleHandler is null || !_dongleHandler.IsConnected || !_pendantConnected)
-                {
-                    _logger.LogInformation("Setting pendant USB as active data handler");
-                    SetActiveHandler(_pendantUsbHandler);
-                    // If dongle exists, watch for pings through it — a ping proves it's paired
-                    // and we should promote it to active (ESP-NOW priority)
-                    AttachDonglePromotionListener();
-                }
-                else
-                {
-                    _logger.LogInformation("Pendant USB connected (dongle is active, USB available for OTA)");
-                }
+                // The cable wins. Every ncSender accessory now prefers wired and
+                // falls back to wireless, and the pendant is no longer the
+                // exception: a direct link has no radio contention, no dongle in
+                // the path to relay through, and far more bandwidth. The dongle
+                // remains the fallback, wired up by OnScannerDeviceLost.
+                //
+                // This used to be the other way round — the dongle took priority
+                // and a promotion listener watched for a ping to hand it the
+                // link — which is why a cabled pendant still reported "reached
+                // over: wireless".
+                _logger.LogInformation("Setting pendant USB as active data handler (wired priority)");
+                DetachDonglePromotionListener();
+                SetActiveHandler(_pendantUsbHandler);
                 break;
 
             case PendantPortScanner.DeviceType.Dongle:
-                _dongleHandler = device.Handler;
-                // Dongle always takes priority — switch active handler
-                _logger.LogInformation("Setting dongle as active data handler (ESP-NOW priority)");
+                SetDongleHandler(device.Handler);
+                // The dongle is the fallback for pendant traffic, not the
+                // preference — it only takes the link when no cable is present.
+                // Its own device enumeration below runs either way: that is about
+                // which peers this dongle knows, which matters regardless of how
+                // the pendant happens to be reachable.
                 DetachDonglePromotionListener();
-                SetActiveHandler(_dongleHandler);
+                if (_pendantUsbHandler is { IsConnected: true })
+                {
+                    _logger.LogInformation("Dongle connected (pendant is on USB, dongle stays the fallback)");
+                }
+                else
+                {
+                    _logger.LogInformation("Setting dongle as active data handler (no pendant cable)");
+                    SetActiveHandler(_dongleHandler);
+                }
                 // The paired list lives in the dongle's own NVS, so it belongs to
                 // that piece of hardware and not to this process. Swap dongles and
                 // every entry we hold is about a device the new one has never
@@ -1345,15 +1383,21 @@ public class PendantManager : IPendantManager
                 if (_serialHandler == device.Handler || _serialHandler is null)
                 {
                     DetachActiveHandler();
-                    _pendantConnected = false;
 
                     if (_dongleHandler is { IsConnected: true })
                     {
+                        // Hand over without dropping the handshake. The pendant
+                        // has not gone anywhere — only the path to it changed —
+                        // so clearing _pendantConnected here just made the UI
+                        // flash "disconnected" until the next ping landed. That
+                        // never showed before because the cable was not the
+                        // preferred link and losing it did not move the handler.
                         _logger.LogInformation("Pendant USB lost, falling back to dongle");
                         SetActiveHandler(_dongleHandler);
                     }
                     else
                     {
+                        _pendantConnected = false;
                         _serialHandler = null;
                         _ = BroadcastDisconnect();
                     }
@@ -1362,12 +1406,11 @@ public class PendantManager : IPendantManager
 
             case PendantPortScanner.DeviceType.Dongle:
                 DetachDonglePromotionListener();
-                _dongleHandler = null;
+                SetDongleHandler(null);
                 // If dongle was active (or already disconnected), try pendant USB fallback
                 if (_serialHandler == device.Handler || _serialHandler is null)
                 {
                     DetachActiveHandler();
-                    _pendantConnected = false;
 
                     if (_pendantUsbHandler is { IsConnected: true })
                     {
@@ -1376,6 +1419,7 @@ public class PendantManager : IPendantManager
                     }
                     else
                     {
+                        _pendantConnected = false;
                         _serialHandler = null;
                         _ = BroadcastDisconnect();
                     }
@@ -1390,6 +1434,104 @@ public class PendantManager : IPendantManager
     /// Sets a handler as the active data handler — wires up message events and starts keep-alive.
     /// Detaches the previous handler's events first (without closing its port).
     /// </summary>
+    /// <summary>
+    /// Assign (or clear) the dongle reference, keeping a disconnect watch on it.
+    ///
+    /// The active handler's own PortDisconnected covers the link in use, but the
+    /// dongle is now usually NOT the active link — a cabled pendant outranks it.
+    /// Without an independent watch, a dongle whose read loop died while sitting
+    /// as the fallback kept reporting DongleConnected: true forever, because a
+    /// SerialPort handle stays "open" over a device that has re-enumerated.
+    /// </summary>
+    private void SetDongleHandler(PendantSerialHandler? handler)
+    {
+        if (ReferenceEquals(_dongleHandler, handler)) return;
+        if (_dongleHandler is not null)
+        {
+            _dongleHandler.PortDisconnected -= OnDongleHandlerDisconnected;
+            _dongleHandler.RawMessageReceived -= OnDongleRawLine;
+            _dongleHandler.MessageReceived -= OnDongleJsonMessage;
+        }
+        _dongleHandler = handler;
+        if (_dongleHandler is not null)
+        {
+            _dongleHandler.PortDisconnected += OnDongleHandlerDisconnected;
+            _dongleHandler.RawMessageReceived += OnDongleRawLine;
+            _dongleHandler.MessageReceived += OnDongleJsonMessage;
+        }
+    }
+
+    /// <summary>
+    /// Peer traffic off the dongle, routed whether or not the dongle is the
+    /// pendant's active link.
+    ///
+    /// This used to live in OnRawMessage, which is attached only to the ACTIVE
+    /// handler. That was fine while the dongle always held that role, but the
+    /// moment a pendant cable took the link every "@peer …" line stopped being
+    /// read: the AutoDustBoot, RGB and XProbe all went stale at the same instant
+    /// while the dongle itself sat there happily relaying, still showing them
+    /// green on its own display. The dongle's job as a peer gateway has nothing
+    /// to do with which transport the pendant happens to be on, so it is wired
+    /// up here, to the dongle handler itself, for as long as that handler lives.
+    /// </summary>
+    private void OnDongleRawLine(string data)
+    {
+        if (data.StartsWith('@')
+            || data.StartsWith("$DEVICES:", StringComparison.Ordinal)
+            || data.StartsWith("$OTA:ACK ", StringComparison.Ordinal))
+        {
+            _dongleDevices.OnDongleLine(data);
+            return;
+        }
+
+        // Everything else off the dongle is pendant traffic — it is relayed
+        // untagged — and it has to be handled even when the dongle is not the
+        // active link. A pendant on a cable still sees the DRO broadcast over the
+        // radio, treats that as proof the link is up, and may answer on it; those
+        // commands were being dropped here, which looked like a pendant that
+        // received telemetry fine but whose buttons did nothing.
+        //
+        // Skipped when the dongle IS the active handler, because OnRawMessage is
+        // already subscribed to it directly and would process the line twice.
+        if (!ReferenceEquals(_dongleHandler, _serialHandler))
+            OnRawMessage(data);
+    }
+
+    /// <summary>
+    /// Pendant JSON arriving over the radio while the cable holds the active
+    /// link.
+    ///
+    /// The handler routes a line by shape: anything starting with '{' becomes
+    /// MessageReceived, everything else RawMessageReceived — and it strips the
+    /// "@pendant " prefix off relayed JSON first. So a pendant command sent over
+    /// ESP-NOW never touches the raw path at all, and with the dongle no longer
+    /// the active handler nothing was subscribed to this one. The pendant kept
+    /// receiving telemetry and its buttons did nothing.
+    ///
+    /// Skipped when the dongle IS active, since OnJsonMessage is then subscribed
+    /// to it directly and would run the command twice — which for a jog means
+    /// moving twice.
+    /// </summary>
+    private void OnDongleJsonMessage(JsonElement root)
+    {
+        if (!ReferenceEquals(_dongleHandler, _serialHandler))
+            OnJsonMessage(root);
+    }
+
+    private void OnDongleHandlerDisconnected()
+    {
+        // Only drop the reference here. If the dongle also happened to be the
+        // active handler, OnPortDisconnected does the rest of the teardown; this
+        // stays deliberately narrow so the two paths cannot fight.
+        var dead = _dongleHandler;
+        if (dead is null) return;
+        _logger.LogInformation("Dongle read loop ended — clearing dongle handler");
+        SetDongleHandler(null);
+        DetachDonglePromotionListener();
+        _ = _broadcaster.Broadcast("pendant:status-changed", GetStatus(),
+                                   NcSenderJsonContext.Default.PendantStatus);
+    }
+
     private void SetActiveHandler(PendantSerialHandler handler)
     {
         if (_serialHandler == handler) return;
@@ -1570,7 +1712,9 @@ public class PendantManager : IPendantManager
                 || data.StartsWith("$DEVICES:", StringComparison.Ordinal)
                 || data.StartsWith("$OTA:ACK ", StringComparison.Ordinal))
             {
-                _dongleDevices.OnDongleLine(data);
+                // Routed by OnDongleRawLine, which is bound to the dongle handler
+                // itself. Feeding it again here would double every peer line
+                // whenever the dongle is also the active handler.
                 return;
             }
 
@@ -1806,7 +1950,7 @@ public class PendantManager : IPendantManager
             if (ReferenceEquals(_dongleHandler, dead))
             {
                 DetachDonglePromotionListener();
-                _dongleHandler = null;
+                SetDongleHandler(null);
             }
             if (ReferenceEquals(_pendantUsbHandler, dead))
                 _pendantUsbHandler = null;
@@ -2579,7 +2723,27 @@ public class PendantManager : IPendantManager
         }
 
         _lastSentDro = current;
-        await _serialHandler.SendRawAsync(sb.ToString());
+        var droLine = sb.ToString();
+        await _serialHandler.SendRawAsync(droLine);
+
+        // The DRO is not just the pendant's: an untagged line broadcasts to EVERY
+        // paired peer, and the accessories use it as their shared state feed —
+        // the RGB follower tracks position from it, and sizes itself from the
+        // travel limits it carries. Writing it only to the active handler meant
+        // that the moment a pendant cable took the link, the radio went quiet and
+        // the RGB simply stopped following, while still looking perfectly
+        // connected because its own heartbeat was unaffected.
+        //
+        // A pendant on USB therefore also sees this frame relayed over the radio.
+        // That duplication is deliberate and harmless — the frame is idempotent
+        // state — and is the cheaper half of the trade against giving every
+        // accessory its own feed.
+        if (_dongleHandler is { IsConnected: true }
+            && !ReferenceEquals(_dongleHandler, _serialHandler))
+        {
+            try { await _dongleHandler.SendRawAsync(droLine); }
+            catch (Exception ex) { _logger.LogDebug(ex, "DRO broadcast to dongle failed"); }
+        }
 
         await SyncAlarmGateAsync(
             string.Equals(effectiveStatus, "alarm", StringComparison.OrdinalIgnoreCase));

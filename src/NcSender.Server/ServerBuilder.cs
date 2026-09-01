@@ -170,6 +170,10 @@ public static class ServerBuilder
         // 0xA7/A8 toolsetter) on the controller. Both are background;
         // no config surface.
         builder.Services.AddSingleton<INcSenderUsbCatalog, NcSender.Server.Usb.NcSenderUsbCatalog>();
+        // Arbitrates who owns a USB serial port, so a firmware flash can take the
+        // cable off the long-lived readers instead of opening a second handle
+        // beside them. Depends on nothing, so it cannot form a cycle.
+        builder.Services.AddSingleton<NcSender.Server.Usb.UsbPortLeases>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
         builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
         // The router filters candidate ports through INcSenderUsbCatalog, so it

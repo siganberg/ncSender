@@ -230,6 +230,12 @@ public sealed class PluginSerialService : IPluginSerialService
             await Task.Delay(120, _flashCts.Token);
             try { sp.DiscardInBuffer(); } catch { }
 
+        // DEPRECATED SOON — the AutoDustBoot's private wired OTA dialect
+        // ("$OTA:BEGIN:<bytes>" / "$OTA:READY" / raw binary stream / "$OTA:ACK"
+        // per 4 KB). It assumes a reliable ordered byte pipe, so it can never
+        // work over the radio, which is why that device had no wireless update
+        // path. Superseded by the shared "$OTA:BEGIN|CHUNK|END" dialect.
+        // Remove once the field has migrated.
             sp.Write($"$OTA:BEGIN:{firmware.Length}\n");
             _logger.LogInformation("Plugin OTA on {Port}: BEGIN ({Bytes} bytes)", port, firmware.Length);
 

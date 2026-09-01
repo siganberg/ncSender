@@ -52,11 +52,15 @@ public sealed class AccessoryService
     // it is nothing like the quick status queries above and needs a real budget.
     private const int LicenceImportTimeoutMs = 6000;
 
+    private readonly INcSenderUsbCatalog _usbCatalog;
+
     public AccessoryService(IDongleDeviceService dongle, IPendantManager pendant,
+                            INcSenderUsbCatalog usbCatalog,
                             ILogger<AccessoryService> logger)
     {
         _dongle = dongle;
         _pendant = pendant;
+        _usbCatalog = usbCatalog;
         _logger = logger;
 
         // Forget a device's version the moment it drops, so the value shown is
@@ -150,7 +154,11 @@ public sealed class AccessoryService
             else if (def.PeerName is not null)
             {
                 peers.TryGetValue(def.PeerName, out var peer);
-                info.Transport = "wireless";
+                // "wireless" used to be hardcoded here, so an accessory sitting
+                // on a cable still reported Wireless. The host does reach these
+                // over the cable when one is present — that is the path a
+                // firmware update takes — so report what is actually there.
+                info.Transport = HasCable(def.PeerName) ? "usb" : "wireless";
                 info.Connected = peer?.Connected ?? false;
                 if (info.Connected)
                 {
@@ -172,6 +180,30 @@ public sealed class AccessoryService
     }
 
     /// <summary>Ask a relayed peer its version. Empty when it does not answer.</summary>
+    // Is this accessory on a cable we can identify? Same VID/PID + product-string
+    // lookup the updater uses to decide wired-vs-wireless, so the label and the
+    // routing can never disagree.
+    private bool HasCable(string peerName)
+    {
+        var kind = peerName.ToLowerInvariant() switch
+        {
+            "xprobe"       => NcSenderUsbKind.XProbe,
+            "autodustboot" => NcSenderUsbKind.AutoDustBoot,
+            "pendant"      => NcSenderUsbKind.Pendant,
+            // RGB is a C3: no wired path today, so it is never on a cable as
+            // far as this is concerned.
+            _              => NcSenderUsbKind.Unknown,
+        };
+        if (kind == NcSenderUsbKind.Unknown) return false;
+        try
+        {
+            foreach (var d in _usbCatalog.GetDevices())
+                if (d.Kind == kind) return true;
+        }
+        catch { /* enumeration is best-effort; absence just means "no cable" */ }
+        return false;
+    }
+
     private async Task<string> PeerVersionAsync(string peerName, CancellationToken ct)
     {
         lock (_versionCache)

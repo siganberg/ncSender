@@ -42,6 +42,15 @@ public sealed class DongleOtaService : IDisposable
     // ESP-NOW payload cap (leaves room for future header growth). 766 KB
     // firmware = ~3830 chunks.
     private const int ChunkSize = 200;
+    // On a cable there is no 246 B radio frame to fit inside, and the round trip
+    // per chunk is what dominates: at 200 B a 1.3 MB pendant image is ~6700
+    // chunks and ~45 s, against ~12 s for the bespoke protocol it replaced.
+    // Sending the same bytes in far fewer, larger chunks closes that gap without
+    // changing the protocol — BEGIN already carries the chunk size, so the
+    // device sizes itself from it. Bounded by the device's line buffer: 1024 B
+    // of data is 1368 B of base64, ~1.4 KB per line, against the 2 KB the
+    // firmwares allow.
+    private const int UsbChunkSize = 1024;
     // 4 chunks in flight matches the design decision; increase if bandwidth
     // is left on the table but watch for out-of-order thrash first.
     // ONE chunk in flight, deliberately. A deeper window overruns the dongle:
@@ -79,15 +88,19 @@ public sealed class DongleOtaService : IDisposable
         IDongleDeviceService dongle,
         INcSenderUsbCatalog usbCatalog,
         XProbeRouter xprobe,
+        NcSender.Server.Usb.UsbPortLeases leases,
         IBroadcaster broadcaster)
     {
         _logger = logger;
         _dongle = dongle;
         _usbCatalog = usbCatalog;
         _xprobe = xprobe;
+        _leases = leases;
         _broadcaster = broadcaster;
         _dongle.DeviceMessageReceived += OnDongleMessage;
     }
+
+    private readonly NcSender.Server.Usb.UsbPortLeases _leases;
 
     public Task FlashAsync(string deviceName, byte[] firmware, string? deviceId, CancellationToken ct)
         => FlashAsync(deviceName, firmware, deviceId, ct, onProgress: null);
@@ -119,10 +132,37 @@ public sealed class DongleOtaService : IDisposable
             using var _hold = string.Equals(deviceName, "xprobe", StringComparison.OrdinalIgnoreCase)
                 ? _xprobe.SuspendForFlash()
                 : null;
+
+            // Take the cable away from whoever is reading it BEFORE opening our
+            // own handle. The pendant scanner holds the pendant and the dongle
+            // for the life of the process, and a second reader on the same tty
+            // does not fail — it just steals lines, so BEGIN acks vanish and the
+            // flash blames the device. Ports nobody owns suspend harmlessly.
+            var targetPort = ResolveUsbPort(deviceName);
+            using var _portHold = targetPort is null ? null : _leases.SuspendForFlash(targetPort);
+
             var viaUsb = TryAttachUsb(s);
             _logger.LogInformation("[OTA {Name}] start — {Bytes} bytes over {Transport}",
                 deviceName, firmware.Length, viaUsb ? "USB" : "wireless");
-            await FlashInternalAsync(s, ct);
+            try
+            {
+                await FlashInternalAsync(s, ct);
+            }
+            catch (Exception ex) when (viaUsb && !ct.IsCancellationRequested && CanRetryWireless(deviceName))
+            {
+                // The cable was there and still did not carry the flash. The
+                // radio is a genuinely independent path, so try it rather than
+                // making the user find the failure and start again — this is the
+                // difference between "hit or miss" and "it updates".
+                _logger.LogWarning(ex,
+                    "[OTA {Name}] wired attempt failed ({Err}) — retrying over the dongle",
+                    deviceName, ex.Message);
+                await BroadcastMessageAsync(s.DeviceName, s.DeviceId, "info",
+                    "Wired update did not take — retrying wirelessly…");
+                DetachUsb(s);
+                s.ResetForRetry();
+                await FlashInternalAsync(s, ct);
+            }
             _logger.LogInformation("[OTA {Name}] COMPLETE in {Secs:F1}s",
                 deviceName, (NowMs() - startedMs) / 1000.0);
             await BroadcastDoneAsync(s);
@@ -186,10 +226,56 @@ public sealed class DongleOtaService : IDisposable
     {
         "xprobe"       => NcSenderUsbKind.XProbe,
         "autodustboot" => NcSenderUsbKind.AutoDustBoot,
-        "rgbled"       => NcSenderUsbKind.RgbController,
+        // RGB is wireless-only for now: the C3 build exposes no wired OTA path,
+        // so there is no cable dialect to prefer. Revisit if it gains one.
+        "rgbled"       => NcSenderUsbKind.Unknown,
+        // The pendant speaks this dialect on its cable as of pendant firmware
+        // 1.0.31. Older builds answer only the legacy "$OTA:<size>:<md5>"
+        // handshake and will not ack BEGIN — that is not a failure, it is the
+        // migration: the wired attempt times out and the wireless retry below
+        // carries the flash, which is also how such a pendant gets onto a build
+        // that does speak it.
         "pendant"      => NcSenderUsbKind.Pendant,
         _              => NcSenderUsbKind.Unknown,
     };
+
+    /// <summary>
+    /// The USB port this accessory is on, or null if it is not cabled to us.
+    ///
+    /// Split out from TryAttachUsb because ownership of the port has to be taken
+    /// BEFORE anything opens it — resolving it twice risks the two calls
+    /// disagreeing after a re-enumeration mid-flash.
+    /// </summary>
+    private string? ResolveUsbPort(string deviceName)
+    {
+        if (string.Equals(deviceName, SelfDeviceName, StringComparison.OrdinalIgnoreCase))
+            return null;   // the dongle is the cable, not a device on it
+        var kind = KindFor(deviceName);
+        if (kind == NcSenderUsbKind.Unknown) return null;
+        try
+        {
+            foreach (var d in _usbCatalog.GetDevices())
+                if (d.Kind == kind) return d.PortName;
+        }
+        catch (Exception ex) { _logger.LogDebug(ex, "[OTA {Name}] USB catalog lookup failed", deviceName); }
+        return null;
+    }
+
+    // A wireless retry is only worth making if the dongle can actually see the
+    // device. Retrying at a peer that is asleep, unpaired or out of range just
+    // spends another BEGIN timeout before reporting the same failure.
+    private bool CanRetryWireless(string deviceName)
+    {
+        // Anything but the dongle itself is worth retrying on the radio. This
+        // deliberately does NOT consult DongleDeviceService's Connected flag:
+        // that only goes true once the host has seen "@name ..." lines from a
+        // peer, and the pendant never sends those — it speaks its own protocol
+        // over the same link — so the flag reads false for a pendant that is
+        // sitting there perfectly reachable. Gating on it made the fallback
+        // dead code for the device that needed it most. The cost of being wrong
+        // is one BEGIN timeout; the cost of not trying is a failed update.
+        return !string.Equals(deviceName, SelfDeviceName, StringComparison.OrdinalIgnoreCase);
+    }
 
     // Prefer the cable. The device speaks the identical "$OTA:" protocol on its
     // own CDC, so this is the same flash over a faster, quieter pipe — it does
@@ -201,16 +287,7 @@ public sealed class DongleOtaService : IDisposable
         // Its own updates go out over the link the host already holds.
         if (s.IsSelf) return false;
 
-        var kind = KindFor(s.DeviceName);
-        if (kind == NcSenderUsbKind.Unknown) return false;
-
-        string? port = null;
-        try
-        {
-            foreach (var d in _usbCatalog.GetDevices())
-                if (d.Kind == kind) { port = d.PortName; break; }
-        }
-        catch (Exception ex) { _logger.LogDebug(ex, "[OTA {Name}] USB catalog lookup failed", s.DeviceName); }
+        var port = ResolveUsbPort(s.DeviceName);
         if (port is null) return false;
 
         try
@@ -290,7 +367,7 @@ public sealed class DongleOtaService : IDisposable
         // flash took, so a USB flash reported itself as a wireless one.
         var via = s.ViaUsb ? "USB" : "wireless";
         await BroadcastMessageAsync(s, "info", $"Starting {via} flash ({s.Firmware.Length / 1024.0:N1} KB)");
-        var beginLine = $"$OTA:BEGIN{s.Tag} {s.SessionId} {s.Firmware.Length} {ChunkSize} {s.Md5Hex}";
+        var beginLine = $"$OTA:BEGIN{s.Tag} {s.SessionId} {s.Firmware.Length} {s.Chunk} {s.Md5Hex}";
         OtaStatus? beginAck = null;
         for (var attempt = 0; attempt < BeginRetries; attempt++)
         {
@@ -314,7 +391,7 @@ public sealed class DongleOtaService : IDisposable
             throw new InvalidOperationException($"Device rejected BEGIN (status={beginAck})");
 
         // 2. Stream chunks with a sliding window.
-        int totalChunks = (s.Firmware.Length + ChunkSize - 1) / ChunkSize;
+        int totalChunks = (s.Firmware.Length + s.Chunk - 1) / s.Chunk;
         s.TotalChunks = totalChunks;
 
         // Chunks currently in flight, keyed by seq. Value carries send time
@@ -415,8 +492,8 @@ public sealed class DongleOtaService : IDisposable
 
     private async Task SendChunkAsync(Session s, uint seq)
     {
-        int offset = (int)seq * ChunkSize;
-        int len = Math.Min(ChunkSize, s.Firmware.Length - offset);
+        int offset = (int)seq * s.Chunk;
+        int len = Math.Min(s.Chunk, s.Firmware.Length - offset);
         var slice = new ArraySegment<byte>(s.Firmware, offset, len);
         var b64 = Convert.ToBase64String(slice.Array!, slice.Offset, slice.Count);
         await SendAsync(s, $"$OTA:CHUNK{s.Tag} {s.SessionId} {seq} {len} {b64}");
@@ -552,6 +629,20 @@ public sealed class DongleOtaService : IDisposable
         // which is exactly what this produces.
         public string Tag => (ViaUsb || IsSelf) ? "" : " @" + DeviceName;
 
+        /// Bytes per chunk for this session's transport. Read once per use rather
+        /// than cached: TryAttachUsb decides the transport after the session is
+        /// built, and a wireless retry re-reads it after DetachUsb.
+        public int Chunk => ViaUsb ? UsbChunkSize : ChunkSize;
+
+        /// Clear anything the failed attempt left behind. The session id is kept
+        /// deliberately: the firmware treats a repeat BEGIN on the same id as
+        /// cancel-and-restart, which is exactly what a retry wants.
+        public void ResetForRetry()
+        {
+            AckChannel.Drain();
+            TotalChunks = 0;
+        }
+
         public Session(string deviceName, byte[] firmware, string deviceId)
         {
             DeviceName = deviceName;
@@ -576,6 +667,15 @@ public sealed class DongleOtaService : IDisposable
         {
             _q.Enqueue(ack);
             _sem.Release();
+        }
+
+        /// Drop acks queued by an attempt that has been abandoned. Without this a
+        /// stale ack from the wired try satisfies the retry's BEGIN wait and the
+        /// transfer starts out of step with the device.
+        public void Drain()
+        {
+            while (_q.TryDequeue(out _)) { }
+            while (_sem.CurrentCount > 0) _sem.Wait(0);
         }
 
         public async Task<(uint seq, OtaStatus status)?> WaitAsync(int timeoutMs, CancellationToken ct)

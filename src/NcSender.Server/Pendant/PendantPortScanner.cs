@@ -42,6 +42,20 @@ public class PendantPortScanner : IDisposable
     // running firmware that predates the USB descriptor rework.
     public event Action<NcSenderUsbDevice>? LegacyCandidateDetected;
 
+    /// <summary>
+    /// Any change to the set of ncSender USB devices present — including the
+    /// accessories this scanner does not open (XProbe, AutoDustBoot, RGB).
+    ///
+    /// Their cables matter even though the scanner ignores them: a cable decides
+    /// whether an update goes wired or wireless, and the Accessories panel
+    /// reports it. Without this, moving a cable from one accessory to another
+    /// changed nobody's connectivity, so no event fired and the panel kept
+    /// showing the old transport until it was closed and reopened.
+    /// </summary>
+    public event Action? UsbInventoryChanged;
+
+    private string _lastInventory = "";
+
     public TrackedDevice? Pendant
     {
         get { lock (_tracked) return _tracked.Values.FirstOrDefault(d => d.Type == DeviceType.Pendant); }
@@ -63,10 +77,14 @@ public class PendantPortScanner : IDisposable
         }
     }
 
-    public PendantPortScanner(ILogger logger, INcSenderUsbCatalog usbCatalog)
+    private readonly NcSender.Server.Usb.UsbPortLeases? _leases;
+
+    public PendantPortScanner(ILogger logger, INcSenderUsbCatalog usbCatalog,
+                              NcSender.Server.Usb.UsbPortLeases? leases = null)
     {
         _logger = logger;
         _usbCatalog = usbCatalog;
+        _leases = leases;
     }
 
     public void Start()
@@ -115,6 +133,7 @@ public class PendantPortScanner : IDisposable
     {
         lock (_tracked)
             _tracked.Remove(port);
+        _leases?.Release(port);
     }
 
     private async Task ScanAsync()
@@ -131,6 +150,16 @@ public class PendantPortScanner : IDisposable
             {
                 _logger.LogDebug(ex, "USB catalog enumeration failed");
                 return;
+            }
+
+            // Ordinal-sorted so the signature is stable across enumeration order.
+            var inventory = string.Join('|', catalogAll
+                .Select(d => $"{d.Kind}:{d.PortName}")
+                .OrderBy(x => x, StringComparer.Ordinal));
+            if (inventory != _lastInventory)
+            {
+                _lastInventory = inventory;
+                try { UsbInventoryChanged?.Invoke(); } catch { /* listener's problem */ }
             }
 
             var recognized = catalogAll
@@ -178,6 +207,13 @@ public class PendantPortScanner : IDisposable
             {
                 if (knownPorts.Contains(port)) continue;
 
+                // A firmware update owns the cable outright for its duration.
+                // Without this the scan would reopen the port mid-flash and put a
+                // second read loop back on the same tty — the exact race the
+                // leases exist to stop, where the flasher's acks start landing in
+                // this handler instead of the flasher's own reader.
+                if (_leases?.IsSuspended(port) == true) continue;
+
                 var deviceType = device.Kind == NcSenderUsbKind.Pendant
                     ? DeviceType.Pendant
                     : DeviceType.Dongle;
@@ -192,6 +228,15 @@ public class PendantPortScanner : IDisposable
                     _logger.LogDebug("Failed to open port {Port} for {Type}: {Error}", port, deviceType, ex.Message);
                     continue;
                 }
+
+                // Tell the arbiter how to get this port back, so a flash can
+                // close us rather than opening a competing reader alongside.
+                _leases?.Claim(port, () =>
+                {
+                    try { handler.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
+                    catch { /* best effort — the flash takes the port regardless */ }
+                    lock (_tracked) _tracked.Remove(port);
+                });
 
                 var tracked = new TrackedDevice(port, deviceType, handler);
                 bool duplicate = false;
