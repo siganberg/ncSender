@@ -34,13 +34,10 @@ public sealed class AccessoryService
     // here: a device that does not implement $VERSION never answers, and the
     // query costs its full timeout on every single call. Cached per device and
     // cleared when it disconnects, so a reconnect re-asks.
-    private readonly Dictionary<string, string> _versionCache = new(StringComparer.OrdinalIgnoreCase);
 
     // Licence state for relayed peers, cached on the same terms as the version
     // above and for the same reason: it changes only on activation, removal or
     // a reboot, and every uncached miss costs a full radio timeout.
-    private readonly Dictionary<string, (bool? Licensed, string DeviceId)> _licenceCache
-        = new(StringComparer.OrdinalIgnoreCase);
 
     // Short on purpose. This is a local cable or a one-hop radio link; a device
     // that is going to answer answers in tens of milliseconds. Anything longer
@@ -63,41 +60,23 @@ public sealed class AccessoryService
         _usbCatalog = usbCatalog;
         _logger = logger;
 
-        // Forget a device's version the moment it drops, so the value shown is
-        // never from a previous session — a device can come back updated.
-        _dongle.DeviceConnectivityChanged += (name, connected) =>
-        {
-            if (!connected)
-            {
-                lock (_versionCache) _versionCache.Remove(name);
-                lock (_licenceCache) _licenceCache.Remove(name);
-            }
-        };
+        // Nothing is cached about a device, so nothing here has to be invalidated.
+        // Version and licence are single round trips to hardware on the end of a
+        // cable or a radio link the host already owns — measured at well under
+        // 100ms for the whole list — and holding those answers only ever produced
+        // a wrong one: a device that rebooted into new firmware inside the peer
+        // timeout kept reporting its old version, and a query made before the
+        // devices had reported in cached the silence and blanked every row. The
+        // GitHub release lookup is the one genuinely remote call, and that is
+        // cached on its own behind _releaseLock.
 
-        // A licence can change by routes this service never sees — a raw
-        // $LICENSE:REMOVE, activation from a plugin, the device being handed a
-        // licence over its cable. Any $LICENSE line from a device is proof its
-        // state may have moved, so drop what we cached and ask again next time.
-        // Without this the view keeps reporting the old answer until the device
-        // happens to disconnect.
-        _dongle.DeviceMessageReceived += (name, line) =>
-        {
-            if (line.StartsWith("$LICENSE:", StringComparison.Ordinal))
-                lock (_licenceCache) _licenceCache.Remove(name);
-        };
     }
 
-    /// <summary>Forget a cached version, e.g. after flashing that device.</summary>
-    public void InvalidateVersion(string name)
-    {
-        lock (_versionCache) _versionCache.Remove(name);
-    }
-
-    /// <summary>Forget a cached licence state, e.g. straight after activating.</summary>
-    public void InvalidateLicence(string name)
-    {
-        lock (_licenceCache) _licenceCache.Remove(name);
-    }
+    /// <summary>
+    /// No-op, kept so callers that used to poke the cache still compile. Nothing
+    /// is held any more: the next read asks the device.
+    /// </summary>
+    public void InvalidateLicence(string name) { }
 
     public async Task<List<AccessoryInfo>> ListAsync(bool checkUpdates, CancellationToken ct)
     {
@@ -206,9 +185,6 @@ public sealed class AccessoryService
 
     private async Task<string> PeerVersionAsync(string peerName, CancellationToken ct)
     {
-        lock (_versionCache)
-            if (_versionCache.TryGetValue(peerName, out var cached)) return cached;
-
         string version;
         try
         {
@@ -223,10 +199,6 @@ public sealed class AccessoryService
             version = "";
         }
 
-        // Cache the silence too. Firmware that does not implement $VERSION will
-        // never answer, and re-asking it on every call is exactly what made the
-        // list take two seconds.
-        lock (_versionCache) _versionCache[peerName] = version;
         return version;
     }
 
@@ -275,9 +247,6 @@ public sealed class AccessoryService
     /// </summary>
     private async Task<(bool? Licensed, string DeviceId)> PeerLicenceAsync(string peerName, CancellationToken ct)
     {
-        lock (_licenceCache)
-            if (_licenceCache.TryGetValue(peerName, out var cached)) return cached;
-
         bool? licensed = null;
         var deviceId = "";
         try
@@ -307,7 +276,6 @@ public sealed class AccessoryService
         }
 
         var result = (licensed, deviceId);
-        lock (_licenceCache) _licenceCache[peerName] = result;
         return result;
     }
 

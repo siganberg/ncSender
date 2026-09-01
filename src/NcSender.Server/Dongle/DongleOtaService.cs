@@ -102,6 +102,7 @@ public sealed class DongleOtaService : IDisposable
 
     private readonly NcSender.Server.Usb.UsbPortLeases _leases;
 
+
     public Task FlashAsync(string deviceName, byte[] firmware, string? deviceId, CancellationToken ct)
         => FlashAsync(deviceName, firmware, deviceId, ct, onProgress: null);
 

@@ -45,16 +45,23 @@ public sealed class PluginSerialService : IPluginSerialService
     private CancellationTokenSource? _flashCts;
     private string? _activeFlashPort;
 
+    private readonly INcSenderUsbCatalog _usbCatalog;
+    private readonly NcSender.Server.Usb.UsbPortLeases _portLeases;
+
     public PluginSerialService(
         ILogger<PluginSerialService> logger,
         IBroadcaster broadcaster,
         ISettingsManager settings,
         ICncController cnc,
-        IPendantManager pendant)
+        IPendantManager pendant,
+        INcSenderUsbCatalog usbCatalog,
+        NcSender.Server.Usb.UsbPortLeases portLeases)
     {
         _logger = logger;
         _broadcaster = broadcaster;
         _settings = settings;
+        _usbCatalog = usbCatalog;
+        _portLeases = portLeases;
         _cnc = cnc;
         _pendant = pendant;
     }
@@ -161,6 +168,30 @@ public sealed class PluginSerialService : IPluginSerialService
         // probing those with $VERSION + DTR would similarly reset ESP32
         // boards.
         foreach (var p in _pendant.GetOccupiedPorts())
+            if (!string.IsNullOrEmpty(p)) reserved.Add(p);
+
+        // Every port the catalogue recognises as one of our own accessories,
+        // whether or not anything currently holds it open.
+        //
+        // GetOccupiedPorts above is the set the pendant scanner is tracking right
+        // now, which is narrower than it looks: the moment a device drops out of
+        // tracking — a dropout, a re-enumeration, a port suspended for a firmware
+        // flash — its port becomes a probe candidate. Probing opens it with DTR
+        // asserted, which resets an ESP32, which drops it again. One dropout was
+        // enough to start a loop that kept knocking the dongle off the bus, and
+        // it would land on a device mid-flash too.
+        //
+        // These are identified by USB descriptor alone — nothing is opened — so
+        // this is safe to consult on every call.
+        try
+        {
+            foreach (var d in _usbCatalog.GetDevices())
+                if (!string.IsNullOrEmpty(d.PortName)) reserved.Add(d.PortName);
+        }
+        catch (Exception ex) { _logger.LogDebug(ex, "USB catalog lookup failed while reserving ports"); }
+
+        // And anything a flash currently owns, for the same reason.
+        foreach (var p in _portLeases.SuspendedPorts())
             if (!string.IsNullOrEmpty(p)) reserved.Add(p);
 
         return reserved;

@@ -1326,7 +1326,9 @@ public class PendantManager : IPendantManager
                 else
                 {
                     _logger.LogInformation("Setting dongle as active data handler (no pendant cable)");
-                    SetActiveHandler(_dongleHandler);
+                    // device.Handler, not _dongleHandler: same object, but the
+                    // field is nullable and the local is not.
+                    SetActiveHandler(device.Handler);
                 }
                 // The paired list lives in the dongle's own NVS, so it belongs to
                 // that piece of hardware and not to this process. Swap dongles and

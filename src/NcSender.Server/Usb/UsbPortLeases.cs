@@ -45,6 +45,13 @@ public sealed class UsbPortLeases
         lock (_gate) return _suspended.Contains(port);
     }
 
+    /// Ports a flash currently owns. Anything that scans or probes ports must
+    /// leave these alone — opening one asserts DTR and resets an ESP32.
+    public IReadOnlyCollection<string> SuspendedPorts()
+    {
+        lock (_gate) return _suspended.ToArray();
+    }
+
     /// <summary>
     /// Take the port for a firmware update: mark it suspended so no owner
     /// reopens it, then close whoever holds it. Disposing releases the mark and
