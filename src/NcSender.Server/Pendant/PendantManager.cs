@@ -1740,7 +1740,18 @@ public class PendantManager : IPendantManager
                         && grIdEl.GetString() is string grId)
                     {
                         var val = grData.TryGetProperty("value", out var vEl) ? vEl.GetString() : null;
-                        _gates.Resolve(grId, val);
+                        // The alarm prompt is synthesised here rather than opened
+                        // through IGateService, so the GateService has no record of
+                        // it and Resolve would be a silent no-op. Handle it before
+                        // that, and let every real gate fall through unchanged.
+                        if (grId == AlarmGateId)
+                        {
+                            if (val == "unlock") _ = HandleCncCommandCoreAsync("$X");
+                        }
+                        else
+                        {
+                            _gates.Resolve(grId, val);
+                        }
                     }
                     break;
                 case "gate:step-fire":
@@ -1853,6 +1864,11 @@ public class PendantManager : IPendantManager
                 // (server may have opened it before pendant connected, or the
                 // pendant just booted mid-flow).
                 await PushGatesActiveAsync();
+
+                // The alarm prompt is ours, not the GateService's, so the
+                // catch-up above cannot replay it. Clearing the latch makes the
+                // next DRO push re-raise it if the machine is still in alarm.
+                _alarmGateShown = false;
             }
         }
         else
@@ -2249,6 +2265,97 @@ public class PendantManager : IPendantManager
         }
     }
 
+    // Identifies the pendant-only alarm prompt. Deliberately namespaced so it can
+    // never collide with a real GateService id.
+    private const string AlarmGateId = "pendant:alarm";
+    private bool _alarmGateShown;
+
+    /**
+     * Mirror the machine's alarm state into a prompt on the pendant.
+     *
+     * Driven from the DRO push rather than from an alarm event, because the push
+     * runs on every state change AND on the 1 s heartbeat: a dropped ESP-NOW
+     * packet costs at most a second of staleness instead of losing the prompt
+     * for good. Auto-close is the same mechanism in reverse — clearing the alarm
+     * anywhere (the app's Unlock button included) moves the status out of
+     * "alarm", and the next push tears the prompt down.
+     */
+    private async Task SyncAlarmGateAsync(bool inAlarm)
+    {
+        if (_serialHandler is not { IsConnected: true }) return;
+        if (inAlarm == _alarmGateShown) return;
+        _alarmGateShown = inAlarm;
+
+        try
+        {
+            if (inAlarm)
+            {
+                var ms = _serverContext.State.MachineState;
+                var desc = ms.AlarmDescription;
+                var title = ms.AlarmCode is int c ? $"ALARM {c}" : "ALARM";
+                // The pendant has no alarm table of its own, and a code with no
+                // text is not something an operator can act on — so when the
+                // host cannot name the alarm, say where the detail lives.
+                var message = string.IsNullOrWhiteSpace(desc)
+                    ? "The machine is in an alarm state. See ncSender for details."
+                    : desc;
+
+                await _serialHandler.SendMessageAsync(
+                    new PendantTypeDataMsg("gate:show", BuildAlarmGate(title, message)),
+                    PendantJsonContext.Default.PendantTypeDataMsg);
+            }
+            else
+            {
+                await _serialHandler.SendMessageAsync(
+                    new PendantTypeDataMsg("gate:close", BuildAlarmClose()),
+                    PendantJsonContext.Default.PendantTypeDataMsg);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to sync the pendant alarm prompt");
+            _alarmGateShown = !inAlarm;   // let the next push retry
+        }
+    }
+
+    // Hand-written with Utf8JsonWriter for the same reason as the probe options
+    // above: the reflection-based serializer is not AOT-safe.
+    private static JsonElement BuildAlarmGate(string title, string message)
+    {
+        using var stream = new MemoryStream();
+        using (var w = new Utf8JsonWriter(stream))
+        {
+            w.WriteStartObject();
+            w.WriteString("gateId", AlarmGateId);
+            w.WriteString("title", title);
+            w.WriteString("message", message);
+            w.WriteBoolean("messageHtml", false);
+            w.WriteStartArray("buttons");
+            w.WriteStartObject();
+            w.WriteString("value", "unlock");
+            w.WriteString("label", "Unlock");
+            w.WriteString("style", "primary");
+            w.WriteEndObject();
+            w.WriteEndArray();
+            w.WriteEndObject();
+        }
+        using var doc = JsonDocument.Parse(stream.ToArray());
+        return doc.RootElement.Clone();
+    }
+
+    private static JsonElement BuildAlarmClose()
+    {
+        using var stream = new MemoryStream();
+        using (var w = new Utf8JsonWriter(stream))
+        {
+            w.WriteStartObject();
+            w.WriteString("gateId", AlarmGateId);
+            w.WriteEndObject();
+        }
+        using var doc = JsonDocument.Parse(stream.ToArray());
+        return doc.RootElement.Clone();
+    }
+
     private async Task PushGatesActiveAsync()
     {
         if (_serialHandler is not { IsConnected: true }) return;
@@ -2473,6 +2580,9 @@ public class PendantManager : IPendantManager
 
         _lastSentDro = current;
         await _serialHandler.SendRawAsync(sb.ToString());
+
+        await SyncAlarmGateAsync(
+            string.Equals(effectiveStatus, "alarm", StringComparison.OrdinalIgnoreCase));
     }
 
     // Given an aux entry's "on" command (e.g. "M8", "M7", "M64 P2"),
@@ -2709,7 +2819,17 @@ public class PendantManager : IPendantManager
                 ["zThickness"]    = Num(Setting("probe.zThickness", 15)),
                 ["xyThickness"]   = Num(Setting("probe.xyThickness", 10)),
                 ["zProbeDistance"] = Num(Setting("probe.zProbeDistance", 3)),
-                ["selectedBitDiameter"] = Num(Setting("probe.selectedBitDiameter", 6)),
+                // AutoZero is the one routine whose shape depends on the bit
+                // diameter, and the pendant has no picker for it — so it runs on
+                // "Auto", where the routine measures the tool rather than being
+                // told its size, and the screen labels the mode "XYZ-Auto" to
+                // say so. This was previously written with Num(), which was
+                // wrong twice over: the app stores this setting as a string, so
+                // GetSetting<double> threw on "Auto" and fell back to 6, and the
+                // generator reads it with GetString, which renders a JSON number
+                // via ToString. A pendant AutoZero probe therefore always ran at
+                // 6 mm no matter what the app was set to.
+                ["selectedBitDiameter"] = Str("Auto"),
                 ["standardBlockBitDiameter"] = Num(Setting("probe.standardBlockBitDiameter", 6)),
                 ["probeZFirst"] = Bool(false),
             };
