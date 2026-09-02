@@ -389,23 +389,44 @@ const selectedVersion = computed<VersionEntry | null>(() => {
 // picking a version auto-collapses it again.
 const historyOpen = ref(false);
 
+// Whether the current selection was made by the user (from the history
+// list) rather than defaulted by the watcher below. Only a deliberate pick
+// should survive the list changing underneath it.
+const userPicked = ref(false);
+
 const selectVersion = (v: VersionEntry) => {
   selectedTag.value = v.tag;
+  userPicked.value = true;
   historyOpen.value = false;
 };
 
 // Default the selection to the newest release in the visible channel
 // whenever the list changes or the user switches channel.
+//
+// This used to keep the existing selection as long as it was still in the
+// list. That is wrong for the automatic default: when a newer release
+// appears, the previous latest is still listed, so the selection stayed on
+// it — the Latest card and the header pill both showed the new version while
+// the button read "Already installed" against the old selection, and only a
+// restart (which reset the ref) cleared it. Seen on the kiosk and on Windows.
+//
+// Now the default always tracks the newest release; a version the user chose
+// by hand is kept while it remains visible, and switching channel drops it.
 watch(
   () => [channelVersions.value.map((v) => v.tag).join(','), props.state.channel],
-  () => {
+  ([, channel], [, prevChannel]) => {
     const visible = channelVersions.value;
     if (!visible.length) {
       selectedTag.value = null;
+      userPicked.value = false;
       return;
     }
+    if (channel !== prevChannel) userPicked.value = false;
     const stillVisible = selectedTag.value && visible.some((v) => v.tag === selectedTag.value);
-    if (!stillVisible) selectedTag.value = visible[0].tag;
+    if (!(userPicked.value && stillVisible)) {
+      selectedTag.value = visible[0].tag;
+      userPicked.value = false;
+    }
   },
   { immediate: true }
 );
