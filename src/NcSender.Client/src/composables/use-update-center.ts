@@ -15,7 +15,7 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { reactive, readonly } from 'vue';
+import { reactive, readonly, watch } from 'vue';
 import packageJson from '../../../package.json';
 import { api } from '@/lib/api.js';
 
@@ -106,8 +106,9 @@ const handleNotAvailable = (payload: any) => {
   state.releaseUrl = null;
   state.releaseName = null;
   state.releaseNotes = '';
-  // Keep releaseDate/latestVersion so the summary cards remain populated
-  // when the user is already on the newest release.
+  // Do NOT null releaseDate here — the "Released" summary card should
+  // stay populated as a stable reference to the installed version's
+  // publish date, even when no newer release is available.
   resetDownloadState();
 };
 
@@ -482,6 +483,24 @@ export const useUpdateCenter = () => {
       }
     }, { once: true });
   }
+
+  // The version history is fetched once per session (App.vue, on startup)
+  // and cached, while latestVersion is refreshed by every check. So any
+  // release that landed after the app started was known to the Latest card
+  // and the header pill but absent from the history list — and since the
+  // dialog's selection defaults to the newest LISTED entry, that was the
+  // installed version, and the button read "Already installed" one version
+  // behind. Seen on the kiosk and on Windows; only a restart reloaded the
+  // list. Whenever a check names a version the list does not have, reload it.
+  watch(
+    () => state.latestVersion,
+    (latest) => {
+      if (!latest || !state.versionsLoaded || state.versionsLoading) return;
+      const tag = latest.startsWith('v') ? latest : `v${latest}`;
+      const known = state.versions.some((v) => v.tag === tag || v.tag === latest);
+      if (!known) void loadVersions({ force: true });
+    }
+  );
 
   return {
     state: readonly(state),
