@@ -153,13 +153,66 @@ public class PendantSerialHandler : IAsyncDisposable
     /// </summary>
     private const int SendLockTimeoutMs = 3000;
 
+    /// <summary>
+    /// Consecutive write-lock timeouts before the handler declares itself dead.
+    ///
+    /// The lock is released in a finally, so it cannot leak by any path in this
+    /// class — and yet it has now wedged three times on the kiosk, with the tty
+    /// itself provably healthy: a shell write to the same node completed in 6ms
+    /// while every write through this handler timed out. No thread was in a write
+    /// syscall either. Whatever parks it lives below us in SerialStream, and the
+    /// only thing that has ever cleared it is replugging the device, which is
+    /// just a slow way of forcing a new handler.
+    ///
+    /// So do that directly. Three failures in a row is well past any real
+    /// contention (writes here are a 1 Hz DRO and occasional short commands) and
+    /// unambiguously means the path is gone.
+    /// </summary>
+    private const int SendFailuresBeforeDead = 3;
+    private int _consecutiveSendFailures;
+
+    // Forensics for the wedge described above. The last time it happened there
+    // was nothing in the log at all — the failure is silent by nature, because
+    // the lock is simply never handed back and no exception is thrown by
+    // whatever holds it. These record enough to tell, next time, WHICH write
+    // went in and never came out, and how long ago that was.
+    private long   _lockAcquiredAtMs;      // 0 when nobody holds it
+    private string _inFlightWrite = "";    // what the holder is writing
+    private long   _lastWriteOkAtMs;
+    private string _lastWriteOk = "";
+
+    private static string Preview(string s) =>
+        s.Length <= 60 ? s : s[..60] + "…";
+
     public virtual async Task SendRawAsync(string message)
     {
         if (_port is not { IsOpen: true })
             return;
 
         if (!await _sendLock.WaitAsync(SendLockTimeoutMs))
+        {
+            var now = Environment.TickCount64;
+            var heldFor = _lockAcquiredAtMs == 0 ? -1 : now - _lockAcquiredAtMs;
+            var failures = Interlocked.Increment(ref _consecutiveSendFailures);
+
+            // Everything we know about the stall, in one line, because the state
+            // is gone by the time anyone looks: what is stuck, for how long, what
+            // we were trying to send, and when the last write actually worked.
+            _logger.LogWarning(
+                "Serial write blocked on {Port}: failure {N}, lock held {HeldMs}ms by [{InFlight}], "
+                + "wanted [{Wanted}], last good write {AgoMs}ms ago [{LastOk}], portOpen={Open}",
+                ConnectedPort, failures, heldFor, Preview(_inFlightWrite), Preview(message),
+                _lastWriteOkAtMs == 0 ? -1 : now - _lastWriteOkAtMs, Preview(_lastWriteOk),
+                _port?.IsOpen == true);
+
+            if (failures >= SendFailuresBeforeDead)
+                MarkWritePathDead();
             throw new TimeoutException("Serial port is busy and did not accept the write");
+        }
+
+        _consecutiveSendFailures = 0;
+        _lockAcquiredAtMs = Environment.TickCount64;
+        _inFlightWrite = message;
 
         try
         {
@@ -168,9 +221,13 @@ public class PendantSerialHandler : IAsyncDisposable
 
             var data = Encoding.UTF8.GetBytes(message + "\n");
             _port.Write(data, 0, data.Length);
+            _lastWriteOkAtMs = Environment.TickCount64;
+            _lastWriteOk = message;
         }
         finally
         {
+            _lockAcquiredAtMs = 0;
+            _inFlightWrite = "";
             _sendLock.Release();
         }
     }
@@ -367,6 +424,29 @@ public class PendantSerialHandler : IAsyncDisposable
         catch (JsonException)
         {
         }
+    }
+
+    /// <summary>
+    /// Give up on a write path that will not come back, the same way the read
+    /// loop reports its own death: close the handle and raise PortDisconnected,
+    /// so the scanner disposes this handler and opens a fresh one. Releasing the
+    /// handle also matters in its own right — holding a dead fd keeps the
+    /// /dev/ttyACMn node alive and pushes the device onto a different number
+    /// when it re-enumerates.
+    /// </summary>
+    private void MarkWritePathDead()
+    {
+        if (_readLoopDead) return;   // already being torn down
+        _readLoopDead = true;
+        _logger.LogWarning(
+            "Serial write path wedged after {N} consecutive lock timeouts — dropping the handler so it can be reopened",
+            SendFailuresBeforeDead);
+        var port = _port;
+        if (port is not null)
+        {
+            try { if (port.IsOpen) port.Close(); } catch { /* best effort */ }
+        }
+        PortDisconnected?.Invoke();
     }
 
     public async ValueTask DisposeAsync()

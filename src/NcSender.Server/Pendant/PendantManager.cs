@@ -1476,6 +1476,27 @@ public class PendantManager : IPendantManager
     /// to do with which transport the pendant happens to be on, so it is wired
     /// up here, to the dongle handler itself, for as long as that handler lives.
     /// </summary>
+    /// <summary>
+    /// Does this line look like an ESP32 dying rather than talking to us?
+    ///
+    /// The ROM and the panic handler both write to the same UART/CDC the
+    /// protocol uses, so a crash arrives interleaved with normal traffic:
+    /// "Guru Meditation Error", a "Backtrace:" of PC/SP pairs, an abort or
+    /// assert, or the bootloader's "rst:0x..." banner on the way back up. The
+    /// backtrace is the valuable part — it decodes to an exact function with
+    /// addr2line against that build's .elf.
+    /// </summary>
+    private static bool LooksLikeFirmwareCrash(string line) =>
+        line.Contains("Guru Meditation", StringComparison.Ordinal)
+        || line.StartsWith("Backtrace:", StringComparison.Ordinal)
+        || line.Contains("Interrupt wdt timeout", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Task watchdog", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("assert failed", StringComparison.OrdinalIgnoreCase)
+        || line.StartsWith("abort()", StringComparison.Ordinal)
+        || line.StartsWith("rst:0x", StringComparison.Ordinal)
+        || line.StartsWith("Core  ", StringComparison.Ordinal)      // "Core 1 panic'ed"
+        || line.StartsWith("ELF file SHA256", StringComparison.Ordinal);
+
     private void OnDongleRawLine(string data)
     {
         if (data.StartsWith('@')
@@ -1831,6 +1852,16 @@ public class PendantManager : IPendantManager
             if (data.StartsWith('['))
             {
                 _logger.LogInformation("Pendant: {Data}", data);
+            }
+            else if (LooksLikeFirmwareCrash(data))
+            {
+                // An ESP32 prints its panic and a backtrace over the same serial
+                // link before rebooting. Those lines were being dropped here —
+                // they match none of the protocol prefixes — so every crash on
+                // the kiosk looked like an unexplained dropout, and the one piece
+                // of evidence that names the faulting code went in the bin.
+                // Kept at Warning so it stands out next to the reconnect noise.
+                _logger.LogWarning("Device firmware crash output: {Data}", data);
             }
         }
         catch (Exception ex)
