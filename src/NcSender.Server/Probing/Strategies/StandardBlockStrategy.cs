@@ -6,6 +6,18 @@ public static class StandardBlockStrategy
 {
     private const double ZParkHeight = 4;
 
+    /// <summary>
+    /// Clearance left above the block when traversing to X0 Y0 at the end of a
+    /// cycle, on top of however far the tool was lowered to reach the sides.
+    /// </summary>
+    private const double ZTraverseClearance = 5;
+
+    /// <summary>
+    /// The lift that used to be hardcoded. Kept as a floor so a normal cycle
+    /// retracts exactly as much as it always did.
+    /// </summary>
+    private const double ZTraverseMinimum = 10;
+
     public static List<string> GetZProbeRoutine(double zThickness = 15)
     {
         return
@@ -80,9 +92,14 @@ public static class StandardBlockStrategy
         ];
     }
 
+    /// <param name="zProbeDistance">
+    /// How far below the top of the block the tool was lowered to reach the
+    /// sides. Zero for a standalone XY cycle, where nothing lowered it.
+    /// </param>
     public static List<string> GetXYProbeRoutine(
         string selectedCorner, double xyThickness = 10,
-        double bitDiameter = 6.35, bool skipPrepMove = false)
+        double bitDiameter = 6.35, bool skipPrepMove = false,
+        double zProbeDistance = 0)
     {
         var bitRadius = bitDiameter / 2;
         var isLeft = selectedCorner is "TopLeft" or "BottomLeft";
@@ -130,7 +147,19 @@ public static class StandardBlockStrategy
         code.Add($"G10 L20 Y{F(yOffset)}");
         code.Add($"G0 Y{F(yRetract)}");
 
-        code.Add("G0 Z10");
+        // Clear the block before traversing to the corner.
+        //
+        // This was a flat "G0 Z10" in relative mode. In an XYZ cycle the tool is
+        // sitting zProbeDistance BELOW the top of the block at this point — the
+        // Z probe parks it 4mm above, then G0 Z-(zProbeDistance + 4) drops it to
+        // reach the sides — so a fixed 10 leaves 10 - zProbeDistance of
+        // clearance. Fine at the default 3mm, and 5mm UNDER the top of the block
+        // at 15mm, which drove the tool straight through it on the way to X0 Y0.
+        //
+        // Derived now, the way ThreeDProbeStrategy already does it, with the old
+        // value as a floor so ordinary cycles are unchanged.
+        var zTraverse = Math.Max(ZTraverseMinimum, zProbeDistance + ZTraverseClearance);
+        code.Add($"G0 Z{F(zTraverse)}");
         code.Add("G90 G0 X0 Y0");
         code.Add("G21");
         code.Add("G[#<return_units>]");
@@ -153,7 +182,8 @@ public static class StandardBlockStrategy
         code.Add($"G0 X{F(xMove)}");
         code.Add($"G0 Z-{F(zProbeDistance + ZParkHeight)}");
 
-        code.AddRange(GetXYProbeRoutine(selectedCorner, xyThickness, bitDiameter, skipPrepMove: true));
+        code.AddRange(GetXYProbeRoutine(selectedCorner, xyThickness, bitDiameter,
+                                        skipPrepMove: true, zProbeDistance: zProbeDistance));
 
         return code;
     }
