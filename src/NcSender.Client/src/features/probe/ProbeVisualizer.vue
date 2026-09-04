@@ -60,7 +60,7 @@ let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
 let renderer: THREE.WebGLRenderer | null = null;
 let controls: OrbitControls | null = null;
-let animationFrame = 0;
+let animationFrame: number | null = null;
 let contextLost = false;
 
 const raycaster = new THREE.Raycaster();
@@ -208,12 +208,32 @@ const initScene = () => {
     if (animationFrame === null) animate();
   }, false);
 
+  // Render on demand, not on every display frame. OrbitControls damping is
+  // the only thing that needs successive frames: run the loop from the
+  // moment a gesture starts until update() reports the camera has settled.
+  // Everything else that changes the scene calls renderScene() itself
+  // (the controls' own 'change' event, the exposed render(), resetCamera).
+  // The previous unconditional loop drew the probe scene 60 times a second
+  // for as long as the dialog was open, even with nothing moving.
+  let gestureActive = false;
   const animate = () => {
     if (contextLost) { animationFrame = null; return; }
-    animationFrame = requestAnimationFrame(animate);
-    controls?.update();
+    const moved = controls ? controls.update() : false;
     renderScene();
+    if (gestureActive || moved) {
+      animationFrame = requestAnimationFrame(animate);
+    } else {
+      animationFrame = null;
+    }
   };
+  controls.addEventListener('start', () => {
+    gestureActive = true;
+    if (animationFrame === null) animate();
+  });
+  controls.addEventListener('end', () => {
+    gestureActive = false;
+    if (animationFrame === null) animate();
+  });
   animate();
 
   window.addEventListener('resize', handleResize);
@@ -227,7 +247,7 @@ const destroyScene = () => {
     renderer.domElement.removeEventListener('mousemove', handleCanvasHover);
   }
 
-  cancelAnimationFrame(animationFrame);
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame);
   controls?.dispose();
 
   // dispose() frees three's own objects but leaves the GL context attached to

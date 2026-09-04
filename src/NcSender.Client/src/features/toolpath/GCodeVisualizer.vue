@@ -1011,7 +1011,40 @@ let gcodeVisualizer: GCodeVisualizer;
 let animationId: number | null = null;
 let renderDirty = true;
 let idleFrameCount = 0;
-const IDLE_FRAMES_BEFORE_STOP = 30; // ~0.5s of convergence for smoothing
+const IDLE_FRAMES_BEFORE_STOP = 10; // a few settled frames, then the loop parks itself
+
+// ---- Render budget ---------------------------------------------------------
+// The machine reports position at ~10 Hz; between reports the spindle is
+// interpolated. Frames asked for explicitly by the user (input, a toggle)
+// render on the next animation frame; frames driven by data (a status
+// report, a job line) and animation frames follow the budget below.
+let lastAutoFrameAt = 0;
+// Two budgets. While the drawn spindle is still travelling towards the
+// reported position, frames run at the display rate: with the shadow pass
+// gone a frame costs ~3 ms on the kiosk, and anything less than full rate
+// was visibly choppy on fast moves. Animations that only decorate a
+// stationary scene (spinning spindle model) are spaced for 30 fps. User
+// interaction bypasses both (see requestRender).
+const MOTION_FRAME_INTERVAL_MS = 0;   // every animation frame
+const DECOR_FRAME_INTERVAL_MS = 30;   // just under two 60 Hz frames
+let autoFrameIntervalMs = MOTION_FRAME_INTERVAL_MS;
+// Safety valve for machines slower than the kiosk this was tuned on: if a
+// frame's CPU cost averages above what fits in a 60 Hz slot with headroom,
+// motion drops to every other frame rather than falling behind and
+// heating the board. The Q6A sits at ~5 ms, well under this.
+const SLOW_FRAME_MS = 11;
+let renderCostEmaMs = 0;
+const noteRenderCost = (costMs: number) => {
+  renderCostEmaMs = renderCostEmaMs === 0 ? costMs : renderCostEmaMs * 0.9 + costMs * 0.1;
+};
+let lastFrameTimeMs = 0;
+// Interpolation time constant: how long the drawn spindle takes to cover
+// ~63% of the distance to the reported position. Expressed in time, not
+// per-frame, so the feel is the same at 30 and 60 fps.
+const SPINDLE_SMOOTH_TAU_MS = 70;
+// Below this the interpolation has visibly arrived; snap so the loop can
+// stop instead of chasing the last hundredths of a millimetre for seconds.
+const SPINDLE_SNAP_MM = 0.02;
 let axisLabelsGroup: THREE.Group;
 let cuttingPointer: THREE.Group;
 let resizeObserver: ResizeObserver;
@@ -1422,9 +1455,18 @@ let pendingResizeFrame: number | null = null;
 // that only a page reload cleared.
 let contextLost = false;
 
-const requestRender = () => {
+// requestRender(immediate)
+//   immediate = true  -> the user is interacting (orbit, zoom, a toggle):
+//                        draw on the very next animation frame.
+//   immediate = false -> data changed (a position report, a job line, a
+//                        state update): draw within the frame budget. These
+//                        arrive up to tens of times a second during a job
+//                        and drawing each one is what pinned the kiosk.
+let renderImmediate = false;
+const requestRender = (immediate = false) => {
   if (contextLost) return;
   renderDirty = true;
+  if (immediate) renderImmediate = true;
   idleFrameCount = 0;
   if (animationId === null) {
     animationId = requestAnimationFrame(animate);
@@ -1434,7 +1476,6 @@ const requestRender = () => {
 // Spindle position interpolation with exponential smoothing
 let targetSpindlePosition = { x: 0, y: 0, z: 0 };
 let currentSpindlePosition = { x: 0, y: 0, z: 0 };
-const spindleSmoothFactor = 0.2; // Lower = smoother but slower (0.05-0.2 recommended)
 const machineOriginPosition = new THREE.Vector3();
 
 const disposeHomeIndicator = () => {
@@ -1535,8 +1576,12 @@ const initThreeJS = () => {
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(safeWidth, safeHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // No shadow map. Nothing in this scene has receiveShadow set, so the
+  // shadow pass (an extra depth render of the spindle model every frame,
+  // then PCF sampling in every lit fragment) never produced a visible
+  // pixel. On the Radxa Q6A kiosk it was a measurable share of a 13 ms
+  // frame.
+  renderer.shadowMap.enabled = false;
   canvas.value.appendChild(renderer.domElement);
 
   // A lost GL context is recoverable, but only if the event is cancelled —
@@ -1571,7 +1616,6 @@ const initThreeJS = () => {
   } else {
     directionalLight.position.set(50, -20, 20);
   }
-  directionalLight.castShadow = true;
   scene.add(directionalLight);
 
   // Set initial grid Z level for home indicator positioning
@@ -1993,7 +2037,7 @@ const onMouseMove = (event: MouseEvent) => {
   }
 
   previousMousePosition = { x: event.clientX, y: event.clientY };
-  requestRender();
+  requestRender(true);
 };
 
 const onMouseUp = (event: MouseEvent | Event) => {
@@ -2152,7 +2196,7 @@ const onWheel = (event: WheelEvent) => {
     updatePointerScale();
     updateAxisLabelsScale();
   }
-  requestRender();
+  requestRender(true);
 };
 
 // Touch events with two-finger panning support
@@ -2294,7 +2338,7 @@ const onTouchMove = (event: TouchEvent) => {
                       newCenter.x, newCenter.y, zoomFactor);
       updatePointerScale();
       updateAxisLabelsScale();
-      requestRender();
+      requestRender(true);
     }
 
     lastTouchDistance = distance;
@@ -2455,9 +2499,11 @@ const animate = () => {
     Math.abs(targetSpindlePosition.z - currentSpindlePosition.z) > 0.001
   );
 
-  // Keep rendering while spindle is spinning or execution is active (progressive graying)
-  const isAnimating = ((props.spindleRpmActual ?? 0) > 0) ||
-    (gcodeVisualizer?.executionActive && lastExecutedLine.value > 0);
+  // Keep rendering while the spindle model is spinning. Progressive
+  // graying during a job is NOT a reason on its own: it only changes when
+  // the spindle position changes, and every position report already asks
+  // for a frame.
+  const isAnimating = (props.spindleRpmActual ?? 0) > 0;
 
   if (!renderDirty && !isSmoothing && !isAnimating) {
     idleFrameCount++;
@@ -2465,19 +2511,46 @@ const animate = () => {
       animationId = null;
       return;
     }
-  } else {
-    idleFrameCount = 0;
-    renderDirty = false;
+    animationId = requestAnimationFrame(animate);
+    return;
   }
+
+  // Only a user-driven request skips the budget; data-driven requests and
+  // animation frames wait for the interval, which depends on whether the
+  // spindle is actually moving.
+  autoFrameIntervalMs = isSmoothing && renderCostEmaMs <= SLOW_FRAME_MS
+    ? MOTION_FRAME_INTERVAL_MS
+    : DECOR_FRAME_INTERVAL_MS;
+  const frameNow = performance.now();
+  if (!renderImmediate && frameNow - lastAutoFrameAt < autoFrameIntervalMs) {
+    animationId = requestAnimationFrame(animate);
+    return;
+  }
+  idleFrameCount = 0;
+  renderDirty = false;
+  renderImmediate = false;
+  lastAutoFrameAt = frameNow;
+  const frameDtMs = lastFrameTimeMs ? Math.min(100, frameNow - lastFrameTimeMs) : 16;
+  lastFrameTimeMs = frameNow;
+  const smoothAlpha = 1 - Math.exp(-frameDtMs / SPINDLE_SMOOTH_TAU_MS);
 
   animationId = requestAnimationFrame(animate);
 
   // Smoothly interpolate spindle position with exponential smoothing (no bouncing)
   if (cuttingPointer) {
     // Simple exponential moving average - always approaches target, never overshoots
-    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * spindleSmoothFactor;
-    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * spindleSmoothFactor;
-    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * spindleSmoothFactor;
+    currentSpindlePosition.x += (targetSpindlePosition.x - currentSpindlePosition.x) * smoothAlpha;
+    currentSpindlePosition.y += (targetSpindlePosition.y - currentSpindlePosition.y) * smoothAlpha;
+    currentSpindlePosition.z += (targetSpindlePosition.z - currentSpindlePosition.z) * smoothAlpha;
+    // Snap once the remaining distance is below what a pixel can show, so
+    // a stopped machine doesn't keep the loop alive for seconds.
+    if (Math.abs(targetSpindlePosition.x - currentSpindlePosition.x) < SPINDLE_SNAP_MM &&
+        Math.abs(targetSpindlePosition.y - currentSpindlePosition.y) < SPINDLE_SNAP_MM &&
+        Math.abs(targetSpindlePosition.z - currentSpindlePosition.z) < SPINDLE_SNAP_MM) {
+      currentSpindlePosition.x = targetSpindlePosition.x;
+      currentSpindlePosition.y = targetSpindlePosition.y;
+      currentSpindlePosition.z = targetSpindlePosition.z;
+    }
 
     // In spindle view mode, spindle stays at origin and everything else moves
     if (spindleViewMode.value) {
@@ -2587,6 +2660,7 @@ const animate = () => {
   }
 
   if (renderer && scene && camera) {
+    const renderStart = performance.now();
     // Use CSS pixels (clientWidth/clientHeight) not device pixels (width/height)
     // THREE.js setViewport/setScissor expect CSS pixels when setPixelRatio is used
     const width = renderer.domElement.clientWidth;
@@ -2644,7 +2718,53 @@ const animate = () => {
       renderer.setViewport(0, 0, width, height);
       renderer.render(scene, camera);
     }
+    noteRenderCost(performance.now() - renderStart);
   }
+};
+
+// Diagnostics hook: `window.__ncVisualizer.stats()` from the DevTools
+// console (or over the DevTools protocol) reports what the last frame
+// drew and what the scene contains, plus the running frame-cost average.
+(window as any).__ncVisualizer = {
+  stats: () => {
+    if (!renderer || !scene) return null;
+    const counts: Record<string, number> = {};
+    let visible = 0;
+    scene.traverse((o: any) => {
+      if (!o.visible) return;
+      visible++;
+      const k = o.isSprite ? 'Sprite' : o.isLineSegments ? 'LineSegments' : o.isLine ? 'Line' : o.isPoints ? 'Points' : o.isMesh ? 'Mesh' : o.isGroup ? 'Group' : o.type;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const r = renderer.info.render;
+    const m = renderer.info.memory;
+    const groups: Record<string, { meshes: number; lines: number; sprites: number; materials: number }> = {};
+    scene.children.forEach((top: any) => {
+      const key = top.name || top.userData?.name || top.type;
+      const g = { meshes: 0, lines: 0, sprites: 0, materials: 0 };
+      const mats = new Set<any>();
+      top.traverse((o: any) => {
+        if (!o.visible) return;
+        if (o.isSprite) g.sprites++;
+        else if (o.isLine || o.isLineSegments) g.lines++;
+        else if (o.isMesh) g.meshes++;
+        if (o.material && (o.isMesh || o.isSprite || o.isLine || o.isLineSegments)) (Array.isArray(o.material) ? o.material : [o.material]).forEach((mm: any) => mats.add(mm));
+      });
+      g.materials = mats.size;
+      groups[key] = groups[key] ? { meshes: groups[key].meshes + g.meshes, lines: groups[key].lines + g.lines, sprites: groups[key].sprites + g.sprites, materials: groups[key].materials + g.materials } : g;
+    });
+    return {
+      groups,
+      lastFrame: { drawCalls: r.calls, triangles: r.triangles, lines: r.lines, points: r.points },
+      memory: { geometries: m.geometries, textures: m.textures },
+      visibleObjects: visible,
+      byType: counts,
+      frameCostEmaMs: Number(renderCostEmaMs.toFixed(2)),
+      pixelRatio: renderer.getPixelRatio(),
+      size: { w: renderer.domElement.width, h: renderer.domElement.height },
+      view: props.view,
+    };
+  },
 };
 
 const handleFileLoad = async (event: Event) => {
@@ -3016,7 +3136,7 @@ const toggleRapids = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.setRapidVisibility(showRapids.value);
   }
-  requestRender();
+  requestRender(true);
 };
 
 const toggleCutting = () => {
@@ -3024,7 +3144,7 @@ const toggleCutting = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.setCuttingVisibility(showCutting.value);
   }
-  requestRender();
+  requestRender(true);
 };
 
 const toggleSpindle = () => {
@@ -3032,7 +3152,7 @@ const toggleSpindle = () => {
   if (cuttingPointer) {
     cuttingPointer.visible = showSpindle.value;
   }
-  requestRender();
+  requestRender(true);
 };
 
 const toggleExtents = () => {
@@ -3040,7 +3160,7 @@ const toggleExtents = () => {
   if (gcodeVisualizer) {
     gcodeVisualizer.setProgramBoundsBoxVisible(showExtents.value);
   }
-  requestRender();
+  requestRender(true);
 };
 
 const updatePointerType = () => {
@@ -3073,7 +3193,7 @@ const toggleTool = (toolNumber: number) => {
   if (tool) {
     tool.visible = !tool.visible;
     gcodeVisualizer.setToolVisibility(toolNumber, tool.visible);
-    requestRender();
+    requestRender(true);
   }
 };
 
@@ -3406,7 +3526,7 @@ const handleResize = () => {
 
   updatePointerScale();
   updateAxisLabelsScale();
-  requestRender();
+  requestRender(true);
 };
 
 const updateSplitViewCameras = () => {
@@ -4800,12 +4920,11 @@ onMounted(async () => {
       if (status && typeof currentLine === 'number' && currentLine > 0) {
         lastExecutedLine.value = currentLine;
         // Re-apply completed segments up to the restored line
+        const restore: number[] = [];
         for (let i = 1; i <= currentLine; i++) {
-          if (!markedLines.has(i)) {
-            gcodeVisualizer.markLineCompleted(i);
-            markedLines.add(i);
-          }
+          if (!markedLines.has(i)) { restore.push(i); markedLines.add(i); }
         }
+        gcodeVisualizer.markLinesCompleted(restore);
         didRestoreThisUpdate = true;
       }
       hasRestoredInitialState = true;
@@ -4847,11 +4966,12 @@ onMounted(async () => {
     // Deactivate execution mode when job stops running — bulk-apply completed colors
     if (prevJobStatus === 'running' && status !== 'running' && gcodeVisualizer?.executionActive) {
       gcodeVisualizer.setExecutionActive(false);
-      // Permanently apply completed colors for all marked lines
+      // Permanently apply completed colors for all marked lines — one
+      // buffer upload for the whole set, not one per line.
       for (const ln of markedLines) {
-        gcodeVisualizer.completedLines.delete(ln); // Allow markLineCompleted to re-apply color
-        gcodeVisualizer.markLineCompleted(ln);
+        gcodeVisualizer.completedLines.delete(ln); // Allow the batch to re-apply color
       }
+      gcodeVisualizer.markLinesCompleted(markedLines);
     }
 
     prevJobStatus = status;
@@ -4983,23 +5103,21 @@ watch(
     if (next < prev) {
       gcodeVisualizer.resetCompletedLines();
       markedLines.clear();
+      const batch: number[] = [];
       for (let i = 1; i <= next; i++) {
-        if (!markedLines.has(i)) {
-          gcodeVisualizer.markLineCompleted(i);
-          markedLines.add(i);
-        }
+        if (!markedLines.has(i)) { batch.push(i); markedLines.add(i); }
       }
+      gcodeVisualizer.markLinesCompleted(batch);
       return;
     }
 
     if (next > prev) {
       const start = Math.max(prev + 1, 1);
+      const batch: number[] = [];
       for (let i = start; i <= next; i++) {
-        if (!markedLines.has(i)) {
-          gcodeVisualizer.markLineCompleted(i);
-          markedLines.add(i);
-        }
+        if (!markedLines.has(i)) { batch.push(i); markedLines.add(i); }
       }
+      gcodeVisualizer.markLinesCompleted(batch);
     }
 
     requestRender();
@@ -5192,9 +5310,9 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 }
 
 .override-panel {
-  background: color-mix(in srgb, var(--color-surface-muted) 85%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  /* Slightly more opaque instead of backdrop-filter: a blur over the live
+     WebGL canvas re-samples the canvas on every 3D frame. */
+  background: color-mix(in srgb, var(--color-surface-muted) 92%, transparent);
   border-radius: var(--radius-small);
   padding: 8px 16px 16px;
   min-width: 250px;
@@ -5969,8 +6087,7 @@ body.theme-light .dot--rapid {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: transparent;
-  backdrop-filter: blur(8px);
+  background: rgba(20, 20, 30, 0.85);
   border: 2px solid #b84444;
   color: #ff8888;
   padding: 16px 24px;
@@ -6034,8 +6151,7 @@ body.theme-light .dot--rapid {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: transparent;
-  backdrop-filter: blur(8px);
+  background: rgba(20, 20, 30, 0.85);
   border: 2px solid #b84444;
   color: #ff8888;
   padding: 10px 20px;

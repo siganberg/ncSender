@@ -869,31 +869,51 @@ class GCodeVisualizer {
     }
 
     markLineCompleted(lineNumber) {
+        if (this._paintLineCompleted(lineNumber)) {
+            this.pathLines[0].geometry.attributes.color.needsUpdate = true;
+        }
+    }
+
+    // Mark many lines and upload the colour buffer ONCE. `needsUpdate` on
+    // the attribute re-sends the entire buffer (hundreds of KB for a real
+    // job); doing that per line at job end — 600 lines, 600 uploads in a
+    // burst — was measured at 380% CPU and 93 C on the kiosk.
+    markLinesCompleted(lineNumbers) {
+        let changed = false;
+        for (const lineNum of lineNumbers) {
+            if (this._paintLineCompleted(lineNum)) changed = true;
+        }
+        if (changed) this.pathLines[0].geometry.attributes.color.needsUpdate = true;
+    }
+
+    // Writes the completed colour into the buffer without uploading.
+    // Returns true if any vertex colour was written.
+    _paintLineCompleted(lineNumber) {
         if (this.executionActive) {
             this.completedLines.add(lineNumber);
-            return; // Shader handles appearance during execution
+            return false; // Shader handles appearance during execution
         }
 
         if (this.completedLines.has(lineNumber)) {
-            return; // Already marked
+            return false; // Already marked
         }
 
         this.completedLines.add(lineNumber);
 
         // Find the line object
         const line = this.pathLines[0];
-        if (!line || !line.geometry.attributes.color) return;
+        if (!line || !line.geometry.attributes.color) return false;
 
         // Get the vertex index range for this line number
         const range = this.lineNumberMap.get(lineNumber);
-        if (!range) return;
+        if (!range) return false;
         const { startVertexIdx, endVertexIdx } = range;
 
         // Check if this line's tool is hidden - if so, keep it black
         const toolNum = this.lineToolNumber.get(lineNumber);
         const isToolHidden = toolNum !== undefined && this.toolVisibility.get(toolNum) === false;
         if (isToolHidden) {
-            return; // Tool is hidden, don't change color
+            return false; // Tool is hidden, don't change color
         }
 
         // Update colors for this line's vertices
@@ -908,12 +928,7 @@ class GCodeVisualizer {
             colors[i * 3 + 1] = completedColor.g;
             colors[i * 3 + 2] = completedColor.b;
         }
-
-        line.geometry.attributes.color.needsUpdate = true;
-    }
-
-    markLinesCompleted(lineNumbers) {
-        lineNumbers.forEach(lineNum => this.markLineCompleted(lineNum));
+        return true;
     }
 
     resetCompletedLines() {

@@ -51,7 +51,11 @@
     <div class="bar-wrap">
       <div class="bar" :class="{ stopped: isStopped }" aria-hidden="true">
         <div class="fill" :class="{ stopped: isStopped }" :style="{ width: percent + '%' }">
-          <div class="shine"></div>
+          <!-- Only animate the stripe while the job is actually running: an
+               infinite transform animation keeps the compositor producing
+               60 frames a second for as long as the bar is on screen, which
+               after a completed job is indefinitely. -->
+          <div v-if="statusRaw === 'running'" class="shine"></div>
         </div>
       </div>
       <div class="percent-overlay" aria-live="polite">{{ displayPercent }}%</div>
@@ -294,7 +298,11 @@ async function handleClose() {
 .shine {
   position: absolute; inset: 0;
   background: repeating-linear-gradient(45deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 8px, rgba(255,255,255,0.08) 8px, rgba(255,255,255,0.08) 16px);
-  mix-blend-mode: overlay; opacity: 0.35; border-radius: 999px;
+  /* No mix-blend-mode: it forced the bar's parent to be re-composited on
+     every frame of the stripe animation. A plain translucent overlay reads
+     the same and the transform animation stays on the compositor. */
+  opacity: 0.28; border-radius: 999px;
+  will-change: transform;
   animation: flow 1.2s linear infinite;
 }
 @keyframes flow { 0% { transform: translateX(-20%); } 100% { transform: translateX(20%); } }
@@ -302,9 +310,12 @@ async function handleClose() {
 .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
 .pre-run { min-width: 180px; width: fit-content; margin: 0 auto; }
 .pre-run.has-warning { max-width: 260px; border: 2px solid #b84444; animation: warningPulse 2s ease-in-out infinite; }
+/* Opacity-only pulse on the border/shadow: box-shadow keyframes repaint. */
+.pre-run.has-warning { position: relative; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6); animation: none; }
+.pre-run.has-warning::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; box-shadow: 0 0 30px rgba(220, 53, 69, 0.9); animation: warningPulse 2s ease-in-out infinite; will-change: opacity; }
 @keyframes warningPulse {
-  0%, 50%, 100% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 53, 69, 0.6); }
-  25%, 75% { border-color: #dc3545; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(220, 53, 69, 0.9); }
+  0%, 50%, 100% { opacity: 0; }
+  25%, 75% { opacity: 1; }
 }
 .warning-row { display: flex; align-items: flex-start; gap: 6px; color: #ff8888; font-size: 0.85rem; font-weight: 500; line-height: 1.3; }
 .warning-text { word-break: break-word; }

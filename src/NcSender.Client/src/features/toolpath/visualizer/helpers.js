@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
+import { mergeBufferGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
@@ -86,10 +87,15 @@ export const generateCuttingPointer = () => {
                                     if ('roughness' in m) m.roughness = 0.3;
                                 });
                             }
-                            child.castShadow = true;
                         }
                     });
 
+                    // Merge the ~120 parts into one mesh per material (bit and
+                    // head kept apart so the bit can still be hidden for T0).
+                    // Must run before anything captures references to the parts.
+                    const BIT_MESH_NAMES_EARLY = new Set(['mesh45', 'mesh46', 'mesh47', 'mesh48', 'mesh49', 'mesh50', 'mesh51']);
+                    const mergedMeshes = mergeObjMeshesByMaterial(obj, meshes, (m) => (BIT_MESH_NAMES_EARLY.has(m.name) ? 'bit' : 'head'));
+                    meshes.splice(0, meshes.length, ...mergedMeshes);
                     // Tag meshes with a stable traversal index and set renderOrder
                     // Start at 1000 and increment to preserve relative order while staying above gcode (999)
                     meshes.forEach((m, idx) => {
@@ -148,7 +154,7 @@ export const generateCuttingPointer = () => {
                     const bitMeshes = [];
                     const headMeshes = [];
                     meshes.forEach((m) => {
-                        const isBit = BIT_MESH_NAMES.has(m.name);
+                        const isBit = m.userData.role === 'bit' || BIT_MESH_NAMES.has(m.name);
                         m.userData.role = isBit ? 'bit' : 'head';
                         (isBit ? bitMeshes : headMeshes).push(m);
                     });
@@ -665,6 +671,147 @@ export const createGridLines = ({ gridSizeX = 1220, gridSizeY = 1220, orientatio
 // grow from 0 at home outward — operator can eyeball a machine
 // coordinate and read straight across to where it lands on the bed.
 // Muted gray so they don't compete visually with the workspace ring.
+// Collapse an OBJ's many small meshes into one mesh per (role, material).
+// The spindle model arrives as ~120 parts that share 6 materials; drawn
+// as-is that is ~120 draw calls every frame for a static prop. Nothing in
+// the visualizer needs the parts individually: the bit/head toggle works
+// on whichever meshes carry the role, and every recolour path works on
+// materials. Transforms are baked into the merged geometry, attributes
+// are reduced to the set every part in a group shares (OBJ parts don't
+// all carry uv), and the merged meshes replace the originals in `obj`.
+const mergeObjMeshesByMaterial = (obj, meshes, roleOf) => {
+    const groups = new Map();
+    meshes.forEach((m) => {
+        if (Array.isArray(m.material)) return; // multi-material parts stay as they are
+        const role = roleOf(m);
+        const key = role + '|' + m.material.uuid;
+        if (!groups.has(key)) groups.set(key, { role, material: m.material, meshes: [] });
+        groups.get(key).meshes.push(m);
+    });
+    const merged = [];
+    const consumed = new Set();
+    groups.forEach(({ role, material, meshes: parts }) => {
+        if (parts.length < 2) return;
+        const names = parts.map((m) => Object.keys(m.geometry.attributes));
+        const common = names.reduce((acc, n) => acc.filter((a) => n.includes(a)));
+        const geoms = parts.map((m) => {
+            m.updateMatrix();
+            const g = m.geometry.clone();
+            Object.keys(g.attributes).forEach((a) => { if (!common.includes(a)) g.deleteAttribute(a); });
+            if (g.index && !parts.every((pm) => !!pm.geometry.index)) g.setIndex(null);
+            g.applyMatrix4(m.matrix);
+            return g;
+        });
+        const allIndexed = geoms.every((g) => !!g.index);
+        if (!allIndexed) geoms.forEach((g) => { if (g.index) g.setIndex(null); });
+        const geometry = mergeBufferGeometries(geoms, false);
+        if (!geometry) { geoms.forEach((g) => g.dispose()); return; }
+        geoms.forEach((g) => g.dispose());
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = 'merged-' + role + '-' + (material.name || material.uuid.slice(0, 6));
+        mesh.userData.role = role;
+        merged.push(mesh);
+        parts.forEach((m) => { consumed.add(m); });
+    });
+    if (merged.length === 0) return meshes;
+    consumed.forEach((m) => { m.parent?.remove(m); m.geometry.dispose(); });
+    merged.forEach((m) => obj.add(m));
+    return meshes.filter((m) => !consumed.has(m)).concat(merged);
+};
+
+// One mesh for a whole set of small text labels. Every label used to be
+// its own plane with its own canvas texture and material, i.e. one draw
+// call and one texture upload each; the grid and workspace tick numbers
+// alone were ~250 draw calls per frame. Here all labels are drawn into
+// one canvas atlas and referenced by one merged geometry, so a set of any
+// size costs a single draw call and a single texture.
+//
+// entries: [{ text, x, y, z, fillStyle? }]  — plane centred at (x, y, z)
+// options: width/height of each plane in mm, opacity, renderOrder,
+//          default fillStyle, font.
+export const buildLabelSheet = (entries, {
+    width = 32, height = 20, opacity = 0.6, renderOrder = 2,
+    fillStyle = 'rgba(180, 180, 180, 0.75)', font = 'bold 20px Arial',
+} = {}) => {
+    const count = entries.length;
+    if (count === 0) return null;
+    // Logical cell is 128×64 (same proportions as the 32×20 mm plane);
+    // rendered at 2× for crispness. 8 cells per row keeps the atlas within
+    // 2048 px wide; rows grow as needed (16 rows = 2048 px tall = 128
+    // labels). Above that, drop to 1× so the texture stays under 2048².
+    const cols = 8;
+    const rows = Math.ceil(count / cols);
+    const scale = rows <= 16 ? 2 : 1;
+    const cellW = 128 * scale;
+    const cellH = 64 * scale;
+    const canvas = document.createElement('canvas');
+    canvas.width = cols * cellW;
+    canvas.height = rows * cellH;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.scale(scale, scale);
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.imageSmoothingEnabled = true;
+
+    const positions = new Float32Array(count * 4 * 3);
+    const uvs = new Float32Array(count * 4 * 2);
+    const index = new Uint32Array(count * 6);
+    const hw = width / 2;
+    const hh = height / 2;
+    entries.forEach((e, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        // draw
+        ctx.fillStyle = e.fillStyle || fillStyle;
+        ctx.fillText(e.text, col * 128 + 64, row * 64 + 32);
+        // geometry: 4 corners, CCW, plane in the XY plane at z
+        const v = i * 4;
+        const corners = [
+            [e.x - hw, e.y - hh], [e.x + hw, e.y - hh], [e.x + hw, e.y + hh], [e.x - hw, e.y + hh],
+        ];
+        // texture rows run top-down; flip V so row 0 sits at the top of the atlas
+        const u0 = col / cols;
+        const u1 = (col + 1) / cols;
+        const v1 = 1 - row / rows;
+        const v0 = 1 - (row + 1) / rows;
+        const uvc = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+        for (let k = 0; k < 4; k++) {
+            positions[(v + k) * 3] = corners[k][0];
+            positions[(v + k) * 3 + 1] = corners[k][1];
+            positions[(v + k) * 3 + 2] = e.z;
+            uvs[(v + k) * 2] = uvc[k][0];
+            uvs[(v + k) * 2 + 1] = uvc[k][1];
+        }
+        const t = i * 6;
+        index[t] = v; index[t + 1] = v + 1; index[t + 2] = v + 2;
+        index[t + 3] = v; index[t + 4] = v + 2; index[t + 5] = v + 3;
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex(new THREE.BufferAttribute(index, 1));
+    geometry.computeBoundingSphere();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = renderOrder;
+    mesh.name = 'label-sheet';
+    return mesh;
+};
+
 export const createGridTickLabels = ({ gridSizeX = 1220, gridSizeY = 1220, orientation = { xHome: 'min', yHome: 'max' }, units = 'metric', zBottom = 0 } = {}) => {
     const group = new THREE.Group();
     const MM_PER_INCH = 25.4;
@@ -686,38 +833,7 @@ export const createGridTickLabels = ({ gridSizeX = 1220, gridSizeY = 1220, orien
     const xLabelYInset = orientation.yHome === 'min' ? -14 : 14;
     const yLabelXInset = orientation.xHome === 'max' ? 20 : -20;
 
-    const buildTick = (displayValue) => {
-        const canvas = document.createElement('canvas');
-        const scale = 4;
-        canvas.width = 128 * scale;
-        canvas.height = 64 * scale;
-        const context = canvas.getContext('2d', { willReadFrequently: true });
-        context.scale(scale, scale);
-        context.clearRect(0, 0, 128, 64);
-        context.fillStyle = tickColor;
-        context.font = 'bold 20px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.imageSmoothingEnabled = true;
-        context.fillText(displayValue, 64, 32);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-
-        const material = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 20), material);
-        mesh.renderOrder = 2;
-        return mesh;
-    };
+    const ticks = [];
 
     // Skip the outermost tick in each direction so the corner isn't
     // crowded and the max-bound label never sits past the border.
@@ -726,17 +842,13 @@ export const createGridTickLabels = ({ gridSizeX = 1220, gridSizeY = 1220, orien
         if (Math.abs(x) < 0.01) continue;
         if (x + labelStep > maxX + 0.01) continue;
         const displayValue = units === 'imperial' ? Math.round(x / MM_PER_INCH).toString() : Math.round(x).toString();
-        const mesh = buildTick(displayValue);
-        mesh.position.set(x, xTickEdgeY + xLabelYInset, zBottom + 0.01);
-        group.add(mesh);
+        ticks.push({ text: displayValue, x, y: xTickEdgeY + xLabelYInset, z: zBottom + 0.01 });
     }
     for (let x = -labelStep; x >= minX; x -= labelStep) {
         if (x > maxX) continue;
         if (x - labelStep < minX - 0.01) continue;
         const displayValue = units === 'imperial' ? Math.round(x / MM_PER_INCH).toString() : Math.round(x).toString();
-        const mesh = buildTick(displayValue);
-        mesh.position.set(x, xTickEdgeY + xLabelYInset, zBottom + 0.01);
-        group.add(mesh);
+        ticks.push({ text: displayValue, x, y: xTickEdgeY + xLabelYInset, z: zBottom + 0.01 });
     }
 
     for (let y = 0; y <= maxY; y += labelStep) {
@@ -744,18 +856,17 @@ export const createGridTickLabels = ({ gridSizeX = 1220, gridSizeY = 1220, orien
         if (Math.abs(y) < 0.01) continue;
         if (y + labelStep > maxY + 0.01) continue;
         const displayValue = units === 'imperial' ? Math.round(y / MM_PER_INCH).toString() : Math.round(y).toString();
-        const mesh = buildTick(displayValue);
-        mesh.position.set(yTickEdgeX + yLabelXInset, y, zBottom + 0.01);
-        group.add(mesh);
+        ticks.push({ text: displayValue, x: yTickEdgeX + yLabelXInset, y, z: zBottom + 0.01 });
     }
     for (let y = -labelStep; y >= minY; y -= labelStep) {
         if (y > maxY) continue;
         if (y - labelStep < minY - 0.01) continue;
         const displayValue = units === 'imperial' ? Math.round(y / MM_PER_INCH).toString() : Math.round(y).toString();
-        const mesh = buildTick(displayValue);
-        mesh.position.set(yTickEdgeX + yLabelXInset, y, zBottom + 0.01);
-        group.add(mesh);
+        ticks.push({ text: displayValue, x: yTickEdgeX + yLabelXInset, y, z: zBottom + 0.01 });
     }
+
+    const sheet = buildLabelSheet(ticks, { opacity: 0.6, fillStyle: tickColor });
+    if (sheet) group.add(sheet);
 
     group.name = 'grid-tick-labels';
     return group;
@@ -877,39 +988,7 @@ export const createWorkspaceOutline = ({ gridSizeX = 1220, gridSizeY = 1220, wor
         return remainder < 0.01 || remainder > labelStep - 0.01;
     };
 
-    const buildTick = (displayValue, fillStyle) => {
-        const canvas = document.createElement('canvas');
-        const scale = 4;
-        canvas.width = 128 * scale;
-        canvas.height = 64 * scale;
-        const context = canvas.getContext('2d', { willReadFrequently: true });
-        context.scale(scale, scale);
-        context.clearRect(0, 0, 128, 64);
-        context.fillStyle = fillStyle;
-        context.font = 'bold 20px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.imageSmoothingEnabled = true;
-        context.fillText(displayValue, 64, 32);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-
-        const planeMaterial = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            opacity: 0.5,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-        });
-        const planeGeometry = new THREE.PlaneGeometry(32, 20);
-        const mesh = new THREE.Mesh(planeGeometry, planeMaterial);
-        mesh.renderOrder = 2;
-        return mesh;
-    };
+    const ticks = [];
 
     for (let offset = 0; offset <= Math.max(Math.abs(maxX - crosshairX), Math.abs(crosshairX - minX)); offset += step) {
         const positions = offset === 0 ? [crosshairX] : [crosshairX + offset, crosshairX - offset];
@@ -919,9 +998,7 @@ export const createWorkspaceOutline = ({ gridSizeX = 1220, gridSizeY = 1220, wor
             if (Math.abs(relativeX) < 0.01) continue;
             if (!shouldLabel(x, crosshairX)) continue;
             const displayValue = units === 'imperial' ? Math.round(relativeX / MM_PER_INCH).toString() : Math.round(relativeX).toString();
-            const mesh = buildTick(displayValue, '#cc6666');
-            mesh.position.set(x, crosshairY - 5, crosshairZ + 0.01);
-            group.add(mesh);
+            ticks.push({ text: displayValue, fillStyle: '#cc6666', x, y: crosshairY - 5, z: crosshairZ + 0.01 });
         }
     }
 
@@ -933,11 +1010,12 @@ export const createWorkspaceOutline = ({ gridSizeX = 1220, gridSizeY = 1220, wor
             if (Math.abs(relativeY) < 0.01) continue;
             if (!shouldLabel(y, crosshairY)) continue;
             const displayValue = units === 'imperial' ? Math.round(relativeY / MM_PER_INCH).toString() : Math.round(relativeY).toString();
-            const mesh = buildTick(displayValue, '#4d994d');
-            mesh.position.set(crosshairX - 5, y, crosshairZ + 0.01);
-            group.add(mesh);
+            ticks.push({ text: displayValue, fillStyle: '#4d994d', x: crosshairX - 5, y, z: crosshairZ + 0.01 });
         }
     }
+
+    const sheet = buildLabelSheet(ticks, { opacity: 0.5 });
+    if (sheet) group.add(sheet);
 
     group.name = 'workspace-outline';
     return group;

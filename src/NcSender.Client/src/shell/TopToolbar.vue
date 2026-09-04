@@ -925,7 +925,6 @@ button.danger {
 .toolbar.state--connecting {
   border-color: var(--color-accent);
   box-shadow: var(--shadow-elevated), 0 0 14px rgba(26, 188, 156, 0.85);
-  animation: pulse-glow-teal 1.6s ease-in-out infinite;
 }
 
 .toolbar.state--idle {
@@ -936,37 +935,31 @@ button.danger {
 .toolbar.state--run {
   border-color: #28a745;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(40, 167, 69, 0.6);
-  animation: pulse-glow-green 2.5s infinite;
 }
 
 .toolbar.state--hold {
   border-color: #ffc107;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(255, 193, 7, 0.6);
-  animation: pulse-glow-yellow 2.5s infinite;
 }
 
 .toolbar.state--jog {
   border-color: #28a745;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(40, 167, 69, 0.6);
-  animation: pulse-glow-green 2.5s infinite;
 }
 
 .toolbar.state--probing {
   border-color: #1abc9c;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6);
-  animation: pulse-glow-teal 2.5s infinite;
 }
 
 .toolbar.state--alarm {
   border-color: #dc3545;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(220, 53, 69, 0.6);
-  animation: pulse-glow-red 1s infinite;
 }
 
 .toolbar.state--door {
   border-color: #fd7e14;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(253, 126, 20, 0.6);
-  animation: pulse-glow-orange 2.5s infinite;
 }
 
 .toolbar.state--check {
@@ -977,13 +970,11 @@ button.danger {
 .toolbar.state--home {
   border-color: #007bff;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(0, 123, 255, 0.6);
-  animation: pulse-glow-blue 2.5s infinite;
 }
 
 .toolbar.state--homing-required {
   border-color: var(--color-accent);
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6);
-  animation: pulse-glow-teal 2s ease-in-out infinite;
 }
 
 .toolbar.state--homing-required .machine-state {
@@ -999,7 +990,6 @@ button.danger {
 .toolbar.state--tool {
   border-color: #c912a8;
   box-shadow: var(--shadow-elevated), 0 0 20px rgba(201, 18, 168, 0.6);
-  animation: pulse-glow-magenta 2.5s infinite;
 }
 
 .toolbar.state--setup-required {
@@ -1024,39 +1014,36 @@ button.danger {
   50% { opacity: 1; }
 }
 
-@keyframes pulse-glow-green {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(40, 167, 69, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(40, 167, 69, 0.9); }
+/* State glow. Animating box-shadow repainted the full-width toolbar
+   on every frame (measured 170 paints/s on the kiosk during a job). The
+   glow now lives on a pseudo-element with a fixed shadow, and only its
+   opacity pulses — that runs on the compositor with no repaint. */
+.toolbar::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
 }
-
-@keyframes pulse-glow-red {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(220, 53, 69, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(220, 53, 69, 0.9); }
+.toolbar.state--run::after,
+.toolbar.state--jog::after        { box-shadow: 0 0 30px rgba(40, 167, 69, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--hold::after       { box-shadow: 0 0 30px rgba(255, 193, 7, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--probing::after    { box-shadow: 0 0 30px rgba(26, 188, 156, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--alarm::after      { box-shadow: 0 0 30px rgba(220, 53, 69, 0.9); animation: pulse-glow 1s infinite; }
+.toolbar.state--door::after       { box-shadow: 0 0 30px rgba(253, 126, 20, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--home::after       { box-shadow: 0 0 30px rgba(0, 123, 255, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--tool::after       { box-shadow: 0 0 30px rgba(201, 18, 168, 0.9); animation: pulse-glow 2.5s infinite; }
+.toolbar.state--connecting::after { box-shadow: 0 0 30px rgba(26, 188, 156, 0.9); animation: pulse-glow-slow 1.6s ease-in-out infinite; }
+.toolbar.state--homing-required::after { box-shadow: 0 0 30px rgba(26, 188, 156, 0.9); animation: pulse-glow-slow 2s ease-in-out infinite; }
+@keyframes pulse-glow {
+  0%, 50%, 100% { opacity: 0; }
+  25%, 75% { opacity: 1; }
 }
-
-@keyframes pulse-glow-blue {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(0, 123, 255, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(0, 123, 255, 0.9); }
-}
-
-@keyframes pulse-glow-orange {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(253, 126, 20, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(253, 126, 20, 0.9); }
-}
-
-@keyframes pulse-glow-magenta {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(201, 18, 168, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(201, 18, 168, 0.9); }
-}
-
-@keyframes pulse-glow-yellow {
-  0%, 50%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(255, 193, 7, 0.6); }
-  25%, 75% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(255, 193, 7, 0.9); }
-}
-
-@keyframes pulse-glow-teal {
-  0%, 100% { box-shadow: var(--shadow-elevated), 0 0 20px rgba(26, 188, 156, 0.6); }
-  50% { box-shadow: var(--shadow-elevated), 0 0 30px rgba(26, 188, 156, 0.9); }
+@keyframes pulse-glow-slow {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 /* Theme toggle button */
