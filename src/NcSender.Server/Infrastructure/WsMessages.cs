@@ -54,7 +54,8 @@ public record WsGateShow(
     IReadOnlyList<WsGateStep>? Steps = null,
     int StepProgress = 0,
     WsGateStepConfig? StepConfig = null,
-    bool MessageHtml = false);
+    bool MessageHtml = false,
+    string? Icon = null);
 
 public record WsGateButton(
     string Value,

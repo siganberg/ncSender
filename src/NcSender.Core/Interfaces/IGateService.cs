@@ -61,7 +61,8 @@ public record GateOptions(
     string? Key = null,
     IReadOnlyList<GateStep>? Steps = null,
     GateStepConfig? StepConfig = null,
-    bool MessageHtml = false);
+    bool MessageHtml = false,
+    string? Icon = null);
 
 /// <summary>
 /// One button on a gate. <see cref="Value"/> is returned from
@@ -100,4 +101,5 @@ public record ActiveGate(
     IReadOnlyList<GateStep>? Steps = null,
     int StepProgress = 0,
     GateStepConfig? StepConfig = null,
-    bool MessageHtml = false);
+    bool MessageHtml = false,
+    string? Icon = null);

@@ -71,11 +71,12 @@ public static class GateEndpoints
                 Variant: "danger",
                 Buttons: new[]
                 {
-                    new GateButton("abort",    "Abort",    "secondary"),
                     new GateButton("continue", "Continue", "danger", IsDefault: true),
+                    new GateButton("abort",    "Abort",    "secondary"),
                 },
                 Source: "core:unhomed-guard",
-                Key: "safety.unhomed"
+                Key: "safety.unhomed",
+                Icon: "hand"
             ), CancellationToken.None);
 
             return Results.Ok(new EnsureHomedResponse(chosen == "continue"));

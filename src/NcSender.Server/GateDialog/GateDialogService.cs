@@ -88,7 +88,8 @@ public class GateDialogService : IGateService
             Steps: options.Steps,
             StepProgress: 0,
             StepConfig: options.StepConfig,
-            MessageHtml: options.MessageHtml);
+            MessageHtml: options.MessageHtml,
+            Icon: options.Icon);
 
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var reg = ct.Register(() => OnCallerCancelled(gateId));
@@ -207,7 +208,8 @@ public class GateDialogService : IGateService
             StepConfig: g.StepConfig is null
                 ? null
                 : new WsGateStepConfig(g.StepConfig.HoldMs, g.StepConfig.CountdownSec, g.StepConfig.ChainSteps),
-            MessageHtml: g.MessageHtml);
+            MessageHtml: g.MessageHtml,
+            Icon: g.Icon);
 
     // ── Persistence ─────────────────────────────────────────────────────────
 
@@ -230,7 +232,7 @@ public class GateDialogService : IGateService
                     g.GateId, g.Title, g.Message, g.Variant ?? "info",
                     buttons, g.Source, Persist: true, Key: g.Key,
                     Steps: steps, StepProgress: g.StepProgress,
-                    StepConfig: g.StepConfig, MessageHtml: g.MessageHtml);
+                    StepConfig: g.StepConfig, MessageHtml: g.MessageHtml, Icon: g.Icon);
 
                 // Orphaned TCS — the awaiter is dead across the restart. Complete()
                 // still fires close broadcast + disk cleanup on client response.
@@ -258,7 +260,7 @@ public class GateDialogService : IGateService
                         p.Gate.GateId, p.Gate.Title, p.Gate.Message, p.Gate.Variant,
                         p.Gate.Buttons.ToList(), p.Gate.Source, p.Gate.Key,
                         p.Gate.Steps?.ToList(), p.Gate.StepProgress,
-                        p.Gate.StepConfig, p.Gate.MessageHtml))
+                        p.Gate.StepConfig, p.Gate.MessageHtml, p.Gate.Icon))
                     .ToList();
 
                 if (toStore.Count == 0)
@@ -294,7 +296,8 @@ internal record PersistedGate(
     List<GateStep>? Steps = null,
     int StepProgress = 0,
     GateStepConfig? StepConfig = null,
-    bool MessageHtml = false);
+    bool MessageHtml = false,
+    string? Icon = null);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(List<PersistedGate>))]

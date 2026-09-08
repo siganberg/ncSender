@@ -58,6 +58,8 @@ export interface Gate {
   stepProgress?: number;
   stepConfig?: GateStepConfig;
   source?: string;
+  /** Content icon: 'hand' | 'home' | 'warning' | 'info' | 'success'. Defaults by variant. */
+  icon?: string;
 }
 
 const gates = ref<Gate[]>([]);

@@ -45,7 +45,7 @@
         <Transition name="home-main" mode="out-in">
           <button
             v-if="!homeSplit"
-            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
+            :class="['control', 'home-button', 'home-main-view', { 'is-holding': homePress.active, 'needs-homing': !store.isHomed.value && store.homingEnabled.value, 'long-press-triggered': homePress.triggered, 'blink-border': homePress.blinking }]"
             :disabled="homeDisabled"
             title="Home All (Hold to home, Double-tap to split)"
             @mousedown="startHomePress($event)"
@@ -70,21 +70,21 @@
         <Transition name="home-split" mode="out-in">
           <div v-if="homeSplit" class="home-split">
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingEnabled.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('X')"
             >
               HX
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingEnabled.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('Y')"
             >
               HY
             </button>
             <button
-              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingStartupRequired.value }]"
+              :class="['control', 'home-split-btn', { 'needs-homing': !store.isHomed.value && store.homingEnabled.value }]"
               :disabled="homeDisabled"
               @click="goHomeAxis('Z')"
             >
@@ -279,6 +279,7 @@ import JogControls from './JogControls.vue';
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
 import { keyBindingStore } from '../keyboard/key-binding-store';
 import { useAppStore } from '@/composables/use-app-store';
+import { ensureHomed } from '@/composables/useUnhomedGuard';
 import { formatCoordinate, getUnitGCode, mmToInches } from '@/lib/units';
 import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
@@ -944,10 +945,19 @@ const cancelAxisZeroPress = (axis: AxisZeroType) => {
   state.touchUsed = false;
 };
 
+// Moving to work zero on an un-homed machine is a rapid to an unknown
+// place. Same gate as M6 / $TLS, only when homing exists ($22 > 0):
+// without homing switches there is nothing the user could do about it.
+const confirmUnhomedMove = async (): Promise<boolean> => {
+  if (!appStore.homingEnabled.value) return true;
+  return ensureHomed();
+};
+
 const goToZero = async (axis: 'X' | 'Y' | 'Z') => {
   if (motionControlsDisabled.value) {
     return;
   }
+  if (!(await confirmUnhomedMove())) return;
   try {
     await api.sendCommandViaWebSocket({
       command: `G90 G0 ${axis}0`,
@@ -962,6 +972,7 @@ const goToZeroXY = async () => {
   if (motionControlsDisabled.value) {
     return;
   }
+  if (!(await confirmUnhomedMove())) return;
   try {
     const isImperial = appStore.unitsPreference.value === 'imperial';
     const unitsGCode = getUnitGCode(appStore.unitsPreference.value);
@@ -1607,34 +1618,29 @@ h2 {
   inset: 0;
 }
 
-/* Glowing animation for Home button when not homed */
-@keyframes glow-pulse {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(26, 188, 156, 0.6),
-                0 0 16px rgba(26, 188, 156, 0.4),
-                inset 0 0 8px rgba(26, 188, 156, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(26, 188, 156, 0.8),
-                0 0 24px rgba(26, 188, 156, 0.6),
-                inset 0 0 12px rgba(26, 188, 156, 0.5);
-  }
-}
-
-.home-button.needs-homing {
-  animation: glow-pulse 2s ease-in-out infinite;
-  background: var(--color-accent);
-  color: white;
-}
-
-.home-button.needs-homing .home-icon {
-  color: white;
-}
-
+/* Home button attention pulse while the machine is not homed (shown
+   whenever $22 has homing enabled, whether or not homing-on-startup is
+   required). The button itself breathes between the accent colour and
+   a dimmed version of it: an opacity animation on a small element runs
+   on the compositor, and unlike an outer glow it can't be clipped by the
+   jog grid around it. The Hold hint switches to white on the accent
+   background so it stays legible. */
+.home-button.needs-homing,
 .home-split-btn.needs-homing {
-  animation: glow-pulse 2s ease-in-out infinite;
   background: var(--color-accent);
   color: white;
+  animation: home-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
+.home-button.needs-homing .home-icon,
+.home-button.needs-homing .hold-hint {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+@keyframes home-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 /* Simple confirm dialog styling (mirrors GCodeVisualizer). */

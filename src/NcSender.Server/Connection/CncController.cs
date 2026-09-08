@@ -1292,8 +1292,15 @@ public partial class CncController : ICncController
                     break;
 
                 case "H":
-                    _lastStatus.Homed = value.Contains('1');
-                    break;
+                    {
+                        // grblHAL: H:<homed>,<axes mask>. Only the first field
+                        // says whether the machine is homed; the mask alone can
+                        // contain a '1' (e.g. 15 for XYZA), which used to read
+                        // as "homed" on an un-homed 4-axis machine.
+                        var homedField = value.Split(',')[0].Trim();
+                        _lastStatus.Homed = int.TryParse(homedField, out var homedFlag) && homedFlag != 0;
+                        break;
+                    }
 
                 case "FS":
                     hasFsField = true;

@@ -724,9 +724,12 @@ public class JsPluginEngine : IJsPluginEngine
         var key = obj.Get("key") is { } kp && kp.IsString() ? kp.AsString() : null;
         var messageHtml = obj.Get("messageHtml") is { } mh && mh.IsBoolean() && mh.AsBoolean();
 
+        // Optional icon name for the dialog ("hand", "home", "warning", "info",
+        // "success"); the client falls back to one that matches the variant.
+        string? icon = obj.Get("icon") is { } ip && ip.IsString() ? ip.AsString() : null;
         return new GateOptions(
             title.AsString(), message, variant, buttons, $"plugin:{pluginId}",
-            persist, key, steps, stepConfig, messageHtml);
+            persist, key, steps, stepConfig, messageHtml, icon);
     }
 
     private static WsDialogOptions? JsValueToDialogOptions(JsValue v)

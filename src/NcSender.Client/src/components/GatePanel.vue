@@ -2,13 +2,48 @@
 <template>
   <div class="gate-panel" :class="`gate-panel--${gate.variant || 'info'}`">
     <h3 class="gate-panel__title">{{ gate.title }}</h3>
-    <p
-      v-if="gate.message && gate.messageHtml"
-      class="gate-panel__message"
-      v-html="gate.message"
-    ></p>
-    <p v-else-if="gate.message" class="gate-panel__message">{{ gate.message }}</p>
-    <p v-if="showHoldHint" class="gate-panel__hint">{{ holdHint }}</p>
+
+    <div class="gate-panel__content">
+      <div class="gate-panel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <template v-if="iconName === 'hand'">
+            <!-- raised hand: "stop, think before you proceed" -->
+            <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" />
+            <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+            <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
+            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+          </template>
+          <template v-else-if="iconName === 'home'">
+            <path d="M3 10.5 12 3l9 7.5" />
+            <path d="M5 9.5V21h14V9.5" />
+            <path d="M10 21v-6h4v6" />
+          </template>
+          <template v-else-if="iconName === 'info'">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5" />
+            <path d="M12 8h.01" />
+          </template>
+          <template v-else-if="iconName === 'success'">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+          </template>
+          <template v-else>
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </template>
+        </svg>
+      </div>
+      <div class="gate-panel__text">
+        <p
+          v-if="gate.message && gate.messageHtml"
+          class="gate-panel__message"
+          v-html="gate.message"
+        ></p>
+        <p v-else-if="gate.message" class="gate-panel__message">{{ gate.message }}</p>
+        <p v-if="showHoldHint" class="gate-panel__hint">{{ holdHint }}</p>
+      </div>
+    </div>
 
     <div class="gate-panel__actions">
       <template v-for="item in actionItems" :key="item.key">
@@ -40,6 +75,19 @@ import type { Gate, GateButton, GateStep } from '../composables/useGateDialog';
 import GateStepButton from './GateStepButton.vue';
 
 const props = defineProps<{ gate: Gate }>();
+
+// Header icon: an explicit icon from the gate wins; otherwise pick one
+// that matches the variant so every gate reads consistently.
+const iconName = computed(() => {
+  const explicit = props.gate.icon;
+  if (explicit === 'hand' || explicit === 'home' || explicit === 'info' || explicit === 'success' || explicit === 'warning') return explicit;
+  const v = props.gate.variant || 'info';
+  if (v === 'info') return 'info';
+  if (v === 'success') return 'success';
+  // Danger gates are "stop and think before you proceed": raised hand.
+  if (v === 'danger') return 'hand';
+  return 'warning';
+});
 const emit = defineEmits<{
   (e: 'respond', gateId: string, value: string): void;
   (e: 'fire-step', gateId: string, stepIndex: number): void;
@@ -116,12 +164,61 @@ watch(stepIndex, () => { /* no-op */ });
   flex-direction: column;
   gap: var(--gap-md);
   padding: var(--gap-lg);
+  min-width: min(420px, 90vw);
+}
+
+/* Centred title as the header, two-column content (icon badge left,
+   text right), buttons centred in the footer. The badge colour follows
+   the variant so a danger gate reads as a warning before the words are
+   read. */
+.gate-panel__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+}
+
+.gate-panel__text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.gate-panel__icon {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+}
+.gate-panel__icon svg { width: 34px; height: 34px; }
+
+.gate-panel--danger .gate-panel__icon {
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff6b6b;
+}
+.gate-panel--warning .gate-panel__icon {
+  background: rgba(255, 193, 7, 0.16);
+  color: #ffc107;
+}
+.gate-panel--success .gate-panel__icon {
+  background: rgba(46, 204, 113, 0.16);
+  color: #2ecc71;
 }
 
 .gate-panel__title {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
   color: var(--color-text-primary);
 }
 
@@ -147,6 +244,7 @@ watch(stepIndex, () => { /* no-op */ });
   justify-content: center;
   margin-top: var(--gap-sm);
 }
+.gate-panel__actions .gate-panel__btn { min-width: 112px; }
 
 .gate-panel__btn {
   padding: 12px 24px;

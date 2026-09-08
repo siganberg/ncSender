@@ -268,6 +268,10 @@ const homingCycle = computed(() => serverState.machineState?.homingCycle ?? 0);
 // use `homingCycle > 0` only for "does homing exist at all" (e.g. rapids,
 // tool positions, which still need a known reference frame).
 const homingStartupRequired = computed(() => (homingCycle.value & 4) !== 0);
+// $22 bit 0 (value 1) = homing cycle enabled. This is the gate for "should
+// we nag about homing at all": with homing disabled the controller never
+// reports a homed state, so an un-homed indicator would never clear.
+const homingEnabled = computed(() => homingCycle.value > 0);
 const isProbing = computed(() => senderStatus.value === 'probing');
 const isJobRunning = computed(() => serverState.jobLoaded?.status === 'running' || senderStatus.value === 'running');
 const unitsPreference = computed<UnitsPreference>(() => {
@@ -1127,6 +1131,7 @@ export function useAppStore() {
     isHomed,
     homingCycle,
     homingStartupRequired,
+    homingEnabled,
     isProbing,
     isJobRunning,
     unitsPreference,
