@@ -237,6 +237,7 @@
             </button>
           </div>
           <button
+            ref="parkButtonRef"
             :class="['control', 'park-btn-wide', { 'save-mode': parkSaveMode, 'long-press-triggered': parkPress.saved, 'blink-border': parkPress.blinking }]"
             :title="parkSaveMode ? 'Tap to save the current position as the parking location' : 'Park (Hold to go, double-tap to set a new parking location)'"
             @mousedown="startParkPress($event)"
@@ -628,6 +629,15 @@ const handleGlobalClick = (e: MouseEvent | TouchEvent) => {
       axisZeroSplit.value = false;
     }
   }
+
+  // Park "Save" mode: a tap anywhere else cancels it, back to plain Park,
+  // same as the split Home / XY0 buttons.
+  if (parkSaveMode.value) {
+    const parkBtn = parkButtonRef.value;
+    if (parkBtn && (!target || !parkBtn.contains(target))) {
+      disarmParkSaveMode();
+    }
+  }
 };
 
 const handleGlobalPointerUp = () => {
@@ -675,6 +685,7 @@ const PARK_DOUBLE_TAP_MS = 400;
 const PARK_SAVE_MODE_TIMEOUT_MS = 6000;
 const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; saved: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, saved: false, blinking: false });
 const parkSaveMode = ref(false);
+const parkButtonRef = ref<HTMLElement | null>(null);
 let lastParkTapTime = 0;
 let parkSaveModeTimer: ReturnType<typeof setTimeout> | undefined;
 
