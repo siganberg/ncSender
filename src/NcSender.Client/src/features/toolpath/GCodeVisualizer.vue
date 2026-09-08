@@ -6347,9 +6347,10 @@ body.theme-light .dot--rapid {
   align-items: center;
   gap: 10px;
   max-width: min(520px, calc(100% - 48px));
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
+  overflow: hidden;
+  background: #d9534f;
+  border: 1px solid #d9534f;
+  color: white;
   padding: 10px 16px;
   border-radius: var(--radius-medium);
   font-size: 0.9rem;
@@ -6365,6 +6366,19 @@ body.theme-light .dot--rapid {
     oob-nudge 3s ease-in-out 0.6s infinite;
   will-change: transform;
 }
+.out-of-bounds-warning > span { position: relative; z-index: 1; }
+/* Whole card breathes: opaque red base with a dark overlay whose opacity
+   swings (same trick as the TLS / Home pulses, no transparency). */
+.out-of-bounds-warning::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.45);
+  animation: attention-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
 
 .out-of-bounds-warning__icon {
   flex: 0 0 auto;
@@ -6376,22 +6390,10 @@ body.theme-light .dot--rapid {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ff6b6b;
-  color: white;
+  background: white;
+  color: #d9534f;
 }
-.out-of-bounds-warning__icon svg { width: 18px; height: 18px; position: relative; z-index: 1; }
-/* Breathing badge: an opaque overlay whose opacity swings, same trick as
-   the TLS / Home attention pulses (no transparency in the button itself). */
-.out-of-bounds-warning__icon::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: rgba(20, 20, 30, 0.6);
-  animation: attention-breathe 1.4s ease-in-out infinite;
-  will-change: opacity;
-}
+.out-of-bounds-warning__icon svg { width: 18px; height: 18px; }
 
 @keyframes oob-enter {
   from { opacity: 0; transform: translate(-50%, 12px); }
