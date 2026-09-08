@@ -5546,10 +5546,24 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   cursor: default;
 }
 
+/* Disabled items (e.g. TLS with no tool loaded) dim through colour, not
+   opacity, so the button stays opaque over the visualizer. */
 .tools-legend__item.disabled {
-  opacity: 0.4;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  background: color-mix(in srgb, var(--color-surface-muted) 70%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
   cursor: not-allowed;
   pointer-events: none;
+}
+
+.tools-legend__item.disabled .tools-legend__label {
+  color: var(--color-text-muted, var(--color-text-secondary));
+}
+
+.tools-legend__item.disabled .tools-legend__dot,
+.tools-legend__item.disabled .dot {
+  filter: grayscale(1);
+  opacity: 0.5;
 }
 
 .tools-legend__item .long-press-indicator {
