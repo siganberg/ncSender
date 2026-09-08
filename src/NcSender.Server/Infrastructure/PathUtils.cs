@@ -37,6 +37,8 @@ public static class PathUtils
     public static string GetGcodeFilesDir() => Path.Combine(GetUserDataDir(), "gcode-files");
 
     public static string GetGcodeCacheDir() => Path.Combine(GetUserDataDir(), "gcode-cache");
+    public static string GetTipsCacheDir() => Path.Combine(GetUserDataDir(), "tips");
+    public static string GetTipsMediaDir() => Path.Combine(GetTipsCacheDir(), "media");
 
     public static string GetLogsDir() => Path.Combine(GetUserDataDir(), "logs");
 

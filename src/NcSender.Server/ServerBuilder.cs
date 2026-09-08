@@ -185,6 +185,8 @@ public static class ServerBuilder
         builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
         builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
+        builder.Services.AddSingleton<ITipsService>(sp =>
+            new Tips.TipsService(sp.GetRequiredService<ILogger<Tips.TipsService>>(), "community"));
         builder.Services.AddSingleton<NcSender.Server.Devices.IPluginSerialService,
                                      NcSender.Server.Devices.PluginSerialService>();
         // For plugin-serial's server-side firmware download (bypasses browser CORS).
@@ -397,6 +399,7 @@ public static class ServerBuilder
         DongleEndpoints.Map(app);
         NcSender.Server.Accessories.AccessoryEndpoints.Map(app);
         UpdateEndpoints.Map(app);
+        Tips.TipsEndpoints.Map(app);
         NcSender.Server.Devices.PluginSerialEndpoints.Map(app);
         NcSender.Server.Devices.PluginLicenseEndpoints.Map(app);
         NcSender.Server.Backup.BackupEndpoints.Map(app);

@@ -172,6 +172,12 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(PluginInstallFromUrlRequest))]
 [JsonSerializable(typeof(PluginExecuteToolMenuRequest))]
 [JsonSerializable(typeof(RotationRequest))]
+// Tips & Tricks
+[JsonSerializable(typeof(TipMedia))]
+[JsonSerializable(typeof(TipItem))]
+[JsonSerializable(typeof(List<TipItem>))]
+[JsonSerializable(typeof(TipsIndex))]
+[JsonSerializable(typeof(TipsResponse))]
 // Firmware flash
 [JsonSerializable(typeof(FirmwareFlashRequest))]
 [JsonSerializable(typeof(FirmwareFlashResponse))]

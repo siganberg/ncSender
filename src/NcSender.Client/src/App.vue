@@ -221,6 +221,16 @@
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
+                  <label class="setting-label">Tips &amp; Tricks at Startup</label>
+                  <div class="settings-note">
+                    Show a tip each time ncSender starts.
+                    <button type="button" class="settings-link" @click="openTips">Show tips now</button>
+                  </div>
+                </div>
+                <ToggleSwitch v-model="tipsOnStartup" />
+              </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
                   <label class="setting-label">Units</label>
                   <div class="settings-note">
                     Choose between Metric (mm) and Imperial (inches) for coordinates, distances, and feed rates.
@@ -986,6 +996,12 @@
     <PluginDialog />
 
   <!-- Gate Dialog Host (server-owned safety prompts) -->
+  <TipsDialog
+    v-if="showTipsDialog"
+    :start-after-id="tipsLastShownId"
+    v-model:show-at-startup="tipsOnStartup"
+    @close="onTipsClosed"
+  />
   <GateHost />
 
   <!-- Plugin Modal Dialog -->
@@ -1128,6 +1144,7 @@ import PluginDialog from './components/PluginDialog.vue';
 import GateHost from './components/GateHost.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
+import TipsDialog from './components/TipsDialog.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import AccessoriesDialog from './components/AccessoriesDialog.vue';
@@ -1557,6 +1574,29 @@ const toolSourceName = computed(() => {
 
 // Park on Pause setting
 const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
+
+// Tips & Tricks: shown at startup unless opted out (Settings > General
+// re-enables it); the dialog's own checkbox writes the same setting.
+// tipsLastShownId makes the next start pick up at the following tip.
+const tipsOnStartup = ref(initialSettings?.tipsOnStartup ?? true);
+const tipsLastShownId = ref<number>(Number(initialSettings?.tipsLastShownId ?? 0) || 0);
+const showTipsDialog = ref(false);
+const openTips = () => { showTipsDialog.value = true; };
+const onTipsClosed = async (lastShownId: number | null) => {
+  showTipsDialog.value = false;
+  if (lastShownId == null || lastShownId === tipsLastShownId.value) return;
+  tipsLastShownId.value = lastShownId;
+  try {
+    const { updateSettings } = await import('./lib/settings-store.js');
+    await updateSettings({ tipsLastShownId: lastShownId });
+  } catch (err) { console.error('Failed to save last shown tip:', err); }
+};
+watch(tipsOnStartup, async (value) => {
+  try {
+    const { updateSettings } = await import('./lib/settings-store.js');
+    await updateSettings({ tipsOnStartup: value });
+  } catch (err) { console.error('Failed to save tips setting:', err); }
+});
 
 // Home Location setting
 const homeLocation = ref(initialSettings?.homeLocation ?? 'back-left');
@@ -3096,6 +3136,9 @@ onMounted(async () => {
   if (!isSettingsValid(initialSettings)) {
     showSetupDialog.value = true;
     await loadSetupUsbPorts();
+  } else if (tipsOnStartup.value) {
+    // Tip of the day, a beat after the UI has settled.
+    setTimeout(() => { if (!showSetupDialog.value) showTipsDialog.value = true; }, 1500);
   }
 
   // Alarm description is now read from machineState in use-app-store.ts
@@ -5345,5 +5388,15 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .flash-btn-secondary:hover:not(:disabled) {
   background: var(--color-surface);
+}
+.settings-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 4px;
+  color: var(--color-accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
 }
 </style>
