@@ -86,6 +86,8 @@
         :current-tool="status.tool"
         :tool-length-set="status.toolLengthSet"
         :alarm-message="alarmMessage"
+        :alarm-code="lastAlarmCode"
+        :alarm-from-startup="alarmFromStartup"
         @change-view="viewport = $event"
       />
       <RightPanel
@@ -1473,7 +1475,7 @@ const handleInstallVersion = async (tag: string) => {
 };
 
 // SHARED STATE FROM STORE (read-only refs from centralized store)
-const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef, hasFullControl, remoteStateLoading, remoteStateInitialized, isLocalClient } = store;
+const { serverState, status, consoleLines, websocketConnected, lastAlarmCode, alarmMessage, alarmFromStartup, gridSizeX, gridSizeY, zMaxTravel, machineOrientation, isConnected, senderStatus: senderStatusRef, hasFullControl, remoteStateLoading, remoteStateInitialized, isLocalClient } = store;
 
 const currentSenderStatus = computed(() => senderStatusRef.value ?? serverState.senderStatus ?? 'connecting');
 

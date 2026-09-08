@@ -96,7 +96,7 @@
 
       <!-- Job Info / Progress bar - top center -->
       <div class="progress-bar-container progress-bar-container--top">
-        <ProgressBar :warning-message="showPreRunState && showOutOfBoundsWarning ? outOfBoundsMessage : undefined" />
+        <ProgressBar />
       </div>
 
       <!-- Segment Legend - right side center -->
@@ -332,34 +332,53 @@
         </div>
       </div>
 
-      <!-- Alarm message -->
-      <div class="alarm-message-warning" v-if="alarmMessage">
-        <div class="alarm-message-body">
-          <svg class="warning-icon" width="64" height="64" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 3.5c-.6 0-1.1.3-1.4.8L2.6 18.1c-.6 1 .1 2.4 1.4 2.4h16c1.3 0 2-1.3 1.4-2.4L13.4 4.3c-.3-.5-.8-.8-1.4-.8z" fill="#b84444" stroke="#b84444" stroke-width="1.5" stroke-linejoin="round"/>
-            <rect x="11" y="9.5" width="2" height="5.5" rx="1" fill="#ff8888"/>
-            <circle cx="12" cy="17" r="1.2" fill="#ff8888"/>
-          </svg>
-          <div class="alarm-message-right">
-            <span>Alert: {{ alarmMessage }}</span>
-            <button class="alarm-unlock-btn" @click="handleUnlock">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Alarm: a dialog scoped to the visualizer card (centred in it, no
+           full-screen scrim), styled like the app's dialogs rather than a
+           glowing banner. -->
+      <div class="visualizer-dialog" v-if="alarmMessage">
+        <div class="visualizer-dialog__panel alarm-message-warning" role="alertdialog" aria-live="assertive">
+          <h3 class="visualizer-dialog__title">{{ alarmHelp ? alarmHelp.title : 'Alarm' }}</h3>
+          <div class="visualizer-dialog__content alarm-message-body">
+            <div class="visualizer-dialog__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+            </div>
+            <div class="visualizer-dialog__text">
+              <p v-if="alarmHelp" class="visualizer-dialog__message">{{ alarmHelp.fix }}</p>
+              <p v-if="alarmCode != null || !alarmHelp" :class="alarmHelp ? 'visualizer-dialog__detail' : 'visualizer-dialog__message'">
+                <span v-if="alarmCode != null" class="visualizer-dialog__code">Alarm {{ alarmCode }}</span>
+                {{ alarmMessage }}
+              </p>
+            </div>
+          </div>
+          <div class="visualizer-dialog__actions alarm-message-right">
+            <button class="alarm-unlock-btn" :class="{ unlocking }" :disabled="unlocking" @click="handleUnlock">
+              <span v-if="unlocking" class="alarm-unlock-btn__spinner" aria-hidden="true"></span>
+              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M17 11H7C5.89543 11 5 11.8954 5 13V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V13C19 11.8954 18.1046 11 17 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 <circle cx="12" cy="16" r="1" fill="currentColor"/>
                 <path d="M7 11V7C7 5.67392 7.52678 4.40215 8.46447 3.46447C9.40215 2.52678 10.6739 2 12 2C13.3261 2 14.5979 2.52678 15.5355 3.46447C16.4732 4.40215 17 5.67392 17 7V11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              Press to Unlock
+              <template v-if="unlocking">Unlocking… {{ unlockSecondsLeft }}s</template>
+              <template v-else>Press to Unlock</template>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Out of bounds warning (only show when job is running, not in pre-run state) -->
-      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning && !showPreRunState">
-        <svg class="warning-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 20h20L12 2z" fill="#ff8888" opacity="0.9"/>
-          <path d="M11 10h2v5h-2zm0 6h2v2h-2z" fill="#b84444"/>
-        </svg>
+      <!-- Out of bounds warning: the single place this is shown (pre-run and
+           while running) so the Job Info card stays a plain info card. -->
+      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning">
+        <span class="out-of-bounds-warning__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+        </span>
         <span>{{ outOfBoundsMessage }}</span>
       </div>
 
@@ -614,6 +633,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
+import { getAlarmHelp } from '@/lib/alarm-help';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
@@ -680,6 +700,8 @@ const props = withDefaults(defineProps<{
   spindleRpmTarget?: number;
   spindleRpmActual?: number;
   alarmMessage?: string;
+  alarmCode?: number | string | null;
+  alarmFromStartup?: boolean;
   currentTool?: number;
   toolLengthSet?: boolean;
 }>(), {
@@ -709,16 +731,68 @@ const normalizedSenderStatus = computed(() => (props.senderStatus || '').toLower
 const isToolChanging = computed(() => normalizedSenderStatus.value === 'tool-changing');
 const isConnecting = computed(() => normalizedSenderStatus.value === 'connecting');
 const isAlarm = computed(() => normalizedSenderStatus.value === 'alarm');
+const alarmHelp = computed(() => getAlarmHelp(props.alarmCode, appStore.status.Pn || '', !!props.alarmFromStartup));
 
-const handleUnlock = async () => {
+// Unlock: grblHAL refuses $X while the cause is still present (E-stop held,
+// limit switch engaged, ...). Instead of making the user hammer the button,
+// one press starts a 30 s attempt that retries the reset + unlock sequence
+// every few seconds until the alarm clears or the time runs out.
+const UNLOCK_WINDOW_SEC = 30;
+const UNLOCK_RETRY_MS = 3000;
+const unlocking = ref(false);
+const unlockSecondsLeft = ref(0);
+let unlockTicker: ReturnType<typeof setInterval> | null = null;
+let unlockRun = 0;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const sendUnlockSequence = async (silent: boolean) => {
+  // Only the first attempt is echoed to the terminal; the retries are
+  // just polling and would flood it with identical lines and error:79s.
+  const meta = { sourceId: 'client', silent };
   try {
-    await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await api.sendCommand('$X', { meta: { sourceId: 'client' } });
+    await api.sendCommand('\x18', { meta });
+    await sleep(500);
+    await api.sendCommand('$X', { meta });
   } catch (error) {
     console.error('Failed to send unlock command:', error);
   }
 };
+
+const stopUnlockAttempt = () => {
+  unlockRun += 1;
+  unlocking.value = false;
+  unlockSecondsLeft.value = 0;
+  if (unlockTicker) {
+    clearInterval(unlockTicker);
+    unlockTicker = null;
+  }
+};
+
+const handleUnlock = async () => {
+  if (unlocking.value) return;
+  const run = ++unlockRun;
+  unlocking.value = true;
+  unlockSecondsLeft.value = UNLOCK_WINDOW_SEC;
+  const startedAt = Date.now();
+  unlockTicker = setInterval(() => {
+    const left = UNLOCK_WINDOW_SEC - Math.floor((Date.now() - startedAt) / 1000);
+    unlockSecondsLeft.value = Math.max(0, left);
+    if (left <= 0) stopUnlockAttempt();
+  }, 250);
+
+  let attempt = 0;
+  while (run === unlockRun && Date.now() - startedAt < UNLOCK_WINDOW_SEC * 1000) {
+    await sendUnlockSequence(attempt++ > 0);
+    if (run !== unlockRun) break;
+    await sleep(UNLOCK_RETRY_MS);
+  }
+  if (run === unlockRun) stopUnlockAttempt();
+};
+
+// The alarm cleared (dialog goes away) or the component is torn down: stop retrying.
+watch(() => props.alarmMessage, (msg) => { if (!msg) stopUnlockAttempt(); });
+onUnmounted(() => stopUnlockAttempt());
 const isHomingRequired = computed(() => normalizedSenderStatus.value === 'homing-required');
 const isHoming = computed(() => normalizedSenderStatus.value === 'homing');
 
@@ -950,7 +1024,7 @@ const showToolInfo = ref<number | null>(null); // Currently displayed tool info 
 const outOfBoundsAxes = ref<string[]>([]);
 const outOfBoundsDirections = ref<string[]>([]);
 const outOfBoundsMessage = computed(() => {
-  const base = 'Warning: Toolpath exceeds machine boundaries';
+  const base = 'Toolpath exceeds machine boundaries';
   if (!showOutOfBoundsWarning.value) return '';
 
   // Prefer direction list; map Z+/Z- to friendly phrases, keep X/Y as-is
@@ -6117,60 +6191,146 @@ body.theme-light .dot--rapid {
 }
 
 /* Alarm message warning */
-.alarm-message-warning {
+/* Visualizer-scoped dialog: a panel centred in the visualizer card only
+   (the card underneath stays visible and interactive). Same anatomy as the app's gate dialogs (centred
+   title, icon badge beside the text, centred actions) so alarms read as
+   part of the same family, without the old glowing red border. */
+.visualizer-dialog {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(20, 20, 30, 0.85);
-  border: 2px solid #b84444;
-  color: #ff8888;
-  padding: 16px 24px;
-  border-radius: var(--radius-medium);
-  font-size: 0.9rem;
-  font-weight: 500;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  inset: 0;
   z-index: 11;
-  animation: warningPulse 2s ease-in-out infinite;
-}
-
-.alarm-message-body {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
 }
 
-.alarm-message-body .warning-icon {
-  flex-shrink: 0;
-}
-
-.alarm-message-right {
+.visualizer-dialog__panel {
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
+  gap: var(--gap-md, 16px);
+  width: min(460px, 100%);
+  padding: var(--gap-lg, 24px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-elevated, 0 20px 40px rgba(0, 0, 0, 0.35));
+  color: var(--color-text-primary);
+}
+
+.visualizer-dialog__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--color-text-primary);
+}
+
+.visualizer-dialog__content {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1;
+  gap: 18px;
+}
+
+.visualizer-dialog__icon {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff6b6b;
+}
+.visualizer-dialog__icon svg { width: 34px; height: 34px; }
+
+.visualizer-dialog__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.visualizer-dialog__message {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.visualizer-dialog__detail {
+  margin: 0;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.visualizer-dialog__code {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff6b6b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+}
+
+.visualizer-dialog__actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--gap-sm, 10px);
+  margin-top: var(--gap-sm, 8px);
 }
 
 .alarm-unlock-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  align-self: center;
-  background: #dc3545;
+  gap: 8px;
+  min-width: 140px;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8));
   color: white;
   border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  border-radius: var(--radius-small);
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.alarm-unlock-btn:hover {
-  background: #ff4444;
+.alarm-unlock-btn:disabled,
+.alarm-unlock-btn.unlocking {
+  cursor: default;
+  background: color-mix(in srgb, #ff6b6b 55%, var(--color-surface));
+  transform: none;
+  box-shadow: none;
+}
+
+.alarm-unlock-btn__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  animation: alarm-unlock-spin 0.8s linear infinite;
+}
+
+@keyframes alarm-unlock-spin {
+  to { transform: rotate(360deg); }
+}
+
+.alarm-unlock-btn:not(:disabled):hover {
   transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
 }
 
 .alarm-unlock-btn:active {
@@ -6185,18 +6345,32 @@ body.theme-light .dot--rapid {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(20, 20, 30, 0.85);
-  border: 2px solid #b84444;
-  color: #ff8888;
-  padding: 10px 20px;
+  gap: 10px;
+  max-width: min(520px, calc(100% - 48px));
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 10px 16px;
   border-radius: var(--radius-medium);
   font-size: 0.9rem;
   font-weight: 500;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  line-height: 1.4;
+  box-shadow: var(--shadow-elevated, 0 12px 28px rgba(0, 0, 0, 0.35));
   z-index: 11;
-  animation: warningPulse 2s ease-in-out infinite;
 }
+
+.out-of-bounds-warning__icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff6b6b;
+}
+.out-of-bounds-warning__icon svg { width: 18px; height: 18px; }
 
 @keyframes warningPulse {
   0%, 50%, 100% {

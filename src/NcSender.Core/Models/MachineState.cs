@@ -124,5 +124,15 @@ public class MachineState
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AlarmDescription { get; set; }
+
+    /// <summary>
+    /// True when the alarm code was only ever seen as the status-report
+    /// substate ("Alarm:10"), never as an ALARM:N line. That is what a board
+    /// that booted into alarm looks like (e.g. the E-stop latch grblHAL holds
+    /// until the E-stop is cycled once), as opposed to an alarm raised while
+    /// we were connected.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AlarmFromStartup { get; set; }
 }
 

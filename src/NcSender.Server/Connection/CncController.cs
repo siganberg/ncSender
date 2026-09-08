@@ -1002,11 +1002,15 @@ public partial class CncController : ICncController
         else if (trimmedData.StartsWith("error:", StringComparison.OrdinalIgnoreCase))
         {
             LogControllerResponse(trimmedData);
+            // System commands and commands sent silently (e.g. the alarm dialog's
+            // unlock retries) keep their error responses off the terminal too.
+            var errorMeta = ActiveCommandMeta;
+            var suppressError = errorMeta?.SourceId == "system" || errorMeta?.Silent == true
+                || errorMeta?.Quiet?.TerminalResponse == true;
             if (_activeProtocol is not null && _activeProtocol.TryParseError(trimmedData, out var code, out var message))
             {
-                var isSystemCommand = GetActiveSourceId() == "system";
                 HandleCommandError(message, code);
-                if (!isSystemCommand)
+                if (!suppressError)
                     ErrorReceived?.Invoke(new CncError { Code = code?.ToString() ?? "", Message = message });
             }
             else
@@ -1016,9 +1020,8 @@ public partial class CncController : ICncController
                 if (int.TryParse(codePart, out var fallbackCode))
                 {
                     var msg = GrblErrors.GetMessage(fallbackCode);
-                    var isSystemCommand = GetActiveSourceId() == "system";
                     HandleCommandError(msg, fallbackCode);
-                    if (!isSystemCommand)
+                    if (!suppressError)
                         ErrorReceived?.Invoke(new CncError { Code = fallbackCode.ToString(), Message = msg });
                 }
             }
@@ -1263,8 +1266,16 @@ public partial class CncController : ICncController
         // NormalizePinState into its ambiguous PT fallback.
         _lastStatus.Pn = "";
 
-        // First part is always the machine status
-        _lastStatus.Status = parts[0].Split(':')[0];
+        // First part is always the machine status. grblHAL appends the alarm
+        // code as a substate ("Alarm:11") once it knows it, which is the only
+        // way to learn the code when we connect to an already-alarmed board
+        // (no ALARM:N line is ever sent for that).
+        var stateParts = parts[0].Split(':');
+        _lastStatus.Status = stateParts[0];
+        _lastStatus.AlarmCode = stateParts.Length > 1
+            && string.Equals(stateParts[0], "Alarm", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(stateParts[1], out var alarmSub) && alarmSub > 0
+            ? alarmSub : null;
 
         for (var i = 1; i < parts.Length; i++)
         {

@@ -25,6 +25,7 @@ public class CncEventBridge
     private readonly IGateService _gates;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
+    private bool _alarmFromStartup; // code came from the status substate only, never an ALARM:N line
 
     private static readonly Regex PluginMessageRegex = new(
         @"\[MSG[,\s]*:?\s*PLUGIN_([^:]+):([^\]]+)\]",
@@ -202,6 +203,15 @@ public class CncEventBridge
         // or clear it when no longer in alarm
         if (string.Equals(status.Status, "Alarm", StringComparison.OrdinalIgnoreCase))
         {
+            // Prefer the code from the status report substate when we never saw
+            // an ALARM:N line (controller was already alarmed when we connected).
+            if (_lastAlarmCode is null && status.AlarmCode is int subCode)
+            {
+                _lastAlarmCode = subCode;
+                _alarmFromStartup = true;
+            }
+
+            state.MachineState.AlarmFromStartup = _alarmFromStartup;
             if (_lastAlarmCode is int code)
             {
                 state.MachineState.AlarmCode = code;
@@ -221,7 +231,9 @@ public class CncEventBridge
         {
             state.MachineState.AlarmCode = null;
             state.MachineState.AlarmDescription = null;
+            state.MachineState.AlarmFromStartup = false;
             _lastAlarmCode = null;
+            _alarmFromStartup = false;
         }
 
         _context.UpdateSenderStatus();
@@ -834,6 +846,8 @@ public class CncEventBridge
         if (error.Code == "ALARM" && error.AlarmCode is int code)
         {
             _lastAlarmCode = code;
+            _alarmFromStartup = false; // raised while connected, not a boot latch
+            _context.State.MachineState.AlarmFromStartup = false;
 
             var description = _alarmService.GetAlarm(code)
                 ?? GrblAlarms.GetMessage(code);

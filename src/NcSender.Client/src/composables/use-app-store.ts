@@ -144,6 +144,7 @@ function trimConsoleBuffer() {
 const websocketConnected = ref(false);
 const lastAlarmCode = ref<number | string | undefined>(undefined);
 const alarmMessage = ref<string>('');
+const alarmFromStartup = ref<boolean>(false);
 const isLocalClient = ref<boolean | null>(null); // null = not yet determined
 const remoteControlEnabled = ref(false);
 const remoteStateInitialized = ref(false); // true after WebSocket handshake determines client type
@@ -775,11 +776,13 @@ export function initializeStore() {
       if (serverState.machineState?.alarmDescription) {
         lastAlarmCode.value = serverState.machineState.alarmCode;
         alarmMessage.value = serverState.machineState.alarmDescription;
+        alarmFromStartup.value = !!serverState.machineState.alarmFromStartup;
       }
     } else {
       // Clear alarm indicators if senderStatus is no longer alarm
       lastAlarmCode.value = undefined;
       alarmMessage.value = '';
+      alarmFromStartup.value = false;
     }
 
     // Try to load machine dimensions when connected
@@ -987,10 +990,12 @@ export async function seedInitialState(initData?: any) {
         if (serverState.machineState?.alarmDescription) {
           lastAlarmCode.value = serverState.machineState.alarmCode;
           alarmMessage.value = serverState.machineState.alarmDescription;
+          alarmFromStartup.value = !!serverState.machineState.alarmFromStartup;
         }
       } else {
         lastAlarmCode.value = undefined;
         alarmMessage.value = '';
+        alarmFromStartup.value = false;
       }
 
       // Cache firmware data from initData for machine dimensions
@@ -1111,6 +1116,7 @@ export function useAppStore() {
     websocketConnected: readonly(websocketConnected),
     lastAlarmCode: readonly(lastAlarmCode),
       alarmMessage: readonly(alarmMessage),
+      alarmFromStartup: readonly(alarmFromStartup),
       gridSizeX: readonly(gridSizeX),
       gridSizeY: readonly(gridSizeY),
       zMaxTravel: readonly(zMaxTravel),
