@@ -176,6 +176,30 @@ public class JsPluginEngine : IJsPluginEngine
                     // output when the spindle is active). See Pro edition
                     // mirror for full rationale.
                     jsMachineState.Set("spindleActive", JsValue.FromObject(engine, context.MachineState.SpindleActive));
+                    // Whether a tool length offset is active right now (G43.1
+                    // after a TLS probe; `[_tool_offset=1]`). This is what the
+                    // UI calls the Tool Length Reference. pneumaticatc probes
+                    // instead of reusing a stored library TLO while it is
+                    // missing, since a stored value is only meaningful
+                    // relative to a reference that has been established.
+                    jsMachineState.Set("toolLengthSet", JsValue.FromObject(engine, context.MachineState.ToolLengthSet));
+                    // Absolute machine XYZ from the last status report. Plugins
+                    // that need to make routing decisions at gcode-generation
+                    // time (e.g., "am I on the loading side of the rack?")
+                    // read this instead of trying to sniff runtime state —
+                    // grblHAL user-defined named parameters / o-word
+                    // conditionals aren't reliably supported on every build.
+                    var jsMpos = new JsObject(engine);
+                    var mposParts = (context.MachineState.MPos ?? "0,0,0").Split(',');
+                    double ParseCoord(int i) =>
+                        i < mposParts.Length &&
+                        double.TryParse(mposParts[i], System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out var v)
+                            ? v : 0.0;
+                    jsMpos.Set("x", JsValue.FromObject(engine, ParseCoord(0)));
+                    jsMpos.Set("y", JsValue.FromObject(engine, ParseCoord(1)));
+                    jsMpos.Set("z", JsValue.FromObject(engine, ParseCoord(2)));
+                    jsMachineState.Set("mpos", jsMpos);
                     jsContext.Set("machineState", jsMachineState);
                     jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
                     jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
