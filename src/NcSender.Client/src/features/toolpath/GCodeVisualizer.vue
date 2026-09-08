@@ -4167,7 +4167,7 @@ function extractToolsFromGCode(content: string): number[] {
 }
 
 // Tool press functionality - long press to change tool
-const LONG_PRESS_MS_TOOL = 1500;
+const LONG_PRESS_MS_TOOL = 1000;
 const DELAY_BEFORE_VISUAL_MS = 150;
 
 const startToolPress = (toolNumber: number | string, _evt?: Event) => {
@@ -5594,18 +5594,39 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   animation: blink-border-tool 0.4s ease-in-out;
 }
 
-@keyframes glow-pulse {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6), inset 0 0 0 2px rgba(239, 68, 68, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.8), inset 0 0 0 2px rgba(239, 68, 68, 0.6);
-  }
+/* TLS attention pulse (tool loaded but not measured). Same treatment as
+   the Home button: a solid off-red fill that stays opaque, with a dark
+   overlay breathing on top through opacity — the compositor animates
+   that without repainting, and nothing behind the button shows through.
+   Off-red rather than the accent so it reads as "needs attention". */
+.tools-legend__item.glow {
+  position: relative;
+  overflow: hidden;
+  background: #d9534f;
+  border-color: #d9534f;
+  color: white;
 }
 
-.tools-legend__item.glow {
-  animation: glow-pulse 2s ease-in-out infinite;
-  background: rgba(239, 68, 68, 0.1);
+.tools-legend__item.glow .tools-legend__label {
+  position: relative;
+  z-index: 1;
+  color: white;
+}
+
+.tools-legend__item.glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.55);
+  animation: attention-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes attention-breathe {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 .tools-legend__label {

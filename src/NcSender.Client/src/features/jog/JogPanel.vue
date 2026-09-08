@@ -1620,17 +1620,24 @@ h2 {
 
 /* Home button attention pulse while the machine is not homed (shown
    whenever $22 has homing enabled, whether or not homing-on-startup is
-   required). The button itself breathes between the accent colour and
-   a dimmed version of it: an opacity animation on a small element runs
-   on the compositor, and unlike an outer glow it can't be clipped by the
-   jog grid around it. The Hold hint switches to white on the accent
-   background so it stays legible. */
+   required). The button keeps a solid accent fill; a dark overlay on top
+   breathes through opacity, which the compositor animates without
+   repainting and without the button ever going see-through. Unlike an
+   outer glow it can't be clipped by the jog grid around it. */
 .home-button.needs-homing,
 .home-split-btn.needs-homing {
+  position: relative;
+  overflow: hidden;
   background: var(--color-accent);
   color: white;
-  animation: home-breathe 1.4s ease-in-out infinite;
-  will-change: opacity;
+}
+
+.home-button.needs-homing .home-button-content,
+.home-split-btn.needs-homing {
+  z-index: 1;
+}
+.home-button.needs-homing .home-button-content {
+  position: relative;
 }
 
 .home-button.needs-homing .home-icon,
@@ -1638,9 +1645,21 @@ h2 {
   color: rgba(255, 255, 255, 0.92);
 }
 
+.home-button.needs-homing::after,
+.home-split-btn.needs-homing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.55);
+  animation: home-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
 @keyframes home-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 /* Simple confirm dialog styling (mirrors GCodeVisualizer). */
