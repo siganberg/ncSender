@@ -237,8 +237,8 @@
             </button>
           </div>
           <button
-            :class="['control', 'park-btn-wide', { 'long-press-triggered': parkPress.saved, 'blink-border': parkPress.blinking }]"
-            title="Park (Hold 1.5s to go, 3s to save)"
+            :class="['control', 'park-btn-wide', { 'save-mode': parkSaveMode, 'long-press-triggered': parkPress.saved, 'blink-border': parkPress.blinking }]"
+            :title="parkSaveMode ? 'Tap to save the current position as the parking location' : 'Park (Hold to go, double-tap to set a new parking location)'"
             @mousedown="startParkPress($event)"
             @mouseup="endParkPress()"
             @mouseleave="cancelParkPress()"
@@ -247,8 +247,8 @@
             @touchcancel="cancelParkPress()"
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${parkPress.progress || 0}%` }"></div>
-            Park
-            <span class="hold-hint">Hold</span>
+            <span class="park-label">{{ parkSaveMode ? 'Save' : (parkPress.saved ? 'Saved' : 'Park') }}</span>
+            <span class="hold-hint">{{ parkSaveMode ? 'Tap' : 'Hold' }}</span>
           </button>
         </div>
       </div>
@@ -258,7 +258,7 @@
     <Dialog v-if="showParkingDialog" @close="showParkingDialog = false" :show-header="false" size="small" :z-index="10000">
       <ConfirmPanel
         title="Parking Location Not Set"
-        message="No parking location is saved yet. Please move your spindle to the desired location and continuously press the Park button for at least 3 seconds."
+        message="No parking location is saved yet. Jog the spindle to the spot you want, double-tap Park so it reads Save, then tap it once to store that position."
         :show-cancel="false"
         confirm-text="Close"
         variant="primary"
@@ -663,11 +663,42 @@ const goHomeAxis = async (axis: 'X' | 'Y' | 'Z') => {
   }
 };
 
-// --- Parking location: 1s to go to park, 2s to save coordinates ---
+// --- Parking location ---
+// Hold 1 s: move to the saved parking location.
+// Double-tap: the button turns into "Save"; a single tap then stores the
+// current machine position as the new parking location. Save mode times
+// out on its own so a stray double-tap can't leave the button armed.
+// (The old "hold 3 s to save" gesture is gone: nobody found it.)
 const showParkingDialog = ref(false);
 const LONG_PRESS_MS_PARK_GO = 1000;
-const LONG_PRESS_MS_PARK_SAVE = 2000;
+const PARK_DOUBLE_TAP_MS = 400;
+const PARK_SAVE_MODE_TIMEOUT_MS = 6000;
 const parkPress = reactive<{ start: number; progress: number; raf?: number; active: boolean; triggered: boolean; saved: boolean; blinking: boolean }>({ start: 0, progress: 0, active: false, triggered: false, saved: false, blinking: false });
+const parkSaveMode = ref(false);
+let lastParkTapTime = 0;
+let parkSaveModeTimer: ReturnType<typeof setTimeout> | undefined;
+
+const armParkSaveMode = () => {
+  parkSaveMode.value = true;
+  if (parkSaveModeTimer) clearTimeout(parkSaveModeTimer);
+  parkSaveModeTimer = setTimeout(() => { parkSaveMode.value = false; }, PARK_SAVE_MODE_TIMEOUT_MS);
+};
+const disarmParkSaveMode = () => {
+  parkSaveMode.value = false;
+  if (parkSaveModeTimer) { clearTimeout(parkSaveModeTimer); parkSaveModeTimer = undefined; }
+};
+
+const saveParkingLocation = () => {
+  const x = Number(props.machineCoords?.x ?? 0).toFixed(3);
+  const y = Number(props.machineCoords?.y ?? 0).toFixed(3);
+  const z = Number(props.machineCoords?.z ?? 0).toFixed(3);
+  api.updateSettings({ parkingLocation: `${x},${y},${z}` }).catch(() => {});
+  showParkingDialog.value = false;
+  disarmParkSaveMode();
+  // Brief "Saved" on the button as confirmation.
+  parkPress.saved = true;
+  setTimeout(() => { parkPress.saved = false; }, 1200);
+};
 
 const goToPark = async () => {
   if (motionControlsDisabled.value) {
@@ -717,47 +748,24 @@ const startParkPress = (_evt?: Event) => {
     if (!parkPress.active) return;
     const elapsed = performance.now() - parkPress.start;
 
-    // Two-stage progress: 0-1.5s for go-to, 1.5-3s for save (reset and fill again)
-    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+    // Save mode is tap-driven: no hold progress while armed.
+    if (parkSaveMode.value) {
       parkPress.progress = 0;
-    } else if (elapsed < LONG_PRESS_MS_PARK_GO) {
-      // Stage 1: Go to park (0-1.5s)
-      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
-      const pct = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_PARK_GO - DELAY_BEFORE_VISUAL_MS)) * 100);
-      parkPress.progress = pct;
-    } else if (elapsed < LONG_PRESS_MS_PARK_SAVE) {
-      // Stage 2: Save coordinates (1.5-3s) - fill again from 0 to 100%
-      const stage2Start = LONG_PRESS_MS_PARK_GO + DELAY_BEFORE_VISUAL_MS;
-      if (elapsed < stage2Start) {
-        parkPress.progress = 0;
-      } else {
-        const stage2Elapsed = elapsed - stage2Start;
-        const stage2Duration = LONG_PRESS_MS_PARK_SAVE - stage2Start;
-        const pct = Math.min(100, (stage2Elapsed / stage2Duration) * 100);
-        parkPress.progress = pct;
-      }
-    }
-
-    // Trigger save coordinates at 3s
-    if (elapsed >= LONG_PRESS_MS_PARK_SAVE && !parkPress.saved) {
-      parkPress.saved = true;
-      // Capture current machine coords and save as parkingLocation
-      const x = Number(props.machineCoords?.x ?? 0).toFixed(3);
-      const y = Number(props.machineCoords?.y ?? 0).toFixed(3);
-      const z = Number(props.machineCoords?.z ?? 0).toFixed(3);
-      const parking = `${x},${y},${z}`;
-      api.updateSettings({ parkingLocation: parking }).catch(() => {});
-      // Close the info dialog if open
-      showParkingDialog.value = false;
-      // stop animating
-      parkPress.active = false;
-      parkPress.progress = 0;
+      parkPress.raf = requestAnimationFrame(tick);
       return;
     }
 
-    // Mark at 1.5s but don't execute yet - wait for release
+    if (elapsed < DELAY_BEFORE_VISUAL_MS) {
+      parkPress.progress = 0;
+    } else {
+      const adjustedElapsed = elapsed - DELAY_BEFORE_VISUAL_MS;
+      parkPress.progress = Math.min(100, (adjustedElapsed / (LONG_PRESS_MS_PARK_GO - DELAY_BEFORE_VISUAL_MS)) * 100);
+    }
+
+    // Mark at 1 s but don't execute yet - wait for release
     if (elapsed >= LONG_PRESS_MS_PARK_GO && !parkPress.triggered) {
       parkPress.triggered = true;
+      parkPress.progress = 100;
     }
 
     parkPress.raf = requestAnimationFrame(tick);
@@ -771,46 +779,44 @@ const endParkPress = async () => {
   parkPress.raf = undefined;
 
   const elapsed = performance.now() - parkPress.start;
+  const wasActive = parkPress.active;
+  parkPress.active = false;
+  parkPress.progress = 0;
+  if (!wasActive) return;
 
-  // < 1.5s: Cancel action (blink)
+  // Tap (released before the hold completes)
   if (elapsed < LONG_PRESS_MS_PARK_GO) {
-    parkPress.active = false;
-    parkPress.progress = 0;
-    parkPress.blinking = true;
-    setTimeout(() => {
-      parkPress.blinking = false;
-    }, 400);
+    if (parkSaveMode.value) {
+      // Armed: this tap stores the current position.
+      saveParkingLocation();
+    } else {
+      const now = performance.now();
+      if (now - lastParkTapTime < PARK_DOUBLE_TAP_MS) {
+        // Double-tap: switch the button to Save.
+        lastParkTapTime = 0;
+        armParkSaveMode();
+      } else {
+        lastParkTapTime = now;
+        parkPress.blinking = true;
+        setTimeout(() => { parkPress.blinking = false; }, 400);
+      }
+    }
   }
-  // 1.5s to 3s: Execute go-to or show dialog if not set
-  else if (elapsed >= LONG_PRESS_MS_PARK_GO && elapsed < LONG_PRESS_MS_PARK_SAVE && !parkPress.saved) {
-    parkPress.active = false;
-    parkPress.progress = 0;
-
-    // Check if parking location exists and execute go-to
+  // Hold: go to the parking location (or explain how to set one)
+  else if (!parkSaveMode.value) {
     try {
       const response = await api.getSetting('parkingLocation');
       if (response === null || !response.value) {
-        // No parking location - show dialog
         showParkingDialog.value = true;
       } else {
-        // Execute go-to park
         goToPark();
       }
     } catch {
       showParkingDialog.value = true;
     }
   }
-  // >= 3s: Already saved via the tick function
-  else {
-    parkPress.active = false;
-    parkPress.progress = 0;
-  }
 
-  // Reset triggered after a short delay
-  setTimeout(() => {
-    parkPress.triggered = false;
-    parkPress.saved = false;
-  }, 100);
+  setTimeout(() => { parkPress.triggered = false; }, 100);
 };
 
 const cancelParkPress = () => {
@@ -819,7 +825,6 @@ const cancelParkPress = () => {
   parkPress.active = false;
   parkPress.progress = 0;
   parkPress.triggered = false;
-  parkPress.saved = false;
 };
 
 // Zero axis buttons with long-press
@@ -1530,6 +1535,14 @@ h2 {
   position: relative;
   overflow: hidden;
 }
+
+/* Save mode (after a double-tap): armed look until tapped or timed out. */
+.park-btn-wide.save-mode {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+.park-btn-wide.save-mode .hold-hint { color: rgba(255, 255, 255, 0.92); }
 
 /* Ensure visibility over accent-pressed background for park */
 .park-btn-wide:active .long-press-indicator {
