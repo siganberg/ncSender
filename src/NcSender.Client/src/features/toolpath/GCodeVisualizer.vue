@@ -6357,20 +6357,53 @@ body.theme-light .dot--rapid {
   line-height: 1.4;
   box-shadow: var(--shadow-elevated, 0 12px 28px rgba(0, 0, 0, 0.35));
   z-index: 11;
+  /* Slide up on appear, then a gentle nudge every few seconds so the eye
+     keeps returning to it. Transform/opacity only: cheap on the
+     compositor, never a box-shadow or filter keyframe over the canvas. */
+  animation:
+    oob-enter 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    oob-nudge 3s ease-in-out 0.6s infinite;
+  will-change: transform;
 }
 
 .out-of-bounds-warning__icon {
   flex: 0 0 auto;
+  position: relative;
+  overflow: hidden;
   width: 32px;
   height: 32px;
   border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 107, 107, 0.16);
-  color: #ff6b6b;
+  background: #ff6b6b;
+  color: white;
 }
-.out-of-bounds-warning__icon svg { width: 18px; height: 18px; }
+.out-of-bounds-warning__icon svg { width: 18px; height: 18px; position: relative; z-index: 1; }
+/* Breathing badge: an opaque overlay whose opacity swings, same trick as
+   the TLS / Home attention pulses (no transparency in the button itself). */
+.out-of-bounds-warning__icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.6);
+  animation: attention-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes oob-enter {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes oob-nudge {
+  0%, 84%, 100% { transform: translate(-50%, 0); }
+  88% { transform: translate(-50%, -6px); }
+  92% { transform: translate(-50%, 0); }
+  96% { transform: translate(-50%, -3px); }
+}
 
 @keyframes warningPulse {
   0%, 50%, 100% {
