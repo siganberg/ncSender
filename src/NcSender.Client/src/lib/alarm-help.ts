@@ -78,7 +78,7 @@ const ALARM_HELP: Record<number, AlarmHelp> = {
   },
   17: {
     title: 'Motor fault',
-    fix: 'A motor driver reported a fault. Check the motor wiring and driver temperature, power-cycle, then re-home.',
+    fix: 'A motor driver reported a fault. If this appeared right after enabling the motor fault inputs, the input reads backwards: invert that axis in $745 (Settings > Firmware, or the setup wizard), then unlock. Otherwise check the motor wiring and driver temperature, power-cycle, then re-home.',
   },
   18: {
     title: 'Homing not configured correctly',

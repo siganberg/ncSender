@@ -354,6 +354,9 @@
               </p>
             </div>
           </div>
+          <p v-if="unlockBlocked" class="visualizer-dialog__blocked">
+            The controller refuses to unlock while the cause is still active. Release the E-stop, clear the switch, or fix the motor fault input, and it will unlock on the next try.
+          </p>
           <div class="visualizer-dialog__actions alarm-message-right">
             <button class="alarm-unlock-btn" :class="{ unlocking }" :disabled="unlocking" @click="handleUnlock">
               <span v-if="unlocking" class="alarm-unlock-btn__spinner" aria-hidden="true"></span>
@@ -746,6 +749,11 @@ let unlockRun = 0;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// grblHAL answers $X with error 79 while the cause of the alarm is still
+// present (E-stop held, limit engaged, motor fault input asserted). The
+// retry loop keeps going, but the user needs to know the board is waiting
+// on them, not on the button.
+const unlockBlocked = ref(false);
 const sendUnlockSequence = async (silent: boolean) => {
   // Only the first attempt is echoed to the terminal; the retries are
   // just polling and would flood it with identical lines and error:79s.
@@ -753,7 +761,8 @@ const sendUnlockSequence = async (silent: boolean) => {
   try {
     await api.sendCommand('\x18', { meta });
     await sleep(500);
-    await api.sendCommand('$X', { meta });
+    const res: any = await api.sendCommand('$X', { meta });
+    unlockBlocked.value = res?.status === 'error' && Number(res?.errorCode) === 79;
   } catch (error) {
     console.error('Failed to send unlock command:', error);
   }
@@ -762,6 +771,7 @@ const sendUnlockSequence = async (silent: boolean) => {
 const stopUnlockAttempt = () => {
   unlockRun += 1;
   unlocking.value = false;
+  unlockBlocked.value = false;
   unlockSecondsLeft.value = 0;
   if (unlockTicker) {
     clearInterval(unlockTicker);
@@ -6281,6 +6291,16 @@ body.theme-light .dot--rapid {
   font-weight: 600;
   letter-spacing: 0.02em;
   vertical-align: 1px;
+}
+
+.visualizer-dialog__blocked {
+  margin: -4px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  background: rgba(255, 107, 107, 0.12);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 .visualizer-dialog__actions {

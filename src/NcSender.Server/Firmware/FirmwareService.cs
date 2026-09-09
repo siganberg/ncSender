@@ -83,9 +83,9 @@ public class FirmwareService : IFirmwareService
             {
                 _logger.LogInformation("Querying firmware structure ($EG, $ES, $ESH)...");
 
-                var egResponse = await QueryCommand("$EG", 5000);
-                var esResponse = await QueryCommand("$ES", 10000);
-                var eshResponse = await QueryCommand("$ESH", 5000);
+                var egResponse = await QueryCommand("$EG", 15000);
+                var esResponse = await QueryCommand("$ES", 45000);
+                var eshResponse = await QueryCommand("$ESH", 45000);
 
                 var groups = ParseSettingGroups(egResponse);
                 var settings = ParseSettingDefinitions(esResponse);
@@ -124,7 +124,7 @@ public class FirmwareService : IFirmwareService
 
             // Always refresh current values
             _logger.LogInformation("Refreshing firmware values with $$...");
-            var valuesResponse = await QueryCommand("$$", 5000);
+            var valuesResponse = await QueryCommand("$$", 20000);
             var currentValues = ParseCurrentValues(valuesResponse);
 
             _cached ??= new FirmwareData
@@ -186,9 +186,11 @@ public class FirmwareService : IFirmwareService
     {
         var lines = new List<string>();
 
+        var lastDataAt = DateTime.UtcNow;
         void OnData(string data, string? sourceId)
         {
             lines.Add(data);
+            lastDataAt = DateTime.UtcNow;
         }
 
         _controller.DataReceived += OnData;
@@ -211,6 +213,13 @@ public class FirmwareService : IFirmwareService
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 _logger.LogWarning("Firmware query '{Command}' timed out after {Timeout}ms — no 'ok' from controller", command, timeoutMs);
+                // The dump may still be streaming (these are tens of KB on a
+                // 115200 baud link). Sending the next command into the middle
+                // of it makes grblHAL scramble its output until it is reset,
+                // so wait for the line to go quiet before moving on.
+                var drainDeadline = DateTime.UtcNow.AddSeconds(30);
+                while (DateTime.UtcNow < drainDeadline && DateTime.UtcNow - lastDataAt < TimeSpan.FromSeconds(1))
+                    await Task.Delay(200);
             }
 
             return string.Join("\n", lines);

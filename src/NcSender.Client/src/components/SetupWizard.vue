@@ -105,6 +105,10 @@
           <div v-else-if="step.id === 'pins'" class="wiz__form">
             <p class="wiz__muted">Press each switch by hand and watch its light, the same colours as the pin states in the toolbar: <span class="wiz__led-key wiz__led-key--green"></span> green while released, <span class="wiz__led-key wiz__led-key--red"></span> red while pressed. If it shows the other way round, turn on Invert for that row: the change is sent to the controller right away, so the light shows the result.</p>
             <div v-if="!connected" class="wiz__notice">Connect the controller to see live pin states.</div>
+            <div v-if="inAlarm" class="wiz__alarm">
+              <span class="wiz__alarm-text"><strong>Controller alarm.</strong> {{ alarmText }} An inversion that reads backwards can trip this: flip it back if so, then unlock.</span>
+              <button type="button" class="wiz__btn wiz__btn--danger" :disabled="unlocking" @click="unlock">{{ unlocking ? 'Unlocking…' : 'Unlock' }}</button>
+            </div>
             <div class="wiz__pins">
               <div v-for="row in pinRows" :key="row.key" class="wiz__pin">
                 <div class="wiz__pin-name">{{ row.label }}<span class="wiz__pin-setting">{{ row.settingLabel }}</span></div>
@@ -117,7 +121,11 @@
                 </label>
               </div>
             </div>
-            <template v-if="hasMotorFault">
+            <div v-if="writeError" class="wiz__error">{{ writeError }}</div>
+          </div>
+
+          <!-- Motor fault (only when the board has $744) -->
+          <div v-else-if="step.id === 'motor'" class="wiz__form">
               <div class="wiz__section">
                 <div class="wiz__row-title">Motor fault inputs ($744 enable, $745 invert)</div>
                 <div class="wiz__row-note">Closed-loop steppers and servo drives report a fault on a dedicated input. Enabling it lets the controller stop the moment a drive faults, so it is recommended on. If a healthy motor raises a motor fault alarm as soon as you enable it, the input reads backwards: turn on Invert for that axis. Both are sent to the controller right away.</div>
@@ -135,7 +143,10 @@
                   </label>
                 </div>
               </div>
-            </template>
+            <div v-if="inAlarm" class="wiz__alarm">
+              <span class="wiz__alarm-text"><strong>Controller alarm.</strong> {{ alarmText }} A healthy motor faulting right after Enable means the input reads backwards: turn on Invert for that axis, then unlock.</span>
+              <button type="button" class="wiz__btn wiz__btn--danger" :disabled="unlocking" @click="unlock">{{ unlocking ? 'Unlocking…' : 'Unlock' }}</button>
+            </div>
             <div v-if="writeError" class="wiz__error">{{ writeError }}</div>
           </div>
 
@@ -286,17 +297,20 @@ const emit = defineEmits<{ (e: 'close', completed: boolean): void }>();
 const store = useAppStore();
 
 // ---- Steps ----
-const steps = [
+const ALL_STEPS = [
   { id: 'welcome', label: 'Welcome', title: 'Set up your machine', subtitle: 'A few controller settings, checked live, in about five minutes.' },
   { id: 'connection', label: 'Connection', title: 'Connect to the controller', subtitle: 'How ncSender reaches the board.' },
   { id: 'travel', label: 'Travel', title: 'Machine travel', subtitle: 'How far each axis can move.' },
   { id: 'pins', label: 'Switches & probe', title: 'Limit switches and probe', subtitle: 'Confirm each input reads the right way round.' },
+  { id: 'motor', label: 'Motor fault', title: 'Motor fault inputs', subtitle: 'For closed-loop steppers and servo drives.' },
   { id: 'homing', label: 'Homing', title: 'Homing', subtitle: 'Enable homing and pick the home corner.' },
   { id: 'safety', label: 'Safety', title: 'Safety limits', subtitle: 'Keep jogs and jobs inside the machine.' },
   { id: 'review', label: 'Review', title: 'Review and apply', subtitle: 'Everything that will be written to the controller.' },
 ];
+// The motor fault page only exists when the board reports $744.
+const steps = computed(() => ALL_STEPS.filter(st => st.id !== 'motor' || hasMotorFault.value));
 const stepIndex = ref(0);
-const step = computed(() => steps[stepIndex.value]);
+const step = computed(() => steps.value[stepIndex.value] ?? steps.value[0]);
 
 const ICON = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 const welcomeCards = [
@@ -418,6 +432,24 @@ const pinRows = computed(() => {
   return rows;
 });
 
+// ---- Alarm handling on the live pages (a wrong inversion trips one) ----
+const inAlarm = computed(() => String(store.senderStatus.value ?? '').toLowerCase() === 'alarm');
+const alarmText = computed(() => {
+  const code = store.lastAlarmCode.value;
+  const msg = store.alarmMessage.value;
+  return [code != null ? `Alarm ${code}.` : '', msg ? `${msg}.` : ''].filter(Boolean).join(' ');
+});
+const unlocking = ref(false);
+const unlock = async () => {
+  unlocking.value = true;
+  try {
+    await api.sendCommand('\x18', { meta: { sourceId: 'client' } });
+    await new Promise(r => setTimeout(r, 500));
+    await api.sendCommand('$X', { meta: { sourceId: 'client' } });
+  } catch (err) { console.error('Unlock failed', err); }
+  finally { setTimeout(() => { unlocking.value = false; }, 1500); }
+};
+
 // ---- Motor fault inputs ($744 enable mask, $745 invert mask), when the board has them ----
 const motorFaultEnable = ref(0);
 const motorFaultInvert = ref(0);
@@ -528,7 +560,6 @@ const apply = async () => {
     appliedCount.value = count;
     applied.value = true;
     await persistCompletion();
-    api.getFirmwareSettings({ refresh: true }).catch(() => { /* cache catch-up only */ });
   } catch (err: any) {
     applyError.value = `Stopped after ${count} setting${count === 1 ? '' : 's'}: ${err?.message ?? err}`;
   } finally {
@@ -551,8 +582,11 @@ const skip = async () => {
 };
 const requestClose = () => emit('close', applied.value);
 
-onMounted(() => { loadFirmware(connected.value); seedHomeCorner(); });
-watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(true); });
+// Read the server's cache: it re-reads $$ on every connect, and asking for
+// a metadata refresh here would pile a 90 KB $ES/$ESH dump onto the connect
+// queries. Every write on the way through updates the cache as it goes.
+onMounted(() => { loadFirmware(false); seedHomeCorner(); });
+watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 </script>
 
 <style scoped>
@@ -802,6 +836,15 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(true); });
 .wiz__btn:not(:disabled):hover { transform: translateY(-1px); }
 .wiz__btn--ghost { background: transparent; border-color: var(--color-border); color: var(--color-text-primary); }
 .wiz__btn--primary { background: var(--color-accent); color: #fff; }
+.wiz__btn--danger { background: #d9534f; color: #fff; }
+.wiz__alarm {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px; border-radius: 10px;
+  border: 1px solid rgba(217, 83, 79, 0.6); background: rgba(217, 83, 79, 0.1);
+  color: var(--color-text-primary); font-size: 0.9rem; line-height: 1.45;
+}
+.wiz__alarm-text { flex: 1 1 auto; }
+.wiz__alarm strong { color: #ff8888; }
 .wiz__spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; animation: wiz-spin 0.8s linear infinite; }
 @keyframes wiz-spin { to { transform: rotate(360deg); } }
 
