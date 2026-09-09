@@ -147,19 +147,21 @@
       <div class="tab-content">
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
-          <div class="settings-section">
-            <h3 class="section-title">CNC Controller Setup</h3>
-            <div class="setting-item">
-              <div class="setting-item-content">
-                <label class="setting-label">Connection Settings</label>
-                <div class="settings-note">
-                  Configure serial or network connection to your CNC controller.
-                </div>
+          <div class="settings-section settings-section--wizard">
+            <div class="wizard-card">
+              <span class="wizard-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
+              </span>
+              <div class="wizard-card__text">
+                <h3 class="section-title wizard-card__title">Machine Setup Wizard</h3>
+                <div class="settings-note">Guided setup for a new controller: connection, travel, switches and probe, homing and safety limits, checked live on the machine.</div>
               </div>
-              <button class="setup-open-button" @click="openSetupFromSettings">
-                CNC Controller Setup
-              </button>
+              <button type="button" class="wizard-card__btn" @click="openSetupWizard">Run setup wizard</button>
             </div>
+          </div>
+          <div class="settings-section">
+            <h3 class="section-title">CNC Connection Setup</h3>
+            <ConnectionSetup />
           </div>
 
           <div class="settings-section" :class="{ 'settings-section--disabled': !canControlRemoteAccess }">
@@ -837,127 +839,6 @@
   <!-- Unhomed action warning migrated to server-owned GateDialog
        (POST /api/gate/ensure-homed). GateHost renders it. -->
 
-  <!-- Mandatory Setup Dialog (non-dismissible) -->
-  <Dialog v-if="showSetupDialog" :show-header="false" size="small-plus" :close-on-backdrop-click="setupDismissible" @close="closeSetupDialog">
-    <div class="setup-container">
-      <div class="setup-header">
-        <h2 class="setup-title">CNC Controller Setup</h2>
-        <p class="setup-subtitle">Configure your CNC connection to continue</p>
-      </div>
-
-      <div class="setup-content">
-        <div class="setting-item">
-          <label class="setting-label">Connection Type</label>
-          <select class="setting-select setting-input--right" v-model="setupSettings.type" @change="loadSetupUsbPorts(); validateSetupForm()">
-            <option value="USB">USB</option>
-            <option value="Ethernet">Ethernet</option>
-          </select>
-        </div>
-        <div class="setting-item" v-if="setupSettings.type === 'Ethernet'">
-          <label class="setting-label">Protocol</label>
-          <select class="setting-select setting-input--right" v-model="setupSettings.protocol" @change="onSetupProtocolChange">
-            <option value="telnet">Telnet</option>
-            <option value="websocket">WebSocket</option>
-          </select>
-        </div>
-        <div class="setting-item" v-if="setupSettings.type === 'USB'">
-          <label class="setting-label">Serial Port (USB)</label>
-          <div class="custom-dropdown">
-            <button
-              class="dropdown-trigger setting-input--right"
-              :class="{ 'invalid': !setupValidation.usbPort }"
-              @click="setupUsbDropdownOpen = !setupUsbDropdownOpen"
-              type="button"
-            >
-              <span>{{ getSelectedSetupPortDisplay() }}</span>
-              <span class="dropdown-arrow">▼</span>
-            </button>
-            <div v-if="setupUsbDropdownOpen" class="dropdown-menu">
-              <div
-                class="dropdown-item"
-                @click="selectSetupUsbPort({ path: '' })"
-              >
-                <div class="port-path">Auto-Detect</div>
-                <div class="port-manufacturer">Automatically scan all available USB ports</div>
-              </div>
-              <div
-                v-if="setupUsbPorts.length === 0"
-                class="dropdown-item disabled"
-              >
-                No USB ports available
-              </div>
-              <div
-                v-for="port in setupUsbPorts"
-                :key="port.path"
-                class="dropdown-item"
-                @click="selectSetupUsbPort(port)"
-              >
-                <div class="port-path">{{ port.path }}</div>
-                <div class="port-manufacturer">{{ port.manufacturer || 'Unknown Manufacturer' }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="setting-item">
-          <label class="setting-label">Baud Rate</label>
-          <select class="setting-select setting-input--right" v-model="setupSettings.baudRate">
-            <option value="9600">9600</option>
-            <option value="19200">19200</option>
-            <option value="38400">38400</option>
-            <option value="57600">57600</option>
-            <option value="115200">115200</option>
-            <option value="230400">230400</option>
-            <option value="460800">460800</option>
-            <option value="921600">921600</option>
-          </select>
-        </div>
-        <div class="setting-item">
-          <label class="setting-label">IP Address</label>
-          <input
-            type="text"
-            class="setting-input setting-input--right"
-            v-model="setupSettings.ipAddress"
-            :disabled="setupSettings.type === 'USB'"
-            :class="{ 'invalid': !setupValidation.ipAddress && setupSettings.type === 'Ethernet' }"
-            placeholder="192.168.5.1"
-            @blur="validateSetupIP"
-          >
-        </div>
-        <div class="setting-item">
-          <label class="setting-label">Port</label>
-          <input
-            type="number"
-            class="setting-input setting-input--right"
-            v-model="setupSettings.port"
-            :disabled="setupSettings.type === 'USB'"
-            :class="{ 'invalid': !setupValidation.port && setupSettings.type === 'Ethernet' }"
-            min="1"
-            max="65535"
-            @blur="validateSetupForm"
-          >
-        </div>
-        <div class="setting-item">
-          <label class="setting-label">Machine Home Location</label>
-          <select class="setting-select setting-input--right" v-model="setupSettings.homeLocation">
-            <option value="back-left">Back-Left (Default)</option>
-            <option value="back-right">Back-Right</option>
-            <option value="front-left">Front-Left</option>
-            <option value="front-right">Front-Right</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="setup-footer">
-        <button v-if="setupDismissible" class="setup-cancel-button" @click="closeSetupDialog">
-          Close
-        </button>
-        <button class="setup-save-button" @click="saveSetupSettings">
-          Connect
-        </button>
-      </div>
-    </div>
-  </Dialog>
-
   <!-- Units Change Confirmation Dialog -->
   <Dialog v-if="showUnitsConfirmDialog" @close="showUnitsConfirmDialog = false" :show-header="false" size="small" :z-index="10001">
     <ConfirmPanel
@@ -996,6 +877,7 @@
     <PluginDialog />
 
   <!-- Gate Dialog Host (server-owned safety prompts) -->
+  <SetupWizard v-if="showSetupWizard" @close="onSetupWizardClosed" />
   <TipsDialog
     v-if="showTipsDialog"
     :start-after-id="tipsLastShownId"
@@ -1145,6 +1027,8 @@ import GateHost from './components/GateHost.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
 import TipsDialog from './components/TipsDialog.vue';
+import SetupWizard from './components/SetupWizard.vue';
+import ConnectionSetup from './components/ConnectionSetup.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import AccessoriesDialog from './components/AccessoriesDialog.vue';
@@ -1216,8 +1100,6 @@ const viewport = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.default
 const defaultView = ref<'top' | 'front' | 'iso' | 'split'>(initialSettings?.defaultGcodeView || 'top');
 const workspace = ref(initialSettings?.workspace || 'G54');
 const showSettings = ref(false);
-const showSetupDialog = ref(false);
-const setupDismissible = ref(false);
 let isInitialThemeLoad = true;
 const showUpdateDialog = ref(false);
 const showWirelessDialog = ref(false);
@@ -1532,17 +1414,6 @@ watch(defaultView, (newView) => {
   viewport.value = newView;
 });
 
-watch(
-  () => senderStatusRef.value,
-  async (newStatus, oldStatus) => {
-    if (newStatus === 'setup-required' && !showSetupDialog.value) {
-      showSetupDialog.value = true;
-      await loadSetupUsbPorts();
-    } else if (oldStatus === 'setup-required' && newStatus !== 'setup-required' && showSetupDialog.value) {
-      showSetupDialog.value = false;
-    }
-  }
-);
 
 // Color customization (from settings store)
 const accentColor = ref(initialSettings?.accentColor || '#1abc9c');
@@ -1581,6 +1452,16 @@ const useDoorAsPause = ref(initialSettings?.useDoorAsPause ?? false);
 const tipsOnStartup = ref(initialSettings?.tipsOnStartup ?? true);
 const tipsLastShownId = ref<number>(Number(initialSettings?.tipsLastShownId ?? 0) || 0);
 const showTipsDialog = ref(false);
+
+// Machine setup wizard: auto-opens once on a fresh install (after the
+// connection setup), re-run any time from Settings > General.
+const setupWizardCompleted = ref(initialSettings?.setupWizardCompleted ?? false);
+const showSetupWizard = ref(false);
+const openSetupWizard = () => { showSettings.value = false; showSetupWizard.value = true; };
+const onSetupWizardClosed = (completed: boolean) => {
+  showSetupWizard.value = false;
+  if (completed) setupWizardCompleted.value = true;
+};
 const openTips = () => { showTipsDialog.value = true; };
 const onTipsClosed = async (lastShownId: number | null) => {
   showTipsDialog.value = false;
@@ -1622,15 +1503,6 @@ const connectionSettings = reactive({
 const connectionSettingsSaved = ref(false);
 
 // Setup dialog connection settings (separate from main settings)
-const setupSettings = reactive({
-  type: 'USB',
-  protocol: 'telnet',
-  baudRate: '115200',
-  ipAddress: '192.168.5.1',
-  port: 23,
-  usbPort: '',
-  homeLocation: 'back-left'
-});
 
 // Console settings
 const consoleSettings = reactive({
@@ -1863,18 +1735,11 @@ const axisCount = computed(() => {
 
 // USB ports
 const availableUsbPorts = ref([]);
-const setupUsbPorts = ref([]);
 
 // IP validation
 const isValidIP = ref(true);
-const isValidSetupIP = ref(true);
 
 // Setup validation
-const setupValidation = reactive({
-  usbPort: true,
-  ipAddress: true,
-  port: true
-});
 
 // Main settings validation
 const mainValidation = reactive({
@@ -1884,7 +1749,6 @@ const mainValidation = reactive({
 });
 
 // Custom dropdown states
-const setupUsbDropdownOpen = ref(false);
 const mainUsbDropdownOpen = ref(false);
 
 // Load available USB ports
@@ -1909,40 +1773,11 @@ const onProtocolChange = () => {
   connectionSettings.port = connectionSettings.protocol === 'websocket' ? 81 : 23;
 };
 
-const onSetupProtocolChange = () => {
-  setupSettings.port = setupSettings.protocol === 'websocket' ? 81 : 23;
-};
 
-const closeSetupDialog = () => {
-  if (!setupDismissible.value) return;
-  showSetupDialog.value = false;
-  setupDismissible.value = false;
-};
 
-const openSetupFromSettings = async () => {
-  setupSettings.type = connectionSettings.type;
-  setupSettings.protocol = connectionSettings.protocol;
-  setupSettings.baudRate = connectionSettings.baudRate;
-  setupSettings.ipAddress = connectionSettings.ipAddress;
-  setupSettings.port = connectionSettings.port;
-  setupSettings.usbPort = connectionSettings.usbPort;
-  setupSettings.homeLocation = homeLocation.value;
-  setupDismissible.value = true;
-  showSetupDialog.value = true;
-  await loadSetupUsbPorts();
-};
 
-const loadSetupUsbPorts = async () => {
-  setupUsbPorts.value = await loadUsbPorts();
-};
 
 // Custom dropdown functions
-const selectSetupUsbPort = (port) => {
-  setupSettings.usbPort = port.path;
-  setupUsbDropdownOpen.value = false;
-  // Trigger validation
-  validateSetupForm();
-};
 
 const selectMainUsbPort = (port) => {
   connectionSettings.usbPort = port.path;
@@ -1954,11 +1789,6 @@ const selectMainUsbPort = (port) => {
   }
 };
 
-const getSelectedSetupPortDisplay = () => {
-  if (!setupSettings.usbPort) return 'Auto-Detect';
-  const port = setupUsbPorts.value.find(p => p.path === setupSettings.usbPort);
-  return port ? port.path : setupSettings.usbPort;
-};
 
 const getSelectedMainPortDisplay = () => {
   if (!connectionSettings.usbPort) return 'Auto-Detect';
@@ -1970,7 +1800,6 @@ const getSelectedMainPortDisplay = () => {
 const handleClickOutside = (event) => {
   const target = event.target;
   if (!target.closest('.custom-dropdown')) {
-    setupUsbDropdownOpen.value = false;
     mainUsbDropdownOpen.value = false;
   }
 };
@@ -2135,8 +1964,6 @@ const openSettings = async () => {
 };
 
 const closeSettings = () => {
-  // Don't close settings while setup dialog is on top
-  if (showSetupDialog.value) return;
   // Clear any pending firmware changes
   clearFirmwareChanges();
   // Close the dialog
@@ -2941,82 +2768,9 @@ const validateIP = () => {
   isValidIP.value = ipRegex.test(connectionSettings.ipAddress);
 };
 
-const validateSetupIP = () => {
-  if (setupSettings.type === 'USB') {
-    isValidSetupIP.value = true;
-    setupValidation.ipAddress = true;
-    return;
-  }
-
-  const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-  const isValid = ipRegex.test(setupSettings.ipAddress);
-  isValidSetupIP.value = isValid;
-  setupValidation.ipAddress = isValid;
-};
-
-const validateSetupForm = () => {
-  let isValid = true;
-
-  // Validate USB port if USB connection (empty = Auto-Detect, always valid)
-  if (setupSettings.type === 'USB') {
-    setupValidation.usbPort = true;
-
-    // Clear Ethernet validation for USB
-    setupValidation.ipAddress = true;
-    setupValidation.port = true;
-  }
-
-  // Validate Ethernet fields if Ethernet connection
-  if (setupSettings.type === 'Ethernet') {
-    // Clear USB validation for Ethernet
-    setupValidation.usbPort = true;
-
-    // Validate IP
-    validateSetupIP();
-    if (!setupValidation.ipAddress) isValid = false;
-
-    // Validate port
-    setupValidation.port = !!(setupSettings.port && setupSettings.port > 0 && setupSettings.port <= 65535);
-    if (!setupValidation.port) isValid = false;
-  }
-
-  return isValid;
-};
 
 
-const isSettingsValid = (settings) => {
-  if (!settings) return false;
 
-  const connection = settings.connection;
-  const connectionType = typeof connection?.type === 'string'
-    ? connection.type.toLowerCase()
-    : undefined;
-  const baudRateRaw = connection?.baudRate;
-  const parsedBaudRate = parseInt(baudRateRaw, 10);
-
-  // Required fields
-  if (!connectionType || Number.isNaN(parsedBaudRate) || parsedBaudRate <= 0) {
-    return false;
-  }
-
-  // USB-specific validation (empty usbPort = Auto-Detect, which is valid)
-  // No USB-specific validation needed
-
-  // Ethernet-specific validation
-  if (connectionType === 'ethernet') {
-    if (!connection?.ip || connection.port === undefined) return false;
-
-    // Validate IP format
-    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (!ipRegex.test(connection.ip)) return false;
-
-    // Validate port range
-    const port = parseInt(connection.port, 10);
-    if (isNaN(port) || port < 1 || port > 65535) return false;
-  }
-
-  return true;
-};
 
 const toggleRemoteControl = async (value: boolean) => {
   connectionSettings.remoteControlEnabled = value;
@@ -3049,53 +2803,6 @@ const saveConnectionSettings = async () => {
   }
 };
 
-const saveSetupSettings = async () => {
-  try {
-    // Validate the entire form
-    if (!validateSetupForm()) {
-      return;
-    }
-
-    // Prepare the setup settings for saving
-    const settingsToSave = {
-      connection: {
-        type: setupSettings.type?.toLowerCase() || 'usb',
-        protocol: setupSettings.type === 'Ethernet' ? setupSettings.protocol : undefined,
-        ip: setupSettings.ipAddress || '192.168.5.1',
-        port: parseInt(setupSettings.port, 10) || 23,
-        serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
-        usbPort: setupSettings.usbPort || '',
-        baudRate: parseInt(setupSettings.baudRate, 10) || 115200
-      },
-      homeLocation: setupSettings.homeLocation || 'back-left'
-    };
-
-    // Use settings store to save
-    const { saveSettings } = await import('./lib/settings-store.js');
-    await saveSettings(settingsToSave);
-
-    // Update local connection settings
-    connectionSettings.type = setupSettings.type;
-    connectionSettings.protocol = setupSettings.protocol;
-    connectionSettings.baudRate = setupSettings.baudRate;
-    connectionSettings.ipAddress = setupSettings.ipAddress;
-    connectionSettings.port = setupSettings.port;
-    connectionSettings.serverPort = settingsToSave.connection.serverPort;
-    connectionSettings.usbPort = setupSettings.usbPort;
-
-    // Close setup dialog
-    showSetupDialog.value = false;
-    setupDismissible.value = false;
-
-    // Load USB ports if USB connection type
-    if (connectionSettings.type === 'USB') {
-      await loadMainUsbPorts();
-    }
-
-  } catch (error) {
-    console.error('Error saving setup settings:', error);
-  }
-};
 
 // Clear console (delegate to store)
 const clearConsole = store.clearConsole;
@@ -3133,12 +2840,13 @@ onMounted(async () => {
   const initialSettings = getSettings();
 
   // Check if settings are valid, show setup dialog if not
-  if (!isSettingsValid(initialSettings)) {
-    showSetupDialog.value = true;
-    await loadSetupUsbPorts();
+  // First run: the setup wizard owns the whole flow, connection included.
+  // The plain connection dialog is kept for later reconfiguration.
+  if (!setupWizardCompleted.value) {
+    showSetupWizard.value = true;
   } else if (tipsOnStartup.value) {
     // Tip of the day, a beat after the UI has settled.
-    setTimeout(() => { if (!showSetupDialog.value) showTipsDialog.value = true; }, 1500);
+    setTimeout(() => { showTipsDialog.value = true; }, 1500);
   }
 
   // Alarm description is now read from machineState in use-app-store.ts
@@ -4101,27 +3809,6 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   gap: var(--gap-sm);
 }
 
-.setup-open-button {
-  background: var(--gradient-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
-  padding: 12px 24px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 120px;
-}
-
-.setup-open-button:hover {
-  filter: brightness(1.1);
-}
-
-.setup-open-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 .save-connection-button {
   background: var(--gradient-accent);
@@ -4210,123 +3897,6 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 }
 
 /* Setup Dialog Styles */
-.setup-container {
-  display: flex;
-  flex-direction: column;
-  width: auto;
-  max-width: 680px; /* Allow a bit more width for setup only */
-  min-width: 480px; /* Ensure dialog is comfortably wider */
-  min-height: auto;
-  background: var(--color-surface);
-  border-radius: var(--radius-medium);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-elevated);
-}
-
-.setup-header {
-  padding: var(--gap-sm) var(--gap-md) var(--gap-xs) var(--gap-md);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
-  text-align: center;
-}
-
-.setup-title {
-  margin: 0 0 var(--gap-xs) 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.setup-subtitle {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  line-height: 1.3;
-}
-
-.setup-content {
-  padding: var(--gap-sm) var(--gap-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-xs);
-  flex: 1;
-}
-
-.setup-footer {
-  padding: var(--gap-xs) var(--gap-md) var(--gap-sm) var(--gap-md);
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  border-radius: 0 0 var(--radius-medium) var(--radius-medium);
-  display: flex;
-  justify-content: center;
-  gap: var(--gap-sm);
-}
-
-.setup-cancel-button {
-  padding: var(--gap-sm) var(--gap-lg);
-  background: var(--color-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-medium);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 100px;
-}
-
-.setup-cancel-button:hover {
-  filter: brightness(1.1);
-}
-
-.setup-save-button {
-  padding: var(--gap-sm) var(--gap-lg);
-  background: var(--color-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-medium);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 120px;
-  position: relative;
-  overflow: hidden;
-}
-
-.setup-save-button:hover {
-  filter: brightness(1.1);
-}
-
-.setup-save-button:active {
-  transform: translateY(0);
-}
-
-.setup-save-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Responsive design for setup dialog */
-@media (max-width: 768px) {
-  .setup-container {
-    max-width: 90vw;
-    margin: var(--gap-md);
-  }
-
-  .setup-header,
-  .setup-content,
-  .setup-footer {
-    padding-left: var(--gap-md);
-    padding-right: var(--gap-md);
-  }
-
-  .setup-title {
-    font-size: 1.3rem;
-  }
-}
 
 /* Custom USB Port Dropdown Styles */
 .custom-dropdown {
@@ -5398,5 +4968,28 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   cursor: pointer;
   font: inherit;
   text-decoration: underline;
+}
+.settings-section--wizard { padding: 0; overflow: hidden; }
+.wizard-card {
+  display: flex; align-items: center; gap: 16px; padding: 18px 20px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)), var(--color-surface));
+}
+.wizard-card__icon {
+  width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-accent); color: #fff;
+}
+.wizard-card__icon svg { width: 24px; height: 24px; }
+.wizard-card__text { flex: 1 1 auto; min-width: 0; }
+.wizard-card__title { margin: 0 0 4px; }
+.wizard-card__btn {
+  flex: 0 0 auto; padding: 10px 18px; border-radius: 10px; border: none; cursor: pointer;
+  background: var(--color-accent); color: #fff; font: inherit; font-weight: 600;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.wizard-card__btn:hover { transform: translateY(-1px); filter: brightness(1.08); }
+@media (max-width: 640px) {
+  .wizard-card { flex-wrap: wrap; }
+  .wizard-card__btn { width: 100%; }
 }
 </style>

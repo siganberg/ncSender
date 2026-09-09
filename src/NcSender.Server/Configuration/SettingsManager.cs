@@ -253,6 +253,7 @@ public class SettingsManager : ISettingsManager
             },
             "useDoorAsPause": true,
             "tipsOnStartup": true,
+            "setupWizardCompleted": false,
             "useControllerMacros": false,
             "remoteControl": {
                 "enabled": false
