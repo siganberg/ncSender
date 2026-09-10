@@ -177,6 +177,14 @@
                 <div class="settings-note">
                   Note: Port changes require restarting the application to take effect.
                 </div>
+                <div
+                  v-if="serverPortStatus"
+                  class="settings-note"
+                  :class="serverPortStatus.kind === 'error' ? 'settings-note--error' : 'settings-note--success'"
+                  role="status"
+                >
+                  {{ serverPortStatus.text }}
+                </div>
               </div>
               <input
                 type="number"
@@ -185,6 +193,8 @@
                 :disabled="!canControlRemoteAccess"
                 min="1024"
                 max="65535"
+                @blur="commitServerPort"
+                @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
               >
             </div>
             <div class="setting-item setting-item--with-note">
@@ -195,17 +205,6 @@
                 </div>
               </div>
               <ToggleSwitch :model-value="connectionSettings.remoteControlEnabled" :disabled="!canControlRemoteAccess" @update:model-value="toggleRemoteControl" />
-            </div>
-            <div class="setting-item">
-              <label class="setting-label"></label>
-              <button
-                class="save-connection-button"
-                :class="{ 'save-connection-button--saved': connectionSettingsSaved }"
-                :disabled="!canControlRemoteAccess"
-                @click="saveConnectionSettings"
-              >
-                {{ connectionSettingsSaved ? 'Saved' : 'Save' }}
-              </button>
             </div>
           </div>
 
@@ -1500,7 +1499,10 @@ const connectionSettings = reactive({
   usbPort: initialConnection?.usbPort || '',
   remoteControlEnabled: initialSettings?.remoteControl?.enabled ?? false
 });
-const connectionSettingsSaved = ref(false);
+// Last port the server has on disk. The input commits on blur only when
+// the value differs from this and passes the server-side availability check.
+const savedServerPort = ref<number>(initialConnection?.serverPort ?? 8090);
+const serverPortStatus = ref<{ kind: 'error' | 'success'; text: string } | null>(null);
 
 // Setup dialog connection settings (separate from main settings)
 
@@ -1951,6 +1953,7 @@ const openSettings = async () => {
       connectionSettings.ipAddress = conn.ip || '192.168.5.1';
       connectionSettings.port = conn.port || 23;
       connectionSettings.serverPort = conn.serverPort || 8090;
+      savedServerPort.value = connectionSettings.serverPort;
       connectionSettings.usbPort = conn.usbPort || '';
     }
   } catch (error) {
@@ -2783,23 +2786,34 @@ const toggleRemoteControl = async (value: boolean) => {
   }
 };
 
-const saveConnectionSettings = async () => {
+// Commit the remote-control port when the field loses focus. The server
+// checks that the port is numeric, unprivileged and not already bound by
+// another program before we persist it; an invalid value stays in the box
+// with the reason shown underneath, and nothing is saved.
+const commitServerPort = async () => {
+  const port = parseInt(String(connectionSettings.serverPort), 10);
+  if (port === savedServerPort.value) {
+    serverPortStatus.value = null;
+    return;
+  }
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    serverPortStatus.value = { kind: 'error', text: 'Port must be a number between 1024 and 65535.' };
+    return;
+  }
   try {
+    const res = await fetch(`${api.baseUrl}/api/server-port/check?port=${port}`);
+    const check = await res.json();
+    if (!check.valid || !check.available) {
+      serverPortStatus.value = { kind: 'error', text: check.reason || `Port ${port} is not available.` };
+      return;
+    }
     const { updateSettings } = await import('./lib/settings-store.js');
-    await updateSettings({
-      connection: {
-        serverPort: parseInt(connectionSettings.serverPort, 10) || 8090,
-      },
-      remoteControl: {
-        enabled: connectionSettings.remoteControlEnabled
-      }
-    });
-    connectionSettingsSaved.value = true;
-    setTimeout(() => {
-      connectionSettingsSaved.value = false;
-    }, 1500);
+    await updateSettings({ connection: { serverPort: port } });
+    savedServerPort.value = port;
+    serverPortStatus.value = { kind: 'success', text: `Port ${port} saved. Restart ncSender to apply.` };
   } catch (error) {
-    console.error('Error saving settings:', error);
+    console.error('Failed to save server port:', error);
+    serverPortStatus.value = { kind: 'error', text: 'Could not verify the port. Try again.' };
   }
 };
 
@@ -3271,6 +3285,16 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   text-align: left;
   font-style: italic;
   margin-top: 4px;
+}
+
+.settings-note--error {
+  color: #ff6b6b;
+  font-style: normal;
+}
+
+.settings-note--success {
+  color: var(--color-accent);
+  font-style: normal;
 }
 
 .setting-item--with-note {
@@ -3809,34 +3833,6 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   gap: var(--gap-sm);
 }
 
-
-.save-connection-button {
-  background: var(--gradient-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
-  padding: 12px 32px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(26, 188, 156, 0.2);
-  min-width: 120px;
-}
-
-.save-connection-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(26, 188, 156, 0.3);
-}
-
-.save-connection-button:active {
-  transform: translateY(0);
-}
-
-.save-connection-button--saved {
-  background: #27ae60;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
-}
 
 .save-button {
   background: var(--gradient-accent);

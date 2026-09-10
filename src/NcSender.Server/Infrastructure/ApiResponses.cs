@@ -103,6 +103,9 @@ public record PluginExecuteToolMenuRequest(string PluginId, string Label);
 // SystemEndpoints
 public record RotationRequest(string Rotation);
 
+// SystemEndpoints
+public record ServerPortCheckResponse(int Port, bool Valid, bool Available, string? Reason);
+
 // FirmwareEndpoints
 public record FirmwareFlashRequest(string Hex, string Port, bool IsDFU = false);
 public record FirmwareFlashResponse(bool Success, string Message, string Mode);

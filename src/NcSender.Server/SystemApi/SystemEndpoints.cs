@@ -10,6 +10,38 @@ public static class SystemEndpoints
 {
     public static void Map(WebApplication app)
     {
+        // Validates a candidate remote-control port before the client saves it:
+        // numeric, in the unprivileged range, and bindable right now. The port
+        // we are already listening on is always reported available so re-saving
+        // the current value never fails.
+        app.MapGet("/api/server-port/check", (HttpContext context) =>
+        {
+            var raw = context.Request.Query["port"].ToString();
+            if (!int.TryParse(raw, out var port) || port < 1024 || port > 65535)
+                return Results.Ok(new ServerPortCheckResponse(0, false, false, "Port must be a number between 1024 and 65535."));
+
+            var listening = app.Urls
+                .Select(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) ? uri.Port : -1)
+                .ToHashSet();
+            if (listening.Contains(port))
+                return Results.Ok(new ServerPortCheckResponse(port, true, true, null));
+
+            try
+            {
+                var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, port);
+                probe.Start();
+                probe.Stop();
+                return Results.Ok(new ServerPortCheckResponse(port, true, true, null));
+            }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                var reason = ex.SocketErrorCode == System.Net.Sockets.SocketError.AccessDenied
+                    ? $"Port {port} needs elevated privileges on this system."
+                    : $"Port {port} is already in use by another program.";
+                return Results.Ok(new ServerPortCheckResponse(port, true, false, reason));
+            }
+        });
+
         app.MapGet("/api/gcode-job/status", (IServerContext context) =>
         {
             var job = context.State.JobLoaded;

@@ -226,6 +226,20 @@ public class JobManager : IJobManager
 
         _logger.LogInformation("Executing {Event} event G-code ({Lines} lines)", settingsKey, lines.Length);
 
+        // Bracket the user's lines with comments so the terminal shows where
+        // event G-code starts and stops. Anyone reading the log can then tell
+        // these lines came from the Events tab, not the program file.
+        var label = EventLabel(settingsKey);
+        try
+        {
+            await _controller.SendCommandAsync($"({label} Event Begin)", meta);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Event G-code marker failed for {Event}", settingsKey);
+            return;
+        }
+
         foreach (var line in lines)
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -240,7 +254,23 @@ public class JobManager : IJobManager
                 break;
             }
         }
+
+        try
+        {
+            await _controller.SendCommandAsync($"({label} Event End)", meta);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Event G-code marker failed for {Event}", settingsKey);
+        }
     }
+
+    private static string EventLabel(string settingsKey) => settingsKey switch
+    {
+        "programStart" => "Program Start",
+        "programEnd" => "Program End",
+        _ => settingsKey
+    };
 
     private void NotifyPluginsJobEnded()
     {
