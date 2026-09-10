@@ -215,6 +215,12 @@ public class JsPluginEngine : IJsPluginEngine
                     var jobLoaded = _serverContext.State.JobLoaded;
                     var jobRunning = jobLoaded is not null && jobLoaded.Status == "running";
                     jsContext.Set("jobRunning", JsValue.FromObject(engine, jobRunning));
+                    // Laser mode (Pro): the laser head is active, so plugins that
+                    // drive spindle-side hardware (dust boot, clamps) stand
+                    // down. Community never sets laserMode, so this reads false.
+                    var settingsForPlugins = _serviceProvider.GetService(typeof(NcSender.Core.Interfaces.ISettingsManager)) as NcSender.Core.Interfaces.ISettingsManager;
+                    var laserMode = settingsForPlugins?.GetSetting<bool>("laserMode", false) ?? false;
+                    jsContext.Set("laserMode", JsValue.FromObject(engine, laserMode));
                     // Edition marker so cross-edition plugins can gate
                     // Pro-only features (e.g. `$keepout_off` prefix).
                     // Plugins check `context.edition === "pro"`.
