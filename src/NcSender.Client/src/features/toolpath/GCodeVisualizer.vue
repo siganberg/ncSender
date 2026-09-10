@@ -913,6 +913,26 @@ const ENABLE_TOOL_BUTTON_SNAP = false;
 // Reactive state
 const hasFile = ref(false);
 const isLoading = ref(false);
+// Set while a transform / reset has asked the server to reload the file
+// and we are waiting for the resulting gcode-updated → content-ready
+// round trip. The overlay stays up across that hand-off instead of being
+// dropped by the caller and raised again by handleGCodeUpdate, which is
+// what used to read as a flicker. Cleared when content lands, or by a
+// safety timer if the server never answers.
+let loadHandoffTimer: ReturnType<typeof setTimeout> | null = null;
+const beginLoadHandoff = () => {
+  if (loadHandoffTimer !== null) clearTimeout(loadHandoffTimer);
+  loadHandoffTimer = setTimeout(() => {
+    loadHandoffTimer = null;
+    isLoading.value = false;
+  }, 15000);
+};
+const endLoadHandoff = () => {
+  if (loadHandoffTimer !== null) {
+    clearTimeout(loadHandoffTimer);
+    loadHandoffTimer = null;
+  }
+};
 const loadingProgress = ref(0);
 const loadingMessage = ref('');
 const loadingError = ref(false);
@@ -2962,11 +2982,11 @@ const handleTransformReset = async () => {
   loadingProgress.value = 0;
 
   try {
+    beginLoadHandoff();
     await api.loadGCodeFile(sourceFile);
-    loadingProgress.value = 100;
   } catch (error) {
     console.error('Error resetting to original:', error);
-  } finally {
+    endLoadHandoff();
     isLoading.value = false;
   }
 };
@@ -3021,12 +3041,24 @@ const applyTransform = async (
     const originalSourceFile = props.jobLoaded?.sourceFile || null;
     const nameForTransform = originalSourceFile || currentFilename;
 
-    // Download current G-code content (may already be transformed)
-    // All transforms apply to current state so they can be chained
-    loadingMessage.value = 'Downloading G-code...';
-    const content = await api.downloadGCodeFile((progress) => {
-      loadingProgress.value = Math.round(progress.percent * 0.3);
-    });
+    // Current G-code content (may already be transformed — transforms
+    // chain). The client already holds it: the store cached it in
+    // IndexedDB when the file loaded, so only fall back to a download if
+    // the cache is missing or belongs to another file.
+    loadingMessage.value = 'Reading G-code...';
+    let content: string | null = null;
+    try {
+      const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
+      const cached = await getGCodeFromIDB();
+      if (cached?.content && cached.filename === currentFilename) content = cached.content;
+    } catch { /* fall through to download */ }
+    if (content === null) {
+      loadingMessage.value = 'Downloading G-code...';
+      content = await api.downloadGCodeFile((progress) => {
+        loadingProgress.value = Math.round(progress.percent * 0.3);
+      });
+    }
+    loadingProgress.value = 30;
 
     // Apply transformation
     loadingMessage.value = 'Transforming toolpath...';
@@ -3055,14 +3087,16 @@ const applyTransform = async (
     loadingMessage.value = 'Loading transformed G-code...';
     loadingProgress.value = 70;
 
+    // The server answers with gcode-updated; the store downloads the new
+    // content and handleGCodeUpdate renders it and drops the overlay.
+    beginLoadHandoff();
     await api.loadTempGCode(transformed, transformedFilename, originalSourceFile);
-
-    loadingProgress.value = 100;
   } catch (error) {
     console.error('Error applying transform:', error);
+    endLoadHandoff();
+    isLoading.value = false;
   } finally {
     isTransforming.value = false;
-    isLoading.value = false;
   }
 };
 
@@ -3078,16 +3112,18 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     if (!data.content) {
       isLoading.value = true;
       loadingMessage.value = 'Downloading G-code...';
-      loadingProgress.value = 0;
+      // Mid hand-off the bar is already past this point; don't rewind it.
+      if (loadHandoffTimer === null) loadingProgress.value = 0;
       return;
     }
 
     const content = data.content;
+    endLoadHandoff();
 
     // Show loading for rendering
     isLoading.value = true;
     loadingMessage.value = 'Rendering toolpath...';
-    loadingProgress.value = 50;
+    loadingProgress.value = Math.max(loadingProgress.value, 50);
 
     // Reset completed lines before rendering new G-code
     if (gcodeVisualizer) {
@@ -3173,14 +3209,17 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
     updatePointerScale();
     updateAxisLabelsScale();
 
-    // Complete loading
+    // Complete loading. One frame is enough for the new toolpath to be on
+    // screen before the overlay lifts; a longer hold only made quick
+    // transforms look like a blink.
     loadingProgress.value = 100;
-    requestRender();
+    requestRender(true);
     setTimeout(() => {
       isLoading.value = false;
-    }, 300);
+    }, 60);
   } catch (error) {
     console.error('Error rendering G-code:', error);
+    endLoadHandoff();
     isLoading.value = false;
   }
 };
@@ -5247,6 +5286,14 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  /* Stay invisible for the first 200 ms. A rotate or mirror of a small
+     file finishes inside that window, so the overlay never paints and
+     the toolpath simply changes in place. Slow loads still get it. */
+  animation: loading-overlay-in 120ms ease-out 200ms both;
+}
+@keyframes loading-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .loading-content {
