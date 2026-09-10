@@ -50,11 +50,5 @@ internal static class BuiltInTips
             Title = "Hold a slot to load or unload a tool",
             Body = "In the tool legend, hold a slot button for one second to run a tool change to that tool. If the slot holds the tool already in the spindle, the same hold unloads it instead.\n\nA short tap expands the slot to show the bit assigned to it.",
         },
-        new()
-        {
-            Id = 5,
-            Title = "Unlock keeps trying for you",
-            Body = "After an alarm, one press of Unlock retries the reset for up to 30 seconds. Release the E-stop or clear the limit switch in the meantime and the dialog closes on its own.",
-        },
     };
 }
