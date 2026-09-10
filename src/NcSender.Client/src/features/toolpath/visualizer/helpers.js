@@ -139,6 +139,7 @@ export const generateCuttingPointer = () => {
                     obj.position.z += 10;
 
                     group.add(obj);
+                    group.userData.onLoaded?.();
 
                     // The OBJ is structured with named groups (g Bit / g Nut
                     // / g Spindle / g Logo). Three's OBJLoader collapses
@@ -218,6 +219,7 @@ export const generateCuttingPointer = () => {
                     obj.position.sub(center);
                     obj.position.z += 11.5;
                     group.add(obj);
+                    group.userData.onLoaded?.();
 
                     // No shading helpers in OBJ-only path
                 },

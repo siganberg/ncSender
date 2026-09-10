@@ -15,11 +15,24 @@
   along with ncSender. If not, see <https://www.gnu.org/licenses/>.
 -->
 
+<!--
+  Confirm prompt laid out like GatePanel so every blocking dialog reads
+  the same: centred title, icon badge beside the text, centred buttons.
+  The badge colour and default glyph follow the variant; pass `icon` to
+  override the glyph (e.g. icon="success" for a completed import).
+-->
 <template>
-  <div class="confirm-dialog">
+  <div class="confirm-dialog" :class="`confirm-dialog--${variant}`">
     <h3 class="confirm-dialog__title">{{ title }}</h3>
-    <p v-if="message" class="confirm-dialog__message">{{ message }}</p>
-    <slot />
+    <div class="confirm-dialog__content">
+      <div v-if="showIcon" class="confirm-dialog__icon" aria-hidden="true">
+        <PanelIcon :name="iconName" />
+      </div>
+      <div class="confirm-dialog__body">
+        <p v-if="message" class="confirm-dialog__message">{{ message }}</p>
+        <slot />
+      </div>
+    </div>
     <div class="confirm-dialog__actions">
       <button
         v-if="showCancel"
@@ -41,6 +54,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import PanelIcon, { type PanelIconName } from './PanelIcon.vue';
 
 const props = withDefaults(defineProps<{
   title: string;
@@ -49,16 +63,28 @@ const props = withDefaults(defineProps<{
   showCancel?: boolean;
   confirmText?: string;
   cancelText?: string;
-  variant?: 'primary' | 'danger';
+  variant?: 'primary' | 'danger' | 'warning';
+  icon?: PanelIconName;
+  showIcon?: boolean;
 }>(), {
   showConfirm: true,
   showCancel: true,
   confirmText: 'Confirm',
   cancelText: 'Cancel',
-  variant: 'primary'
+  variant: 'primary',
+  showIcon: true
 });
 
 defineEmits<{ (e: 'confirm'): void; (e: 'cancel'): void }>();
+
+// Same defaults as GatePanel: danger is "stop and think" (raised hand),
+// warning is the triangle, anything else is informational.
+const iconName = computed<PanelIconName>(() => {
+  if (props.icon) return props.icon;
+  if (props.variant === 'danger') return 'hand';
+  if (props.variant === 'warning') return 'warning';
+  return 'info';
+});
 
 const confirmClass = computed(() => (
   props.variant === 'danger'
@@ -73,40 +99,96 @@ const confirmClass = computed(() => (
   flex-direction: column;
   gap: var(--gap-md);
   padding: var(--gap-lg);
+  min-width: min(420px, 90vw);
+  /* Fill the Dialog's content area so the internal scroll region can
+     bound itself. When the surrounding Dialog is auto-height and content
+     is short, flex-basis:auto keeps the panel tight — this only kicks in
+     when the Dialog's content area is height-constrained. */
+  flex: 1;
+  min-height: 0;
 }
 
 .confirm-dialog__title {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
   color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+/* Two-column content: icon badge left, text right. Mirrors GatePanel. */
+.confirm-dialog__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.confirm-dialog__icon {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+}
+.confirm-dialog__icon svg { width: 34px; height: 34px; }
+
+.confirm-dialog--danger .confirm-dialog__icon {
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff6b6b;
+}
+.confirm-dialog--warning .confirm-dialog__icon {
+  background: rgba(255, 193, 7, 0.16);
+  color: #ffc107;
+}
+
+.confirm-dialog__body {
+  /* Only this region scrolls when the message/slot content overflows.
+     min-height:0 lets the flex child actually shrink below its content
+     height so overflow-y can take effect. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .confirm-dialog__message {
   margin: 0;
   color: var(--color-text-secondary);
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .confirm-dialog__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--gap-sm);
   justify-content: center;
   margin-top: var(--gap-sm);
-}
-
-.confirm-dialog__actions:has(> :only-child) {
-  justify-content: center;
+  flex-shrink: 0;
 }
 
 .confirm-dialog__btn {
-  padding: 10px 24px;
+  padding: 12px 24px;
   border-radius: var(--radius-small);
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
+  min-width: 112px;
 }
 
 .confirm-dialog__btn--cancel {
@@ -140,4 +222,3 @@ const confirmClass = computed(() => (
   box-shadow: 0 4px 8px rgba(26, 188, 156, 0.25);
 }
 </style>
-

@@ -3259,6 +3259,11 @@ const updatePointerType = () => {
     });
   }
   cuttingPointer = generateCuttingPointer();
+  // The head model arrives from an async OBJ load. With on-demand
+  // rendering, nothing else may draw a frame before then, so a swapped
+  // head stays invisible until the user touches the view. Draw when the
+  // model lands.
+  cuttingPointer.userData.onLoaded = () => requestRender(true);
   cuttingPointer.position.set(0, 0, 0);
   cuttingPointer.visible = showSpindle.value;
   if (scene) scene.add(cuttingPointer);
