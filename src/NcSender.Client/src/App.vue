@@ -483,6 +483,7 @@
             :show-manual-button="showManualButton"
             :show-tls-button="showTLSButton"
             :show-probe-button="showProbeButton"
+            :probe-tool-number="probeToolNumber"
             :tool-count-disabled="toolCountDisabled"
             :tool-source-name="toolSourceName"
             @update:tool-count="handleToolCountUpdate"
@@ -1433,6 +1434,7 @@ const toolCountDisabled = computed(() => !!toolSource.value);
 const showManualButton = ref(initialSettings?.tool?.manual ?? true);
 const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
 const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
+const probeToolNumber = ref<number>(initialSettings?.tool?.probeToolNumber ?? 99);
 const loadedPlugins = ref<Array<{ id: string; name: string }>>([]);
 
 // Computed property to get the friendly plugin name from toolSource
@@ -1900,6 +1902,9 @@ onMounted(() => {
     }
     // Update tool settings when changed (from server broadcast)
     if (detail?.tool) {
+      if (Number.isInteger(detail.tool.probeToolNumber) && detail.tool.probeToolNumber > 0) {
+        probeToolNumber.value = detail.tool.probeToolNumber;
+      }
       if (typeof detail.tool.count === 'number') {
         // Only set the suppression flag if the assignment will
         // actually change the ref — otherwise Vue won't fire the

@@ -241,6 +241,37 @@
           <span class="tools-legend__label">{{ manualToolLabel }}</span>
         </div>
 
+        <!-- Probe Tool -->
+        <div
+          v-if="showProbeTool"
+          :key="'probe'"
+          class="tools-legend__item probe-tool"
+          :class="{
+            'active': currentTool === probeToolNumber,
+            'disabled': isToolActionsDisabled,
+            'long-press-triggered': toolPress['probe']?.triggered,
+            'blink-border': toolPress['probe']?.blinking
+          }"
+          :title="`Probe (Hold to load T${probeToolNumber})`"
+          @mousedown="isToolActionsDisabled ? null : startToolPress('probe', $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress('probe')"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('probe')"
+          @touchstart="isToolActionsDisabled ? null : startToolPress('probe', $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress('probe')"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('probe')"
+        >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['probe']?.progress || 0}%` }"></div>
+          <!-- Same TLO dot as the slot buttons: the probe lives in the tool
+               library under its own tool number, so its stored offset shows
+               here too. -->
+          <span
+            v-if="hasStoredTlo(probeToolNumber)"
+            class="tools-legend__tlo-dot"
+            :title="`TLO stored (${formatDiameter(toolInventory?.[probeToolNumber]?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
+          ></span>
+          <span class="tools-legend__label">Probe</span>
+        </div>
+
         <!-- TLS Tool -->
         <div
           v-if="showTlsTool"
@@ -262,29 +293,6 @@
         >
           <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['tls']?.progress || 0}%` }"></div>
           <span class="tools-legend__label">TLS</span>
-        </div>
-
-        <!-- Probe Tool -->
-        <div
-          v-if="showProbeTool"
-          :key="'probe'"
-          class="tools-legend__item probe-tool"
-          :class="{
-            'active': currentTool === probeToolNumber,
-            'disabled': isToolActionsDisabled,
-            'long-press-triggered': toolPress['probe']?.triggered,
-            'blink-border': toolPress['probe']?.blinking
-          }"
-          :title="`Probe (Hold to load T${probeToolNumber})`"
-          @mousedown="isToolActionsDisabled ? null : startToolPress('probe', $event)"
-          @mouseup="isToolActionsDisabled ? null : endToolPress('probe')"
-          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('probe')"
-          @touchstart="isToolActionsDisabled ? null : startToolPress('probe', $event)"
-          @touchend="isToolActionsDisabled ? null : endToolPress('probe')"
-          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('probe')"
-        >
-          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['probe']?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">Probe</span>
         </div>
       </div>
 

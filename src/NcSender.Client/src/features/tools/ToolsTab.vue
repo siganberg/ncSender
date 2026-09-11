@@ -91,7 +91,7 @@
             <td class="col-tool-id">
               <div class="tool-id-cell tool-id-cell--clickable" @click.stop="openSlotSelector(tool, $event)">
                 <span class="tool-id-text">{{ tool.toolId }}</span>
-                <span v-if="tool.toolNumber !== null" class="tool-number-badge">Slot{{ tool.toolNumber }}</span>
+                <span v-if="tool.toolNumber !== null" class="tool-number-badge">{{ slotLabel(tool.toolNumber) }}</span>
                 <span v-else class="tool-slot-placeholder">No Slot</span>
               </div>
             </td>
@@ -135,6 +135,18 @@
                 <span v-else class="slot-empty">—</span>
               </div>
               <div class="slot-box-label">SLOT{{ slotNum }}</div>
+            </div>
+            <div
+              v-if="probeSlot"
+              class="slot-box slot-box--probe"
+              :class="{ 'slot-box--assigned': getToolForSlot(probeSlot), 'slot-box--clickable': getToolForSlot(probeSlot) }"
+              @click="scrollToToolInSlot(probeSlot)"
+            >
+              <div class="slot-box-content">
+                <span v-if="getToolForSlot(probeSlot)" class="slot-tool-id">#{{ getToolForSlot(probeSlot).toolId }}</span>
+                <span v-else class="slot-empty">—</span>
+              </div>
+              <div class="slot-box-label">PROBE</div>
             </div>
           </div>
           <button
@@ -218,6 +230,9 @@
                     :value="num"
                   >
                     Slot{{ num }}{{ getToolNumberInfo(num) }}
+                  </option>
+                  <option v-if="probeSlot" :value="probeSlot">
+                    Probe (T{{ probeSlot }}){{ getToolNumberInfo(probeSlot) }}
                   </option>
                 </select>
               </div>
@@ -478,6 +493,17 @@
             >
               Slot{{ num }}{{ getSlotSelectorInfo(num) }}
             </div>
+            <div
+              v-if="probeSlot"
+              class="slot-selector-item"
+              :class="{
+                'slot-selector-item--active': slotSelectorTool?.toolNumber === probeSlot,
+                'slot-selector-item--occupied': getToolForSlot(probeSlot) && getToolForSlot(probeSlot)?.id !== slotSelectorTool?.id
+              }"
+              @click="selectSlot(probeSlot)"
+            >
+              Probe (T{{ probeSlot }}){{ getSlotSelectorInfo(probeSlot) }}
+            </div>
           </div>
         </div>
       </div>
@@ -586,6 +612,10 @@ const props = defineProps<{
   showManualButton?: boolean;
   showTlsButton?: boolean;
   showProbeButton?: boolean;
+  // Tool number the Probe legend button loads (tool.probeToolNumber).
+  // When the Probe button is on, this number is offered as a "Probe" slot
+  // so the probe can live in the library and keep a TLO like any tool.
+  probeToolNumber?: number;
   toolCountDisabled?: boolean;
   toolSourceName?: string | null;
 }>();
@@ -602,6 +632,9 @@ const appStore = useAppStore();
 
 // Computed
 const maxToolCount = computed(() => props.maxToolCount || 1);
+// The probe's slot number, or null when there is no Probe button.
+const probeSlot = computed<number | null>(() => (props.showProbeButton ? (props.probeToolNumber || 99) : null));
+const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
@@ -911,8 +944,9 @@ const handleMagazineSizeChange = (event: Event) => {
   const currentSize = props.toolCount || 0;
 
   if (newSize < currentSize) {
-    // Check if there are any tools with toolNumber > newSize (1-indexed, so T1-T6 for size 6)
-    const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize);
+    // Check if there are any tools with toolNumber > newSize (1-indexed, so T1-T6 for size 6).
+    // The probe's slot sits above the magazine and is not affected.
+    const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize && t.toolNumber !== probeSlot.value);
 
     if (affectedTools.length > 0) {
       // Show confirmation dialog
@@ -932,8 +966,8 @@ const confirmMagazineSizeChange = async () => {
 
   const newSize = pendingMagazineSize.value;
 
-  // Unassign tools with toolNumber > newSize (1-indexed)
-  const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize);
+  // Unassign tools with toolNumber > newSize (1-indexed); the probe slot stays.
+  const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize && t.toolNumber !== probeSlot.value);
 
   try {
     for (const tool of affectedTools) {
@@ -1902,6 +1936,8 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   opacity: 0.5;
 }
+
+.slot-box--probe { border-style: dashed; }
 
 .slot-box-label {
   font-size: 0.6rem;
