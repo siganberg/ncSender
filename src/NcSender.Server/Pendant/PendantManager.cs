@@ -2906,15 +2906,16 @@ public class PendantManager : IPendantManager
         }
 
         var slotCount = ReadAtcSlotCount();
+        var probeTool = ReadProbeTool();
 
-        var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount);
+        var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount, probeTool);
         if (!force && _lastSentOutputsCfg is not null && snapshot.Equals(_lastSentOutputsCfg))
             return Task.CompletedTask;
         _lastSentOutputsCfg = snapshot;
 
         var msg = new PendantOutputsConfigMsg(
             "outputs-config",
-            new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount));
+            new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount, snapshot.ProbeTool));
         return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
     }
 
@@ -3075,11 +3076,24 @@ public class PendantManager : IPendantManager
         catch { return 0; }
     }
 
-    private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount)
+    // The probe's tool number (tool.probeToolNumber) when the Probe button is
+    // on, else 0 — the pendant shows a "Probe" entry after the last slot.
+    private int ReadProbeTool()
+    {
+        try
+        {
+            if (!_settingsManager.GetSetting<bool>("tool.probe", false)) return 0;
+            var n = _settingsManager.GetSetting<int>("tool.probeToolNumber", 99);
+            return n > 0 ? n : 99;
+        }
+        catch { return 0; }
+    }
+
+    private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool)
     {
         public bool Equals(PendantOutputsConfigSnapshot? other)
         {
-            if (other is null || other.SlotCount != SlotCount || other.Aux.Length != Aux.Length) return false;
+            if (other is null || other.SlotCount != SlotCount || other.ProbeTool != ProbeTool || other.Aux.Length != Aux.Length) return false;
             for (int i = 0; i < Aux.Length; i++)
                 if (!Aux[i].Equals(other.Aux[i])) return false;
             return true;

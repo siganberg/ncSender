@@ -58,8 +58,8 @@ public static class AccessoryCatalog
             LicenseProduct: "ncsender-wireless-usb"),
 
         // The pendant's asset name depends on which board it is (pibot vs
-        // ncsender), so its version and download are resolved by the pendant
-        // manager, which knows the model, rather than by this prefix.
+        // ncsender). This prefix is the ncsender one; AccessoryService swaps
+        // in the pibot prefix when the connected pendant reports that model.
         new AccessoryDefinition("pendant", "Pendant",
             "siganberg/ncSender.pendant.releases", "firmware_ncsender_pendant_v", "pendant",
             LicenseProduct: "ncSenderPendant"),

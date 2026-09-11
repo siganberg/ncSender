@@ -50,11 +50,43 @@ public static class AccessoryEndpoints
                 return Results.BadRequest(new ApiError(
                     info.UpdateCheckError ?? $"No firmware available for {def.Name}"));
 
-            // Fire and forget: progress and completion go out on plugin-ota:*,
-            // which is the same stream the existing flashing UI already reads.
             var target = def.Id == AccessoryCatalog.WirelessUsbId
                 ? NcSender.Server.Dongle.DongleOtaService.SelfDeviceName
                 : def.PeerName ?? def.Id;
+
+            // The pendant comes in two boards. The asset was picked by model,
+            // but a wrong image is expensive: it writes to 100% and only fails
+            // at Update.end() on the device. So download first and refuse an
+            // image built for the other chip before a byte goes over the air.
+            if (def.Id == "pendant")
+            {
+                var expectedChip = info.AssetPrefix.Contains("pibot", StringComparison.OrdinalIgnoreCase) ? 0 : 9;
+                byte[] image;
+                try
+                {
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+                    http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
+                    image = await http.GetByteArrayAsync(info.DownloadUrl, ct);
+                }
+                catch (Exception ex)
+                {
+                    return Results.BadRequest(new ApiError($"Download failed: {ex.Message}"));
+                }
+                var chip = NcSender.Server.Dongle.DongleOtaService.EspChipId(image);
+                if (chip is not null && chip != expectedChip)
+                    return Results.BadRequest(new ApiError(
+                        $"That firmware is built for the {NcSender.Server.Dongle.DongleOtaService.EspChipName(chip.Value)}, " +
+                        $"but this pendant is an {NcSender.Server.Dongle.DongleOtaService.EspChipName(expectedChip)}. Not flashed."));
+                _ = Task.Run(async () =>
+                {
+                    try { await ota.FlashAsync(target, image, info.DeviceId, CancellationToken.None); }
+                    catch { /* already broadcast */ }
+                });
+                return Results.Ok(new ApiSuccess(true));
+            }
+
+            // Fire and forget: progress and completion go out on plugin-ota:*,
+            // which is the same stream the existing flashing UI already reads.
             _ = Task.Run(async () =>
             {
                 try { await ota.FlashFromUrlAsync(target, info.DownloadUrl, info.DeviceId, CancellationToken.None); }

@@ -21,7 +21,9 @@ public record PendantClientMeta(string ClientId, string Ip, bool IsLocal, string
 // the Outputs screen has a full picture without polling. Live on/off
 // state and the currently-loaded tool piggyback on the DRO delta.
 public record PendantOutputsConfigMsg(string Type, PendantOutputsConfigData Data);
-public record PendantOutputsConfigData(PendantAuxOutput[] Aux, int SlotCount);
+// ProbeTool: the probe's tool number when the tool provider offers a probe
+// (tool.probe on), else 0. The pendant lists it after the last slot.
+public record PendantOutputsConfigData(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool);
 public record PendantAuxOutput(
     string Id,
     string Name,

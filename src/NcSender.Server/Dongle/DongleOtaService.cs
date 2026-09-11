@@ -189,6 +189,26 @@ public sealed class DongleOtaService : IDisposable
         }
     }
 
+    /// <summary>
+    /// The chip an ESP-IDF application image was built for, read from its
+    /// header (magic 0xE9, chip id at offset 12): 0 = ESP32, 9 = ESP32-S3.
+    /// Null when the bytes are not an ESP image.
+    /// </summary>
+    public static int? EspChipId(byte[] image)
+    {
+        if (image is null || image.Length < 14 || image[0] != 0xE9) return null;
+        return image[12] | (image[13] << 8);
+    }
+
+    public static string EspChipName(int chipId) => chipId switch
+    {
+        0  => "ESP32",
+        2  => "ESP32-S2",
+        5  => "ESP32-C3",
+        9  => "ESP32-S3",
+        _  => $"chip {chipId}",
+    };
+
     public async Task FlashFromUrlAsync(string deviceName, string downloadUrl, string? deviceId, CancellationToken ct)
     {
         // Server-side download bypasses browser CORS on GitHub Release assets —

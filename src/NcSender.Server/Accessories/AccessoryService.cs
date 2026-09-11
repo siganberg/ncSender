@@ -107,6 +107,7 @@ public sealed class AccessoryService
             var info = new AccessoryInfo { Id = def.Id, Name = def.Name, Availability = def.Availability,
                                             PluginName = def.PluginName,
                                             AssetPrefix = def.AssetPrefix };
+            string? pendantAssetPrefix = null;
 
             if (def.Id == AccessoryCatalog.WirelessUsbId)
             {
@@ -129,6 +130,23 @@ public sealed class AccessoryService
                 info.CurrentVersion = dev?.Version ?? "";
                 info.Licensed = dev?.Licensed;
                 info.DeviceId = dev?.DeviceId ?? "";
+                // Two boards, two images: a pibot (ESP32) and an ncsender
+                // (ESP32-S3) pendant need different assets. The catalog prefix
+                // is only the ncsender one; pick by the model the pendant
+                // reports, or refuse rather than flash the wrong chip's image
+                // — which writes to 100% and then fails at Update.end().
+                var model = PendantModel(dev);
+                if (model is null)
+                {
+                    pendantAssetPrefix = null;
+                    if (checkUpdates && info.Connected)
+                        info.UpdateCheckError = "The pendant has not reported which board it is. Reconnect it, or update from the Pendant page.";
+                }
+                else
+                {
+                    pendantAssetPrefix = $"firmware_{model}_pendant_v";
+                    info.AssetPrefix = pendantAssetPrefix;
+                }
             }
             else if (def.PeerName is not null)
             {
@@ -151,11 +169,32 @@ public sealed class AccessoryService
                 }
             }
 
-            if (checkUpdates && info.Connected)
-                await ApplyReleaseAsync(def, info, ct).ConfigureAwait(false);
+            if (checkUpdates && info.Connected && info.UpdateCheckError is null)
+                await ApplyReleaseAsync(def, info, pendantAssetPrefix ?? def.AssetPrefix, ct).ConfigureAwait(false);
 
             return info;
         }
+    }
+
+    /// <summary>
+    /// "pibot" or "ncsender" for the connected pendant: what it reported in
+    /// its metadata, else inferred from its USB port (native CDC = ncsender,
+    /// a USB-serial bridge = pibot). Null when neither is known.
+    /// </summary>
+    private static string? PendantModel(PendantDeviceInfo? dev)
+    {
+        var m = dev?.DeviceModel?.Trim().ToLowerInvariant();
+        if (m == "pibot" || m == "ncsender") return m;
+        var port = dev?.Port ?? "";
+        if (port.Contains("usbmodem", StringComparison.OrdinalIgnoreCase) ||
+            port.Contains("ttyACM", StringComparison.OrdinalIgnoreCase))
+            return "ncsender";
+        if (port.Contains("usbserial", StringComparison.OrdinalIgnoreCase) ||
+            port.Contains("ttyUSB", StringComparison.OrdinalIgnoreCase) ||
+            port.Contains("SLAB_USBtoUART", StringComparison.Ordinal) ||
+            port.Contains("wchusbserial", StringComparison.OrdinalIgnoreCase))
+            return "pibot";
+        return null;
     }
 
     /// <summary>Ask a relayed peer its version. Empty when it does not answer.</summary>
@@ -279,9 +318,9 @@ public sealed class AccessoryService
         return result;
     }
 
-    private async Task ApplyReleaseAsync(AccessoryDefinition def, AccessoryInfo info, CancellationToken ct)
+    private async Task ApplyReleaseAsync(AccessoryDefinition def, AccessoryInfo info, string assetPrefix, CancellationToken ct)
     {
-        var release = await LatestReleaseAsync(def, ct).ConfigureAwait(false);
+        var release = await LatestReleaseAsync(def, assetPrefix, ct).ConfigureAwait(false);
         if (release.Error is not null) { info.UpdateCheckError = release.Error; return; }
 
         info.LatestVersion = release.Version;
@@ -293,12 +332,15 @@ public sealed class AccessoryService
                             && IsNewer(release.Version, info.CurrentVersion);
     }
 
-    private async Task<ReleaseInfo> LatestReleaseAsync(AccessoryDefinition def, CancellationToken ct)
+    private async Task<ReleaseInfo> LatestReleaseAsync(AccessoryDefinition def, string assetPrefix, CancellationToken ct)
     {
         await _releaseLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_releaseCache.TryGetValue(def.Id, out var hit) && DateTime.UtcNow - hit.At < ReleaseCacheTtl)
+            // Cached per asset, not per accessory: the pendant's asset depends
+            // on which board is connected.
+            var cacheKey = $"{def.Id}:{assetPrefix}";
+            if (_releaseCache.TryGetValue(cacheKey, out var hit) && DateTime.UtcNow - hit.At < ReleaseCacheTtl)
                 return hit.Info;
 
             ReleaseInfo info;
@@ -314,7 +356,7 @@ public sealed class AccessoryService
                 var url = "";
                 if (doc.RootElement.TryGetProperty("assets", out var assets))
                 {
-                    var wanted = $"{def.AssetPrefix}{version}.bin";
+                    var wanted = $"{assetPrefix}{version}.bin";
                     foreach (var asset in assets.EnumerateArray())
                     {
                         if (!string.Equals(asset.GetProperty("name").GetString(), wanted,
@@ -324,7 +366,7 @@ public sealed class AccessoryService
                     }
                 }
                 info = new ReleaseInfo(version, url,
-                    url.Length == 0 ? $"No asset named {def.AssetPrefix}{version}.bin in the latest release" : null);
+                    url.Length == 0 ? $"No asset named {assetPrefix}{version}.bin in the latest release" : null);
             }
             catch (Exception ex)
             {
@@ -334,7 +376,7 @@ public sealed class AccessoryService
                 _logger.LogDebug(ex, "Release check failed for {Id}", def.Id);
             }
 
-            _releaseCache[def.Id] = (DateTime.UtcNow, info);
+            _releaseCache[cacheKey] = (DateTime.UtcNow, info);
             return info;
         }
         finally { _releaseLock.Release(); }
