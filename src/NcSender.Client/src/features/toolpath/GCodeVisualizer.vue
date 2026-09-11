@@ -440,7 +440,10 @@
       </div>
 
       <!-- Control buttons - bottom center -->
-      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || (store.homingStartupRequired.value && !store.isHomed.value) || store.isProbing.value }">
+      <!-- Probing no longer disables the whole group: Cycle, Trace and From
+           Line each gate on isProbing themselves, so Stop stays live as the
+           way to abort a running probe. -->
+      <div class="control-buttons" :class="{ 'controls-disabled': !store.isConnected.value || (store.homingStartupRequired.value && !store.isHomed.value) }">
         <button
           class="control-btn control-btn--primary"
           :disabled="!canStartOrResume || (isJobRunning && !isOnHold)"
@@ -464,7 +467,7 @@
         <button
           class="control-btn control-btn--danger"
           @click="handleStop"
-          title="Stop Job"
+          :title="store.isProbing.value ? 'Stop Probe' : 'Stop Job'"
         >
           <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
           Stop
@@ -3377,6 +3380,12 @@ const handlePause = async () => {
 
 const handleStop = async () => {
   try {
+    if (store.isProbing.value) {
+      // The probe service clears its state and soft-resets the controller.
+      const { stopProbe } = await import('../probe/api');
+      await stopProbe();
+      return;
+    }
     // Send soft reset to stop/cancel any active operation
     await api.sendCommandViaWebSocket({
       command: '\x18'

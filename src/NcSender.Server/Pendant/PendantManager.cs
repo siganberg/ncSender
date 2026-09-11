@@ -2947,6 +2947,15 @@ public class PendantManager : IPendantManager
     {
         try
         {
+            // "PROBE STOP" aborts the running probe — the pendant's Start
+            // control doubles as Stop while a probe is in flight.
+            if (string.Equals(payload.Trim(), "STOP", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("Pendant probe: stop requested");
+                _probeService.Stop();
+                return;
+            }
+
             var parts = payload.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 2)
             {
@@ -2963,7 +2972,19 @@ public class PendantManager : IPendantManager
                 "Center-Outer" => "Center - Outer",
                 var other      => other,
             };
-            var placement = parts.Length > 2 ? parts[2] : null;
+            // Centre modes carry the bore / boss size as "D<mm>" instead of a
+            // placement; the pendant has room for one number, so it stands in
+            // for both the X and the Y dimension.
+            double? centerDiameter = null;
+            string? placement = null;
+            foreach (var part in parts.Skip(2))
+            {
+                if (part.Length > 1 && (part[0] == 'D' || part[0] == 'd')
+                    && double.TryParse(part[1..], NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d > 0)
+                    centerDiameter = d;
+                else if (placement is null)
+                    placement = part;
+            }
 
             // X and Y probe a single face, so their placement is a side; every
             // other axis mode starts from a corner. Sending the wrong one leaves
@@ -3007,11 +3028,18 @@ public class PendantManager : IPendantManager
 
                 // Defaults mirror the app's probe dialog so a pendant-started
                 // probe behaves the same as one started on screen.
-                ["toolDiameter"]  = Num(Setting("probe.selectedBitDiameter", 6)),
+                // The generator's toolDiameter is the 3D probe's ball point
+                // diameter, which the app's probe dialog sends from this
+                // setting. probe.selectedBitDiameter is the AutoZero bit
+                // picker (a string, "Auto" by default) and belongs to
+                // selectedBitDiameter below — reading it here left every
+                // pendant 3D probe at the 6 mm fallback, so the zeroed
+                // origin sat half a ball off the edge.
+                ["toolDiameter"]  = Num(Setting("probe.3d-probe.ballPointDiameter", 2)),
                 ["zPlunge"]       = Num(Setting("probe.zPlunge", 3)),
                 ["zOffset"]       = Num(Setting("probe.zOffset", -0.1)),
-                ["xDimension"]    = Num(Setting("probe.xDimension", 100)),
-                ["yDimension"]    = Num(Setting("probe.yDimension", 100)),
+                ["xDimension"]    = Num(centerDiameter ?? Setting("probe.xDimension", 100)),
+                ["yDimension"]    = Num(centerDiameter ?? Setting("probe.yDimension", 100)),
                 ["rapidMovement"] = Num(Setting("probe.rapidMovement", 2000)),
                 ["zThickness"]    = Num(Setting("probe.zThickness", 15)),
                 ["xyThickness"]   = Num(Setting("probe.xyThickness", 10)),
@@ -3031,8 +3059,8 @@ public class PendantManager : IPendantManager
                 ["probeZFirst"] = Bool(false),
             };
 
-            _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement}",
-                probeType, axis, placement ?? "-");
+            _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement} diameter={Diameter}",
+                probeType, axis, placement ?? "-", centerDiameter?.ToString(CultureInfo.InvariantCulture) ?? "-");
             await _probeService.StartAsync(options, null);
         }
         catch (Exception ex)
