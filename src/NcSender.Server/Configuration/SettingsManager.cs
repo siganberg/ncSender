@@ -246,7 +246,9 @@ public class SettingsManager : ISettingsManager
                 "count": 0,
                 "source": null,
                 "tls": false,
-                "manual": false
+                "manual": false,
+                "probe": false,
+                "probeToolNumber": 99
             },
             "plugins": {
                 "allowPriorityReordering": false

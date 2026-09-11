@@ -223,8 +223,8 @@
           :key="'manual'"
           class="tools-legend__item manual-tool"
           :class="{
-            'active': currentTool > numberOfToolsToShow && currentTool < 99,
-            'used': toolsUsed.some(t => t > numberOfToolsToShow && t < 99),
+            'active': currentTool > numberOfToolsToShow && currentTool < probeToolNumber,
+            'used': toolsUsed.some(t => t > numberOfToolsToShow && t < probeToolNumber),
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress['manual']?.triggered,
             'blink-border': toolPress['manual']?.blinking
@@ -270,12 +270,12 @@
           :key="'probe'"
           class="tools-legend__item probe-tool"
           :class="{
-            'active': currentTool === 99,
+            'active': currentTool === probeToolNumber,
             'disabled': isToolActionsDisabled,
             'long-press-triggered': toolPress['probe']?.triggered,
             'blink-border': toolPress['probe']?.blinking
           }"
-          title="Probe (Hold to load T99)"
+          :title="`Probe (Hold to load T${probeToolNumber})`"
           @mousedown="isToolActionsDisabled ? null : startToolPress('probe', $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress('probe')"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress('probe')"
@@ -1090,12 +1090,15 @@ const numberOfToolsToShow = ref<number>(0);
 const showManualTool = ref<boolean>(false);
 const showTlsTool = ref<boolean>(false);
 const showProbeTool = ref<boolean>(false);
+// The probe's tool number comes from the tool provider (the ATC plugin's
+// Probe Auto-Loader lets the user pick it); 99 is the historical default.
+const probeToolNumber = ref<number>(99);
 
 // Manual tool label - show tool number when manual tool is active
 const manualToolLabel = computed(() => {
   const tool = props.currentTool ?? 0;
   const toolCount = numberOfToolsToShow.value;
-  const isManualToolActive = tool > toolCount && tool < 99;
+  const isManualToolActive = tool > toolCount && tool < probeToolNumber.value;
 
   if (toolCount === 0 && showManualTool.value) {
     return `T${tool}`;
@@ -4353,8 +4356,8 @@ const startToolPress = (toolNumber: number | string, _evt?: Event) => {
         // Manual tool - use a number greater than numberOfToolsToShow
         toolToLoad = props.currentTool > numberOfToolsToShow.value ? 0 : numberOfToolsToShow.value + 1;
       } else if (toolNumber === 'probe') {
-        // Probe tool - T99 is reserved for probe
-        toolToLoad = props.currentTool === 99 ? 0 : 99;
+        // Probe tool - number comes from the tool provider (default T99)
+        toolToLoad = props.currentTool === probeToolNumber.value ? 0 : probeToolNumber.value;
       } else {
         // Regular numbered tool - if this is the current tool, send T0 to unload, otherwise send the tool number
         toolToLoad = props.currentTool === toolNumber ? 0 : toolNumber as number;
@@ -4812,6 +4815,9 @@ onMounted(async () => {
     if (typeof settings.tool?.probe === 'boolean') {
       showProbeTool.value = settings.tool.probe;
     }
+    if (Number.isInteger(settings.tool?.probeToolNumber) && settings.tool.probeToolNumber > 0) {
+      probeToolNumber.value = settings.tool.probeToolNumber;
+    }
     if (typeof settings.autoFit === 'boolean') {
       autoFitMode.value = settings.autoFit;
     }
@@ -4901,6 +4907,9 @@ onMounted(async () => {
     }
     if (changedSettings.tool?.probe !== undefined) {
       showProbeTool.value = changedSettings.tool.probe;
+    }
+    if (Number.isInteger(changedSettings.tool?.probeToolNumber) && changedSettings.tool.probeToolNumber > 0) {
+      probeToolNumber.value = changedSettings.tool.probeToolNumber;
     }
     // Update I/O Switches config when settings change (support new auxOutputs or legacy ioSwitches)
     if (changedSettings.auxOutputs !== undefined) {
