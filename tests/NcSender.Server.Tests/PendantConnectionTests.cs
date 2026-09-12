@@ -81,6 +81,9 @@ public class PendantConnectionTests : IDisposable
 
     public void Dispose()
     {
+        // The scanner now starts in the constructor; stop its timer so it
+        // does not keep polling the catalog mock after the test ends.
+        _manager.StopAutoConnect();
         foreach (var h in _handlers)
             h.Dispose();
     }

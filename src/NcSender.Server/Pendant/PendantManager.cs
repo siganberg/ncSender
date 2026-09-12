@@ -118,14 +118,17 @@ public class PendantManager : IPendantManager
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
 
-        // Start pendant auto-connect once CNC controller is connected
-        _controller.ConnectionStatusChanged += (status, isConnected) =>
-        {
-            if (isConnected)
-                StartAutoConnect();
-            else
-                StopAutoConnect();
-        };
+        // The USB scanner runs for the life of the process, independent of the
+        // CNC link. It used to start only once the controller was connected, a
+        // guard from when discovery probed ports by opening them and could
+        // reset or steal the controller's own USB cable. Discovery is now a
+        // USB-descriptor lookup that opens nothing except devices identified
+        // as an ncSender pendant or wireless dongle, and the CNC auto-connect
+        // skips whatever the scanner holds. Gating it on the controller only
+        // meant every wireless accessory vanished whenever the machine was
+        // off or unreachable. The pendant learns the CNC state from the "C"
+        // flag carried on every DRO frame the keep-alive pushes.
+        StartAutoConnect();
     }
 
     private void OnStatusReportReceived(MachineState state)
@@ -1223,6 +1226,9 @@ public class PendantManager : IPendantManager
 
     #region Auto-Connect (Scanner-based)
 
+    // Test seam: whether the USB scanner is running.
+    internal bool ScannerRunning => _scanner is not null;
+
     public HashSet<string> GetOccupiedPorts()
     {
         if (_scanner is not null)
@@ -1234,7 +1240,6 @@ public class PendantManager : IPendantManager
     {
         var autoConnect = _settingsManager.GetSetting<bool>("pendant.autoConnect", true);
         if (!autoConnect) return;
-        if (!_controller.IsConnected) return;
         if (_scanner is not null) return; // Already running
 
         _scanner = new PendantPortScanner(_logger, _usbCatalog, _portLeases);
@@ -1255,7 +1260,7 @@ public class PendantManager : IPendantManager
         _scanner.UsbInventoryChanged -= OnUsbInventoryChanged;
         _scanner.Dispose();
         _scanner = null;
-        _logger.LogInformation("Pendant scanner stopped (CNC disconnected)");
+        _logger.LogInformation("Pendant scanner stopped");
     }
 
     // Fired when the USB catalog surfaces a VID=0x303A / PID=0x1001 device
