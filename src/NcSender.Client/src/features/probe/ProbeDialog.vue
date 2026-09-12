@@ -410,6 +410,87 @@
                   <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
                 </div>
               </div>
+              <details class="probe-advanced">
+                <summary class="probe-advanced__summary">Advanced</summary>
+                <div class="probe-advanced__fields">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Retract Distance</label>
+                    <div class="probe-input-with-unit probe-input-wrapper">
+                      <input
+                        v-model.number="retractDistance"
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        max="20"
+                        class="probe-input"
+                        :class="{ 'probe-input--error': errors.retractDistance }"
+                        :disabled="isProbing"
+                        @input="validateRetractDistance"
+                        @blur="handleToolLengthSetterAdvancedBlur"
+                      />
+                      <span class="probe-unit">mm</span>
+                      <span v-if="errors.retractDistance" class="probe-error-tooltip">{{ errors.retractDistance }}</span>
+                    </div>
+                  </div>
+                  <div class="probe-control-group">
+                    <label class="probe-label">Second Probe Delay</label>
+                    <div class="probe-input-with-unit probe-input-wrapper">
+                      <input
+                        v-model.number="secondProbeDelay"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="5"
+                        class="probe-input"
+                        :class="{ 'probe-input--error': errors.secondProbeDelay }"
+                        :disabled="isProbing"
+                        @input="validateSecondProbeDelay"
+                        @blur="handleToolLengthSetterAdvancedBlur"
+                      />
+                      <span class="probe-unit">sec</span>
+                      <span v-if="errors.secondProbeDelay" class="probe-error-tooltip">{{ errors.secondProbeDelay }}</span>
+                    </div>
+                  </div>
+                  <div class="probe-control-group">
+                    <label class="probe-label">First Probe Feedrate</label>
+                    <div class="probe-input-with-unit probe-input-wrapper">
+                      <input
+                        v-model.number="firstProbeFeedrate"
+                        type="number"
+                        step="10"
+                        min="1"
+                        max="5000"
+                        class="probe-input"
+                        :class="{ 'probe-input--error': errors.firstProbeFeedrate }"
+                        :disabled="isProbing"
+                        @input="validateFirstProbeFeedrate"
+                        @blur="handleToolLengthSetterAdvancedBlur"
+                      />
+                      <span class="probe-unit">mm/min</span>
+                      <span v-if="errors.firstProbeFeedrate" class="probe-error-tooltip">{{ errors.firstProbeFeedrate }}</span>
+                    </div>
+                  </div>
+                  <div class="probe-control-group">
+                    <label class="probe-label">Second Probe Feedrate</label>
+                    <div class="probe-input-with-unit probe-input-wrapper">
+                      <input
+                        v-model.number="secondProbeFeedrate"
+                        type="number"
+                        step="5"
+                        min="1"
+                        max="1000"
+                        class="probe-input"
+                        :class="{ 'probe-input--error': errors.secondProbeFeedrate }"
+                        :disabled="isProbing"
+                        @input="validateSecondProbeFeedrate"
+                        @blur="handleToolLengthSetterAdvancedBlur"
+                      />
+                      <span class="probe-unit">mm/min</span>
+                      <span v-if="errors.secondProbeFeedrate" class="probe-error-tooltip">{{ errors.secondProbeFeedrate }}</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
             </template>
 
             <!-- Contextual instruction - shown at bottom of controls -->
@@ -530,6 +611,10 @@ const zThickness = ref(15);
 const loadedZThickness = { standardBlock: 15, toolLengthSetter: 15 };
 const xyThickness = ref(10);
 const zProbeDistance = ref(3);
+const retractDistance = ref(4);
+const secondProbeDelay = ref(0.5);
+const firstProbeFeedrate = ref(200);
+const secondProbeFeedrate = ref(75);
 
 // ── Unit display ────────────────────────────────────────────────────────
 // Everything below the surface stays metric: these refs are what gets sent to
@@ -631,6 +716,10 @@ const errors = ref({
   zThickness: '',
   xyThickness: '',
   zProbeDistance: '',
+  retractDistance: '',
+  secondProbeDelay: '',
+  firstProbeFeedrate: '',
+  secondProbeFeedrate: '',
   rapidMovement: '',
   xDimension: '',
   yDimension: ''
@@ -643,7 +732,11 @@ const originalValues = ref({
   zOffset: -0.1,
   xDimension: 100,
   yDimension: 100,
-  rapidMovement: 2000
+  rapidMovement: 2000,
+  retractDistance: 4,
+  secondProbeDelay: 0.5,
+  firstProbeFeedrate: 200,
+  secondProbeFeedrate: 75
 });
 
 // Flag to prevent saving during initial load
@@ -723,6 +816,46 @@ const validateZProbeDistance = () => {
     errors.value.zProbeDistance = `Must be between ${lengthRange(1, 30)}`;
   } else {
     errors.value.zProbeDistance = '';
+  }
+};
+
+const validateRetractDistance = () => {
+  if (!Number.isFinite(retractDistance.value)) {
+    errors.value.retractDistance = 'Must be a valid number';
+  } else if (retractDistance.value < 0.1 || retractDistance.value > 20) {
+    errors.value.retractDistance = 'Must be between 0.1 and 20mm';
+  } else {
+    errors.value.retractDistance = '';
+  }
+};
+
+const validateSecondProbeDelay = () => {
+  if (!Number.isFinite(secondProbeDelay.value)) {
+    errors.value.secondProbeDelay = 'Must be a valid number';
+  } else if (secondProbeDelay.value < 0 || secondProbeDelay.value > 5) {
+    errors.value.secondProbeDelay = 'Must be between 0 and 5 seconds';
+  } else {
+    errors.value.secondProbeDelay = '';
+  }
+};
+
+const validateFirstProbeFeedrate = () => {
+  if (!Number.isFinite(firstProbeFeedrate.value)) {
+    errors.value.firstProbeFeedrate = 'Must be a valid number';
+  } else if (firstProbeFeedrate.value < 1 || firstProbeFeedrate.value > 5000) {
+    errors.value.firstProbeFeedrate = 'Must be between 1 and 5000 mm/min';
+  } else {
+    errors.value.firstProbeFeedrate = '';
+  }
+};
+
+const validateSecondProbeFeedrate = () => {
+  if (!Number.isFinite(secondProbeFeedrate.value)) {
+    errors.value.secondProbeFeedrate = 'Must be a valid number';
+  } else if (secondProbeFeedrate.value < 1 || secondProbeFeedrate.value > 1000) {
+    errors.value.secondProbeFeedrate = 'Must be between 1 and 1000 mm/min';
+  } else {
+    errors.value.secondProbeFeedrate = '';
   }
 };
 
@@ -882,6 +1015,44 @@ const handleZProbeDistanceBlur = async () => {
       await updateSettings({ probe: { 'standard-block': { zProbeDistance: zProbeDistance.value } } });
     } catch (error) {
       console.error('[ProbeDialog] Failed to save Z probe distance setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleToolLengthSetterAdvancedBlur = async () => {
+  validateRetractDistance();
+  validateSecondProbeDelay();
+  validateFirstProbeFeedrate();
+  validateSecondProbeFeedrate();
+
+  const hasErrors = errors.value.retractDistance
+    || errors.value.secondProbeDelay
+    || errors.value.firstProbeFeedrate
+    || errors.value.secondProbeFeedrate;
+
+  const hasChanges = retractDistance.value !== originalValues.value.retractDistance
+    || secondProbeDelay.value !== originalValues.value.secondProbeDelay
+    || firstProbeFeedrate.value !== originalValues.value.firstProbeFeedrate
+    || secondProbeFeedrate.value !== originalValues.value.secondProbeFeedrate;
+
+  if (!hasErrors && hasChanges) {
+    try {
+      await updateSettings({
+        probe: {
+          'tool-length-setter': {
+            retractDistance: retractDistance.value,
+            secondProbeDelay: secondProbeDelay.value,
+            firstProbeFeedrate: firstProbeFeedrate.value,
+            secondProbeFeedrate: secondProbeFeedrate.value
+          }
+        }
+      });
+      originalValues.value.retractDistance = retractDistance.value;
+      originalValues.value.secondProbeDelay = secondProbeDelay.value;
+      originalValues.value.firstProbeFeedrate = firstProbeFeedrate.value;
+      originalValues.value.secondProbeFeedrate = secondProbeFeedrate.value;
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save tool length setter advanced settings', JSON.stringify({ error: error.message }));
     }
   }
 };
@@ -1070,6 +1241,10 @@ const resetTransientState = () => {
     zThickness: '',
     xyThickness: '',
     zProbeDistance: '',
+    retractDistance: '',
+    secondProbeDelay: '',
+    firstProbeFeedrate: '',
+    secondProbeFeedrate: '',
     rapidMovement: '',
     xDimension: '',
     yDimension: ''
@@ -1151,6 +1326,22 @@ watch(() => props.show, async (isShown) => {
         loadedZThickness.toolLengthSetter = typeof settings.probe?.['tool-length-setter']?.zThickness === 'number'
           ? settings.probe['tool-length-setter'].zThickness
           : loadedZThickness.toolLengthSetter;
+        if (typeof settings.probe?.['tool-length-setter']?.retractDistance === 'number') {
+          retractDistance.value = settings.probe['tool-length-setter'].retractDistance;
+          originalValues.value.retractDistance = settings.probe['tool-length-setter'].retractDistance;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.secondProbeDelay === 'number') {
+          secondProbeDelay.value = settings.probe['tool-length-setter'].secondProbeDelay;
+          originalValues.value.secondProbeDelay = settings.probe['tool-length-setter'].secondProbeDelay;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.firstProbeFeedrate === 'number') {
+          firstProbeFeedrate.value = settings.probe['tool-length-setter'].firstProbeFeedrate;
+          originalValues.value.firstProbeFeedrate = settings.probe['tool-length-setter'].firstProbeFeedrate;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.secondProbeFeedrate === 'number') {
+          secondProbeFeedrate.value = settings.probe['tool-length-setter'].secondProbeFeedrate;
+          originalValues.value.secondProbeFeedrate = settings.probe['tool-length-setter'].secondProbeFeedrate;
+        }
         if (typeof settings.probe?.['standard-block']?.xyThickness === 'number') {
           xyThickness.value = settings.probe['standard-block'].xyThickness;
         }
@@ -1434,6 +1625,10 @@ const handleStartProbe = async () => {
       zThickness: zThickness.value,
       xyThickness: xyThickness.value,
       zProbeDistance: zProbeDistance.value,
+      retractDistance: retractDistance.value,
+      secondProbeDelay: secondProbeDelay.value,
+      firstProbeFeedrate: firstProbeFeedrate.value,
+      secondProbeFeedrate: secondProbeFeedrate.value,
       standardBlockBitDiameter: selectedStandardBlockBitDiameter.value
     };
 
@@ -1571,6 +1766,31 @@ const handleStartProbe = async () => {
 
 .probe-control-group {
   margin-bottom: 12px;
+}
+
+.probe-advanced {
+  margin-top: 8px;
+  margin-bottom: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.probe-advanced__summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 10px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.probe-advanced[open] .probe-advanced__summary {
+  color: var(--color-text-primary);
+}
+
+.probe-advanced__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .probe-control-group .switch {

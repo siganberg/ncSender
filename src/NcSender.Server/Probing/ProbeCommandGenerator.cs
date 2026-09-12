@@ -150,7 +150,11 @@ public static class ProbeCommandGenerator
             return null;
         }
         return StandardBlockStrategy.GetZProbeRoutine(
-            GetDouble(opts, "zThickness", 15));
+            GetDouble(opts, "zThickness", 15),
+            Math.Clamp(GetDouble(opts, "secondProbeDelay", 0.5), 0, 5),
+            Math.Clamp(GetDouble(opts, "retractDistance", 4), 0.1, 20),
+            Math.Clamp(GetDouble(opts, "firstProbeFeedrate", 200), 1, 5000),
+            Math.Clamp(GetDouble(opts, "secondProbeFeedrate", 75), 1, 1000));
     }
 
     private static List<string>? GenerateAutoZeroTouch(

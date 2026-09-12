@@ -28,6 +28,10 @@ export interface ProbeOptions {
   probeYDimension?: number;
   probeRapidMovement: number;
   probeZFirst?: boolean;
+  retractDistance?: number;
+  secondProbeDelay?: number;
+  firstProbeFeedrate?: number;
+  secondProbeFeedrate?: number;
 }
 
 /**
