@@ -540,6 +540,12 @@ public partial class CncController : ICncController
         // Coolant/aux commands bypass the queue — send immediately so they work during job execution
         if (IsCoolantOrAuxCommand(normalizedCommand: cleanCommand.ToUpperInvariant()))
         {
+            if (NeedsErrorStateClear(meta, cleanCommand))
+            {
+                // Bypasses the queue like the command itself; the empty line's
+                // "ok" is unmatched, same as the immediate command's own.
+                await _transport!.WriteAsync("\n");
+            }
             return await SendImmediateCommand(cleanCommand, commandToSend, commandId, displayCommand, meta);
         }
 
@@ -565,6 +571,9 @@ public partial class CncController : ICncController
             if (colon > 0)
                 dongleSend = (inner.Substring(0, colon).Trim(), inner.Substring(colon + 1).Trim());
         }
+
+        if (NeedsErrorStateClear(meta, cleanCommand))
+            EnqueueErrorStateClear();
 
         var entry = new CommandEntry
         {
@@ -769,6 +778,43 @@ public partial class CncController : ICncController
             CommandAcknowledged?.Invoke(errorResult);
             throw;
         }
+    }
+
+    // grblHAL stops parsing G-code after an error reply and re-reports the
+    // same error for every following line until it sees an empty line, a
+    // '$' command, or a soft reset (grbl/protocol.c, gc_state.last_error).
+    // Every interactive command is therefore preceded by an empty line so it
+    // is always parsed fresh. A job stream is left alone on purpose: after an
+    // error it must not carry on with the lines buffered behind the bad one.
+    private static readonly HashSet<string> InteractiveSources = new(StringComparer.Ordinal) { "client", "macro" };
+
+    private static bool NeedsErrorStateClear(CommandMeta? meta, string cleanCommand)
+    {
+        if (meta?.SourceId is not { } source || !InteractiveSources.Contains(source)) return false;
+        // '$' and '[' lines (including $J= jogs) reset the error state on their own.
+        return cleanCommand[0] != '$' && cleanCommand[0] != '[';
+    }
+
+    /// <summary>
+    /// Queue a bare newline ahead of an interactive command. grblHAL answers an
+    /// empty line with "ok" and resets its last error, so the user's line is
+    /// parsed instead of being rejected with a stale error. Hidden from the terminal.
+    /// </summary>
+    private void EnqueueErrorStateClear()
+    {
+        var id = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}"[..24];
+        var entry = new CommandEntry
+        {
+            Id = id,
+            RawCommand = "",
+            CommandToWrite = "\n",
+            Meta = new CommandMeta { SourceId = "system", Silent = true, Quiet = new CommandQuiet { LogCommand = true, LogResponse = true } },
+            DisplayCommand = "(clear error state)",
+            Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        _pendingCommands[id] = entry;
+        if (_commandChannel is null || !_commandChannel.Writer.TryWrite(entry))
+            _pendingCommands.TryRemove(id, out _);
     }
 
     public void FlushQueue(string reason)
