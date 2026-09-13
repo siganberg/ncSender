@@ -194,6 +194,69 @@ public sealed class DongleOtaService : IDisposable
     /// header (magic 0xE9, chip id at offset 12): 0 = ESP32, 9 = ESP32-S3.
     /// Null when the bytes are not an ESP image.
     /// </summary>
+    // TODO(2027-03): deprecate this fallback. It exists only so pendants still on
+    // firmware older than v1.0.31 can take one more update; once those have
+    // migrated (revisit ~6 months after 2026-09), delete PendantNeedsLegacyUsbFlash,
+    // FlashPendantLegacyUsbAsync, and the branch in the accessories update
+    // endpoint, and let such a pendant be updated with a wired tool instead.
+    //
+    // Pendant firmware learned the "$OTA:BEGIN" protocol on the radio in
+    // v1.0.18 and on its own USB port only in v1.0.31. A cabled pendant older
+    // than that never acks BEGIN, and the wireless retry cannot help it either
+    // below v1.0.18 — so the update looked impossible from the Accessories
+    // dialog even though the pendant manager's original wired flasher still
+    // speaks that firmware's "$OTA:<size>" stream. An unparseable version is
+    // treated as current so a cosmetic version string never blocks an update.
+    public static bool PendantNeedsLegacyUsbFlash(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return false;
+        var v = version.Trim().TrimStart('v', 'V');
+        var dash = v.IndexOf('-');
+        if (dash > 0) v = v[..dash];
+        var parts = v.Split('.');
+        if (parts.Length < 3) return false;
+        if (!int.TryParse(parts[0], out var maj) || !int.TryParse(parts[1], out var min) || !int.TryParse(parts[2], out var pat))
+            return false;
+        var n = (maj, min, pat);
+        return n.CompareTo((1, 0, 31)) < 0;
+    }
+
+    /// <summary>
+    /// Flash a cabled pendant that predates the BEGIN protocol, through the
+    /// pendant manager's original wired flasher, reporting on the same
+    /// plugin-ota:* stream the Accessories dialog already listens to.
+    /// </summary>
+    public async Task FlashPendantLegacyUsbAsync(byte[] image, string deviceId, IPendantManager pendant, string? version)
+    {
+        const string name = "pendant";
+        var id = string.IsNullOrEmpty(deviceId) ? name : deviceId;
+        _logger.LogInformation("[OTA pendant] firmware {Version} predates the BEGIN protocol on USB — using the legacy wired flasher ({Bytes} bytes)",
+            version ?? "?", image.Length);
+        await BroadcastMessageAsync(name, id, "info",
+            $"Starting USB flash ({image.Length:N0} bytes) — legacy wired protocol for firmware {version ?? "?"}");
+        var startedMs = NowMs();
+        try
+        {
+            using var ms = new MemoryStream(image);
+            var lastPct = -1;
+            await pendant.FlashFileAsync(ms, async pct =>
+            {
+                var p = (int)Math.Clamp(pct, 0, 100);
+                if (p == lastPct) return;
+                lastPct = p;
+                await BroadcastProgressAsync(name, id, p);
+            });
+            _logger.LogInformation("[OTA pendant] COMPLETE in {Secs:F1}s (legacy USB)", (NowMs() - startedMs) / 1000.0);
+            await BroadcastDoneAsync(name, id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Firmware update failed for 'pendant' (legacy USB)");
+            await BroadcastErrorAsync(name, id, ex.Message);
+            throw;
+        }
+    }
+
     public static int? EspChipId(byte[] image)
     {
         if (image is null || image.Length < 14 || image[0] != 0xE9) return null;
@@ -405,7 +468,7 @@ public sealed class DongleOtaService : IDisposable
                     s.DeviceName, attempt + 1, BeginRetries);
                 if (attempt == BeginRetries - 1)
                     throw new TimeoutException(
-                        $"No BEGIN ack after {BeginRetries} attempts. Device may be offline, on a firmware older than v1.0.4, or the wireless link is unusable.");
+                        $"No BEGIN ack after {BeginRetries} attempts. Device may be offline, on a firmware older than v1.0.18 (which predates wireless updates), or the wireless link is unusable.");
             }
         }
         if (beginAck != OtaStatus.Ok)
@@ -560,10 +623,13 @@ public sealed class DongleOtaService : IDisposable
     // -------- broadcast helpers (match plugin-ota:* used by USB OTA) --------
 
     private Task BroadcastProgressAsync(Session s, int percent)
+        => BroadcastProgressAsync(s.DeviceName, s.DeviceId, percent);
+
+    private Task BroadcastProgressAsync(string deviceName, string deviceId, int percent)
         => _broadcaster.Broadcast("plugin-ota:progress",
             JsonSerializer.SerializeToElement(new DongleOtaEvent
             {
-                DeviceId = s.DeviceId, Device = s.DeviceName, Percent = percent
+                DeviceId = deviceId, Device = deviceName, Percent = percent
             }, NcSenderJsonContext.Default.DongleOtaEvent),
             NcSenderJsonContext.Default.JsonElement);
 
@@ -579,18 +645,24 @@ public sealed class DongleOtaService : IDisposable
             NcSenderJsonContext.Default.JsonElement);
 
     private Task BroadcastErrorAsync(Session s, string error)
+        => BroadcastErrorAsync(s.DeviceName, s.DeviceId, error);
+
+    private Task BroadcastErrorAsync(string deviceName, string deviceId, string error)
         => _broadcaster.Broadcast("plugin-ota:error",
             JsonSerializer.SerializeToElement(new DongleOtaEvent
             {
-                DeviceId = s.DeviceId, Device = s.DeviceName, Type = "error", Message = error
+                DeviceId = deviceId, Device = deviceName, Type = "error", Message = error
             }, NcSenderJsonContext.Default.DongleOtaEvent),
             NcSenderJsonContext.Default.JsonElement);
 
     private Task BroadcastDoneAsync(Session s)
+        => BroadcastDoneAsync(s.DeviceName, s.DeviceId);
+
+    private Task BroadcastDoneAsync(string deviceName, string deviceId)
         => _broadcaster.Broadcast("plugin-ota:done",
             JsonSerializer.SerializeToElement(new DongleOtaEvent
             {
-                DeviceId = s.DeviceId, Device = s.DeviceName, Percent = 100
+                DeviceId = deviceId, Device = deviceName, Percent = 100
             }, NcSenderJsonContext.Default.DongleOtaEvent),
             NcSenderJsonContext.Default.JsonElement);
 

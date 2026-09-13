@@ -1,3 +1,4 @@
+using NcSender.Core.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -37,7 +38,7 @@ public static class AccessoryEndpoints
         // and a paired one over the radio.
         app.MapPost("/api/accessories/{id}/update",
             async (string id, AccessoryService svc, NcSender.Server.Dongle.DongleOtaService ota,
-                   CancellationToken ct) =>
+                   IPendantManager pendant, CancellationToken ct) =>
         {
             var def = AccessoryCatalog.ById(id);
             if (def is null) return Results.NotFound(new ApiError($"Unknown accessory '{id}'"));
@@ -77,6 +78,26 @@ public static class AccessoryEndpoints
                     return Results.BadRequest(new ApiError(
                         $"That firmware is built for the {NcSender.Server.Dongle.DongleOtaService.EspChipName(chip.Value)}, " +
                         $"but this pendant is an {NcSender.Server.Dongle.DongleOtaService.EspChipName(expectedChip)}. Not flashed."));
+                // TODO(2027-03): deprecate — see DongleOtaService.PendantNeedsLegacyUsbFlash.
+                // A cabled pendant older than v1.0.31 does not speak the BEGIN
+                // protocol on its USB port, and one older than v1.0.18 cannot take
+                // a wireless update either. Its own wired flasher still works, so
+                // that is the path for it — the way such a pendant gets onto a
+                // firmware that supports everything else.
+                var pstatus = pendant.GetStatus();
+                var usbPendant = pstatus.UsbPendant;
+                if (usbPendant is not null
+                    && NcSender.Server.Dongle.DongleOtaService.PendantNeedsLegacyUsbFlash(usbPendant.Version))
+                {
+                    var legacyVersion = usbPendant.Version;
+                    _ = Task.Run(async () =>
+                    {
+                        try { await ota.FlashPendantLegacyUsbAsync(image, info.DeviceId, pendant, legacyVersion); }
+                        catch { /* already broadcast */ }
+                    });
+                    return Results.Ok(new ApiSuccess(true));
+                }
+
                 _ = Task.Run(async () =>
                 {
                     try { await ota.FlashAsync(target, image, info.DeviceId, CancellationToken.None); }
