@@ -891,7 +891,7 @@
     :isOpen="showPluginModal"
     :content="pluginModalContent"
     :closable="pluginModalClosable"
-    @close="showPluginModal = false"
+    @close="dismissPluginModal"
   />
 
   <!-- Firmware Flasher Dialog -->
@@ -1110,6 +1110,16 @@ const showGateFileManager = ref(false);
 // Plugin modal dialog state
 const showPluginModal = ref(false);
 const pluginModalContent = ref('');
+
+// Dismissing a plugin/keepout modal on one client closes it everywhere:
+// $NCSENDER_CLEAR_MSG is answered with a cnc-command-result broadcast that
+// every client already turns into a close (see the handler below), and it
+// clears the persisted pluginMessage so the dialog doesn't come back on reload.
+const dismissPluginModal = () => {
+  if (!showPluginModal.value) return;
+  showPluginModal.value = false;
+  api.sendCommandViaWebSocket({ command: '$NCSENDER_CLEAR_MSG', meta: { sourceId: 'client' } }).catch(() => {});
+};
 const pluginModalClosable = ref(true);
 
 // Firmware flasher dialog state
@@ -1818,7 +1828,7 @@ onMounted(() => {
       pluginModalContent.value = event.data.content;
       pluginModalClosable.value = event.data.closable !== false;
     } else if (event.data.type === 'close-modal') {
-      showPluginModal.value = false;
+      dismissPluginModal();
     } else if (event.data.type === 'send-command') {
       api.sendCommandViaWebSocket({
         command: event.data.command,

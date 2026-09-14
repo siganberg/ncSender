@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -110,26 +110,42 @@ const emit = defineEmits<{
 
 const menuRef = ref<HTMLElement | null>(null);
 
+// The menu's real size, measured once it is in the DOM. The item list
+// varies by view and connection state, so a guessed height put the bottom
+// of the menu off-screen on short viewports.
+const menuSize = ref({ w: 180, h: 220 });
+const viewport = ref({ w: window.innerWidth, h: window.innerHeight });
+const measure = async () => {
+  await nextTick();
+  const vv = window.visualViewport;
+  viewport.value = { w: vv?.width ?? window.innerWidth, h: vv?.height ?? window.innerHeight };
+  const el = menuRef.value;
+  if (el) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) menuSize.value = { w: r.width, h: r.height };
+  }
+};
+watch(() => [props.visible, props.x, props.y, props.view, props.hasFile, props.isConnected], () => { if (props.visible) measure(); }, { immediate: true });
+
 const menuStyle = computed(() => {
-  // Position menu at click location, adjust if near screen edge
+  const pad = 8;
+  const { w: menuWidth, h: menuHeight } = menuSize.value;
+  const { w: vw, h: vh } = viewport.value;
+
+  // Open to the right/below the pointer; flip to the left/above when that
+  // side has no room; then clamp so the menu always stays on screen.
   let left = props.x;
+  if (left + menuWidth + pad > vw) left = props.x - menuWidth;
+  left = Math.max(pad, Math.min(left, vw - menuWidth - pad));
+
   let top = props.y;
-
-  // Menu dimensions (approximate)
-  const menuWidth = 180;
-  const menuHeight = 220;
-
-  // Adjust for screen boundaries
-  if (left + menuWidth > window.innerWidth) {
-    left = window.innerWidth - menuWidth - 10;
-  }
-  if (top + menuHeight > window.innerHeight) {
-    top = window.innerHeight - menuHeight - 10;
-  }
+  if (top + menuHeight + pad > vh) top = props.y - menuHeight;
+  top = Math.max(pad, Math.min(top, vh - menuHeight - pad));
 
   return {
     left: `${left}px`,
-    top: `${top}px`
+    top: `${top}px`,
+    maxHeight: `${vh - pad * 2}px`
   };
 });
 
@@ -199,6 +215,8 @@ onUnmounted(() => {
 .transform-context-menu {
   position: fixed;
   z-index: 10000;
+  overflow-y: auto;
+  box-sizing: border-box;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
