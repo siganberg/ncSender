@@ -23,7 +23,7 @@ public record PendantClientMeta(string ClientId, string Ip, bool IsLocal, string
 public record PendantOutputsConfigMsg(string Type, PendantOutputsConfigData Data);
 // ProbeTool: the probe's tool number when the tool provider offers a probe
 // (tool.probe on), else 0. The pendant lists it after the last slot.
-public record PendantOutputsConfigData(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool);
+public record PendantOutputsConfigData(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool, bool Manual, bool Tls);
 public record PendantAuxOutput(
     string Id,
     string Name,

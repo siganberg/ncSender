@@ -29,4 +29,9 @@ public interface ISettingsManager
     /// Remove a setting by dot-notation key.
     /// </summary>
     Task RemoveSetting(string key);
+
+    /// <summary>
+    /// Raised after SaveSettings persists, with the patch that was merged in.
+    /// </summary>
+    event Action<JsonObject>? SettingsSaved;
 }

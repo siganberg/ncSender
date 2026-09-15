@@ -822,6 +822,15 @@ public class PluginManager : IPluginManager
                 }
 
                 // Explicit addProbe setting takes precedence over sensor-derived default
+                if (settings.TryGetValue("probe", out var probeCfg) && probeCfg.ValueKind == JsonValueKind.Object)
+                {
+                    toolSettings["probe"] = probeCfg.TryGetProperty("enabled", out var probeEnabled)
+                        && probeEnabled.ValueKind == JsonValueKind.True;
+                    if (probeCfg.TryGetProperty("toolNumber", out var probeTool)
+                        && probeTool.TryGetInt32(out var probeToolNumber) && probeToolNumber > 0)
+                        toolSettings["probeToolNumber"] = probeToolNumber;
+                }
+
                 if (settings.TryGetValue("addProbe", out var addProbe))
                     toolSettings["probe"] = addProbe.ValueKind == JsonValueKind.True;
 

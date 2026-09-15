@@ -48,6 +48,8 @@ public class SettingsManager : ISettingsManager
         }
     }
 
+    public event Action<JsonObject>? SettingsSaved;
+
     public async Task SaveSettings(JsonObject newSettings)
     {
         lock (_lock)
@@ -56,6 +58,7 @@ public class SettingsManager : ISettingsManager
         }
 
         await PersistToDisk();
+        SettingsSaved?.Invoke(newSettings);
     }
 
     public JsonObject ReadAll()

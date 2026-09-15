@@ -118,6 +118,8 @@ public class PendantManager : IPendantManager
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
 
+        _settingsManager.SettingsSaved += OnSettingsSaved;
+
         // The USB scanner runs for the life of the process, independent of the
         // CNC link. It used to start only once the controller was connected, a
         // guard from when discovery probed ports by opening them and could
@@ -2688,6 +2690,8 @@ public class PendantManager : IPendantManager
             sb.Append("|C");
         if (current.Homed)
             sb.Append("|H");
+        if (ms.Tool > 0 && !ms.ToolLengthSet)
+            sb.Append("|Q");
 
         if (isFull || current.AlarmCode != prev!.AlarmCode)
         {
@@ -2857,6 +2861,24 @@ public class PendantManager : IPendantManager
 
     #region Settings Sync
 
+    private void OnSettingsSaved(System.Text.Json.Nodes.JsonObject patch)
+    {
+        if (!patch.ContainsKey("tool")) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(400);
+                if (_serialHandler is { IsConnected: true } && _pendantConnected)
+                    await SendOutputsConfig();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to push tool settings to the pendant");
+            }
+        });
+    }
+
     public void NotifySettingsChanged()
     {
         // Same spacing rule as the initial handshake: back-to-back JSON
@@ -2912,15 +2934,17 @@ public class PendantManager : IPendantManager
 
         var slotCount = ReadAtcSlotCount();
         var probeTool = ReadProbeTool();
+        var manual = ReadToolFlag("tool.manual");
+        var tls = ReadToolFlag("tool.tls");
 
-        var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount, probeTool);
+        var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount, probeTool, manual, tls);
         if (!force && _lastSentOutputsCfg is not null && snapshot.Equals(_lastSentOutputsCfg))
             return Task.CompletedTask;
         _lastSentOutputsCfg = snapshot;
 
         var msg = new PendantOutputsConfigMsg(
             "outputs-config",
-            new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount, snapshot.ProbeTool));
+            new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount, snapshot.ProbeTool, snapshot.Manual, snapshot.Tls));
         return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
     }
 
@@ -3094,11 +3118,18 @@ public class PendantManager : IPendantManager
         catch { return 0; }
     }
 
-    private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool)
+    private bool ReadToolFlag(string key)
+    {
+        try { return _settingsManager.GetSetting<bool>(key, false); }
+        catch { return false; }
+    }
+
+    private sealed record PendantOutputsConfigSnapshot(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool, bool Manual, bool Tls)
     {
         public bool Equals(PendantOutputsConfigSnapshot? other)
         {
-            if (other is null || other.SlotCount != SlotCount || other.ProbeTool != ProbeTool || other.Aux.Length != Aux.Length) return false;
+            if (other is null || other.SlotCount != SlotCount || other.ProbeTool != ProbeTool
+                || other.Manual != Manual || other.Tls != Tls || other.Aux.Length != Aux.Length) return false;
             for (int i = 0; i < Aux.Length; i++)
                 if (!Aux[i].Equals(other.Aux[i])) return false;
             return true;
