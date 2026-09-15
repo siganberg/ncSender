@@ -2019,6 +2019,12 @@ const handleStartProbe = async () => {
   height: 300px;
 }
 
+@media (orientation: portrait) {
+  :deep(.dialog) {
+    height: 65vh !important;
+  }
+}
+
 .probe-main__footer {
   flex: 0 0 auto;
   display: flex;
