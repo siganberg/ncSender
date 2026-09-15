@@ -400,24 +400,35 @@
             <span class="override-label">Feedrate</span>
             <div class="override-value-stack">
               <span class="override-value">{{ formatFeedRate(appStore.status.feedRate, appStore.unitsPreference.value) }} {{ getFeedRateUnitLabel(appStore.unitsPreference.value) }}</span>
-              <span class="override-percent">{{ overrideControls.feedOverride.value }}%</span>
             </div>
           </div>
-          <div class="override-slider-row">
-            <input
-              type="range"
-              min="0"
-              max="200"
-              step="10"
-              v-model="overrideControls.feedOverride.value"
-              @mousedown="overrideControls.startInteracting"
-              @mouseup="overrideControls.handleFeedOverrideComplete"
-              @touchstart="overrideControls.startInteracting"
-              @touchend="overrideControls.handleFeedOverrideComplete"
-              @input="overrideControls.updateFeedOverride"
-              class="override-slider"
-            />
-            <button class="override-reset-dot" @click.stop="overrideControls.resetFeedOverride" @mousedown.stop @pointerdown.stop title="Reset to 100%">↻</button>
+          <div class="override-stepper">
+            <button
+              class="override-step"
+              :disabled="overrideControls.feed.value <= OVERRIDE_MIN"
+              aria-label="Decrease by 10%"
+              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.feed.step(-10))"
+              @pointerup="overrideControls.stopRepeat"
+              @pointerleave="overrideControls.stopRepeat"
+              @pointercancel="overrideControls.stopRepeat"
+              @contextmenu.prevent
+            >−</button>
+            <button
+              class="override-current"
+              :class="{ 'is-default': overrideControls.feed.value === 100 }"
+              title="Reset to 100%"
+              @click="overrideControls.feed.reset()"
+            >{{ overrideControls.feed.value }}%</button>
+            <button
+              class="override-step"
+              :disabled="overrideControls.feed.value >= OVERRIDE_MAX"
+              aria-label="Increase by 10%"
+              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.feed.step(10))"
+              @pointerup="overrideControls.stopRepeat"
+              @pointerleave="overrideControls.stopRepeat"
+              @pointercancel="overrideControls.stopRepeat"
+              @contextmenu.prevent
+            >+</button>
           </div>
         </div>
         <div class="override-panel">
@@ -425,24 +436,35 @@
             <span class="override-label">Spindle</span>
             <div class="override-value-stack">
               <span class="override-value">{{ `${appStore.status.spindleRpmActual} / ${appStore.status.spindleRpmTarget} rpm` }}</span>
-              <span class="override-percent">{{ overrideControls.spindleOverride.value }}%</span>
             </div>
           </div>
-          <div class="override-slider-row">
-            <input
-              type="range"
-              min="0"
-              max="200"
-              step="10"
-              v-model="overrideControls.spindleOverride.value"
-              @mousedown="overrideControls.startInteracting"
-              @mouseup="overrideControls.handleSpindleOverrideComplete"
-              @touchstart="overrideControls.startInteracting"
-              @touchend="overrideControls.handleSpindleOverrideComplete"
-              @input="overrideControls.updateSpindleOverride"
-              class="override-slider"
-            />
-            <button class="override-reset-dot" @click.stop="overrideControls.resetSpindleOverride" @mousedown.stop @pointerdown.stop title="Reset to 100%">↻</button>
+          <div class="override-stepper">
+            <button
+              class="override-step"
+              :disabled="overrideControls.spindle.value <= OVERRIDE_MIN"
+              aria-label="Decrease by 10%"
+              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(-10))"
+              @pointerup="overrideControls.stopRepeat"
+              @pointerleave="overrideControls.stopRepeat"
+              @pointercancel="overrideControls.stopRepeat"
+              @contextmenu.prevent
+            >−</button>
+            <button
+              class="override-current"
+              :class="{ 'is-default': overrideControls.spindle.value === 100 }"
+              title="Reset to 100%"
+              @click="overrideControls.spindle.reset()"
+            >{{ overrideControls.spindle.value }}%</button>
+            <button
+              class="override-step"
+              :disabled="overrideControls.spindle.value >= OVERRIDE_MAX"
+              aria-label="Increase by 10%"
+              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(10))"
+              @pointerup="overrideControls.stopRepeat"
+              @pointerleave="overrideControls.stopRepeat"
+              @pointercancel="overrideControls.stopRepeat"
+              @contextmenu.prevent
+            >+</button>
           </div>
         </div>
       </div>
@@ -668,7 +690,7 @@ import StartFromLineDialog from './StartFromLineDialog.vue';
 import TransformContextMenu from './TransformContextMenu.vue';
 import OffsetDialog from './OffsetDialog.vue';
 import { rotateGCode, mirrorGCode, offsetGCode } from './transform/gcode-transformer';
-import { useOverrideControls } from '@/composables/use-override-controls';
+import { useOverrideControls, OVERRIDE_MIN, OVERRIDE_MAX } from '@/composables/use-override-controls';
 import { formatFeedRate, getFeedRateUnitLabel, formatDistance, getDistanceUnitLabel, mmToInches, inchesToMm } from '@/lib/units';
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
 // Probing is now handled server-side
@@ -5509,86 +5531,54 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   gap: 2px;
 }
 
-.override-slider-row {
-  position: relative;
+.override-stepper {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
 }
 
-.override-reset-dot {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid var(--color-accent);
-  background: var(--color-surface-muted);
-  color: var(--color-accent);
-  font-size: 10px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 1;
-  transition: background 0.15s ease, transform 0.15s ease;
-  pointer-events: auto;
-}
-
-.override-reset-dot:hover {
-  background: var(--color-accent);
-  color: white;
-  transform: translate(-50%, -50%) scale(1.15);
-}
-
-.override-reset-dot:active {
-  transform: translate(-50%, -50%) scale(0.95);
-}
-
-.override-percent {
-  font-size: 0.9rem;
+.override-step,
+.override-current {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   font-weight: 600;
-  color: var(--color-accent);
-  min-width: 35px;
-  text-align: right;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
 }
 
-.override-slider {
+.override-step {
+  width: 52px;
+  height: 48px;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.override-current {
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--color-border);
-  position: relative;
-  z-index: 2;
+  height: 48px;
+  font-size: 1.35rem;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
 }
 
-.override-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+.override-current.is-default {
+  color: var(--color-text-primary);
 }
 
-.override-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+.override-step:active:not(:disabled),
+.override-current:active {
+  transform: scale(0.96);
+  border-color: var(--color-accent);
+}
+
+.override-step:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .tools-legend {

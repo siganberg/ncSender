@@ -137,6 +137,7 @@ public class CncEventBridge
     {
         var state = _context.State;
         var prevStatus = state.MachineState.Status;
+        var prevFeedOverride = state.MachineState.FeedrateOverride;
 
         // Merge status into machineState preserving non-report fields
         state.MachineState.Status = status.Status;
@@ -153,6 +154,7 @@ public class CncEventBridge
         state.MachineState.FeedrateOverride = status.FeedrateOverride;
         state.MachineState.RapidOverride = status.RapidOverride;
         state.MachineState.SpindleOverride = status.SpindleOverride;
+        LinkRapidOverrideToFeed(prevFeedOverride, status.FeedrateOverride, status.RapidOverride);
         state.MachineState.ActiveProbe = status.ActiveProbe;
         state.MachineState.ProbeCount = status.ProbeCount;
         state.MachineState.Pn = status.Pn;
@@ -774,6 +776,50 @@ public class CncEventBridge
         }
     }
 
+    private void LinkRapidOverrideToFeed(double previousFeed, double feed, double rapid)
+    {
+        var command = RapidCommandForFeedChange(previousFeed, feed, rapid);
+        if (command is null) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _controller.SendCommandAsync(command, new CommandOptions
+                {
+                    Meta = new CommandMeta { SourceId = "system" }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send rapid override for feed override {Feed}%", feed);
+            }
+        });
+    }
+
+    internal static int RapidLevelForFeed(double feedOverride) => feedOverride switch
+    {
+        > 50 => 100,
+        > 25 => 50,
+        > 10 => 25,
+        _ => 5,
+    };
+
+    internal static string RapidOverrideCommand(int level) => level switch
+    {
+        100 => "\x95",
+        50 => "\x96",
+        25 => "\x97",
+        _ => "\x98",
+    };
+
+    internal static string? RapidCommandForFeedChange(double previousFeed, double feed, double rapid)
+    {
+        if (Math.Abs(feed - previousFeed) < 0.5) return null;
+        var level = RapidLevelForFeed(feed);
+        return Math.Abs(rapid - level) < 0.5 ? null : RapidOverrideCommand(level);
+    }
+
     // Matches V1's formatCommandText: map known realtime commands, escape control chars
     private static readonly Dictionary<char, string> RealtimeCommandNames = new()
     {
@@ -786,6 +832,10 @@ public class CncEventBridge
         ['\x92'] = "0x92 (Feed Rate Override -10%)",
         ['\x93'] = "0x93 (Feed Rate Override +1%)",
         ['\x94'] = "0x94 (Feed Rate Override -1%)",
+        ['\x95'] = "0x95 (Rapid Override Reset 100%)",
+        ['\x96'] = "0x96 (Rapid Override 50%)",
+        ['\x97'] = "0x97 (Rapid Override 25%)",
+        ['\x98'] = "0x98 (Rapid Override 5%)",
         ['\x99'] = "0x99 (Spindle Speed Override Reset 100%)",
         ['\x9A'] = "0x9A (Spindle Speed Override +10%)",
         ['\x9B'] = "0x9B (Spindle Speed Override -10%)",
