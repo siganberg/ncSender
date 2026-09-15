@@ -479,6 +479,90 @@
                   <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
                 </div>
               </div>
+
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">Retract Distance</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="retractDistanceInput"
+                      type="number"
+                      :step="lengthStep"
+                      :min="lim(0.1)"
+                      :max="lim(20)"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.retractDistance }"
+                      :disabled="isProbing"
+                      @input="validateRetractDistance"
+                      @blur="validateRetractDistance(); saveToolLengthSetterSetting('retractDistance', retractDistance, errors.retractDistance)"
+                    />
+                    <span class="probe-unit">{{ lengthUnit }}</span>
+                    <span v-if="errors.retractDistance" class="probe-error-tooltip">{{ errors.retractDistance }}</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Second Probe Delay</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="secondProbeDelay"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="5"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.secondProbeDelay }"
+                      :disabled="isProbing"
+                      @input="validateSecondProbeDelay"
+                      @blur="validateSecondProbeDelay(); saveToolLengthSetterSetting('secondProbeDelay', secondProbeDelay, errors.secondProbeDelay)"
+                    />
+                    <span class="probe-unit">s</span>
+                    <span v-if="errors.secondProbeDelay" class="probe-error-tooltip">{{ errors.secondProbeDelay }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="probe-control-row">
+                <div class="probe-control-group">
+                  <label class="probe-label">First Probe Feedrate</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="firstProbeFeedrateInput"
+                      type="number"
+                      :step="feedStep"
+                      :min="feedLim(1)"
+                      :max="feedLim(5000)"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.firstProbeFeedrate }"
+                      :disabled="isProbing"
+                      @input="validateFirstProbeFeedrate"
+                      @blur="validateFirstProbeFeedrate(); saveToolLengthSetterSetting('firstProbeFeedrate', firstProbeFeedrate, errors.firstProbeFeedrate)"
+                    />
+                    <span class="probe-unit">{{ feedUnit }}</span>
+                    <span v-if="errors.firstProbeFeedrate" class="probe-error-tooltip">{{ errors.firstProbeFeedrate }}</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Second Probe Feedrate</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="secondProbeFeedrateInput"
+                      type="number"
+                      :step="isImperial ? '0.5' : '5'"
+                      :min="feedLim(1)"
+                      :max="feedLim(1000)"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.secondProbeFeedrate }"
+                      :disabled="isProbing"
+                      @input="validateSecondProbeFeedrate"
+                      @blur="validateSecondProbeFeedrate(); saveToolLengthSetterSetting('secondProbeFeedrate', secondProbeFeedrate, errors.secondProbeFeedrate)"
+                    />
+                    <span class="probe-unit">{{ feedUnit }}</span>
+                    <span v-if="errors.secondProbeFeedrate" class="probe-error-tooltip">{{ errors.secondProbeFeedrate }}</span>
+                  </div>
+                </div>
+              </div>
             </template>
 
           </div>
@@ -609,6 +693,10 @@ const loadedZThickness = { standardBlock: 15, toolLengthSetter: 15 };
 const xyThickness = ref(10);
 const zProbeDistance = ref(3);
 const edgeDistance = ref(10);
+const retractDistance = ref(4);
+const secondProbeDelay = ref(0.5);
+const firstProbeFeedrate = ref(200);
+const secondProbeFeedrate = ref(75);
 
 // ── Unit display ────────────────────────────────────────────────────────
 // Everything below the surface stays metric: these refs are what gets sent to
@@ -684,6 +772,9 @@ const zThicknessInput = lengthProxy(zThickness);
 const xyThicknessInput = lengthProxy(xyThickness);
 const zProbeDistanceInput = lengthProxy(zProbeDistance);
 const edgeDistanceInput = lengthProxy(edgeDistance);
+const retractDistanceInput = lengthProxy(retractDistance);
+const firstProbeFeedrateInput = feedProxy(firstProbeFeedrate);
+const secondProbeFeedrateInput = feedProxy(secondProbeFeedrate);
 const rapidMovementInput = feedProxy(rapidMovement);
 
 /** Bit diameters are stored in mm; the picker shows them converted. */
@@ -715,6 +806,10 @@ const errors = ref({
   xyThickness: '',
   zProbeDistance: '',
   edgeDistance: '',
+  retractDistance: '',
+  secondProbeDelay: '',
+  firstProbeFeedrate: '',
+  secondProbeFeedrate: '',
   rapidMovement: '',
   xDimension: '',
   yDimension: ''
@@ -815,6 +910,31 @@ const validateEdgeDistance = () => {
     errors.value.edgeDistance = `Must be between ${lengthRange(1, 100)}`;
   } else {
     errors.value.edgeDistance = '';
+  }
+};
+
+const validateRetractDistance = () => {
+  errors.value.retractDistance = retractDistance.value >= 0.1 && retractDistance.value <= 20 ? '' : `Must be between ${lengthRange(0.1, 20)}`;
+};
+
+const validateSecondProbeDelay = () => {
+  errors.value.secondProbeDelay = secondProbeDelay.value >= 0 && secondProbeDelay.value <= 5 ? '' : 'Must be between 0 and 5 s';
+};
+
+const validateFirstProbeFeedrate = () => {
+  errors.value.firstProbeFeedrate = firstProbeFeedrate.value >= 1 && firstProbeFeedrate.value <= 5000 ? '' : `Must be between ${feedRange(1, 5000)}`;
+};
+
+const validateSecondProbeFeedrate = () => {
+  errors.value.secondProbeFeedrate = secondProbeFeedrate.value >= 1 && secondProbeFeedrate.value <= 1000 ? '' : `Must be between ${feedRange(1, 1000)}`;
+};
+
+const saveToolLengthSetterSetting = async (key: string, value: number, error: string) => {
+  if (error) return;
+  try {
+    await updateSettings({ probe: { 'tool-length-setter': { [key]: value } } });
+  } catch (error) {
+    console.error('[ProbeDialog] Failed to save tool length setter setting', JSON.stringify({ key, error: error.message }));
   }
 };
 
@@ -1174,6 +1294,10 @@ const resetTransientState = () => {
     xyThickness: '',
     zProbeDistance: '',
     edgeDistance: '',
+    retractDistance: '',
+    secondProbeDelay: '',
+    firstProbeFeedrate: '',
+    secondProbeFeedrate: '',
     rapidMovement: '',
     xDimension: '',
     yDimension: ''
@@ -1255,6 +1379,18 @@ watch(() => props.show, async (isShown) => {
         loadedZThickness.toolLengthSetter = typeof settings.probe?.['tool-length-setter']?.zThickness === 'number'
           ? settings.probe['tool-length-setter'].zThickness
           : loadedZThickness.toolLengthSetter;
+        if (typeof settings.probe?.['tool-length-setter']?.retractDistance === 'number') {
+          retractDistance.value = settings.probe['tool-length-setter'].retractDistance;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.secondProbeDelay === 'number') {
+          secondProbeDelay.value = settings.probe['tool-length-setter'].secondProbeDelay;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.firstProbeFeedrate === 'number') {
+          firstProbeFeedrate.value = settings.probe['tool-length-setter'].firstProbeFeedrate;
+        }
+        if (typeof settings.probe?.['tool-length-setter']?.secondProbeFeedrate === 'number') {
+          secondProbeFeedrate.value = settings.probe['tool-length-setter'].secondProbeFeedrate;
+        }
         if (typeof settings.probe?.['standard-block']?.xyThickness === 'number') {
           xyThickness.value = settings.probe['standard-block'].xyThickness;
         }
@@ -1542,6 +1678,10 @@ const handleStartProbe = async () => {
       xyThickness: xyThickness.value,
       zProbeDistance: zProbeDistance.value,
       edgeDistance: edgeDistance.value,
+      retractDistance: retractDistance.value,
+      secondProbeDelay: secondProbeDelay.value,
+      firstProbeFeedrate: firstProbeFeedrate.value,
+      secondProbeFeedrate: secondProbeFeedrate.value,
       standardBlockBitDiameter: selectedStandardBlockBitDiameter.value
     };
 

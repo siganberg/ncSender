@@ -40,6 +40,10 @@ internal static class PendantProbeOptions
             ["xyThickness"]    = Num(xyThickness),
             ["zProbeDistance"] = Num(Number("probe.standard-block.zProbeDistance", 3)),
             ["edgeDistance"]   = Num(Number("probe.standard-block.edgeDistance", xyThickness)),
+            ["retractDistance"]     = Num(Number("probe.tool-length-setter.retractDistance", 4)),
+            ["secondProbeDelay"]    = Num(Number("probe.tool-length-setter.secondProbeDelay", 0.5)),
+            ["firstProbeFeedrate"]  = Num(Number("probe.tool-length-setter.firstProbeFeedrate", 200)),
+            ["secondProbeFeedrate"] = Num(Number("probe.tool-length-setter.secondProbeFeedrate", 75)),
             ["standardBlockBitDiameter"] = Num(Number("probe.standard-block.selectedBitDiameter", 6.35)),
 
             ["selectedBitDiameter"] = Str("Auto"),
