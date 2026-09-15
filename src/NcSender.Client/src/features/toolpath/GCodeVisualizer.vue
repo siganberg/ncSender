@@ -521,7 +521,7 @@
       <!-- Probe button - bottom right -->
       <button class="probe-button" @click="openProbeDialog" title="Probe" :disabled="isProbeDisabled">
         <span class="probe-label">Probe</span>
-        <div class="probe-icon" role="img" aria-label="Probe"></div>
+        <svg class="probe-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5 2h7a2 2 0 0 1 2 2v3.5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm.75 4.25a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5z"/><path d="M9.3 10h5.4l-1.5 2.4h-2.4z"/><rect x="11.1" y="12.2" width="1.8" height="5.6" rx=".5"/><circle cx="12" cy="19.9" r="2.5"/></svg>
       </button>
     </div>
   </section>
@@ -6619,33 +6619,34 @@ body.theme-light .dot--rapid {
   position: absolute;
   bottom: 16px;
   right: 16px;
-  background: var(--color-surface-muted);
-  color: var(--color-accent);
-  border: 2px solid var(--color-accent);
-  border-radius: var(--radius-small);
   width: 80px;
   height: 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  font-size: 0.75rem;
-  font-weight: 700;
+  gap: 0;
+  padding: 0;
+  background: var(--gradient-accent, var(--color-accent));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-small);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 4px 14px -4px color-mix(in srgb, var(--color-accent) 55%, transparent);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   z-index: 10;
 }
 
 .probe-button:hover {
-  background: var(--color-accent);
-  color: white;
-  border-color: var(--color-accent);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  filter: brightness(1.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 6px 18px -4px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  transform: translateY(-1px);
 }
 
 .probe-button:active {
+  filter: brightness(0.96);
   transform: translateY(0);
 }
 
@@ -6655,29 +6656,19 @@ body.theme-light .dot--rapid {
   pointer-events: none;
 }
 
-.probe-icon {
-  width: 48px;
-  height: 48px;
-  /* Use mask to apply accent color dynamically */
-  -webkit-mask: url(/assets/probe/3d-probe/probe.svg) no-repeat center;
-  mask: url(/assets/probe/3d-probe/probe.svg) no-repeat center;
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  background-color: var(--color-accent);
-}
-
 .probe-label {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  line-height: 1.1;
   font-weight: 700;
-  color: var(--color-accent);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
 }
 
-.probe-button:hover .probe-icon {
-  background-color: white;
-}
-
-.probe-button:hover .probe-label {
-  color: white;
+.probe-icon {
+  width: 40px;
+  height: 40px;
+  color: #fff;
 }
 
 /* Confirmation Dialog */
