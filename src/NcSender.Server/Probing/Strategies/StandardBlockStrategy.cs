@@ -99,7 +99,7 @@ public static class StandardBlockStrategy
     public static List<string> GetXYProbeRoutine(
         string selectedCorner, double xyThickness = 10,
         double bitDiameter = 6.35, bool skipPrepMove = false,
-        double zProbeDistance = 0)
+        double zProbeDistance = 0, double? edgeDistance = null)
     {
         var bitRadius = bitDiameter / 2;
         var isLeft = selectedCorner is "TopLeft" or "BottomLeft";
@@ -114,8 +114,9 @@ public static class StandardBlockStrategy
         var xOffset = isLeft ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
         var yOffset = isBottom ? -(xyThickness + bitRadius) : (xyThickness + bitRadius);
 
-        var xMove = isLeft ? (xyThickness + bitDiameter + 5) : -(xyThickness + bitDiameter + 5);
-        var yMove = isBottom ? (xyThickness + bitDiameter + 5) : -(xyThickness + bitDiameter + 5);
+        var reach = (edgeDistance ?? xyThickness) + bitDiameter + 5;
+        var xMove = isLeft ? reach : -reach;
+        var yMove = isBottom ? reach : -reach;
 
         var code = new List<string>
         {
@@ -170,10 +171,11 @@ public static class StandardBlockStrategy
     public static List<string> GetXYZProbeRoutine(
         string selectedCorner, double xyThickness = 10,
         double zThickness = 15, double zProbeDistance = 3,
-        double bitDiameter = 6.35)
+        double bitDiameter = 6.35, double? edgeDistance = null)
     {
         var isLeft = selectedCorner is "TopLeft" or "BottomLeft";
-        var xMove = isLeft ? -(xyThickness + bitDiameter + 5) : (xyThickness + bitDiameter + 5);
+        var reach = (edgeDistance ?? xyThickness) + bitDiameter + 5;
+        var xMove = isLeft ? -reach : reach;
 
         var code = new List<string>();
         code.AddRange(GetZProbeRoutine(zThickness));
@@ -183,7 +185,8 @@ public static class StandardBlockStrategy
         code.Add($"G0 Z-{F(zProbeDistance + ZParkHeight)}");
 
         code.AddRange(GetXYProbeRoutine(selectedCorner, xyThickness, bitDiameter,
-                                        skipPrepMove: true, zProbeDistance: zProbeDistance));
+                                        skipPrepMove: true, zProbeDistance: zProbeDistance,
+                                        edgeDistance: edgeDistance));
 
         return code;
     }

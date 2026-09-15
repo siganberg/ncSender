@@ -16,56 +16,102 @@
 -->
 
 <template>
-  <Dialog v-if="show" @close="handleClose" size="medium-minus" :close-on-backdrop-click="false">
+  <Dialog v-if="show" @close="handleClose" :show-header="false" width="1000px" height="85vh" max-width="95vw" :close-on-backdrop-click="false">
     <div class="probe-dialog">
-      <div class="probe-dialog__header">
-        <p class="probe-dialog__instructions">
-          Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.
-        </p>
-      </div>
-      <div class="probe-dialog__content">
-        <div class="probe-dialog__columns">
-          <div class="probe-dialog__column probe-dialog__column--controls">
-            <div class="probe-control-group">
-              <label class="probe-label">Probe Type</label>
-              <select v-model="probeType" class="probe-select" :disabled="isProbing">
-                <option value="3d-probe">3D Probe</option>
-                <option value="standard-block">Standard Block</option>
-                <option value="autozero-touch">AutoZero Touch</option>
-                <option value="tool-length-setter">Tool Length Setter</option>
-              </select>
-            </div>
+      <aside class="probe-sidebar">
+        <div class="probe-sidebar__header">
+          <span class="probe-sidebar__eyebrow">ncSender</span>
+          <span class="probe-sidebar__title">Probe</span>
+        </div>
+        <nav class="probe-sidebar__nav">
+          <button
+            v-for="tab in probeTabs"
+            :key="tab.id"
+            type="button"
+            class="probe-tab"
+            :class="{ active: probeType === tab.id }"
+            :disabled="isProbing"
+            @click="probeType = tab.id"
+          >
+            <span class="probe-tab__icon" v-html="tab.icon"></span>
+            <span class="probe-tab__label">{{ tab.label }}</span>
+            <span v-if="probeType === tab.id" class="probe-tab__caret" aria-hidden="true"></span>
+          </button>
+        </nav>
+        <div class="probe-sidebar__footer">
+          <button class="probe-sidebar__close" :disabled="isProbing" @click="handleClose">Close</button>
+        </div>
+      </aside>
 
-            <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
-              <label class="probe-label">Probing Axis</label>
-              <select v-model="probingAxis" class="probe-select" :disabled="isProbing">
-                <option value="Z">Z</option>
-                <option value="XYZ">XYZ</option>
-                <option value="XY">XY</option>
-                <option value="X">X</option>
-                <option value="Y">Y</option>
-                <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
-                <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
-              </select>
+      <section class="probe-main">
+        <header class="probe-main__header">
+          <h2 class="probe-main__title">{{ activeTab.label }}</h2>
+          <p class="probe-main__instructions">Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.</p>
+          <div class="probe-header-cards">
+            <div class="probe-header-card">
+              <div class="probe-coords">
+                <div class="probe-coords__title">Work Coordinates</div>
+                <div v-for="axis in coordAxes" :key="axis" class="probe-coords__cell">
+                  <span class="probe-coords__axis">{{ axis.toUpperCase() }}</span>
+                  <span class="probe-coords__value">{{ formatCoord(appStore.status.workCoords[axis]) }}</span>
+                </div>
+              </div>
             </div>
-
-            <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
-              <label class="probe-label">Rapid Movement</label>
-              <div class="probe-input-with-unit probe-input-wrapper">
-                <input
-                  v-model.number="rapidMovementInput"
-                  type="number"
-                  :step="feedStep"
-                  :min="feedLim(1000)"
-                  :max="feedLim(5000)"
-                  class="probe-input"
-                  :class="{ 'probe-input--error': errors.rapidMovement }"
-                  :disabled="isProbing"
-                  @input="validateRapidMovement"
-                  @blur="handleRapidMovementBlur"
+            <div class="probe-header-card">
+              <div class="probe-jog">
+                <StepControl
+                  :current-step="jogStep"
+                  :step-options="stepOptions"
+                  :current-feed-rate="jogFeedRate"
+                  @update:step="jogStep = $event"
+                  @update:feedRate="jogFeedRate = $event"
                 />
-                <span class="probe-unit">{{ feedUnit }}</span>
-                <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
+                <JogControls
+                  :current-step="jogStep"
+                  :feed-rate="jogFeedRate"
+                  :disabled="isProbing"
+                  custom-class="jog-controls-probe"
+                  @center-click="handleCenterClick"
+                />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="probe-main__body">
+          <div class="probe-card">
+            <div class="probe-control-row">
+              <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
+                <label class="probe-label">Probing Axis</label>
+                <select v-model="probingAxis" class="probe-select" :disabled="isProbing">
+                  <option value="Z">Z</option>
+                  <option value="XYZ">XYZ</option>
+                  <option value="XY">XY</option>
+                  <option value="X">X</option>
+                  <option value="Y">Y</option>
+                  <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
+                  <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
+                </select>
+              </div>
+
+              <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
+                <label class="probe-label">Rapid Movement</label>
+                <div class="probe-input-with-unit probe-input-wrapper">
+                  <input
+                    v-model.number="rapidMovementInput"
+                    type="number"
+                    :step="feedStep"
+                    :min="feedLim(1000)"
+                    :max="feedLim(5000)"
+                    class="probe-input"
+                    :class="{ 'probe-input--error': errors.rapidMovement }"
+                    :disabled="isProbing"
+                    @input="validateRapidMovement"
+                    @blur="handleRapidMovementBlur"
+                  />
+                  <span class="probe-unit">{{ feedUnit }}</span>
+                  <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
+                </div>
               </div>
             </div>
 
@@ -286,25 +332,48 @@
                 </div>
               </div>
 
-              <div class="probe-control-group">
-                <label class="probe-label">Z Probe Distance</label>
-                <div class="probe-input-with-unit probe-input-wrapper">
-                  <input
-                    v-model.number="zProbeDistanceInput"
-                    type="number"
-                    :step="lengthStep"
-                    :min="lim(1)"
-                    :max="lim(30)"
-                    class="probe-input"
-                    :class="{ 'probe-input--error': errors.zProbeDistance }"
-                    :disabled="isProbing"
-                    @input="validateZProbeDistance"
-                    @blur="handleZProbeDistanceBlur"
-                  />
-                  <span class="probe-unit">{{ lengthUnit }}</span>
-                  <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
+              <div class="probe-control-row">
+                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': probingAxis !== 'XYZ' }">
+                  <label class="probe-label">Edge Distance</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="edgeDistanceInput"
+                      type="number"
+                      :step="lengthStep"
+                      :min="lim(1)"
+                      :max="lim(100)"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.edgeDistance }"
+                      :disabled="isProbing || probingAxis !== 'XYZ'"
+                      @input="validateEdgeDistance"
+                      @blur="handleEdgeDistanceBlur"
+                    />
+                    <span class="probe-unit">{{ lengthUnit }}</span>
+                    <span v-if="errors.edgeDistance" class="probe-error-tooltip">{{ errors.edgeDistance }}</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-group">
+                  <label class="probe-label">Z Probe Distance</label>
+                  <div class="probe-input-with-unit probe-input-wrapper">
+                    <input
+                      v-model.number="zProbeDistanceInput"
+                      type="number"
+                      :step="lengthStep"
+                      :min="lim(1)"
+                      :max="lim(30)"
+                      class="probe-input"
+                      :class="{ 'probe-input--error': errors.zProbeDistance }"
+                      :disabled="isProbing"
+                      @input="validateZProbeDistance"
+                      @blur="handleZProbeDistanceBlur"
+                    />
+                    <span class="probe-unit">{{ lengthUnit }}</span>
+                    <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
+                  </div>
                 </div>
               </div>
+              <p class="probe-help">{{ probingAxis === 'XYZ' ? 'How far in from the block edges you start. XYZ moves out this far before probing the sides, so raise it if your block has a hole near the corner.' : 'Used when Probing Axis is XYZ.' }}</p>
             </template>
 
             <template v-if="probeType === 'autozero-touch'">
@@ -412,22 +481,8 @@
               </div>
             </template>
 
-            <!-- Contextual instruction - shown at bottom of controls -->
-            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              Click on a corner to select where to start probing
-            </div>
-            <div v-else-if="probingAxis === 'X'" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              Click on the left or right side to select where to probe
-            </div>
-            <div v-else-if="probingAxis === 'Y'" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              Click on the front or back side to select where to probe
-            </div>
-            <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-contextual-instruction probe-contextual-instruction--warning">
-              <strong>Important:</strong> Position the probe 3-5mm above at the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}. Measure dimension as close as possible to prevent probe damage.
-            </div>
           </div>
-          <div class="probe-dialog__column probe-dialog__column--viewer">
-            <!-- Connection Test Toggle -->
+          <div class="probe-card probe-card--preview">
             <div class="probe-connection-test">
               <label class="probe-label">Connection Test</label>
               <label class="switch">
@@ -447,30 +502,29 @@
               @side-selected="selectedSide = $event"
             />
 
-            <!-- Step Control -->
-            <StepControl
-              :current-step="jogStep"
-              :step-options="stepOptions"
-              :current-feed-rate="jogFeedRate"
-              @update:step="jogStep = $event"
-              @update:feedRate="jogFeedRate = $event"
-            />
-
-            <!-- Jog Controls -->
-            <JogControls
-              :current-step="jogStep"
-              :feed-rate="jogFeedRate"
-              :disabled="isProbing"
-              custom-class="jog-controls-probe"
-              @center-click="handleCenterClick"
-            />
+            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-hint">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>Click on a corner to select where to start probing</span>
+            </div>
+            <div v-else-if="probingAxis === 'X'" class="probe-hint">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>Click on the left or right side to select where to probe</span>
+            </div>
+            <div v-else-if="probingAxis === 'Y'" class="probe-hint">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>Click on the front or back side to select where to probe</span>
+            </div>
+            <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-hint">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span><strong>Important:</strong> Position the probe 3-5mm above at the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}. Measure dimension as close as possible to prevent probe damage.</span>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="probe-dialog__footer">
-        <button @click="handleClose" class="probe-dialog__btn probe-dialog__btn--secondary" :disabled="isProbing">Close</button>
-        <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isPrimaryActionDisabled">{{ primaryButtonLabel }}</button>
-      </div>
+
+        <footer class="probe-main__footer">
+          <button @click="handleStartProbe" class="probe-dialog__btn probe-dialog__btn--primary" :disabled="isPrimaryActionDisabled">{{ primaryButtonLabel }}</button>
+        </footer>
+      </section>
     </div>
   </Dialog>
 </template>
@@ -507,6 +561,30 @@ const emit = defineEmits<{
 
 // Probe state
 const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch' | 'tool-length-setter'>('autozero-touch');
+
+const probeTabs = [
+  {
+    id: '3d-probe',
+    label: '3D Probe',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="8" rx="2"/><path d="M12 10v8"/><circle cx="12" cy="20" r="2"/></svg>'
+  },
+  {
+    id: 'standard-block',
+    label: 'Standard Block',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h12v12H3z"/><path d="M3 9l5-5h13v12l-6 5"/><path d="M15 9l6-5"/></svg>'
+  },
+  {
+    id: 'autozero-touch',
+    label: 'AutoZero Touch',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M12 3v7"/><path d="M9 7l3 3 3-3"/></svg>'
+  },
+  {
+    id: 'tool-length-setter',
+    label: 'Tool Length Setter',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M9 7l3 3 3-3"/><rect x="7" y="13" width="10" height="4" rx="1"/><path d="M10 17v5h4v-5"/></svg>'
+  }
+] as const;
+const activeTab = computed(() => probeTabs.find(tab => tab.id === probeType.value) ?? probeTabs[0]);
 const ballPointDiameter = ref(2);
 const zPlunge = ref(3);
 const zOffset = ref(-0.1);
@@ -530,6 +608,7 @@ const zThickness = ref(15);
 const loadedZThickness = { standardBlock: 15, toolLengthSetter: 15 };
 const xyThickness = ref(10);
 const zProbeDistance = ref(3);
+const edgeDistance = ref(10);
 
 // ── Unit display ────────────────────────────────────────────────────────
 // Everything below the surface stays metric: these refs are what gets sent to
@@ -604,11 +683,15 @@ const yDimensionInput = lengthProxy(yDimension);
 const zThicknessInput = lengthProxy(zThickness);
 const xyThicknessInput = lengthProxy(xyThickness);
 const zProbeDistanceInput = lengthProxy(zProbeDistance);
+const edgeDistanceInput = lengthProxy(edgeDistance);
 const rapidMovementInput = feedProxy(rapidMovement);
 
 /** Bit diameters are stored in mm; the picker shows them converted. */
 const formatDiameter = (mm: number) =>
   isImperial.value ? `${showLength(mm)}"` : `${mm}mm`;
+
+const coordAxes = ['x', 'y', 'z'] as const;
+const formatCoord = (mm: number) => (isImperial.value ? mmToInches(mm).toFixed(4) : mm.toFixed(3));
 
 
 // AutoZero Touch probe state
@@ -631,6 +714,7 @@ const errors = ref({
   zThickness: '',
   xyThickness: '',
   zProbeDistance: '',
+  edgeDistance: '',
   rapidMovement: '',
   xDimension: '',
   yDimension: ''
@@ -723,6 +807,14 @@ const validateZProbeDistance = () => {
     errors.value.zProbeDistance = `Must be between ${lengthRange(1, 30)}`;
   } else {
     errors.value.zProbeDistance = '';
+  }
+};
+
+const validateEdgeDistance = () => {
+  if (edgeDistance.value < 1 || edgeDistance.value > 100) {
+    errors.value.edgeDistance = `Must be between ${lengthRange(1, 100)}`;
+  } else {
+    errors.value.edgeDistance = '';
   }
 };
 
@@ -882,6 +974,17 @@ const handleZProbeDistanceBlur = async () => {
       await updateSettings({ probe: { 'standard-block': { zProbeDistance: zProbeDistance.value } } });
     } catch (error) {
       console.error('[ProbeDialog] Failed to save Z probe distance setting', JSON.stringify({ error: error.message }));
+    }
+  }
+};
+
+const handleEdgeDistanceBlur = async () => {
+  validateEdgeDistance();
+  if (!errors.value.edgeDistance) {
+    try {
+      await updateSettings({ probe: { 'standard-block': { edgeDistance: edgeDistance.value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save edge distance setting', JSON.stringify({ error: error.message }));
     }
   }
 };
@@ -1070,6 +1173,7 @@ const resetTransientState = () => {
     zThickness: '',
     xyThickness: '',
     zProbeDistance: '',
+    edgeDistance: '',
     rapidMovement: '',
     xDimension: '',
     yDimension: ''
@@ -1157,6 +1261,9 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['standard-block']?.zProbeDistance === 'number') {
           zProbeDistance.value = settings.probe['standard-block'].zProbeDistance;
         }
+        edgeDistance.value = typeof settings.probe?.['standard-block']?.edgeDistance === 'number'
+          ? settings.probe['standard-block'].edgeDistance
+          : xyThickness.value;
         if (typeof settings.probe?.['standard-block']?.rapidMovement === 'number') {
           rapidMovement.value = settings.probe['standard-block'].rapidMovement;
           originalValues.value.rapidMovement = settings.probe['standard-block'].rapidMovement;
@@ -1434,6 +1541,7 @@ const handleStartProbe = async () => {
       zThickness: zThickness.value,
       xyThickness: xyThickness.value,
       zProbeDistance: zProbeDistance.value,
+      edgeDistance: edgeDistance.value,
       standardBlockBitDiameter: selectedStandardBlockBitDiameter.value
     };
 
@@ -1447,59 +1555,336 @@ const handleStartProbe = async () => {
 </script>
 
 <style scoped>
+:deep(.dialog__content) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .probe-dialog {
   display: flex;
-  flex-direction: column;
-  max-width: 750px !important;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
-}
-
-.probe-dialog__header {
-  padding: 30px 20px 15px 20px;
-}
-
-.probe-dialog__instructions {
-  margin: 0;
-  font-size: 0.95rem;
-  font-style: italic;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  text-align: left;
-}
-
-.probe-dialog__content {
-  padding: 10px 30px 10px 30px;
+  overflow: hidden;
   color: var(--color-text-primary);
-  height: 100%;
 }
 
-.probe-dialog__columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-  min-height: 400px;
+.probe-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 220px;
+  border-right: 1px solid var(--color-border);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-surface-muted) 96%, transparent) 0%,
+    var(--color-surface-muted) 100%);
+  padding: 22px 14px 14px;
+  overflow-y: auto;
 }
 
-.probe-dialog__column {
+.probe-sidebar__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 18px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.probe-sidebar__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0.85;
+}
+
+.probe-sidebar__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.probe-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.probe-tab {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.probe-tab__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.probe-tab__icon :deep(svg) {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.probe-tab__label {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.probe-tab:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text-primary, #fff) 5%, transparent);
+  color: var(--color-text-primary);
+}
+
+.probe-tab:hover:not(:disabled) .probe-tab__icon,
+.probe-tab.active .probe-tab__icon {
+  color: var(--color-accent);
+  opacity: 1;
+}
+
+.probe-tab.active {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--color-accent) 16%, transparent) 0%,
+    color-mix(in srgb, var(--color-accent) 8%, transparent) 100%);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.probe-tab:disabled {
+  cursor: not-allowed;
+}
+
+.probe-tab:disabled:not(.active) {
+  opacity: 0.5;
+}
+
+.probe-tab__caret {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+.probe-sidebar__footer {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+}
+
+.probe-sidebar__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px;
+  min-height: 44px;
+  padding: 12px 32px;
+  background: var(--gradient-accent, var(--color-accent));
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+
+.probe-sidebar__close:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.probe-sidebar__close:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.probe-sidebar__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.probe-main {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-.probe-dialog__column h3 {
-  margin: 0 0 16px 0;
-  font-size: 1.1rem;
-  font-weight: 600;
+.probe-main__header {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.probe-main__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
-.probe-dialog__column--controls {
-  padding-right: 20px;
+.probe-main__instructions {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.probe-header-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.probe-header-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 12px 16px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.probe-coords {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.probe-coords__title {
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.probe-coords__cell {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.probe-coords__axis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, var(--color-surface));
   border-right: 1px solid var(--color-border);
 }
 
-.probe-dialog__column--viewer {
-  padding-left: 20px;
+.probe-coords__value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--color-accent);
+}
+
+.probe-jog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.probe-jog :deep(.jog-a) {
+  display: none !important;
+}
+
+.probe-main__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 20px;
+}
+
+.probe-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium, 8px);
+}
+
+.probe-card--preview {
   gap: 10px;
+}
+
+.probe-card--preview :deep(.probe-visualizer) {
+  height: 300px;
+}
+
+.probe-main__footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
 }
 
 .probe-coming-soon {
@@ -1544,29 +1929,54 @@ const handleStartProbe = async () => {
   margin-bottom: 0;
 }
 
-.probe-contextual-instruction {
-  margin-top: 16px;
-  padding: 10px 14px;
-  font-size: 0.85rem;
-  font-style: italic;
-  text-align: center;
+.probe-control-group--inactive .probe-label {
   color: var(--color-text-secondary);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
 }
 
-.probe-contextual-instruction--warning {
-  color: #ff9800;
-  background: rgba(255, 152, 0, 0.1);
-  border-color: rgba(255, 152, 0, 0.3);
+.probe-help {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.probe-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: 8px;
+}
+
+.probe-hint__icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.probe-hint strong {
+  font-weight: 600;
 }
 
 .probe-control-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: 12px;
-  margin-bottom: 6px;
+}
+
+.probe-control-row > .probe-control-group {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.probe-control-row + .probe-help {
+  margin: -6px 0 12px;
 }
 
 .probe-control-group {
@@ -1636,7 +2046,30 @@ const handleStartProbe = async () => {
 .probe-input-with-unit {
   display: flex;
   align-items: center;
-  gap: 6px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.probe-input-with-unit:focus-within {
+  border-color: var(--color-accent);
+}
+
+.probe-input-with-unit:has(.probe-input--error) {
+  border-color: #ff6b6b;
+}
+
+.probe-input-with-unit:has(.probe-input:disabled) {
+  opacity: 0.6;
+}
+
+.probe-input-with-unit .probe-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .probe-input-wrapper {
@@ -1644,6 +2077,7 @@ const handleStartProbe = async () => {
 }
 
 .probe-unit {
+  padding: 0 10px 0 2px;
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   white-space: nowrap;

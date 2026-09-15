@@ -3016,78 +3016,8 @@ public class PendantManager : IPendantManager
                     placement = part;
             }
 
-            // X and Y probe a single face, so their placement is a side; every
-            // other axis mode starts from a corner. Sending the wrong one leaves
-            // the generator without a reference and it refuses the operation.
-            var isSide = axis is "X" or "Y";
-
-            // Built with Utf8JsonWriter rather than JsonSerializer.Serialize: the
-            // reflection overload is not trim- or AOT-safe, and this server is
-            // published AOT. Cloned because the element must outlive its document.
-            static JsonElement Str(string? v)
-            {
-                if (v is null) return JsonDocument.Parse("null").RootElement.Clone();
-                using var ms = new MemoryStream();
-                using (var w = new Utf8JsonWriter(ms)) w.WriteStringValue(v);
-                using var doc = JsonDocument.Parse(ms.ToArray());
-                return doc.RootElement.Clone();
-            }
-            static JsonElement Num(double v)
-            {
-                using var doc = JsonDocument.Parse(v.ToString(CultureInfo.InvariantCulture));
-                return doc.RootElement.Clone();
-            }
-            static JsonElement Bool(bool v)
-            {
-                using var doc = JsonDocument.Parse(v ? "true" : "false");
-                return doc.RootElement.Clone();
-            }
-
-            double Setting(string key, double fallback)
-            {
-                try { return _settingsManager.GetSetting<double>(key, fallback); }
-                catch { return fallback; }
-            }
-
-            var options = new Dictionary<string, JsonElement>
-            {
-                ["probeType"]   = Str(probeType),
-                ["probingAxis"] = Str(axis),
-                ["selectedCorner"] = Str(isSide ? null : placement),
-                ["selectedSide"]   = Str(isSide ? placement : null),
-
-                // Defaults mirror the app's probe dialog so a pendant-started
-                // probe behaves the same as one started on screen.
-                // The generator's toolDiameter is the 3D probe's ball point
-                // diameter, which the app's probe dialog sends from this
-                // setting. probe.selectedBitDiameter is the AutoZero bit
-                // picker (a string, "Auto" by default) and belongs to
-                // selectedBitDiameter below — reading it here left every
-                // pendant 3D probe at the 6 mm fallback, so the zeroed
-                // origin sat half a ball off the edge.
-                ["toolDiameter"]  = Num(Setting("probe.3d-probe.ballPointDiameter", 2)),
-                ["zPlunge"]       = Num(Setting("probe.zPlunge", 3)),
-                ["zOffset"]       = Num(Setting("probe.zOffset", -0.1)),
-                ["xDimension"]    = Num(centerDiameter ?? Setting("probe.xDimension", 100)),
-                ["yDimension"]    = Num(centerDiameter ?? Setting("probe.yDimension", 100)),
-                ["rapidMovement"] = Num(Setting("probe.rapidMovement", 2000)),
-                ["zThickness"]    = Num(Setting("probe.zThickness", 15)),
-                ["xyThickness"]   = Num(Setting("probe.xyThickness", 10)),
-                ["zProbeDistance"] = Num(Setting("probe.zProbeDistance", 3)),
-                // AutoZero is the one routine whose shape depends on the bit
-                // diameter, and the pendant has no picker for it — so it runs on
-                // "Auto", where the routine measures the tool rather than being
-                // told its size, and the screen labels the mode "XYZ-Auto" to
-                // say so. This was previously written with Num(), which was
-                // wrong twice over: the app stores this setting as a string, so
-                // GetSetting<double> threw on "Auto" and fell back to 6, and the
-                // generator reads it with GetString, which renders a JSON number
-                // via ToString. A pendant AutoZero probe therefore always ran at
-                // 6 mm no matter what the app was set to.
-                ["selectedBitDiameter"] = Str("Auto"),
-                ["standardBlockBitDiameter"] = Num(Setting("probe.standardBlockBitDiameter", 6)),
-                ["probeZFirst"] = Bool(false),
-            };
+            var options = PendantProbeOptions.Build(probeType, axis, placement, centerDiameter,
+                key => _settingsManager.GetSetting(key));
 
             _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement} diameter={Diameter}",
                 probeType, axis, placement ?? "-", centerDiameter?.ToString(CultureInfo.InvariantCulture) ?? "-");

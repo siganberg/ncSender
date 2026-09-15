@@ -165,10 +165,10 @@ const initScene = () => {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-  controls.enableZoom = true;
+  controls.enableZoom = false;
   controls.zoomSpeed = 0.1;
-  controls.enablePan = true;
-  controls.enableRotate = true;
+  controls.enablePan = false;
+  controls.enableRotate = false;
   controls.screenSpacePanning = true;
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,

@@ -130,7 +130,8 @@ public static class ProbeCommandGenerator
                     GetDouble(opts, "xyThickness", 10),
                     GetDouble(opts, "zThickness", 15),
                     GetDouble(opts, "zProbeDistance", 3),
-                    GetDouble(opts, "bitDiameter", 6.35))),
+                    GetDouble(opts, "bitDiameter", 6.35),
+                    GetDouble(opts, "edgeDistance", GetDouble(opts, "xyThickness", 10)))),
 
             _ => AddError(errors, "Invalid probing axis for standard block")
         };
