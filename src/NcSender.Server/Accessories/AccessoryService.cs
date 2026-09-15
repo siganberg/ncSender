@@ -50,14 +50,17 @@ public sealed class AccessoryService
     private const int LicenceImportTimeoutMs = 6000;
 
     private readonly INcSenderUsbCatalog _usbCatalog;
+    private readonly NcSender.Server.Usb.UsbAccessoryLink _usbLink;
 
     public AccessoryService(IDongleDeviceService dongle, IPendantManager pendant,
                             INcSenderUsbCatalog usbCatalog,
+                            NcSender.Server.Usb.UsbAccessoryLink usbLink,
                             ILogger<AccessoryService> logger)
     {
         _dongle = dongle;
         _pendant = pendant;
         _usbCatalog = usbCatalog;
+        _usbLink = usbLink;
         _logger = logger;
 
         // Nothing is cached about a device, so nothing here has to be invalidated.
@@ -155,8 +158,9 @@ public sealed class AccessoryService
                 // on a cable still reported Wireless. The host does reach these
                 // over the cable when one is present — that is the path a
                 // firmware update takes — so report what is actually there.
-                info.Transport = HasCable(def.PeerName) ? "usb" : "wireless";
-                info.Connected = peer?.Connected ?? false;
+                var wired = _usbLink.IsConnected(def.PeerName);
+                info.Transport = wired || HasCable(def.PeerName) ? "usb" : "wireless";
+                info.Connected = wired || (peer?.Connected ?? false);
                 if (info.Connected)
                 {
                     info.CurrentVersion = await PeerVersionAsync(def.PeerName, ct).ConfigureAwait(false);
@@ -222,12 +226,17 @@ public sealed class AccessoryService
         return false;
     }
 
+    private Task<string?> QueryPeerAsync(string peerName, string payload, Func<string, bool> match, int timeoutMs) =>
+        _usbLink.IsConnected(peerName)
+            ? _usbLink.QueryAsync(peerName, payload, match, timeoutMs)
+            : _dongle.QueryAsync(peerName, payload, match, timeoutMs);
+
     private async Task<string> PeerVersionAsync(string peerName, CancellationToken ct)
     {
         string version;
         try
         {
-            var reply = await _dongle.QueryAsync(peerName, "$VERSION",
+            var reply = await QueryPeerAsync(peerName, "$VERSION",
                 l => l.StartsWith("$VERSION:", StringComparison.Ordinal),
                 VersionQueryTimeoutMs).ConfigureAwait(false);
             version = reply is null ? "" : reply["$VERSION:".Length..].Trim();
@@ -266,7 +275,7 @@ public sealed class AccessoryService
             throw new InvalidOperationException($"{def.Name} cannot be activated");
 
         // The relayed peers all speak the same line protocol.
-        var reply = await _dongle.QueryAsync(def.PeerName, $"$LICENSE:SET {compact}",
+        var reply = await QueryPeerAsync(def.PeerName, $"$LICENSE:SET {compact}",
             l => l == "$LICENSE:OK" || l.StartsWith("$LICENSE:ERR", StringComparison.Ordinal),
             LicenceImportTimeoutMs).ConfigureAwait(false);
 
@@ -290,7 +299,7 @@ public sealed class AccessoryService
         var deviceId = "";
         try
         {
-            var status = await _dongle.QueryAsync(peerName, "$LICENSE:STATUS",
+            var status = await QueryPeerAsync(peerName, "$LICENSE:STATUS",
                 l => l.StartsWith("$LICENSE:STATUS:", StringComparison.Ordinal),
                 VersionQueryTimeoutMs).ConfigureAwait(false);
             if (status is not null)
@@ -303,7 +312,7 @@ public sealed class AccessoryService
             // activation call binds the licence to.
             if (licensed is not null)
             {
-                var id = await _dongle.QueryAsync(peerName, "$LICENSE:ID",
+                var id = await QueryPeerAsync(peerName, "$LICENSE:ID",
                     l => l.StartsWith("$LICENSE:ID:", StringComparison.Ordinal),
                     VersionQueryTimeoutMs).ConfigureAwait(false);
                 deviceId = id is null ? "" : id["$LICENSE:ID:".Length..].Trim();

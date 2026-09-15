@@ -174,6 +174,8 @@ public static class ServerBuilder
         // cable off the long-lived readers instead of opening a second handle
         // beside them. Depends on nothing, so it cannot form a cycle.
         builder.Services.AddSingleton<NcSender.Server.Usb.UsbPortLeases>();
+        builder.Services.AddSingleton<NcSender.Server.Usb.UsbAccessoryLink>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Usb.UsbAccessoryLink>());
         builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
         builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
         // The router filters candidate ports through INcSenderUsbCatalog, so it

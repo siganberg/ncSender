@@ -21,6 +21,9 @@ public class DongleDeviceInfo
     /// <summary>The raw last payload from the device (everything after "@name "), if any.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LastMessage { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Transport { get; set; }
 }
 
 /// <summary>Body for POST /api/dongle/devices/{name}/send.</summary>

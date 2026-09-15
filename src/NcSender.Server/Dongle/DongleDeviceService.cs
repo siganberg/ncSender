@@ -33,6 +33,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     private readonly IBroadcaster _broadcaster;
     private readonly Timer _watchdog;
     private readonly ConcurrentDictionary<string, DeviceState> _devices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Func<string, Task>> _wiredSenders = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Mirrors <see cref="DongleOtaService.SelfDeviceName"/>.</summary>
     private const string SelfDeviceName = "wireless-usb";
@@ -70,7 +71,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     public DongleDeviceInfo? GetDevice(string name)
         => _devices.TryGetValue(name, out var st) ? Snapshot(name, st, Environment.TickCount64) : null;
 
-    private static DongleDeviceInfo Snapshot(string name, DeviceState st, long now)
+    private DongleDeviceInfo Snapshot(string name, DeviceState st, long now)
     {
         var last = st.LastSeenTicks;
         var sinceMs = last == 0 ? -1 : now - last;
@@ -79,7 +80,8 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             Name = name,
             Connected = last != 0 && sinceMs >= 0 && sinceMs < ConnectedWindowMs,
             LastSeenMs = sinceMs,
-            LastMessage = st.LastMessage
+            LastMessage = st.LastMessage,
+            Transport = _wiredSenders.ContainsKey(name) ? "usb" : (last != 0 ? "wireless" : null)
         };
     }
 
@@ -219,9 +221,18 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     public Task SendAsync(string name, string payload)
     {
+        if (_wiredSenders.TryGetValue(name, out var wired)) return wired(payload);
         var sender = _sender;
         return sender is null ? Task.CompletedTask : sender($"@{name} {payload}");
     }
+
+    public void SetWiredSender(string name, Func<string, Task>? send)
+    {
+        if (send is null) _wiredSenders.TryRemove(name, out _);
+        else _wiredSenders[name] = send;
+    }
+
+    public void OnWiredLine(string name, string payload) => OnDongleLine($"@{name} {payload}");
 
     public Task SendRawLineAsync(string line)
     {
