@@ -6428,7 +6428,7 @@ body.theme-light .dot--rapid {
 /* Out of bounds warning */
 .out-of-bounds-warning {
   position: absolute;
-  bottom: 180px;
+  bottom: 200px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
