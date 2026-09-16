@@ -47,7 +47,8 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
         foreach (var kv in _pending.ToArray())
         {
             var toolNumber = kv.Key;
-            var tool = tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
+            var tool = tools.FirstOrDefault(t => t.ToolNumber == toolNumber)
+                       ?? tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber);
             if (tool is not null)
             {
                 tool.Offsets.Tlo = tloValue;

@@ -232,6 +232,7 @@ public class JsPluginEngine : IJsPluginEngine
                         {
                             var jsTool = new JsObject(engine);
                             jsTool.Set("toolNumber", JsValue.FromObject(engine, t.ToolNumber ?? 0));
+                            jsTool.Set("toolId", JsValue.FromObject(engine, t.ToolId ?? t.Id));
                             var jsOffsets = new JsObject(engine);
                             jsOffsets.Set("x", JsValue.FromObject(engine, t.Offsets.X));
                             jsOffsets.Set("y", JsValue.FromObject(engine, t.Offsets.Y));
