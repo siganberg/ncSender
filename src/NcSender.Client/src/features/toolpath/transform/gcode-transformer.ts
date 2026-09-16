@@ -227,11 +227,36 @@ function parseCoord(line: string, coord: string): number | null {
 }
 
 /**
+ * How many decimals transformed lines are written with.
+ *
+ * Fixed at three, this quantised an inch program to 0.001" (0.025mm) a word —
+ * and because an arc's endpoint and its centre offsets are rounded separately,
+ * it moved them relative to each other, which is what an arc radius check on
+ * the controller rejects. So the output follows whatever the file itself uses.
+ */
+let outputDecimals = 3;
+
+function detectDecimals(gcodeContent: string): number {
+  let most = 3;
+  const pattern = /[XYZIJKR]-?\d*\.(\d+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(gcodeContent)) !== null) {
+    if (match[1].length > most) most = match[1].length;
+    if (most >= 6) return 6;
+  }
+  return most;
+}
+
+function formatValue(value: number): string {
+  return value.toFixed(outputDecimals);
+}
+
+/**
  * Replace a coordinate value in a G-code line.
  */
 function replaceCoord(line: string, coord: string, value: number): string {
   const regex = new RegExp(`(${coord})([+-]?\\d*\\.?\\d+)`, 'gi');
-  return line.replace(regex, `$1${value.toFixed(3)}`);
+  return line.replace(regex, `$1${formatValue(value)}`);
 }
 
 /**
@@ -247,26 +272,34 @@ function removeCoord(line: string, coord: string): string {
  * Maintains proper G-code coordinate order: G-code X Y Z I J K R F
  */
 function addCoord(line: string, coord: string, value: number): string {
-  // For arc parameters (I, J), insert after Y (or X if no Y), before F
-  if (coord === 'I' || coord === 'J') {
-    // If adding J, check if I exists and insert after I
+  // For arc parameters (I, J, K), insert after Y (or X if no Y), before F
+  if (coord === 'I' || coord === 'J' || coord === 'K') {
+    if (coord === 'J' || coord === 'K') {
+      const prior = coord === 'K'
+        ? line.match(/[JI][+-]?\d*\.?\d+/i)
+        : line.match(/I[+-]?\d*\.?\d+/i);
+      if (prior && prior.index !== undefined) {
+        const insertPos = prior.index + prior[0].length;
+        return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
+      }
+    }
     if (coord === 'J') {
       const iMatch = line.match(/I[+-]?\d*\.?\d+/i);
       if (iMatch && iMatch.index !== undefined) {
         const insertPos = iMatch.index + iMatch[0].length;
-        return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+        return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
       }
     }
     // Insert after Y coordinate (or X if no Y)
     const yMatch = line.match(/Y[+-]?\d*\.?\d+/i);
     if (yMatch && yMatch.index !== undefined) {
       const insertPos = yMatch.index + yMatch[0].length;
-      return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+      return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
     }
     const xMatch = line.match(/X[+-]?\d*\.?\d+/i);
     if (xMatch && xMatch.index !== undefined) {
       const insertPos = xMatch.index + xMatch[0].length;
-      return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+      return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
     }
   }
 
@@ -275,17 +308,17 @@ function addCoord(line: string, coord: string, value: number): string {
     // Look for Y first and insert before it
     const yMatch = line.match(/Y[+-]?\d*\.?\d+/i);
     if (yMatch && yMatch.index !== undefined) {
-      return line.slice(0, yMatch.index) + `${coord}${value.toFixed(3)} ` + line.slice(yMatch.index);
+      return line.slice(0, yMatch.index) + `${coord}${formatValue(value)} ` + line.slice(yMatch.index);
     }
     // Look for I (arc param) and insert before it
     const iMatch = line.match(/I[+-]?\d*\.?\d+/i);
     if (iMatch && iMatch.index !== undefined) {
-      return line.slice(0, iMatch.index) + `${coord}${value.toFixed(3)} ` + line.slice(iMatch.index);
+      return line.slice(0, iMatch.index) + `${coord}${formatValue(value)} ` + line.slice(iMatch.index);
     }
     // Look for F (feed rate) and insert before it
     const fMatch = line.match(/F[+-]?\d*\.?\d+/i);
     if (fMatch && fMatch.index !== undefined) {
-      return line.slice(0, fMatch.index) + `${coord}${value.toFixed(3)} ` + line.slice(fMatch.index);
+      return line.slice(0, fMatch.index) + `${coord}${formatValue(value)} ` + line.slice(fMatch.index);
     }
   }
 
@@ -295,17 +328,17 @@ function addCoord(line: string, coord: string, value: number): string {
     const xMatch = line.match(/X[+-]?\d*\.?\d+/i);
     if (xMatch && xMatch.index !== undefined) {
       const insertPos = xMatch.index + xMatch[0].length;
-      return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+      return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
     }
     // Look for I (arc param) and insert before it
     const iMatch = line.match(/I[+-]?\d*\.?\d+/i);
     if (iMatch && iMatch.index !== undefined) {
-      return line.slice(0, iMatch.index) + `${coord}${value.toFixed(3)} ` + line.slice(iMatch.index);
+      return line.slice(0, iMatch.index) + `${coord}${formatValue(value)} ` + line.slice(iMatch.index);
     }
     // Look for F (feed rate) and insert before it
     const fMatch = line.match(/F[+-]?\d*\.?\d+/i);
     if (fMatch && fMatch.index !== undefined) {
-      return line.slice(0, fMatch.index) + `${coord}${value.toFixed(3)} ` + line.slice(fMatch.index);
+      return line.slice(0, fMatch.index) + `${coord}${formatValue(value)} ` + line.slice(fMatch.index);
     }
   }
 
@@ -319,23 +352,23 @@ function addCoord(line: string, coord: string, value: number): string {
 
   if (lastMatch) {
     const insertPos = lastMatch.index + lastMatch[0].length;
-    return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+    return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
   }
 
   // Fallback: add after G-code command
   const gcodeMatch = line.match(/G\d+/i);
   if (gcodeMatch && gcodeMatch.index !== undefined) {
     const insertPos = gcodeMatch.index + gcodeMatch[0].length;
-    return line.slice(0, insertPos) + ` ${coord}${value.toFixed(3)}` + line.slice(insertPos);
+    return line.slice(0, insertPos) + ` ${coord}${formatValue(value)}` + line.slice(insertPos);
   }
 
   // Last fallback: add at end before any comment
   const commentIndex = line.indexOf('(');
   if (commentIndex > 0) {
-    return line.slice(0, commentIndex) + ` ${coord}${value.toFixed(3)} ` + line.slice(commentIndex);
+    return line.slice(0, commentIndex) + ` ${coord}${formatValue(value)} ` + line.slice(commentIndex);
   }
 
-  return line + ` ${coord}${value.toFixed(3)}`;
+  return line + ` ${coord}${formatValue(value)}`;
 }
 
 /**
@@ -351,11 +384,68 @@ function swapArcDirection(line: string): string {
 /**
  * Rotate G-code by 90 degrees CW or CCW around workspace origin (0,0).
  */
+type ArcPlane = 'G17' | 'G18' | 'G19';
+
+/**
+ * What a rotation about Z does to an arc, derived by sampling arcs numerically
+ * rather than by reasoning about conventions:
+ *
+ *   - the centre offset rotates like any other vector, which is why a plain XY
+ *     arc has always worked;
+ *   - a G18 (XZ) arc turns into a G19 (YZ) one and back, because the plane
+ *     itself is carried around with the toolpath;
+ *   - and the direction word flips whenever the axis you sight the plane along
+ *     ends up pointing the other way. G17 never flips; G18 flips at -90 and
+ *     180; G19 flips at +90 and 180.
+ *
+ * Miss any of the three and the arc still looks plausible while cutting
+ * something else entirely: before this, a G18 ramp came out as G18 with its
+ * offsets zeroed and a stray Y, i.e. a zero-radius arc carrying a helical
+ * move, which a controller crawls through.
+ */
+const ROTATED_PLANE: Record<string, Record<ArcPlane, ArcPlane>> = {
+  '90': { G17: 'G17', G18: 'G19', G19: 'G18' },
+  '-90': { G17: 'G17', G18: 'G19', G19: 'G18' },
+  '180': { G17: 'G17', G18: 'G18', G19: 'G19' },
+};
+
+const FLIPS_DIRECTION: Record<string, Record<ArcPlane, boolean>> = {
+  '90': { G17: false, G18: false, G19: true },
+  '-90': { G17: false, G18: true, G19: false },
+  '180': { G17: false, G18: true, G19: true },
+};
+
+/** The two offset words each plane uses, in G-code order. */
+const PLANE_OFFSETS: Record<ArcPlane, Array<'I' | 'J' | 'K'>> = {
+  G17: ['I', 'J'],
+  G18: ['I', 'K'],
+  G19: ['J', 'K'],
+};
+
+const OFFSET_AXIS: Record<'I' | 'J' | 'K', 'x' | 'y' | 'z'> = { I: 'x', J: 'y', K: 'z' };
+
+function parsePlaneWord(upper: string): ArcPlane | null {
+  if (/\bG17\b/.test(upper)) return 'G17';
+  if (/\bG18\b/.test(upper)) return 'G18';
+  if (/\bG19\b/.test(upper)) return 'G19';
+  return null;
+}
+
+/** G0/G1/G2/G3 (or G00..G03) on this line, or null when the line is modal. */
+function parseMotionWord(upper: string): number | null {
+  const match = upper.match(/\bG0*([0123])\b/);
+  return match ? Number(match[1]) : null;
+}
+
 export function rotateGCode(
   gcodeContent: string,
   degrees: 90 | -90 | 180,
   options?: TransformOptions
 ): string {
+  outputDecimals = detectDecimals(gcodeContent);
+
+  outputDecimals = detectDecimals(gcodeContent);
+
   const centerX = 0;
   const centerY = 0;
 
@@ -368,6 +458,10 @@ export function rotateGCode(
   let originalX = 0;
   let originalY = 0;
   let isAbsolute = true;
+  // Plane and motion are modal, and posts lean on that: Fusion writes one
+  // "G18 G2 ..." and then bare "X.. Z.. I.. K.." lines that inherit both.
+  let plane: ArcPlane = 'G17';
+  let arcDirection: 2 | 3 | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -381,13 +475,19 @@ export function rotateGCode(
       continue;
     }
 
-    // Track positioning mode changes
     const trimmed = line.trim().toUpperCase();
     if (trimmed.includes('G90') && !trimmed.includes('G90.1')) isAbsolute = true;
     if (trimmed.includes('G91') && !trimmed.includes('G91.1')) isAbsolute = false;
 
+    const planeWord = parsePlaneWord(trimmed);
+    if (planeWord) plane = planeWord;
+
+    const motionWord = parseMotionWord(trimmed);
+    if (motionWord !== null) arcDirection = motionWord === 2 || motionWord === 3 ? motionWord : null;
+
     const { transformed, endX, endY } = rotateLineWithPosition(
-      line, degrees, centerX, centerY, originalX, originalY, isAbsolute
+      line, degrees, centerX, centerY, originalX, originalY, isAbsolute,
+      plane, planeWord !== null, arcDirection, motionWord !== null
     );
     result.push(transformed);
 
@@ -413,12 +513,14 @@ function rotateLineWithPosition(
   centerY: number,
   originalX: number,
   originalY: number,
-  isAbsolute: boolean
+  isAbsolute: boolean,
+  plane: ArcPlane,
+  hasPlaneWord: boolean,
+  arcDirection: 2 | 3 | null,
+  hasMotionWord: boolean
 ): { transformed: string; endX: number | null; endY: number | null } {
   const x = parseCoord(line, 'X');
   const y = parseCoord(line, 'Y');
-  const i = parseCoord(line, 'I');
-  const j = parseCoord(line, 'J');
 
   let result = line;
   // Track the ORIGINAL endpoint (not rotated) for position tracking
@@ -497,34 +599,62 @@ function rotateLineWithPosition(
     }
   }
 
-  // Transform I, J for arcs (same rotation, no center offset since they're relative)
-  // Important: After rotation, I and J values swap, so we need to handle cases where
-  // one was originally zero/omitted but becomes non-zero after rotation
-  if (i !== null || j !== null) {
-    const iVal = i ?? 0;
-    const jVal = j ?? 0;
+  const key = String(degrees);
+  const targetPlane = ROTATED_PLANE[key][plane];
 
-    let newI: number, newJ: number;
+  // The plane word travels with the toolpath: a G18 ramp becomes a G19 one.
+  if (hasPlaneWord && targetPlane !== plane) {
+    result = result.replace(new RegExp(`\\b${plane}\\b`, 'i'), targetPlane);
+  }
 
-    if (degrees === 90) {
-      newI = jVal;
-      newJ = -iVal;
-    } else if (degrees === -90) {
-      newI = -jVal;
-      newJ = iVal;
-    } else {
-      newI = -iVal;
-      newJ = -jVal;
+  // Arc offsets. Only the words this plane actually uses are read - a J on a
+  // G18 line means nothing to a controller, and inventing one was how the old
+  // code destroyed these arcs.
+  const sourceWords = PLANE_OFFSETS[plane];
+  const offsets: Record<'x' | 'y' | 'z', number> = { x: 0, y: 0, z: 0 };
+  let hasOffset = false;
+  for (const word of sourceWords) {
+    const value = parseCoord(line, word);
+    if (value !== null) {
+      offsets[OFFSET_AXIS[word]] = value;
+      hasOffset = true;
     }
+  }
 
-    // Remove existing I and J values
+  if (hasOffset) {
+    let rx: number, ry: number;
+    if (degrees === 90) {
+      rx = offsets.y;
+      ry = -offsets.x;
+    } else if (degrees === -90) {
+      rx = -offsets.y;
+      ry = offsets.x;
+    } else {
+      rx = -offsets.x;
+      ry = -offsets.y;
+    }
+    const rotated = { x: rx, y: ry, z: offsets.z };
+
     result = removeCoord(result, 'I');
     result = removeCoord(result, 'J');
+    result = removeCoord(result, 'K');
+    for (const word of PLANE_OFFSETS[targetPlane]) {
+      result = addCoord(result, word, rotated[OFFSET_AXIS[word]]);
+    }
+  }
 
-    // Always add both I and J values for arc commands after rotation
-    // Some G-code interpreters require explicit values
-    result = addCoord(result, 'I', newI);
-    result = addCoord(result, 'J', newJ);
+  // Direction. When the plane is sighted along the opposite axis after
+  // rotation, the same physical arc is written with the other word - and a
+  // modal arc has to be given one explicitly, because its G2/G3 was inherited
+  // from a line that may now say something different.
+  if (arcDirection !== null && FLIPS_DIRECTION[key][plane]) {
+    const flipped = arcDirection === 2 ? 3 : 2;
+    if (hasMotionWord) {
+      result = result.replace(/\bG0*[23]\b/i, `G${flipped}`);
+    } else {
+      const indent = result.match(/^\s*/)?.[0] ?? '';
+      result = `${indent}G${flipped} ${result.trim()}`;
+    }
   }
 
   return { transformed: result, endX, endY };
@@ -538,6 +668,8 @@ export function mirrorGCode(
   axis: 'x' | 'y',
   options?: TransformOptions
 ): string {
+  outputDecimals = detectDecimals(gcodeContent);
+
   const centerX = 0;
   const centerY = 0;
 
@@ -625,6 +757,8 @@ export function offsetGCode(
   offsetZ: number = 0,
   options?: TransformOptions
 ): string {
+  outputDecimals = detectDecimals(gcodeContent);
+
   const lines = gcodeContent.split('\n');
   const result: string[] = [];
   const totalLines = lines.length;
@@ -672,21 +806,21 @@ function offsetLine(line: string, offsetX: number, offsetY: number, offsetZ: num
   if (offsetX !== 0) {
     result = result.replace(/X([+-]?\d*\.?\d+)/gi, (_match, value) => {
       const newValue = parseFloat(value) + offsetX;
-      return 'X' + newValue.toFixed(3);
+      return 'X' + formatValue(newValue);
     });
   }
 
   if (offsetY !== 0) {
     result = result.replace(/Y([+-]?\d*\.?\d+)/gi, (_match, value) => {
       const newValue = parseFloat(value) + offsetY;
-      return 'Y' + newValue.toFixed(3);
+      return 'Y' + formatValue(newValue);
     });
   }
 
   if (offsetZ !== 0) {
     result = result.replace(/Z([+-]?\d*\.?\d+)/gi, (_match, value) => {
       const newValue = parseFloat(value) + offsetZ;
-      return 'Z' + newValue.toFixed(3);
+      return 'Z' + formatValue(newValue);
     });
   }
 
