@@ -431,6 +431,15 @@
             >+</button>
           </div>
         </div>
+        <!-- Spindle panel. Always one row of three cells, the same shape
+             as Feedrate — only what the cells DO changes:
+               program running  → override stepper (unchanged; an override
+                                  only means anything while a program runs)
+               spindle turning  → [ − ][ STOP ][ + ], stepping re-issues at
+                                  the new speed like the feedrate override
+               otherwise        → [ CW ][ rpm ][ CCW ], tap rpm for presets
+             The live readout stays in the header throughout, so nothing
+             needs a second place to show the speed. -->
         <div class="override-panel">
           <div class="override-row">
             <span class="override-label">Spindle</span>
@@ -439,32 +448,107 @@
             </div>
           </div>
           <div class="override-stepper">
-            <button
-              class="override-step"
-              :disabled="overrideControls.spindle.value <= OVERRIDE_MIN"
-              aria-label="Decrease by 10%"
-              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(-10))"
-              @pointerup="overrideControls.stopRepeat"
-              @pointerleave="overrideControls.stopRepeat"
-              @pointercancel="overrideControls.stopRepeat"
-              @contextmenu.prevent
-            >−</button>
-            <button
-              class="override-current"
-              :class="{ 'is-default': overrideControls.spindle.value === 100 }"
-              title="Reset to 100%"
-              @click="overrideControls.spindle.reset()"
-            >{{ overrideControls.spindle.value }}%</button>
-            <button
-              class="override-step"
-              :disabled="overrideControls.spindle.value >= OVERRIDE_MAX"
-              aria-label="Increase by 10%"
-              @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(10))"
-              @pointerup="overrideControls.stopRepeat"
-              @pointerleave="overrideControls.stopRepeat"
-              @pointercancel="overrideControls.stopRepeat"
-              @contextmenu.prevent
-            >+</button>
+            <template v-if="isJobRunning">
+              <button
+                class="override-step"
+                :disabled="overrideControls.spindle.value <= OVERRIDE_MIN"
+                aria-label="Decrease by 10%"
+                @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(-10))"
+                @pointerup="overrideControls.stopRepeat"
+                @pointerleave="overrideControls.stopRepeat"
+                @pointercancel="overrideControls.stopRepeat"
+                @contextmenu.prevent
+              >−</button>
+              <button
+                class="override-current"
+                :class="{ 'is-default': overrideControls.spindle.value === 100 }"
+                title="Reset to 100%"
+                @click="overrideControls.spindle.reset()"
+              >{{ overrideControls.spindle.value }}%</button>
+              <button
+                class="override-step"
+                :disabled="overrideControls.spindle.value >= OVERRIDE_MAX"
+                aria-label="Increase by 10%"
+                @pointerdown.prevent="overrideControls.startRepeat(() => overrideControls.spindle.step(10))"
+                @pointerup="overrideControls.stopRepeat"
+                @pointerleave="overrideControls.stopRepeat"
+                @pointercancel="overrideControls.stopRepeat"
+                @contextmenu.prevent
+              >+</button>
+            </template>
+
+            <!-- Turning: centre stops, flanks trim the speed live. -->
+            <template v-else-if="isSpindleTurning">
+              <button
+                class="override-step"
+                :disabled="!canStepRpmDown"
+                aria-label="Decrease spindle speed"
+                @pointerdown.prevent="overrideControls.startRepeat(() => { stepRpm(-1); resendAtCurrentSpeed(); })"
+                @pointerup="overrideControls.stopRepeat"
+                @pointerleave="overrideControls.stopRepeat"
+                @pointercancel="overrideControls.stopRepeat"
+                @contextmenu.prevent
+              >−</button>
+              <button
+                class="override-current spindle-run__stop"
+                :disabled="!storeIsConnected"
+                @click="sendSpindleStop"
+                title="Stop spindle (M5)"
+              >STOP</button>
+              <button
+                class="override-step"
+                :disabled="!canStepRpmUp"
+                aria-label="Increase spindle speed"
+                @pointerdown.prevent="overrideControls.startRepeat(() => { stepRpm(1); resendAtCurrentSpeed(); })"
+                @pointerup="overrideControls.stopRepeat"
+                @pointerleave="overrideControls.stopRepeat"
+                @pointercancel="overrideControls.stopRepeat"
+                @contextmenu.prevent
+              >+</button>
+            </template>
+
+            <!-- Idle: the flanks start it, the centre sets the speed. -->
+            <template v-else>
+              <button
+                class="override-step spindle-run__dir"
+                :disabled="isSpindleRunDisabled"
+                @click="sendSpindleCW"
+                title="Start spindle clockwise (M3)"
+              >
+                <svg class="spindle-run__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 3 21 8 16 8"/>
+                </svg>
+                <span>CW</span>
+              </button>
+              <button
+                class="override-current spindle-run__value"
+                :class="{ 'is-open': showSpindlePresets }"
+                :disabled="isSpindleRunDisabled"
+                title="Tap for preset speeds"
+                @click.stop="toggleSpindlePresets"
+              >{{ spindleRPM }}</button>
+              <button
+                class="override-step spindle-run__dir"
+                :disabled="isSpindleRunDisabled"
+                @click="sendSpindleCCW"
+                title="Start spindle counter-clockwise (M4)"
+              >
+                <svg class="spindle-run__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12a9 9 0 1 0 3.5-7.1"/><polyline points="3 3 3 8 8 8"/>
+                </svg>
+                <span>CCW</span>
+              </button>
+            </template>
+
+            <div v-if="showSpindlePresets" class="spindle-run__presets" @pointerdown.stop>
+              <button
+                v-for="v in rpmPresets"
+                :key="v"
+                class="spindle-run__preset"
+                :class="{ 'is-current': v === spindleRPM }"
+                @click="applyPreset(v)"
+              >{{ v }}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -674,6 +758,7 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
+import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
 import { useToolpathStore } from './store';
@@ -903,6 +988,37 @@ const canStop = computed(() => {
 const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+
+// Spindle run. Stricter than the I/O switches: those are coolant and aux
+// outputs, this spins a cutter, so it also refuses while a job owns the
+// machine and while the door is open. The stop button is deliberately NOT
+// gated on any of this — stopping must stay available whenever there is a
+// connection to stop through.
+const {
+  spindleRPM, rpmPresets, stepRpm, canStepRpmDown, canStepRpmUp,
+  sendSpindleCW, sendSpindleCCW, sendSpindleStop, isSpindleTurning, resendAtCurrentSpeed,
+} = useSpindleControl();
+const isSpindleRunDisabled = computed(() =>
+  isCoolantDisabled.value || isJobRunning.value || isDoorOpenViaPn.value
+);
+
+// Single tap on the value opens the preset list. It floats over the
+// canvas, so any pointer down elsewhere closes it again.
+const showSpindlePresets = ref(false);
+const closePresetsOnOutside = () => { showSpindlePresets.value = false; };
+const toggleSpindlePresets = () => {
+  if (isSpindleRunDisabled.value) return;
+  showSpindlePresets.value = !showSpindlePresets.value;
+};
+const applyPreset = (v: number) => {
+  spindleRPM.value = v;
+  showSpindlePresets.value = false;
+};
+watch(showSpindlePresets, (open) => {
+  if (open) window.addEventListener('pointerdown', closePresetsOnOutside, { once: true });
+  else window.removeEventListener('pointerdown', closePresetsOnOutside);
+});
+onUnmounted(() => window.removeEventListener('pointerdown', closePresetsOnOutside));
 
 // Template refs
 const canvas = ref<HTMLElement>();
@@ -5499,7 +5615,12 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   background: color-mix(in srgb, var(--color-surface-muted) 92%, transparent);
   border-radius: var(--radius-small);
   padding: 8px 16px 16px;
-  min-width: 250px;
+  /* Fixed, not min-: the spindle panel swaps between three different sets
+     of cells and .override-controls is a centred max-content row, so a
+     content-sized panel would let a longer label resize this card AND
+     shift the Feedrate card beside it. box-sizing is border-box globally,
+     so this includes the padding: 250 - 32 = 218 inner. */
+  width: 250px;
 }
 
 .override-row {
@@ -5532,6 +5653,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 }
 
 .override-stepper {
+  position: relative;   /* anchors .spindle-run__presets */
   display: flex;
   align-items: stretch;
   gap: 8px;
@@ -5565,6 +5687,86 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
+
+/* Spindle run cells. Each reuses .override-step or .override-current, so
+   the card keeps exactly the Feedrate card's geometry in every state. */
+.spindle-run__dir {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+}
+
+.spindle-run__dir .spindle-run__icon { width: 20px; height: 20px; }
+.spindle-run__dir:disabled { opacity: 0.5; cursor: not-allowed; }
+.spindle-run__icon { flex-shrink: 0; }
+
+.spindle-run__value { position: relative; }
+.spindle-run__value.is-open {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+}
+
+.spindle-run__stop {
+  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.85));
+  border-color: transparent;
+  color: #fff !important;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.spindle-run__stop:hover:not(:disabled) { filter: brightness(1.08); }
+
+/* Preset speeds: a two-column card so even a 24000-rpm machine shows the
+   whole list without scrolling. */
+.spindle-run__presets {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(84px, 1fr));
+  gap: 4px;
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-elevated);
+  z-index: 20;
+}
+
+.spindle-run__presets::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--color-border);
+}
+
+.spindle-run__preset {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.spindle-run__preset:hover { border-color: var(--color-accent); }
+.spindle-run__preset.is-current { background: var(--gradient-accent); color: #fff; }
 
 .override-current.is-default {
   color: var(--color-text-primary);

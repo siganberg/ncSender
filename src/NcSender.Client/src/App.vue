@@ -877,9 +877,9 @@
     <PluginDialog />
 
   <!-- Gate Dialog Host (server-owned safety prompts) -->
-  <SetupWizard v-if="showSetupWizard" @close="onSetupWizardClosed" />
+  <SetupWizard v-if="showSetupWizard && hasFullControl" @close="onSetupWizardClosed" />
   <TipsDialog
-    v-if="showTipsDialog"
+    v-if="showTipsDialog && hasFullControl"
     :start-after-id="tipsLastShownId"
     v-model:show-at-startup="tipsOnStartup"
     @close="onTipsClosed"
