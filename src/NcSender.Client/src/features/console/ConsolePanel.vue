@@ -454,37 +454,6 @@
               </svg>
               <span>Modal State</span>
             </button>
-            <div class="spindle-control">
-              <button @click="sendSpindleCW" :disabled="!connected || !isSenderIdle" class="quick-control-btn spindle-control__btn" title="Spindle CW (M3)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3zM1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8z"/>
-                  <path d="m10.854 8.146-2-2a.5.5 0 0 0-.708 0l-2 2a.5.5 0 0 0 .708.708L8 7.707l1.146 1.147a.5.5 0 0 0 .708-.708z"/>
-                </svg>
-                <span>Spindle CW</span>
-              </button>
-              <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
-                <option v-for="rpm in rpmOptions" :key="rpm" :value="rpm">{{ rpm }}</option>
-              </select>
-            </div>
-            <div class="spindle-control">
-              <button @click="sendSpindleCCW" :disabled="!connected || !isSenderIdle" class="quick-control-btn spindle-control__btn" title="Spindle CCW (M4)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3zM1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8z"/>
-                  <path d="M10.854 7.854 9.707 9H11.5a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 1 0v1.793l1.146-1.147a.5.5 0 0 1 .708.708z"/>
-                </svg>
-                <span>Spindle CCW</span>
-              </button>
-              <select v-model.number="spindleRPM" class="spindle-control__select" :disabled="!connected || !isSenderIdle">
-                <option v-for="rpm in rpmOptions" :key="rpm" :value="rpm">{{ rpm }}</option>
-              </select>
-            </div>
-            <button @click="sendQuickCommand('M5')" :disabled="!connected || !isSenderIdle" class="quick-control-btn quick-control-btn--danger" title="Stop spindle (M5)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-                <path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3z"/>
-              </svg>
-              <span>Stop Spindle</span>
-            </button>
             </div>
           </div>
           <div class="terminal-right-column">
@@ -734,42 +703,7 @@ const searchQuery = ref('');
 const showTerminalModal = ref(false);
 const modalTerminalScrollerRef = ref<any>(null);
 const autoScrollTerminalModal = ref(true);
-const spindleRPM = ref(10000);
 const appStore = useAppStore();
-
-// Spindle RPM dropdown options — derived from firmware $30 (max) and $31 (min).
-// While firmware settings load, fall back to the original 1000..24000 range so
-// the dropdown never renders empty. Step size is fixed at 1000 RPM (matches
-// the previous hardcoded list).
-const RPM_STEP = 1000;
-const RPM_FALLBACK_MIN = 1000;
-const RPM_FALLBACK_MAX = 24000;
-const rpmOptions = computed(() => {
-  const max = appStore.spindleRPMMax.value ?? RPM_FALLBACK_MAX;
-  const rawMin = appStore.spindleRPMMin.value ?? RPM_FALLBACK_MIN;
-  // Never let the list start at 0 — a 0-RPM entry is useless for M3/M4 and
-  // the original hardcoded list started at 1000. If $31 is 0 (common
-  // default), start at RPM_STEP.
-  const min = Math.max(rawMin, RPM_STEP);
-  if (max < min) return [max];
-  const first = Math.ceil(min / RPM_STEP) * RPM_STEP;
-  const last = Math.floor(max / RPM_STEP) * RPM_STEP;
-  const opts: number[] = [];
-  for (let v = first; v <= last; v += RPM_STEP) opts.push(v);
-  return opts.length > 0 ? opts : [max];
-});
-
-// Clamp the selected RPM into the current range when the firmware settings
-// load (e.g. old default 10000 with a $30 of 8000 would leave 10000 selected
-// but invisible in the dropdown). Snap to the nearest option.
-watch(rpmOptions, (opts) => {
-  if (!opts.length) return;
-  if (opts.includes(spindleRPM.value)) return;
-  const nearest = opts.reduce((best, v) => (
-    Math.abs(v - spindleRPM.value) < Math.abs(best - spindleRPM.value) ? v : best
-  ), opts[0]);
-  spindleRPM.value = nearest;
-}, { immediate: true });
 const searchResults = ref<number[]>([]);
 const currentSearchIndex = ref(0);
 const editableGcode = ref('');
@@ -1806,14 +1740,6 @@ const navigateHistory = (direction: 'up' | 'down') => {
       commandToSend.value = currentInput.value;
     }
   }
-};
-
-const sendSpindleCW = () => {
-  sendQuickCommand(`M3 S${spindleRPM.value}`);
-};
-
-const sendSpindleCCW = () => {
-  sendQuickCommand(`M4 S${spindleRPM.value}`);
 };
 
 let unsubscribeHistory;
@@ -3868,44 +3794,6 @@ body.theme-light .monaco-editor-container :deep(.monaco-selected-gcode-glyph) {
   transition: all 0.2s ease;
   justify-content: flex-start;
   width: 100%;
-}
-
-.spindle-control {
-  display: flex;
-  align-items: stretch;
-  border-radius: var(--radius-small);
-  overflow: hidden;
-  border: 1px solid var(--color-accent);
-}
-
-.spindle-control__btn {
-  flex: 1;
-  border-radius: 0;
-  border: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.spindle-control__select {
-  background: var(--gradient-accent);
-  color: white;
-  border: none;
-  padding: 10px 12px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  width: 90px;
-  outline: none;
-}
-
-.spindle-control__select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.spindle-control__select option {
-  background: var(--color-surface);
-  color: var(--color-text-primary);
 }
 
 .quick-control-btn:hover:not(:disabled) {
