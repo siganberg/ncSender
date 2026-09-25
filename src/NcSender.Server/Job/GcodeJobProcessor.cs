@@ -37,7 +37,33 @@ internal class GcodeJobProcessor
 
     public void Pause() => _isPaused = true;
     public void Resume() => _isPaused = false;
+    /// <summary>Why the controller rejected a line, if it did.</summary>
+    public string? FailureReason { get; private set; }
+
     public void Stop() => _isStopped = true;
+
+    // A job line is never optional. The command processor's hold guard exists
+    // for commands a person typed -- dropping one of those is a courtesy --
+    // but a job line that is dropped punches a hole in the middle of the
+    // program. And the guard reads the LAST STATUS REPORT, so it still says
+    // Hold for tens of milliseconds after the machine has already resumed:
+    // an M0 in a tool-change event silently ate the next ten lines of a real
+    // customer's job, taking the positioning moves and the F word with them,
+    // so the run carried on into an arc it had no start point for, at
+    // whatever feed the tool-change macro happened to leave behind.
+    //
+    // So the stream waits for a hold to clear instead of feeding lines into
+    // it. This also covers the cases the processor's own _isPaused flag never
+    // sees: an M0 in the g-code itself, or a feed hold from a pendant.
+    private async Task WaitWhileHeldAsync()
+    {
+        while (!_isStopped && _context.State.MachineState.Status
+                   .StartsWith("Hold", StringComparison.OrdinalIgnoreCase))
+        {
+            await Task.Delay(50);
+        }
+    }
+
 
     public async Task ProcessLinesAsync()
     {
@@ -72,6 +98,7 @@ internal class GcodeJobProcessor
                 {
                     await Task.Delay(100);
                 }
+                await WaitWhileHeldAsync();
                 if (_isStopped) break;
 
                 var processorContext = new CommandProcessorContext
@@ -124,6 +151,7 @@ internal class GcodeJobProcessor
             {
                 await Task.Delay(100);
             }
+            await WaitWhileHeldAsync();
 
             if (_isStopped) break;
 
@@ -182,6 +210,12 @@ internal class GcodeJobProcessor
                 if (cmdResult.Status == "error")
                 {
                     _logger.LogWarning("Command error at line {Line}: {Error}", fileLineNumber, cmdResult.ErrorMessage);
+                    // Stopping here is right, but the run must not then be
+                    // reported as finished: leaving this unset let a job that
+                    // died on error:33 log "Job completed" and fire Program End.
+                    FailureReason = string.IsNullOrWhiteSpace(cmdResult.ErrorMessage)
+                        ? $"Controller rejected line {fileLineNumber}"
+                        : $"Line {fileLineNumber}: {cmdResult.ErrorMessage}";
                     _isStopped = true;
                     break;
                 }

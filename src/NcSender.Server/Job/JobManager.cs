@@ -101,8 +101,12 @@ public class JobManager : IJobManager
                 if (!isFromLine)
                     await ExecuteEventGcode("programStart");
 
-                await _activeProcessor.ProcessLinesAsync();
-                OnJobCompleted();
+                var processor = _activeProcessor;
+                await processor.ProcessLinesAsync();
+                if (processor.FailureReason is { } failureReason)
+                    OnJobFailed(failureReason);
+                else
+                    OnJobCompleted();
             }
             catch (OperationCanceledException)
             {

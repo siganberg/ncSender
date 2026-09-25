@@ -362,4 +362,99 @@ public class GcodeJobProcessorTests : IDisposable
                 File.Delete(cachePath);
         }
     }
+
+    // Regression: an M0 in a tool-change event silently ate ten lines of a
+    // customer's job. The command processor blocks commands while the machine
+    // is in Hold, and it reads the last status report -- which still says Hold
+    // for tens of milliseconds after a resume. Job lines hit that window and
+    // were dropped, not delayed, so the run continued into an arc whose
+    // positioning moves and F word had never been sent.
+    [Fact]
+    public async Task LinesAreDelayedWhileHeld_NeverDropped()
+    {
+        var gcode = "G0 X1\nG0 X2\nG0 X3\n";
+        var cachePath = SetupCacheFile(gcode);
+        try
+        {
+            var (processor, controller, context) = CreateProcessor(gcode, 3);
+            context.Object.State.MachineState.Status = "Hold:0";
+
+            var run = processor.ProcessLinesAsync();
+            await Task.Delay(250);
+
+            controller.Verify(c => c.SendCommandAsync(
+                It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()),
+                Times.Never());
+
+            context.Object.State.MachineState.Status = "Idle";
+            await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+            foreach (var axis in new[] { "X1", "X2", "X3" })
+            {
+                var expected = axis;
+                controller.Verify(c => c.SendCommandAsync(
+                    It.Is<string>(cmd => cmd.Contains(expected)),
+                    It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()),
+                    Times.Once());
+            }
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
+    // A run that died on a controller error used to be reported as finished,
+    // logging "Job completed" and firing the Program End event.
+    [Fact]
+    public async Task ControllerError_RecordsFailureReasonWithLineNumber()
+    {
+        var gcode = "G0 X1\nG2 X9 I0 J0\nG0 X3\n";
+        var cachePath = SetupCacheFile(gcode);
+        try
+        {
+            var (processor, controller, context) = CreateProcessor(gcode, 3);
+            context.Object.State.MachineState.Status = "Idle";
+
+            controller.Setup(c => c.SendCommandAsync(
+                    It.Is<string>(cmd => cmd.Contains("G2")),
+                    It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new CommandResult { Status = "error", ErrorMessage = "Motion command target is invalid." });
+
+            await processor.ProcessLinesAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.NotNull(processor.FailureReason);
+            Assert.Contains("2", processor.FailureReason);
+            Assert.Contains("Motion command target is invalid.", processor.FailureReason);
+
+            controller.Verify(c => c.SendCommandAsync(
+                It.Is<string>(cmd => cmd.Contains("X3")),
+                It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()),
+                Times.Never());
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
+    [Fact]
+    public async Task CleanRun_LeavesNoFailureReason()
+    {
+        var gcode = "G0 X1\nG0 X2\n";
+        var cachePath = SetupCacheFile(gcode);
+        try
+        {
+            var (processor, _, context) = CreateProcessor(gcode, 2);
+            context.Object.State.MachineState.Status = "Idle";
+
+            await processor.ProcessLinesAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Null(processor.FailureReason);
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
 }
