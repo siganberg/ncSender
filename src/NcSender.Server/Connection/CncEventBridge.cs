@@ -31,6 +31,13 @@ public class CncEventBridge
         @"\[MSG[,\s]*:?\s*PLUGIN_([^:]+):([^\]]+)\]",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // An operator-authored pause: (MSG, NCSENDER_PAUSE: Title | Body) written
+    // into any plugin's event field, a macro, or the g-code file itself.
+    // Everything after the colon is the operator's own words.
+    internal static readonly Regex PauseMessageRegex = new(
+        @"\[MSG[,\s]*:?\s*NCSENDER_PAUSE\s*:?(.*?)\]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public CncEventBridge(
         ICncController controller,
         IServerContext context,
@@ -549,6 +556,14 @@ public class CncEventBridge
             return;
         }
 
+        // Detect [MSG:NCSENDER_PAUSE: ...] — operator-authored pause dialog.
+        if (data.Contains("NCSENDER_PAUSE", StringComparison.OrdinalIgnoreCase))
+        {
+            var pauseMatch = PauseMessageRegex.Match(data);
+            if (pauseMatch.Success)
+                _ = HandlePauseMessageAsync(pauseMatch.Groups[1].Value);
+        }
+
         // Detect [MSG:PLUGIN_*:*] — show plugin safety dialog (matches V1 plugin event handler)
         if (data.Contains("PLUGIN_", StringComparison.OrdinalIgnoreCase))
         {
@@ -719,16 +734,87 @@ public class CncEventBridge
     // program (M6 macro, TLS routine, etc.) are purged. abortEventGcode would
     // otherwise be discarded by the reset. 200 ms lets grblHAL settle before
     // we send the plugin's post-abort gcode.
+    // Pairs with an M0 exactly the way the plugin fault dialogs do: the
+    // message opens the gate, the M0 holds the machine, Continue sends ~ to
+    // release it. Written as two lines in an event field:
+    //
+    //     (MSG, NCSENDER_PAUSE: Dust shoe | Fit the dust shoe, then Continue)
+    //     M0
+    //
+    // The text before "|" is the title, after it the body; either may be
+    // omitted. It is passed as plain text, not HTML — this is whatever the
+    // operator typed, and a stray "<" in "clearance < 5mm" has to read as a
+    // character rather than an unclosed tag.
+    //
+    // g-code comments cannot contain parentheses and grblHAL caps a line at
+    // roughly 256 characters, so the text always arrives on one short line.
+    // An empty message still opens the gate: the operator asked for a pause,
+    // and a pause with no words beats no pause at all.
+    /// <summary>
+    /// Splits the text of an NCSENDER_PAUSE message into title and body on the
+    /// first "|". Either side may be omitted: no separator makes the whole
+    /// string the body, an empty half falls back to a default.
+    /// </summary>
+    internal static (string Title, string Body) ParsePauseMessage(string raw)
+    {
+        var text = (raw ?? string.Empty).Trim();
+        var title = "Paused";
+        var body = text;
+
+        var split = text.IndexOf('|');
+        if (split >= 0)
+        {
+            var head = text[..split].Trim();
+            body = text[(split + 1)..].Trim();
+            if (head.Length > 0) title = head;
+        }
+
+        if (body.Length == 0)
+            body = "The program is paused. Click Continue when you are ready.";
+
+        return (title, body);
+    }
+
+    private async Task HandlePauseMessageAsync(string raw)
+    {
+        var (title, body) = ParsePauseMessage(raw);
+
+        _logger.LogInformation("Operator pause from g-code: {Title}", title);
+
+        var chosen = await _gates.AskAsync(new GateOptions(
+            Title: title,
+            Message: body,
+            Variant: "warning",
+            Buttons: new List<GateButton>
+            {
+                new("abort", "Abort", "danger"),
+                new("continue", "Continue", "primary", IsDefault: true)
+            },
+            Source: "gcode:pause",
+            Persist: false,
+            Key: "gcode:pause"));
+
+        if (chosen == "abort")
+            await SendSoftResetAsync();
+        else if (chosen == "continue")
+            await DispatchGateContinueAsync();
+    }
+
+    private async Task SendSoftResetAsync()
+    {
+        await _controller.SendCommandAsync("\x18", new CommandOptions
+        {
+            DisplayCommand = "0x18 (Soft Reset)",
+            Meta = new CommandMeta { SourceId = "system", Silent = true }
+        });
+        await Task.Delay(200);
+    }
+
     private async Task DispatchGateAbortAsync(PluginDialogInfo dialog)
     {
         try
         {
-            await _controller.SendCommandAsync("\x18", new CommandOptions
-            {
-                DisplayCommand = "0x18 (Soft Reset)",
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
-            await Task.Delay(200);
+            await SendSoftResetAsync();
 
             if (!string.IsNullOrWhiteSpace(dialog.AbortEventGcode))
             {

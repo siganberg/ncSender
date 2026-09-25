@@ -514,8 +514,17 @@ public partial class CncController : ICncController
         }
         else
         {
-            var hasVariableSyntax = cleanCommand.StartsWith('%') || cleanCommand.Contains('[');
-            commandToSend = (hasVariableSyntax ? cleanCommand : cleanCommand.ToUpperInvariant()) + "\n";
+            // Upper-casing is right for g-code, and grblHAL echoes back whatever
+            // it is handed -- a lower-case g0 would come back lower-case and read
+            // as an error. Two things must survive as written: expressions, where
+            // named parameters like #<_metric> are case-sensitive, and an
+            // NCSENDER_PAUSE message, which is the operator's own sentence on its
+            // way to a dialog. "FIT THE DUST SHOE, THEN CLICK CONTINUE" is not
+            // what they typed into the settings field.
+            var preserveCase = cleanCommand.StartsWith('%')
+                || cleanCommand.Contains('[')
+                || cleanCommand.Contains("NCSENDER_PAUSE", StringComparison.OrdinalIgnoreCase);
+            commandToSend = (preserveCase ? cleanCommand : cleanCommand.ToUpperInvariant()) + "\n";
         }
 
         // Track pending full status report request (0x87) from user
