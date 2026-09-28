@@ -155,6 +155,8 @@ public class CncEventBridge
         // queued change; intermediate tools in a batch leave it in place.
         _toolProjection.ActualToolObserved(status.Tool);
         state.MachineState.ToolLengthSet = status.ToolLengthSet;
+        state.MachineState.ZeroSetWithoutTlr = status.ZeroSetWithoutTlr;
+        state.MachineState.ZeroTool = status.ZeroTool;
         state.MachineState.SpindleActive = status.SpindleActive;
         state.MachineState.FloodCoolant = status.FloodCoolant;
         state.MachineState.MistCoolant = status.MistCoolant;
@@ -515,6 +517,21 @@ public class CncEventBridge
 
     private void OnDataReceived(string data, string? sourceId)
     {
+        // ZERO_KEEP_START T<n> / ZERO_KEEP_END — a tool changer plugin is
+        // touching off the outgoing tool first so a Z0 set before any tool
+        // length reference survives the change. Shown as a banner while it runs.
+        if (data.Contains("ZERO_KEEP_START", StringComparison.OrdinalIgnoreCase))
+        {
+            var m = ZeroKeepStartRegex().Match(data);
+            SetZeroKeepTool(m.Success && int.TryParse(m.Groups[1].Value, out var t) ? Math.Max(t, 0) : 0);
+            return;
+        }
+        if (data.Contains("ZERO_KEEP_END", StringComparison.OrdinalIgnoreCase))
+        {
+            SetZeroKeepTool(0);
+            return;
+        }
+
         // Detect TOOL_CHANGE_START sentinel — prepended to every M6/TLS
         // expansion (see PluginCommandProcessor). Firing on the controller's
         // echo means each M6 in a macro batch flips the flag right when its
@@ -536,6 +553,7 @@ public class CncEventBridge
         // Detect TOOL_CHANGE_COMPLETE sentinel
         if (data.Contains("TOOL_CHANGE_COMPLETE", StringComparison.OrdinalIgnoreCase))
         {
+            SetZeroKeepTool(0);
             // Retire one queued change. Until the count reaches zero the
             // projection stays authoritative, because the tool the controller
             // is reporting belongs to an earlier point in the batch.
@@ -994,6 +1012,7 @@ public class CncEventBridge
             var state = _context.State;
             state.MachineState.AlarmCode = code;
             state.MachineState.AlarmDescription = description;
+            state.MachineState.ZeroKeepTool = 0;
             _context.UpdateSenderStatus();
             BroadcastStateDelta();
         }
@@ -1001,9 +1020,23 @@ public class CncEventBridge
         _ = _broadcaster.Broadcast("cnc-error", error, NcSenderJsonContext.Default.CncError);
     }
 
+    private static readonly System.Text.RegularExpressions.Regex ZeroKeepStartRegexInstance =
+        new(@"ZERO_KEEP_START\s*T\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static System.Text.RegularExpressions.Regex ZeroKeepStartRegex() => ZeroKeepStartRegexInstance;
+
+    private void SetZeroKeepTool(int tool)
+    {
+        var state = _context.State;
+        if (state.MachineState.ZeroKeepTool == tool) return;
+        state.MachineState.ZeroKeepTool = tool;
+        BroadcastStateDelta();
+        if (tool > 0) _logger.LogInformation("Measuring T{Tool} first to keep Z0", tool);
+    }
+
     private void OnStop()
     {
         var state = _context.State;
+        state.MachineState.ZeroKeepTool = 0;
         if (state.MachineState.IsToolChanging)
         {
             state.MachineState.IsToolChanging = false;

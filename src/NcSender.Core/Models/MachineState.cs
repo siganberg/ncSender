@@ -33,6 +33,17 @@ public class MachineState
     public string Workspace { get; set; } = "G54";
     public int Tool { get; set; }
     public bool ToolLengthSet { get; set; }
+    // Z0 was written (G10 L2/L20 or G92 with a Z word) while no Tool Length
+    // Reference existed. The tool setter routines use this to keep that Z0
+    // valid when they establish the reference: they measure the tool that
+    // set Z0 and shift the work offset by its length. Cleared as soon as a
+    // reference is active. ZeroTool is the tool that was in the spindle.
+    public bool ZeroSetWithoutTlr { get; set; }
+    public int ZeroTool { get; set; }
+    // Tool being touched off right now to keep that Z0 (a tool changer plugin
+    // measures the outgoing tool before the swap). 0 = not in that step.
+    // Set/cleared by the ZERO_KEEP_START/END sentinels; drives a UI banner.
+    public int ZeroKeepTool { get; set; }
     public bool SpindleActive { get; set; }
     public bool FloodCoolant { get; set; }
     public bool MistCoolant { get; set; }

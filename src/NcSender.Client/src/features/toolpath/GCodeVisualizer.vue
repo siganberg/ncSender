@@ -279,7 +279,6 @@
           class="tools-legend__item tls-tool"
           :class="{
             'disabled': isToolActionsDisabled || currentTool === 0,
-            'glow': shouldTLSGlow,
             'long-press-triggered': toolPress['tls']?.triggered,
             'blink-border': toolPress['tls']?.blinking
           }"
@@ -391,6 +390,45 @@
           </svg>
         </span>
         <span>{{ outOfBoundsMessage }}</span>
+      </div>
+
+      <!-- A tool change is touching off the OUTGOING tool first so the Z0 set
+           before any tool length reference carries over. Same card as the
+           out-of-bounds warning, in blue; gone as soon as the step ends
+           (ZERO_KEEP_END, tool change done, stop or alarm). -->
+      <div
+        v-if="zeroKeepStepTool > 0"
+        class="zero-keep-step"
+        :class="{ 'zero-keep-step--raised': showOutOfBoundsWarning }"
+        role="status"
+      >
+        <span class="zero-keep-step__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v14" />
+            <path d="M7 11l5 5 5-5" />
+            <path d="M5 21h14" />
+          </svg>
+        </span>
+        <span>Measuring T{{ appStore.status.zeroKeepTool }} first to keep your Z0. The new tool is measured right after.</span>
+      </div>
+
+      <!-- Z0 set before a Tool Length Reference: information only. The next
+           tool setter run measures this tool and keeps the Z0. -->
+      <div
+        v-if="tlrZeroNotice && !(zeroKeepStepTool > 0)"
+        class="tlr-zero-notice"
+        :class="{ 'tlr-zero-notice--raised': showOutOfBoundsWarning, 'tlr-zero-notice--problem': tlrZeroNotice === 'swapped' }"
+        role="status"
+      >
+        <span class="tlr-zero-notice__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4" />
+            <path d="M12 8h.01" />
+          </svg>
+        </span>
+        <span v-if="tlrZeroNotice === 'swapped'">Z0 was set with T{{ appStore.status.zeroTool }}, but T{{ appStore.status.tool }} is in the spindle now. Set Z0 again before cutting.</span>
+        <span v-else>Z0 is set, no tool length reference yet. At the next tool change T{{ appStore.status.tool }} is measured first, so your Z0 carries over.</span>
       </div>
 
       <!-- Override Controls - above control buttons -->
@@ -634,38 +672,6 @@
     @started="handleStartFromLineSuccess"
   />
 
-  <!-- TLR Warning Dialog -->
-  <Dialog v-if="showTlrWarningDialog" @close="showTlrWarningDialog = false" size="small">
-    <ConfirmPanel
-      title="Tool Length Reference Not Set"
-      :show-confirm="true"
-      :show-cancel="true"
-      confirm-text="Continue Anyway"
-      cancel-text="Cancel"
-      variant="danger"
-      @confirm="showTlrWarningDialog = false; showProbeDialog = true"
-      @cancel="showTlrWarningDialog = false"
-    >
-      <div class="tlr-warning-content">
-        <p class="tlr-warning-text">
-          <strong>Warning:</strong> Setting Z0 (material height) without establishing a Tool Length Reference (TLR) may cause unpredictable Z offsets during tool changes.
-        </p>
-        <p v-if="currentTool && currentTool > 0" class="tlr-warning-text">
-          <strong>Recommended:</strong> Perform TLS (Tool Length Sensing) first to establish the TLR.
-        </p>
-        <p v-else class="tlr-warning-text">
-          <strong>Recommended:</strong> Load a tool first, then perform TLS (Tool Length Sensing) to establish the TLR.
-        </p>
-        <button
-          v-if="currentTool && currentTool > 0"
-          class="tlr-tls-button"
-          @click="handleTlsFromWarning"
-        >
-          Run TLS
-        </button>
-      </div>
-    </ConfirmPanel>
-  </Dialog>
 
   <!-- Transform Context Menu (Top/Front view) -->
   <TransformContextMenu
@@ -930,9 +936,20 @@ const isDoorOpenViaPn = computed(() => {
   return pnString.includes('D');
 });
 
-// TLS button should glow when a tool is loaded but tool length is not set
-const shouldTLSGlow = computed(() => {
-  return (props.currentTool ?? 0) > 0 && !props.toolLengthSet;
+// Z0 was set while no Tool Length Reference existed. 'kept': the next tool
+// setter run will measure the same tool and keep that Z0. 'swapped': a
+// different tool is in the spindle now, so the Z0 can't be carried over.
+// Outgoing tool being touched off right now to keep Z0 (0 = not in that step).
+const zeroKeepStepTool = computed(() => Number((appStore.status as any).zeroKeepTool) || 0);
+
+const tlrZeroNotice = computed<'' | 'kept' | 'swapped'>(() => {
+  const st = appStore.status as any;
+  if (!st.zeroSetWithoutTlr || props.toolLengthSet
+      // Mid tool change the tool number passes through T0 and the new tool
+      // before the new one is measured; that is the Z0 being carried over,
+      // not a swap. The blue step banner covers this stretch.
+      || isToolChanging.value) return '';
+  return (st.zeroTool ?? 0) === (st.tool ?? 0) ? 'kept' : 'swapped';
 });
 
 const isMachineConnected = computed(() => {
@@ -1095,7 +1112,6 @@ const toolPathColors = ref<{ number: number; color: number; visible: boolean }[]
 const showFileManager = ref(false);
 const showProbeDialog = ref(false);
 const showStartFromLineDialog = ref(false);
-const showTlrWarningDialog = ref(false);
 const startFromLineInitial = ref(1);
 
 // Transform context menu and offset dialog state
@@ -3488,18 +3504,9 @@ const getToolColor = (toolNumber: number): string => {
 
 // Probe dialog
 const openProbeDialog = () => {
-  // Safety check: If TLS is enabled but TLR is not set, warn user
-  if (showTlsTool.value && !props.toolLengthSet) {
-    showTlrWarningDialog.value = true;
-    return;
-  }
+  // No Tool Length Reference gate here: a Z0 probed now is remembered by the
+  // server and kept by the next tool setter run (see the info banner).
   showProbeDialog.value = true;
-};
-
-// Handle TLS from warning dialog
-const handleTlsFromWarning = async () => {
-  showTlrWarningDialog.value = false;
-  await api.sendCommandViaWebSocket({ command: '$TLS' });
 };
 
 // Control button handlers
@@ -5962,35 +5969,8 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   animation: blink-border-tool 0.4s ease-in-out;
 }
 
-/* TLS attention pulse (tool loaded but not measured). Same treatment as
-   the Home button: a solid off-red fill that stays opaque, with a dark
-   overlay breathing on top through opacity — the compositor animates
-   that without repainting, and nothing behind the button shows through.
-   Off-red rather than the accent so it reads as "needs attention". */
-.tools-legend__item.glow {
-  position: relative;
-  overflow: hidden;
-  background: #d9534f;
-  border-color: #d9534f;
-  color: white;
-}
 
-.tools-legend__item.glow .tools-legend__label {
-  position: relative;
-  z-index: 1;
-  color: white;
-}
 
-.tools-legend__item.glow::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: rgba(20, 20, 30, 0.55);
-  animation: attention-breathe 1.4s ease-in-out infinite;
-  will-change: opacity;
-}
 
 @keyframes attention-breathe {
   0%, 100% { opacity: 0; }
@@ -6685,6 +6665,105 @@ body.theme-light .dot--rapid {
 }
 .out-of-bounds-warning__icon svg { width: 18px; height: 18px; }
 
+/* The out-of-bounds card, in blue: same slot, entrance, nudge and breathing
+   overlay, so it reads as "something is happening, look here". */
+.zero-keep-step {
+  position: absolute;
+  bottom: 200px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, calc(100% - 48px));
+  overflow: hidden;
+  background: #2f6fed;
+  border: 1px solid #2f6fed;
+  color: white;
+  padding: 10px 16px;
+  border-radius: var(--radius-medium);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.4;
+  box-shadow: var(--shadow-elevated, 0 12px 28px rgba(0, 0, 0, 0.35));
+  z-index: 12;
+  animation:
+    oob-enter 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    oob-nudge 3s ease-in-out 0.6s infinite;
+  will-change: transform;
+}
+.zero-keep-step--raised { bottom: 270px; }
+.zero-keep-step > span { position: relative; z-index: 1; }
+.zero-keep-step::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.35);
+  animation: attention-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+.zero-keep-step__icon {
+  flex: 0 0 auto;
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: #2f6fed;
+}
+.zero-keep-step__icon svg { width: 18px; height: 18px; }
+
+/* Same card as the measuring banner (.zero-keep-step): solid blue, white icon
+   tile, slide-in and the periodic nudge. Orange for the one case the Z0 can't
+   be carried over. Raised above the out-of-bounds card when both show. */
+.tlr-zero-notice {
+  position: absolute;
+  bottom: 200px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100% - 48px));
+  overflow: hidden;
+  background: #2f6fed;
+  border: 1px solid #2f6fed;
+  color: white;
+  padding: 10px 16px;
+  border-radius: var(--radius-medium);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.4;
+  box-shadow: var(--shadow-elevated, 0 12px 28px rgba(0, 0, 0, 0.35));
+  z-index: 11;
+  animation:
+    oob-enter 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    oob-nudge 3s ease-in-out 0.6s infinite;
+  will-change: transform;
+}
+.tlr-zero-notice > span { position: relative; z-index: 1; }
+.tlr-zero-notice--raised { bottom: 270px; }
+.tlr-zero-notice--problem { background: #e08a1e; border-color: #e08a1e; }
+.tlr-zero-notice__icon {
+  flex: 0 0 auto;
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: #2f6fed;
+}
+.tlr-zero-notice--problem .tlr-zero-notice__icon { color: #e08a1e; }
+.tlr-zero-notice__icon svg { width: 18px; height: 18px; }
+
 @keyframes oob-enter {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
@@ -6932,36 +7011,6 @@ body.theme-light .dot--rapid {
   box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
 }
 
-/* TLR Warning Dialog */
-.tlr-warning-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-sm);
-}
-
-.tlr-warning-text {
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-  font-size: 0.95rem;
-}
-
-.tlr-tls-button {
-  margin-top: var(--gap-xs);
-  padding: var(--gap-sm) var(--gap-md);
-  background: var(--color-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.tlr-tls-button:hover {
-  opacity: 0.85;
-}
 
 /* Tool Expansion */
 .tools-legend__item.expanded {

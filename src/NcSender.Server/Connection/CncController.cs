@@ -13,6 +13,18 @@ public partial class CncController : ICncController
     [GeneratedRegex(@"G10\s+L(2|20)\b", RegexOptions.IgnoreCase)]
     private static partial Regex G10WcoPattern();
 
+    // A line that writes a Z work offset: G10 L2/L20 or G92 (not G92.1-.3)
+    // carrying a Z word. Matched on the line with comments stripped.
+    [GeneratedRegex(@"((?<![\d.])G0*10\s*L\s*(2|20)(?!\d)|(?<![\d.])G92(?![.\d])).*Z\s*[-+\d.\[#]", RegexOptions.IgnoreCase)]
+    private static partial Regex ZOffsetWritePattern();
+
+    [GeneratedRegex(@"\([^)]*\)|;.*$")]
+    private static partial Regex GcodeCommentPattern();
+
+    /// <summary>True when the line writes a Z work offset (G10 L2/L20 or G92 with a Z word).</summary>
+    internal static bool WritesZWorkOffset(string line) =>
+        !string.IsNullOrWhiteSpace(line) && ZOffsetWritePattern().IsMatch(GcodeCommentPattern().Replace(line, ""));
+
     [GeneratedRegex(@"M64\s*P(\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex M64Pattern();
 
@@ -65,7 +77,7 @@ public partial class CncController : ICncController
     // Watched fields for change detection
     private static readonly string[] WatchedStatusFields =
     [
-        "Status", "Homed", "Workspace", "Tool", "ToolLengthSet",
+        "Status", "Homed", "Workspace", "Tool", "ToolLengthSet", "ZeroSetWithoutTlr",
         "SpindleActive", "FloodCoolant", "MistCoolant",
         "FeedrateOverride", "RapidOverride", "ActiveProbe", "Pn"
     ];
@@ -75,7 +87,7 @@ public partial class CncController : ICncController
     [
         "ActiveProbe", "Status", "FeedRate", "SpindleRpmTarget", "SpindleRpmActual",
         "FeedrateOverride", "RapidOverride", "SpindleOverride",
-        "Tool", "ToolLengthSet", "Homed", "Pn",
+        "Tool", "ToolLengthSet", "ZeroSetWithoutTlr", "Homed", "Pn",
         "SpindleActive", "FloodCoolant", "MistCoolant", "Workspace"
     ];
 
@@ -1145,6 +1157,12 @@ public partial class CncController : ICncController
             // Delegate to active protocol handler for controller-specific messages
             if (_activeProtocol is not null && _activeProtocol.TryHandleData(trimmedData, _lastStatus, out var stateChanged))
             {
+                // A reference is active now: any earlier Z0 has been folded into it.
+                if (_lastStatus.ToolLengthSet && _lastStatus.ZeroSetWithoutTlr)
+                {
+                    _lastStatus.ZeroSetWithoutTlr = false;
+                    stateChanged = true;
+                }
                 if (stateChanged)
                     StatusReportReceived?.Invoke(_lastStatus);
                 if (!_activeProtocol.ShouldSuppressEcho(trimmedData))
@@ -1231,6 +1249,20 @@ public partial class CncController : ICncController
             if (_lastStatus.ToolLengthSet)
             {
                 _lastStatus.ToolLengthSet = false;
+                StatusReportReceived?.Invoke(_lastStatus);
+            }
+        }
+
+        // Z0 written while no Tool Length Reference exists: remember it (and the
+        // tool in the spindle) so the next tool setter run keeps this Z0 valid
+        // instead of shifting it by the tool's length.
+        if (cmd.RawCommand is not null && !_lastStatus.ToolLengthSet && WritesZWorkOffset(cmd.RawCommand))
+        {
+            if (!_lastStatus.ZeroSetWithoutTlr || _lastStatus.ZeroTool != _lastStatus.Tool)
+            {
+                _lastStatus.ZeroSetWithoutTlr = true;
+                _lastStatus.ZeroTool = _lastStatus.Tool;
+                _logger.LogInformation("Z0 set without a Tool Length Reference (T{Tool}); the next TLS will keep it", _lastStatus.Tool);
                 StatusReportReceived?.Invoke(_lastStatus);
             }
         }
@@ -1557,6 +1589,7 @@ public partial class CncController : ICncController
             "SpindleOverride" => _lastStatus.SpindleOverride.ToString("F0", System.Globalization.CultureInfo.InvariantCulture),
             "Tool" => _lastStatus.Tool.ToString(),
             "ToolLengthSet" => _lastStatus.ToolLengthSet.ToString(),
+            "ZeroSetWithoutTlr" => _lastStatus.ZeroSetWithoutTlr.ToString(),
             "Homed" => _lastStatus.Homed.ToString(),
             "Pn" => _lastStatus.Pn,
             "SpindleActive" => _lastStatus.SpindleActive.ToString(),

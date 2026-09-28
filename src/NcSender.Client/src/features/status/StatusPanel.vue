@@ -168,50 +168,15 @@
       </ul>
     </div>
 
-    <!-- TLR Warning Dialog -->
-    <Dialog v-if="showTlrWarningDialog" @close="showTlrWarningDialog = false" size="small">
-      <ConfirmPanel
-        title="Tool Length Reference Not Set"
-        :show-confirm="true"
-        :show-cancel="true"
-        confirm-text="Zero Z Anyway"
-        cancel-text="Cancel"
-        variant="danger"
-        @confirm="handleZeroZAnyway"
-        @cancel="showTlrWarningDialog = false"
-      >
-        <div class="tlr-warning-content">
-          <p class="tlr-warning-text">
-            <strong>Warning:</strong> Setting Z0 (material height) without establishing a Tool Length Reference (TLR) may cause unpredictable Z offsets during tool changes.
-          </p>
-          <p v-if="currentTool > 0" class="tlr-warning-text">
-            <strong>Recommended:</strong> Perform TLS (Tool Length Sensing) first to establish the TLR.
-          </p>
-          <p v-else class="tlr-warning-text">
-            <strong>Recommended:</strong> Load a tool first, then perform TLS (Tool Length Sensing) to establish the TLR.
-          </p>
-          <button
-            v-if="currentTool > 0"
-            class="tlr-tls-button"
-            @click="handleTlsFromWarning"
-          >
-            Run TLS
-          </button>
-        </div>
-      </ConfirmPanel>
-    </Dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, computed, reactive, onMounted, onUnmounted } from 'vue';
-import { api, zeroAxis, zeroXY, setAxisValue } from './api';
+import { zeroAxis, zeroXY, setAxisValue } from './api';
 import { useStatusStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import { formatCoordinate } from '@/lib/units';
-import { settingsStore } from '../../lib/settings-store.js';
-import Dialog from '../../components/Dialog.vue';
-import ConfirmPanel from '../../components/ConfirmPanel.vue';
 
 const store = useStatusStore();
 const appStore = useAppStore();
@@ -223,11 +188,6 @@ const isHoming = computed(() => (store.senderStatus.value || '').toLowerCase() =
 const cardDisabled = computed(() => !store.isConnected.value || (store.homingStartupRequired.value && !store.isHomed.value) || isHoming.value || store.isProbing.value);
 const axisControlsDisabled = computed(() => cardDisabled.value || isJobRunning.value);
 
-// TLR warning state for Z axis zeroing
-const showTlrWarningDialog = ref(false);
-const isTlsEnabled = computed(() => settingsStore.data?.tool?.tls === true);
-const toolLengthSet = computed(() => appStore.status.toolLengthSet === true);
-const currentTool = computed(() => appStore.status.tool ?? 0);
 
 const props = defineProps<{
   status: {
@@ -350,10 +310,9 @@ const startLongPress = (axis: AxisKey, _evt: Event) => {
       const a = String(axis).toUpperCase();
       if (a === 'XY' || a === 'YX') {
         zeroXY().catch(() => {});
-      } else if (a === 'Z' && isTlsEnabled.value && !toolLengthSet.value) {
-        // Show TLR warning for Z axis when TLS enabled but TLR not set
-        showTlrWarningDialog.value = true;
       } else {
+        // Z0 with no Tool Length Reference is fine: the server remembers it
+        // and the next tool setter run keeps it (see ZeroSetWithoutTlr).
         zeroAxis(a as any).catch(() => {});
       }
     }
@@ -453,16 +412,6 @@ onUnmounted(() => {
   window.removeEventListener('touchcancel', handleGlobalPointerUp);
 });
 
-// TLR warning dialog handlers
-const handleTlsFromWarning = async () => {
-  showTlrWarningDialog.value = false;
-  await api.sendCommandViaWebSocket({ command: '$TLS' });
-};
-
-const handleZeroZAnyway = () => {
-  showTlrWarningDialog.value = false;
-  zeroAxis('Z').catch(() => {});
-};
 </script>
 
 <style scoped>
@@ -710,36 +659,6 @@ h2, h3 {
   }
 }
 
-/* TLR Warning Dialog */
-.tlr-warning-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-sm);
-}
-
-.tlr-warning-text {
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-  font-size: 0.95rem;
-}
-
-.tlr-tls-button {
-  margin-top: var(--gap-xs);
-  padding: var(--gap-sm) var(--gap-md);
-  background: var(--color-accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-small);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.tlr-tls-button:hover {
-  opacity: 0.85;
-}
 
 /* Portrait/Landscape axis row handling */
 /* Row 2 (Z/A) hidden by default (landscape) */

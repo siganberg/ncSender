@@ -183,6 +183,11 @@ public class JsPluginEngine : IJsPluginEngine
                     // missing, since a stored value is only meaningful
                     // relative to a reference that has been established.
                     jsMachineState.Set("toolLengthSet", JsValue.FromObject(engine, context.MachineState.ToolLengthSet));
+                    // Z0 was set while no reference existed, and with which tool.
+                    // Tool setter routines measure that tool and shift the work
+                    // offset by its length so the operator's Z0 survives.
+                    jsMachineState.Set("zeroSetWithoutTlr", JsValue.FromObject(engine, context.MachineState.ZeroSetWithoutTlr));
+                    jsMachineState.Set("zeroTool", JsValue.FromObject(engine, context.MachineState.ZeroTool));
                     // Absolute machine XYZ from the last status report. Plugins
                     // that need to make routing decisions at gcode-generation
                     // time (e.g., "am I on the loading side of the rack?")

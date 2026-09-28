@@ -108,6 +108,9 @@ const status = reactive({
   spindleOverride: 100,
   tool: 0,
   toolLengthSet: false,
+  zeroSetWithoutTlr: false,
+  zeroTool: 0,
+  zeroKeepTool: 0,
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
@@ -347,6 +350,18 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).toolLengthSet === 'boolean') {
     status.toolLengthSet = (report as any).toolLengthSet;
+  }
+
+  if (typeof (report as any).zeroSetWithoutTlr === 'boolean') {
+    status.zeroSetWithoutTlr = (report as any).zeroSetWithoutTlr;
+  }
+
+  if (typeof (report as any).zeroTool === 'number') {
+    status.zeroTool = (report as any).zeroTool;
+  }
+
+  if (typeof (report as any).zeroKeepTool === 'number') {
+    status.zeroKeepTool = (report as any).zeroKeepTool;
   }
 
   if (typeof (report as any).Pn === 'string') {
