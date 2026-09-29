@@ -170,6 +170,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(CommandHistoryRequest))]
 [JsonSerializable(typeof(PluginReorderRequest))]
 [JsonSerializable(typeof(PluginInstallFromUrlRequest))]
+[JsonSerializable(typeof(PluginInstallFromRepoRequest))]
 [JsonSerializable(typeof(PluginExecuteToolMenuRequest))]
 [JsonSerializable(typeof(RotationRequest))]
 // Tips & Tricks

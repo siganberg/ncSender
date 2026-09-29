@@ -1391,7 +1391,7 @@ const closeUpdateDialog = () => {
 
 const handleManualCheckForUpdates = async () => {
   try {
-    await updateCenter.checkForUpdates();
+    await updateCenter.checkForUpdates({ force: true });
   } catch (error) {
     console.error('Failed to check for updates:', error);
   }

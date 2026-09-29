@@ -199,6 +199,23 @@ public static class PluginEndpoints
             }
         });
 
+        app.MapPost("/api/plugins/install-from-repo", async (HttpContext context, IPluginManager plugins) =>
+        {
+            var body = await context.Request.ReadFromJsonAsync(NcSenderJsonContext.Default.PluginInstallFromRepoRequest);
+            if (string.IsNullOrWhiteSpace(body?.Repository))
+                return Results.BadRequest(new ApiError("repository required"));
+
+            try
+            {
+                await plugins.InstallLatestFromRepositoryAsync(body.Repository);
+                return Results.Ok(new ApiSuccess(true));
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+        });
+
         app.MapGet("/api/plugins/{pluginId}/check-update", async (string pluginId, IPluginManager plugins) =>
         {
             var result = await plugins.CheckUpdateAsync(pluginId);

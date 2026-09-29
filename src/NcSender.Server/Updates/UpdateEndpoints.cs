@@ -12,9 +12,11 @@ public static class UpdateEndpoints
 {
     public static void Map(WebApplication app)
     {
-        app.MapGet("/api/updates/check", async (IUpdateService updates) =>
+        app.MapGet("/api/updates/check", async (HttpContext ctx, IUpdateService updates) =>
         {
-            var result = await updates.CheckAsync();
+            // ?force=1 (Check Again) skips the 15 min cache; see GitHubApi.
+            var force = ctx.Request.Query["force"] is var f && (f == "1" || f == "true");
+            var result = await updates.CheckAsync(force);
             return Results.Ok(result);
         });
 

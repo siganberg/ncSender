@@ -355,10 +355,8 @@ public sealed class AccessoryService
             ReleaseInfo info;
             try
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
-                var json = await http.GetStringAsync(
-                    $"https://api.github.com/repos/{def.ReleaseRepo}/releases/latest", ct).ConfigureAwait(false);
+                var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(
+                    $"https://api.github.com/repos/{def.ReleaseRepo}/releases/latest", ct: ct).ConfigureAwait(false);
 
                 using var doc = JsonDocument.Parse(json);
                 var version = (doc.RootElement.GetProperty("tag_name").GetString() ?? "").TrimStart('v');

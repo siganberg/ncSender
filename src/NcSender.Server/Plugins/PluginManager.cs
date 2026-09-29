@@ -251,6 +251,29 @@ public class PluginManager : IPluginManager
     }
 
     // Install from URL
+    // Install the latest release of a plugin repository (the Plugin Manager's
+    // Install button). The release lookup goes through GitHubApi's cache
+    // instead of the browser calling GitHub itself.
+    public async Task InstallLatestFromRepositoryAsync(string repository)
+    {
+        var repoPath = ExtractGitHubRepoPath(repository)
+            ?? throw new InvalidOperationException($"Not a GitHub repository: {repository}");
+        var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(
+            $"https://api.github.com/repos/{repoPath}/releases/latest");
+        using var doc = JsonDocument.Parse(json);
+        string? zipUrl = null;
+        if (doc.RootElement.TryGetProperty("assets", out var assets))
+            foreach (var asset in assets.EnumerateArray())
+                if ((asset.GetProperty("name").GetString() ?? "").EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    zipUrl = asset.GetProperty("browser_download_url").GetString();
+                    break;
+                }
+        if (string.IsNullOrEmpty(zipUrl))
+            throw new InvalidOperationException("The latest release has no plugin .zip");
+        await InstallFromUrlAsync(zipUrl);
+    }
+
     public async Task InstallFromUrlAsync(string url)
     {
         using var http = new HttpClient();
@@ -432,10 +455,8 @@ public class PluginManager : IPluginManager
             var repoPath = ExtractGitHubRepoPath(manifest.Repository);
             if (repoPath is null) return result;
 
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
             var releaseUrl = $"https://api.github.com/repos/{repoPath}/releases/latest";
-            var json = await http.GetStringAsync(releaseUrl);
+            var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(releaseUrl);
             using var doc = JsonDocument.Parse(json);
             var tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
             var latestVersion = tagName.TrimStart('v');

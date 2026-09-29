@@ -12,6 +12,9 @@ public class UpdateCheckResult
     public bool CanInstall { get; set; }
     public string Channel { get; set; } = "stable";
     public string? ReleaseUrl { get; set; }
+    /// <summary>GitHub couldn't be reached (e.g. rate limit); this is the last good answer.</summary>
+    public bool Stale { get; set; }
+    public string? StaleReason { get; set; }
 }
 
 public class UpdateStatus

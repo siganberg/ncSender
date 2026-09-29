@@ -60,6 +60,9 @@
           'update-dialog__status--installing': props.state.isInstalling
         }"
       >
+        <div v-if="props.state.staleNote && !props.state.error" class="status-text status-text--stale">
+          <span>Couldn't refresh ({{ props.state.staleNote }}). Showing the last check; try again in a few minutes.</span>
+        </div>
         <div v-if="props.state.error || props.state.isDownloading || props.state.isInstalling" class="status-text">
           <span>{{ statusText }}</span>
           <span v-if="props.state.error" class="status-text__error">{{ props.state.error }}</span>
@@ -1101,5 +1104,10 @@ const formatVersionDate = (iso: string) => {
   .update-dialog {
     width: 100%;
   }
+}
+
+.status-text--stale {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
 }
 </style>

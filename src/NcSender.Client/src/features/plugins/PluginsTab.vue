@@ -1401,27 +1401,14 @@ const installFromRegistry = async (plugin: any) => {
   installError.value = null;
 
   try {
-    const repoPath = plugin.repository.replace('https://github.com/', '');
-    const apiUrl = `https://api.github.com/repos/${repoPath}/releases/latest`;
-
-    const releaseResponse = await fetch(apiUrl);
-    if (!releaseResponse.ok) {
-      throw new Error('Failed to fetch latest release information');
-    }
-
-    const releaseData = await releaseResponse.json();
-    const zipAsset = releaseData.assets.find((asset: any) => asset.name.endsWith('.zip'));
-
-    if (!zipAsset) {
-      throw new Error('No ZIP file found in latest release');
-    }
-
-    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-url`, {
+    // The server looks up the latest release (cached, rate-limit safe) and
+    // installs its .zip.
+    const response = await fetch(`${api.baseUrl}/api/plugins/install-from-repo`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: zipAsset.browser_download_url }),
+      body: JSON.stringify({ repository: plugin.repository }),
     });
 
     let data;

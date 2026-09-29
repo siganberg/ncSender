@@ -49,6 +49,9 @@ const state = reactive({
   downloadPath: null as string | null,
   statusMessage: '' as string,
   error: null as string | null,
+  // Set when GitHub couldn't be reached (rate limit, offline) and the server
+  // answered from its last good check instead.
+  staleNote: null as string | null,
   canInstall: false,
   autoInstallRequested: false,
   // Version history — separate from the "latest release" summary above.
@@ -281,14 +284,16 @@ export const useUpdateCenter = () => {
     }
   };
 
-  const checkForUpdates = async () => {
+  // force: skip the server's 15 min GitHub cache (Check Again).
+  const checkForUpdates = async (opts: { force?: boolean } = {}) => {
     if (transport === 'ipc') {
       return window.ncSender?.updates?.checkForUpdates();
     }
     handleChecking();
     try {
-      const res = await fetch('/api/updates/check');
+      const res = await fetch(opts.force ? '/api/updates/check?force=1' : '/api/updates/check');
       const data = await res.json();
+      state.staleNote = data.stale ? (data.staleReason || 'GitHub unavailable') : null;
       if (data.currentVersion) state.currentVersion = data.currentVersion;
       if (data.latestVersion) state.latestVersion = data.latestVersion;
       if (data.publishedAt) state.releaseDate = data.publishedAt;

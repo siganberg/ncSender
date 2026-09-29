@@ -98,6 +98,7 @@ public record CommandHistoryRequest(string Command);
 // PluginEndpoints
 public record PluginReorderRequest(List<string> PluginIds);
 public record PluginInstallFromUrlRequest(string Url);
+public record PluginInstallFromRepoRequest(string Repository);
 public record PluginExecuteToolMenuRequest(string PluginId, string Label);
 
 // SystemEndpoints

@@ -12,6 +12,7 @@ public interface IPluginManager
     void Reorder(List<string> pluginIds);
     Task InstallAsync(Stream zipStream, string? filename = null);
     Task InstallFromUrlAsync(string url);
+    Task InstallLatestFromRepositoryAsync(string repository);
     void Uninstall(string pluginId);
     Dictionary<string, JsonElement> GetSettings(string pluginId);
     void SaveSettings(string pluginId, Dictionary<string, JsonElement> settings);

@@ -473,10 +473,8 @@ public class PendantManager : IPendantManager
 
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
             var url = $"https://api.github.com/repos/{FirmwareRepo}/releases/latest";
-            var json = await http.GetStringAsync(url);
+            var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(url);
             using var doc = JsonDocument.Parse(json);
             var tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
             result.LatestVersion = tagName.TrimStart('v');

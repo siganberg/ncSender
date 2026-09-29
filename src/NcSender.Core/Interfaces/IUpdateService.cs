@@ -4,7 +4,7 @@ namespace NcSender.Core.Interfaces;
 
 public interface IUpdateService
 {
-    Task<UpdateCheckResult> CheckAsync();
+    Task<UpdateCheckResult> CheckAsync(bool force = false);
     Task DownloadAsync(bool install = false);
     Task InstallAsync();
     UpdateStatus GetStatus();

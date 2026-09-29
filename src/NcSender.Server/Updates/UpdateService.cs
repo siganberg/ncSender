@@ -20,7 +20,7 @@ public class UpdateService : IUpdateService
         _settings = settings;
     }
 
-    public async Task<UpdateCheckResult> CheckAsync()
+    public async Task<UpdateCheckResult> CheckAsync(bool force = false)
     {
         _status = new UpdateStatus { Phase = "checking" };
 
@@ -31,10 +31,10 @@ public class UpdateService : IUpdateService
 
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
-            var json = await http.GetStringAsync(GitHubReleasesUrl);
-            using var doc = JsonDocument.Parse(json);
+            var gh = await NcSender.Server.Infrastructure.GitHubApi.GetAsync(GitHubReleasesUrl, force);
+            result.Stale = gh.Stale;
+            result.StaleReason = gh.StaleReason;
+            using var doc = JsonDocument.Parse(gh.Json);
 
             var targetRelease = FindTargetRelease(doc, channel);
 
@@ -87,7 +87,7 @@ public class UpdateService : IUpdateService
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
-            var json = await http.GetStringAsync(GitHubReleasesUrl);
+            var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(GitHubReleasesUrl);
             using var doc = JsonDocument.Parse(json);
 
             var channel = _settings.GetSetting<string>("updateChannel", "stable") ?? "stable";
@@ -107,9 +107,7 @@ public class UpdateService : IUpdateService
 
     public async Task<List<ReleaseVersion>> ListVersionsAsync(int limit = 30)
     {
-        using var http = new HttpClient();
-        http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
-        var json = await http.GetStringAsync(GitHubReleasesUrl);
+        var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(GitHubReleasesUrl);
         using var doc = JsonDocument.Parse(json);
 
         var current = GetCurrentVersion();
@@ -168,7 +166,7 @@ public class UpdateService : IUpdateService
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Add("User-Agent", "ncSender");
-            var json = await http.GetStringAsync(GitHubReleasesUrl);
+            var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(GitHubReleasesUrl);
             using var doc = JsonDocument.Parse(json);
 
             JsonElement? match = null;
