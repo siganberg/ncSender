@@ -160,7 +160,7 @@ public class SerialTransport : IConnectionTransport
             }
 
             foreach (var line in linesToEmit)
-                LineReceived?.Invoke(line);
+                TransportLineFramer.Dispatch(LineReceived, line);
         }
         catch (Exception ex)
         {

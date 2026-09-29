@@ -23,6 +23,35 @@ namespace NcSender.Server.Connection;
 /// </summary>
 internal static class TransportLineFramer
 {
+    private static readonly Serilog.ILogger Logger = Serilog.Log.ForContext(typeof(TransportLineFramer));
+    private static long _lastHandlerErrorTicks = long.MinValue;
+
+    /// <summary>
+    /// Hand one line to the transport's LineReceived handler. A handler that
+    /// throws skips that line only: the transports used to treat any exception
+    /// in their read path as a dead port, so one malformed controller line
+    /// (e.g. a bare "&gt;" after a reset in a motor-fault alarm) dropped the
+    /// connection, the auto-reconnect soft-reset the board, and the garbage
+    /// that reset produced dropped it again.
+    /// </summary>
+    public static void Dispatch(Action<string>? handler, string line)
+    {
+        if (handler is null) return;
+        try
+        {
+            handler(line);
+        }
+        catch (Exception ex)
+        {
+            var now = Environment.TickCount64;
+            if (now - Interlocked.Read(ref _lastHandlerErrorTicks) >= 5000)
+            {
+                Interlocked.Exchange(ref _lastHandlerErrorTicks, now);
+                Logger.Warning(ex, "Skipped a controller line the parser could not handle: {Line}", line);
+            }
+        }
+    }
+
     /// <summary>
     /// Emit <paramref name="line"/> to <paramref name="sink"/> as one or more
     /// items, extracting any single inline &lt;…&gt; status frame. Splits into

@@ -150,7 +150,7 @@ public class WebSocketTransport : IConnectionTransport
                 }
 
                 foreach (var line in linesToEmit)
-                    LineReceived?.Invoke(line);
+                    TransportLineFramer.Dispatch(LineReceived, line);
             }
         }
         catch (OperationCanceledException)

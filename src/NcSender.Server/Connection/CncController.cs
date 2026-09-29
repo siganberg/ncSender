@@ -1003,6 +1003,12 @@ public partial class CncController : ICncController
         // In raw mode (Ymodem etc.), skip line-based parsing
         if (_rawMode) return;
 
+        // Noise. A controller reset inside a motor-fault alarm was seen emitting
+        // space-padded lines and torn status reports ("O:367.000,…>", a bare
+        // ">", "<Alarm:17|…|FW:gr") every poll. Parsing those produced bogus
+        // states and a crash; echoing them flooded the terminal. Drop them.
+        if (IsControllerNoise(trimmedData)) return;
+
         // Status report (<...>)
         if (trimmedData.EndsWith('>'))
         {
@@ -1342,6 +1348,18 @@ public partial class CncController : ICncController
     #endregion
 
     #region Status Report Parser
+
+    // Blank lines, and status-report fragments: a real report is one whole
+    // "<…>" (the transports split inline reports out of longer lines), so a
+    // line with only one of the brackets is a torn report, never a response.
+    internal static bool IsControllerNoise(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return true;
+        var opens = line[0] == '<';
+        var closes = line[^1] == '>';
+        if (opens && closes) return line.Length < 3;
+        return opens != closes;
+    }
 
     internal void ParseStatusReport(string data)
     {
