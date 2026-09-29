@@ -587,16 +587,24 @@
 
             <!-- Idle: the flanks start it, the centre sets the speed. -->
             <template v-else>
+              <!-- Starting the spindle is a 1 s hold, never a tap: a brush
+                   against the screen must not spin it up. -->
               <button
                 class="override-step spindle-run__dir"
                 :disabled="isSpindleRunDisabled"
-                @click="sendSpindleCW"
-                title="Start spindle clockwise (M3)"
+                title="Hold to start spindle clockwise (M3)"
+                @pointerdown.prevent="startSpindleHold('cw')"
+                @pointerup="cancelSpindleHold"
+                @pointerleave="cancelSpindleHold"
+                @pointercancel="cancelSpindleHold"
+                @contextmenu.prevent
               >
+                <span class="spindle-run__hold-fill" :style="{ width: `${spindleHold.dir === 'cw' ? spindleHold.progress : 0}%` }"></span>
                 <svg class="spindle-run__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 3 21 8 16 8"/>
+                  <text x="12" y="12" class="spindle-run__icon-text">CW</text>
                 </svg>
-                <span>CW</span>
+                <span>HOLD</span>
               </button>
               <button
                 class="override-current spindle-run__value"
@@ -608,13 +616,19 @@
               <button
                 class="override-step spindle-run__dir"
                 :disabled="isSpindleRunDisabled"
-                @click="sendSpindleCCW"
-                title="Start spindle counter-clockwise (M4)"
+                title="Hold to start spindle counter-clockwise (M4)"
+                @pointerdown.prevent="startSpindleHold('ccw')"
+                @pointerup="cancelSpindleHold"
+                @pointerleave="cancelSpindleHold"
+                @pointercancel="cancelSpindleHold"
+                @contextmenu.prevent
               >
+                <span class="spindle-run__hold-fill" :style="{ width: `${spindleHold.dir === 'ccw' ? spindleHold.progress : 0}%` }"></span>
                 <svg class="spindle-run__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 12a9 9 0 1 0 3.5-7.1"/><polyline points="3 3 3 8 8 8"/>
+                  <text x="12" y="12" class="spindle-run__icon-text">CCW</text>
                 </svg>
-                <span>CCW</span>
+                <span>HOLD</span>
               </button>
             </template>
 
@@ -4447,6 +4461,35 @@ const toggleIOSwitch = async (switchKey: string) => {
 // See Pro edition mirror for details. 1-second press-and-hold to toggle;
 // filling progress bar shows completion; release before threshold cancels.
 const AUX_HOLD_MS = 1000;
+
+// Spindle CW/CCW start: same 1 s hold as the aux outputs, for the same
+// reason — a spindle must never start from an accidental touch.
+const SPINDLE_HOLD_MS = 1000;
+const spindleHold = reactive<{ dir: 'cw' | 'ccw' | null; progress: number; start: number; raf?: number }>({ dir: null, progress: 0, start: 0 });
+const cancelSpindleHold = () => {
+  if (spindleHold.raf) cancelAnimationFrame(spindleHold.raf);
+  spindleHold.raf = undefined;
+  spindleHold.dir = null;
+  spindleHold.progress = 0;
+};
+const startSpindleHold = (dir: 'cw' | 'ccw') => {
+  if (isSpindleRunDisabled.value) return;
+  cancelSpindleHold();
+  spindleHold.dir = dir;
+  spindleHold.start = performance.now();
+  const tick = () => {
+    if (spindleHold.dir !== dir) return;
+    const elapsed = performance.now() - spindleHold.start;
+    spindleHold.progress = Math.min(100, (elapsed / SPINDLE_HOLD_MS) * 100);
+    if (elapsed >= SPINDLE_HOLD_MS) {
+      cancelSpindleHold();
+      if (dir === 'cw') sendSpindleCW(); else sendSpindleCCW();
+      return;
+    }
+    spindleHold.raf = requestAnimationFrame(tick);
+  };
+  spindleHold.raf = requestAnimationFrame(tick);
+};
 const auxHoldState = reactive<Record<string, { active: boolean; progress: number }>>({});
 const auxHoldTimers: Record<string, { timeout: any; raf: any; start: number }> = {};
 
@@ -5761,6 +5804,8 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 /* Spindle run cells. Each reuses .override-step or .override-current, so
    the card keeps exactly the Feedrate card's geometry in every state. */
 .spindle-run__dir {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5772,7 +5817,25 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   color: var(--color-accent);
 }
 
-.spindle-run__dir .spindle-run__icon { width: 20px; height: 20px; }
+.spindle-run__dir .spindle-run__icon { width: 26px; height: 26px; position: relative; }
+.spindle-run__dir > span:not(.spindle-run__hold-fill) { position: relative; }
+.spindle-run__icon-text {
+  font-size: 6.5px;
+  font-weight: 800;
+  fill: currentColor;
+  stroke: none;
+  text-anchor: middle;
+  dominant-baseline: central;
+  letter-spacing: 0;
+}
+.spindle-run__hold-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  pointer-events: none;
+}
 .spindle-run__dir:disabled { opacity: 0.5; cursor: not-allowed; }
 .spindle-run__icon { flex-shrink: 0; }
 
