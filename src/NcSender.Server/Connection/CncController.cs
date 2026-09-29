@@ -393,6 +393,12 @@ public partial class CncController : ICncController
                         }
                     }
 
+                    // Dongle wait — hold the stream until the accessory reports
+                    // it reached the position (replaces a fixed G4 dwell). The
+                    // queue is send-and-wait, so the machine is stopped here.
+                    if (entry.DongleWait is { } dw && _dongleDevices is not null)
+                        await WaitForDongleAsync(dw, ct);
+
                     await _transport.WriteAsync(entry.CommandToWrite, ct);
 
                     LogCommandSent(entry.RawCommand, isRealTime: false, entry.Meta);
@@ -593,6 +599,8 @@ public partial class CncController : ICncController
                 dongleSend = (inner.Substring(0, colon).Trim(), inner.Substring(colon + 1).Trim());
         }
 
+        var dongleWait = DongleWait.TryParse(cleanCommand);
+
         if (NeedsErrorStateClear(meta, cleanCommand))
             EnqueueErrorStateClear();
 
@@ -605,7 +613,8 @@ public partial class CncController : ICncController
             Meta = meta,
             DisplayCommand = display,
             Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously),
-            DongleSend = dongleSend
+            DongleSend = dongleSend,
+            DongleWait = dongleWait
         };
 
         var pendingPayload = new CommandResult
@@ -1814,5 +1823,28 @@ public partial class CncController : ICncController
         // Optional dongle send — see CncController.SendCommandAsync
         // (Pro edition mirror). `(DONGLE:name:payload)` sentinel comment.
         public (string Name, string Payload)? DongleSend { get; init; }
+        // Optional hold from a `(DONGLE_WAIT:…)` sentinel, see DongleWait.
+        public DongleWait? DongleWait { get; init; }
+    }
+
+    private async Task WaitForDongleAsync(DongleWait dw, CancellationToken ct)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await _dongleDevices!.WaitForValueAsync(dw.Name, dw.Field, dw.Target, dw.Tolerance,
+                dw.TimeoutMs, ct);
+            if (result is DongleWaitResult.TimedOut or DongleWaitResult.Offline)
+                _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, continuing",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+            else
+                _logger.LogInformation("Dongle wait {Name} {Field}={Target}: {Result} in {Ms} ms",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dongle wait {Name} failed, continuing", dw.Name);
+        }
     }
 }

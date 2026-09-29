@@ -284,6 +284,65 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         }
     }
 
+    public async Task<DongleWaitResult> WaitForValueAsync(string name, string field, long target,
+        long tolerance, int timeoutMs, CancellationToken ct = default)
+    {
+        bool AtTarget(string? line) =>
+            TryReadField(line, field, out var v) && Math.Abs(v - target) <= tolerance;
+
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnMessage(string from, string line)
+        {
+            if (string.Equals(from, name, StringComparison.OrdinalIgnoreCase) && AtTarget(line))
+                tcs.TrySetResult(true);
+        }
+
+        // Subscribe before reading the snapshot so a status landing in between
+        // is not missed.
+        DeviceMessageReceived += OnMessage;
+        try
+        {
+            var device = GetDevice(name);
+            if (device is null || !device.Connected) return DongleWaitResult.Offline;
+            // Devices only report between moves (the move itself blocks their
+            // loop), so the latest position is where they are or were told to
+            // stop — never a mid-move reading that would end the wait early.
+            if (AtTarget(device.LastMessage)) return DongleWaitResult.AlreadyThere;
+
+            using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs, CancellationToken.None)).ConfigureAwait(false);
+            if (done != tcs.Task) return DongleWaitResult.TimedOut;
+            await tcs.Task.ConfigureAwait(false);   // rethrows cancellation
+            return DongleWaitResult.Arrived;
+        }
+        finally
+        {
+            DeviceMessageReceived -= OnMessage;
+        }
+    }
+
+    // "status pos=-3 expand=46524 …" -> pos = -3.
+    internal static bool TryReadField(string? line, string field, out long value)
+    {
+        value = 0;
+        if (string.IsNullOrEmpty(line)) return false;
+        var key = field + "=";
+        var i = 0;
+        while ((i = line.IndexOf(key, i, StringComparison.Ordinal)) >= 0)
+        {
+            if (i == 0 || char.IsWhiteSpace(line[i - 1]))
+            {
+                var start = i + key.Length;
+                var end = start;
+                while (end < line.Length && !char.IsWhiteSpace(line[end])) end++;
+                return long.TryParse(line.AsSpan(start, end - start), System.Globalization.NumberStyles.AllowLeadingSign,
+                    System.Globalization.CultureInfo.InvariantCulture, out value);
+            }
+            i += key.Length;
+        }
+        return false;
+    }
+
     public Task RequestDevicesAsync()
     {
         var sender = _sender;

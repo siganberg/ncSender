@@ -8,6 +8,17 @@ namespace NcSender.Core.Models;
 /// interpret the payload — that's the accessory plugin's job. Core only tracks presence
 /// and relays the raw last message.
 /// </summary>
+public enum DongleWaitResult
+{
+    /// <summary>The latest status already showed the value: no wait.</summary>
+    AlreadyThere,
+    /// <summary>A status with the value arrived while waiting.</summary>
+    Arrived,
+    TimedOut,
+    /// <summary>The device is not linked, so nothing will arrive: not waited for.</summary>
+    Offline
+}
+
 public class DongleDeviceInfo
 {
     public string Name { get; set; } = "";

@@ -497,6 +497,10 @@ public class JsPluginEngine : IJsPluginEngine
             return arr;
         }));
 
+        // Host understands `(DONGLE_WAIT:name:field=target:tolerance:timeoutSec)`
+        // in the command stream; plugins fall back to a fixed G4 without it.
+        dongle.Set("supportsWait", JsBoolean.True);
+
         ctx.Set("dongle", dongle);
 
         // Tool library APIs — let plugins update tool offsets after a probe.

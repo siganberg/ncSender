@@ -39,6 +39,15 @@ public interface IDongleDeviceService
     Task<string?> QueryAsync(string name, string payload, Func<string, bool> match, int timeoutMs);
 
     /// <summary>
+    /// Wait until the device reports numeric <paramref name="field"/> (a "field=N"
+    /// token in its status line) within <paramref name="tolerance"/> of
+    /// <paramref name="target"/>. Returns at once when the latest status already
+    /// shows it, so an accessory that is already in place costs no time.
+    /// </summary>
+    Task<DongleWaitResult> WaitForValueAsync(string name, string field, long target, long tolerance,
+        int timeoutMs, CancellationToken ct = default);
+
+    /// <summary>
     /// Send a raw dongle line verbatim (no "@name " wrapping). Used for
     /// commands the dongle firmware itself parses — $PAIR, $UNPAIR, $OTA:*,
     /// etc. — where wrapping would defeat the dongle's own line parser.
