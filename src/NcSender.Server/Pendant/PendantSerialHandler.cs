@@ -219,8 +219,18 @@ public class PendantSerialHandler : IAsyncDisposable
             if (_port is not { IsOpen: true })
                 return;
 
+            // The write runs on a pool thread, never the caller's. Callers include
+            // the controller's status handler (the DRO push) and the command
+            // queue (dongle sentinels), which call in fire-and-forget: before the
+            // first await everything here ran on THEIR thread, so a dongle whose
+            // USB stopped draining parked the controller reader inside this
+            // write. Its "ok"s went unread, the job stopped feeding, and the
+            // machine stood still mid-cut for ~10 s until the wedge detection
+            // below dropped the handler (kiosk, 2026-09-29). The lock is still
+            // taken first, in call order, so messages keep their order.
             var data = Encoding.UTF8.GetBytes(message + "\n");
-            _port.Write(data, 0, data.Length);
+            var port = _port;
+            await Task.Run(() => port.Write(data, 0, data.Length)).ConfigureAwait(false);
             _lastWriteOkAtMs = Environment.TickCount64;
             _lastWriteOk = message;
         }
