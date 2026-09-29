@@ -77,6 +77,7 @@ public class CncEventBridge
         _controller.PauseReceived += OnPause;
         _controller.ResumeReceived += OnResume;
         _controller.UnlockReceived += OnUnlock;
+        _controller.AccessoryWaitChanged += OnAccessoryWaitChanged;
 
         // Initialize machineState from cached firmware (before connection)
         InitMachineStateFromFirmwareCache();
@@ -1023,6 +1024,14 @@ public class CncEventBridge
     private static readonly System.Text.RegularExpressions.Regex ZeroKeepStartRegexInstance =
         new(@"ZERO_KEEP_START\s*T\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
     private static System.Text.RegularExpressions.Regex ZeroKeepStartRegex() => ZeroKeepStartRegexInstance;
+
+    private void OnAccessoryWaitChanged(string name)
+    {
+        var state = _context.State;
+        if (state.MachineState.AccessoryWait == name) return;
+        state.MachineState.AccessoryWait = name;
+        BroadcastStateDelta();
+    }
 
     private void SetZeroKeepTool(int tool)
     {

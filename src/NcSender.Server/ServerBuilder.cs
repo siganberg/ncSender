@@ -108,6 +108,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<NcSender.Server.CommandProcessor.CommandProcessor>();
         builder.Services.AddSingleton<IGcodeFileService, GcodeFileService>();
         builder.Services.AddSingleton<IJobManager, JobManager>();
+        builder.Services.AddSingleton<NcSender.Server.Job.HomeToolMeasure>();
 
         // Phase 4 DI registrations
         builder.Services.AddSingleton<ICommandHistoryService, CommandHistoryService>();
@@ -245,6 +246,9 @@ public static class ServerBuilder
 
         // Eagerly create PluginManager to load enabled command plugins into JsPluginEngine
         _ = app.Services.GetRequiredService<IPluginManager>();
+
+        // Measures the loaded tool after the first home since power-up.
+        _ = app.Services.GetRequiredService<NcSender.Server.Job.HomeToolMeasure>();
 
         app.UseCors();
         app.Use(async (context, next) =>

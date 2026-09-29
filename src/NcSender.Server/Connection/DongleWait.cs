@@ -34,4 +34,21 @@ public sealed record DongleWait(string Name, string Field, long Target, long Tol
         var timeoutMs = (int)Math.Min(timeoutSec * 1000, 30000);
         return new DongleWait(name, field, target, tolerance, timeoutMs);
     }
+
+    // Accessory names as the operator knows them; anything else shows as-is.
+    private static readonly Dictionary<string, string> DisplayNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["autodustboot"] = "Dust boot",
+    };
+
+    public string DisplayName => DisplayNames.TryGetValue(Name, out var n) ? n : Name;
+
+    /// <summary>
+    /// Written in place of the sentinel when the accessory never answered: the
+    /// operator pause dialog (NCSENDER_PAUSE + M0 — Continue releases the hold,
+    /// Abort soft-resets). Plain text; no parentheses inside a g-code comment.
+    /// </summary>
+    public string PauseLine() =>
+        $"(MSG, NCSENDER_PAUSE: {DisplayName} not responding | {DisplayName} did not confirm it moved. "
+        + "Continue only if you have checked it is clear of the tool and the work, Abort to stop the job.)M0";
 }

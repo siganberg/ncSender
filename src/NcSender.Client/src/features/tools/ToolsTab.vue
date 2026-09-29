@@ -165,30 +165,7 @@
         <div class="tools-footer">
           <div class="tools-footer-content">
             <div class="tools-footer-row">
-              <div class="tool-settings">
-                <div class="setting-item">
-                  <label class="setting-label">Magazine Size</label>
-                  <select class="setting-select" :value="toolCount" @change="handleMagazineSizeChange" :disabled="toolCountDisabled">
-                    <option v-for="n in 99" :key="n-1" :value="n-1">{{ n-1 }}</option>
-                  </select>
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label">Manual</label>
-                  <ToggleSwitch :modelValue="showManualButton" @update:modelValue="$emit('update:showManualButton', $event)" :disabled="toolCountDisabled" />
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label">TLS</label>
-                  <ToggleSwitch :modelValue="showTlsButton" @update:modelValue="$emit('update:showTlsButton', $event)" :disabled="toolCountDisabled" />
-                </div>
-                <div class="setting-item">
-                  <label class="setting-label">Probe</label>
-                  <ToggleSwitch :modelValue="showProbeButton" @update:modelValue="$emit('update:showProbeButton', $event)" :disabled="toolCountDisabled" />
-                </div>
-              </div>
               <div class="tool-count">{{ tools.length }} tool{{ tools.length !== 1 ? 's' : '' }} total</div>
-            </div>
-            <div v-if="toolSourceName" class="settings-note">
-              Controls are disabled because they are currently controlled by Plugin: {{ toolSourceName }}
             </div>
             <div v-if="storagePath" class="tools-storage-info" :title="storagePath">
               Storage: <em>{{ storagePath }}</em>
@@ -509,20 +486,6 @@
       </div>
     </Teleport>
 
-    <!-- Magazine Size Confirmation Dialog -->
-    <Dialog v-if="showMagazineSizeConfirmDialog" @close="cancelMagazineSizeChange" :show-header="false" size="small">
-      <ConfirmPanel
-        title="Reduce Magazine Size"
-        :message="`Changing magazine size to ${pendingMagazineSize} will unassign ${affectedToolsCount} tool${affectedToolsCount !== 1 ? 's' : ''} that ${affectedToolsCount !== 1 ? 'are' : 'is'} currently assigned to slots T${(pendingMagazineSize || 0) + 1} and above. Do you want to continue?`"
-        :show-cancel="true"
-        confirm-text="Confirm"
-        cancel-text="Cancel"
-        variant="primary"
-        @confirm="confirmMagazineSizeChange"
-        @cancel="cancelMagazineSizeChange"
-      />
-    </Dialog>
-
     <!-- Save-to-drive picker (kiosk mode) -->
     <FileBrowserDialog
       v-if="showDrivePicker"
@@ -553,7 +516,6 @@ import { ref, computed, onMounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
-import ToggleSwitch from '../../components/ToggleSwitch.vue';
 import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
 import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
@@ -665,13 +627,10 @@ const importConflictMessage = ref('');
 const importConflictTools = ref<Tool[]>([]);
 const showImportSuccessDialog = ref(false);
 const importSuccessMessage = ref('');
-const showMagazineSizeConfirmDialog = ref(false);
-const pendingMagazineSize = ref<number | null>(null);
 
 // Slot carousel state
 const slotScrollOffset = ref(0);
 const visibleSlots = 18;
-const affectedToolsCount = ref(0);
 
 // Slot selector popup state
 const showSlotSelector = ref(false);
@@ -939,73 +898,6 @@ const loadToolsInfo = async () => {
   }
 };
 
-const handleMagazineSizeChange = (event: Event) => {
-  const newSize = parseInt((event.target as HTMLSelectElement).value);
-  const currentSize = props.toolCount || 0;
-
-  if (newSize < currentSize) {
-    // Check if there are any tools with toolNumber > newSize (1-indexed, so T1-T6 for size 6).
-    // The probe's slot sits above the magazine and is not affected.
-    const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize && t.toolNumber !== probeSlot.value);
-
-    if (affectedTools.length > 0) {
-      // Show confirmation dialog
-      pendingMagazineSize.value = newSize;
-      affectedToolsCount.value = affectedTools.length;
-      showMagazineSizeConfirmDialog.value = true;
-      return;
-    }
-  }
-
-  // No confirmation needed, emit the change
-  emit('update:toolCount', newSize);
-};
-
-const confirmMagazineSizeChange = async () => {
-  if (pendingMagazineSize.value === null) return;
-
-  const newSize = pendingMagazineSize.value;
-
-  // Unassign tools with toolNumber > newSize (1-indexed); the probe slot stays.
-  const affectedTools = tools.value.filter(t => t.toolNumber !== null && t.toolNumber > newSize && t.toolNumber !== probeSlot.value);
-
-  try {
-    for (const tool of affectedTools) {
-      const response = await fetch(`${api.baseUrl}/api/tools/${tool.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...tool,
-          toolNumber: null
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to unassign tool ${tool.id}`);
-      }
-    }
-
-    // Reload tools to reflect changes
-    await loadTools();
-
-    // Emit the magazine size change
-    emit('update:toolCount', newSize);
-
-    // Close dialog
-    showMagazineSizeConfirmDialog.value = false;
-    pendingMagazineSize.value = null;
-  } catch (error) {
-    console.error('Error unassigning tools:', error);
-    showDeleteErrorDialog.value = true;
-    deleteErrorMessage.value = 'Failed to unassign tools. Please try again.';
-  }
-};
-
-const cancelMagazineSizeChange = () => {
-  showMagazineSizeConfirmDialog.value = false;
-  pendingMagazineSize.value = null;
-  affectedToolsCount.value = 0;
-};
 
 const formatType = (type: string) => {
   const typeMap: Record<string, string> = {

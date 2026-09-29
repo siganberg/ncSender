@@ -44,6 +44,17 @@ public class MachineState
     // measures the outgoing tool before the swap). 0 = not in that step.
     // Set/cleared by the ZERO_KEEP_START/END sentinels; drives a UI banner.
     public int ZeroKeepTool { get; set; }
+    // Accessory (dongle device name, e.g. "autodustboot") the command stream is
+    // holding for because it stopped answering, e.g. while its radio
+    // reconnects. "" = not waiting. Drives a UI banner; set by CncController
+    // around a failed DONGLE_WAIT.
+    public string AccessoryWait { get; set; } = "";
+    // Tool being measured at job start because nothing has measured it since
+    // power-up (no Tool Length Reference). 0 = not in that step. Drives a UI
+    // banner; set by JobManager.
+    public int MeasureBeforeJobTool { get; set; }
+    // Same, right after the first home since power-up (HomeToolMeasure).
+    public int MeasureAfterHomeTool { get; set; }
     public bool SpindleActive { get; set; }
     public bool FloodCoolant { get; set; }
     public bool MistCoolant { get; set; }

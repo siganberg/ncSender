@@ -257,6 +257,7 @@ public class SettingsManager : ISettingsManager
                 "allowPriorityReordering": false
             },
             "useDoorAsPause": true,
+            "tlsAfterHome": false,
             "tipsOnStartup": true,
             "setupWizardCompleted": false,
             "useControllerMacros": false,

@@ -279,6 +279,7 @@
           class="tools-legend__item tls-tool"
           :class="{
             'disabled': isToolActionsDisabled || currentTool === 0,
+            'glow': shouldTLSGlow,
             'long-press-triggered': toolPress['tls']?.triggered,
             'blink-border': toolPress['tls']?.blinking
           }"
@@ -392,6 +393,44 @@
         <span>{{ outOfBoundsMessage }}</span>
       </div>
 
+      <!-- Job start is measuring the loaded tool: nothing measured it since
+           power-up, and the Z0 kept in the controller needs its length. -->
+      <div
+        v-if="measureBeforeJobTool > 0 || measureAfterHomeTool > 0"
+        class="zero-keep-step"
+        role="status"
+      >
+        <span class="zero-keep-step__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v14" />
+            <path d="M7 11l5 5 5-5" />
+            <path d="M5 21h14" />
+          </svg>
+        </span>
+        <span v-if="measureBeforeJobTool > 0">Measuring T{{ measureBeforeJobTool }} before the job: nothing has measured it since power-up, and your Z0 needs its length.</span>
+        <span v-else>Measuring T{{ measureAfterHomeTool }} after homing: nothing has measured it since power-up.</span>
+      </div>
+
+      <!-- The stream is holding for an accessory that stopped answering (e.g.
+           the dust boot while its radio reconnects): the last move is re-sent
+           when it is back, and the job pauses with a dialog if it never is.
+           Same card as the measuring banner, in violet. -->
+      <div
+        v-if="accessoryWait"
+        class="zero-keep-step zero-keep-step--accessory"
+        role="status"
+      >
+        <span class="zero-keep-step__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+            <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+            <path d="M12 20h.01" />
+          </svg>
+        </span>
+        <span>Waiting for the {{ accessoryWait }} to answer. Its last move is sent again as soon as it reconnects.</span>
+      </div>
+
       <!-- A tool change is touching off the OUTGOING tool first so the Z0 set
            before any tool length reference carries over. Same card as the
            out-of-bounds warning, in blue; gone as soon as the step ends
@@ -428,6 +467,7 @@
           </svg>
         </span>
         <span v-if="tlrZeroNotice === 'swapped'">Z0 was set with T{{ appStore.status.zeroTool }}, but T{{ appStore.status.tool }} is in the spindle now. Set Z0 again before cutting.</span>
+        <span v-else-if="tlrZeroNotice === 'unmeasured'">T{{ appStore.status.tool }} hasn't been measured since power-up. Run TLS now, or it's measured automatically when the job starts.</span>
         <span v-else>Z0 is set, no tool length reference yet. At the next tool change T{{ appStore.status.tool }} is measured first, so your Z0 carries over.</span>
       </div>
 
@@ -940,10 +980,33 @@ const isDoorOpenViaPn = computed(() => {
 // setter run will measure the same tool and keep that Z0. 'swapped': a
 // different tool is in the spindle now, so the Z0 can't be carried over.
 // Outgoing tool being touched off right now to keep Z0 (0 = not in that step).
-const zeroKeepStepTool = computed(() => Number((appStore.status as any).zeroKeepTool) || 0);
+// A tool is loaded but nothing has measured it since power-up (no Tool Length
+// Reference). A Z0 kept in the controller from an earlier session is only right
+// once the tool is measured again, so point at TLS until something does:
+// TLS itself, a tool change, or the Z0 carry-over. Job start also measures it
+// automatically; this is the reminder for everything before that.
+const shouldTLSGlow = computed(() =>
+  (props.currentTool ?? 0) > 0 && !props.toolLengthSet);
 
-const tlrZeroNotice = computed<'' | 'kept' | 'swapped'>(() => {
+const measureBeforeJobTool = computed(() => Number((appStore.status as any).measureBeforeJobTool) || 0);
+const measureAfterHomeTool = computed(() => Number((appStore.status as any).measureAfterHomeTool) || 0);
+
+const zeroKeepStepTool = computed(() => Number((appStore.status as any).zeroKeepTool) || 0);
+// Display name for the accessory being waited for; unknown devices show as-is.
+const ACCESSORY_NAMES: Record<string, string> = { autodustboot: 'dust boot' };
+const accessoryWait = computed(() => {
+  const id = String((appStore.status as any).accessoryWait || '');
+  return id ? (ACCESSORY_NAMES[id] ?? id) : '';
+});
+
+const tlrZeroNotice = computed<'' | 'kept' | 'swapped' | 'unmeasured'>(() => {
   const st = appStore.status as any;
+  // Same moment the TLS button blinks, with nothing else explaining it: say
+  // why, and that job start takes care of it. Not while a job or tool change
+  // runs (the job-start banner covers that), and a Z0 set this session gets
+  // the notes below instead, which already say the tool will be measured.
+  if (shouldTLSGlow.value && !st.zeroSetWithoutTlr && !isToolChanging.value && !isJobActive.value)
+    return 'unmeasured';
   if (!st.zeroSetWithoutTlr || props.toolLengthSet
       // Mid tool change the tool number passes through T0 and the new tool
       // before the new one is measured; that is the Z0 being carried over,
@@ -5972,6 +6035,36 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 
 
 
+/* TLS attention pulse (tool loaded but not measured). Same treatment as
+   the Home button: a solid off-red fill that stays opaque, with a dark
+   overlay breathing on top through opacity — the compositor animates
+   that without repainting, and nothing behind the button shows through.
+   Off-red rather than the accent so it reads as "needs attention". */
+.tools-legend__item.glow {
+  position: relative;
+  overflow: hidden;
+  background: #d9534f;
+  border-color: #d9534f;
+  color: white;
+}
+
+.tools-legend__item.glow .tools-legend__label {
+  position: relative;
+  z-index: 1;
+  color: white;
+}
+
+.tools-legend__item.glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(20, 20, 30, 0.55);
+  animation: attention-breathe 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
 @keyframes attention-breathe {
   0%, 100% { opacity: 0; }
   50% { opacity: 1; }
@@ -6717,6 +6810,8 @@ body.theme-light .dot--rapid {
   color: #2f6fed;
 }
 .zero-keep-step__icon svg { width: 18px; height: 18px; }
+.zero-keep-step--accessory { background: #7c4dff; border-color: #7c4dff; }
+.zero-keep-step--accessory .zero-keep-step__icon { color: #7c4dff; }
 
 /* Same card as the measuring banner (.zero-keep-step): solid blue, white icon
    tile, slide-in and the periodic nudge. Orange for the one case the Z0 can't

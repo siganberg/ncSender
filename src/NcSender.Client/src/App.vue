@@ -475,6 +475,59 @@
           </div>
         </div>
 
+        <!-- Tool Changer Tab: how the tool changer is set up (moved out of the
+             Tool Library, which is just the tools) and when the loaded tool is
+             measured automatically. -->
+        <div v-if="activeTab === 'toolChanger'" class="tab-panel tab-panel--tool-changer">
+          <div class="settings-section">
+            <h3 class="section-title">Setup</h3>
+            <div v-if="toolSourceName" class="settings-note">
+              Controls are disabled because they are currently controlled by Plugin: {{ toolSourceName }}
+            </div>
+            <div class="settings-group">
+              <div class="setting-item">
+                <label class="setting-label">Magazine Size</label>
+                <MagazineSizeSelect
+                  :tool-count="toolCount"
+                  :disabled="toolCountDisabled"
+                  :probe-slot="showProbeButton ? (probeToolNumber || 99) : null"
+                  @update:tool-count="handleToolCountUpdate"
+                />
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">Manual</label>
+                <ToggleSwitch :model-value="showManualButton" :disabled="toolCountDisabled" @update:model-value="handleShowManualButtonUpdate" />
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">TLS</label>
+                <ToggleSwitch :model-value="showTLSButton" :disabled="toolCountDisabled" @update:model-value="handleShowTLSButtonUpdate" />
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">Probe</label>
+                <ToggleSwitch :model-value="showProbeButton" :disabled="toolCountDisabled" @update:model-value="handleShowProbeButtonUpdate" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Automatic measuring sends the plugin's $TLS, so it needs TLS on AND a
+               tool changer plugin owning the tool settings (toolCountDisabled). -->
+          <div v-if="showTLSButton && toolCountDisabled" class="settings-section">
+            <h3 class="section-title">Tool Length Measuring</h3>
+            <!-- Section description, not a setting: job start always measures an
+                 unmeasured tool (the safety net); the toggle below adds homing. -->
+            <p class="section-description">After the machine is powered on, the tool in the spindle needs to be measured once before it cuts. If you haven't done it, ncSender measures it for you when you start a job. Turn on the option below to have it measured right after homing instead.</p>
+            <div class="settings-group">
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
+                  <label class="setting-label">TLS after homing</label>
+                  <div class="settings-note">After homing, the gantry moves to the tool setter on its own to measure the tool. Keep your hands clear of the machine.</div>
+                </div>
+                <ToggleSwitch v-model="tlsAfterHome" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Tools Tab -->
         <div v-if="activeTab === 'tools'" class="tab-panel tab-panel--tools">
           <ToolsTab
@@ -1041,6 +1094,7 @@ import { useUpdateCenter } from './composables/use-update-center';
 import ControlsTab from './features/controls/ControlsTab.vue';
 import PluginsTab from './features/plugins/PluginsTab.vue';
 import ToolsTab from './features/tools/ToolsTab.vue';
+import MagazineSizeSelect from './features/tools/MagazineSizeSelect.vue';
 import LogsTab from './features/logs/LogsTab.vue';
 import ConfigTab from './features/config/ConfigTab.vue';
 import BackupTab from './features/backup/BackupTab.vue';
@@ -1402,6 +1456,7 @@ const activeTab = ref('general');
 const allSettingsTabs = [
   { id: 'general', label: 'General', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></svg>' },
   { id: 'tools', label: 'Tool Library', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.5 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5M10.329 1.671a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 1 1-.707.707L10.329 2.378a.5.5 0 0 1 0-.707M14.5 7a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zM3.5 9a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5z"/></svg>' },
+  { id: 'toolChanger', label: 'Tool Changer', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></svg>' },
   { id: 'keyboard', label: 'Controls', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>' },
   { id: 'firmware', label: 'Firmware', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.496 8a4.5 4.5 0 0 1-1.703 3.526L9.497 8.5l2.959-1.11q.04.3.04.61"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-1 0a7 7 0 1 0-13.202 3.249l1.988-1.657a4.5 4.5 0 0 1 7.537-4.623L7.497 6.5l1 2.5 1.333 3.11c-.56.251-1.18.39-1.833.39a4.5 4.5 0 0 1-1.592-.29L4.747 14.2A7 7 0 0 0 15 8m-8.295.139a.25.25 0 0 0-.288-.376l-1.5.5.159.474.808-.27-.595.894a.25.25 0 0 0 .287.376l.808-.27-.595.894a.25.25 0 0 0 .287.376l1.5-.5-.159-.474-.808.27.596-.894a.25.25 0 0 0-.288-.376l-.808.27z"/></svg>' },
   { id: 'config', label: 'Config', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5zM4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 8h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5m0-2A.5.5 0 0 1 5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5"/></svg>' },
@@ -1445,6 +1500,13 @@ const showManualButton = ref(initialSettings?.tool?.manual ?? true);
 const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
 const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
 const probeToolNumber = ref<number>(initialSettings?.tool?.probeToolNumber ?? 99);
+// Measure the loaded tool after the first home since power-up (core, default
+// off: the gantry moving by itself after homing has to be opted into).
+const tlsAfterHome = ref(initialSettings?.tlsAfterHome === true);
+watch(tlsAfterHome, async (value) => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({ tlsAfterHome: value });
+});
 const loadedPlugins = ref<Array<{ id: string; name: string }>>([]);
 
 // Computed property to get the friendly plugin name from toolSource
@@ -3230,11 +3292,13 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   flex: 1;
 }
 
-.tab-panel--general {
+.tab-panel--general,
+.tab-panel--tool-changer {
   gap: 0;
 }
 
 .tab-panel--general .settings-section,
+.tab-panel--tool-changer .settings-section,
 .tab-panel--advanced .settings-section {
   margin: 15px 20px;
 }
@@ -3310,6 +3374,16 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .settings-note--success {
   color: var(--color-accent);
   font-style: normal;
+}
+
+/* Card-style description under a section title (same as the plugin
+   dialogs' .pa-card-help): plain text, not a setting. */
+.section-description {
+  margin: 0 0 var(--gap-sm);
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  font-style: normal;
+  line-height: 1.45;
 }
 
 .setting-item--with-note {

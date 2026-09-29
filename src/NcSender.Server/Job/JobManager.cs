@@ -98,10 +98,12 @@ public class JobManager : IJobManager
         {
             try
             {
+                var processor = _activeProcessor;
+                await MeasureToolBeforeJobAsync(processor, startLine, resumeSequence);
+
                 if (!isFromLine)
                     await ExecuteEventGcode("programStart");
 
-                var processor = _activeProcessor;
                 await processor.ProcessLinesAsync();
                 if (processor.FailureReason is { } failureReason)
                     OnJobFailed(failureReason);
@@ -215,6 +217,79 @@ public class JobManager : IJobManager
         _context.UpdateSenderStatus();
         _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
         _logger.LogInformation("Job force reset");
+    }
+
+    // A Z0 kept in the controller (G54 lives in its EEPROM) is only right with
+    // the tool length offset it was set with, and that offset is gone after a
+    // power cycle. Someone who zeroed once and just re-runs the job after a
+    // reboot would cut the whole touch-off height off. So with a tool setter in
+    // play (tool.tls, set by the tool changer plugin), a loaded tool and no
+    // reference, measure it before the first line. The offsets are absolute, so
+    // this restores the old Z0 exactly; a Z0 pending from this session is kept
+    // by the plugin's own $TLS. Skipped when the program's first tool change
+    // loads another tool: that change measures anyway.
+    private async Task MeasureToolBeforeJobAsync(GcodeJobProcessor? processor, int startLine, string[]? resumeSequence)
+    {
+        var ms = _context.State.MachineState;
+        if (processor is null || !LoadedToolMeasure.IsNeeded(ms, _settingsManager)) return;
+
+        var cachePath = Path.Combine(PathUtils.GetGcodeCacheDir(), "current.gcode");
+        var fileLines = File.Exists(cachePath)
+            ? File.ReadLines(cachePath).Skip(Math.Max(0, startLine - 1))
+            : Enumerable.Empty<string>();
+        if (FirstToolChangeLoadsAnotherTool((resumeSequence ?? []).Concat(fileLines), ms.Tool))
+        {
+            _logger.LogInformation("No tool length reference, but the job's first tool change measures its tool");
+            return;
+        }
+
+        var tool = ms.Tool;
+        _logger.LogInformation("No tool length reference since power-up: measuring T{Tool} before the job", tool);
+        SetMeasureBeforeJobTool(tool);
+        try
+        {
+            await LoadedToolMeasure.SendTlsAsync(_commandProcessor, _controller, _context, "job-start",
+                () => ReferenceEquals(_activeProcessor, processor));
+        }
+        finally
+        {
+            SetMeasureBeforeJobTool(0);
+        }
+    }
+
+    private void SetMeasureBeforeJobTool(int tool)
+    {
+        _context.State.MachineState.MeasureBeforeJobTool = tool;
+        _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex CommentPattern =
+        new(@"\([^)]*\)|;.*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex M6Pattern =
+        new(@"(?<![A-Z\d.])M0*6(?![\d.])", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex TWordPattern =
+        new(@"(?<![A-Z])T\s*0*(\d+)", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex MotionPattern =
+        new(@"(?<![A-Z\d.])G0*[0-3](?![\d.])|^\s*(?:N\d+\s*)?[XYZABC]\s*[-+.\d]", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// True when the program changes to a different tool before it moves at
+    /// all — that tool change measures the new tool, so nothing needs doing
+    /// first. Any motion before it runs with the loaded tool.
+    /// </summary>
+    internal static bool FirstToolChangeLoadsAnotherTool(IEnumerable<string> lines, int currentTool)
+    {
+        var lastT = 0;
+        foreach (var raw in lines)
+        {
+            var line = CommentPattern.Replace(raw, "");
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var t = TWordPattern.Match(line);
+            if (t.Success && int.TryParse(t.Groups[1].Value, out var tn)) lastT = tn;
+            if (M6Pattern.IsMatch(line)) return lastT > 0 && lastT != currentTool;
+            if (MotionPattern.IsMatch(line)) return false;
+        }
+        return false;
     }
 
     private async Task ExecuteEventGcode(string settingsKey)

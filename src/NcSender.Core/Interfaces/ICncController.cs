@@ -38,4 +38,9 @@ public interface ICncController
     event Action PauseReceived;
     event Action ResumeReceived;
     event Action UnlockReceived;
+    /// <summary>
+    /// Raised with an accessory's device name while the stream holds for it to
+    /// come back, and with "" when that wait ends.
+    /// </summary>
+    event Action<string> AccessoryWaitChanged;
 }

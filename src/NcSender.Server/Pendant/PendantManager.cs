@@ -2690,8 +2690,9 @@ public class PendantManager : IPendantManager
             sb.Append("|C");
         if (current.Homed)
             sb.Append("|H");
-        // |Q (tool not measured, blink TLS) is no longer sent: a Z0 set before
-        // measuring is kept automatically, so there is nothing to nag about.
+        // Tool loaded without a measured length: the app blinks TLS, so does the pendant.
+        if (ms.Tool > 0 && !ms.ToolLengthSet)
+            sb.Append("|Q");
 
         if (isFull || current.AlarmCode != prev!.AlarmCode)
         {

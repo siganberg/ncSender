@@ -111,6 +111,9 @@ const status = reactive({
   zeroSetWithoutTlr: false,
   zeroTool: 0,
   zeroKeepTool: 0,
+  accessoryWait: '',
+  measureBeforeJobTool: 0,
+  measureAfterHomeTool: 0,
   homed: false,
   floodCoolant: false,
   mistCoolant: false,
@@ -362,6 +365,18 @@ const applyStatusReport = (report: StatusReport | null | undefined) => {
 
   if (typeof (report as any).zeroKeepTool === 'number') {
     status.zeroKeepTool = (report as any).zeroKeepTool;
+  }
+
+  if (typeof (report as any).measureAfterHomeTool === 'number') {
+    status.measureAfterHomeTool = (report as any).measureAfterHomeTool;
+  }
+
+  if (typeof (report as any).measureBeforeJobTool === 'number') {
+    status.measureBeforeJobTool = (report as any).measureBeforeJobTool;
+  }
+
+  if (typeof (report as any).accessoryWait === 'string') {
+    status.accessoryWait = (report as any).accessoryWait;
   }
 
   if (typeof (report as any).Pn === 'string') {

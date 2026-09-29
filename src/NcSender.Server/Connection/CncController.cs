@@ -385,6 +385,7 @@ public partial class CncController : ICncController
                     // comment itself still goes to grblHAL as a no-op.
                     if (entry.DongleSend is { } ds && _dongleDevices is not null)
                     {
+                        _lastDongleSend[ds.Name] = ds.Payload;
                         try { _ = _dongleDevices.SendAsync(ds.Name, ds.Payload); }
                         catch (Exception ex)
                         {
@@ -396,10 +397,14 @@ public partial class CncController : ICncController
                     // Dongle wait — hold the stream until the accessory reports
                     // it reached the position (replaces a fixed G4 dwell). The
                     // queue is send-and-wait, so the machine is stopped here.
-                    if (entry.DongleWait is { } dw && _dongleDevices is not null)
-                        await WaitForDongleAsync(dw, ct);
+                    // If the accessory never gets there, this line becomes a pause
+                    // instead: the operator decides whether to run on without it.
+                    var toWrite = entry.CommandToWrite;
+                    if (entry.DongleWait is { } dw && _dongleDevices is not null
+                        && !await WaitForDongleAsync(dw, ct))
+                        toWrite = dw.PauseLine() + "\n";
 
-                    await _transport.WriteAsync(entry.CommandToWrite, ct);
+                    await _transport.WriteAsync(toWrite, ct);
 
                     LogCommandSent(entry.RawCommand, isRealTime: false, entry.Meta);
 
@@ -1845,24 +1850,72 @@ public partial class CncController : ICncController
         public DongleWait? DongleWait { get; init; }
     }
 
-    private async Task WaitForDongleAsync(DongleWait dw, CancellationToken ct)
+    // Last payload fired at each accessory by a (DONGLE:…) sentinel, so a wait
+    // that finds the accessory gone can send it again once it is back.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastDongleSend =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public event Action<string>? AccessoryWaitChanged;
+
+    /// <summary>
+    /// Holds the stream until the accessory reports the target. An accessory
+    /// that is offline (radio reconnecting) or never arrives (packet lost) gets
+    /// one more chance: the UI shows it is being waited for, the last command is
+    /// re-sent once it answers, and it is waited for again. False when it still
+    /// is not there — the caller pauses the job rather than moving on with, say,
+    /// a dust boot still down during a tool change.
+    /// </summary>
+    private async Task<bool> WaitForDongleAsync(DongleWait dw, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var result = await _dongleDevices!.WaitForValueAsync(dw.Name, dw.Field, dw.Target, dw.Tolerance,
                 dw.TimeoutMs, ct);
-            if (result is DongleWaitResult.TimedOut or DongleWaitResult.Offline)
-                _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, continuing",
-                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
-            else
+            if (result is DongleWaitResult.AlreadyThere or DongleWaitResult.Arrived)
+            {
                 _logger.LogInformation("Dongle wait {Name} {Field}={Target}: {Result} in {Ms} ms",
                     dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+                return true;
+            }
+
+            _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, waiting for it to answer",
+                dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+            AccessoryWaitChanged?.Invoke(dw.Name);
+            try
+            {
+                var deadline = Environment.TickCount64 + dw.TimeoutMs;
+                while (_dongleDevices.GetDevice(dw.Name) is not { Connected: true }
+                       && Environment.TickCount64 < deadline)
+                    await Task.Delay(100, ct);
+
+                if (_dongleDevices.GetDevice(dw.Name) is { Connected: true })
+                {
+                    if (_lastDongleSend.TryGetValue(dw.Name, out var payload))
+                        await _dongleDevices.SendAsync(dw.Name, payload);
+                    result = await _dongleDevices.WaitForValueAsync(dw.Name, dw.Field, dw.Target, dw.Tolerance,
+                        dw.TimeoutMs, ct);
+                }
+            }
+            finally
+            {
+                AccessoryWaitChanged?.Invoke("");
+            }
+
+            var ok = result is DongleWaitResult.AlreadyThere or DongleWaitResult.Arrived;
+            if (ok)
+                _logger.LogInformation("Dongle wait {Name} {Field}={Target}: {Result} after resend, {Ms} ms",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+            else
+                _logger.LogWarning("Dongle wait {Name} {Field}={Target}: still {Result} after {Ms} ms, pausing",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+            return ok;
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Dongle wait {Name} failed, continuing", dw.Name);
+            _logger.LogWarning(ex, "Dongle wait {Name} failed, pausing", dw.Name);
+            return false;
         }
     }
 }

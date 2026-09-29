@@ -40,6 +40,27 @@ public class DongleWaitTests
     public void Parse_CapsTimeout() =>
         Assert.Equal(30000, DongleWait.TryParse("(DONGLE_WAIT:d:pos=0:5:600)")!.TimeoutMs);
 
+    [Fact]
+    public void PauseLine_OpensTheOperatorPauseDialogAndHolds()
+    {
+        var line = DongleWait.TryParse("(DONGLE_WAIT:autodustboot:pos=0:50:5)")!.PauseLine();
+        Assert.StartsWith("(MSG, NCSENDER_PAUSE: Dust boot not responding | ", line);
+        Assert.EndsWith(")M0", line);
+        // One comment, no nested parentheses (g-code comments cannot hold them),
+        // and well inside grblHAL's ~256 character line limit.
+        Assert.Equal(1, line.Count(c => c == '('));
+        Assert.Equal(1, line.Count(c => c == ')'));
+        Assert.True(line.Length < 240, $"{line.Length} chars");
+        var (title, body) = CncEventBridge.ParsePauseMessage(
+            line["(MSG, NCSENDER_PAUSE:".Length..line.LastIndexOf(')')]);
+        Assert.Equal("Dust boot not responding", title);
+        Assert.Contains("Abort", body);
+    }
+
+    [Fact]
+    public void DisplayName_FallsBackToTheDeviceName() =>
+        Assert.Equal("xprobe", DongleWait.TryParse("(DONGLE_WAIT:xprobe:state=1:0:2)")!.DisplayName);
+
     [Theory]
     [InlineData("status pos=-3 expand=46524 state=home", "pos", -3)]
     [InlineData("status pos=12 expand=46524", "expand", 46524)]
