@@ -1013,8 +1013,17 @@ const accessoryWait = computed(() => {
   return id ? (ACCESSORY_NAMES[id] ?? id) : '';
 });
 
+// The measure-before-job / Z0 carry-over notes only apply when a tool changer
+// plugin owns the tool settings and offers a tool setter: the same rule the
+// server uses before it measures (LoadedToolMeasure.IsNeeded). Without one, a
+// tool number left over from before (e.g. ATC removed, plugin disabled) must
+// not promise a measurement that will never run.
+const toolChangerSource = ref<string>('');
+const toolChangerMeasures = computed(() => showTlsTool.value && toolChangerSource.value.trim() !== '');
+
 const tlrZeroNotice = computed<'' | 'kept' | 'swapped' | 'unmeasured'>(() => {
   const st = appStore.status as any;
+  if (!toolChangerMeasures.value) return '';
   // Same moment the TLS button blinks, with nothing else explaining it: say
   // why, and that job start takes care of it. Not while a job or tool change
   // runs (the job-start banner covers that), and a Z0 set this session gets
@@ -5088,6 +5097,9 @@ onMounted(async () => {
     if (typeof settings.tool?.tls === 'boolean') {
       showTlsTool.value = settings.tool.tls;
     }
+    if (typeof settings.tool?.source === 'string') {
+      toolChangerSource.value = settings.tool.source;
+    }
     if (typeof settings.tool?.probe === 'boolean') {
       showProbeTool.value = settings.tool.probe;
     }
@@ -5180,6 +5192,9 @@ onMounted(async () => {
     }
     if (changedSettings.tool?.tls !== undefined) {
       showTlsTool.value = changedSettings.tool.tls;
+    }
+    if (changedSettings.tool?.source !== undefined) {
+      toolChangerSource.value = changedSettings.tool.source ?? '';
     }
     if (changedSettings.tool?.probe !== undefined) {
       showProbeTool.value = changedSettings.tool.probe;
