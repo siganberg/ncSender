@@ -437,7 +437,9 @@ public class WebSocketLayer : IBroadcaster
 
                 if (result.ShouldContinue)
                 {
-                    foreach (var cmd in result.Commands)
+                    // Stops at the first rejected line of an expansion (see ExpandedCommandSender).
+                    await NcSender.Server.CommandProcessor.ExpandedCommandSender.SendAsync(
+                        _controller, this, _logger, result.Commands, cmd =>
                     {
                         // V1 parity: unique ID per command, display falls back to
                         // actual command text, meta merges original with per-command.
@@ -454,14 +456,13 @@ public class WebSocketLayer : IBroadcaster
                             ?? cmd.Command;
                         var cmdMeta = MergeMeta(meta, cmd.Meta);
 
-                        var options = new CommandOptions
+                        return new CommandOptions
                         {
                             CommandId = cmdId,
                             DisplayCommand = cmdDisplay,
                             Meta = cmdMeta
                         };
-                        await _controller.SendCommandAsync(cmd.Command, options);
-                    }
+                    });
                 }
             }
             else

@@ -207,6 +207,7 @@ public class CommandProcessor : ICommandProcessor
                 Command = "(MSG, TOOL_CHANGE_COMPLETE)",
                 DisplayCommand = "(tool change sentinel)",
                 IsOriginal = false,
+                Cleanup = true,
                 Meta = new CommandMeta { SourceId = "system", Silent = true }
             });
         }
@@ -235,7 +236,8 @@ public class CommandProcessor : ICommandProcessor
                 {
                     Command = $"G65P5Q{probeIdx}",
                     DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
-                    IsOriginal = false
+                    IsOriginal = false,
+                    Cleanup = true
                 });
             }
 
@@ -256,6 +258,7 @@ public class CommandProcessor : ICommandProcessor
                 Command = "(MSG, TOOL_CHANGE_COMPLETE)",
                 DisplayCommand = "(tool change sentinel)",
                 IsOriginal = false,
+                Cleanup = true,
                 Meta = new CommandMeta { SourceId = "system", Silent = true }
             });
         }

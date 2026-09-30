@@ -50,4 +50,10 @@ public class ProcessedCommand
     public string? DisplayCommand { get; set; }
     public bool IsOriginal { get; set; } = true;
     public CommandMeta? Meta { get; set; }
+    /// <summary>
+    /// Unwinding line of an expansion (tool change end marker, probe source
+    /// restore): still sent when an earlier line of the same expansion failed
+    /// and the rest is skipped. See ExpandedCommandSender.
+    /// </summary>
+    public bool Cleanup { get; set; }
 }

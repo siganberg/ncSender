@@ -62,7 +62,9 @@ public static class MacroEndpoints
             IMacroService svc,
             ICncController cnc,
             ICommandProcessor processor,
-            IServerContext serverContext) =>
+            IServerContext serverContext,
+            IBroadcaster broadcaster,
+            ILoggerFactory loggerFactory) =>
         {
             var macro = svc.GetMacro(id);
             if (macro is null)
@@ -87,9 +89,9 @@ public static class MacroEndpoints
             if (!result.ShouldContinue)
                 return Results.Ok(new MacroExecuteResponse(true, 0));
 
-            foreach (var cmd in result.Commands)
-            {
-                await cnc.SendCommandAsync(cmd.Command, new CommandOptions
+            // Stops at the first rejected line of an expansion (see ExpandedCommandSender).
+            await NcSender.Server.CommandProcessor.ExpandedCommandSender.SendAsync(
+                cnc, broadcaster, loggerFactory.CreateLogger("Macro"), result.Commands, cmd => new CommandOptions
                 {
                     // Fall back to the untrimmed command text like WebSocketLayer
                     // does. SendCommandAsync trims what goes to the controller but
@@ -98,7 +100,6 @@ public static class MacroEndpoints
                     DisplayCommand = cmd.DisplayCommand ?? cmd.Command,
                     Meta = cmd.Meta ?? new CommandMeta { SourceId = "macro" }
                 });
-            }
 
             return Results.Ok(new MacroExecuteResponse(true, result.Commands.Count));
         });

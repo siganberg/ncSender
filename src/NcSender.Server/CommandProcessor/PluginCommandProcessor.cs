@@ -205,6 +205,7 @@ public class PluginCommandProcessor : ICommandProcessor
             {
                 Command = "(MSG, TOOL_CHANGE_COMPLETE)",
                 IsOriginal = false,
+                Cleanup = true,
                 Meta = new CommandMeta { SourceId = "system", Silent = true }
             });
         }
@@ -232,7 +233,8 @@ public class PluginCommandProcessor : ICommandProcessor
                 {
                     Command = $"G65P5Q{probeIdx}",
                     DisplayCommand = $"G65P5Q{probeIdx} (restore probe source)",
-                    IsOriginal = false
+                    IsOriginal = false,
+                    Cleanup = true
                 });
             }
 
@@ -252,6 +254,7 @@ public class PluginCommandProcessor : ICommandProcessor
             {
                 Command = "(MSG, TOOL_CHANGE_COMPLETE)",
                 IsOriginal = false,
+                Cleanup = true,
                 Meta = new CommandMeta { SourceId = "system", Silent = true }
             });
         }

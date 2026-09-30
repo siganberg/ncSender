@@ -596,7 +596,8 @@ public static class ServerBuilder
         });
 
         app.MapPost("/api/send-command", async (HttpContext context,
-            ICncController cnc, ICommandProcessor processor, IServerContext serverContext) =>
+            ICncController cnc, ICommandProcessor processor, IServerContext serverContext,
+            IBroadcaster broadcaster, ILoggerFactory loggerFactory) =>
         {
             var request = await context.Request.ReadFromJsonAsync<SendCommandRequest>();
             if (request is null || string.IsNullOrWhiteSpace(request.Command))
@@ -649,19 +650,15 @@ public static class ServerBuilder
 
                 // Send each processed command — V1 parity: unique ID per command,
                 // display falls back to actual command text, not the original request
-                CommandResult? lastResult = null;
-                foreach (var cmd in result.Commands)
-                {
-                    var cmdId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}"[..24];
-                    var cmdDisplay = cmd.DisplayCommand ?? hexDisplay ?? cmd.Command;
-                    var options = new CommandOptions
+                // Stops at the first rejected line of an expansion (see ExpandedCommandSender).
+                var lastResult = await NcSender.Server.CommandProcessor.ExpandedCommandSender.SendAsync(
+                    cnc, broadcaster, loggerFactory.CreateLogger("SendCommand"), result.Commands,
+                    cmd => new CommandOptions
                     {
-                        CommandId = cmdId,
-                        DisplayCommand = cmdDisplay,
+                        CommandId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}"[..24],
+                        DisplayCommand = cmd.DisplayCommand ?? hexDisplay ?? cmd.Command,
                         Meta = cmd.Meta ?? meta
-                    };
-                    lastResult = await cnc.SendCommandAsync(cmd.Command, options);
-                }
+                    });
                 return Results.Ok(lastResult);
             }
             catch (Exception ex)

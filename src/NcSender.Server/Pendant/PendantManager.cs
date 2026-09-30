@@ -2269,14 +2269,13 @@ public class PendantManager : IPendantManager
             var result = await _commandProcessor.ProcessAsync(command, processorContext);
             if (!result.ShouldContinue) return;
 
-            foreach (var cmd in result.Commands)
-            {
-                await _controller.SendCommandAsync(cmd.Command, new CommandOptions
+            // Stops at the first rejected line of an expansion (see ExpandedCommandSender).
+            await NcSender.Server.CommandProcessor.ExpandedCommandSender.SendAsync(
+                _controller, _broadcaster, _logger, result.Commands, cmd => new CommandOptions
                 {
                     DisplayCommand = cmd.DisplayCommand ?? cmd.Command,
                     Meta = cmd.Meta ?? new CommandMeta { SourceId = "usb-pendant" }
                 });
-            }
         }
         catch (Exception ex)
         {
