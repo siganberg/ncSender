@@ -4767,7 +4767,23 @@ const stopScrollPress = () => {
 };
 
 // Handle mouse wheel scroll - snap to nearest button after scrolling stops
+// Scrolling the tool list must never turn into a tool change: the finger that
+// drags the list rests on a button long enough to count as a 1 s hold. Any
+// scroll, or a drag past a few pixels, drops every hold in progress (and the
+// tap-to-expand that a release would otherwise do).
+const TOOL_DRAG_CANCEL_PX = 8;
+const cancelAllToolPresses = () => {
+  for (const state of Object.values(toolPress.value)) {
+    if (!state?.active) continue;
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = undefined;
+    state.active = false;
+    state.progress = 0;
+  }
+};
+
 const handleToolsScroll = () => {
+  cancelAllToolPresses();
   // Clear previous snap timeout
   if (scrollTimeout !== null) {
     clearTimeout(scrollTimeout);
@@ -4859,6 +4875,7 @@ const handleDragMove = (event: MouseEvent | TouchEvent) => {
 
   // Calculate delta and update scroll position
   const deltaY = toolsDragStartY - currentY;
+  if (Math.abs(deltaY) > TOOL_DRAG_CANCEL_PX) cancelAllToolPresses();
   toolsScrollContainer.value.scrollTop = toolsDragStartScrollTop + deltaY;
 };
 
