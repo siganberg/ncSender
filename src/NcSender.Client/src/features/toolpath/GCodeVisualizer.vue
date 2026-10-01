@@ -133,7 +133,7 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="!laserMode && (legendEntries.length > 0 || showTlsTool || showProbeTool)" class="tools-legend tools-legend--bottom">
+      <div v-if="legendEntries.length > 0 || showTlsTool || showProbeTool" class="tools-legend tools-legend--bottom">
         <!-- Scroll Up Button -->
         <button
           v-if="legendEntries.length > 8"
@@ -1333,7 +1333,9 @@ const probeToolNumber = ref<number>(99);
 const libraryTools = ref<any[]>([]);
 const toolSource = ref<string>('');
 // `num` is what the button sends and matches the loaded tool against: the
-// Tool ID. An empty slot has none, so its button does nothing.
+// Tool ID. An empty slot sends its slot number, which the tool changer reads
+// as that slot when no library tool has that ID. If one does (it lives
+// elsewhere), T<slot> would load that tool instead, so that slot is disabled.
 type LegendEntry = { key: string; slot: number | null; id: number | null; num: number | null; tool: any | null; unknown?: boolean };
 const magazineSlots = computed(() =>
   /manualtoolchange/i.test(toolSource.value) ? 0 : numberOfToolsToShow.value);
@@ -1344,7 +1346,7 @@ const legendEntries = computed<LegendEntry[]>(() => {
   for (let slot = 1; slot <= magazineSlots.value; slot++) {
     const tool = toolInventory.value?.[slot] ?? null;
     const id = tool?.toolId ?? null;
-    const num = id;
+    const num = id ?? (libraryTools.value.some((tl: any) => tl.toolId === slot) ? null : slot);
     if (num !== null) seen.add(num);
     out.push({ key: `s${slot}`, slot, id, num, tool });
   }
@@ -1369,7 +1371,7 @@ const toolHasTlo = (tool: any): boolean => {
   return typeof tlo === 'number' && Math.abs(tlo) > 0.0001;
 };
 const getEntryTooltip = (e: LegendEntry): string => {
-  if (e.id === null) return 'Empty';
+  if (e.id === null) return e.num !== null ? `Tool T${e.num} (Hold to change)` : 'Empty';
   if (e.unknown) return `Tool ${e.id} is not in the Tool Library`;
   const base = props.currentTool === e.id
     ? `Tool T${e.id} (Current - Hold to unload)`
@@ -5071,6 +5073,14 @@ const loadToolInventory = async () => {
     toolInventory.value = inventory;
   }
 };
+
+// Tool library type ids -> display names (expanded tool button in the tools legend).
+const TOOL_TYPE_LABELS: Record<string, string> = {
+  'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
+  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing',
+  'thread-mill': 'Thread Mill', 'probe': 'Probe'
+};
+const toolTypeLabel = (type: string): string => TOOL_TYPE_LABELS[type] ?? type;
 
 const formatDiameter = (mm: number): string => {
   if (appStore.unitsPreference.value === 'imperial') {

@@ -73,8 +73,8 @@ public class PendantManager : IPendantManager
 
     /// <summary>
     /// Tool-id concept: a T number is a Tool ID, so the pendant's slot button
-    /// loads whatever tool the library has in that slot. An empty slot does
-    /// nothing.
+    /// loads whatever tool the library has in that slot. An empty slot loads
+    /// that slot by number (see below).
     /// </summary>
     private async Task LoadSlotAsync(int slot)
     {
@@ -85,8 +85,14 @@ public class PendantManager : IPendantManager
             var id = tool?.ToolId ?? tool?.Id;
             if (id is null or <= 0)
             {
-                _logger.LogInformation("Pendant SLOT {Slot}: no tool in that slot", slot);
-                return;
+                // Empty slot: T<slot> means that slot to the tool changer, unless
+                // a library tool elsewhere owns that ID (then it would load it).
+                if (tools.Any(t => (t.ToolId ?? t.Id) == slot))
+                {
+                    _logger.LogInformation("Pendant SLOT {Slot}: empty, and Tool {Slot} lives elsewhere", slot, slot);
+                    return;
+                }
+                id = slot;
             }
             await HandleCncCommandCoreAsync($"M6T{id}");
         }
