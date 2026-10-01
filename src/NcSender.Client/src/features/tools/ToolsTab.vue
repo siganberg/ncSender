@@ -197,7 +197,7 @@
                 >
                 <div v-if="toolIdError" class="form-error-inline">{{ toolIdError }}</div>
               </div>
-              <div class="form-group">
+              <div v-if="maxToolCount > 0 || probeSlot" class="form-group">
                 <label class="form-label">Assigned To Slot</label>
                 <select class="form-select" v-model="toolForm.toolNumber">
                   <option :value="null">None (Not in magazine)</option>
@@ -593,7 +593,8 @@ const emit = defineEmits<{
 const appStore = useAppStore();
 
 // Computed
-const maxToolCount = computed(() => props.maxToolCount || 1);
+// No magazine (e.g. the Manual Tool Changer) means no slots to offer.
+const maxToolCount = computed(() => props.maxToolCount ?? 0);
 // The probe's slot number, or null when there is no Probe button.
 const probeSlot = computed<number | null>(() => (props.showProbeButton ? (props.probeToolNumber || 99) : null));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);

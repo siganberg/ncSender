@@ -133,10 +133,10 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="numberOfToolsToShow > 0 || showManualTool || showTlsTool || showProbeTool" class="tools-legend tools-legend--bottom">
+      <div v-if="!laserMode && (legendEntries.length > 0 || showTlsTool || showProbeTool)" class="tools-legend tools-legend--bottom">
         <!-- Scroll Up Button -->
         <button
-          v-if="numberOfToolsToShow > 8"
+          v-if="legendEntries.length > 8"
           class="tools-scroll-btn tools-scroll-btn--up"
           @mousedown="startScrollPress('up')"
           @mouseup="stopScrollPress"
@@ -152,57 +152,60 @@
         </button>
 
         <!-- Scrollable container for numbered tools -->
-        <div v-if="numberOfToolsToShow > 0" ref="toolsScrollContainer" class="tools-scrollable">
+        <!-- Tool buttons (tool-id concept): the magazine's slots first, in
+             slot order, each with its SLOT pill; then every other tool in
+             the Tool Library by Tool ID, as regular buttons. A button always
+             loads its tool by Tool ID. -->
+        <div v-if="legendEntries.length > 0" ref="toolsScrollContainer" class="tools-scrollable">
           <div
-            v-for="t in numberOfToolsToShow"
-            :key="t"
+            v-for="e in legendEntries"
+            :key="e.key"
             class="tools-legend__item"
             :class="{
-              'active': currentTool === t,
-              'used': toolsUsed.includes(t),
+              'active': e.num !== null && currentTool === e.num,
+              'used': e.id !== null && toolsUsed.includes(e.id),
               'disabled': isToolActionsDisabled,
-              'long-press-triggered': toolPress[t]?.triggered,
-              'blink-border': toolPress[t]?.blinking,
-              'expanded': showToolInfo === t
+              'long-press-triggered': toolPress[e.key]?.triggered,
+              'blink-border': toolPress[e.key]?.blinking,
+              'expanded': showToolInfo === e.key,
+              'tools-legend__item--unknown': e.unknown
             }"
-            :style="toolsUsed.includes(t) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(t)}` } : {}"
-            :title="getToolTooltip(t)"
-            @mousedown="isToolActionsDisabled ? null : startToolPress(t, $event)"
-            @mouseup="isToolActionsDisabled ? null : endToolPress(t)"
-            @mouseleave="isToolActionsDisabled ? null : cancelToolPress(t)"
-            @touchstart="isToolActionsDisabled ? null : startToolPress(t, $event)"
-            @touchend="isToolActionsDisabled ? null : endToolPress(t)"
-            @touchcancel="isToolActionsDisabled ? null : cancelToolPress(t)"
+            :style="e.id !== null && toolsUsed.includes(e.id) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(e.id)}` } : {}"
+            :title="getEntryTooltip(e)"
+            @mousedown="isToolActionsDisabled ? null : startToolPress(e.key, $event)"
+            @mouseup="isToolActionsDisabled ? null : endToolPress(e.key)"
+            @mouseleave="isToolActionsDisabled ? null : cancelToolPress(e.key)"
+            @touchstart="isToolActionsDisabled ? null : startToolPress(e.key, $event)"
+            @touchend="isToolActionsDisabled ? null : endToolPress(e.key)"
+            @touchcancel="isToolActionsDisabled ? null : cancelToolPress(e.key)"
           >
-            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[t]?.progress || 0}%` }"></div>
-            <!-- Small dot in the top-right corner of the slot button when
-                 the assigned bit has a stored TLO in the tool library. -->
+            <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[e.key]?.progress || 0}%` }"></div>
+            <!-- Small dot in the top-right corner when the tool has a stored
+                 TLO in the tool library. -->
             <span
-              v-if="hasStoredTlo(t)"
+              v-if="toolHasTlo(e.tool)"
               class="tools-legend__tlo-dot"
-              :title="`TLO stored (${formatDiameter(toolInventory?.[t]?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
+              :title="`TLO stored (${formatDiameter(e.tool?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
             ></span>
-            <span v-if="showToolInfo !== t" class="tools-legend__label">Slot{{ t }}</span>
-            <span v-if="showToolInfo === t && toolInventory && toolInventory[t]" class="tool-name-expanded">
-              <span v-if="toolInventory[t].toolId" class="tool-id-label">#{{ toolInventory[t].toolId }}</span>
-              <template v-if="toolInventory[t].diameter || toolInventory[t].type">
-                <span v-if="toolInventory[t].toolId && (toolInventory[t].diameter || toolInventory[t].type)"> - </span>
-                <span v-if="toolInventory[t].diameter">Ø{{ formatDiameter(toolInventory[t].diameter) }}{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
-                <span v-if="toolInventory[t].diameter && toolInventory[t].type"> - </span>
-                <span v-if="toolInventory[t].type">{{
-                  { 'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
-                    'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing', 'thread-mill': 'Thread Mill', 'probe': 'Probe'
-                  }[toolInventory[t].type] || toolInventory[t].type
-                }}</span>
-              </template>
-              <template v-else-if="!toolInventory[t].toolId">{{ toolInventory[t].name }}</template>
+            <!-- Only a magazine slot gets the SLOT pill; any other tool is a
+                 regular button. -->
+            <span v-if="e.slot !== null" class="tools-legend__pill">
+              <span class="tools-legend__pill-word">Slot</span>
+              <span class="tools-legend__pill-num">{{ e.slot }}</span>
+            </span>
+            <span v-if="showToolInfo !== e.key" class="tools-legend__id" :class="{ 'tools-legend__id--empty': e.id === null }">{{ e.id !== null ? `Tool ${e.id}` : 'Empty' }}</span>
+            <span v-if="showToolInfo === e.key && e.tool" class="tool-name-expanded">
+              <span class="tool-id-label">#{{ e.id }}</span>
+              <span v-if="e.tool.diameter"> · Ø{{ formatDiameter(e.tool.diameter) }}{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
+              <span v-if="e.tool.type"> · {{ toolTypeLabel(e.tool.type) }}</span>
+              <span v-if="!e.tool.diameter && !e.tool.type && e.tool.name"> · {{ e.tool.name }}</span>
             </span>
           </div>
         </div>
 
         <!-- Scroll Down Button -->
         <button
-          v-if="numberOfToolsToShow > 8"
+          v-if="legendEntries.length > 8"
           class="tools-scroll-btn tools-scroll-btn--down"
           @mousedown="startScrollPress('down')"
           @mouseup="stopScrollPress"
@@ -216,30 +219,6 @@
             <path d="M12 16L6 10L18 10L12 16Z" fill="currentColor"/>
           </svg>
         </button>
-
-        <!-- Manual Tool -->
-        <div
-          v-if="showManualTool"
-          :key="'manual'"
-          class="tools-legend__item manual-tool"
-          :class="{
-            'active': currentTool > numberOfToolsToShow && currentTool < probeToolNumber,
-            'used': toolsUsed.some(t => t > numberOfToolsToShow && t < probeToolNumber),
-            'disabled': isToolActionsDisabled,
-            'long-press-triggered': toolPress['manual']?.triggered,
-            'blink-border': toolPress['manual']?.blinking
-          }"
-          :title="`${manualToolLabel} (Hold to change)`"
-          @mousedown="isToolActionsDisabled ? null : startToolPress('manual', $event)"
-          @mouseup="isToolActionsDisabled ? null : endToolPress('manual')"
-          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('manual')"
-          @touchstart="isToolActionsDisabled ? null : startToolPress('manual', $event)"
-          @touchend="isToolActionsDisabled ? null : endToolPress('manual')"
-          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('manual')"
-        >
-          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['manual']?.progress || 0}%` }"></div>
-          <span class="tools-legend__label">{{ manualToolLabel }}</span>
-        </div>
 
         <!-- Probe Tool -->
         <div
@@ -265,11 +244,15 @@
                library under its own tool number, so its stored offset shows
                here too. -->
           <span
-            v-if="hasStoredTlo(probeToolNumber)"
+            v-if="toolHasTlo(probeLibraryTool)"
             class="tools-legend__tlo-dot"
-            :title="`TLO stored (${formatDiameter(toolInventory?.[probeToolNumber]?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
+            :title="`TLO stored (${formatDiameter(probeLibraryTool?.offsets?.tlo ?? 0)}${getDistanceUnitLabel(appStore.unitsPreference.value)})`"
           ></span>
-          <span class="tools-legend__label">Probe</span>
+          <span class="tools-legend__pill">
+            <span class="tools-legend__pill-word">Probe</span>
+            <svg class="tools-legend__pill-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5 2h7a2 2 0 0 1 2 2v3.5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm.75 4.25a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5z"/><path d="M9.3 10h5.4l-1.5 2.4h-2.4z"/><rect x="11.1" y="12.2" width="1.8" height="5.6" rx=".5"/><circle cx="12" cy="19.9" r="2.5"/></svg>
+          </span>
+          <span class="tools-legend__id">Tool {{ probeToolNumber }}</span>
         </div>
 
         <!-- TLS Tool -->
@@ -1301,7 +1284,7 @@ const showPreRunState = computed(() => {
   return !!props.jobLoaded?.filename && props.jobLoaded?.status === null;
 });
 const toolInventory = ref<Record<number, any> | null>(null); // Tool inventory data from plugin
-const showToolInfo = ref<number | null>(null); // Currently displayed tool info popup
+const showToolInfo = ref<string | null>(null); // Currently displayed tool info popup
 const outOfBoundsAxes = ref<string[]>([]);
 const outOfBoundsDirections = ref<string[]>([]);
 const outOfBoundsMessage = computed(() => {
@@ -1341,6 +1324,58 @@ const showProbeTool = ref<boolean>(false);
 // The probe's tool number comes from the tool provider (the ATC plugin's
 // Probe Auto-Loader lets the user pick it); 99 is the historical default.
 const probeToolNumber = ref<number>(99);
+
+// Experiment (tool-id concept): the tool buttons come from the Tool Library.
+// The magazine's slots come first (slot order), then every other library
+// tool by Tool ID; a loaded tool the library doesn't know gets a button of
+// its own while it's in the spindle. Holding a button sends M6 T<Tool ID>.
+// The Manual Tool Changer has no magazine, so it gets no slot buttons.
+const libraryTools = ref<any[]>([]);
+const toolSource = ref<string>('');
+// `num` is what the button sends and matches the loaded tool against: the
+// Tool ID. An empty slot has none, so its button does nothing.
+type LegendEntry = { key: string; slot: number | null; id: number | null; num: number | null; tool: any | null; unknown?: boolean };
+const magazineSlots = computed(() =>
+  /manualtoolchange/i.test(toolSource.value) ? 0 : numberOfToolsToShow.value);
+const legendEntries = computed<LegendEntry[]>(() => {
+  const probe = showProbeTool.value ? probeToolNumber.value : -1;
+  const out: LegendEntry[] = [];
+  const seen = new Set<number>();
+  for (let slot = 1; slot <= magazineSlots.value; slot++) {
+    const tool = toolInventory.value?.[slot] ?? null;
+    const id = tool?.toolId ?? null;
+    const num = id;
+    if (num !== null) seen.add(num);
+    out.push({ key: `s${slot}`, slot, id, num, tool });
+  }
+  if (!magazineSlots.value && !numberOfToolsToShow.value && !showManualTool.value) return out;
+  const rest: LegendEntry[] = libraryTools.value
+    .filter((tl: any) => Number.isInteger(tl.toolId) && tl.toolId > 0 && tl.toolId !== probe && !seen.has(tl.toolId))
+    .map((tl: any) => { seen.add(tl.toolId); return { key: `i${tl.toolId}`, slot: null, id: tl.toolId, num: tl.toolId, tool: tl }; });
+  // A loaded tool the library doesn't know (e.g. set with M61): shown in ID
+  // order among the others, flagged, until another tool is loaded.
+  const cur = props.currentTool ?? 0;
+  if (cur > 0 && cur !== probe && !seen.has(cur)) {
+    rest.push({ key: `i${cur}`, slot: null, id: cur, num: cur, tool: null, unknown: true });
+  }
+  rest.sort((x, y) => (x.id ?? 0) - (y.id ?? 0));
+  return out.concat(rest);
+});
+const probeLibraryTool = computed(() =>
+  libraryTools.value.find((tl: any) => tl.toolId === probeToolNumber.value) ?? toolInventory.value?.[probeToolNumber.value] ?? null);
+const entryByKey = (key: string) => legendEntries.value.find(e => e.key === key);
+const toolHasTlo = (tool: any): boolean => {
+  const tlo = tool?.offsets?.tlo;
+  return typeof tlo === 'number' && Math.abs(tlo) > 0.0001;
+};
+const getEntryTooltip = (e: LegendEntry): string => {
+  if (e.id === null) return 'Empty';
+  if (e.unknown) return `Tool ${e.id} is not in the Tool Library`;
+  const base = props.currentTool === e.id
+    ? `Tool T${e.id} (Current - Hold to unload)`
+    : `Tool T${e.id} (Hold to change)`;
+  return e.tool?.name ? `${base} - ${e.tool.name}` : base;
+};
 
 // Manual tool label - show tool number when manual tool is active
 const manualToolLabel = computed(() => {
@@ -4212,8 +4247,9 @@ watch(isToolChanging, (nowChanging, wasChanging) => {
 
 // Auto-expand tool button when current tool changes
 watch(() => props.currentTool, (newTool) => {
-  if (newTool && newTool > 0 && toolInventory.value && toolInventory.value[newTool]) {
-    showToolInfo.value = newTool;
+  const entry = newTool && newTool > 0 ? legendEntries.value.find(e => e.num === newTool) : undefined;
+  if (entry?.tool) {
+    showToolInfo.value = entry.key;
   }
 });
 
@@ -4620,9 +4656,18 @@ const startToolPress = (toolNumber: number | string, _evt?: Event) => {
 
       // Determine tool number to send
       let toolToLoad: number;
-      if (toolNumber === 'manual') {
-        // Manual tool - use a number greater than numberOfToolsToShow
-        toolToLoad = props.currentTool > numberOfToolsToShow.value ? 0 : numberOfToolsToShow.value + 1;
+      const entry = typeof toolNumber === 'string' ? entryByKey(toolNumber) : undefined;
+      if (entry) {
+        // Library button: load by Tool ID; the loaded tool's button unloads.
+        // An empty slot has nothing to load.
+        if (entry.num === null) {
+          state.progress = 0;
+          state.active = false;
+          state.blinking = true;
+          setTimeout(() => { state.blinking = false; }, 400);
+          return;
+        }
+        toolToLoad = props.currentTool === entry.num ? 0 : entry.num;
       } else if (toolNumber === 'probe') {
         // Probe tool - number comes from the tool provider (default T99)
         toolToLoad = props.currentTool === probeToolNumber.value ? 0 : probeToolNumber.value;
@@ -4656,7 +4701,7 @@ const endToolPress = (toolNumber: number | string) => {
     state.progress = 0;
 
     // If this is a numbered tool with inventory data, toggle expansion instead of blink
-    if (typeof toolNumber === 'number' && toolInventory.value?.[toolNumber]) {
+    if (typeof toolNumber === 'string' && entryByKey(toolNumber)?.tool) {
       toggleToolInfo(toolNumber);
     } else {
       // No inventory data - close any expanded tool and show blink feedback
@@ -4914,7 +4959,8 @@ const scrollToCurrentTool = () => {
 
   // Calculate scroll position to center the current tool (or show it in view)
   // Scroll to position where current tool is at index 3 (middle of 8 visible tools)
-  const targetIndex = toolNumber - 1; // Zero-based index
+  const targetIndex = legendEntries.value.findIndex(e => e.num === toolNumber);
+  if (targetIndex < 0) return;
   const scrollPosition = Math.max(0, (targetIndex - 3) * itemHeight);
 
   toolsScrollContainer.value.scrollTo({
@@ -5015,6 +5061,7 @@ const loadToolInventory = async () => {
 
   // Convert tools array to lookup map by toolNumber for quick access
   if (Array.isArray(tools)) {
+    libraryTools.value = tools;
     const inventory: Record<number, any> = {};
     tools.forEach((tool: any) => {
       if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
@@ -5061,7 +5108,7 @@ const getToolTooltip = (toolNumber: number): string => {
 };
 
 // Toggle tool expansion (for click/tap interaction)
-const toggleToolInfo = (toolNumber: number) => {
+const toggleToolInfo = (toolNumber: string) => {
   if (showToolInfo.value === toolNumber) {
     showToolInfo.value = null;
   } else {
@@ -5090,6 +5137,9 @@ onMounted(async () => {
   if (settings) {
     if (typeof settings.tool?.count === 'number') {
       numberOfToolsToShow.value = settings.tool.count;
+    }
+    if (typeof settings.tool?.source === 'string') {
+      toolSource.value = settings.tool.source;
     }
     if (typeof settings.tool?.manual === 'boolean') {
       showManualTool.value = settings.tool.manual;
@@ -5186,6 +5236,9 @@ onMounted(async () => {
     // Apply only the changed settings
     if (changedSettings.tool?.count !== undefined) {
       numberOfToolsToShow.value = changedSettings.tool.count;
+    }
+    if (typeof changedSettings.tool?.source === 'string') {
+      toolSource.value = changedSettings.tool.source;
     }
     if (changedSettings.tool?.manual !== undefined) {
       showManualTool.value = changedSettings.tool.manual;
@@ -5289,6 +5342,7 @@ onMounted(async () => {
   offToolsUpdated = api.on('tools-updated', (tools: any[]) => {
     showToolInfo.value = null;
     if (Array.isArray(tools)) {
+      libraryTools.value = tools;
       const inventory: Record<number, any> = {};
       tools.forEach((tool: any) => {
         if (tool.toolNumber !== null && tool.toolNumber !== undefined) {
@@ -6171,6 +6225,82 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   font-size: 1.2rem;
   font-weight: 500;
   text-transform: uppercase;
+}
+
+/* "Tool 15" in the button, the pocket as a pill on its left edge: the word
+   small on top, the pocket number big underneath ("SLOT" / "1"), in the
+   same 122x44 button. Probe / Manual pills carry a single small word. */
+.tools-legend__item:has(.tools-legend__pill) {
+  padding-left: 46px;
+  padding-right: 6px;
+}
+.tools-legend__pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+  color: var(--color-text-secondary);
+  z-index: 1;
+}
+.tools-legend__pill-word {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.tools-legend__pill-num {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* A pocket with no tool assigned: quiet, so the loaded pockets stand out. */
+.tools-legend__id--empty {
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+/* Probe: the probe button's icon, small, over the word. */
+.tools-legend__item--unknown {
+  outline: 2px dashed var(--color-warning, #f59e0b);
+  outline-offset: -2px;
+}
+
+.tools-legend__pill-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Manual: the word runs up the pill, bottom to top. */
+.tools-legend__pill--word {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.tools-legend__item.active .tools-legend__pill {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.tools-legend__id {
+  position: relative;
+  z-index: 1;
+  font-size: 1.02rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .tools-legend__item.manual-tool,
@@ -7204,9 +7334,9 @@ body.theme-light .dot--rapid {
 
 /* Tool Expansion */
 .tools-legend__item.expanded {
-  min-width: 240px;
-  max-width: 240px;
-  justify-content: center;
+  min-width: 300px;
+  max-width: 300px;
+  justify-content: flex-start;
   /* Keep overflow: hidden from the base rule — otherwise the
      long-press fill overlay escapes the rounded corners when the
      button is expanded. The fadeInFromRight animation only offsets
@@ -7219,11 +7349,11 @@ body.theme-light .dot--rapid {
   opacity: 0;
   animation: fadeInFromRight 0.3s ease forwards;
   animation-delay: 0.15s;
-  margin-right: auto;
-  margin-left: 0;
   padding-right: 8px;
   font-weight: 500;
-  order: -1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tools-legend__item.active .tool-name-expanded {
