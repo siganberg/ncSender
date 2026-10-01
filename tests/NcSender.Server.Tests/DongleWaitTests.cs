@@ -59,7 +59,7 @@ public class DongleWaitTests
 
     [Fact]
     public void DisplayName_FallsBackToTheDeviceName() =>
-        Assert.Equal("xprobe", DongleWait.TryParse("(DONGLE_WAIT:xprobe:state=1:0:2)")!.DisplayName);
+        Assert.Equal("ncprobe", DongleWait.TryParse("(DONGLE_WAIT:ncprobe:state=1:0:2)")!.DisplayName);
 
     [Theory]
     [InlineData("status pos=-3 expand=46524 state=home", "pos", -3)]

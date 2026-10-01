@@ -280,7 +280,7 @@ const baseUrl = getApiBaseUrl();
 // Where to buy each accessory. Presentation only, so it lives here rather than
 // in the server catalogue. The AutoDustBoot is a search rather than a product
 // page on purpose: it ships in machine-specific variants (Alt-Mill, Onefinity,
-// Creator Kit) and picking one would be wrong for most readers. The xProbe is
+// Creator Kit) and picking one would be wrong for most readers. The ncProbe is
 // absent because it is not sold yet — no entry means no button.
 const STORE_URLS: Record<string, string> = {
   'wireless-usb': 'https://franciscreation.com/p/ncsender-wireless-usb',
@@ -331,7 +331,7 @@ const needsInstallationId = ref(false);
 const offs: Array<() => void> = [];
 
 // Catalogue order, always: Wireless USB, Pendant, AutoDustBoot, RGB LED,
-// xProbe. This used to sort by connection state, which meant rows swapped
+// ncProbe. This used to sort by connection state, which meant rows swapped
 // places whenever a device came or went — you would reach for one and press
 // another. A device's position is now something you can learn.
 const rows = computed(() => {
@@ -512,7 +512,7 @@ async function onFilePicked(ev: Event) {
   // Check the file looks like this device's firmware before sending it.
   // Most of these accessories are the same ESP32-S3, so a mismatched image
   // passes the header check the device itself makes and boots as the wrong
-  // product — an xProbe build on the Wireless USB leaves you with a dongle
+  // product — an ncProbe build on the Wireless USB leaves you with a dongle
   // that no longer relays anything. The device cannot catch this; only the
   // name can.
   const prefix = target.assetPrefix || '';

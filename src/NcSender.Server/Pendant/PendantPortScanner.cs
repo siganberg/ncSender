@@ -44,7 +44,7 @@ public class PendantPortScanner : IDisposable
 
     /// <summary>
     /// Any change to the set of ncSender USB devices present — including the
-    /// accessories this scanner does not open (XProbe, AutoDustBoot, RGB).
+    /// accessories this scanner does not open (NcProbe, AutoDustBoot, RGB).
     ///
     /// Their cables matter even though the scanner ignores them: a cable decides
     /// whether an update goes wired or wireless, and the Accessories panel

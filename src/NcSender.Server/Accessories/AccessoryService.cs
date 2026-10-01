@@ -209,7 +209,7 @@ public sealed class AccessoryService
     {
         var kind = peerName.ToLowerInvariant() switch
         {
-            "xprobe"       => NcSenderUsbKind.XProbe,
+            "ncprobe"       => NcSenderUsbKind.NcProbe,
             "autodustboot" => NcSenderUsbKind.AutoDustBoot,
             "pendant"      => NcSenderUsbKind.Pendant,
             // RGB is a C3: no wired path today, so it is never on a cable as

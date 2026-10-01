@@ -89,7 +89,7 @@ public static class DongleEndpoints
             // Refuse an image that says it belongs to a different accessory.
             //
             // Every ncSender firmware carries an "NCSENDER-FW-ID:<id>:" marker.
-            // This check exists because the dongle, pendant, xProbe and
+            // This check exists because the dongle, pendant, ncProbe and
             // AutoDustBoot are all ESP32-S3: a mismatched image passes the
             // header check the DEVICE makes and boots as the wrong product,
             // leaving — for instance — a Wireless USB that relays nothing and

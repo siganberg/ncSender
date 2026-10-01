@@ -48,18 +48,18 @@ public class PendantConnectionTests : IDisposable
         var probeService = new Mock<IProbeService>();
         var usbCatalog = new Mock<INcSenderUsbCatalog>();
         usbCatalog.Setup(c => c.GetDevices()).Returns(Array.Empty<NcSenderUsbDevice>());
-        // The OTA service holds the XProbe router so it can park the port scan
+        // The OTA service holds the NcProbe router so it can park the port scan
         // for the duration of a firmware push. A real router over the same
         // no-device catalog mock never opens anything, so it needs no stubbing.
-        var xprobeRouter = new NcSender.Server.Dongle.XProbeRouter(
+        var ncprobeRouter = new NcSender.Server.Dongle.NcProbeRouter(
             dongleDevices.Object,
             usbCatalog.Object,
-            NullLogger<NcSender.Server.Dongle.XProbeRouter>.Instance);
+            NullLogger<NcSender.Server.Dongle.NcProbeRouter>.Instance);
         var dongleOta = new NcSender.Server.Dongle.DongleOtaService(
             NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
             dongleDevices.Object,
             usbCatalog.Object,
-            xprobeRouter,
+            ncprobeRouter,
             new NcSender.Server.Usb.UsbPortLeases(),
             _broadcaster.Object);
         _manager = new PendantManager(

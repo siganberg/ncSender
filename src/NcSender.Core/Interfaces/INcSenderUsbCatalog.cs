@@ -4,7 +4,7 @@ namespace NcSender.Core.Interfaces;
 
 /// <summary>
 /// Enumerates USB serial devices whose descriptors match a known ncSender
-/// accessory VID+PID. Consumers (XProbe scanner, pendant discovery, dongle
+/// accessory VID+PID. Consumers (NcProbe scanner, pendant discovery, dongle
 /// discovery) filter by <see cref="NcSenderUsbDevice.Kind"/> instead of
 /// opening every unclaimed port and probing with <c>$ID</c> — which resets
 /// Arduino-class devices and briefly locks ports on Windows.

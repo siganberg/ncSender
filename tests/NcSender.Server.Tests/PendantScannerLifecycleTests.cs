@@ -44,12 +44,12 @@ public class PendantScannerLifecycleTests : IDisposable
         var dongleDevices = new Mock<IDongleDeviceService>();
         var usbCatalog = new Mock<INcSenderUsbCatalog>();
         usbCatalog.Setup(c => c.GetDevices()).Returns(Array.Empty<NcSenderUsbDevice>());
-        var xprobeRouter = new NcSender.Server.Dongle.XProbeRouter(
+        var ncprobeRouter = new NcSender.Server.Dongle.NcProbeRouter(
             dongleDevices.Object, usbCatalog.Object,
-            NullLogger<NcSender.Server.Dongle.XProbeRouter>.Instance);
+            NullLogger<NcSender.Server.Dongle.NcProbeRouter>.Instance);
         var dongleOta = new NcSender.Server.Dongle.DongleOtaService(
             NullLogger<NcSender.Server.Dongle.DongleOtaService>.Instance,
-            dongleDevices.Object, usbCatalog.Object, xprobeRouter,
+            dongleDevices.Object, usbCatalog.Object, ncprobeRouter,
             new NcSender.Server.Usb.UsbPortLeases(), broadcaster.Object);
 
         var manager = new PendantManager(

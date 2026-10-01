@@ -20,7 +20,7 @@ public sealed record NcSenderUsbDevice(
 public enum NcSenderUsbKind
 {
     Unknown = 0,
-    XProbe = 1,          // 0x303A / 0x8210
+    NcProbe = 1,          // 0x303A / 0x8210
     WirelessDongle = 2,  // 0x303A / 0x8211  (reserved — firmware not shipped)
     Pendant = 3,         // 0x303A / 0x8212  (reserved — firmware not shipped)
     AutoDustBoot = 4,    // 0x303A / 0x8213  (reserved — firmware not shipped)

@@ -52,7 +52,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private static readonly Dictionary<(ushort Vid, ushort Pid), NcSenderUsbKind> KnownPids =
         new()
         {
-            [(NcSenderVid, 0x8210)] = NcSenderUsbKind.XProbe,
+            [(NcSenderVid, 0x8210)] = NcSenderUsbKind.NcProbe,
             [(NcSenderVid, 0x8211)] = NcSenderUsbKind.WirelessDongle,
             [(NcSenderVid, 0x8212)] = NcSenderUsbKind.Pendant,
             [(NcSenderVid, 0x8213)] = NcSenderUsbKind.AutoDustBoot,
@@ -69,7 +69,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private static readonly Dictionary<string, NcSenderUsbKind> KnownProductStrings =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["ncSender XProbe"]           = NcSenderUsbKind.XProbe,
+            ["ncSender ncProbe"]           = NcSenderUsbKind.NcProbe,
             ["ncSender Wireless USB"]     = NcSenderUsbKind.WirelessDongle,
             ["ncSender Pendant"]          = NcSenderUsbKind.Pendant,
             ["ncSender AutoDustBoot"]     = NcSenderUsbKind.AutoDustBoot,

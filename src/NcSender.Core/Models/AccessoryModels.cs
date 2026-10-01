@@ -50,7 +50,7 @@ public class AccessoryInfo
     public string? PluginName { get; set; }
 
     /// <summary>
-    /// Filename prefix of this device's firmware, e.g. "firmware_xprobe_v".
+    /// Filename prefix of this device's firmware, e.g. "firmware_ncprobe_v".
     /// The view checks a hand-picked file against it before flashing: most of
     /// these devices are the same ESP32-S3, so a mismatched image passes every
     /// check the device itself makes and boots as the wrong product.

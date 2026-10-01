@@ -1475,7 +1475,7 @@ public class PendantManager : IPendantManager
     /// This used to live in OnRawMessage, which is attached only to the ACTIVE
     /// handler. That was fine while the dongle always held that role, but the
     /// moment a pendant cable took the link every "@peer …" line stopped being
-    /// read: the AutoDustBoot, RGB and XProbe all went stale at the same instant
+    /// read: the AutoDustBoot, RGB and NcProbe all went stale at the same instant
     /// while the dongle itself sat there happily relaying, still showing them
     /// green on its own display. The dongle's job as a peer gateway has nothing
     /// to do with which transport the pendant happens to be on, so it is wired

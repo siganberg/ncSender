@@ -3,8 +3,8 @@ using NcSender.Core.Interfaces;
 namespace NcSender.Server.Dongle;
 
 /// <summary>
-/// Translates xprobe payloads (from either wired USB or wireless ESP-NOW,
-/// arbitrated by <see cref="IXProbeSource"/>) into grblHAL virtual-input
+/// Translates ncprobe payloads (from either wired USB or wireless ESP-NOW,
+/// arbitrated by <see cref="INcProbeSource"/>) into grblHAL virtual-input
 /// realtime bytes on the controller. The compact wire payload carries
 /// channel-source + state + type + seq:
 ///
@@ -22,22 +22,22 @@ namespace NcSender.Server.Dongle;
 /// byte path used elsewhere for feedhold / status request.
 ///
 /// The translator itself doesn't know which transport (wired or wireless)
-/// delivered a given payload — <see cref="IXProbeSource"/> selects the
+/// delivered a given payload — <see cref="INcProbeSource"/> selects the
 /// authoritative one and suppresses the other while both are up.
 ///
 /// Backward compat: payloads without the trailing <c>:P</c>/<c>:T</c> field
 /// (older firmware) are treated as probe channel.
 /// </summary>
-public sealed class XProbeTranslator : IHostedService
+public sealed class NcProbeTranslator : IHostedService
 {
     private const byte ProbeAssert       = 0xA5;
     private const byte ProbeRelease      = 0xA6;
     private const byte ToolsetterAssert  = 0xA7;
     private const byte ToolsetterRelease = 0xA8;
 
-    private readonly IXProbeSource _source;
+    private readonly INcProbeSource _source;
     private readonly ICncController _controller;
-    private readonly ILogger<XProbeTranslator> _logger;
+    private readonly ILogger<NcProbeTranslator> _logger;
 
     // NOTE: previously kept per-channel dedup (_lastProbeState / _lastTls…)
     // to skip re-writing bytes when incoming state matched. That was WRONG:
@@ -45,7 +45,7 @@ public sealed class XProbeTranslator : IHostedService
     // inputs plugin zeroes its own state — but this translator's dedup
     // memory stays "1" from the last edge, so subsequent 1:H heartbeats
     // match dedup and never re-drive the pin. grblHAL is left believing
-    // the probe is released while the XProbe firmware keeps insisting
+    // the probe is released while the NcProbe firmware keeps insisting
     // "1:H:...:P" (physically triggered).
     //
     // Fix follows the HID keyboard/mouse model: every report (edge OR
@@ -56,10 +56,10 @@ public sealed class XProbeTranslator : IHostedService
     // (soft-reset, packet reorder, connection blip) corrects within
     // HEARTBEAT_MS of the next report.
 
-    public XProbeTranslator(
-        IXProbeSource source,
+    public NcProbeTranslator(
+        INcProbeSource source,
         ICncController controller,
-        ILogger<XProbeTranslator> logger)
+        ILogger<NcProbeTranslator> logger)
     {
         _source = source;
         _controller = controller;
@@ -107,11 +107,11 @@ public sealed class XProbeTranslator : IHostedService
         try
         {
             await _source.SendAsync("status");
-            _logger.LogDebug("XPROBE state resync polled ({Reason})", reason);
+            _logger.LogDebug("NCPROBE state resync polled ({Reason})", reason);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "XProbeTranslator: status poll ({Reason}) failed — device likely offline; heartbeat will self-heal within ~3s", reason);
+            _logger.LogDebug(ex, "NcProbeTranslator: status poll ({Reason}) failed — device likely offline; heartbeat will self-heal within ~3s", reason);
         }
     }
 
@@ -152,7 +152,7 @@ public sealed class XProbeTranslator : IHostedService
 
     private async Task SendAsync(byte b)
     {
-        // The xprobe streams heartbeats every ~100 ms, so if the CNC
+        // The ncprobe streams heartbeats every ~100 ms, so if the CNC
         // controller is disconnected (USB unplugged, mid-reconnect) we'd
         // otherwise spew 10 stack traces per second into the log. Skip
         // silently — the heartbeat will re-drive the pin the moment the
@@ -162,9 +162,9 @@ public sealed class XProbeTranslator : IHostedService
         {
             await _controller.WriteRawAsync(new[] { b });
             // Debug-level: one line per probe/TLS edge is fine when triaging
-            // but useless noise in a normal run. Bump the XProbeTranslator
+            // but useless noise in a normal run. Bump the NcProbeTranslator
             // category to Debug when you need to see it again.
-            _logger.LogDebug("XPROBE -> controller 0x{Byte:X2} ({Action})",
+            _logger.LogDebug("NCPROBE -> controller 0x{Byte:X2} ({Action})",
                 b, ActionLabel(b));
         }
         catch (Exception ex)
@@ -172,7 +172,7 @@ public sealed class XProbeTranslator : IHostedService
             // Still warn on write failures that survive the gate above —
             // those are real (mid-write disconnect race, transport
             // fault) and worth logging.
-            _logger.LogWarning(ex, "XProbeTranslator: failed to write byte 0x{Byte:X2} to controller", b);
+            _logger.LogWarning(ex, "NcProbeTranslator: failed to write byte 0x{Byte:X2} to controller", b);
         }
     }
 

@@ -178,11 +178,11 @@ const deviceRows = computed(() => {
 
 // Devices that can pair but aren't in the store catalog yet. They still need
 // their real capitalisation — the generic fallback below title-cases the routing
-// tag, turning 'xprobe' into 'Xprobe'. Keeping them out of CATALOG matters:
+// tag, turning 'ncprobe' into 'Ncprobe'. Keeping them out of CATALOG matters:
 // catalog entries render a row with a "Get One" link even when unpaired, which
 // would advertise hardware that isn't on sale.
 const DISPLAY_NAMES: Record<string, string> = {
-  xprobe: 'xProbe',
+  ncprobe: 'ncProbe',
 };
 
 function prettyName(name: string): string {

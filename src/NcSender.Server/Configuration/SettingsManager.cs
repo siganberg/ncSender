@@ -270,7 +270,7 @@ public class SettingsManager : ISettingsManager
                 "baudRate": 115200,
                 "autoConnect": true
             },
-            "xprobe": {
+            "ncprobe": {
                 "enabled": false
             }
         }
