@@ -517,7 +517,8 @@ public class JsPluginEngine : IJsPluginEngine
                 if (toolNumber <= 0) return JsBoolean.False;
                 var patch = args.Length > 1 && args[1] is ObjectInstance p ? p : null;
                 var tools = _toolService.GetAllAsync().GetAwaiter().GetResult();
-                var tool = tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
+                var tool = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber)
+                           ?? tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
                 if (tool is null) return JsBoolean.False;
 
                 if (patch is not null)

@@ -75,7 +75,8 @@ public class PendantConnectionTests : IDisposable
             gates.Object,
             usbCatalog.Object,
             new NcSender.Server.Usb.UsbPortLeases(),
-            probeService.Object
+            probeService.Object,
+            new Mock<NcSender.Core.Interfaces.IToolService>().Object
         );
     }
 

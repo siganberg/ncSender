@@ -47,8 +47,10 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
         foreach (var kv in _pending.ToArray())
         {
             var toolNumber = kv.Key;
-            var tool = tools.FirstOrDefault(t => t.ToolNumber == toolNumber)
-                       ?? tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber);
+            // Tool ID first, then slot — as CncEventBridge resolves a T word
+            // (tool-id concept: a T number names the tool, not the pocket).
+            var tool = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber)
+                       ?? tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
             if (tool is not null)
             {
                 tool.Offsets.Tlo = tloValue;

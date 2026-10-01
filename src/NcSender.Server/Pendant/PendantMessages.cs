@@ -24,6 +24,12 @@ public record PendantOutputsConfigMsg(string Type, PendantOutputsConfigData Data
 // ProbeTool: the probe's tool number when the tool provider offers a probe
 // (tool.probe on), else 0. The pendant lists it after the last slot.
 public record PendantOutputsConfigData(PendantAuxOutput[] Aux, int SlotCount, int ProbeTool, bool Manual, bool Tls);
+// Tool-id concept: the Outputs picker's entries, in the app's button order.
+// T is "slot.id" pairs separated by commas: slot 0 = a library tool outside
+// the magazine, id 0 = an empty slot. e.g. "1.1,2.2,3.0,12.24,0.31".
+// A plain string keeps it well under the pendant's 1 KB reassembly buffer.
+public record PendantToolListMsg(string Type, PendantToolListData Data);
+public record PendantToolListData(string T);
 public record PendantAuxOutput(
     string Id,
     string Name,
@@ -34,6 +40,7 @@ public record PendantAuxOutput(
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(PendantTypeMsg))]
+[JsonSerializable(typeof(PendantToolListMsg))]
 [JsonSerializable(typeof(PendantTypeDataMsg))]
 [JsonSerializable(typeof(PendantFlashInitMsg))]
 [JsonSerializable(typeof(PendantFlashDataMsg))]

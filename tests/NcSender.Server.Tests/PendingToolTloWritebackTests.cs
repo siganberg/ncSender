@@ -42,8 +42,9 @@ public class PendingToolTloWritebackTests
     }
 
     [Fact]
-    public void The_slot_wins_when_a_tool_id_matches_the_same_number()
+    public void The_tool_id_wins_when_a_slot_matches_the_same_number()
     {
+        // Tool-id concept: T4 is Tool 4, not whatever sits in slot 4.
         var inSlot4 = new ToolInfo { Id = 10, ToolNumber = 4, ToolId = 68 };
         var toolIdFour = new ToolInfo { Id = 12, ToolNumber = null, ToolId = 4 };
         var (writeback, service) = Create(inSlot4, toolIdFour);
@@ -51,8 +52,8 @@ public class PendingToolTloWritebackTests
         writeback.Arm(4);
         writeback.Consume(7.0);
 
-        service.Verify(s => s.UpdateAsync(10, It.IsAny<ToolInfo>()), Times.Once);
-        service.Verify(s => s.UpdateAsync(12, It.IsAny<ToolInfo>()), Times.Never);
+        service.Verify(s => s.UpdateAsync(12, It.IsAny<ToolInfo>()), Times.Once);
+        service.Verify(s => s.UpdateAsync(10, It.IsAny<ToolInfo>()), Times.Never);
     }
 
     [Fact]

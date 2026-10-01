@@ -69,6 +69,32 @@ public class PendantManager : IPendantManager
     private readonly IGateService _gates;
     private readonly INcSenderUsbCatalog _usbCatalog;
     private readonly NcSender.Server.Usb.UsbPortLeases _portLeases;
+    private readonly NcSender.Core.Interfaces.IToolService _toolService;
+
+    /// <summary>
+    /// Tool-id concept: a T number is a Tool ID, so the pendant's slot button
+    /// loads whatever tool the library has in that slot. An empty slot does
+    /// nothing.
+    /// </summary>
+    private async Task LoadSlotAsync(int slot)
+    {
+        try
+        {
+            var tools = await _toolService.GetAllAsync();
+            var tool = tools.FirstOrDefault(t => t.ToolNumber == slot);
+            var id = tool?.ToolId ?? tool?.Id;
+            if (id is null or <= 0)
+            {
+                _logger.LogInformation("Pendant SLOT {Slot}: no tool in that slot", slot);
+                return;
+            }
+            await HandleCncCommandCoreAsync($"M6T{id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pendant SLOT {Slot} failed", slot);
+        }
+    }
 
     public PendantManager(
         ILogger<PendantManager> logger,
@@ -83,8 +109,10 @@ public class PendantManager : IPendantManager
         IGateService gates,
         INcSenderUsbCatalog usbCatalog,
         NcSender.Server.Usb.UsbPortLeases portLeases,
-        IProbeService probeService)
+        IProbeService probeService,
+        NcSender.Core.Interfaces.IToolService toolService)
     {
+        _toolService = toolService;
         _logger = logger;
         _controller = controller;
         _broadcaster = broadcaster;
@@ -1806,7 +1834,9 @@ public class PendantManager : IPendantManager
 
             // Outputs screen commands from the pendant. Format:
             //   "AUX <id> on|off"  — toggle a configured aux output by id
-            //   "SLOT <n>"         — load tool at slot n via M6T<n>
+            //   "SLOT <n>"         — load the tool assigned to slot n
+            //                       (older firmware)
+            //   "TOOL <id>"        — load Tool <id> via M6T<id> (tool list)
             //   "UNLOAD"           — drop the loaded tool (M6T0)
             //   "MANUAL"           — load the manual tool: M6 T(slotCount+1),
             //                       i.e. a tool number just past the ATC
@@ -1821,7 +1851,14 @@ public class PendantManager : IPendantManager
             if (data.StartsWith("SLOT ", StringComparison.Ordinal))
             {
                 if (int.TryParse(data.AsSpan(5).Trim(), out var slot) && slot > 0)
-                    _ = HandleCncCommandCoreAsync($"M6T{slot}");
+                    _ = LoadSlotAsync(slot);
+                return;
+            }
+            if (data.StartsWith("TOOL ", StringComparison.Ordinal))
+            {
+                // Tool-id concept: the pendant picked a tool by its Tool ID.
+                if (int.TryParse(data.AsSpan(5).Trim(), out var toolId) && toolId > 0)
+                    _ = HandleCncCommandCoreAsync($"M6T{toolId}");
                 return;
             }
             if (data == "UNLOAD")
@@ -2038,6 +2075,8 @@ public class PendantManager : IPendantManager
                 await Task.Delay(200);
                 await SendOutputsConfig(force: true);
                 await Task.Delay(200);
+                await SendToolList(force: true);
+                await Task.Delay(200);
                 await _serialHandler.SendMessageAsync(
                     new PendantTypeMsg("request:metadata"),
                     PendantJsonContext.Default.PendantTypeMsg);
@@ -2121,6 +2160,8 @@ public class PendantManager : IPendantManager
                 await SendOutputsConfig(force: true);
                 await Task.Delay(200);
                 await SendSettings(force: true);
+                await Task.Delay(200);
+                await SendToolList(force: true);
             }
             catch (Exception ex)
             {
@@ -2426,6 +2467,16 @@ public class PendantManager : IPendantManager
     // treats gate:show as an upsert).
     private void OnBroadcastToPendant(string type, JsonElement data)
     {
+        if (type == "tools-updated")
+        {
+            // Tool Library edited: refresh the pendant's tool picker.
+            _ = Task.Run(async () =>
+            {
+                try { await Task.Delay(300); await SendToolList(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to push the tool list to the pendant"); }
+            });
+            return;
+        }
         if (type is not ("gate:show" or "gate:close")) return;
         if (_serialHandler is not { IsConnected: true }) return;
 
@@ -2868,7 +2919,11 @@ public class PendantManager : IPendantManager
             {
                 await Task.Delay(400);
                 if (_serialHandler is { IsConnected: true } && _pendantConnected)
+                {
                     await SendOutputsConfig();
+                    await Task.Delay(200);
+                    await SendToolList();
+                }
             }
             catch (Exception ex)
             {
@@ -2886,6 +2941,8 @@ public class PendantManager : IPendantManager
             await SendSettings(force: true);
             await Task.Delay(200);
             await SendOutputsConfig(force: true);
+            await Task.Delay(200);
+            await SendToolList(force: true);
         });
     }
 
@@ -2944,6 +3001,46 @@ public class PendantManager : IPendantManager
             "outputs-config",
             new PendantOutputsConfigData(snapshot.Aux, snapshot.SlotCount, snapshot.ProbeTool, snapshot.Manual, snapshot.Tls));
         return _serialHandler.SendMessageAsync(msg, PendantJsonContext.Default.PendantOutputsConfigMsg);
+    }
+
+    // Tool-id concept: the tool picker's entries, same order as the app's tool
+    // buttons (GCodeVisualizer legendEntries): the magazine's slots first,
+    // then every other library tool by Tool ID. The probe is not listed; the
+    // pendant adds it from outputs-config's probeTool. The Manual Tool Changer
+    // has no magazine, so its list is library tools only.
+    private string? _lastSentToolList;
+
+    private async Task SendToolList(bool force = false)
+    {
+        if (_serialHandler is not { IsConnected: true } || !_pendantConnected) return;
+
+        var source = _settingsManager.GetSetting<string>("tool.source", "") ?? "";
+        var slots = source.Contains("manualtoolchange", StringComparison.OrdinalIgnoreCase) ? 0 : ReadAtcSlotCount();
+        var probe = _settingsManager.GetSetting<bool>("tool.probe", false)
+            ? _settingsManager.GetSetting<int>("tool.probeToolNumber", 99) : -1;
+        var tools = await _toolService.GetAllAsync();
+
+        var parts = new List<string>();
+        var seen = new HashSet<int>();
+        for (var slot = 1; slot <= slots; slot++)
+        {
+            var tool = tools.FirstOrDefault(t => t.ToolNumber == slot);
+            var id = tool?.ToolId ?? 0;
+            if (id > 0) seen.Add(id);
+            parts.Add($"{slot}.{id}");
+        }
+        foreach (var id in tools.Select(t => t.ToolId ?? 0)
+                     .Where(id => id > 0 && id != probe && !seen.Contains(id))
+                     .Distinct().OrderBy(id => id))
+            parts.Add($"0.{id}");
+        // 100 entries of "nn.nn" stay under the pendant's 1 KB buffer.
+        var list = string.Join(",", parts.Take(100));
+
+        if (!force && list == _lastSentToolList) return;
+        _lastSentToolList = list;
+        await _serialHandler.SendMessageAsync(
+            new PendantToolListMsg("tool-list", new PendantToolListData(list)),
+            PendantJsonContext.Default.PendantToolListMsg);
     }
 
     private static string DeriveOffFromOn(string onCmd)

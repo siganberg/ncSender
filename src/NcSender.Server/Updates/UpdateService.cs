@@ -339,7 +339,7 @@ public class UpdateService : IUpdateService
         return null;
     }
 
-    private static int CompareVersions(string a, string b)
+    internal static int CompareVersions(string a, string b)
     {
         static (int[] baseParts, string pre, int preNum) Parse(string v)
         {

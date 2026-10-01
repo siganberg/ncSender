@@ -192,6 +192,15 @@ public class PluginManager : IPluginManager
             if (manifest is null || string.IsNullOrEmpty(manifest.Id))
                 throw new InvalidOperationException("Invalid plugin manifest");
 
+            // A plugin built for a newer ncSender (e.g. a beta) must not land
+            // on an older one. Dev builds skip the check.
+            var appVersion = BuildVersion.Value;
+            if (!string.IsNullOrWhiteSpace(manifest.MinAppVersion)
+                && !appVersion.Contains("-dev", StringComparison.Ordinal)
+                && NcSender.Server.Updates.UpdateService.CompareVersions(appVersion, manifest.MinAppVersion) < 0)
+                throw new InvalidOperationException(
+                    $"{manifest.Name} {manifest.Version} needs ncSender {manifest.MinAppVersion} or newer (this is {appVersion}).");
+
             var targetDir = Path.Combine(PluginsDir, manifest.Id);
             var isUpdate = Directory.Exists(targetDir);
             if (isUpdate)
@@ -455,24 +464,48 @@ public class PluginManager : IPluginManager
             var repoPath = ExtractGitHubRepoPath(manifest.Repository);
             if (repoPath is null) return result;
 
-            var releaseUrl = $"https://api.github.com/repos/{repoPath}/releases/latest";
-            var json = await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(releaseUrl);
-            using var doc = JsonDocument.Parse(json);
-            var tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
+            // Stable channel: GitHub's "latest" release, which never includes a
+            // pre-release, so plugin betas can't reach it. Beta channel: the
+            // newest release of any kind, betas included.
+            // The beta channel is stored as "development".
+            var channel = _settingsManager.GetSetting<string>("updateChannel", "stable") ?? "stable";
+            var beta = channel.Equals("development", StringComparison.OrdinalIgnoreCase)
+                || channel.Equals("beta", StringComparison.OrdinalIgnoreCase);
+            using var doc = JsonDocument.Parse(await NcSender.Server.Infrastructure.GitHubApi.GetJsonAsync(beta
+                ? $"https://api.github.com/repos/{repoPath}/releases?per_page=20"
+                : $"https://api.github.com/repos/{repoPath}/releases/latest"));
+            var release = doc.RootElement;
+            if (beta)
+            {
+                JsonElement? best = null;
+                foreach (var r in doc.RootElement.EnumerateArray())
+                {
+                    if (r.TryGetProperty("draft", out var d) && d.GetBoolean()) continue;
+                    if (best is null || NcSender.Server.Updates.UpdateService.CompareVersions(
+                            (r.GetProperty("tag_name").GetString() ?? "").TrimStart('v'),
+                            (best.Value.GetProperty("tag_name").GetString() ?? "").TrimStart('v')) > 0)
+                        best = r;
+                }
+                if (best is null) return result;
+                release = best.Value;
+            }
+            var tagName = release.GetProperty("tag_name").GetString() ?? "";
             var latestVersion = tagName.TrimStart('v');
             result.LatestVersion = latestVersion;
-            result.UpdateAvailable = latestVersion != manifest.Version;
+            // Only ever offer something newer: a beta tester on a plugin beta
+            // must not be "updated" back to the older stable release.
+            result.UpdateAvailable = NcSender.Server.Updates.UpdateService.CompareVersions(latestVersion, manifest.Version) > 0;
 
-            if (doc.RootElement.TryGetProperty("html_url", out var htmlUrl))
+            if (release.TryGetProperty("html_url", out var htmlUrl))
                 result.ReleaseUrl = htmlUrl.GetString() ?? "";
 
-            if (doc.RootElement.TryGetProperty("published_at", out var publishedAt))
+            if (release.TryGetProperty("published_at", out var publishedAt))
                 result.PublishedAt = publishedAt.GetString();
 
-            if (doc.RootElement.TryGetProperty("body", out var body))
+            if (release.TryGetProperty("body", out var body))
                 result.ReleaseNotes = body.GetString() ?? "";
 
-            if (result.UpdateAvailable && doc.RootElement.TryGetProperty("assets", out var assets))
+            if (result.UpdateAvailable && release.TryGetProperty("assets", out var assets))
             {
                 foreach (var asset in assets.EnumerateArray())
                 {
@@ -791,7 +824,8 @@ public class PluginManager : IPluginManager
             //   ManualToolChange  → numberOfTools
             //   RapidChangeATC    → pockets
             //   Pneumatic ATC     → slots
-            var isManual = settings.ContainsKey("numberOfTools");
+            var isManual = settings.ContainsKey("numberOfTools")
+                || pluginId.Contains("manualtoolchange", StringComparison.OrdinalIgnoreCase);
             var hasToolChanger = isManual
                 || settings.ContainsKey("pockets")
                 || settings.ContainsKey("slots");
@@ -805,11 +839,9 @@ public class PluginManager : IPluginManager
 
             if (isManual)
             {
-                // ManualToolChange: numberOfTools (min 1), manual + tls always on
-                var count = settings.TryGetValue("numberOfTools", out var n)
-                    ? Math.Max(1, Convert.ToInt32(n.ToString()))
-                    : 1;
-                toolSettings["count"] = count;
+                // ManualToolChange: no magazine (tools come from the Tool
+                // Library by Tool ID), manual + tls always on
+                toolSettings["count"] = 0;
                 toolSettings["manual"] = true;
                 toolSettings["tls"] = true;
                 toolSettings["probe"] = settings.TryGetValue("addProbe", out var addProbe)

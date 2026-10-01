@@ -65,7 +65,8 @@ public class PendantScannerLifecycleTests : IDisposable
             new Mock<IGateService>().Object,
             usbCatalog.Object,
             new NcSender.Server.Usb.UsbPortLeases(),
-            new Mock<IProbeService>().Object);
+            new Mock<IProbeService>().Object,
+            new Mock<NcSender.Core.Interfaces.IToolService>().Object);
         _managers.Add(manager);
         return (manager, controller);
     }
