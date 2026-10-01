@@ -15,7 +15,10 @@ namespace NcSender.Server.CommandProcessor;
 ///
 /// Lines marked <see cref="ProcessedCommand.Cleanup"/> (the tool change end
 /// marker, the probe source restore) are still sent so the machine state
-/// unwinds, and the user is told which line failed.
+/// unwinds. No dialog of its own: the controller's error already shows in the
+/// terminal and an alarm opens the alarm dialog. (A full-screen "Sequence
+/// stopped" popup here sat over the alarm dialog on the kiosk touchscreen with
+/// no way to close it.)
 /// </summary>
 public static class ExpandedCommandSender
 {
@@ -43,19 +46,6 @@ public static class ExpandedCommandSender
             foreach (var cleanup in commands.Skip(i + 1).Where(c => c.Cleanup))
                 await controller.SendCommandAsync(cleanup.Command, optionsFor(cleanup));
 
-            var shown = System.Net.WebUtility.HtmlEncode(cmd.DisplayCommand ?? cmd.Command);
-            var error = System.Net.WebUtility.HtmlEncode(last.ErrorMessage ?? "error");
-            var html =
-                "<div style=\"padding:20px;max-width:520px\">"
-                + "<h3 style=\"margin:0 0 10px\">Sequence stopped</h3>"
-                + "<p style=\"margin:0 0 10px\">The controller rejected this line, so the rest of the sequence was not sent:</p>"
-                + $"<pre style=\"margin:0 0 10px;white-space:pre-wrap\">{shown}</pre>"
-                + $"<p style=\"margin:0 0 10px;opacity:.8\">{error}</p>"
-                + "<p style=\"margin:0\">Check the line (for example a Pre/Post event in the tool changer plugin), then try again.</p>"
-                + "</div>";
-            _ = broadcaster.Broadcast("plugin:show-modal",
-                new WsShowModal("sequence-stopped", html, Closable: true),
-                NcSenderJsonContext.Default.WsShowModal);
             break;
         }
         return last;
