@@ -6,11 +6,11 @@ namespace NcSender.Server.Dongle;
 
 /// <summary>
 /// Combined USB scanner + wireless subscriber + priority arbiter for the
-/// xprobe device. Presents a single <see cref="IXProbeSource"/> that the
-/// <see cref="XProbeTranslator"/> consumes without knowing which transport
+/// ncprobe device. Presents a single <see cref="INcProbeSource"/> that the
+/// <see cref="NcProbeTranslator"/> consumes without knowing which transport
 /// the payload arrived on.
 ///
-/// Priority: wired (USB) wins whenever a xprobe device is present on a USB
+/// Priority: wired (USB) wins whenever a ncprobe device is present on a USB
 /// serial port. The wireless path keeps flowing (dongle still hears it,
 /// heartbeats still arrive) but its <see cref="MessageReceived"/> notifications
 /// are suppressed while USB is up — first-arrival semantics with less noise.
@@ -18,19 +18,19 @@ namespace NcSender.Server.Dongle;
 ///
 /// USB discovery: background probe of unclaimed serial ports every
 /// <see cref="ScanIntervalMs"/> ms. Each candidate gets a <c>$ID</c> and
-/// ~800 ms window; only <c>$ID:xprobe</c> is claimed. Other identities /
+/// ~800 ms window; only <c>$ID:ncprobe</c> is claimed. Other identities /
 /// CNC-looking greetings release the port immediately.
 /// </summary>
-public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
+public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
 {
-    private const string DeviceName = "xprobe";
+    private const string DeviceName = "ncprobe";
     private const int ScanIntervalMs = 4000;
     private const int IdentifyTimeoutMs = 800;
     private const int BaudRate = 115200;
 
     private readonly IDongleDeviceService _devices;
     private readonly INcSenderUsbCatalog _usbCatalog;
-    private readonly ILogger<XProbeRouter> _logger;
+    private readonly ILogger<NcProbeRouter> _logger;
 
     // Active USB link (null when wireless-only)
     private SerialPort? _usbPort;
@@ -46,10 +46,10 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     public event Action<string>? MessageReceived;
     public event Action<bool>? ConnectivityChanged;
 
-    public XProbeRouter(
+    public NcProbeRouter(
         IDongleDeviceService devices,
         INcSenderUsbCatalog usbCatalog,
-        ILogger<XProbeRouter> logger)
+        ILogger<NcProbeRouter> logger)
     {
         _devices = devices;
         _usbCatalog = usbCatalog;
@@ -116,7 +116,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "XProbeRouter scan tick threw");
+                _logger.LogDebug(ex, "NcProbeRouter scan tick threw");
             }
             try { await Task.Delay(ScanIntervalMs, ct); } catch { break; }
         }
@@ -130,13 +130,13 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             try
             {
                 // With the catalog filter every candidate is already a
-                // known-VID/PID XProbe — no third-party device can appear
+                // known-VID/PID NcProbe — no third-party device can appear
                 // here. Open with DTR/RTS FALSE anyway so we never toggle
-                // reset lines on the XProbe itself during identification.
+                // reset lines on the NcProbe itself during identification.
                 sp = new SerialPort(port, BaudRate)
                 {
                     // DTR HIGH. It was low to avoid kicking the auto-reset
-                    // circuit on a CH340-bridged board, but the XProbe is a
+                    // circuit on a CH340-bridged board, but the NcProbe is a
                     // native-USB S3: there is no reset circuit to protect, and
                     // TinyUSB CDC only transmits once the host asserts DTR — so
                     // with it low the device never answered "$ID" and wired
@@ -174,12 +174,12 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
                 if (matched)
                 {
                     ClaimUsbPort(sp!, port);
-                    return;   // one xprobe is enough
+                    return;   // one ncprobe is enough
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogTrace(ex, "XProbeRouter probe of {Port} failed", port);
+                _logger.LogTrace(ex, "NcProbeRouter probe of {Port} failed", port);
             }
             finally
             {
@@ -201,7 +201,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             _usbRxBuf.Clear();
         }
         sp.DataReceived += OnUsbData;
-        _logger.LogInformation("XPROBE USB claimed on {Port} — wired priority active", path);
+        _logger.LogInformation("NCPROBE USB claimed on {Port} — wired priority active", path);
         FireConnectivity(true);
         // Immediately ask for state so translator can drive controller to reality.
         _ = SendAsync("status");
@@ -235,11 +235,11 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "XProbeRouter GetPortNames failed during liveness check");
+            _logger.LogDebug(ex, "NcProbeRouter GetPortNames failed during liveness check");
         }
     }
 
-    // Held while a firmware update is in flight. The router owns the XProbe's
+    // Held while a firmware update is in flight. The router owns the NcProbe's
     // USB port, which blocked the updater from claiming it ("Access denied")
     // AND kept the device busy on two transports at once — a wireless flash
     // then died mid-stream and took the dongle's watchdog with it. A flash must
@@ -255,8 +255,8 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private sealed class FlashHold : IDisposable
     {
-        private XProbeRouter? _r;
-        public FlashHold(XProbeRouter r) => _r = r;
+        private NcProbeRouter? _r;
+        public FlashHold(NcProbeRouter r) => _r = r;
         public void Dispose()
         {
             var r = _r; _r = null;
@@ -281,7 +281,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         try { old.DataReceived -= OnUsbData; } catch { }
         try { if (old.IsOpen) old.Close(); } catch { }
         try { old.Dispose(); } catch { }
-        _logger.LogInformation("XPROBE USB released ({Port}, reason: {Reason}) — falling back to wireless", oldPath, reason);
+        _logger.LogInformation("NCPROBE USB released ({Port}, reason: {Reason}) — falling back to wireless", oldPath, reason);
         FireConnectivity(false);
     }
 
@@ -313,7 +313,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "XProbeRouter USB read failed");
+            _logger.LogDebug(ex, "NcProbeRouter USB read failed");
             CloseUsb("read exception");
         }
     }
@@ -321,7 +321,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private void HandleUsbLine(string line)
     {
         // Only protocol frames — the XIAO shares this serial with LOGF debug
-        // lines, so we filter to the "@xprobe " prefix that sendState() emits.
+        // lines, so we filter to the "@ncprobe " prefix that sendState() emits.
         const string tag = "@" + DeviceName + " ";
         if (!line.StartsWith(tag, StringComparison.Ordinal)) return;
         var payload = line.Substring(tag.Length);
@@ -334,13 +334,13 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
     private void Fire(string payload)
     {
         try { MessageReceived?.Invoke(payload); }
-        catch (Exception ex) { _logger.LogWarning(ex, "XProbeRouter MessageReceived handler threw"); }
+        catch (Exception ex) { _logger.LogWarning(ex, "NcProbeRouter MessageReceived handler threw"); }
     }
 
     private void FireConnectivity(bool connected)
     {
         try { ConnectivityChanged?.Invoke(connected); }
-        catch (Exception ex) { _logger.LogWarning(ex, "XProbeRouter ConnectivityChanged handler threw"); }
+        catch (Exception ex) { _logger.LogWarning(ex, "NcProbeRouter ConnectivityChanged handler threw"); }
     }
 
     public Task SendAsync(string command)
@@ -355,7 +355,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "XProbeRouter USB write failed for '{Cmd}' — releasing port and falling through to wireless", command);
+                _logger.LogDebug(ex, "NcProbeRouter USB write failed for '{Cmd}' — releasing port and falling through to wireless", command);
                 // Write faults are how a physically-gone-but-still-open port
                 // announces itself. Release now so the scan loop can pick up
                 // whatever the device re-enumerated as, and don't spend the
@@ -368,7 +368,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
 
     private IEnumerable<string> EnumerateCandidatePorts()
     {
-        // Only devices whose USB descriptors match the XProbe VID/PID are
+        // Only devices whose USB descriptors match the NcProbe VID/PID are
         // candidates. No probing arbitrary serial devices, no reset kicks,
         // no port lock-ups. The catalog reads sysfs / ioreg / SetupAPI and
         // never opens the port itself.
@@ -376,7 +376,7 @@ public sealed class XProbeRouter : IXProbeSource, IHostedService, IDisposable
         var kept = new List<string>();
         foreach (var dev in _usbCatalog.GetDevices())
         {
-            if (dev.Kind != NcSenderUsbKind.XProbe) continue;
+            if (dev.Kind != NcSenderUsbKind.NcProbe) continue;
             if (string.Equals(dev.PortName, currentUsb, StringComparison.Ordinal)) continue;
             kept.Add(dev.PortName);
         }

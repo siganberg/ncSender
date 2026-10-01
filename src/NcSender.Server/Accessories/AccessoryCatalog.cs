@@ -75,9 +75,9 @@ public static class AccessoryCatalog
             LicenseProduct: "ncsender.rgb"),
 
         // Prototype, not a product yet.
-        new AccessoryDefinition("xprobe", "xProbe",
-            "siganberg/ncSender.xprobe.releases", "firmware_xprobe_v", "xprobe",
-            Availability: "Not available", LicenseProduct: "ncsender.xprobe"),
+        new AccessoryDefinition("ncprobe", "ncProbe",
+            "siganberg/ncSender.ncProbe.releases", "firmware_ncprobe_v", "ncprobe",
+            Availability: "Not available", LicenseProduct: "ncsender.ncprobe"),
     };
 
     /// <summary>

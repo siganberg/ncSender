@@ -1,9 +1,9 @@
 namespace NcSender.Core.Interfaces;
 
 /// <summary>
-/// Single abstract source of <c>@xprobe</c> payloads for the XProbeTranslator.
+/// Single abstract source of <c>@ncprobe</c> payloads for the NcProbeTranslator.
 ///
-/// The physical xprobe device is reachable two ways: wirelessly through the
+/// The physical ncprobe device is reachable two ways: wirelessly through the
 /// ESP-NOW dongle (via <see cref="IDongleDeviceService"/>) or wired via USB
 /// serial straight into the host. This interface lets the translator subscribe
 /// to whichever source is currently authoritative without knowing which it is;
@@ -12,7 +12,7 @@ namespace NcSender.Core.Interfaces;
 /// Payloads carry the same <c>&lt;state&gt;:&lt;type&gt;:&lt;seq&gt;:&lt;src&gt;</c>
 /// grammar in both cases — the framing tag is stripped before it reaches here.
 /// </summary>
-public interface IXProbeSource
+public interface INcProbeSource
 {
     /// <summary>
     /// True while the wired (USB) source is present and considered
@@ -38,7 +38,7 @@ public interface IXProbeSource
     event Action<bool>? ConnectivityChanged;
 
     /// <summary>
-    /// Send a command back to the xprobe device on whatever transport is
+    /// Send a command back to the ncprobe device on whatever transport is
     /// currently active. Used for the "status" poll on reconnect. No-op if
     /// nothing is connected; caller should be resilient to that (heartbeat
     /// will re-emit state within a few seconds anyway).

@@ -77,7 +77,7 @@ public sealed class DongleOtaService : IDisposable
     private readonly ILogger<DongleOtaService> _logger;
     private readonly IDongleDeviceService _dongle;
     private readonly INcSenderUsbCatalog _usbCatalog;
-    private readonly XProbeRouter _xprobe;
+    private readonly NcProbeRouter _ncprobe;
     private readonly IBroadcaster _broadcaster;
     private readonly ConcurrentDictionary<string, Session> _sessions
         = new(StringComparer.OrdinalIgnoreCase);
@@ -87,14 +87,14 @@ public sealed class DongleOtaService : IDisposable
         ILogger<DongleOtaService> logger,
         IDongleDeviceService dongle,
         INcSenderUsbCatalog usbCatalog,
-        XProbeRouter xprobe,
+        NcProbeRouter ncprobe,
         NcSender.Server.Usb.UsbPortLeases leases,
         IBroadcaster broadcaster)
     {
         _logger = logger;
         _dongle = dongle;
         _usbCatalog = usbCatalog;
-        _xprobe = xprobe;
+        _ncprobe = ncprobe;
         _leases = leases;
         _broadcaster = broadcaster;
         _dongle.DeviceMessageReceived += OnDongleMessage;
@@ -127,11 +127,11 @@ public sealed class DongleOtaService : IDisposable
             // silent mid-transfer and a stall is indistinguishable from success.
             var startedMs = NowMs();
             // Make the updater the device's only owner for the duration. The
-            // XProbe router otherwise holds the cable, which both blocked the
+            // NcProbe router otherwise holds the cable, which both blocked the
             // wired path and let a wireless flash compete with live USB traffic
             // — that combination reset the dongle mid-transfer.
-            using var _hold = string.Equals(deviceName, "xprobe", StringComparison.OrdinalIgnoreCase)
-                ? _xprobe.SuspendForFlash()
+            using var _hold = string.Equals(deviceName, "ncprobe", StringComparison.OrdinalIgnoreCase)
+                ? _ncprobe.SuspendForFlash()
                 : null;
 
             // Take the cable away from whoever is reading it BEFORE opening our
@@ -182,7 +182,7 @@ public sealed class DongleOtaService : IDisposable
         finally
         {
             // Never hold the accessory's port past the flash — the scanner and
-            // XProbeRouter both want it back, and a device that reboots into new
+            // NcProbeRouter both want it back, and a device that reboots into new
             // firmware re-enumerates underneath us anyway.
             DetachUsb(s);
             _sessions.TryRemove(deviceName, out _);
@@ -308,7 +308,7 @@ public sealed class DongleOtaService : IDisposable
     // else simply falls through to the dongle.
     private static NcSenderUsbKind KindFor(string deviceName) => deviceName.ToLowerInvariant() switch
     {
-        "xprobe"       => NcSenderUsbKind.XProbe,
+        "ncprobe"       => NcSenderUsbKind.NcProbe,
         "autodustboot" => NcSenderUsbKind.AutoDustBoot,
         // RGB is wireless-only for now: the C3 build exposes no wired OTA path,
         // so there is no cable dialect to prefer. Revisit if it gains one.

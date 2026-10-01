@@ -164,9 +164,9 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.DongleOtaService>();
         builder.Services.AddSingleton<NcSender.Server.Accessories.AccessoryService>();
-        // XPROBE probe/TLS wiring: XProbeRouter arbitrates between the wireless
+        // NCPROBE probe/TLS wiring: NcProbeRouter arbitrates between the wireless
         // (ESP-NOW dongle) source and a wired USB source; wired wins when
-        // present. XProbeTranslator subscribes to whichever is authoritative
+        // present. NcProbeTranslator subscribes to whichever is authoritative
         // and emits grblHAL virtual-input realtime bytes (0xA5/A6 probe,
         // 0xA7/A8 toolsetter) on the controller. Both are background;
         // no config surface.
@@ -177,16 +177,16 @@ public static class ServerBuilder
         builder.Services.AddSingleton<NcSender.Server.Usb.UsbPortLeases>();
         builder.Services.AddSingleton<NcSender.Server.Usb.UsbAccessoryLink>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Usb.UsbAccessoryLink>());
-        builder.Services.AddSingleton<NcSender.Server.Dongle.XProbeRouter>();
-        builder.Services.AddSingleton<IXProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
+        builder.Services.AddSingleton<NcSender.Server.Dongle.NcProbeRouter>();
+        builder.Services.AddSingleton<INcProbeSource>(sp => sp.GetRequiredService<NcSender.Server.Dongle.NcProbeRouter>());
         // The router filters candidate ports through INcSenderUsbCatalog, so it
         // only ever opens a device whose USB descriptors identify it as an
-        // XProbe — no resets or lock-ups on unrelated USB serial peripherals.
-        // That is what the old `xprobe.enabled` opt-in existed to prevent, so
+        // NcProbe — no resets or lock-ups on unrelated USB serial peripherals.
+        // That is what the old `ncprobe.enabled` opt-in existed to prevent, so
         // the gate is gone: its only remaining effect was leaving a cabled
-        // XProbe silently unconnected. See docs/xprobe.md.
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.XProbeRouter>());
-        builder.Services.AddHostedService<NcSender.Server.Dongle.XProbeTranslator>();
+        // NcProbe silently unconnected. See docs/ncprobe.md.
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.NcProbeRouter>());
+        builder.Services.AddHostedService<NcSender.Server.Dongle.NcProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<ITipsService>(sp =>
             new Tips.TipsService(sp.GetRequiredService<ILogger<Tips.TipsService>>(), "community"));

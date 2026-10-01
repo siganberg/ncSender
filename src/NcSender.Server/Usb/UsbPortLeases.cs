@@ -4,8 +4,8 @@ namespace NcSender.Server.Usb;
 /// Single source of truth for who owns a USB serial port right now.
 ///
 /// The host keeps several long-lived readers on accessory cables — the pendant
-/// port scanner holds the pendant and the dongle, the XProbe router holds the
-/// XProbe. A firmware flash needs the device to itself: on Linux a second
+/// port scanner holds the pendant and the dongle, the NcProbe router holds the
+/// NcProbe. A firmware flash needs the device to itself: on Linux a second
 /// <c>SerialPort</c> on the same tty opens happily, with no exclusive lock, and
 /// then two read loops race for every line the device sends. The flasher's
 /// BEGIN ack lands in the scanner's reader instead of its own, so the flash
