@@ -44,6 +44,10 @@ export const getCornerPosition = (
   }
 };
 
+// How far outside the material's edge the probe's centre sits when probing a
+// side (X or Y): close enough that it reads as touching that edge.
+const SIDE_GAP = 1.2;
+
 export const getSidePosition = (
   plate: THREE.Object3D,
   axis: ProbingAxis,
@@ -55,7 +59,7 @@ export const getSidePosition = (
 
   if (axis === 'X') {
     return {
-      x: side === 'Left' ? plateMin.x - 2 : plateMax.x + 2,
+      x: side === 'Left' ? plateMin.x - SIDE_GAP : plateMax.x + SIDE_GAP,
       y: 0
     };
   }
@@ -63,7 +67,7 @@ export const getSidePosition = (
   if (axis === 'Y') {
     return {
       x: 0,
-      y: side === 'Front' ? plateMin.y - 2 : plateMax.y + 2
+      y: side === 'Front' ? plateMin.y - SIDE_GAP : plateMax.y + SIDE_GAP
     };
   }
 

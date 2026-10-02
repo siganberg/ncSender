@@ -61,6 +61,7 @@ let camera: THREE.PerspectiveCamera | null = null;
 let renderer: THREE.WebGLRenderer | null = null;
 let controls: OrbitControls | null = null;
 let animationFrame: number | null = null;
+let resizeObserver: ResizeObserver | null = null;
 let contextLost = false;
 
 const raycaster = new THREE.Raycaster();
@@ -80,11 +81,48 @@ const renderScene = () => {
   }
 };
 
+// Default view: from the front, looking down at 60 degrees (steep enough that
+// the probe at a front corner does not hide the back ones), sized to fit the
+// panel whatever its shape. The framed box is the material's footprint plus
+// the probe's height: where the probe sits sideways is ignored, so the
+// material (what gets tapped) is the same size on every probing axis, and on
+// X / Y the probe beside it may be cropped a little. (A fixed camera cut the
+// material off in the tall, narrow vertical layout.)
+const VIEW_ELEVATION = THREE.MathUtils.degToRad(60);
+const FRAME_MARGIN = 1.05;
+
 const resetCamera = () => {
-  if (!camera || !controls || !renderer) return;
-  camera.position.set(0.06712719516456761, -15.055168073827874, 7.4374412642715955);
-  camera.lookAt(0.06712719516456761, 0.44892946315514726, 0.07238395350471344);
-  controls.target.set(0.06712719516456761, 0.44892946315514726, 0.07238395350471344);
+  const material = controller.value?.getPlateManager().getPlate();
+  if (!camera || !controls || !material) return;
+  const box = new THREE.Box3().setFromObject(material);
+  if (box.isEmpty()) return;
+  const probe = controller.value?.getStrategy()?.getModel();
+  if (probe) box.max.z = Math.max(box.max.z, new THREE.Box3().setFromObject(probe).max.z);
+  const center = box.getCenter(new THREE.Vector3());
+
+  // Closest distance at which every corner of the box is inside the view:
+  // in the camera's frame a corner at (x, y, z) needs depth - z >= |x| / tan(h/2)
+  // and >= |y| / tan(v/2). (A bounding sphere left a flat block far too small.)
+  const direction = new THREE.Vector3(0, -Math.cos(VIEW_ELEVATION), Math.sin(VIEW_ELEVATION));
+  const right = new THREE.Vector3(1, 0, 0);
+  const up = new THREE.Vector3().crossVectors(direction, right);
+  const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const tanH = tanV * camera.aspect;
+  let distance = 0;
+  for (const x of [box.min.x, box.max.x])
+    for (const y of [box.min.y, box.max.y])
+      for (const z of [box.min.z, box.max.z]) {
+        const p = new THREE.Vector3(x, y, z).sub(center);
+        const toCamera = p.dot(direction);
+        distance = Math.max(distance,
+          toCamera + Math.abs(p.dot(right)) / tanH,
+          toCamera + Math.abs(p.dot(up)) / tanV);
+      }
+  distance *= FRAME_MARGIN;
+
+  camera.position.copy(center).addScaledVector(direction, distance);
+  controls.target.copy(center);
+  camera.lookAt(center);
   controls.update();
   renderScene();
 };
@@ -142,9 +180,7 @@ const initScene = () => {
     0.001,
     1000
   );
-  camera.position.set(0.06712719516456761, -15.055168073827874, 7.4374412642715955);
-  camera.lookAt(0.06712719516456761, 0.44892946315514726, 0.07238395350471344);
-  camera.up.set(0, 0, 1);
+  camera.up.set(0, 0, 1);   // positioned by resetCamera() once the models are in
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setClearColor(0x000000, 0);
@@ -165,10 +201,10 @@ const initScene = () => {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-  controls.enableZoom = false;
+  controls.enableZoom = true;
   controls.zoomSpeed = 0.1;
-  controls.enablePan = false;
-  controls.enableRotate = false;
+  controls.enablePan = true;
+  controls.enableRotate = true;
   controls.screenSpacePanning = true;
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
@@ -177,8 +213,6 @@ const initScene = () => {
   };
   controls.minAzimuthAngle = 0;
   controls.maxAzimuthAngle = 0;
-  controls.target.set(0.06712719516456761, 0.44892946315514726, 0.07238395350471344);
-  controls.update();
   controls.addEventListener('change', () => {
     logCameraState();
     renderScene();
@@ -236,11 +270,13 @@ const initScene = () => {
   });
   animate();
 
-  window.addEventListener('resize', handleResize);
+  resizeObserver = new ResizeObserver(handleResize);
+  resizeObserver.observe(containerRef.value);
 };
 
 const destroyScene = () => {
-  window.removeEventListener('resize', handleResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
 
   if (renderer) {
     renderer.domElement.removeEventListener('click', handleCanvasClick);
@@ -282,10 +318,11 @@ const handleResize = () => {
   if (!containerRef.value || !camera || !renderer) return;
   const width = containerRef.value.clientWidth;
   const height = containerRef.value.clientHeight;
+  if (width === 0 || height === 0) return;   // hidden tab
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
-  renderScene();
+  resetCamera();
 };
 
 const handleCanvasClick = (event: MouseEvent) => {
@@ -386,6 +423,7 @@ onMounted(() => {
           if (selectionState.value.side) {
             controller.value.handleSideChange(axis as ProbingAxis, selectionState.value.side);
           }
+          resetCamera();   // frame the new probe type's models, probe placed
         })
         .catch((error) => {
           console.error('[ProbeVisualizer] Failed to set probe type', error);

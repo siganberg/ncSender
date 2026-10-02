@@ -2019,9 +2019,13 @@ const handleStartProbe = async () => {
   height: 300px;
 }
 
+/* Portrait screens are tall, so a share of the height left a large empty
+   area (65% is ~1250 px on a 1080x1920 kiosk). Use the height the dialog has
+   on a landscape 1080 screen, where everything fits at about this width; a
+   fixed height also keeps it steady when switching tabs. */
 @media (orientation: portrait) {
   :deep(.dialog) {
-    height: 65vh !important;
+    height: min(65vh, 920px) !important;
   }
 }
 

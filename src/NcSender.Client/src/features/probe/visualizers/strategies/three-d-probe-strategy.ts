@@ -29,6 +29,10 @@ import type {
   ProbeSide
 } from '../types';
 
+// Probe size relative to the material: at the material's own scale it looked
+// oversized next to the block.
+const PROBE_SCALE = 0.8;
+
 export class ThreeDProbeStrategy implements ProbeStrategy {
   readonly type = '3d-probe';
   readonly supports: ProbeStrategySupports = {
@@ -153,7 +157,7 @@ export class ThreeDProbeStrategy implements ProbeStrategy {
     object.position.sub(center);
 
     const plateScale = this.context.plateManager.getScale();
-    object.scale.multiplyScalar(plateScale);
+    object.scale.multiplyScalar(plateScale * PROBE_SCALE);
     object.position.z += 4;
   }
 
