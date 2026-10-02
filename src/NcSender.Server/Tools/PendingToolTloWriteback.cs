@@ -10,10 +10,10 @@ namespace NcSender.Server.Tools;
 /// controller replies with <c>[TLO:value]</c>, the listener writes that
 /// value into the matching tool's <c>Offsets.Tlo</c> and clears the arm.
 ///
-/// Armed entries have no expiry — if a probe is aborted before the reply
-/// arrives, the arm sits until the next real probe consumes it. That's the
-/// pragmatic tradeoff; a stale arm doesn't corrupt anything since the next
-/// probe writes a fresh value.
+/// One probe measures one tool, so arming replaces any earlier arm, and an
+/// arm expires after two minutes. Both matter: an arm left by a
+/// probe that never finished (an alarm mid-TLS) used to stay pending and take
+/// the NEXT measurement too, writing another tool's length into it.
 /// </summary>
 public interface IPendingToolTloWriteback
 {
@@ -25,7 +25,9 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
 {
     private readonly IToolService _toolService;
     private readonly ILogger<PendingToolTloWriteback> _logger;
-    private readonly ConcurrentDictionary<int, byte> _pending = new();
+    // Tool number -> when it was armed.
+    private readonly ConcurrentDictionary<int, DateTime> _pending = new();
+    internal static readonly TimeSpan ArmLifetime = TimeSpan.FromMinutes(2);
 
     public PendingToolTloWriteback(IToolService toolService, ILogger<PendingToolTloWriteback> logger)
     {
@@ -36,7 +38,10 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
     public void Arm(int toolNumber)
     {
         if (toolNumber <= 0) return;
-        _pending[toolNumber] = 1;
+        // Latest arm wins: a stale one from an unfinished probe must not
+        // receive this tool's measurement.
+        _pending.Clear();
+        _pending[toolNumber] = DateTime.UtcNow;
         _logger.LogInformation("Armed TLO writeback for T{Tool}", toolNumber);
     }
 
@@ -47,6 +52,12 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
         foreach (var kv in _pending.ToArray())
         {
             var toolNumber = kv.Key;
+            if (DateTime.UtcNow - kv.Value > ArmLifetime)
+            {
+                _pending.TryRemove(toolNumber, out _);
+                _logger.LogInformation("Dropped expired TLO writeback arm for T{Tool}", toolNumber);
+                continue;
+            }
             // Tool ID first, then slot — as CncEventBridge resolves a T word
             // (tool-id concept: a T number names the tool, not the pocket).
             var tool = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber)

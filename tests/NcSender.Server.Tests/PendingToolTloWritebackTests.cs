@@ -66,4 +66,21 @@ public class PendingToolTloWritebackTests
 
         service.Verify(s => s.UpdateAsync(It.IsAny<int>(), It.IsAny<ToolInfo>()), Times.Never);
     }
+
+    [Fact]
+    public void A_stale_arm_does_not_take_the_next_measurement()
+    {
+        // Seen on the kiosk: T5's TLS alarmed before measuring, its arm stayed,
+        // and the next measurement (for T1) was written to T5 as well.
+        var t1 = new ToolInfo { Id = 1, ToolNumber = 1, ToolId = 1 };
+        var t5 = new ToolInfo { Id = 10, ToolNumber = 3, ToolId = 5 };
+        var (writeback, service) = Create(t1, t5);
+
+        writeback.Arm(5);   // probe never finished
+        writeback.Arm(1);
+        writeback.Consume(-46.615);
+
+        service.Verify(s => s.UpdateAsync(1, It.IsAny<ToolInfo>()), Times.Once);
+        service.Verify(s => s.UpdateAsync(10, It.IsAny<ToolInfo>()), Times.Never);
+    }
 }
