@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 using NcSender.Core.Utils;
@@ -123,10 +124,8 @@ public class PluginCommandProcessor : ICommandProcessor
         };
 
         var tools = await _toolService.GetAllAsync();
-        foreach (var pluginId in pluginIds)
-        {
-            commands = await _jsEngine.ProcessOnBeforeCommandAsync(pluginId, commands, context, tools);
-        }
+        commands = await RunPluginChainAsync(commands, pluginIds, context, tools);
+        commands = await ExpandNestedMarkersAsync(commands, pluginIds, context, tools);
 
         // If plugin didn't modify (single original command), use inner processor directly
         // Inner processor handles all its own logic (door safety, laser mode, return-to-position, etc.)
@@ -296,4 +295,92 @@ public class PluginCommandProcessor : ICommandProcessor
 
         return null;
     }
+
+    private async Task<List<ProcessedCommand>> RunPluginChainAsync(
+        List<ProcessedCommand> commands, List<string> pluginIds,
+        CommandProcessorContext context, List<ToolInfo> tools)
+    {
+        foreach (var pluginId in pluginIds)
+            commands = await _jsEngine.ProcessOnBeforeCommandAsync(pluginId, commands, context, tools);
+        return commands;
+    }
+
+    // A plugin marker such as `$ADB_GOTO 32` written inside another plugin's
+    // expansion (a tool changer's Pre/Post Tool Change event) used to reach the
+    // controller as-is: the plugin that owns it runs earlier in the chain and
+    // only ever saw the M6, so grblHAL rejected the line and the tool change
+    // stopped. Each marker line now goes through the plugin chain once, as if
+    // typed, and its expansion takes the line's place. That expansion is never
+    // scanned again, so a plugin answering a marker with a marker cannot loop.
+    private static readonly Regex NestedMarker = new(@"^\$[A-Za-z][A-Za-z0-9]*_\w*", RegexOptions.Compiled);
+
+    // `$keepout_off` is the host's own prefix on a tool changer's rack moves,
+    // not a plugin marker: run as typed, a plugin could take the rack move for
+    // a console rapid.
+    private static bool IsNestedMarker(string line) =>
+        NestedMarker.IsMatch(line) && !line.StartsWith("$keepout_off", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<List<ProcessedCommand>> ExpandNestedMarkersAsync(
+        List<ProcessedCommand> commands, List<string> pluginIds,
+        CommandProcessorContext context, List<ToolInfo> tools)
+    {
+        var result = new List<ProcessedCommand>(commands.Count);
+        foreach (var cmd in commands)
+        {
+            if (cmd.IsOriginal || !cmd.Command.Split('\n').Any(l => IsNestedMarker(l.Trim())))
+            {
+                result.Add(cmd);
+                continue;
+            }
+
+            // Keep the plain lines around each marker together, as the plugin wrote them.
+            var plain = new List<string>();
+            foreach (var line in cmd.Command.Split('\n'))
+            {
+                var expansion = IsNestedMarker(line.Trim())
+                    ? await ExpandMarkerAsync(line.Trim(), cmd.Meta, pluginIds, context, tools)
+                    : null;
+                if (expansion is null)
+                {
+                    plain.Add(line);
+                    continue;
+                }
+                if (plain.Count > 0) result.Add(LikeCommand(cmd, string.Join("\n", plain)));
+                plain.Clear();
+                result.AddRange(expansion);
+            }
+            if (plain.Count > 0) result.Add(LikeCommand(cmd, string.Join("\n", plain)));
+        }
+        return result;
+    }
+
+    // The marker's expansion, or null when no plugin claims it (the line is
+    // then sent as before and the controller decides).
+    private async Task<List<ProcessedCommand>?> ExpandMarkerAsync(
+        string marker, CommandMeta? meta, List<string> pluginIds,
+        CommandProcessorContext context, List<ToolInfo> tools)
+    {
+        var expanded = await RunPluginChainAsync(
+            [new ProcessedCommand { Command = marker, IsOriginal = true, Meta = meta }],
+            pluginIds, context, tools);
+        if (expanded.Count == 1 && expanded[0].IsOriginal && expanded[0].Command.Trim() == marker)
+            return null;
+
+        _logger.LogDebug("Expanded nested plugin marker {Marker} into {Count} line(s)", marker, expanded.Count);
+        foreach (var c in expanded)
+        {
+            c.IsOriginal = false;   // part of the outer expansion now
+            c.Meta ??= meta;
+        }
+        return expanded;
+    }
+
+    private static ProcessedCommand LikeCommand(ProcessedCommand source, string command) => new()
+    {
+        Command = command,
+        DisplayCommand = source.DisplayCommand,
+        IsOriginal = false,
+        Meta = source.Meta,
+        Cleanup = source.Cleanup
+    };
 }
