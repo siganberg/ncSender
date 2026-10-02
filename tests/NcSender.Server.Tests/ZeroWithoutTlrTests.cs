@@ -1,3 +1,4 @@
+using NcSender.Core.Models;
 using NcSender.Server.Connection;
 
 namespace NcSender.Server.Tests;
@@ -32,4 +33,34 @@ public class ZeroWithoutTlrTests
     [InlineData("")]
     public void OtherLines_AreNotZWorkOffsetWrites(string line) =>
         Assert.False(CncController.WritesZWorkOffset(line));
+
+    [Fact]
+    public void A_Z0_set_with_a_tool_loaded_is_kept_for_that_tool()
+    {
+        var s = new MachineState { Tool = 3 };
+        Assert.True(CncController.NoteZeroWithoutTlr(s));
+        Assert.True(s.ZeroSetWithoutTlr);
+        Assert.Equal(3, s.ZeroTool);
+        Assert.False(CncController.NoteZeroWithoutTlr(s));   // same tool again: no change
+    }
+
+    [Fact]
+    public void A_Z0_set_with_no_tool_loaded_is_not_kept()
+    {
+        // Kept, the tool changer would first measure "T0": the empty spindle.
+        var s = new MachineState { Tool = 0 };
+        Assert.False(CncController.NoteZeroWithoutTlr(s));
+        Assert.False(s.ZeroSetWithoutTlr);
+    }
+
+    [Fact]
+    public void A_Z0_set_with_no_tool_loaded_replaces_an_earlier_one()
+    {
+        var s = new MachineState { Tool = 3 };
+        CncController.NoteZeroWithoutTlr(s);
+        s.Tool = 0;
+        Assert.True(CncController.NoteZeroWithoutTlr(s));
+        Assert.False(s.ZeroSetWithoutTlr);
+        Assert.Equal(0, s.ZeroTool);
+    }
 }

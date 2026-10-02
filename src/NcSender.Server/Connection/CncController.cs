@@ -22,6 +22,24 @@ public partial class CncController : ICncController
     private static partial Regex GcodeCommentPattern();
 
     /// <summary>True when the line writes a Z work offset (G10 L2/L20 or G92 with a Z word).</summary>
+    /// <summary>
+    /// Records a Z work offset written while no Tool Length Reference exists,
+    /// together with the tool in the spindle, so the next tool setter run can
+    /// keep that Z0 instead of shifting it by the tool's length. With no tool
+    /// loaded there is nothing to measure: that Z0 cannot be kept (the tool
+    /// changers used to probe the empty spindle) and it replaces any earlier
+    /// one. Returns whether the state changed.
+    /// </summary>
+    internal static bool NoteZeroWithoutTlr(MachineState status)
+    {
+        var keep = status.Tool > 0;
+        var zeroTool = keep ? status.Tool : 0;
+        if (status.ZeroSetWithoutTlr == keep && status.ZeroTool == zeroTool) return false;
+        status.ZeroSetWithoutTlr = keep;
+        status.ZeroTool = zeroTool;
+        return true;
+    }
+
     internal static bool WritesZWorkOffset(string line) =>
         !string.IsNullOrWhiteSpace(line) && ZOffsetWritePattern().IsMatch(GcodeCommentPattern().Replace(line, ""));
 
@@ -1273,18 +1291,16 @@ public partial class CncController : ICncController
             }
         }
 
-        // Z0 written while no Tool Length Reference exists: remember it (and the
-        // tool in the spindle) so the next tool setter run keeps this Z0 valid
-        // instead of shifting it by the tool's length.
-        if (cmd.RawCommand is not null && !_lastStatus.ToolLengthSet && WritesZWorkOffset(cmd.RawCommand))
+        // Z0 written while no Tool Length Reference exists: remember it so the
+        // next tool setter run keeps this Z0 (see NoteZeroWithoutTlr).
+        if (cmd.RawCommand is not null && !_lastStatus.ToolLengthSet && WritesZWorkOffset(cmd.RawCommand)
+            && NoteZeroWithoutTlr(_lastStatus))
         {
-            if (!_lastStatus.ZeroSetWithoutTlr || _lastStatus.ZeroTool != _lastStatus.Tool)
-            {
-                _lastStatus.ZeroSetWithoutTlr = true;
-                _lastStatus.ZeroTool = _lastStatus.Tool;
-                _logger.LogInformation("Z0 set without a Tool Length Reference (T{Tool}); the next TLS will keep it", _lastStatus.Tool);
-                StatusReportReceived?.Invoke(_lastStatus);
-            }
+            if (_lastStatus.ZeroSetWithoutTlr)
+                _logger.LogInformation("Z0 set without a Tool Length Reference (T{Tool}); the next TLS will keep it", _lastStatus.ZeroTool);
+            else
+                _logger.LogInformation("Z0 set with no tool loaded; there is no tool to measure, so it is not kept");
+            StatusReportReceived?.Invoke(_lastStatus);
         }
 
         // G10 L2/L20 sets work coordinate offsets — refresh WCO first, then G54-G59 values
