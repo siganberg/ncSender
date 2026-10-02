@@ -42,6 +42,64 @@ public class PluginCommandProcessor : ICommandProcessor
     {
         var pluginIds = _jsEngine.GetLoadedPluginIds();
 
+        // --- Door-open tool change guard (runs before the early-out below so
+        // it covers all sources, plugins loaded or not) ---
+        //
+        // Reject M6 and $TLS unconditionally when the door is open — from terminal,
+        // buttons, slot press, plugin — everything EXCEPT the running-job
+        // stream. grblHAL already halts a running program when the door
+        // opens (Door hold), so this covers the out-of-band sources it
+        // can't police. $TLS needs it as much as M6: the per-line door rules
+        // drop only its G0 lines (safe Z, the move over the setter) while the
+        // probe-down still runs, from wherever the spindle is. Mirrors
+        // CommandProcessor.CreateBlockedResult so
+        // the client's terminal renders "M6Tn (BLOCKED - door open)" with
+        // an X icon immediately — no grblHAL round-trip.
+        //
+        // Detects Door via either the derived status ("Door") or the raw
+        // Pn pin (contains 'D'), covering $61=1 setups where Status
+        // stays Idle while the door pin is asserted.
+        {
+            var m6Check = GcodePatterns.ParseM6Command(command);
+            var isValidM6Early = m6Check.Matched && m6Check.ToolNumber is not null;
+            var isToolChangeEarly = isValidM6Early || GcodePatterns.IsTlsCommand(command);
+            var sourceIdEarly = context.Meta?.SourceId;
+            var isJobSourceEarly = sourceIdEarly is "job" or "resume";
+            if (isToolChangeEarly && !isJobSourceEarly && IsDoorOpen(context.MachineState))
+            {
+                var reason = "door open";
+                var display = $"{command.Trim()} (BLOCKED - {reason})";
+                var nowIso = DateTime.UtcNow.ToString("o");
+                if (string.IsNullOrEmpty(context.CommandId))
+                    context.CommandId = Guid.NewGuid().ToString();   // keep terminal rows distinct
+                _logger.LogInformation("{Command} rejected — door open (source: {Source})", command.Trim(), sourceIdEarly ?? "unknown");
+
+                _ = _broadcaster.Broadcast("cnc-command", new WsCncCommandStatus(
+                    context.CommandId ?? "",
+                    command.Trim().ToUpperInvariant(),
+                    display,
+                    "pending",
+                    nowIso,
+                    sourceIdEarly ?? "client"
+                ), NcSenderJsonContext.Default.WsCncCommandStatus);
+
+                _ = _broadcaster.Broadcast("cnc-command-result", new WsCncCommandStatus(
+                    context.CommandId ?? "",
+                    command.Trim().ToUpperInvariant(),
+                    display,
+                    "blocked",
+                    nowIso,
+                    sourceIdEarly ?? "client"
+                ), NcSenderJsonContext.Default.WsCncCommandStatus);
+
+                return new CommandProcessorResult
+                {
+                    ShouldContinue = false,
+                    SkipReason = $"Command blocked: {reason}"
+                };
+            }
+        }
+
         // No plugins — pass through to inner processor (which handles everything)
         if (pluginIds.Count == 0)
             return await _inner.ProcessAsync(command, context);
@@ -294,6 +352,14 @@ public class PluginCommandProcessor : ICommandProcessor
             return new XyPosition { X = x, Y = y };
 
         return null;
+    }
+
+    private static bool IsDoorOpen(MachineState ms)
+    {
+        if (ms is null) return false;
+        if (string.Equals(ms.Status, "Door", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!string.IsNullOrEmpty(ms.Pn) && ms.Pn.IndexOf('D') >= 0) return true;
+        return false;
     }
 
     private async Task<List<ProcessedCommand>> RunPluginChainAsync(
