@@ -194,11 +194,15 @@
               <span class="tools-legend__pill-num">{{ e.slot }}</span>
             </span>
             <span v-if="showToolInfo !== e.key" class="tools-legend__id" :class="{ 'tools-legend__id--empty': e.id === null }">{{ e.id !== null ? `Tool ${e.id}` : 'Empty' }}</span>
+            <!-- Expanded: the tool's name first; diameter and type only when
+                 it has no name. -->
             <span v-if="showToolInfo === e.key && e.tool" class="tool-name-expanded">
               <span class="tool-id-label">#{{ e.id }}</span>
-              <span v-if="e.tool.diameter"> · Ø{{ formatDiameter(e.tool.diameter) }}{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
-              <span v-if="e.tool.type"> · {{ toolTypeLabel(e.tool.type) }}</span>
-              <span v-if="!e.tool.diameter && !e.tool.type && e.tool.name"> · {{ e.tool.name }}</span>
+              <template v-if="e.tool.name && e.tool.name.trim()"> · {{ e.tool.name.trim() }}</template>
+              <template v-else>
+                <span v-if="e.tool.diameter"> · Ø{{ formatDiameter(e.tool.diameter) }}{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
+                <span v-if="e.tool.type"> · {{ toolTypeLabel(e.tool.type) }}</span>
+              </template>
             </span>
           </div>
         </div>
@@ -6137,6 +6141,16 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* The loaded tool keeps its highlight while the buttons are locked (a tool
+   change, a job): the new tool shows the moment it is picked up, not only
+   once the change finishes. Without this the disabled grey above, declared
+   later with the same specificity, hid it until after the TLS. */
+.tools-legend__item.active.disabled {
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: none;
 }
 
 .tools-legend__item.disabled .tools-legend__label {
