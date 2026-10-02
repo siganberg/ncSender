@@ -5792,14 +5792,18 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 }
 
 .floating-toolbar--top {
-  top: 16px;
+  /* View buttons left, Clear / Upload / Files right: flush with the same
+     16 px side gap as the tool buttons, 12 px from the top. */
+  top: 12px;
   left: 16px;
   right: 16px;
+  padding: 0;
 }
 
 .floating-toolbar--right {
   position: absolute;
   left: 16px;
+  padding: 0;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -6425,7 +6429,12 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .load-button, .clear-button, .toggle-button {
   border: none;
   border-radius: var(--radius-small);
-  padding: 8px;
+  /* Touch height, same as the view buttons (was ~38 px). */
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
   cursor: pointer;
   font-size: 16px;
   font-weight: 500;
@@ -6483,6 +6492,10 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* The switch itself sits 16 px from the visualizer's edge, like the tool
+     buttons on the right: cancel the rows' own 10 px padding (the row stays
+     the touch / hover area). The lower-left I/O switches line up with these. */
+  margin-left: -10px;
 }
 
 .legend-group {
@@ -6492,12 +6505,17 @@ h2 {
   width: 100%;
   max-width: 220px;
   margin-top: -8px;
+  /* Colour dots 16 px from the edge, like the switches: cancel the items'
+     12 px padding (the item stays the touch / hover area). */
+  margin-left: -12px;
 }
 
 .view-button {
   border: none;
   border-radius: var(--radius-small);
-  padding: 10px 16px;
+  /* Touch height, same as Clear / Upload / Files (was ~40 px). */
+  min-height: 50px;
+  padding: 0 16px;
   cursor: pointer;
   background: var(--color-surface-muted);
   color: var(--color-text-secondary);
@@ -6557,7 +6575,7 @@ h2 {
 }
 .switch--hold { cursor: pointer; }
 .switch--hold.is-on .slider { background-color: var(--color-accent); }
-.switch--hold.is-on .slider::before { transform: translateX(18px); }
+.switch--hold.is-on .slider::before { transform: translateX(calc(var(--switch-width) - var(--switch-height))); }
 .switch--hold.is-disabled { opacity: 0.5; cursor: not-allowed; }
 .hold-sup {
   font-size: 8px;
@@ -6574,10 +6592,14 @@ h2 {
 }
 
 .switch {
+  /* Sized for touch (was 40 x 22). The knob and its travel follow these. */
+  --switch-width: 50px;
+  --switch-height: 28px;
+  --switch-knob: 22px;
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: var(--switch-width);
+  height: var(--switch-height);
   flex-shrink: 0;
 }
 
@@ -6596,15 +6618,15 @@ h2 {
   bottom: 0;
   background-color: #ccc;
   transition: 0.3s;
-  border-radius: 22px;
+  border-radius: var(--switch-height);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: var(--switch-knob);
+  width: var(--switch-knob);
   left: 3px;
   bottom: 3px;
   background-color: white;
@@ -6617,7 +6639,7 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-  transform: translateX(18px);
+  transform: translateX(calc(var(--switch-width) - var(--switch-height)));
 }
 
 /* Disabled state for switch */
@@ -6692,15 +6714,17 @@ input:checked + .slider:before {
 .coolant-controls {
   position: absolute;
   bottom: 16px;
-  left: 16px;
-  background: var(--color-surface-muted);
-  padding: 8px 12px;
+  left: 6px;   /* + the rows' 10 px padding = switch 16 px from the edge */
+  /* No panel behind the switches: they sit on the view like the
+     Spindle View / Auto-Fit toggles at the top left. */
+  background: transparent;
+  padding: 0;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;   /* same as Spindle View / Auto-Fit */
 }
 
 /* Tool indicator - lower right */
@@ -7145,7 +7169,7 @@ body.theme-light .dot--rapid {
 }
 
 .progress-bar-container--top {
-  top: 16px;
+  top: 12px;   /* level with the top buttons */
   width: min(380px, calc(100% - 400px));
 }
 
