@@ -1336,14 +1336,14 @@ const probeToolNumber = ref<number>(99);
 // its own while it's in the spindle. Holding a button sends M6 T<Tool ID>.
 // The Manual Tool Changer has no magazine, so it gets no slot buttons.
 const libraryTools = ref<any[]>([]);
-const toolSource = ref<string>('');
 // `num` is what the button sends and matches the loaded tool against: the
 // Tool ID. An empty slot sends its slot number, which the tool changer reads
 // as that slot when no library tool has that ID. If one does (it lives
 // elsewhere), T<slot> would load that tool instead, so that slot is disabled.
 type LegendEntry = { key: string; slot: number | null; id: number | null; num: number | null; tool: any | null; unknown?: boolean };
-const magazineSlots = computed(() =>
-  /manualtoolchange/i.test(toolSource.value) ? 0 : numberOfToolsToShow.value);
+// tool.count is the slot count for every tool changer (the Manual Tool Changer
+// reports 0 unless it drives a RapidChangeSolo).
+const magazineSlots = computed(() => numberOfToolsToShow.value);
 const legendEntries = computed<LegendEntry[]>(() => {
   const probe = showProbeTool.value ? probeToolNumber.value : -1;
   const out: LegendEntry[] = [];
@@ -5155,9 +5155,6 @@ onMounted(async () => {
     if (typeof settings.tool?.count === 'number') {
       numberOfToolsToShow.value = settings.tool.count;
     }
-    if (typeof settings.tool?.source === 'string') {
-      toolSource.value = settings.tool.source;
-    }
     if (typeof settings.tool?.manual === 'boolean') {
       showManualTool.value = settings.tool.manual;
     }
@@ -5253,9 +5250,6 @@ onMounted(async () => {
     // Apply only the changed settings
     if (changedSettings.tool?.count !== undefined) {
       numberOfToolsToShow.value = changedSettings.tool.count;
-    }
-    if (typeof changedSettings.tool?.source === 'string') {
-      toolSource.value = changedSettings.tool.source;
     }
     if (changedSettings.tool?.manual !== undefined) {
       showManualTool.value = changedSettings.tool.manual;

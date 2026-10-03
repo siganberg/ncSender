@@ -342,6 +342,25 @@ public class PluginManager : IPluginManager
     // plugin's own Save button spins forever waiting for the response.
     // Running it in the background lets the PUT return immediately after
     // the config file is on disk; the reload happens when the lock frees.
+    /// <summary>
+    /// The Manual Tool Changer has slots only with RapidChangeSolo (autoSwap):
+    /// its Magazine Size (numberOfTools). Tools in those slots go through the
+    /// Solo; anything else, the probe included, is swapped by hand. Without the
+    /// Solo there are no slots: every tool is a hand swap.
+    /// </summary>
+    internal static int ManualToolChangerSlots(IReadOnlyDictionary<string, JsonElement> settings)
+    {
+        var solo = settings.TryGetValue("autoSwap", out var autoSwap) && autoSwap.ValueKind == JsonValueKind.True;
+        if (!solo || !settings.TryGetValue("numberOfTools", out var n)) return 0;
+        var count = n.ValueKind switch
+        {
+            JsonValueKind.Number when n.TryGetInt32(out var i) => i,
+            JsonValueKind.String when int.TryParse(n.GetString(), out var i) => i,
+            _ => 0
+        };
+        return Math.Max(0, count);
+    }
+
     public void SaveSettings(string pluginId, Dictionary<string, JsonElement> settings)
     {
         var configDir = Path.Combine(PathUtils.GetPluginConfigDir(), pluginId);
@@ -839,9 +858,9 @@ public class PluginManager : IPluginManager
 
             if (isManual)
             {
-                // ManualToolChange: no magazine (tools come from the Tool
-                // Library by Tool ID), manual + tls always on
-                toolSettings["count"] = 0;
+                // ManualToolChange: manual + tls always on; a magazine only
+                // with RapidChangeSolo (see ManualToolChangerSlots).
+                toolSettings["count"] = ManualToolChangerSlots(settings);
                 toolSettings["manual"] = true;
                 toolSettings["tls"] = true;
                 toolSettings["probe"] = settings.TryGetValue("addProbe", out var addProbe)

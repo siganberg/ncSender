@@ -3024,8 +3024,9 @@ public class PendantManager : IPendantManager
     {
         if (_serialHandler is not { IsConnected: true } || !_pendantConnected) return;
 
-        var source = _settingsManager.GetSetting<string>("tool.source", "") ?? "";
-        var slots = source.Contains("manualtoolchange", StringComparison.OrdinalIgnoreCase) ? 0 : ReadAtcSlotCount();
+        // tool.count is the slot count for every tool changer (the Manual Tool
+        // Changer reports 0 unless it drives a RapidChangeSolo).
+        var slots = ReadAtcSlotCount();
         var probe = _settingsManager.GetSetting<bool>("tool.probe", false)
             ? _settingsManager.GetSetting<int>("tool.probeToolNumber", 99) : -1;
         var tools = await _toolService.GetAllAsync();
