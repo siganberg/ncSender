@@ -164,7 +164,8 @@
             :class="{
               'active': e.num !== null && currentTool === e.num,
               'used': e.id !== null && toolsUsed.includes(e.id),
-              'disabled': isToolActionsDisabled,
+              'disabled': isToolActionsDisabled || e.num === null,
+              'tools-legend__item--no-command': e.num === null,
               'long-press-triggered': toolPress[e.key]?.triggered,
               'blink-border': toolPress[e.key]?.blinking,
               'expanded': showToolInfo === e.key,
@@ -172,12 +173,12 @@
             }"
             :style="e.id !== null && toolsUsed.includes(e.id) ? { boxShadow: `inset 0 0 0 3px ${getToolColor(e.id)}` } : {}"
             :title="getEntryTooltip(e)"
-            @mousedown="isToolActionsDisabled ? null : startToolPress(e.key, $event)"
-            @mouseup="isToolActionsDisabled ? null : endToolPress(e.key)"
-            @mouseleave="isToolActionsDisabled ? null : cancelToolPress(e.key)"
-            @touchstart="isToolActionsDisabled ? null : startToolPress(e.key, $event)"
-            @touchend="isToolActionsDisabled ? null : endToolPress(e.key)"
-            @touchcancel="isToolActionsDisabled ? null : cancelToolPress(e.key)"
+            @mousedown="isToolActionsDisabled || e.num === null ? null : startToolPress(e.key, $event)"
+            @mouseup="isToolActionsDisabled || e.num === null ? null : endToolPress(e.key)"
+            @mouseleave="isToolActionsDisabled || e.num === null ? null : cancelToolPress(e.key)"
+            @touchstart="isToolActionsDisabled || e.num === null ? null : startToolPress(e.key, $event)"
+            @touchend="isToolActionsDisabled || e.num === null ? null : endToolPress(e.key)"
+            @touchcancel="isToolActionsDisabled || e.num === null ? null : cancelToolPress(e.key)"
           >
             <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress[e.key]?.progress || 0}%` }"></div>
             <!-- Small dot in the top-right corner when the tool has a stored
@@ -1350,7 +1351,9 @@ const legendEntries = computed<LegendEntry[]>(() => {
   for (let slot = 1; slot <= magazineSlots.value; slot++) {
     const tool = toolInventory.value?.[slot] ?? null;
     const id = tool?.toolId ?? null;
-    const num = id ?? (libraryTools.value.some((tl: any) => tl.toolId === slot) ? null : slot);
+    // A slot loads its assigned tool; with none it has nothing to load and is
+    // disabled. (With the Tool Library off every slot holds its built-in Tool N.)
+    const num = id;
     if (num !== null) seen.add(num);
     out.push({ key: `s${slot}`, slot, id, num, tool });
   }
@@ -6139,6 +6142,12 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 
 /* Disabled items (e.g. TLS with no tool loaded) dim through colour, not
    opacity, so the button stays opaque over the visualizer. */
+/* An empty slot whose number belongs to a library tool kept elsewhere: it has
+   nothing to load, so it reads clearly as unavailable, not just busy. */
+.tools-legend__item--no-command {
+  opacity: 0.4;
+}
+
 .tools-legend__item.disabled {
   color: var(--color-text-muted, var(--color-text-secondary));
   background: color-mix(in srgb, var(--color-surface-muted) 70%, var(--color-surface));
