@@ -59,10 +59,32 @@ public class ToolService : IToolService
         }
     }
 
-    /// <summary>Settings → Tool Library → "Use Tool Library" (on by default).</summary>
+    /// <summary>
+    /// Settings → Tool Library → "Use Tool Library". Off on a fresh install; an
+    /// install from before the switch keeps the library on if it has tools in
+    /// it (see <see cref="DecideUseLibraryAsync"/>).
+    /// </summary>
     public const string UseLibrarySetting = "tool.useLibrary";
 
-    private bool LibraryEnabled => _settings.GetSetting<bool>(UseLibrarySetting, true);
+    private bool LibraryEnabled => _settings.GetSetting<bool>(UseLibrarySetting, false);
+
+    /// <summary>
+    /// Installs from before the switch have no setting yet. Keep the library on
+    /// for anyone who already keeps tools in it, off for everyone else. Decided
+    /// once and saved, so the switch, the server and every client read the same
+    /// value from then on; a value the user set is never touched.
+    /// </summary>
+    public async Task DecideUseLibraryAsync()
+    {
+        if (_settings.GetSetting(UseLibrarySetting) is not null) return;
+        var on = (await LoadAsync()).Count > 0;
+        await _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
+        {
+            ["tool"] = new System.Text.Json.Nodes.JsonObject { ["useLibrary"] = on }
+        });
+        _logger.LogInformation("Use Tool Library not set yet: {State} ({Reason})",
+            on ? "on" : "off", on ? "the library has tools" : "the library is empty");
+    }
 
     // Every reader of the library (tool changes, plugins, the pendant, the tool
     // buttons, TLO writeback) comes through here, so this is the one place that

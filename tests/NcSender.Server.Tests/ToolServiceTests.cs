@@ -28,7 +28,7 @@ public class ToolServiceTests : IDisposable
     }
 
     private void UseLibrary(bool on) =>
-        _settings.Setup(s => s.GetSetting<bool>(ToolService.UseLibrarySetting, true)).Returns(on);
+        _settings.Setup(s => s.GetSetting<bool>(ToolService.UseLibrarySetting, false)).Returns(on);
 
     public void Dispose()
     {
@@ -237,5 +237,59 @@ public class ToolServiceTests : IDisposable
             new System.Text.Json.Nodes.JsonObject { ["tool"] = new System.Text.Json.Nodes.JsonObject { ["tls"] = true } });
 
         _broadcaster.Verify(b => b.Broadcast("tools-updated", It.IsAny<JsonElement>()), Times.Never);
+    }
+
+    // --- Default: off on a fresh install, on for installs that have tools ---
+
+    private System.Text.Json.Nodes.JsonObject? SavedPatch;
+
+    private void TrackSaves() =>
+        _settings.Setup(s => s.SaveSettings(It.IsAny<System.Text.Json.Nodes.JsonObject>()))
+            .Callback<System.Text.Json.Nodes.JsonObject>(p => SavedPatch = p)
+            .Returns(Task.CompletedTask);
+
+    [Fact]
+    public async Task Unset_with_tools_in_the_library_keeps_it_on()
+    {
+        var svc = await ServiceWithStoredToolAsync();
+        TrackSaves();
+
+        await svc.DecideUseLibraryAsync();
+
+        Assert.True(SavedPatch?["tool"]?["useLibrary"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Unset_with_an_empty_library_turns_it_off()
+    {
+        var svc = CreateService();
+        TrackSaves();
+
+        await svc.DecideUseLibraryAsync();
+
+        Assert.False(SavedPatch?["tool"]?["useLibrary"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task A_value_the_user_set_is_never_changed()
+    {
+        var svc = await ServiceWithStoredToolAsync();
+        _settings.Setup(s => s.GetSetting(ToolService.UseLibrarySetting, null))
+            .Returns(System.Text.Json.Nodes.JsonValue.Create(false));
+        TrackSaves();
+
+        await svc.DecideUseLibraryAsync();
+
+        Assert.Null(SavedPatch);
+    }
+
+    [Fact]
+    public void Fresh_install_defaults_to_off()
+    {
+        var dir = Path.Combine(_tempDir, "fresh");
+        Directory.CreateDirectory(dir);
+        var settings = new NcSender.Server.Configuration.SettingsManager(Path.Combine(dir, "settings.json"));
+
+        Assert.False(settings.GetSetting<bool>(ToolService.UseLibrarySetting, true));
     }
 }

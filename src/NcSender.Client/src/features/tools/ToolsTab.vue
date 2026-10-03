@@ -551,9 +551,10 @@ import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
 const { isKiosk } = useKioskDetection();
 
-// Settings → Tool Library → Use Tool Library (on by default). Off, the server
-// hands tool changes a built-in library instead (Slot N holds Tool N).
-const useToolLibrary = ref<boolean>(getSettings()?.tool?.useLibrary ?? true);
+// Settings → Tool Library → Use Tool Library. Off on a fresh install (the
+// server settles it once for older installs: on if they already had tools).
+// Off, the server hands tool changes a built-in library (Slot N holds Tool N).
+const useToolLibrary = ref<boolean>(getSettings()?.tool?.useLibrary ?? false);
 watch(useToolLibrary, async (on) => {
   await updateSettings({ tool: { useLibrary: on } });
   if (on) await loadTools();

@@ -113,7 +113,9 @@ public static class ServerBuilder
         // Phase 4 DI registrations
         builder.Services.AddSingleton<ICommandHistoryService, CommandHistoryService>();
         builder.Services.AddSingleton<IMacroService, MacroService>();
-        builder.Services.AddSingleton<IToolService, ToolService>();
+        builder.Services.AddSingleton<ToolService>();
+        builder.Services.AddSingleton<IToolService>(sp => sp.GetRequiredService<ToolService>());
+        builder.Services.AddHostedService<NcSender.Server.Tools.ToolLibraryDefault>();
         // Auto-writeback of TLS probe results into the tool library, gated
         // by a per-tool "arm" flag set from the plugin via
         // pluginContext.armTlsWriteback(toolNumber).
