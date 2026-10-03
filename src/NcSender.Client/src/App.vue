@@ -479,6 +479,29 @@
              Tool Library, which is just the tools) and when the loaded tool is
              measured automatically. -->
         <div v-if="activeTab === 'toolChanger'" class="tab-panel tab-panel--tool-changer">
+          <!-- Tool Numbering: what the T in M6 T5 names. Yours to choose even
+               while a tool changer plugin owns the Setup rows below. -->
+          <div class="settings-section">
+            <h3 class="section-title">Tool Numbering</h3>
+            <p class="section-description">What the T in a tool change (M6 T5) refers to. It decides which tool each button loads.</p>
+            <div class="numbering-modes" role="radiogroup">
+              <button type="button" role="radio" class="numbering-mode"
+                :class="{ 'numbering-mode--active': toolNumbering !== 'toolId' }"
+                :aria-checked="toolNumbering !== 'toolId'"
+                @click="selectToolNumbering('slot')">
+                <div class="numbering-mode__title">Slot (classic)</div>
+                <p>M6 T5 loads the tool in slot 5. Each slot uses the tool you assigned to it in the Tool Library (its name and stored length), or a plain Tool 5 if none. Tools in no slot aren't used. The Manual button changes a tool outside the magazine by hand.</p>
+              </button>
+              <button type="button" role="radio" class="numbering-mode"
+                :class="{ 'numbering-mode--active': toolNumbering === 'toolId' }"
+                :aria-checked="toolNumbering === 'toolId'"
+                @click="selectToolNumbering('toolId')">
+                <div class="numbering-mode__title">Tool ID</div>
+                <p>M6 T5 loads the tool with Tool ID 5 in the Tool Library, whichever slot it is in. A tool in no slot is changed by hand and gets its own button. Use this to keep the tool numbers from your CAM.</p>
+              </button>
+            </div>
+          </div>
+
           <div class="settings-section">
             <h3 class="section-title">Setup</h3>
             <div v-if="toolSourceName" class="settings-note">
@@ -493,10 +516,6 @@
                   :probe-slot="showProbeButton ? (probeToolNumber || 99) : null"
                   @update:tool-count="handleToolCountUpdate"
                 />
-              </div>
-              <div class="setting-item">
-                <label class="setting-label">Manual</label>
-                <ToggleSwitch :model-value="showManualButton" :disabled="toolCountDisabled" @update:model-value="handleShowManualButtonUpdate" />
               </div>
               <div class="setting-item">
                 <label class="setting-label">TLS</label>
@@ -1497,6 +1516,15 @@ const toolSource = ref(initialSettings?.tool?.source ?? null);
 // build aren't stuck with the controls greyed out.
 const toolCountDisabled = computed(() => !!toolSource.value);
 const showManualButton = ref(initialSettings?.tool?.manual ?? true);
+// Settings → Tool Changer → Tool Numbering: 'slot' (classic, the default) or
+// 'toolId'. Decides what M6 T<n> loads and whether the Manual button shows.
+const toolNumbering = ref<string>(initialSettings?.tool?.numbering ?? 'slot');
+const selectToolNumbering = async (value: string) => {
+  if (toolNumbering.value === value) return;
+  toolNumbering.value = value;
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({ tool: { numbering: value } });
+};
 const showTLSButton = ref(initialSettings?.tool?.tls ?? true);
 const showProbeButton = ref(initialSettings?.tool?.probe ?? false);
 const probeToolNumber = ref<number>(initialSettings?.tool?.probeToolNumber ?? 99);
@@ -5076,5 +5104,47 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 @media (max-width: 640px) {
   .wizard-card { flex-wrap: wrap; }
   .wizard-card__btn { width: 100%; }
+}
+.numbering-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.numbering-mode:hover:not(.numbering-mode--active) {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+}
+
+@media (max-width: 720px) {
+  .numbering-modes { grid-template-columns: 1fr; }
+}
+
+.numbering-mode {
+  /* A choice: tap a card to use that numbering. */
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  cursor: pointer;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.numbering-mode p {
+  margin: 4px 0 0;
+}
+
+.numbering-mode__title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.numbering-mode--active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 </style>

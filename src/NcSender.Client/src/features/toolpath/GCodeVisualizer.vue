@@ -133,7 +133,7 @@
       </div>
 
       <!-- Tools list - bottom right above current tool -->
-      <div v-if="legendEntries.length > 0 || showTlsTool || showProbeTool" class="tools-legend tools-legend--bottom">
+      <div v-if="legendEntries.length > 0 || showTlsTool || showProbeTool || showManualTool" class="tools-legend tools-legend--bottom">
         <!-- Scroll Up Button -->
         <button
           v-if="legendEntries.length > 8"
@@ -224,6 +224,32 @@
             <path d="M12 16L6 10L18 10L12 16Z" fill="currentColor"/>
           </svg>
         </button>
+
+        <!-- Manual Tool: Slot numbering only, M6 T<magazine size + 1> (a manual
+             change). With Tool ID numbering, tools outside the magazine have
+             buttons of their own. -->
+        <div
+          v-if="showManualTool"
+          :key="'manual'"
+          class="tools-legend__item manual-tool"
+          :class="{
+            'active': currentTool > numberOfToolsToShow && currentTool < probeToolNumber,
+            'used': toolsUsed.some(t => t > numberOfToolsToShow && t < probeToolNumber),
+            'disabled': isToolActionsDisabled,
+            'long-press-triggered': toolPress['manual']?.triggered,
+            'blink-border': toolPress['manual']?.blinking
+          }"
+          :title="$t('visualizer.holdToChange', { label: manualToolLabel })"
+          @mousedown="isToolActionsDisabled ? null : startToolPress('manual', $event)"
+          @mouseup="isToolActionsDisabled ? null : endToolPress('manual')"
+          @mouseleave="isToolActionsDisabled ? null : cancelToolPress('manual')"
+          @touchstart="isToolActionsDisabled ? null : startToolPress('manual', $event)"
+          @touchend="isToolActionsDisabled ? null : endToolPress('manual')"
+          @touchcancel="isToolActionsDisabled ? null : cancelToolPress('manual')"
+        >
+          <div class="long-press-indicator long-press-horizontal" :style="{ width: `${toolPress['manual']?.progress || 0}%` }"></div>
+          <span class="tools-legend__label">{{ manualToolLabel }}</span>
+        </div>
 
         <!-- Probe Tool -->
         <div
@@ -1323,7 +1349,12 @@ const toolsUsed = ref<number[]>([]);
 
 // Number of tools to display (from settings)
 const numberOfToolsToShow = ref<number>(0);
-const showManualTool = ref<boolean>(false);
+// Settings → Tool Changer → Tool Numbering: 'slot' (classic, T<n> is slot n,
+// with a Manual button) or 'toolId' (T<n> is the tool with Tool ID n).
+const toolNumbering = ref<string>('slot');
+// The Manual button only when there is a tool changer to handle it.
+const showManualTool = computed(() =>
+  toolNumbering.value !== 'toolId' && (!!toolChangerSource.value || numberOfToolsToShow.value > 0));
 const showTlsTool = ref<boolean>(false);
 const showProbeTool = ref<boolean>(false);
 // The probe's tool number comes from the tool provider (the ATC plugin's
@@ -1357,14 +1388,16 @@ const legendEntries = computed<LegendEntry[]>(() => {
     if (num !== null) seen.add(num);
     out.push({ key: `s${slot}`, slot, id, num, tool });
   }
-  if (!magazineSlots.value && !numberOfToolsToShow.value && !showManualTool.value) return out;
+  // Library tools only become buttons when a tool changer is set up.
+  if (!magazineSlots.value && !toolChangerSource.value) return out;
   const rest: LegendEntry[] = libraryTools.value
     .filter((tl: any) => Number.isInteger(tl.toolId) && tl.toolId > 0 && tl.toolId !== probe && !seen.has(tl.toolId))
     .map((tl: any) => { seen.add(tl.toolId); return { key: `i${tl.toolId}`, slot: null, id: tl.toolId, num: tl.toolId, tool: tl }; });
   // A loaded tool the library doesn't know (e.g. set with M61): shown in ID
   // order among the others, flagged, until another tool is loaded.
   const cur = props.currentTool ?? 0;
-  if (cur > 0 && cur !== probe && !seen.has(cur)) {
+  // With Slot numbering a tool past the magazine is the Manual button's.
+  if (cur > 0 && cur !== probe && !seen.has(cur) && !showManualTool.value) {
     rest.push({ key: `i${cur}`, slot: null, id: cur, num: cur, tool: null, unknown: true });
   }
   rest.sort((x, y) => (x.id ?? 0) - (y.id ?? 0));
@@ -4666,7 +4699,12 @@ const startToolPress = (toolNumber: number | string, _evt?: Event) => {
       // Determine tool number to send
       let toolToLoad: number;
       const entry = typeof toolNumber === 'string' ? entryByKey(toolNumber) : undefined;
-      if (entry) {
+      if (toolNumber === 'manual') {
+        // Manual tool (Slot numbering): the number past the magazine; pressed
+        // with a manual tool in, it unloads.
+        toolToLoad = props.currentTool > numberOfToolsToShow.value && props.currentTool < probeToolNumber.value
+          ? 0 : numberOfToolsToShow.value + 1;
+      } else if (entry) {
         // Library button: load by Tool ID; the loaded tool's button unloads.
         // An empty slot has nothing to load.
         if (entry.num === null) {
@@ -5057,7 +5095,8 @@ const loadToolInventory = async () => {
   if (!tools || tools.length === 0) {
     // Fallback to fetching from API
     try {
-      const response = await fetch(`${api.baseUrl}/api/tools`);
+      // What tool changes use (depends on Tool Numbering), not the stored library.
+      const response = await fetch(`${api.baseUrl}/api/tools/active`);
       if (response.ok) {
         tools = await response.json();
       }
@@ -5155,8 +5194,8 @@ onMounted(async () => {
     if (typeof settings.tool?.count === 'number') {
       numberOfToolsToShow.value = settings.tool.count;
     }
-    if (typeof settings.tool?.manual === 'boolean') {
-      showManualTool.value = settings.tool.manual;
+    if (typeof settings.tool?.numbering === 'string') {
+      toolNumbering.value = settings.tool.numbering;
     }
     if (typeof settings.tool?.tls === 'boolean') {
       showTlsTool.value = settings.tool.tls;
@@ -5251,8 +5290,8 @@ onMounted(async () => {
     if (changedSettings.tool?.count !== undefined) {
       numberOfToolsToShow.value = changedSettings.tool.count;
     }
-    if (changedSettings.tool?.manual !== undefined) {
-      showManualTool.value = changedSettings.tool.manual;
+    if (typeof changedSettings.tool?.numbering === 'string') {
+      toolNumbering.value = changedSettings.tool.numbering;
     }
     if (changedSettings.tool?.tls !== undefined) {
       showTlsTool.value = changedSettings.tool.tls;

@@ -252,7 +252,7 @@ public class SettingsManager : ISettingsManager
                 "manual": false,
                 "probe": false,
                 "probeToolNumber": 99,
-                "useLibrary": false
+                "numbering": "slot"
             },
             "plugins": {
                 "allowPriorityReordering": false

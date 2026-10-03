@@ -24,11 +24,14 @@ public class ToolServiceTests : IDisposable
 
         _settings = new Mock<ISettingsManager>();
         _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(0);
-        UseLibrary(true);
+        Numbering(ToolNumbering.ToolId);
     }
 
-    private void UseLibrary(bool on) =>
-        _settings.Setup(s => s.GetSetting<bool>(ToolService.UseLibrarySetting, false)).Returns(on);
+    private void Numbering(string value) =>
+        _settings.Setup(s => s.GetSetting<string>(ToolNumbering.Setting, ToolNumbering.Slot)).Returns(value);
+
+    private void Magazine(int size) =>
+        _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(size);
 
     public void Dispose()
     {
@@ -123,102 +126,273 @@ public class ToolServiceTests : IDisposable
         Assert.Equal(2, all.Count);
     }
 
-    // --- Tool Library off: Slot N always loads Tool N ---------------------
+    // --- Tool Numbering --------------------------------------------------
 
-    private async Task<ToolService> ServiceWithStoredToolAsync()
+    private async Task<ToolService> ServiceWithLibraryAsync()
     {
         var svc = CreateService();
-        await svc.AddAsync(new ToolInfo { Name = "Compression", ToolId = 300, ToolNumber = 1, Type = "flat", Diameter = 6.35 });
+        Magazine(0);   // assigning slots needs no magazine size check here
+        await svc.AddAsync(new ToolInfo { Name = "Compression", ToolId = 300, ToolNumber = 2, Type = "flat", Diameter = 6.35 });
+        await svc.AddAsync(new ToolInfo { Name = "3D probe", ToolId = 50, ToolNumber = null, Type = "probe", Diameter = 2 });
         return svc;
     }
 
     [Fact]
-    public async Task Library_on_returns_the_stored_tools()
+    public async Task Tool_ID_numbering_uses_the_stored_library()
     {
-        var svc = await ServiceWithStoredToolAsync();
+        var svc = await ServiceWithLibraryAsync();
 
         var tools = await svc.GetAllAsync();
 
-        Assert.Single(tools);
-        Assert.Equal(300, tools[0].ToolId);
+        Assert.Equal(new int?[] { 300, 50 }, tools.Select(t => t.ToolId));
     }
 
     [Fact]
-    public async Task Library_off_puts_Tool_N_in_slot_N()
+    public async Task Slot_numbering_T_n_is_slot_n_with_the_slotted_tool_kept()
     {
-        var svc = await ServiceWithStoredToolAsync();
-        _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(4);
-        UseLibrary(false);
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
 
         var tools = await svc.GetAllAsync();
 
         Assert.Equal(new int?[] { 1, 2, 3, 4 }, tools.Select(t => t.ToolNumber));
-        Assert.All(tools, t => Assert.Equal(t.ToolNumber, t.ToolId));   // T<n> is slot n
-        Assert.All(tools, t => Assert.True(t.Id < 0));                  // never a stored tool
-        Assert.DoesNotContain(tools, t => t.ToolId == 300);             // the user's library is not used
+        Assert.All(tools, t => Assert.Equal(t.ToolNumber, t.ToolId));          // T<n> is slot n
+        var slot2 = tools.Single(t => t.ToolNumber == 2);
+        Assert.Equal("Compression", slot2.Name);                               // the library's tool, kept
+        Assert.True(slot2.Id > 0);
+        Assert.All(tools.Where(t => t.ToolNumber != 2), t => Assert.True(t.Id < 0));   // plain Tool n
+        Assert.DoesNotContain(tools, t => t.Name == "3D probe");               // no slot: not reachable
     }
 
     [Fact]
-    public async Task Library_off_keeps_the_probe_slot()
+    public async Task Slot_numbering_never_renumbers_the_stored_tools()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
+
+        _ = await svc.GetAllAsync();
+        var stored = await svc.GetLibraryAsync();
+
+        Assert.Equal(300, stored.Single(t => t.Name == "Compression").ToolId);
+    }
+
+    [Fact]
+    public async Task Slot_numbering_tls_writeback_lands_on_the_slotted_tool_and_keeps_its_ID()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
+        var writeback = new PendingToolTloWriteback(svc, NullLogger<PendingToolTloWriteback>.Instance);
+
+        writeback.Arm(2);            // M6 T2 = slot 2 = the Compression bit
+        writeback.Consume(-17.25);
+
+        var tool = (await svc.GetLibraryAsync()).Single(t => t.Name == "Compression");
+        Assert.Equal(-17.25, tool.Offsets.Tlo);
+        Assert.Equal(300, tool.ToolId);
+    }
+
+    [Fact]
+    public async Task Slot_numbering_a_plain_slot_stores_nothing()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
+        var writeback = new PendingToolTloWriteback(svc, NullLogger<PendingToolTloWriteback>.Instance);
+
+        writeback.Arm(3);
+        writeback.Consume(-9);
+
+        Assert.All(await svc.GetLibraryAsync(), t => Assert.Equal(0, t.Offsets.Tlo));
+    }
+
+    [Fact]
+    public async Task Slot_numbering_keeps_the_probe_slot()
     {
         var svc = CreateService();
-        _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(4);
+        Magazine(4);
         _settings.Setup(s => s.GetSetting<bool>("tool.probe", false)).Returns(true);
         _settings.Setup(s => s.GetSetting<int>("tool.probeToolNumber", 99)).Returns(99);
-        UseLibrary(false);
+        Numbering(ToolNumbering.Slot);
 
-        var tools = await svc.GetAllAsync();
+        var probe = Assert.Single(await svc.GetAllAsync(), t => t.ToolNumber == 99);
 
-        var probe = Assert.Single(tools, t => t.ToolNumber == 99);
         Assert.Equal(99, probe.ToolId);
         Assert.Equal("probe", probe.Type);
     }
 
     [Fact]
-    public async Task Library_off_leaves_the_stored_library_untouched()
+    public async Task The_Tool_Library_stays_editable_with_Slot_numbering()
     {
-        var svc = await ServiceWithStoredToolAsync();
-        _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(4);
-        UseLibrary(false);
+        var svc = await ServiceWithLibraryAsync();
+        Numbering(ToolNumbering.Slot);
 
-        // A built-in tool's measured length goes nowhere.
-        var builtIn = (await svc.GetAllAsync()).First();
-        builtIn.Offsets.Tlo = -42.5;
-        Assert.Null(await svc.UpdateAsync(builtIn.Id, builtIn));
+        await svc.AddAsync(new ToolInfo { Name = "Vee", ToolId = 12, Type = "v-bit", Diameter = 6 });
 
-        // Saving what clients see while off would replace the user's tools.
-        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.BulkUpdateAsync(new List<ToolInfo> { builtIn }));
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.AddAsync(new ToolInfo { Name = "X", ToolNumber = 2, Type = "flat", Diameter = 3 }));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(1));
-
-        UseLibrary(true);
-        var stored = Assert.Single(await svc.GetAllAsync());
-        Assert.Equal(300, stored.ToolId);
-        Assert.Equal("Compression", stored.Name);
-        Assert.Equal(0, stored.Offsets.Tlo);
+        Assert.Equal(3, (await svc.GetLibraryAsync()).Count);
     }
 
     [Fact]
-    public async Task Library_off_tls_writeback_stores_nothing()
+    public async Task Slot_numbering_ignores_a_tool_assigned_past_the_magazine()
     {
-        var svc = await ServiceWithStoredToolAsync();
-        _settings.Setup(s => s.GetSetting<int>("tool.count", 0)).Returns(4);
-        UseLibrary(false);
-        var writeback = new PendingToolTloWriteback(svc, NullLogger<PendingToolTloWriteback>.Instance);
+        var svc = CreateService();
+        await svc.AddAsync(new ToolInfo { Name = "Far", ToolId = 40, ToolNumber = 9, Type = "flat", Diameter = 3 });
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
 
-        writeback.Arm(1);
-        writeback.Consume(-17.25);   // must not throw, must not write
+        var tools = await svc.GetAllAsync();
 
-        UseLibrary(true);
-        Assert.Equal(0, Assert.Single(await svc.GetAllAsync()).Offsets.Tlo);
+        Assert.Equal(4, tools.Count);
+        Assert.DoesNotContain(tools, t => t.Name == "Far");
+    }
+
+    [Fact]
+    public async Task Slot_numbering_with_no_magazine_has_no_tools()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(0);   // e.g. the Manual Tool Changer without a Solo
+        Numbering(ToolNumbering.Slot);
+
+        Assert.Empty(await svc.GetAllAsync());
+    }
+
+    // --- Offsets-only writes ---------------------------------------------
+
+    [Fact]
+    public async Task UpdateOffsets_writes_only_the_given_offsets()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        var id = (await svc.GetLibraryAsync()).Single(t => t.Name == "Compression").Id;
+        await svc.UpdateOffsetsAsync(id, x: 1.5, y: -2);
+
+        var updated = await svc.UpdateOffsetsAsync(id, tlo: -30.25);
+
+        Assert.NotNull(updated);
+        var tool = (await svc.GetLibraryAsync()).Single(t => t.Id == id);
+        Assert.Equal(-30.25, tool.Offsets.Tlo);
+        Assert.Equal(1.5, tool.Offsets.X);      // earlier values kept
+        Assert.Equal(-2, tool.Offsets.Y);
+        Assert.Equal(300, tool.ToolId);         // identity untouched
+        Assert.Equal(2, tool.ToolNumber);
+        Assert.Equal("Compression", tool.Name);
     }
 
     [Theory]
-    [InlineData("useLibrary")]
+    [InlineData(-3)]     // a plain slot tool
+    [InlineData(0)]
+    [InlineData(9999)]   // unknown
+    public async Task UpdateOffsets_stores_nothing_for_a_tool_that_isnt_stored(int id)
+    {
+        var svc = await ServiceWithLibraryAsync();
+
+        Assert.Null(await svc.UpdateOffsetsAsync(id, tlo: -5));
+        Assert.All(await svc.GetLibraryAsync(), t => Assert.Equal(0, t.Offsets.Tlo));
+    }
+
+    [Fact]
+    public async Task UpdateOffsets_sends_clients_the_new_list()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        _broadcaster.Invocations.Clear();
+        var id = (await svc.GetLibraryAsync()).First().Id;
+
+        await svc.UpdateOffsetsAsync(id, tlo: -1);
+
+        _broadcaster.Verify(b => b.Broadcast("tools-updated", It.IsAny<JsonElement>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetById_reads_the_stored_library()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        Magazine(4);
+        Numbering(ToolNumbering.Slot);
+        var id = (await svc.GetLibraryAsync()).Single(t => t.Name == "Compression").Id;
+
+        var tool = await svc.GetByIdAsync(id);
+
+        Assert.Equal(300, tool!.ToolId);   // its own ID, not the slot number
+    }
+
+    // --- Default: Slot on a fresh install; Tool ID kept for library users -
+
+    private System.Text.Json.Nodes.JsonObject? SavedPatch;
+
+    private void TrackSaves() =>
+        _settings.Setup(s => s.SaveSettings(It.IsAny<System.Text.Json.Nodes.JsonObject>()))
+            .Callback<System.Text.Json.Nodes.JsonObject>(p => SavedPatch = p)
+            .Returns(Task.CompletedTask);
+
+    private string? SavedNumbering => SavedPatch?["tool"]?["numbering"]?.GetValue<string>();
+
+    [Fact]
+    public async Task Unset_with_tools_in_the_library_keeps_Tool_ID()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        TrackSaves();
+
+        await svc.DecideNumberingAsync();
+
+        Assert.Equal(ToolNumbering.ToolId, SavedNumbering);
+    }
+
+    [Fact]
+    public async Task Unset_with_an_empty_library_is_Slot()
+    {
+        var svc = CreateService();
+        TrackSaves();
+
+        await svc.DecideNumberingAsync();
+
+        Assert.Equal(ToolNumbering.Slot, SavedNumbering);
+    }
+
+    [Theory]
+    [InlineData(true, ToolNumbering.ToolId)]
+    [InlineData(false, ToolNumbering.Slot)]
+    public async Task An_earlier_Use_Tool_Library_choice_carries_over(bool useLibrary, string expected)
+    {
+        var svc = CreateService();
+        _settings.Setup(s => s.GetSetting("tool.useLibrary", null))
+            .Returns(System.Text.Json.Nodes.JsonValue.Create(useLibrary));
+        TrackSaves();
+
+        await svc.DecideNumberingAsync();
+
+        Assert.Equal(expected, SavedNumbering);
+    }
+
+    [Fact]
+    public async Task A_numbering_the_user_set_is_never_changed()
+    {
+        var svc = await ServiceWithLibraryAsync();
+        _settings.Setup(s => s.GetSetting(ToolNumbering.Setting, null))
+            .Returns(System.Text.Json.Nodes.JsonValue.Create(ToolNumbering.Slot));
+        TrackSaves();
+
+        await svc.DecideNumberingAsync();
+
+        Assert.Null(SavedPatch);
+    }
+
+    [Fact]
+    public void Fresh_install_defaults_to_Slot()
+    {
+        var dir = Path.Combine(_tempDir, "fresh");
+        Directory.CreateDirectory(dir);
+        var settings = new NcSender.Server.Configuration.SettingsManager(Path.Combine(dir, "settings.json"));
+
+        Assert.True(ToolNumbering.IsSlot(settings));
+        Assert.Equal(ToolNumbering.Slot, settings.GetSetting<string>(ToolNumbering.Setting, ""));
+    }
+
+    [Theory]
+    [InlineData("numbering")]
     [InlineData("count")]
     [InlineData("probe")]
-    public void Changing_a_library_setting_sends_clients_the_new_list(string key)
+    public void Changing_a_numbering_setting_sends_clients_the_new_list(string key)
     {
         _ = CreateService();
 
@@ -229,7 +403,7 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
-    public void Unrelated_settings_do_not_resend_the_library()
+    public void Unrelated_settings_do_not_resend_the_list()
     {
         _ = CreateService();
 
@@ -237,59 +411,5 @@ public class ToolServiceTests : IDisposable
             new System.Text.Json.Nodes.JsonObject { ["tool"] = new System.Text.Json.Nodes.JsonObject { ["tls"] = true } });
 
         _broadcaster.Verify(b => b.Broadcast("tools-updated", It.IsAny<JsonElement>()), Times.Never);
-    }
-
-    // --- Default: off on a fresh install, on for installs that have tools ---
-
-    private System.Text.Json.Nodes.JsonObject? SavedPatch;
-
-    private void TrackSaves() =>
-        _settings.Setup(s => s.SaveSettings(It.IsAny<System.Text.Json.Nodes.JsonObject>()))
-            .Callback<System.Text.Json.Nodes.JsonObject>(p => SavedPatch = p)
-            .Returns(Task.CompletedTask);
-
-    [Fact]
-    public async Task Unset_with_tools_in_the_library_keeps_it_on()
-    {
-        var svc = await ServiceWithStoredToolAsync();
-        TrackSaves();
-
-        await svc.DecideUseLibraryAsync();
-
-        Assert.True(SavedPatch?["tool"]?["useLibrary"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public async Task Unset_with_an_empty_library_turns_it_off()
-    {
-        var svc = CreateService();
-        TrackSaves();
-
-        await svc.DecideUseLibraryAsync();
-
-        Assert.False(SavedPatch?["tool"]?["useLibrary"]?.GetValue<bool>());
-    }
-
-    [Fact]
-    public async Task A_value_the_user_set_is_never_changed()
-    {
-        var svc = await ServiceWithStoredToolAsync();
-        _settings.Setup(s => s.GetSetting(ToolService.UseLibrarySetting, null))
-            .Returns(System.Text.Json.Nodes.JsonValue.Create(false));
-        TrackSaves();
-
-        await svc.DecideUseLibraryAsync();
-
-        Assert.Null(SavedPatch);
-    }
-
-    [Fact]
-    public void Fresh_install_defaults_to_off()
-    {
-        var dir = Path.Combine(_tempDir, "fresh");
-        Directory.CreateDirectory(dir);
-        var settings = new NcSender.Server.Configuration.SettingsManager(Path.Combine(dir, "settings.json"));
-
-        Assert.False(settings.GetSetting<bool>(ToolService.UseLibrarySetting, true));
     }
 }

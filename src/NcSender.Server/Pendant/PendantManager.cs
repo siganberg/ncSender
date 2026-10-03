@@ -2999,7 +2999,9 @@ public class PendantManager : IPendantManager
 
         var slotCount = ReadAtcSlotCount();
         var probeTool = ReadProbeTool();
-        var manual = ReadToolFlag("tool.manual");
+        // The Manual button (T<size + 1>) belongs to Slot numbering; with Tool ID
+        // numbering, tools outside the magazine have their own entries.
+        var manual = NcSender.Server.Tools.ToolNumbering.OffersManualTool(_settingsManager);
         var tls = ReadToolFlag("tool.tls");
 
         var snapshot = new PendantOutputsConfigSnapshot(auxList.ToArray(), slotCount, probeTool, manual, tls);

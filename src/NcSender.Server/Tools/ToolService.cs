@@ -35,9 +35,9 @@ public class ToolService : IToolService
         _settings.SettingsSaved += OnSettingsSaved;
     }
 
-    // These settings change what GetAllAsync returns while the library is off
-    // (or switch it), so every client gets the new list.
-    private static readonly string[] LibraryShapingKeys = ["useLibrary", "count", "probe", "probeToolNumber"];
+    // These settings change what GetAllAsync returns, so every client gets the
+    // new list.
+    private static readonly string[] LibraryShapingKeys = ["numbering", "count", "probe", "probeToolNumber"];
 
     private void OnSettingsSaved(System.Text.Json.Nodes.JsonObject patch)
     {
@@ -46,6 +46,9 @@ public class ToolService : IToolService
         _ = BroadcastLibraryAsync();
     }
 
+    // "tools-updated" carries what tool changes use (GetAllAsync), the list the
+    // tool buttons are built from. The Tool Library tab reads the stored
+    // library itself (GetLibraryAsync).
     private async Task BroadcastLibraryAsync()
     {
         try
@@ -55,84 +58,104 @@ public class ToolService : IToolService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to broadcast the tool library after a settings change");
+            _logger.LogWarning(ex, "Failed to broadcast the tool library");
         }
     }
 
     /// <summary>
-    /// Settings → Tool Library → "Use Tool Library". Off on a fresh install; an
-    /// install from before the switch keeps the library on if it has tools in
-    /// it (see <see cref="DecideUseLibraryAsync"/>).
+    /// Installs from before Tool Numbering have no setting yet. Anyone who kept
+    /// tools in the library (or had "Use Tool Library" on) stays on Tool ID;
+    /// everyone else gets Slot, the classic default. Decided once and saved; a
+    /// value the user set is never touched.
     /// </summary>
-    public const string UseLibrarySetting = "tool.useLibrary";
-
-    private bool LibraryEnabled => _settings.GetSetting<bool>(UseLibrarySetting, false);
-
-    /// <summary>
-    /// Installs from before the switch have no setting yet. Keep the library on
-    /// for anyone who already keeps tools in it, off for everyone else. Decided
-    /// once and saved, so the switch, the server and every client read the same
-    /// value from then on; a value the user set is never touched.
-    /// </summary>
-    public async Task DecideUseLibraryAsync()
+    public async Task DecideNumberingAsync()
     {
-        if (_settings.GetSetting(UseLibrarySetting) is not null) return;
-        var on = (await LoadAsync()).Count > 0;
+        if (_settings.GetSetting(ToolNumbering.Setting) is not null) return;
+        var legacy = _settings.GetSetting("tool.useLibrary");
+        var toolId = legacy is not null
+            ? legacy.GetValue<bool>()
+            : (await LoadAsync()).Count > 0;
+        var value = toolId ? ToolNumbering.ToolId : ToolNumbering.Slot;
         await _settings.SaveSettings(new System.Text.Json.Nodes.JsonObject
         {
-            ["tool"] = new System.Text.Json.Nodes.JsonObject { ["useLibrary"] = on }
+            ["tool"] = new System.Text.Json.Nodes.JsonObject { ["numbering"] = value }
         });
-        _logger.LogInformation("Use Tool Library not set yet: {State} ({Reason})",
-            on ? "on" : "off", on ? "the library has tools" : "the library is empty");
+        _logger.LogInformation("Tool Numbering not set yet: {Value} ({Reason})", value,
+            legacy is not null ? "from Use Tool Library" : toolId ? "the library has tools" : "the library is empty");
     }
 
-    // Every reader of the library (tool changes, plugins, the pendant, the tool
-    // buttons, TLO writeback) comes through here, so this is the one place that
-    // decides what M6 T<n> loads.
+    /// <summary>
+    /// The tools as tool changes see them. Every reader that resolves a T number
+    /// (tool changes, plugins, the pendant, the tool buttons, TLO writeback)
+    /// comes through here, so this is the one place that decides what M6 T&lt;n&gt;
+    /// loads: the stored library with Tool ID numbering, or the slots with Slot
+    /// numbering (<see cref="SlotLibraryAsync"/>).
+    /// </summary>
     public async Task<List<ToolInfo>> GetAllAsync()
     {
-        return LibraryEnabled ? await LoadAsync() : BuiltInLibrary();
+        return ToolNumbering.IsSlot(_settings) ? await SlotLibraryAsync() : await LoadAsync();
     }
+
+    /// <summary>The stored Tool Library, as the Tool Library tab edits it.</summary>
+    public Task<List<ToolInfo>> GetLibraryAsync() => LoadAsync();
 
     public async Task<ToolInfo?> GetByIdAsync(int id)
     {
-        var tools = await GetAllAsync();
+        var tools = await LoadAsync();
         return tools.FirstOrDefault(t => t.Id == id);
     }
 
     /// <summary>
-    /// With the Tool Library off: Slot N always holds "Tool N" (Tool ID N) and
-    /// nothing else, so T&lt;n&gt; is simply slot n everywhere, and the probe slot
-    /// holds the probe. Ids are negative: they are never in the stored file, so a
-    /// write to one (TLO writeback, a plugin's updateToolOffset) finds nothing and
-    /// no tool length is kept. The stored library is left exactly as it was.
+    /// Slot numbering: T&lt;n&gt; is slot n. Each slot (and the probe slot) gives the
+    /// tool the library puts there, with its name and lengths, numbered n; an
+    /// empty slot gives a plain "Tool n" (negative Id: never stored, so nothing
+    /// is written to it). Tools in no slot aren't reachable by a T number.
     /// </summary>
-    private List<ToolInfo> BuiltInLibrary()
+    private async Task<List<ToolInfo>> SlotLibraryAsync()
     {
+        var stored = await LoadAsync();
         var count = Math.Max(0, _settings.GetSetting<int>("tool.count", 0));
-        var tools = Enumerable.Range(1, count)
-            .Select(n => new ToolInfo { Id = -n, ToolId = n, ToolNumber = n })
-            .ToList();
+        var slots = Enumerable.Range(1, count).ToList();
         if (_settings.GetSetting<bool>("tool.probe", false))
         {
             var probe = _settings.GetSetting<int>("tool.probeToolNumber", 99);
-            if (probe > count)
-                tools.Add(new ToolInfo { Id = -probe, ToolId = probe, ToolNumber = probe, Type = "probe" });
+            if (probe > count) slots.Add(probe);
         }
-        return tools;
+        var probeSlot = slots.Count > count ? slots[^1] : -1;
+
+        return slots.Select(n =>
+        {
+            var tool = stored.FirstOrDefault(t => t.ToolNumber == n);
+            if (tool is null)
+                return new ToolInfo { Id = -n, ToolId = n, ToolNumber = n, Type = n == probeSlot ? "probe" : "flat" };
+            tool.ToolId = n;   // a fresh copy from disk; the stored tool keeps its own ID
+            return tool;
+        }).ToList();
     }
 
-    // The stored library can't be changed while it is off: what a client sees
-    // then is the built-in one, and saving that back would replace the user's tools.
-    private void EnsureLibraryEnabled()
+    /// <summary>
+    /// Writes a measured or plugin-set offset onto the stored tool, and nothing
+    /// else: the list tool changes read can carry a slot number as the Tool ID,
+    /// so saving that whole object back would renumber the tool. Null for a
+    /// plain slot tool (nothing is stored) or an unknown Id.
+    /// </summary>
+    public async Task<ToolInfo?> UpdateOffsetsAsync(int id, double? tlo = null, double? x = null, double? y = null, double? z = null)
     {
-        if (!LibraryEnabled)
-            throw new InvalidOperationException("The Tool Library is off");
+        if (id <= 0) return null;
+        var tools = await LoadAsync();
+        var tool = tools.FirstOrDefault(t => t.Id == id);
+        if (tool is null) return null;
+        if (tlo.HasValue) tool.Offsets.Tlo = tlo.Value;
+        if (x.HasValue) tool.Offsets.X = x.Value;
+        if (y.HasValue) tool.Offsets.Y = y.Value;
+        if (z.HasValue) tool.Offsets.Z = z.Value;
+        await SaveAsync(tools);
+        await BroadcastLibraryAsync();
+        return tool;
     }
 
     public async Task<ToolInfo> AddAsync(ToolInfo tool)
     {
-        EnsureLibraryEnabled();
         Validate(tool);
 
         var tools = await LoadAsync();
@@ -151,15 +174,14 @@ public class ToolService : IToolService
 
         tools.Add(tool);
         await SaveAsync(tools);
-        await _broadcaster.Broadcast("tools-updated", tools, NcSenderJsonContext.Default.ListToolInfo);
+        await BroadcastLibraryAsync();
 
         return tool;
     }
 
     public async Task<ToolInfo?> UpdateAsync(int id, ToolInfo tool)
     {
-        if (id <= 0) return null;   // a built-in tool: nothing is stored
-        EnsureLibraryEnabled();
+        if (id <= 0) return null;   // a plain slot tool: nothing is stored
         Validate(tool);
 
         var tools = await LoadAsync();
@@ -173,26 +195,24 @@ public class ToolService : IToolService
         tool.Id = id;
         tools[index] = tool;
         await SaveAsync(tools);
-        await _broadcaster.Broadcast("tools-updated", tools, NcSenderJsonContext.Default.ListToolInfo);
+        await BroadcastLibraryAsync();
 
         return tool;
     }
 
     public async Task<bool> DeleteAsync(int id)
     {
-        EnsureLibraryEnabled();
         var tools = await LoadAsync();
         var removed = tools.RemoveAll(t => t.Id == id);
         if (removed == 0) return false;
 
         await SaveAsync(tools);
-        await _broadcaster.Broadcast("tools-updated", tools, NcSenderJsonContext.Default.ListToolInfo);
+        await BroadcastLibraryAsync();
         return true;
     }
 
     public async Task BulkUpdateAsync(List<ToolInfo> tools)
     {
-        EnsureLibraryEnabled();
         foreach (var tool in tools)
             Validate(tool);
 
@@ -202,7 +222,7 @@ public class ToolService : IToolService
             tool.Id = ++maxId;
 
         await SaveAsync(tools);
-        await _broadcaster.Broadcast("tools-updated", tools, NcSenderJsonContext.Default.ListToolInfo);
+        await BroadcastLibraryAsync();
     }
 
     private static int GenerateId(List<ToolInfo> tools)

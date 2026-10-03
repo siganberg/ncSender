@@ -521,20 +521,14 @@ public class JsPluginEngine : IJsPluginEngine
                            ?? tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
                 if (tool is null) return JsBoolean.False;
 
-                if (patch is not null)
-                {
-                    var tloProp = patch.Get("tlo");
-                    if (tloProp.IsNumber()) tool.Offsets.Tlo = tloProp.AsNumber();
-                    var xProp = patch.Get("x");
-                    if (xProp.IsNumber()) tool.Offsets.X = xProp.AsNumber();
-                    var yProp = patch.Get("y");
-                    if (yProp.IsNumber()) tool.Offsets.Y = yProp.AsNumber();
-                    var zProp = patch.Get("z");
-                    if (zProp.IsNumber()) tool.Offsets.Z = zProp.AsNumber();
-                }
-                // Null for a built-in tool (Tool Library off): nothing is kept.
-                if (_toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult() is null)
-                    return JsBoolean.False;
+                double? Num(string key) =>
+                    patch is not null && patch.Get(key) is var v && v.IsNumber() ? v.AsNumber() : null;
+                // Offsets only (the tool as tool changes see it may carry its slot
+                // as the Tool ID). Null for a plain slot tool: nothing is stored.
+                var updated = _toolService.UpdateOffsetsAsync(tool.Id, Num("tlo"), Num("x"), Num("y"), Num("z"))
+                    .GetAwaiter().GetResult();
+                if (updated is null) return JsBoolean.False;
+                tool = updated;
                 _logger.LogInformation(
                     "[plugin:{PluginId}] updateToolOffset T{Tool} tlo={Tlo:F4}",
                     pluginId, toolNumber, tool.Offsets.Tlo);

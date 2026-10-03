@@ -64,9 +64,9 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
                        ?? tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
             if (tool is not null)
             {
-                tool.Offsets.Tlo = tloValue;
-                // Null for a built-in tool (Tool Library off): nothing is kept.
-                if (_toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult() is not null)
+                // Only the TLO is written: the tool as tool changes see it may carry
+                // its slot as the Tool ID. Null for a plain slot tool (nothing stored).
+                if (_toolService.UpdateOffsetsAsync(tool.Id, tlo: tloValue).GetAwaiter().GetResult() is not null)
                     _logger.LogInformation(
                         "Wrote back TLO={Tlo:F4} to T{Tool} (id={Id})",
                         tloValue, toolNumber, tool.Id);

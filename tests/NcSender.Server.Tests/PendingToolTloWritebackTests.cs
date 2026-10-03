@@ -12,8 +12,10 @@ public class PendingToolTloWritebackTests
     {
         var service = new Mock<IToolService>();
         service.Setup(s => s.GetAllAsync()).ReturnsAsync(tools.ToList());
-        service.Setup(s => s.UpdateAsync(It.IsAny<int>(), It.IsAny<ToolInfo>()))
-            .ReturnsAsync((int _, ToolInfo t) => t);
+        // Only the offsets are written back (UpdateOffsetsAsync), never the
+        // whole tool: what tool changes see may carry a slot as the Tool ID.
+        service.Setup(s => s.UpdateOffsetsAsync(It.IsAny<int>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>()))
+            .ReturnsAsync((int id, double? _, double? _, double? _, double? _) => tools.FirstOrDefault(t => t.Id == id));
         return (new PendingToolTloWriteback(service.Object, NullLogger<PendingToolTloWriteback>.Instance), service);
     }
 
@@ -26,7 +28,7 @@ public class PendingToolTloWritebackTests
         writeback.Arm(4);
         writeback.Consume(12.5);
 
-        service.Verify(s => s.UpdateAsync(10, It.Is<ToolInfo>(t => t.Offsets.Tlo == 12.5)), Times.Once);
+        service.Verify(s => s.UpdateOffsetsAsync(10, 12.5, null, null, null), Times.Once);
     }
 
     [Fact]
@@ -38,7 +40,7 @@ public class PendingToolTloWritebackTests
         writeback.Arm(87);
         writeback.Consume(33.1);
 
-        service.Verify(s => s.UpdateAsync(11, It.Is<ToolInfo>(t => t.Offsets.Tlo == 33.1)), Times.Once);
+        service.Verify(s => s.UpdateOffsetsAsync(11, 33.1, null, null, null), Times.Once);
     }
 
     [Fact]
@@ -52,8 +54,8 @@ public class PendingToolTloWritebackTests
         writeback.Arm(4);
         writeback.Consume(7.0);
 
-        service.Verify(s => s.UpdateAsync(12, It.IsAny<ToolInfo>()), Times.Once);
-        service.Verify(s => s.UpdateAsync(10, It.IsAny<ToolInfo>()), Times.Never);
+        service.Verify(s => s.UpdateOffsetsAsync(12, It.IsAny<double?>(), null, null, null), Times.Once);
+        service.Verify(s => s.UpdateOffsetsAsync(10, It.IsAny<double?>(), null, null, null), Times.Never);
     }
 
     [Fact]
@@ -64,7 +66,7 @@ public class PendingToolTloWritebackTests
         writeback.Arm(99);
         writeback.Consume(1.0);
 
-        service.Verify(s => s.UpdateAsync(It.IsAny<int>(), It.IsAny<ToolInfo>()), Times.Never);
+        service.Verify(s => s.UpdateOffsetsAsync(It.IsAny<int>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>()), Times.Never);
     }
 
     [Fact]
@@ -80,7 +82,7 @@ public class PendingToolTloWritebackTests
         writeback.Arm(1);
         writeback.Consume(-46.615);
 
-        service.Verify(s => s.UpdateAsync(1, It.IsAny<ToolInfo>()), Times.Once);
-        service.Verify(s => s.UpdateAsync(10, It.IsAny<ToolInfo>()), Times.Never);
+        service.Verify(s => s.UpdateOffsetsAsync(1, It.IsAny<double?>(), null, null, null), Times.Once);
+        service.Verify(s => s.UpdateOffsetsAsync(10, It.IsAny<double?>(), null, null, null), Times.Never);
     }
 }

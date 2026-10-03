@@ -11,7 +11,15 @@ public static class ToolEndpoints
 {
     public static void Map(WebApplication app)
     {
+        // The stored Tool Library (the Tool Library tab).
         app.MapGet("/api/tools", async (IToolService svc) =>
+        {
+            var tools = await svc.GetLibraryAsync();
+            return Results.Ok(tools);
+        });
+
+        // What tool changes use (the tool buttons): depends on Tool Numbering.
+        app.MapGet("/api/tools/active", async (IToolService svc) =>
         {
             var tools = await svc.GetAllAsync();
             return Results.Ok(tools);
