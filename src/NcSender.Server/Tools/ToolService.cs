@@ -32,21 +32,85 @@ public class ToolService : IToolService
         _settings = settings;
         _logger = logger;
         _filePath = filePath;
+        _settings.SettingsSaved += OnSettingsSaved;
     }
 
+    // These settings change what GetAllAsync returns while the library is off
+    // (or switch it), so every client gets the new list.
+    private static readonly string[] LibraryShapingKeys = ["useLibrary", "count", "probe", "probeToolNumber"];
+
+    private void OnSettingsSaved(System.Text.Json.Nodes.JsonObject patch)
+    {
+        if (patch["tool"] is not System.Text.Json.Nodes.JsonObject tool) return;
+        if (!LibraryShapingKeys.Any(tool.ContainsKey)) return;
+        _ = BroadcastLibraryAsync();
+    }
+
+    private async Task BroadcastLibraryAsync()
+    {
+        try
+        {
+            var tools = await GetAllAsync();
+            await _broadcaster.Broadcast("tools-updated", tools, NcSenderJsonContext.Default.ListToolInfo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast the tool library after a settings change");
+        }
+    }
+
+    /// <summary>Settings → Tool Library → "Use Tool Library" (on by default).</summary>
+    public const string UseLibrarySetting = "tool.useLibrary";
+
+    private bool LibraryEnabled => _settings.GetSetting<bool>(UseLibrarySetting, true);
+
+    // Every reader of the library (tool changes, plugins, the pendant, the tool
+    // buttons, TLO writeback) comes through here, so this is the one place that
+    // decides what M6 T<n> loads.
     public async Task<List<ToolInfo>> GetAllAsync()
     {
-        return await LoadAsync();
+        return LibraryEnabled ? await LoadAsync() : BuiltInLibrary();
     }
 
     public async Task<ToolInfo?> GetByIdAsync(int id)
     {
-        var tools = await LoadAsync();
+        var tools = await GetAllAsync();
         return tools.FirstOrDefault(t => t.Id == id);
+    }
+
+    /// <summary>
+    /// With the Tool Library off: Slot N always holds "Tool N" (Tool ID N) and
+    /// nothing else, so T&lt;n&gt; is simply slot n everywhere, and the probe slot
+    /// holds the probe. Ids are negative: they are never in the stored file, so a
+    /// write to one (TLO writeback, a plugin's updateToolOffset) finds nothing and
+    /// no tool length is kept. The stored library is left exactly as it was.
+    /// </summary>
+    private List<ToolInfo> BuiltInLibrary()
+    {
+        var count = Math.Max(0, _settings.GetSetting<int>("tool.count", 0));
+        var tools = Enumerable.Range(1, count)
+            .Select(n => new ToolInfo { Id = -n, ToolId = n, ToolNumber = n })
+            .ToList();
+        if (_settings.GetSetting<bool>("tool.probe", false))
+        {
+            var probe = _settings.GetSetting<int>("tool.probeToolNumber", 99);
+            if (probe > count)
+                tools.Add(new ToolInfo { Id = -probe, ToolId = probe, ToolNumber = probe, Type = "probe" });
+        }
+        return tools;
+    }
+
+    // The stored library can't be changed while it is off: what a client sees
+    // then is the built-in one, and saving that back would replace the user's tools.
+    private void EnsureLibraryEnabled()
+    {
+        if (!LibraryEnabled)
+            throw new InvalidOperationException("The Tool Library is off");
     }
 
     public async Task<ToolInfo> AddAsync(ToolInfo tool)
     {
+        EnsureLibraryEnabled();
         Validate(tool);
 
         var tools = await LoadAsync();
@@ -72,6 +136,8 @@ public class ToolService : IToolService
 
     public async Task<ToolInfo?> UpdateAsync(int id, ToolInfo tool)
     {
+        if (id <= 0) return null;   // a built-in tool: nothing is stored
+        EnsureLibraryEnabled();
         Validate(tool);
 
         var tools = await LoadAsync();
@@ -92,6 +158,7 @@ public class ToolService : IToolService
 
     public async Task<bool> DeleteAsync(int id)
     {
+        EnsureLibraryEnabled();
         var tools = await LoadAsync();
         var removed = tools.RemoveAll(t => t.Id == id);
         if (removed == 0) return false;
@@ -103,6 +170,7 @@ public class ToolService : IToolService
 
     public async Task BulkUpdateAsync(List<ToolInfo> tools)
     {
+        EnsureLibraryEnabled();
         foreach (var tool in tools)
             Validate(tool);
 

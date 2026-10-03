@@ -65,10 +65,11 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
             if (tool is not null)
             {
                 tool.Offsets.Tlo = tloValue;
-                _toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult();
-                _logger.LogInformation(
-                    "Wrote back TLO={Tlo:F4} to T{Tool} (id={Id})",
-                    tloValue, toolNumber, tool.Id);
+                // Null for a built-in tool (Tool Library off): nothing is kept.
+                if (_toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult() is not null)
+                    _logger.LogInformation(
+                        "Wrote back TLO={Tlo:F4} to T{Tool} (id={Id})",
+                        tloValue, toolNumber, tool.Id);
             }
             _pending.TryRemove(toolNumber, out _);
         }

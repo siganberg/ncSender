@@ -56,8 +56,15 @@ public static class ToolEndpoints
 
         app.MapDelete("/api/tools/{id:int}", async (int id, IToolService svc) =>
         {
-            var deleted = await svc.DeleteAsync(id);
-            return deleted ? Results.Ok(new ApiSuccess(true)) : Results.NotFound();
+            try
+            {
+                var deleted = await svc.DeleteAsync(id);
+                return deleted ? Results.Ok(new ApiSuccess(true)) : Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
         });
 
         app.MapPut("/api/tools", async (List<ToolInfo> tools, IToolService svc) =>

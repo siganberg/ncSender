@@ -251,7 +251,8 @@ public class SettingsManager : ISettingsManager
                 "tls": false,
                 "manual": false,
                 "probe": false,
-                "probeToolNumber": 99
+                "probeToolNumber": 99,
+                "useLibrary": true
             },
             "plugins": {
                 "allowPriorityReordering": false

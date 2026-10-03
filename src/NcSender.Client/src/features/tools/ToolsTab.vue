@@ -19,6 +19,30 @@
   <div class="tools-tab">
     <div class="tools-content">
       <div class="tools-inner-content">
+        <!-- Off: the tool changer uses a built-in library (Slot N holds Tool N)
+             and this one is kept as it is, hidden, like the Macros tab's
+             controller-macros mode. -->
+        <div class="tools-mode-bar">
+          <label class="tools-mode-toggle">
+            <span>Use Tool Library</span>
+            <ToggleSwitch v-model="useToolLibrary" />
+          </label>
+        </div>
+
+        <div v-if="!useToolLibrary" class="tools-off-note">
+          <div class="tools-off-note__inner">
+            <div class="tools-off-note__icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+            </div>
+            <h3 class="tools-off-note__title">Tool Library is OFF</h3>
+            <p class="tools-off-note__body">Each slot is its own tool: <code>M6 T5</code> loads the tool in Slot 5. Tool lengths aren't stored; each tool is measured when it's loaded.</p>
+            <p class="tools-off-note__hint">Your tools are kept. To use Tool IDs and names and keep tool lengths, turn on <strong>Use Tool Library</strong> above.</p>
+          </div>
+        </div>
+
+        <template v-else>
         <!-- Header with search and actions -->
         <div class="tools-header">
         <input
@@ -172,6 +196,7 @@
             </div>
           </div>
         </div>
+        </template>
       </div>
     </div>
 
@@ -512,7 +537,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -521,8 +546,18 @@ import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+import ToggleSwitch from '../../components/ToggleSwitch.vue';
+import { getSettings, updateSettings } from '@/lib/settings-store.js';
 
 const { isKiosk } = useKioskDetection();
+
+// Settings → Tool Library → Use Tool Library (on by default). Off, the server
+// hands tool changes a built-in library instead (Slot N holds Tool N).
+const useToolLibrary = ref<boolean>(getSettings()?.tool?.useLibrary ?? true);
+watch(useToolLibrary, async (on) => {
+  await updateSettings({ tool: { useLibrary: on } });
+  if (on) await loadTools();
+});
 const showDrivePicker = ref(false);
 const showImportPicker = ref(false);
 const toolsExportFilename = computed(() => `tool-library-${new Date().toISOString().split('T')[0]}.json`);
@@ -1430,6 +1465,90 @@ onMounted(async () => {
 .tool-settings .setting-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.tools-mode-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--gap-sm);
+  flex-shrink: 0;
+}
+
+.tools-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tools-off-note {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.tools-off-note__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 460px;
+  padding: 32px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-surface);
+}
+
+.tools-off-note__icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.tools-off-note__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tools-off-note__body,
+.tools-off-note__hint {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.tools-off-note__hint {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.tools-off-note code {
+  background: var(--color-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.875rem;
+  color: var(--color-accent);
+}
+
+.tools-off-note strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .tools-header {

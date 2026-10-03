@@ -532,7 +532,9 @@ public class JsPluginEngine : IJsPluginEngine
                     var zProp = patch.Get("z");
                     if (zProp.IsNumber()) tool.Offsets.Z = zProp.AsNumber();
                 }
-                _toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult();
+                // Null for a built-in tool (Tool Library off): nothing is kept.
+                if (_toolService.UpdateAsync(tool.Id, tool).GetAwaiter().GetResult() is null)
+                    return JsBoolean.False;
                 _logger.LogInformation(
                     "[plugin:{PluginId}] updateToolOffset T{Tool} tlo={Tlo:F4}",
                     pluginId, toolNumber, tool.Offsets.Tlo);
