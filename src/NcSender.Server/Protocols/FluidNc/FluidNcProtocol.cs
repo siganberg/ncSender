@@ -12,6 +12,7 @@ public class FluidNcProtocol : IProtocolHandler
     public string CacheKey => "fluidnc";
     public byte? FullStatusRequestByte => null;
     public bool SupportsSettingEnumeration => false;
+    public bool SupportsOverrideControl => false;   // no M51 in FluidNC
     public string AlarmFetchCommand => "$A";
 
     // Per-status-poll multiplier for the M5 measured-RPM coast-down, and the rpm

@@ -61,6 +61,14 @@ public interface IProtocolHandler
     bool SupportsSettingEnumeration => true;
 
     /// <summary>
+    /// Whether the controller understands override control (M51) and the
+    /// #&lt;_speed_override&gt; parameter. Tool changer plugins use it to hold the
+    /// spindle override at 100% during load/unload; a controller without it
+    /// rejects the line, which stops the tool change.
+    /// </summary>
+    bool SupportsOverrideControl => true;
+
+    /// <summary>
     /// Post-process the status report after all fields are parsed.
     /// Used for protocol-specific state inference (e.g. homing detection).
     /// </summary>

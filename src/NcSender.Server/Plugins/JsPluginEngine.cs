@@ -208,6 +208,12 @@ public class JsPluginEngine : IJsPluginEngine
                     jsContext.Set("machineState", jsMachineState);
                     jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
                     jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
+                    // What the connected controller can do, so a plugin can leave out
+                    // lines it would reject (a rejected line stops the sequence).
+                    var jsController = new JsObject(engine);
+                    jsController.Set("overrideControl", JsValue.FromObject(engine,
+                        _cncController.ActiveProtocol?.SupportsOverrideControl ?? true));
+                    jsContext.Set("controller", jsController);
                     jsContext.Set("sourceId", context.Meta?.SourceId is not null
                         ? JsValue.FromObject(engine, context.Meta.SourceId)
                         : JsValue.Null);
