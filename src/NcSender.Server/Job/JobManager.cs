@@ -263,7 +263,7 @@ public class JobManager : IJobManager
         }
 
         var tool = ms.Tool;
-        _logger.LogInformation("No tool length reference since power-up: measuring T{Tool} before the job", tool);
+        _logger.LogInformation("T{Tool} has no measured length: measuring it before the job", tool);
         SetMeasureBeforeJobTool(tool);
         try
         {

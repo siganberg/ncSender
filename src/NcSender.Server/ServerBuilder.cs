@@ -123,6 +123,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<NcSender.Server.Tools.IPendingToolTloWriteback,
             NcSender.Server.Tools.PendingToolTloWriteback>();
         builder.Services.AddHostedService<NcSender.Server.Tools.TloWritebackListener>();
+        builder.Services.AddHostedService<NcSender.Server.Tools.ToolLengthOnAbort>();
         builder.Services.AddSingleton<IFirmwareService, FirmwareService>();
         builder.Services.AddSingleton<IConfigService, ConfigService>();
         builder.Services.AddSingleton<IAlarmService, AlarmService>();

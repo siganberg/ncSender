@@ -421,7 +421,7 @@
             <path d="M5 21h14" />
           </svg>
         </span>
-        <span v-if="measureBeforeJobTool > 0">Measuring T{{ measureBeforeJobTool }} before the job: nothing has measured it since power-up, and your Z0 needs its length.</span>
+        <span v-if="measureBeforeJobTool > 0">Measuring T{{ measureBeforeJobTool }} before the job: it has no measured length, and your Z0 needs it.</span>
         <span v-else>Measuring T{{ measureAfterHomeTool }} after homing: nothing has measured it since power-up.</span>
       </div>
 
@@ -481,7 +481,7 @@
           </svg>
         </span>
         <span v-if="tlrZeroNotice === 'swapped'">Z0 was set with T{{ appStore.status.zeroTool }}, but T{{ appStore.status.tool }} is in the spindle now. Set Z0 again before cutting.</span>
-        <span v-else-if="tlrZeroNotice === 'unmeasured'">T{{ appStore.status.tool }} hasn't been measured since power-up. Run TLS now, or it's measured automatically when the job starts.</span>
+        <span v-else-if="tlrZeroNotice === 'unmeasured'">T{{ appStore.status.tool }} has no measured length. Run TLS now, or it's measured automatically when the job starts.</span>
         <span v-else>Z0 is set, no tool length reference yet. At the next tool change T{{ appStore.status.tool }} is measured first, so your Z0 carries over.</span>
       </div>
 
