@@ -1390,6 +1390,7 @@ public partial class CncController : ICncController
 
         var prevStatus = _lastStatus.Status;
         var hasFsField = false;
+        _lastStatus.WcoInReport = false;
 
         // Reset Pn each report — grblHAL omits it when no pins are active, so
         // absence genuinely means "nothing triggered".
@@ -1497,6 +1498,7 @@ public partial class CncController : ICncController
 
                 case "WCO":
                     _lastStatus.WCO = value;
+                    _lastStatus.WcoInReport = true;
                     break;
 
                 case "Bf":

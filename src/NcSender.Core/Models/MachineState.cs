@@ -133,6 +133,11 @@ public class MachineState
     [JsonIgnore]
     public double Tlo { get; set; }
 
+    // True when the status report just parsed carried WCO. Controllers send it
+    // only every few reports; FluidNC's handler fills the gaps itself.
+    [JsonIgnore]
+    public bool WcoInReport { get; set; }
+
     // Aux IO counts from [AUX IO:<in>,<out>,..]. Inputs matter to plugins that
     // let the operator pick a sensor pin — without it they can only guess at a
     // range and offer ports the board doesn't have.

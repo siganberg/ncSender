@@ -89,27 +89,51 @@ public class FluidNcProtocol : IProtocolHandler
             }
         }
 
-        // FluidNC status reports omit WCO. Synthesize it from the active
-        // workspace's offset plus the current G92 modal offset and TLO so
-        // the client sees the same fields grblHAL provides. The visualizer
-        // and any wPos arithmetic depend on WCO matching the controller's
-        // internal frame; without this every multi-workspace render is
-        // misaligned by the difference between G54 and the file's frame.
-        SynthesizeWco(state);
+        // FluidNC sends WCO only every 10-30 status reports. When it does,
+        // it is the controller's own frame (G5x + G92 + TLO) and is kept as
+        // is; the TLO is read back from it, since FluidNC never prints
+        // [TLO:] and a tool change in a firmware macro or plugin (G43.1)
+        // would otherwise go unseen. Between those reports, WCO is rebuilt
+        // from the active workspace offset, G92 and that TLO so a G10 or
+        // workspace switch shows up at once. The visualizer and any wPos
+        // arithmetic depend on WCO matching the controller's frame.
+        if (state.WcoInReport)
+            TloFromReportedWco(state);
+        else
+            SynthesizeWco(state);
+    }
+
+    private static string? ActiveWorkspaceOffset(MachineState state) => state.Workspace switch
+    {
+        "G54" => state.G54,
+        "G55" => state.G55,
+        "G56" => state.G56,
+        "G57" => state.G57,
+        "G58" => state.G58,
+        "G59" => state.G59,
+        _ => null
+    };
+
+    // TLO (Z only on FluidNC) = reported WCO Z - workspace Z - G92 Z.
+    private static void TloFromReportedWco(MachineState state)
+    {
+        static bool Z(string? csv, out double z)
+        {
+            z = 0;
+            var parts = csv?.Split(',');
+            return parts is { Length: > 2 }
+                && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out z);
+        }
+
+        if (!Z(state.WCO, out var wcoZ) || !Z(ActiveWorkspaceOffset(state), out var wsZ))
+            return;
+        Z(state.G92Offset, out var g92Z);   // no G92 yet reads as 0
+        state.Tlo = Math.Round(wcoZ - wsZ - g92Z, 3);
     }
 
     private static void SynthesizeWco(MachineState state)
     {
-        var activeOffset = state.Workspace switch
-        {
-            "G54" => state.G54,
-            "G55" => state.G55,
-            "G56" => state.G56,
-            "G57" => state.G57,
-            "G58" => state.G58,
-            "G59" => state.G59,
-            _ => null
-        };
+        var activeOffset = ActiveWorkspaceOffset(state);
 
         if (string.IsNullOrEmpty(activeOffset)) return;
 
