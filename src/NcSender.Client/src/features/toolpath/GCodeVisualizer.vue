@@ -239,7 +239,7 @@
             'long-press-triggered': toolPress['manual']?.triggered,
             'blink-border': toolPress['manual']?.blinking
           }"
-          :title="$t('visualizer.holdToChange', { label: manualToolLabel })"
+          :title="`${manualToolLabel} (Hold to change)`"
           @mousedown="isToolActionsDisabled ? null : startToolPress('manual', $event)"
           @mouseup="isToolActionsDisabled ? null : endToolPress('manual')"
           @mouseleave="isToolActionsDisabled ? null : cancelToolPress('manual')"
