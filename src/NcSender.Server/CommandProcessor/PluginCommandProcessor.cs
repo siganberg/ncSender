@@ -13,6 +13,7 @@ public class PluginCommandProcessor : ICommandProcessor
     private readonly IJsPluginEngine _jsEngine;
     private readonly IToolService _toolService;
     private readonly IServerContext _serverContext;
+    private readonly IToolChangeTracker? _toolChangeTracker;
     private readonly IBroadcaster _broadcaster;
     private readonly ISettingsManager _settingsManager;
     private readonly IToolProjection _toolProjection;
@@ -26,8 +27,10 @@ public class PluginCommandProcessor : ICommandProcessor
         IBroadcaster broadcaster,
         ISettingsManager settingsManager,
         IToolProjection toolProjection,
-        ILogger<PluginCommandProcessor> logger)
+        ILogger<PluginCommandProcessor> logger,
+        IToolChangeTracker? toolChangeTracker = null)
     {
+        _toolChangeTracker = toolChangeTracker;
         _inner = inner;
         _jsEngine = jsEngine;
         _toolService = toolService;
@@ -202,14 +205,18 @@ public class PluginCommandProcessor : ICommandProcessor
         // actually starts (not at expansion time, which for macros is
         // completely detached from dispatch order). Paired with the
         // TOOL_CHANGE_COMPLETE sentinel appended below.
+        var toolChangeId = 0;
         if (isValidM6 || isTLS)
         {
-            finalCommands.Add(new ProcessedCommand
-            {
-                Command = "(MSG, TOOL_CHANGE_START)",
-                IsOriginal = false,
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            var job = _serverContext.State.JobLoaded;
+            toolChangeId = _toolChangeTracker?.Register(new ToolChangeInfo(
+                isTLS ? "TLS" : "M6",
+                isTLS ? currentTool : m6Parse.ToolNumber!.Value,
+                currentTool,
+                command.Trim(),
+                context.Meta?.SourceId,
+                job is not null && job.Status == "running")) ?? 0;
+            finalCommands.Add(ToolChangeSentinel.Start(toolChangeId));
         }
 
         foreach (var cmd in commands)
@@ -258,13 +265,8 @@ public class PluginCommandProcessor : ICommandProcessor
                 });
             }
 
-            finalCommands.Add(new ProcessedCommand
-            {
-                Command = "(MSG, TOOL_CHANGE_COMPLETE)",
-                IsOriginal = false,
-                Cleanup = true,
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            finalCommands.Add(ToolChangeSentinel.Sync());
+            finalCommands.Add(ToolChangeSentinel.Complete(toolChangeId));
         }
 
         if (isTLS)
@@ -307,13 +309,8 @@ public class PluginCommandProcessor : ICommandProcessor
                 });
             }
 
-            finalCommands.Add(new ProcessedCommand
-            {
-                Command = "(MSG, TOOL_CHANGE_COMPLETE)",
-                IsOriginal = false,
-                Cleanup = true,
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            finalCommands.Add(ToolChangeSentinel.Sync());
+            finalCommands.Add(ToolChangeSentinel.Complete(toolChangeId));
         }
 
         return new CommandProcessorResult

@@ -152,10 +152,12 @@ public class CommandProcessorTests
         var result = await processor.ProcessAsync("M6 T5", ctx);
 
         Assert.True(result.ShouldContinue);
-        Assert.Equal(3, result.Commands.Count); // M6 + return + sentinel
-        Assert.Equal("M6 T5", result.Commands[0].Command);
-        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[1].Command);
-        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[2].Command);
+        Assert.Equal(5, result.Commands.Count); // start + M6 + return + sync + complete
+        Assert.Contains("TOOL_CHANGE_START", result.Commands[0].Command);
+        Assert.Equal("M6 T5", result.Commands[1].Command);
+        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[2].Command);
+        Assert.Equal("G4 P0", result.Commands[3].Command);
+        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[4].Command);
     }
 
     [Fact]
@@ -200,6 +202,42 @@ public class CommandProcessorTests
         // so no isToolChanging flag, just passthrough
     }
 
+    // --- Tool change tracking (#77) ---
+
+    [Fact]
+    public async Task M6_registers_the_change_and_both_sentinels_carry_its_id()
+    {
+        var machineState = new MachineState { Tool = 1, MPos = "100.000,200.000,0.000" };
+        var (_, context, broadcaster, firmware, settings) = CreateProcessor(machineState);
+        var tracker = new Mock<IToolChangeTracker>();
+        ToolChangeInfo? info = null;
+        tracker.Setup(t => t.Register(It.IsAny<ToolChangeInfo>())).Callback<ToolChangeInfo>(i => info = i).Returns(42);
+        var processor = new NcSender.Server.CommandProcessor.CommandProcessor(
+            context.Object, broadcaster.Object, firmware.Object, settings.Object, new Mock<IMacroService>().Object,
+            NewProjection(), NullLogger<NcSender.Server.CommandProcessor.CommandProcessor>.Instance, tracker.Object);
+
+        var result = await processor.ProcessAsync("M6 T5", CreateContext(machineState));
+
+        Assert.Equal("(MSG, TOOL_CHANGE_START 42)", result.Commands[0].Command);
+        Assert.Equal("(MSG, TOOL_CHANGE_COMPLETE 42)", result.Commands[^1].Command);
+        Assert.Equal(new ToolChangeInfo("M6", 5, 1, "M6 T5", null, false), info);
+    }
+
+    [Fact]
+    public async Task Same_tool_M6_is_skipped_and_not_registered()
+    {
+        var machineState = new MachineState { Tool = 5 };
+        var (_, context, broadcaster, firmware, settings) = CreateProcessor(machineState);
+        var tracker = new Mock<IToolChangeTracker>();
+        var processor = new NcSender.Server.CommandProcessor.CommandProcessor(
+            context.Object, broadcaster.Object, firmware.Object, settings.Object, new Mock<IMacroService>().Object,
+            NewProjection(), NullLogger<NcSender.Server.CommandProcessor.CommandProcessor>.Instance, tracker.Object);
+
+        await processor.ProcessAsync("M6 T5", CreateContext(machineState));
+
+        tracker.Verify(t => t.Register(It.IsAny<ToolChangeInfo>()), Times.Never);
+    }
+
     // --- M6 Return-to-Position ---
 
     [Fact]
@@ -212,9 +250,10 @@ public class CommandProcessorTests
         var result = await processor.ProcessAsync("M6 T5", ctx);
 
         Assert.True(result.ShouldContinue);
-        Assert.Equal(3, result.Commands.Count); // M6 + return + sentinel
-        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[1].Command);
-        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[2].Command);
+        Assert.Equal(5, result.Commands.Count); // start + M6 + return + sync + complete
+        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[2].Command);
+        Assert.Equal("G4 P0", result.Commands[3].Command);
+        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[4].Command);
     }
 
     [Fact]
@@ -232,9 +271,9 @@ public class CommandProcessorTests
             var result = await processor.ProcessAsync("M6 T5", ctx);
 
             Assert.True(result.ShouldContinue);
-            Assert.Equal(3, result.Commands.Count);
+            Assert.Equal(5, result.Commands.Count);
             // Must use dot decimal separator, not comma
-            Assert.Contains("G53 G21 G0 X-859.459 Y-789.625", result.Commands[1].Command);
+            Assert.Contains("G53 G21 G0 X-859.459 Y-789.625", result.Commands[2].Command);
         }
         finally
         {
@@ -253,8 +292,8 @@ public class CommandProcessorTests
         var result = await processor.ProcessAsync("M6 T5", ctx);
 
         Assert.True(result.ShouldContinue);
-        Assert.Equal(2, result.Commands.Count); // M6 + sentinel (no return command in program mode)
-        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[1].Command);
+        Assert.Equal(4, result.Commands.Count); // start + M6 + sync + complete (no return command in program mode)
+        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[3].Command);
     }
 
     // --- $TLS Handling ---
@@ -270,9 +309,11 @@ public class CommandProcessorTests
 
         Assert.True(result.ShouldContinue);
         Assert.True(context.Object.State.MachineState.IsToolChanging);
-        Assert.Equal(3, result.Commands.Count); // $TLS + return + sentinel
-        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[1].Command);
-        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[2].Command);
+        Assert.Equal(5, result.Commands.Count); // start + $TLS + return + sync + complete
+        Assert.Contains("TOOL_CHANGE_START", result.Commands[0].Command);
+        Assert.Contains("G53 G21 G0 X100.000 Y200.000", result.Commands[2].Command);
+        Assert.Equal("G4 P0", result.Commands[3].Command);
+        Assert.Contains("TOOL_CHANGE_COMPLETE", result.Commands[4].Command);
     }
 
     // --- $NCSENDER_CLEAR_MSG ---

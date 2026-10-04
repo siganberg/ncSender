@@ -39,7 +39,7 @@ public class JsPluginEngine : IJsPluginEngine
     // a DI cycle. Resolve it lazily on demand from the service provider.
     private readonly IServiceProvider _serviceProvider;
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext, IFirmwareService firmwareService, ICncController cncController, IServiceProvider serviceProvider)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext, IFirmwareService firmwareService, ICncController cncController, IServiceProvider serviceProvider, IToolChangeTracker? toolChangeTracker = null)
     {
         _logger = logger;
         _dialogs = dialogs;
@@ -51,6 +51,73 @@ public class JsPluginEngine : IJsPluginEngine
         _firmwareService = firmwareService;
         _cncController = cncController;
         _serviceProvider = serviceProvider;
+
+        if (toolChangeTracker is not null)
+        {
+            toolChangeTracker.Started += e => QueueToolChangeHook("onToolChangeStart", e);
+            toolChangeTracker.Ended += e => QueueToolChangeHook("onToolChangeEnd", e);
+        }
+    }
+
+    // Tool change hooks run off the controller's read loop (a plugin may be
+    // slow, or the plugin lock held by a dialog), one at a time so a plugin
+    // always sees a change's start before its end.
+    private readonly Lock _hookGate = new();
+    private Task _hookChain = Task.CompletedTask;
+
+    private void QueueToolChangeHook(string hook, ToolChangeEvent e)
+    {
+        lock (_hookGate)
+            _hookChain = _hookChain.ContinueWith(_ => RunToolChangeHook(hook, e), TaskScheduler.Default);
+    }
+
+    internal Task ToolChangeHooksIdle
+    {
+        get { lock (_hookGate) return _hookChain; }
+    }
+
+    internal string? EvaluateForTest(string pluginId, string script)
+    {
+        lock (_lock)
+            return _plugins.TryGetValue(pluginId, out var state) ? state.JintEngine.Evaluate(script).ToString() : null;
+    }
+
+    // onToolChangeStart(event, settings) / onToolChangeEnd(event, settings).
+    // event: kind ("M6" | "TLS"), tool, previousTool, command, sourceId,
+    // jobRunning; on end also outcome ("completed" | "aborted") and, when
+    // aborted, reason ("error" | "alarm" | "stopped" | "disconnected").
+    private void RunToolChangeHook(string hook, ToolChangeEvent e)
+    {
+        foreach (var pluginId in GetLoadedPluginIds())
+        {
+            lock (_lock)
+            {
+                if (!_plugins.TryGetValue(pluginId, out var state)) continue;
+                try
+                {
+                    var fn = state.JintEngine.GetValue(hook);
+                    if (fn.IsUndefined()) continue;
+                    var engine = state.JintEngine;
+                    var ev = new JsObject(engine);
+                    ev.Set("kind", e.Info.Kind);
+                    ev.Set("tool", e.Info.Tool);
+                    ev.Set("previousTool", e.Info.PreviousTool);
+                    ev.Set("command", e.Info.Command);
+                    ev.Set("sourceId", e.Info.SourceId is null ? JsValue.Null : new JsString(e.Info.SourceId));
+                    ev.Set("jobRunning", e.Info.JobRunning);
+                    if (e.Outcome is not null)
+                    {
+                        ev.Set("outcome", e.Outcome);
+                        ev.Set("reason", e.Reason is null ? JsValue.Null : new JsString(e.Reason));
+                    }
+                    fn.Call(ev, state.CachedSettings);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "JS plugin {PluginId} {Hook} failed", pluginId, hook);
+                }
+            }
+        }
     }
 
     public void LoadPlugin(string pluginId, string commandsFilePath, Dictionary<string, JsonElement> settings, int priority = 0)

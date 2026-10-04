@@ -16,6 +16,7 @@ public class CommandProcessor : ICommandProcessor
     private const int MaxM98Depth = 16;
 
     private readonly IServerContext _context;
+    private readonly IToolChangeTracker? _toolChangeTracker;
     private readonly IBroadcaster _broadcaster;
     private readonly IFirmwareService _firmwareService;
     private readonly ISettingsManager _settingsManager;
@@ -40,8 +41,10 @@ public class CommandProcessor : ICommandProcessor
         ISettingsManager settingsManager,
         IMacroService macroService,
         IToolProjection toolProjection,
-        ILogger<CommandProcessor> logger)
+        ILogger<CommandProcessor> logger,
+        IToolChangeTracker? toolChangeTracker = null)
     {
+        _toolChangeTracker = toolChangeTracker;
         _context = context;
         _broadcaster = broadcaster;
         _firmwareService = firmwareService;
@@ -182,6 +185,22 @@ public class CommandProcessor : ICommandProcessor
             }
         };
 
+        // Bracket the change with START / COMPLETE sentinels so the tool
+        // change tracker sees when it runs and whether it finished.
+        var toolChangeId = 0;
+        if (isValidM6 || isTLS)
+        {
+            var job = _context.State.JobLoaded;
+            toolChangeId = _toolChangeTracker?.Register(new ToolChangeInfo(
+                isTLS ? "TLS" : "M6",
+                isTLS ? currentTool : m6Parse.ToolNumber!.Value,
+                currentTool,
+                command.Trim(),
+                processorContext.Meta?.SourceId,
+                job is not null && job.Status == "running")) ?? 0;
+            commands.Insert(0, ToolChangeSentinel.Start(toolChangeId));
+        }
+
         // 15. If valid M6 (non-same-tool), append return-to-position + sentinel
         if (isValidM6)
         {
@@ -202,14 +221,8 @@ public class CommandProcessor : ICommandProcessor
                 });
             }
 
-            commands.Add(new ProcessedCommand
-            {
-                Command = "(MSG, TOOL_CHANGE_COMPLETE)",
-                DisplayCommand = "(tool change sentinel)",
-                IsOriginal = false,
-                Cleanup = true,
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            commands.Add(ToolChangeSentinel.Sync());
+            commands.Add(ToolChangeSentinel.Complete(toolChangeId));
         }
 
         // 16. If $TLS, switch probe source, run TLS, restore probe source, return
@@ -253,14 +266,8 @@ public class CommandProcessor : ICommandProcessor
                 });
             }
 
-            commands.Add(new ProcessedCommand
-            {
-                Command = "(MSG, TOOL_CHANGE_COMPLETE)",
-                DisplayCommand = "(tool change sentinel)",
-                IsOriginal = false,
-                Cleanup = true,
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            commands.Add(ToolChangeSentinel.Sync());
+            commands.Add(ToolChangeSentinel.Complete(toolChangeId));
         }
 
         // 17. M98 detection — by default ncSender intercepts and expands

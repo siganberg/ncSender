@@ -714,6 +714,8 @@ public class PluginManager : IPluginManager
         var hasJsEvent = manifest.Events.Contains("onBeforeCommand")
             || manifest.Events.Contains("onGcodeProgramLoad")
             || manifest.Events.Contains("onAfterJobEnd")
+            || manifest.Events.Contains("onToolChangeStart")
+            || manifest.Events.Contains("onToolChangeEnd")
             || manifest.Events.Contains("background");
         if (!hasJsEvent || string.IsNullOrEmpty(manifest.Commands))
         {
