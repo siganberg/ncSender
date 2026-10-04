@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -60,6 +61,8 @@ public class PluginManager : IPluginManager
                 ConfigUi = manifest.ConfigUi,
                 InstalledAt = DateTime.TryParse(entry?.InstalledAt, out var dt) ? dt : DateTime.MinValue,
                 UpdatedAt = DateTime.MinValue,
+                RunState = entry?.Enabled == true && _runState.TryGetValue(manifest.Id, out var run) ? run.State : null,
+                RunError = entry?.Enabled == true && _runState.TryGetValue(manifest.Id, out var runErr) ? runErr.Error : null,
                 Manifest = manifest
             });
         }
@@ -92,6 +95,7 @@ public class PluginManager : IPluginManager
                 {
                     entry.Enabled = false;
                     _jsEngine.UnloadPlugin(entry.Id);
+                    _runState.TryRemove(entry.Id, out _);
                 }
             }
         }
@@ -146,6 +150,7 @@ public class PluginManager : IPluginManager
 
         // Unload command plugin from JS engine
         _jsEngine.UnloadPlugin(pluginId);
+        _runState.TryRemove(pluginId, out _);
 
         // Only reset tool settings if this plugin is the current tool source
         SyncToolSettingsOnDisable(pluginId);
@@ -646,25 +651,128 @@ public class PluginManager : IPluginManager
 
     public string ApplyOnGcodeProgramLoad(string content, IReadOnlyDictionary<string, object?> context)
     {
-        try
+        // A plugin that should have prepared the program but didn't (not
+        // running, or it threw) leaves the program without its lines, e.g.
+        // AutoDustBoot's retracts. The program still loads, but jobs are
+        // refused until it is loaded again with the plugin working.
+        var current = content;
+        var missed = new List<string>();
+        foreach (var plugin in ListLoaded())
         {
-            var current = content;
-            foreach (var plugin in ListLoaded())
+            if (plugin.Manifest?.Events is null) continue;
+            if (!plugin.Manifest.Events.Any(e => string.Equals(e, "onGcodeProgramLoad", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (!_jsEngine.HasPlugin(plugin.Id))
             {
-                if (plugin.Manifest?.Events is null) continue;
-                if (!plugin.Manifest.Events.Any(e => string.Equals(e, "onGcodeProgramLoad", StringComparison.OrdinalIgnoreCase)))
-                    continue;
-                if (!_jsEngine.HasPlugin(plugin.Id)) continue;
+                missed.Add($"{plugin.Id}	{plugin.Name} (not running)");
+                continue;
+            }
 
+            try
+            {
                 _logger.LogInformation("Running onGcodeProgramLoad for plugin {PluginId}", plugin.Id);
                 current = _jsEngine.ProcessOnGcodeProgramLoad(plugin.Id, current, context);
             }
-            return current;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "onGcodeProgramLoad failed for {PluginId}", plugin.Id);
+                missed.Add($"{plugin.Id}	{plugin.Name} ({ex.Message})");
+            }
+        }
+
+        SetProgramMissedBy(missed);
+        return current;
+    }
+
+    // --- Plugins that must run ---
+
+    private readonly ConcurrentDictionary<string, PluginRunStatus> _runState = new();
+    // Plugins that should have prepared the loaded program but didn't, as
+    // "<id>	<what happened>" lines.
+    private List<string> _programMissedBy = ReadProgramMissedBy();
+
+    private sealed record PluginRunStatus(string State, string? Error);
+
+    // Plugins that change what is sent to the machine: if one is enabled but
+    // not running, motion it should have shaped goes out without it.
+    private static bool ChangesCommands(PluginManifest m) =>
+        !string.IsNullOrEmpty(m.Commands)
+        && m.Events.Any(e => string.Equals(e, "onBeforeCommand", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(e, "onGcodeProgramLoad", StringComparison.OrdinalIgnoreCase));
+
+    public string? GetMotionBlocker() =>
+        MotionBlocker(ListLoaded(), _jsEngine.HasPlugin, _programMissedBy);
+
+    internal static string? MotionBlocker(List<PluginInfo> enabled, Func<string, bool> isRunning, List<string> programMissedBy)
+    {
+        foreach (var plugin in enabled)
+        {
+            if (plugin.Manifest is null || !ChangesCommands(plugin.Manifest) || isRunning(plugin.Id))
+                continue;
+            var why = plugin.RunState switch
+            {
+                "quarantined" => "quarantined after ncSender stopped twice while loading it",
+                "failed" => $"failed to load: {plugin.RunError}",
+                _ => "not loaded",
+            };
+            return $"{plugin.Name} is enabled but not running ({why}). Retry or disable it in Settings > Plugins";
+        }
+
+        // Only plugins still enabled count: disabling one is a choice to run without it.
+        var enabledIds = enabled.Select(p => p.Id).ToHashSet();
+        var missed = programMissedBy
+            .Select(l => l.Split('	', 2))
+            .Where(f => f.Length == 2 && enabledIds.Contains(f[0]))
+            .Select(f => f[1])
+            .ToList();
+        return missed.Count == 0 ? null
+            : $"The loaded program was not prepared by {string.Join(", ", missed)}. Load it again once the plugin is running";
+    }
+
+    public void Retry(string pluginId)
+    {
+        ClearLoadingMarker(pluginId);
+        var manifest = LoadManifest(pluginId);
+        var enabled = LoadRegistry().Find(r => r.Id == pluginId)?.Enabled == true;
+        if (manifest is not null && enabled)
+        {
+            try
+            {
+                TryLoadCommandPlugin(pluginId, manifest);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Retry of plugin {PluginId} failed", pluginId);
+            }
+        }
+        _ = _broadcaster.Broadcast("plugins:tools-changed",
+            new WsPluginToolsChanged(pluginId, enabled), NcSenderJsonContext.Default.WsPluginToolsChanged);
+        _logger.LogInformation("Plugin {PluginId} retried: {State}", pluginId,
+            _runState.TryGetValue(pluginId, out var s) ? s.State : "nothing to run");
+    }
+
+    // Kept on disk: after a restart the program comes back from the cache
+    // without plugins running on it, so the flag has to survive too.
+    private static string ProgramMissedByPath =>
+        Path.Combine(PathUtils.GetUserDataDir(), "program-not-prepared.txt");
+
+    private static List<string> ReadProgramMissedBy()
+    {
+        try { return File.Exists(ProgramMissedByPath) ? File.ReadAllLines(ProgramMissedByPath).Where(l => l.Length > 0).ToList() : []; }
+        catch { return []; }
+    }
+
+    private void SetProgramMissedBy(List<string> missed)
+    {
+        _programMissedBy = missed;
+        try
+        {
+            if (missed.Count == 0) File.Delete(ProgramMissedByPath);
+            else File.WriteAllLines(ProgramMissedByPath, missed);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to apply onGcodeProgramLoad transformations");
-            return content;
+            _logger.LogWarning(ex, "Failed to record the program's plugin preparation");
         }
     }
 
@@ -719,6 +827,7 @@ public class PluginManager : IPluginManager
             || manifest.Events.Contains("background");
         if (!hasJsEvent || string.IsNullOrEmpty(manifest.Commands))
         {
+            _runState.TryRemove(pluginId, out _);
             _logger.LogInformation("Plugin {PluginId}: skipping load (events={Events}, commands={Commands})",
                 pluginId, string.Join(",", manifest.Events), manifest.Commands);
             return;
@@ -731,6 +840,7 @@ public class PluginManager : IPluginManager
         if (!File.Exists(commandsPath))
         {
             _logger.LogWarning("Commands file not found for plugin {PluginId}: {Path}", pluginId, commandsPath);
+            _runState[pluginId] = new("failed", $"{manifest.Commands} not found");
             return;
         }
 
@@ -751,6 +861,7 @@ public class PluginManager : IPluginManager
             _logger.LogWarning(
                 "Plugin {PluginId}@{Version} is QUARANTINED — the previous startup died while loading it. Skipping. Delete {Path} to retry.",
                 pluginId, version, GetQuarantineMarkerPath(pluginId));
+            _runState[pluginId] = new("quarantined", null);
             return;
         }
 
@@ -763,9 +874,11 @@ public class PluginManager : IPluginManager
         {
             _jsEngine.LoadPlugin(pluginId, commandsPath, settings, manifest.Priority);
             ClearLoadingMarker(pluginId);
+            _runState[pluginId] = new("running", null);
         }
-        catch
+        catch (Exception ex)
         {
+            _runState[pluginId] = new("failed", ex.Message);
             // Managed exception — the load failed, but we know it wasn't a
             // native crash (or we wouldn't be here). Clear the marker so
             // the next boot retries. Native SIGABRT bypasses this catch,
@@ -785,13 +898,7 @@ public class PluginManager : IPluginManager
     {
         try
         {
-            var path = GetQuarantineMarkerPath(pluginId);
-            if (!File.Exists(path)) return false;
-            var marked = File.ReadAllText(path).Trim();
-            // Match on version so a plugin upgrade auto-clears quarantine.
-            // An empty marker matches anything (defensive: assume old crash
-            // if we can't read the version).
-            return marked.Length == 0 || marked == version;
+            return IsQuarantinedMarker(GetQuarantineMarkerPath(pluginId), version);
         }
         catch (Exception ex)
         {
@@ -806,19 +913,47 @@ public class PluginManager : IPluginManager
         {
             var dir = GetQuarantineDir();
             Directory.CreateDirectory(dir);
-            var path = GetQuarantineMarkerPath(pluginId);
-            // WriteThrough + Flush(true) forces the write past OS buffers
-            // so the marker survives a SIGABRT in the very next moment.
-            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write,
-                FileShare.None, 4096, FileOptions.WriteThrough);
-            var bytes = System.Text.Encoding.UTF8.GetBytes(version);
-            fs.Write(bytes, 0, bytes.Length);
-            fs.Flush(flushToDisk: true);
+            WriteLoadingMarker(GetQuarantineMarkerPath(pluginId), version);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to write quarantine marker for {PluginId}", pluginId);
         }
+    }
+
+    // Quarantined only after the same version died while loading on two
+    // startups in a row. One interrupted startup (power cut, the app killed
+    // while starting) gets another try; a plugin that really crashes the
+    // runtime fails again and is caught. A new plugin version clears it.
+    internal static bool IsQuarantinedMarker(string path, string version)
+    {
+        if (!File.Exists(path)) return false;
+        var (markedVersion, failures) = ReadMarker(path);
+        return markedVersion == version && failures >= 2;
+    }
+
+    // Written just before loading; counts consecutive startups that died
+    // while loading this version.
+    internal static void WriteLoadingMarker(string path, string version)
+    {
+        var (markedVersion, failures) = File.Exists(path) ? ReadMarker(path) : ("", 0);
+        var count = (markedVersion == version ? failures : 0) + 1;
+        // WriteThrough + Flush(true) forces the write past OS buffers
+        // so the marker survives a SIGABRT in the very next moment.
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write,
+            FileShare.None, 4096, FileOptions.WriteThrough);
+        var bytes = System.Text.Encoding.UTF8.GetBytes($"{version}\n{count}");
+        fs.Write(bytes, 0, bytes.Length);
+        fs.Flush(flushToDisk: true);
+    }
+
+    // Marker: "<version>\n<failed startups>". A marker from before the count
+    // was kept holds only the version and counts as one failed startup.
+    internal static (string Version, int Failures) ReadMarker(string path)
+    {
+        var lines = File.ReadAllText(path).Split('\n', StringSplitOptions.TrimEntries);
+        var failures = lines.Length > 1 && int.TryParse(lines[1], out var n) ? n : 1;
+        return (lines[0], failures);
     }
 
     private void ClearLoadingMarker(string pluginId)

@@ -111,6 +111,13 @@ internal class GcodeJobProcessor
 
                 var result = await _commandProcessor.ProcessAsync(trimmed, processorContext);
 
+                if (result.Error is { } refused)
+                {
+                    // A plugin failed on this line: running on without it is unsafe.
+                    FailureReason = refused;
+                    _isStopped = true;
+                    break;
+                }
                 if (!result.ShouldContinue)
                     continue;
 
@@ -185,6 +192,13 @@ internal class GcodeJobProcessor
 
             var result = await _commandProcessor.ProcessAsync(numbered, processorContext);
 
+            if (result.Error is { } refused)
+            {
+                // A plugin failed on this line: running on without it is unsafe.
+                FailureReason = refused;
+                _isStopped = true;
+                break;
+            }
             if (!result.ShouldContinue)
             {
                 UpdateProgress(job, fileLineNumber, totalLines);

@@ -152,7 +152,8 @@ public static class ServerBuilder
                 sp.GetRequiredService<ISettingsManager>(),
                 sp.GetRequiredService<IToolProjection>(),
                 sp.GetRequiredService<ILogger<NcSender.Server.CommandProcessor.PluginCommandProcessor>>(),
-                sp.GetRequiredService<IToolChangeTracker>()
+                sp.GetRequiredService<IToolChangeTracker>(),
+                sp.GetRequiredService<IPluginManager>()
             );
 
             // Close the loop: M98 expansion lives in the inner processor but

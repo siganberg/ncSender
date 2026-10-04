@@ -26,8 +26,10 @@ public class JobManager : IJobManager
         IBroadcaster broadcaster,
         IJsPluginEngine jsEngine,
         ISettingsManager settingsManager,
-        ILogger<JobManager> logger)
+        ILogger<JobManager> logger,
+        IPluginManager? pluginManager = null)
     {
+        _pluginManager = pluginManager;
         _controller = controller;
         _commandProcessor = commandProcessor;
         _context = context;
@@ -35,6 +37,19 @@ public class JobManager : IJobManager
         _jsEngine = jsEngine;
         _settingsManager = settingsManager;
         _logger = logger;
+    }
+
+    private readonly IPluginManager? _pluginManager;
+
+    // An enabled plugin that shapes motion isn't running, or didn't prepare
+    // the loaded program: refuse the job, with the reason in the terminal
+    // (the start can come from the pendant, which shows no error).
+    private void ThrowIfPluginsNotReady()
+    {
+        if (_pluginManager?.GetMotionBlocker() is not { } blocker) return;
+        _logger.LogWarning("Job start refused: {Reason}", blocker);
+        NcSender.Server.CommandProcessor.BlockedCommandNotice.Broadcast(_broadcaster, null, "Job start", blocker, "client");
+        throw new InvalidOperationException(blocker);
     }
 
     public Task StartJobFromLineAsync(int startLine, string[]? resumeSequence)
@@ -45,6 +60,8 @@ public class JobManager : IJobManager
 
         if (_activeProcessor is not null)
             throw new InvalidOperationException("A job is already running");
+
+        ThrowIfPluginsNotReady();
 
         // Don't modify the cached file — pass startLine and resumeSequence
         // to the processor which skips lines in-memory (matching V1 behavior)
@@ -59,6 +76,8 @@ public class JobManager : IJobManager
 
         if (_activeProcessor is not null)
             throw new InvalidOperationException("A job is already running");
+
+        ThrowIfPluginsNotReady();
 
         return StartJobInternalAsync(startLine: 1, resumeSequence: null);
     }

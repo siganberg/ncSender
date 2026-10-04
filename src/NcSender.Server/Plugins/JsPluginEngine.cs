@@ -337,7 +337,7 @@ public class JsPluginEngine : IJsPluginEngine
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "JS plugin {PluginId} onBeforeCommand failed", pluginId);
-                    return commands; // Fall through on error
+                    throw new PluginCommandException(pluginId, ex.Message, ex);
                 }
             }
         });
@@ -466,7 +466,7 @@ public class JsPluginEngine : IJsPluginEngine
             catch (Exception ex)
             {
                 _logger.LogError(ex, "JS plugin {PluginId} onGcodeProgramLoad failed", pluginId);
-                return content;
+                throw;
             }
         }
     }

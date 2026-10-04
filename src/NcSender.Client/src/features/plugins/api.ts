@@ -71,6 +71,9 @@ export interface PluginListItem {
   priority?: number;
   repository?: string;
   updateInfo?: PluginUpdateInfo | null;
+  // Enabled plugins with server-side code: 'running', 'quarantined' or 'failed'.
+  runState?: 'running' | 'quarantined' | 'failed';
+  runError?: string;
 }
 
 export interface ToolMenuItem {
@@ -90,6 +93,16 @@ export async function fetchPlugins(): Promise<PluginListItem[]> {
 
 export async function reloadPlugin(pluginId: string): Promise<void> {
   const response = await fetch(buildUrl(`/${pluginId}/reload`), {
+    method: 'POST'
+  });
+  if (!response.ok) {
+    await parseError(response);
+  }
+}
+
+// Clear a quarantine / failed load and load the plugin again.
+export async function retryPlugin(pluginId: string): Promise<void> {
+  const response = await fetch(buildUrl(`/${pluginId}/retry`), {
     method: 'POST'
   });
   if (!response.ok) {

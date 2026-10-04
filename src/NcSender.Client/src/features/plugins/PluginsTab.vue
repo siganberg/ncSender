@@ -118,6 +118,7 @@
                   <div class="plugin-name-text">{{ plugin.name }}</div>
                   <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
                   <span v-else class="status-badge status-disabled">Disabled</span>
+                  <span v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="status-badge status-not-running">Not running</span>
                 </div>
                 <div class="plugin-meta-row">
                   <span class="plugin-category-text">{{ plugin.category }}</span>
@@ -139,6 +140,10 @@
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
                   </span>
+                </div>
+                <div v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="plugin-run-problem">
+                  <span>{{ plugin.runState === 'quarantined' ? 'Not running: ncSender stopped twice while loading it. Jobs and tool changes are blocked until it runs or is disabled.' : `Not running: it failed to load (${plugin.runError}). Jobs and tool changes are blocked until it runs or is disabled.` }}</span>
+                  <button class="plugin-retry-btn" :disabled="retrying === plugin.id" @click.stop="retryPlugin(plugin.id)">Retry</button>
                 </div>
               </div>
 
@@ -224,6 +229,7 @@
                   <div class="plugin-name-text">{{ plugin.name }}</div>
                   <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
                   <span v-else class="status-badge status-disabled">Disabled</span>
+                  <span v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="status-badge status-not-running">Not running</span>
                 </div>
                 <div class="plugin-meta-row">
                   <span class="plugin-category-text">{{ plugin.category }}</span>
@@ -245,6 +251,10 @@
                   <span v-if="plugin.installedAt" class="plugin-installed-text">
                     Installed {{ formatDate(plugin.installedAt) }}
                   </span>
+                </div>
+                <div v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="plugin-run-problem">
+                  <span>{{ plugin.runState === 'quarantined' ? 'Not running: ncSender stopped twice while loading it. Jobs and tool changes are blocked until it runs or is disabled.' : `Not running: it failed to load (${plugin.runError}). Jobs and tool changes are blocked until it runs or is disabled.` }}</span>
+                  <button class="plugin-retry-btn" :disabled="retrying === plugin.id" @click.stop="retryPlugin(plugin.id)">Retry</button>
                 </div>
               </div>
 
@@ -726,6 +736,7 @@ import {
   installPlugin as installPluginRequest,
   setPluginEnabled,
   reloadPlugin as reloadPluginRequest,
+  retryPlugin as retryPluginRequest,
   uninstallPlugin as uninstallPluginRequest,
   reorderPlugins,
   checkPluginUpdate,
@@ -738,6 +749,7 @@ const plugins = ref<PluginListItem[]>([]);
 const loading = ref(false);
 const loadError = ref<string | null>(null);
 const reloading = ref<string | null>(null);
+const retrying = ref<string | null>(null);
 const toggling = ref<string | null>(null);
 const uninstalling = ref<string | null>(null);
 const selectedPlugin = ref<PluginListItem | null>(null);
@@ -1095,6 +1107,19 @@ const reloadPlugin = async (pluginId: string) => {
     console.error('Error reloading plugin:', error);
   } finally {
     reloading.value = null;
+  }
+};
+
+// The list refreshes on the 'plugins:tools-changed' event the retry sends.
+const retryPlugin = async (pluginId: string) => {
+  retrying.value = pluginId;
+  try {
+    await retryPluginRequest(pluginId);
+  } catch (error: any) {
+    loadError.value = error.message || 'Failed to retry plugin';
+    console.error('Error retrying plugin:', error);
+  } finally {
+    retrying.value = null;
   }
 };
 
@@ -2486,6 +2511,37 @@ onBeforeUnmount(() => {
 .status-disabled {
   background: rgba(128, 128, 128, 0.15);
   color: var(--color-text-secondary);
+}
+
+.status-not-running {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--color-danger, #f87171);
+}
+
+.plugin-run-problem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--color-danger, #f87171);
+}
+
+.plugin-retry-btn {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--color-danger, #f87171);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.plugin-retry-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .plugin-actions-cell {

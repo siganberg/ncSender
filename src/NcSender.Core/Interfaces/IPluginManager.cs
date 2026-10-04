@@ -26,4 +26,14 @@ public interface IPluginManager
     Task UpdateAsync(string pluginId);
     PluginDialogInfo? GetPluginMessageDialog(string normalizedName, string messageCode);
     string ApplyOnGcodeProgramLoad(string content, IReadOnlyDictionary<string, object?> context);
+
+    /// <summary>
+    /// Why jobs and tool changes must not run now: an enabled plugin that
+    /// changes commands or programs isn't running, or the loaded program
+    /// wasn't prepared by one. Null when everything that should run does.
+    /// </summary>
+    string? GetMotionBlocker();
+
+    /// <summary>Clears a plugin's quarantine and loads it again.</summary>
+    void Retry(string pluginId);
 }

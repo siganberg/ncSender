@@ -140,6 +140,14 @@ public class PluginInfo
     public DateTime InstalledAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
+    // Enabled plugins with server-side code: "running", "quarantined" or
+    // "failed" (RunError says why). Null for plugins with nothing to run.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RunState { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RunError { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PluginManifest? Manifest { get; set; }
 }

@@ -14,6 +14,7 @@ public class PluginCommandProcessor : ICommandProcessor
     private readonly IToolService _toolService;
     private readonly IServerContext _serverContext;
     private readonly IToolChangeTracker? _toolChangeTracker;
+    private readonly IPluginManager? _pluginManager;
     private readonly IBroadcaster _broadcaster;
     private readonly ISettingsManager _settingsManager;
     private readonly IToolProjection _toolProjection;
@@ -28,9 +29,11 @@ public class PluginCommandProcessor : ICommandProcessor
         ISettingsManager settingsManager,
         IToolProjection toolProjection,
         ILogger<PluginCommandProcessor> logger,
-        IToolChangeTracker? toolChangeTracker = null)
+        IToolChangeTracker? toolChangeTracker = null,
+        IPluginManager? pluginManager = null)
     {
         _toolChangeTracker = toolChangeTracker;
+        _pluginManager = pluginManager;
         _inner = inner;
         _jsEngine = jsEngine;
         _toolService = toolService;
@@ -70,36 +73,17 @@ public class PluginCommandProcessor : ICommandProcessor
             var isJobSourceEarly = sourceIdEarly is "job" or "resume";
             if (isToolChangeEarly && !isJobSourceEarly && IsDoorOpen(context.MachineState))
             {
-                var reason = "door open";
-                var display = $"{command.Trim()} (BLOCKED - {reason})";
-                var nowIso = DateTime.UtcNow.ToString("o");
-                if (string.IsNullOrEmpty(context.CommandId))
-                    context.CommandId = Guid.NewGuid().ToString();   // keep terminal rows distinct
                 _logger.LogInformation("{Command} rejected — door open (source: {Source})", command.Trim(), sourceIdEarly ?? "unknown");
+                return Refuse(command, context, "door open", stopsJob: false);
+            }
 
-                _ = _broadcaster.Broadcast("cnc-command", new WsCncCommandStatus(
-                    context.CommandId ?? "",
-                    command.Trim().ToUpperInvariant(),
-                    display,
-                    "pending",
-                    nowIso,
-                    sourceIdEarly ?? "client"
-                ), NcSenderJsonContext.Default.WsCncCommandStatus);
-
-                _ = _broadcaster.Broadcast("cnc-command-result", new WsCncCommandStatus(
-                    context.CommandId ?? "",
-                    command.Trim().ToUpperInvariant(),
-                    display,
-                    "blocked",
-                    nowIso,
-                    sourceIdEarly ?? "client"
-                ), NcSenderJsonContext.Default.WsCncCommandStatus);
-
-                return new CommandProcessorResult
-                {
-                    ShouldContinue = false,
-                    SkipReason = $"Command blocked: {reason}"
-                };
+            // An enabled plugin that should shape this change isn't running
+            // (quarantined, failed to load). A job can't start in that state,
+            // so only manual changes reach here.
+            if (isToolChangeEarly && !isJobSourceEarly && _pluginManager?.GetMotionBlocker() is { } blocker)
+            {
+                _logger.LogWarning("{Command} rejected — {Reason}", command.Trim(), blocker);
+                return Refuse(command, context, blocker, stopsJob: false);
             }
         }
 
@@ -185,8 +169,18 @@ public class PluginCommandProcessor : ICommandProcessor
         };
 
         var tools = await _toolService.GetAllAsync();
-        commands = await RunPluginChainAsync(commands, pluginIds, context, tools);
-        commands = await ExpandNestedMarkersAsync(commands, pluginIds, context, tools);
+        try
+        {
+            commands = await RunPluginChainAsync(commands, pluginIds, context, tools);
+            commands = await ExpandNestedMarkersAsync(commands, pluginIds, context, tools);
+        }
+        catch (NcSender.Server.Plugins.PluginCommandException ex)
+        {
+            // Sending the command without the plugin's lines could leave a
+            // dust boot down or skip part of a tool change: refuse it, and
+            // stop a running job here.
+            return Refuse(command, context, ex.Message, stopsJob: true);
+        }
 
         // If plugin didn't modify (single original command), use inner processor directly
         // Inner processor handles all its own logic (door safety, laser mode, return-to-position, etc.)
@@ -317,6 +311,19 @@ public class PluginCommandProcessor : ICommandProcessor
         {
             ShouldContinue = finalCommands.Count > 0,
             Commands = finalCommands
+        };
+    }
+
+    private CommandProcessorResult Refuse(string command, CommandProcessorContext context, string reason, bool stopsJob)
+    {
+        if (string.IsNullOrEmpty(context.CommandId))
+            context.CommandId = Guid.NewGuid().ToString();   // keep terminal rows distinct
+        BlockedCommandNotice.Broadcast(_broadcaster, context.CommandId, command, reason, context.Meta?.SourceId);
+        return new CommandProcessorResult
+        {
+            ShouldContinue = false,
+            SkipReason = $"Command blocked: {reason}",
+            Error = stopsJob ? reason : null,
         };
     }
 

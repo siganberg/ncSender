@@ -92,6 +92,13 @@ public static class PluginEndpoints
             return Results.Ok(new ApiSuccess(true));
         });
 
+        // Clear a plugin's quarantine / failed load and load it again.
+        app.MapPost("/api/plugins/{pluginId}/retry", (string pluginId, IPluginManager plugins) =>
+        {
+            plugins.Retry(pluginId);
+            return Results.Ok(new ApiSuccess(true));
+        });
+
         app.MapGet("/api/plugins/tool-menu-items", (IPluginManager plugins) =>
         {
             return Results.Ok(plugins.GetToolMenuItems());
