@@ -272,6 +272,20 @@ public class JsPluginEngine : IJsPluginEngine
                     jsMpos.Set("y", JsValue.FromObject(engine, ParseCoord(1)));
                     jsMpos.Set("z", JsValue.FromObject(engine, ParseCoord(2)));
                     jsMachineState.Set("mpos", jsMpos);
+                    // Work position (machine units) — the Z a program's own
+                    // coordinates refer to, which mpos is not once a work
+                    // offset or tool length offset is active.
+                    var wposParts = (context.MachineState.WPos ?? "0,0,0").Split(',');
+                    double ParseWorkCoord(int i) =>
+                        i < wposParts.Length &&
+                        double.TryParse(wposParts[i], System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out var v)
+                            ? v : 0.0;
+                    var jsWpos = new JsObject(engine);
+                    jsWpos.Set("x", JsValue.FromObject(engine, ParseWorkCoord(0)));
+                    jsWpos.Set("y", JsValue.FromObject(engine, ParseWorkCoord(1)));
+                    jsWpos.Set("z", JsValue.FromObject(engine, ParseWorkCoord(2)));
+                    jsMachineState.Set("wpos", jsWpos);
                     jsContext.Set("machineState", jsMachineState);
                     jsContext.Set("lineNumber", JsValue.FromObject(engine, context.LineNumber));
                     jsContext.Set("safeZHeight", JsValue.FromObject(engine, context.SafeZHeight));
