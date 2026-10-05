@@ -323,7 +323,7 @@ public class CncEventBridge
                         if (trvZ is > 0) state.MachineState.MaxTravelZ = trvZ.Value;
 
                         // Broadcast key settings so client updates reactively
-                        foreach (var id in new[] { "32", "130", "131", "132" })
+                        foreach (var id in new[] { "30", "31", "32", "130", "131", "132" })
                         {
                             if (firmware.Settings.TryGetValue(id, out var setting) && setting.Value is not null)
                             {
@@ -453,8 +453,8 @@ public class CncEventBridge
                 BroadcastStateDelta();
             }
 
-            // $32/$130/$131/$132 → broadcast firmware-setting-changed for visualizer
-            if (id is "32" or "130" or "131" or "132")
+            // $30/$31/$32/$130/$131/$132 → broadcast firmware-setting-changed for visualizer and spindle presets
+            if (id is "30" or "31" or "32" or "130" or "131" or "132")
             {
                 _ = _broadcaster.Broadcast("firmware-setting-changed",
                     new WsFirmwareSettingChanged(id, newValue),

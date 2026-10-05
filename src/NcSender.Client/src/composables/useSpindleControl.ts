@@ -16,15 +16,56 @@ import { api } from '../lib/api.js';
 //
 // Laser mode is Pro-only, so there is no test-fire half here.
 
-const RPM_STEP = 1000;
-const RPM_FALLBACK_MIN = 1000;
+const RPM_FALLBACK_MIN = 0;
 const RPM_FALLBACK_MAX = 24000;
 
-// Presets step in 5000s so the list is short enough to show whole — a
-// scrolling popup over the canvas is exactly what this is replacing. The
-// machine's own min and max always bookend it, so the extremes are one tap
-// away even when they are not round numbers.
-const PRESET_STEP = 5000;
+// Spindles range from a few thousand rpm (high-torque) to 50k+ (high-speed),
+// so the increments scale with the machine's $31..$30 range instead of being
+// fixed. The preset spacing starts at the round number that splits the range
+// into about five and tightens until there are at least six presets, so the
+// list stays short enough to show whole — a scrolling popup over the canvas is
+// exactly what this is replacing — but is never too sparse to be useful. The
+// +/- step is a fifth of the preset spacing. A 0-24000 router gets presets
+// every 5000 and a 1000 step.
+const PRESETS_ACROSS_RANGE = 5;
+const MIN_PRESETS = 6;
+const STEPS_PER_PRESET = 5;
+const NICE_MANTISSAS = [1, 2, 2.5, 5];
+
+// Smallest whole 1/2/2.5/5 x 10^n at or above the value, so increments stay round.
+const roundUpToNiceNumber = (value: number) => {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(value, 1)));
+  const nice = [...NICE_MANTISSAS, 10].map((m) => m * magnitude).find((n) => n >= value && Number.isInteger(n));
+  return nice ?? 10 * magnitude;
+};
+
+// The next whole 1/2/2.5/5 x 10^n below the value, or the value itself at 1.
+const nextSmallerNiceNumber = (value: number) => {
+  for (let magnitude = 10 ** Math.floor(Math.log10(value)); magnitude >= 1; magnitude /= 10) {
+    const smaller = [...NICE_MANTISSAS].reverse().map((m) => m * magnitude)
+      .find((n) => n < value && Number.isInteger(n));
+    if (smaller) return smaller;
+  }
+  return value;
+};
+
+const planPresets = (configuredMin: number, max: number) => {
+  let presetStep = roundUpToNiceNumber((max - configuredMin) / PRESETS_ACROSS_RANGE);
+  for (;;) {
+    const rpmStep = roundUpToNiceNumber(presetStep / STEPS_PER_PRESET);
+    // Never floor the range at 0 — a 0-rpm spindle command is useless for M3/M4.
+    const min = Math.min(configuredMin > 0 ? configuredMin : rpmStep, max);
+    // The machine's own min and max always bookend the list, so the extremes
+    // are one tap away even when they are not round numbers.
+    const presets = new Set([min, max]);
+    for (let v = Math.ceil(min / presetStep) * presetStep; v <= max; v += presetStep) presets.add(v);
+    const smaller = nextSmallerNiceNumber(presetStep);
+    if (presets.size >= MIN_PRESETS || smaller === presetStep) {
+      return { min, rpmStep, presets: [...presets].sort((a, b) => a - b) };
+    }
+    presetStep = smaller;
+  }
+};
 
 export function useSpindleControl() {
   const appStore = useAppStore();
@@ -32,22 +73,17 @@ export function useSpindleControl() {
   const spindleRPM = ref(10000);
 
   const rpmMax = computed(() => appStore.spindleRPMMax.value ?? RPM_FALLBACK_MAX);
-  // Never floor the range at 0 — a 0-rpm spindle command is useless for M3/M4.
-  const rpmMin = computed(() => Math.max(appStore.spindleRPMMin.value ?? RPM_FALLBACK_MIN, RPM_STEP));
-
-  const rpmPresets = computed(() => {
-    const out: number[] = [rpmMin.value];
-    const first = Math.ceil(rpmMin.value / PRESET_STEP) * PRESET_STEP;
-    for (let v = first; v <= rpmMax.value; v += PRESET_STEP) out.push(v);
-    out.push(rpmMax.value);
-    return [...new Set(out)].sort((a, b) => a - b);
-  });
+  const plan = computed(() => planPresets(appStore.spindleRPMMin.value ?? RPM_FALLBACK_MIN, rpmMax.value));
+  const rpmMin = computed(() => plan.value.min);
+  const rpmStep = computed(() => plan.value.rpmStep);
+  const rpmPresets = computed(() => plan.value.presets);
 
   const clampRpm = (v: number) => Math.min(rpmMax.value, Math.max(rpmMin.value, v));
   const stepRpm = (delta: number) => {
     // Snap to the increment grid so a preset like 8000 still steps to 9000
     // rather than carrying an offset forever.
-    const next = Math.round((spindleRPM.value + delta * RPM_STEP) / RPM_STEP) * RPM_STEP;
+    const step = rpmStep.value;
+    const next = Math.round((spindleRPM.value + delta * step) / step) * step;
     spindleRPM.value = clampRpm(next);
   };
   const canStepRpmDown = computed(() => spindleRPM.value > rpmMin.value);

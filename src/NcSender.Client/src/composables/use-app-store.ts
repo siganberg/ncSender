@@ -721,11 +721,24 @@ export function initializeStore() {
     serverVersion.value = version;
   });
 
-  // Machine limits changed ($130/$131/$132) — update visualizer grid reactively
+  // Machine limits ($130/$131/$132) and spindle range ($30/$31) changed —
+  // update the visualizer grid and the spindle presets reactively
   api.on('firmware-setting-changed', (data: { id: string; value: string }) => {
     const val = parseFloat(data.value);
-    if (Number.isNaN(val) || val <= 0) return;
-    if (data.id === '130') {
+    if (Number.isNaN(val)) return;
+    const cachedSetting = cachedFirmwareData?.settings?.[data.id];
+    if (cachedSetting) cachedSetting.value = data.value;
+    if (data.id === '31') {
+      if (val < 0) return;
+      spindleRPMMin.value = val;
+      debugLog(`[Store] Spindle min $31 updated to ${val}`);
+      return;
+    }
+    if (val <= 0) return;
+    if (data.id === '30') {
+      spindleRPMMax.value = val;
+      debugLog(`[Store] Spindle max $30 updated to ${val}`);
+    } else if (data.id === '130') {
       gridSizeX.value = val;
       saveMachineDimsToCache();
       debugLog(`[Store] Machine limit $130 (X) updated to ${val}`);
