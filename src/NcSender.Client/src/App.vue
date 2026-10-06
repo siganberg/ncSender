@@ -60,6 +60,7 @@
         @toggle-theme="toggleTheme"
         @unlock="handleUnlock"
         @change-workspace="handleWorkspaceChange"
+        @set-units="setUnits"
         @show-update-dialog="openUpdateDialog"
         @show-bluetooth="showWirelessDialog = true"
         :on-show-settings="openSettings"
@@ -916,10 +917,10 @@
     <ConfirmPanel
       title="Change Units"
       :message="`You are switching to ${pendingUnitsChange === 'imperial' ? 'Imperial (inches)' : 'Metric (mm)'}. We'll also issue a ${pendingUnitsChange === 'imperial' ? 'G20' : 'G21'} command for your convenience.\n\nThis can still be overridden by your program at runtime or by sending a manual unit-switch command.`"
-      :show-cancel="false"
       confirm-text="OK"
       variant="primary"
       @confirm="confirmUnitsChange"
+      @cancel="showUnitsConfirmDialog = false; pendingUnitsChange = null"
     />
   </Dialog>
 

@@ -35,17 +35,38 @@
           @touchend="cancelKioskExitPress"
           @touchcancel="cancelKioskExitPress"
         >ncSender</span>
-        <span
-          class="version"
-          :class="{ 'version--action': updateSupported }"
-          @click="onVersionClick"
-          :title="updateSupported ? 'Open update center' : 'Version information'"
-        >
-          v{{ appVersion }}
-        </span>
+        <div class="version-row">
+          <span
+            class="version"
+            :class="{ 'version--action': updateSupported }"
+            @click="onVersionClick"
+            :title="updateSupported ? 'Open update center' : 'Version information'"
+          >
+            v{{ appVersion }}
+          </span>
+          <!-- Just a tag that something is going on; the version and details
+               are one click away in the update centre. -->
+          <button
+            v-if="shouldShowUpdateIndicator"
+            class="update-tag"
+            :class="{
+              'update-tag--busy': isCheckingUpdates || isDownloadingUpdate,
+              'update-tag--error': hasUpdateError
+            }"
+            @click="emit('show-update-dialog')"
+            @contextmenu.prevent="copyUpdateStatus"
+            :title="updateIndicatorTitle"
+          >
+            <span v-if="isCheckingUpdates || isDownloadingUpdate" class="spinner"></span>
+            <template v-else-if="hasUpdateError">!</template>
+            <svg v-else width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 5v14M5 12l7 7 7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="workspace-selector">
-        <label class="workspace-label" for="workspace-select">Workspace:</label>
+        <label class="workspace-label" for="workspace-select">WS:</label>
         <select
           id="workspace-select"
           class="workspace-select"
@@ -133,26 +154,23 @@
       <!-- Unlock button moved to alarm box in GCodeVisualizer -->
     </div>
     <div class="toolbar__actions">
-      <button
-        v-if="shouldShowUpdateIndicator"
-        class="update-indicator"
-        :class="{
-          'update-indicator--available': hasUpdateAvailable,
-          'update-indicator--busy': isCheckingUpdates || isDownloadingUpdate,
-          'update-indicator--error': hasUpdateError
-        }"
-        @click="emit('show-update-dialog')"
-        @contextmenu.prevent="copyUpdateStatus"
-        :title="updateIndicatorTitle"
-      >
-        <span v-if="isCheckingUpdates || isDownloadingUpdate" class="spinner"></span>
-        <span v-else class="update-indicator__dot"></span>
-        <span class="update-indicator__label">{{ updateIndicatorLabel }}</span>
-        <span v-if="updateStatusCopied" class="update-indicator__copy-feedback">Copied!</span>
-      </button>
-      <div class="unit-display">
-        <label class="unit-label">Unit:</label>
-        <span class="unit-value">{{ unitDisplayText }}</span>
+      <!-- Metric / imperial, the same setting as Settings > General > Units.
+           Tapping the other side asks for confirmation first. Not during a
+           job: switching sends G20/G21 to the controller. -->
+      <div class="unit-seg" :data-units="unitsPreference === 'imperial' ? 'imperial' : 'metric'" role="group" :aria-label="'Switch units (metric / imperial)'" :title="'Switch units (metric / imperial)'">
+        <span class="unit-seg__thumb" aria-hidden="true"></span>
+        <button
+          class="unit-seg__btn"
+          :aria-pressed="unitsPreference !== 'imperial'"
+          :disabled="isJobRunning"
+          @click="unitsPreference === 'imperial' && emit('set-units', 'metric')"
+        >MM</button>
+        <button
+          class="unit-seg__btn"
+          :aria-pressed="unitsPreference === 'imperial'"
+          :disabled="isJobRunning"
+          @click="unitsPreference !== 'imperial' && emit('set-units', 'imperial')"
+        >IN</button>
       </div>
       <button class="theme-toggle" @click="$emit('toggle-theme')" title="Toggle theme">
         <svg class="theme-icon" width="32" height="32"><use href="#emoji-sun"></use></svg>
@@ -171,7 +189,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useAppStore } from '../composables/use-app-store';
-import { getFeedRateUnitLabel } from '../lib/units';
 import GamepadDebugOverlay from '../features/controls/GamepadDebugOverlay.vue';
 import packageJson from '../../../package.json';
 
@@ -205,6 +222,7 @@ const emit = defineEmits<{
   (e: 'toggle-theme'): void;
   (e: 'unlock'): void;
   (e: 'change-workspace', value: string): void;
+  (e: 'set-units', value: 'metric' | 'imperial'): void;
   (e: 'show-update-dialog'): void;
   (e: 'show-bluetooth'): void;
 }>();
@@ -273,10 +291,6 @@ const machineStateText = computed(() => {
     case 'sleep': return 'Sleep';
     default: return 'Connected';
   }
-});
-
-const unitDisplayText = computed(() => {
-  return getFeedRateUnitLabel(unitsPreference.value);
 });
 
 // Machine info tooltip state
@@ -669,25 +683,73 @@ const onVersionClick = () => {
   font-size: 0.95rem;
 }
 
-.unit-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-small);
-  padding: 4px 8px;
+
+.unit-seg {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
   height: 40px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong, rgba(127, 127, 127, 0.35));
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+  isolation: isolate;
 }
 
-.unit-label {
+/* The accent block that slides to the active unit. */
+.unit-seg__thumb {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: calc(var(--radius-small) - 2px);
+  background: var(--color-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.unit-seg[data-units="imperial"] .unit-seg__thumb {
+  transform: translateX(100%);
+}
+
+.unit-seg__btn {
+  position: relative;
+  z-index: 1;
+  min-width: 40px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
   color: var(--color-text-secondary);
-  font-size: 0.9rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.25s ease;
 }
 
-.unit-value {
+.unit-seg__btn:hover:not(:disabled):not([aria-pressed="true"]) {
   color: var(--color-text-primary);
-  font-size: 0.95rem;
-  font-weight: 500;
+}
+
+.unit-seg__btn[aria-pressed="true"] {
+  color: #fff;
+  cursor: default;
+}
+
+.unit-seg__btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unit-seg__thumb,
+  .unit-seg__btn {
+    transition: none;
+  }
 }
 
 .toolbar__actions {
@@ -698,81 +760,47 @@ const onVersionClick = () => {
   justify-content: flex-end;
 }
 
-.update-indicator {
-  display: inline-flex;
+.version-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  background: var(--color-surface-muted);
-  color: var(--color-text-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.update-indicator:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-elevated);
-}
-
-.update-indicator--available {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.update-indicator--busy {
-  opacity: 0.85;
-}
-
-.update-indicator--error {
-  border-color: #ff7a7a;
-  color: #ff7a7a;
-}
-
-.update-indicator .spinner {
-  width: 12px;
-  height: 12px;
-}
-
-.update-indicator__dot {
-  width: 8px;
-  height: 8px;
+.update-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: var(--color-accent);
-  animation: updateDotPulse 1.6s ease-in-out infinite;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  animation: updateTagPulse 2.4s ease-in-out infinite;
 }
 
-.update-indicator--error .update-indicator__dot {
+.update-tag--busy {
+  background: transparent;
+  animation: none;
+}
+
+.update-tag--error {
   background: #ff7a7a;
 }
 
-.update-indicator__label {
-  white-space: nowrap;
-  user-select: text;
+.update-tag .spinner {
+  width: 10px;
+  height: 10px;
 }
 
-.update-indicator__copy-feedback {
-  font-weight: 700;
-  font-size: 0.7rem;
-  color: var(--color-accent);
-}
-
-@keyframes updateDotPulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(0.6);
-    opacity: 0.55;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+@keyframes updateTagPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 button {

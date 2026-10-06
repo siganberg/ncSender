@@ -16,7 +16,7 @@
 -->
 
 <template>
-  <Dialog @close="emit('close')" :show-header="false" size="small-plus">
+  <Dialog @close="emit('close')" :show-header="false" size="medium-minus">
     <div class="update-dialog">
       <header class="update-dialog__header">
         <div class="update-dialog__headline">
@@ -604,6 +604,12 @@ const formatVersionDate = (iso: string) => {
   grid-template-columns: 1fr 1fr 1.35fr;
 }
 
+/* Latest Release takes the width of its version so a beta like
+   v2.0.176-beta.1 plus its NEW badge stays on one line. */
+.update-dialog__summary:has(> :nth-child(3)) {
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1.35fr);
+}
+
 .summary-card {
   display: flex;
   flex-direction: column;
@@ -624,6 +630,7 @@ const formatVersionDate = (iso: string) => {
 }
 
 .summary-value {
+  white-space: nowrap;
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--color-text-primary);
