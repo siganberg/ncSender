@@ -212,6 +212,7 @@ public sealed class AccessoryService
             "ncprobe"       => NcSenderUsbKind.NcProbe,
             "autodustboot" => NcSenderUsbKind.AutoDustBoot,
             "pendant"      => NcSenderUsbKind.Pendant,
+            "xio"          => NcSenderUsbKind.Xio,
             // RGB is a C3: no wired path today, so it is never on a cable as
             // far as this is concerned.
             _              => NcSenderUsbKind.Unknown,

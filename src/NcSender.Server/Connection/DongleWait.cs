@@ -39,6 +39,7 @@ public sealed record DongleWait(string Name, string Field, long Target, long Tol
     private static readonly Dictionary<string, string> DisplayNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["autodustboot"] = "Dust boot",
+        ["xio"] = "ATC Wireless Bridge",
     };
 
     public string DisplayName => DisplayNames.TryGetValue(Name, out var n) ? n : Name;

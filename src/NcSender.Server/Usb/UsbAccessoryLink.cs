@@ -14,6 +14,8 @@ public sealed class UsbAccessoryLink : IHostedService, IDisposable
         new Dictionary<string, NcSenderUsbKind>(StringComparer.OrdinalIgnoreCase)
         {
             ["autodustboot"] = NcSenderUsbKind.AutoDustBoot,
+            // ATC Wireless Bridge: same command table on its USB port, no "@xio" prefix.
+            ["xio"] = NcSenderUsbKind.Xio,
         };
 
     private sealed class Link
