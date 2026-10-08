@@ -124,6 +124,8 @@ export class AutoZeroTouchStrategy implements ProbeStrategy {
     const ledColor = isActive ? 0xff0000 : 0x5cb85c;
     setGroupColor(this.probeModel, 'LED', ledColor);
     setGroupColor(this.probeModel, 'Led', ledColor);
+    // The preview redraws on demand: without this the LED keeps its old colour.
+    this.context?.render();
   }
 
   getModel(): THREE.Object3D | null {
