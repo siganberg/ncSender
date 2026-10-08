@@ -19,7 +19,7 @@ public class ToolChangeTrackerTests
     {
         _tracker = new ToolChangeTracker(_controller.Object, NullLogger<ToolChangeTracker>.Instance);
         _tracker.Started += e => _events.Add($"start {e.Info.Kind} T{e.Info.Tool}");
-        _tracker.Ended += e => _events.Add($"end {e.Info.Kind} T{e.Info.Tool} {e.Outcome}{(e.Reason is null ? "" : " " + e.Reason)}");
+        _tracker.Ended += e => { _events.Add($"end {e.Info.Kind} T{e.Info.Tool} {e.Outcome}{(e.Reason is null ? "" : " " + e.Reason)}"); _lastEnd = e; };
     }
 
     private int Register(int tool = 5, string kind = "M6") =>
@@ -145,6 +145,65 @@ public class ToolChangeTrackerTests
         Assert.False(ToolChangeSentinel.Sync().Cleanup);
         Assert.True(ToolChangeSentinel.Complete(3).Cleanup);
         Assert.Equal("(MSG, TOOL_CHANGE_COMPLETE 3)", ToolChangeSentinel.Complete(3).Command);
+    }
+
+    private ToolChangeEvent? _lastEnd;
+
+    private bool? InDoubtAfter(params string[] sentLines)
+    {
+        var id = Register();
+        Echo($"[MSG:TOOL_CHANGE_START {id}]");
+        foreach (var line in sentLines) Ack(line, "success");
+        _controller.Raise(c => c.StopReceived += null);
+        return _lastEnd?.LengthInDoubt;
+    }
+
+    [Fact]
+    public void An_abort_at_the_tool_sensor_check_leaves_the_length_alone()
+        => Assert.False(InDoubtAfter("G53 G0 Z0", "(DONGLE:XIO:OUT 0 1)", "(DONGLE_WAIT:XIO:IN1=1:0:0.5:ELSE)",
+            "(MSG, TOOL_CHANGE_START 4)", "(G43.1 is applied after the sensor check)", "M66 P0 L3 Q1", "M65 P2", "M0"));
+
+    [Theory]
+    [InlineData("G43.1 Z0")]
+    [InlineData("G43.1 Z0.000")]
+    [InlineData("g49")]
+    [InlineData("G38.2 G91 Z-15 F200")]
+    [InlineData("$TLS")]
+    [InlineData("M6 T3")]
+    [InlineData("G65 P101")]
+    public void A_line_that_clears_or_measures_the_length_puts_it_in_doubt(string line)
+        => Assert.True(InDoubtAfter("G53 G0 Z0", line));
+
+    [Fact]
+    public void A_rejected_probe_counts_too()
+    {
+        var id = Register();
+        Echo($"[MSG:TOOL_CHANGE_START {id}]");
+        Ack("G38.3 G91 Z-15.000 F99999", "error");
+        Assert.True(_lastEnd?.LengthInDoubt);
+    }
+
+    // Library strategy: the stored length was applied, then the exit leg was
+    // stopped. The offset is right for the tool in the spindle.
+    [Fact]
+    public void Applying_a_stored_length_settles_it()
+        => Assert.False(InDoubtAfter("G43.1 Z0", "G43.1 Z-48.695", "G53 G0 X63.8 Y-863.231"));
+
+    // Measure strategy: the measurement finished and was applied.
+    [Fact]
+    public void Applying_a_finished_measurement_settles_it()
+        => Assert.False(InDoubtAfter("G43.1 Z0", "G38.2 G91 Z-15 F200", "G43.1 Z[#<_NC_LAST_TLO>]"));
+
+    // sylthecru: stopped while measuring the newly loaded tool.
+    [Fact]
+    public void Stopping_mid_measurement_leaves_it_in_doubt()
+        => Assert.True(InDoubtAfter("G43.1 Z-30.1", "G43.1 Z0", "G38.2 G91 Z-15 F200"));
+
+    [Fact]
+    public void Each_change_starts_with_no_doubt()
+    {
+        Assert.True(InDoubtAfter("G43.1 Z0"));
+        Assert.False(InDoubtAfter("G53 G0 Z0"));
     }
 }
 

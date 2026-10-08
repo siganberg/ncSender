@@ -25,4 +25,5 @@ public enum NcSenderUsbKind
     Pendant = 3,         // 0x303A / 0x8212  (reserved — firmware not shipped)
     AutoDustBoot = 4,    // 0x303A / 0x8213  (reserved — firmware not shipped)
     RgbController = 5,   // 0x303A / 0x8214  (reserved — firmware not shipped)
+    Xio = 6,             // 0x303A / 0x8215  Wireless I/O; enumerates as 0x1001, found by iProduct
 }

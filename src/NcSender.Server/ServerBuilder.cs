@@ -426,7 +426,10 @@ public static class ServerBuilder
 
         // Eagerly resolve the dongle device service so its disconnect watchdog starts and the
         // PendantManager (dongle reader) has it wired for "@name" addressed-device traffic.
-        app.Services.GetRequiredService<IDongleDeviceService>();
+        var dongleDevices = app.Services.GetRequiredService<IDongleDeviceService>();
+        // For the drawbar interlock: no release to a drawbar output while the spindle turns.
+        var serverContextForDongle = app.Services.GetRequiredService<IServerContext>();
+        dongleDevices.SpindleActive = () => serverContextForDongle.State.MachineState.SpindleActive;
 
         // Restore last loaded program from previous session
         RestoreLastLoadedFile(app.Services);

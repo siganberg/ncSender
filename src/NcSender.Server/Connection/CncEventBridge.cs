@@ -830,10 +830,32 @@ public class CncEventBridge
         await Task.Delay(200);
     }
 
+    // Abort with an abort block (see GateAbortBlock): resume the M0 so the
+    // block runs (the plugin's way out, e.g. leaving the rack), then reset as
+    // usual, so the rest of the change and a running job are still dropped.
+    internal static readonly TimeSpan AbortBlockTimeout = TimeSpan.FromMinutes(5);
+
     private async Task DispatchGateAbortAsync(PluginDialogInfo dialog)
     {
         try
         {
+            if (_controller.TryArmGateAbort(out var blockDone))
+            {
+                _logger.LogInformation("Gate abort: running the plugin's abort block before the reset");
+                // Twice, as Continue does: the second is a no-op if the first resumed.
+                foreach (var delay in new[] { 0, 500 })
+                {
+                    if (delay > 0) await Task.Delay(delay);
+                    await _controller.SendCommandAsync("~", new CommandOptions
+                    {
+                        DisplayCommand = "~ (Cycle Start: abort block)",
+                        Meta = new CommandMeta { SourceId = "system", Silent = true }
+                    });
+                }
+                if (await Task.WhenAny(blockDone, Task.Delay(AbortBlockTimeout)) != blockDone)
+                    _logger.LogWarning("Abort block did not finish in {Timeout}; resetting anyway", AbortBlockTimeout);
+            }
+
             await SendSoftResetAsync();
 
             if (!string.IsNullOrWhiteSpace(dialog.AbortEventGcode))

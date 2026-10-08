@@ -394,6 +394,22 @@ public partial class CncController : ICncController
                         continue;
                     }
 
+                    // A (DONGLE_ELSE)…(DONGLE_END) block after an `else` wait:
+                    // skipped when the wait succeeded, sent when it failed.
+                    // The markers themselves never reach the controller.
+                    if (SkipForDongleElse(entry))
+                    {
+                        CompleteUnsent(entry);
+                        continue;
+                    }
+
+                    // A plugin prompt's abort block, see GateAbortBlock.
+                    if (await HandleGateAbortLineAsync(entry, ct))
+                    {
+                        if (!entry.Tcs.Task.IsCompleted) CompleteUnsent(entry);
+                        continue;
+                    }
+
                     if (entry.PrependJogCancel)
                         await _transport.WriteRawAsync([0x85], ct);
 
@@ -418,9 +434,14 @@ public partial class CncController : ICncController
                     // If the accessory never gets there, this line becomes a pause
                     // instead: the operator decides whether to run on without it.
                     var toWrite = entry.CommandToWrite;
-                    if (entry.DongleWait is { } dw && _dongleDevices is not null
-                        && !await WaitForDongleAsync(dw, ct))
-                        toWrite = dw.PauseLine() + "\n";
+                    if (entry.DongleWait is { } dw)
+                    {
+                        var arrived = _dongleDevices is not null && await WaitForDongleAsync(dw, ct);
+                        // With `else` the plugin's own block decides what happens;
+                        // the wait line goes out as the no-op comment it is.
+                        if (dw.Else) _dongleElseWaitFailed = !arrived;
+                        else if (!arrived && _dongleDevices is not null) toWrite = dw.PauseLine() + "\n";
+                    }
 
                     await _transport.WriteAsync(toWrite, ct);
 
@@ -872,6 +893,8 @@ public partial class CncController : ICncController
 
     public void FlushQueue(string reason)
     {
+        ResetDongleElse();
+        ResetGateAbort();
         // 1. Flush active command
         CommandEntry? active;
         lock (_activeLock)
@@ -1866,6 +1889,115 @@ public partial class CncController : ICncController
         public DongleWait? DongleWait { get; init; }
     }
 
+    private enum DongleElseBlock { None, Skip, Run }
+    private DongleElseBlock _dongleElseBlock = DongleElseBlock.None;
+    private bool _dongleElseWaitFailed;
+
+    // True for a line that must not be sent: either marker, or a line inside
+    // a block whose wait succeeded. A (DONGLE_ELSE) with no failed `else` wait
+    // before it is skipped too, so a failure block can never run by accident.
+    private bool SkipForDongleElse(CommandEntry entry)
+    {
+        if (DongleWait.IsElseMarker(entry.RawCommand))
+        {
+            _dongleElseBlock = _dongleElseWaitFailed ? DongleElseBlock.Run : DongleElseBlock.Skip;
+            _dongleElseWaitFailed = false;
+            return true;
+        }
+        if (DongleWait.IsEndMarker(entry.RawCommand))
+        {
+            _dongleElseBlock = DongleElseBlock.None;
+            return true;
+        }
+        return _dongleElseBlock == DongleElseBlock.Skip;
+    }
+
+    private enum GateAbortState { None, Offered, Armed, Running, Skipping }
+    private GateAbortState _gateAbort = GateAbortState.None;
+    private TaskCompletionSource? _gateAbortDone;
+    private TaskCompletionSource? _gateAbortHold;
+    private readonly object _gateAbortLock = new();
+
+    public bool TryArmGateAbort(out Task blockDone)
+    {
+        lock (_gateAbortLock)
+        {
+            if (_gateAbort != GateAbortState.Offered) { blockDone = Task.CompletedTask; return false; }
+            _gateAbort = GateAbortState.Armed;
+            _gateAbortDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            blockDone = _gateAbortDone.Task;
+            return true;
+        }
+    }
+
+    // True for a line that must not be sent: the markers, and the block's
+    // lines on Continue. After the block has run on Abort the stream holds
+    // here (nothing after it may go out) until the gate's soft reset flushes
+    // the queue.
+    private async Task<bool> HandleGateAbortLineAsync(CommandEntry entry, CancellationToken ct)
+    {
+        var line = entry.RawCommand ?? "";
+        Task? hold = null;
+        lock (_gateAbortLock)
+        {
+            if (GateAbortBlock.IsOffered(line)) { _gateAbort = GateAbortState.Offered; return true; }
+            if (GateAbortBlock.IsStart(line))
+            {
+                _gateAbort = _gateAbort == GateAbortState.Armed ? GateAbortState.Running : GateAbortState.Skipping;
+                return true;
+            }
+            if (GateAbortBlock.IsEnd(line))
+            {
+                if (_gateAbort == GateAbortState.Running)
+                {
+                    _gateAbortHold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    hold = _gateAbortHold.Task;
+                    _gateAbortDone?.TrySetResult();
+                }
+                _gateAbort = GateAbortState.None;
+                if (hold is null) return true;
+            }
+            else return _gateAbort == GateAbortState.Skipping;
+        }
+        _logger.LogInformation("Abort block finished: holding the stream for the reset");
+        try { await hold.WaitAsync(ct); } catch (OperationCanceledException) { }
+        return true;
+    }
+
+    private void ResetGateAbort()
+    {
+        lock (_gateAbortLock)
+        {
+            _gateAbort = GateAbortState.None;
+            _gateAbortDone?.TrySetResult();
+            _gateAbortDone = null;
+            _gateAbortHold?.TrySetResult();
+            _gateAbortHold = null;
+        }
+    }
+
+    private void ResetDongleElse()
+    {
+        _dongleElseBlock = DongleElseBlock.None;
+        _dongleElseWaitFailed = false;
+    }
+
+    // Answer a line the controller never sees, as if it had said "ok".
+    private void CompleteUnsent(CommandEntry entry)
+    {
+        var result = new CommandResult
+        {
+            Id = entry.Id,
+            Command = entry.RawCommand,
+            DisplayCommand = entry.DisplayCommand,
+            Meta = entry.Meta,
+            Status = "success",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        entry.Tcs.TrySetResult(result);
+        CommandAcknowledged?.Invoke(result);
+    }
+
     // Last payload fired at each accessory by a (DONGLE:…) sentinel, so a wait
     // that finds the accessory gone can send it again once it is back.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastDongleSend =
@@ -1893,6 +2025,15 @@ public partial class CncController : ICncController
                 _logger.LogInformation("Dongle wait {Name} {Field}={Target}: {Result} in {Ms} ms",
                     dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
                 return true;
+            }
+
+            // The plugin's failure block takes over. No re-send: repeating the
+            // last command (a clamp release, say) is not a safe default there.
+            if (dw.Else)
+            {
+                _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, running the failure block",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+                return false;
             }
 
             _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, waiting for it to answer",

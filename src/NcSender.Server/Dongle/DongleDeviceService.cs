@@ -150,9 +150,17 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         {
             justConnected = !st.WasConnected || st.LastSeenTicks == 0 || (now - st.LastSeenTicks) >= ConnectedWindowMs;
             st.LastSeenTicks = now;
-            st.LastMessage = payload;
+            // Command replies ("$OK role 0 drawbar", "$ERR:…") carry no state.
+            // Letting one replace the status line hid the device's fields from
+            // DONGLE_WAIT (a sensor check) until the next status, up to 2 s.
+            if (!payload.StartsWith('$')) st.LastMessage = payload;
             st.WasConnected = true;
         }
+
+        // The device's own interlock refused a drawbar release (something got
+        // past the host's check, e.g. the spindle started a moment earlier).
+        if (payload.StartsWith("$ERR:SPINDLE", StringComparison.OrdinalIgnoreCase))
+            _ = NcSender.Server.Infrastructure.BlockedNotice.ShowDrawbarBlockedAsync(_broadcaster, "drawbar release", $"{name} (refused by the device)");
 
         // Per-message hook for latency-sensitive consumers (e.g. NcProbeTranslator)
         // that need every payload immediately — the WS relay below is throttled.
@@ -219,11 +227,67 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         }
     }
 
+    public Func<bool>? SpindleActive { get; set; }
+
     public Task SendAsync(string name, string payload)
     {
+        // An output the device reports as a drawbar ("dr=" mask) never switches
+        // on while the spindle turns, whoever asks: a released collet at speed
+        // throws the tool. The device enforces the same rule itself.
+        if (IsRefusedDrawbarRelease(name, payload))
+        {
+            _logger.LogWarning("Refused '{Payload}' to {Name}: that output is a drawbar and the spindle is turning", payload, name);
+            _ = NcSender.Server.Infrastructure.BlockedNotice.ShowDrawbarBlockedAsync(_broadcaster, payload, $"{name} output {DrawbarIndex(payload) + 1}");
+            return Task.CompletedTask;
+        }
         if (_wiredSenders.TryGetValue(name, out var wired)) return wired(payload);
         var sender = _sender;
         return sender is null ? Task.CompletedTask : sender($"@{name} {payload}");
+    }
+
+    internal bool IsRefusedDrawbarRelease(string name, string payload)
+    {
+        if (SpindleActive?.Invoke() != true) return false;
+        var m = System.Text.RegularExpressions.Regex.Match(payload.Trim(), @"^(?:out\s+(\d+)\s+1|pulse\s+(\d+)\s+\d+)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) return false;
+        var index = int.Parse(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
+        return (DrawbarMask(name) & (1 << index)) != 0;
+    }
+
+    private static int DrawbarIndex(string payload)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(payload.Trim(), @"^(?:out|pulse)\s+(\d+)");
+        return m.Success ? int.Parse(m.Groups[1].Value) : 0;
+    }
+
+    // Outputs the device itself reports as drawbars: "dr=<hex>" in its status.
+    private int DrawbarMask(string name)
+    {
+        if (!_devices.TryGetValue(name, out var st)) return 0;
+        string? last;
+        lock (st) last = st.LastMessage;
+        var m = last is null ? null : System.Text.RegularExpressions.Regex.Match(last, @"(?:^|\s)dr=([0-9a-fA-F]+)(?:\s|$)");
+        return m is { Success: true } ? Convert.ToInt32(m.Groups[1].Value, 16) : 0;
+    }
+
+    private IEnumerable<KeyValuePair<string, Func<string, Task>>> WiredDroSubscribers() =>
+        _wiredSenders.Where(kv => _devices.TryGetValue(kv.Key, out var st) && HasDrawbarField(st));
+
+    private static bool HasDrawbarField(DeviceState st)
+    {
+        lock (st) return st.LastMessage is { } m && System.Text.RegularExpressions.Regex.IsMatch(m, @"(?:^|\s)dr=");
+    }
+
+    public bool HasWiredDroSubscribers => WiredDroSubscribers().Any();
+
+    public async Task SendDroToWiredAsync(string line)
+    {
+        foreach (var (name, send) in WiredDroSubscribers().ToList())
+        {
+            try { await send(line); }
+            catch (Exception ex) { _logger.LogDebug(ex, "DRO to wired {Name} failed", name); }
+        }
     }
 
     public void SetWiredSender(string name, Func<string, Task>? send)

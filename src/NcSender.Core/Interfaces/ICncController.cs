@@ -20,6 +20,13 @@ public interface ICncController
     IConnectionTransport? Transport { get; }
     IProtocolHandler? ActiveProtocol { get; }
     void FlushQueue(string reason);
+    /// <summary>
+    /// Abort for a prompt that offered an abort block (see GateAbortBlock):
+    /// arms the block so the next resume runs it instead of skipping it.
+    /// False when the paused sequence offered none. <paramref name="blockDone"/>
+    /// completes once the block has run (or the queue was flushed).
+    /// </summary>
+    bool TryArmGateAbort(out Task blockDone);
 
     event Action<string, bool> ConnectionStatusChanged;
     event Action<MachineState> StatusReportReceived;
