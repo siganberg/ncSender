@@ -422,7 +422,7 @@
                           <option v-for="cmd in availableOnCommands" :key="cmd.value" :value="cmd.value">{{ cmd.label }}</option>
                         </select>
                       </td>
-                      <td class="command-cell">{{ getOffCommand(auxEditState.on) }}</td>
+                      <td class="command-cell">{{ auxCommandLabel(getOffCommand(auxEditState.on)) }}</td>
                       <td></td>
                       <td>
                         <div class="aux-actions-cell">
@@ -448,8 +448,8 @@
                     </template>
                     <template v-else>
                       <td>{{ output.name }}</td>
-                      <td class="command-cell">{{ output.on }}</td>
-                      <td class="command-cell">{{ getOffCommand(output.on) }}</td>
+                      <td class="command-cell">{{ auxCommandLabel(output.on) }}</td>
+                      <td class="command-cell">{{ auxCommandLabel(getOffCommand(output.on)) }}</td>
                       <td>
                         <ToggleSwitch v-model="output.holdToActivate" @update:modelValue="saveAuxOutputs" />
                       </td>
@@ -1106,6 +1106,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import AccessoriesDialog from './components/AccessoriesDialog.vue';
 import { api } from './lib/api.js';
+import { BRIDGE_DEVICE, BRIDGE_OUTPUT_COUNT, bridgeOnCommand, bridgeOutputIndex, auxOffCommand } from './lib/aux-outputs';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
 import { getPluginsFromInit, getInitData } from './lib/init';
@@ -1671,16 +1672,8 @@ async function applyRotation() {
 }
 
 // Helper function to compute OFF command based on ON command
-const getOffCommand = (onCommand: string): string => {
-  if (!onCommand) return '';
-  if (onCommand === 'M7' || onCommand === 'M8') return 'M9';
-  // M64 P<n> -> M65 P<n>
-  const m64Match = onCommand.match(/M64\s+(P\d+)/i);
-  if (m64Match) {
-    return `M65 ${m64Match[1]}`;
-  }
-  return '';
-};
+// Off command for an output's on command; see lib/aux-outputs.
+const getOffCommand = (onCommand: string): string => auxOffCommand(onCommand);
 
 // TLS index assignment (probe is always 0)
 const tlsIndex = ref<number>(initialSettings?.tlsIndex ?? 0);
@@ -1756,8 +1749,34 @@ const availableOnCommands = computed(() => {
   for (let i = 0; i < outputPins; i++) {
     commands.push({ value: `M64 P${i}`, label: `M64 P${i}` });
   }
+  // Wireless I/O outputs, once one is paired.
+  if (bridgePaired.value) {
+    for (let i = 0; i < BRIDGE_OUTPUT_COUNT; i++) {
+      commands.push({ value: bridgeOnCommand(i), label: auxCommandLabel(bridgeOnCommand(i)) });
+    }
+  }
   return commands;
 });
+
+// Readable name for a command in the table: bridge outputs show as
+// "Wireless I/O OUT1" rather than their (DONGLE:…) sentinel.
+const auxCommandLabel = (command: string): string => {
+  const index = bridgeOutputIndex(command) ?? bridgeOutputIndex((command || '').replace(/ 0\)$/, ' 1)'));
+  return index === null ? command : `Wireless I/O OUT${index + 1}`;
+};
+
+// Is an Wireless I/O paired with the Wireless USB?
+const bridgePaired = ref(false);
+const refreshBridgePaired = async () => {
+  try {
+    const res = await fetch(`${api.baseUrl}/api/dongle/devices`);
+    if (!res.ok) return;
+    const devices = await res.json();
+    bridgePaired.value = Array.isArray(devices) && devices.some((dv: any) => dv?.name === BRIDGE_DEVICE);
+  } catch {
+    // Keep the last answer; the list just won't offer bridge outputs.
+  }
+};
 
 const startAuxEdit = (index: number) => {
   editingAuxIndex.value = index;
@@ -1934,6 +1953,8 @@ onMounted(() => {
     pluginModalClosable.value = data.closable !== false;
   });
 
+  refreshBridgePaired();
+  api.on('dongle:device-changed', refreshBridgePaired);
   api.on('plugin:close-modal', () => {
     showPluginModal.value = false;
   });

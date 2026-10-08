@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 
@@ -16,6 +17,28 @@ public sealed class ToolChangeTracker : IToolChangeTracker
     private readonly Dictionary<int, ToolChangeInfo> _pending = new();
     private int _nextId;
     private (int Id, ToolChangeInfo Info)? _active;
+    private bool _lengthInDoubt;
+
+    // Lines that leave the tool length unknown: clearing it, measuring, or a
+    // bare M6 / G65 call handing over to a controller macro ncSender can't see.
+    private static readonly Regex DoubtLine = new(
+        @"G43(?:\.1)?(?!\d)|G49(?!\d)|G38\.[2-5]|^\$TLS|M0*6(?!\d)|G65(?!\d)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    // A G43.1 that applies a real length (a stored value, or the result of a
+    // measurement that just finished) settles it again.
+    private static readonly Regex SettleLine = new(
+        @"G43\.1Z(\[|[-+]?[\d.]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static bool Settles(string code)
+    {
+        var m = SettleLine.Match(code);
+        if (!m.Success) return false;
+        var z = m.Groups[1].Value;
+        return z == "[" || (double.TryParse(z, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v != 0);
+    }
+    private static readonly Regex Comments = new(@"\([^)]*\)|;.*$", RegexOptions.Compiled);
 
     public event Action<ToolChangeEvent>? Started;
     public event Action<ToolChangeEvent>? Ended;
@@ -59,13 +82,14 @@ public sealed class ToolChangeTracker : IToolChangeTracker
                 if (_pending.Remove(id, out var info) && _active is null)
                 {
                     _active = (id, info);
+                    _lengthInDoubt = false;
                     started = new ToolChangeEvent(info);
                 }
             }
             else if (_active is { } a && a.Id == id)
             {
                 _active = null;
-                ended = new ToolChangeEvent(a.Info, "completed");
+                ended = new ToolChangeEvent(a.Info, "completed", null, _lengthInDoubt);
             }
         }
         Raise(Started, started, "start");
@@ -77,6 +101,16 @@ public sealed class ToolChangeTracker : IToolChangeTracker
     // touch the sequence.
     private void OnAcknowledged(CommandResult result)
     {
+        if (result.Status is "success" or "error" && result.Command is { } line)
+        {
+            var code = Comments.Replace(line, "").Replace(" ", "");
+            // A rejected line changed nothing, except a probe: a failed probe
+            // still means the measurement didn't finish.
+            var settles = result.Status == "success" && Settles(code);
+            var doubts = !settles && DoubtLine.IsMatch(code);
+            if (settles || doubts)
+                lock (_gate) if (_active is not null) _lengthInDoubt = doubts;
+        }
         if (result.Status != "error") return;
         if (result.Command?.TrimStart().StartsWith("$J=", StringComparison.OrdinalIgnoreCase) == true) return;
         Abort("error");
@@ -90,7 +124,7 @@ public sealed class ToolChangeTracker : IToolChangeTracker
             if (_active is { } a)
             {
                 _active = null;
-                ended = new ToolChangeEvent(a.Info, "aborted", reason);
+                ended = new ToolChangeEvent(a.Info, "aborted", reason, _lengthInDoubt);
             }
         }
         Raise(Ended, ended, "aborted (" + reason + ")");

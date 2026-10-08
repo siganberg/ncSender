@@ -25,8 +25,8 @@ public class ToolLengthOnAbortTests
             .StartAsync(default).Wait();
     }
 
-    private void End(string outcome, string? reason = null) =>
-        _tracker.Raise(t => t.Ended += null, new ToolChangeEvent(new ToolChangeInfo("M6", 15, 6, "M6 T15", "job", true), outcome, reason));
+    private void End(string outcome, string? reason = null, bool lengthInDoubt = true) =>
+        _tracker.Raise(t => t.Ended += null, new ToolChangeEvent(new ToolChangeInfo("M6", 15, 6, "M6 T15", "job", true), outcome, reason, lengthInDoubt));
 
     private void Status(string status) =>
         _controller.Raise(c => c.StatusReportReceived += null, new MachineState { Status = status });
@@ -71,5 +71,16 @@ public class ToolLengthOnAbortTests
         _controller.Verify(c => c.SendCommandAsync("G49", It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         Status("Idle"); await Task.Delay(50);
         _controller.Verify(c => c.SendCommandAsync("G49", It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    // Aborted with the length intact (the tool sensor found no tool, or the
+    // stored length was already applied): the offset is right, so it stays and
+    // the next change can use the stored length instead of measuring.
+    [Fact]
+    public async Task An_abort_that_left_the_length_intact_keeps_it()
+    {
+        End("aborted", "stopped", lengthInDoubt: false);
+        Status("Idle"); await Task.Delay(50);
+        Assert.Empty(_sent);
     }
 }

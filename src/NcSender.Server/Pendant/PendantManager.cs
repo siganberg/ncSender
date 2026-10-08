@@ -179,7 +179,7 @@ public class PendantManager : IPendantManager
         // same stream. Requiring the pendant to be online used to strand the
         // accessories on the 1 s keep-alive cadence and show up as ~500 ms
         // lag on state changes when the pendant was offline.
-        if (_serialHandler?.IsConnected == true && !_otaInProgress)
+        if ((_serialHandler?.IsConnected == true || _dongleDevices.HasWiredDroSubscribers) && !_otaInProgress)
         {
             _ = SendDroAsync(full: false);
         }
@@ -1720,6 +1720,11 @@ public class PendantManager : IPendantManager
             // "P:" or "W:" leaves the pendant's cached copy stale until the next
             // job/pair event, showing up as an occasional wildly-wrong MPos while idle.
             var fullDro = (++_droFrameCounter % FullDroEveryNTicks) == 0;
+            // An accessory on a cable that reads the spindle from the DRO (the
+            // Wireless I/O's drawbar interlock) needs the keep-alive too,
+            // with or without a radio: no frame for 3 s locks its drawbar.
+            if (_serialHandler?.IsConnected != true && _dongleDevices.HasWiredDroSubscribers)
+                _ = SendDroAsync(full: fullDro);
             if (_serialHandler?.IsConnected == true)
             {
                 _ = SendDroAsync(full: fullDro);
@@ -2629,7 +2634,8 @@ public class PendantManager : IPendantManager
 
     private async Task SendDroAsync(bool full)
     {
-        if (_serialHandler is not { IsConnected: true } || _otaInProgress) return;
+        var radio = _serialHandler is { IsConnected: true };
+        if ((!radio && !_dongleDevices.HasWiredDroSubscribers) || _otaInProgress) return;
 
         var state = _serverContext.State;
         var ms = state.MachineState;
@@ -2825,7 +2831,13 @@ public class PendantManager : IPendantManager
 
         _lastSentDro = current;
         var droLine = sb.ToString();
-        await _serialHandler.SendRawAsync(droLine);
+
+        // Accessories on a USB cable that read the spindle from this frame get
+        // it there; the radio carries it to everyone else.
+        await _dongleDevices.SendDroToWiredAsync(droLine);
+        if (!radio) return;
+
+        await _serialHandler!.SendRawAsync(droLine);
 
         // The DRO is not just the pendant's: an untagged line broadcasts to EVERY
         // paired peer, and the accessories use it as their shared state feed —

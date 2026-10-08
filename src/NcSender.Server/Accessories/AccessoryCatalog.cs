@@ -77,7 +77,7 @@ public static class AccessoryCatalog
         // Wireless I/O for the Pneumatic ATC: drives the clamp valve and reads
         // the drawbar / tool / pressure sensors over the radio. Device name
         // "xio" (the board's firmware is the xIO).
-        new AccessoryDefinition("xio", "ATC Wireless Bridge",
+        new AccessoryDefinition("xio", "Wireless I/O",
             "siganberg/ncSender.xIO.releases", "firmware_xio_v", "xio",
             Availability: "Coming Soon", PluginName: "Pneumatic ATC",
             LicenseProduct: "ncsender.xio"),

@@ -29,6 +29,22 @@ public interface IDongleDeviceService
     Task SendAsync(string name, string payload);
 
     /// <summary>
+    /// Whether the spindle is turning, used to refuse a drawbar release (see
+    /// SendAsync). Set once at startup; null means "unknown" and refuses nothing.
+    /// </summary>
+    Func<bool>? SpindleActive { get; set; }
+
+    /// <summary>
+    /// Accessories on a USB cable that take the shared machine-state (DRO)
+    /// frame there, because they read the spindle from it (they advertise
+    /// "dr=" in their status). The radio carries it to everyone else.
+    /// </summary>
+    bool HasWiredDroSubscribers { get; }
+
+    /// <summary>Send the shared machine-state (DRO) line down those cables.</summary>
+    Task SendDroToWiredAsync(string line);
+
+    /// <summary>
     /// Ask a device something and wait for the first reply matching
     /// <paramref name="match"/>, or null on timeout.
     ///

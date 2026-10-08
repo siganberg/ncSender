@@ -313,7 +313,7 @@ public sealed class DongleOtaService : IDisposable
         // RGB is wireless-only for now: the C3 build exposes no wired OTA path,
         // so there is no cable dialect to prefer. Revisit if it gains one.
         "rgbled"       => NcSenderUsbKind.Unknown,
-        // ATC Wireless Bridge: speaks $OTA:BEGIN/CHUNK/END on its cable; found
+        // Wireless I/O: speaks $OTA:BEGIN/CHUNK/END on its cable; found
         // by its "ncSender xIO" product string (it enumerates as 0x1001).
         "xio"          => NcSenderUsbKind.Xio,
         // The pendant speaks this dialect on its cable as of pendant firmware

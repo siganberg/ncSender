@@ -394,6 +394,15 @@ public partial class CncController : ICncController
                         continue;
                     }
 
+                    // A (DONGLE_ELSE)…(DONGLE_END) block after an `else` wait:
+                    // skipped when the wait succeeded, sent when it failed.
+                    // The markers themselves never reach the controller.
+                    if (SkipForDongleElse(entry))
+                    {
+                        CompleteUnsent(entry);
+                        continue;
+                    }
+
                     if (entry.PrependJogCancel)
                         await _transport.WriteRawAsync([0x85], ct);
 
@@ -418,9 +427,14 @@ public partial class CncController : ICncController
                     // If the accessory never gets there, this line becomes a pause
                     // instead: the operator decides whether to run on without it.
                     var toWrite = entry.CommandToWrite;
-                    if (entry.DongleWait is { } dw && _dongleDevices is not null
-                        && !await WaitForDongleAsync(dw, ct))
-                        toWrite = dw.PauseLine() + "\n";
+                    if (entry.DongleWait is { } dw)
+                    {
+                        var arrived = _dongleDevices is not null && await WaitForDongleAsync(dw, ct);
+                        // With `else` the plugin's own block decides what happens;
+                        // the wait line goes out as the no-op comment it is.
+                        if (dw.Else) _dongleElseWaitFailed = !arrived;
+                        else if (!arrived && _dongleDevices is not null) toWrite = dw.PauseLine() + "\n";
+                    }
 
                     await _transport.WriteAsync(toWrite, ct);
 
@@ -872,6 +886,7 @@ public partial class CncController : ICncController
 
     public void FlushQueue(string reason)
     {
+        ResetDongleElse();
         // 1. Flush active command
         CommandEntry? active;
         lock (_activeLock)
@@ -1866,6 +1881,51 @@ public partial class CncController : ICncController
         public DongleWait? DongleWait { get; init; }
     }
 
+    private enum DongleElseBlock { None, Skip, Run }
+    private DongleElseBlock _dongleElseBlock = DongleElseBlock.None;
+    private bool _dongleElseWaitFailed;
+
+    // True for a line that must not be sent: either marker, or a line inside
+    // a block whose wait succeeded. A (DONGLE_ELSE) with no failed `else` wait
+    // before it is skipped too, so a failure block can never run by accident.
+    private bool SkipForDongleElse(CommandEntry entry)
+    {
+        if (DongleWait.IsElseMarker(entry.RawCommand))
+        {
+            _dongleElseBlock = _dongleElseWaitFailed ? DongleElseBlock.Run : DongleElseBlock.Skip;
+            _dongleElseWaitFailed = false;
+            return true;
+        }
+        if (DongleWait.IsEndMarker(entry.RawCommand))
+        {
+            _dongleElseBlock = DongleElseBlock.None;
+            return true;
+        }
+        return _dongleElseBlock == DongleElseBlock.Skip;
+    }
+
+    private void ResetDongleElse()
+    {
+        _dongleElseBlock = DongleElseBlock.None;
+        _dongleElseWaitFailed = false;
+    }
+
+    // Answer a line the controller never sees, as if it had said "ok".
+    private void CompleteUnsent(CommandEntry entry)
+    {
+        var result = new CommandResult
+        {
+            Id = entry.Id,
+            Command = entry.RawCommand,
+            DisplayCommand = entry.DisplayCommand,
+            Meta = entry.Meta,
+            Status = "success",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        entry.Tcs.TrySetResult(result);
+        CommandAcknowledged?.Invoke(result);
+    }
+
     // Last payload fired at each accessory by a (DONGLE:…) sentinel, so a wait
     // that finds the accessory gone can send it again once it is back.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastDongleSend =
@@ -1893,6 +1953,15 @@ public partial class CncController : ICncController
                 _logger.LogInformation("Dongle wait {Name} {Field}={Target}: {Result} in {Ms} ms",
                     dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
                 return true;
+            }
+
+            // The plugin's failure block takes over. No re-send: repeating the
+            // last command (a clamp release, say) is not a safe default there.
+            if (dw.Else)
+            {
+                _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, running the failure block",
+                    dw.Name, dw.Field, dw.Target, result, sw.ElapsedMilliseconds);
+                return false;
             }
 
             _logger.LogWarning("Dongle wait {Name} {Field}={Target}: {Result} after {Ms} ms, waiting for it to answer",

@@ -492,6 +492,27 @@ public class JsPluginEngine : IJsPluginEngine
             return JsonElementToJsValue(engine, response);
         }));
 
+        // showNotice(title, message, details?) — a popup the operator dismisses,
+        // for something the plugin refused (e.g. a drawbar release with the
+        // spindle turning). Does not wait: safe from inside onBeforeCommand.
+        // details: { Label: value, ... } shown as a small table.
+        ctx.Set("showNotice", new ClrFunction(engine, "showNotice", (thisObj, args) =>
+        {
+            var title = args.Length > 0 && args[0].IsString() ? args[0].AsString() : "";
+            var message = args.Length > 1 && args[1].IsString() ? args[1].AsString() : "";
+            var details = new List<(string, string)>();
+            if (args.Length > 2 && args[2].IsObject())
+            {
+                var obj = args[2].AsObject();
+                foreach (var key in obj.GetOwnPropertyKeys())
+                    details.Add((key.ToString(), obj.Get(key).ToString()));
+            }
+            var broadcaster = _serviceProvider.GetService(typeof(IBroadcaster)) as IBroadcaster;
+            if (broadcaster is not null)
+                _ = NcSender.Server.Infrastructure.BlockedNotice.ShowAsync(broadcaster, $"notice-{pluginId}", title, message, details);
+            return JsValue.Undefined;
+        }));
+
         // askGate({title, message, variant, buttons: [{value, label, style, isDefault}],
         //          persist?, key?, steps?: [{value, label, commands: []}], stepConfig?})
         // Blocks the Jint thread; returns chosen button value (string) or null.

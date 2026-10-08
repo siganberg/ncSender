@@ -15,6 +15,12 @@ namespace NcSender.Server.Tools;
 /// and ncSender agree that there is no reference. The TLS button then asks for
 /// a measurement, job start measures the loaded tool, and a Z0 set in between
 /// is kept by the next tool change.
+///
+/// Only when the abort left the length in doubt (see ToolChangeEvent.LengthInDoubt).
+/// An abort before any length line (a failed tool-sensor check) or after the
+/// new tool's length was applied (a stored value from the tool library, or a
+/// finished measurement) leaves a correct offset, and clearing it would only
+/// force a needless measurement on the next change.
 /// </summary>
 public sealed class ToolLengthOnAbort : IHostedService
 {
@@ -48,6 +54,12 @@ public sealed class ToolLengthOnAbort : IHostedService
     private void OnEnded(ToolChangeEvent e)
     {
         if (e.Outcome != "aborted") return;
+        if (!e.LengthInDoubt)
+        {
+            _logger.LogInformation("{Kind} T{Tool} was interrupted ({Reason}) with its tool length intact: offset kept",
+                e.Info.Kind, e.Info.Tool, e.Reason);
+            return;
+        }
         _pending = true;
         _logger.LogInformation("{Kind} T{Tool} was interrupted ({Reason}): its tool length is cleared once the machine is idle",
             e.Info.Kind, e.Info.Tool, e.Reason);

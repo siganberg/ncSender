@@ -832,6 +832,7 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
+import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand } from '../../lib/aux-outputs';
 import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1243,17 +1244,8 @@ const getPinState = (pinKey: string): boolean => {
 const ioSwitchesConfig = ref<any>({});
 const ioSwitchStates = reactive<Record<string, boolean>>({});
 
-// Helper function to compute OFF command based on ON command
-const getOffCommand = (onCommand: string): string => {
-  if (!onCommand) return '';
-  if (onCommand === 'M7' || onCommand === 'M8') return 'M9';
-  // M64 P<n> -> M65 P<n>
-  const m64Match = onCommand.match(/M64\s+(P\d+)/i);
-  if (m64Match) {
-    return `M65 ${m64Match[1]}`;
-  }
-  return '';
-};
+// Off command for an output's on command; see lib/aux-outputs.
+const getOffCommand = (onCommand: string): string => auxOffCommand(onCommand);
 
 // Helper to extract pin number from M64 Pn command
 const getM64PinNumber = (onCommand: string): number | null => {
@@ -4530,7 +4522,10 @@ const toggleIOSwitch = async (switchKey: string) => {
       return;
     }
 
-    // Other aux outputs (M64/M65) — send as regular command
+    // Other aux outputs (M64/M65, and Wireless I/O outputs, whose
+    // (DONGLE:xio:out …) line the server relays to the bridge) — send as a
+    // regular command, so plugin guards such as the Pneumatic ATC's
+    // "no release while the spindle runs" apply to them too.
     const command = newState ? switchConfig.on : switchConfig.off;
     if (command) {
       await api.sendCommandViaWebSocket({
@@ -5183,6 +5178,7 @@ const toggleToolInfo = (toolNumber: string) => {
 // Vue's render cycle, which is why the result was a white screen rather than a
 // leaked listener.
 let offToolsUpdated: (() => void) | undefined;
+let offBridgeMessage: (() => void) | undefined;
 let offGcodeUpdated: (() => void) | undefined;
 let offGcodeContentReady: (() => void) | undefined;
 let offGcodeDownloadProgress: (() => void) | undefined;
@@ -5388,6 +5384,18 @@ onMounted(async () => {
     }
   }, { deep: true });
 
+  // Bridge output switches follow what the bridge reports (out0=… out3=).
+  offBridgeMessage = api.on('dongle:device-message', (msg: any) => {
+    if (msg?.name !== BRIDGE_DEVICE) return;
+    const states = parseBridgeOutputs(msg.payload);
+    const config = ioSwitchesConfig.value;
+    if (!Array.isArray(config)) return;
+    for (const output of config) {
+      const index = bridgeOutputIndex(output?.on);
+      if (output?.enabled && index !== null && index in states) ioSwitchStates[output.id] = states[index];
+    }
+  });
+
   // Listen for tools updates via WebSocket
   offToolsUpdated = api.on('tools-updated', (tools: any[]) => {
     showToolInfo.value = null;
@@ -5592,6 +5600,7 @@ onUnmounted(() => {
 
   // Clean up api event listeners
   offToolsUpdated?.();
+  offBridgeMessage?.();
   offGcodeUpdated?.();
   offGcodeContentReady?.();
   offGcodeDownloadProgress?.();

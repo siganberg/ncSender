@@ -137,7 +137,7 @@ const CATALOG = [
   { key: 'autodustboot', label: 'AutoDustBoot', desc: 'Automatic dust boot control',    store: 'https://franciscreation.com/search?q=autodustboot' },
   { key: 'rgbled',       label: 'RGB LED',      desc: 'Machine status lighting',         store: 'https://franciscreation.com/ncsender-rgb-led' },
   // No store page yet, so no "Get one" button.
-  { key: 'xio',          label: 'ATC Wireless Bridge', desc: 'Wireless clamp valve and sensors for the Pneumatic ATC', store: '' },
+  { key: 'xio',          label: 'Wireless I/O', desc: 'Wireless clamp valve and sensors for the Pneumatic ATC', store: '' },
 ];
 
 interface DongleDevice { name: string; connected: boolean; }
