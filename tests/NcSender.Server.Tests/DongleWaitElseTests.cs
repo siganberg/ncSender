@@ -129,7 +129,7 @@ public class DongleWaitElseTests : IDisposable
         typeof(CncController).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(_controller, null);
 
     // Records every line and answers "ok" to it, like a controller would.
-    private sealed class AckingTransport(CncController controller) : IConnectionTransport
+    internal sealed class AckingTransport(CncController controller) : IConnectionTransport
     {
         public readonly List<string> Written = new();
         public bool IsConnected => true;

@@ -403,6 +403,13 @@ public partial class CncController : ICncController
                         continue;
                     }
 
+                    // A plugin prompt's abort block, see GateAbortBlock.
+                    if (await HandleGateAbortLineAsync(entry, ct))
+                    {
+                        if (!entry.Tcs.Task.IsCompleted) CompleteUnsent(entry);
+                        continue;
+                    }
+
                     if (entry.PrependJogCancel)
                         await _transport.WriteRawAsync([0x85], ct);
 
@@ -887,6 +894,7 @@ public partial class CncController : ICncController
     public void FlushQueue(string reason)
     {
         ResetDongleElse();
+        ResetGateAbort();
         // 1. Flush active command
         CommandEntry? active;
         lock (_activeLock)
@@ -1902,6 +1910,70 @@ public partial class CncController : ICncController
             return true;
         }
         return _dongleElseBlock == DongleElseBlock.Skip;
+    }
+
+    private enum GateAbortState { None, Offered, Armed, Running, Skipping }
+    private GateAbortState _gateAbort = GateAbortState.None;
+    private TaskCompletionSource? _gateAbortDone;
+    private TaskCompletionSource? _gateAbortHold;
+    private readonly object _gateAbortLock = new();
+
+    public bool TryArmGateAbort(out Task blockDone)
+    {
+        lock (_gateAbortLock)
+        {
+            if (_gateAbort != GateAbortState.Offered) { blockDone = Task.CompletedTask; return false; }
+            _gateAbort = GateAbortState.Armed;
+            _gateAbortDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            blockDone = _gateAbortDone.Task;
+            return true;
+        }
+    }
+
+    // True for a line that must not be sent: the markers, and the block's
+    // lines on Continue. After the block has run on Abort the stream holds
+    // here (nothing after it may go out) until the gate's soft reset flushes
+    // the queue.
+    private async Task<bool> HandleGateAbortLineAsync(CommandEntry entry, CancellationToken ct)
+    {
+        var line = entry.RawCommand ?? "";
+        Task? hold = null;
+        lock (_gateAbortLock)
+        {
+            if (GateAbortBlock.IsOffered(line)) { _gateAbort = GateAbortState.Offered; return true; }
+            if (GateAbortBlock.IsStart(line))
+            {
+                _gateAbort = _gateAbort == GateAbortState.Armed ? GateAbortState.Running : GateAbortState.Skipping;
+                return true;
+            }
+            if (GateAbortBlock.IsEnd(line))
+            {
+                if (_gateAbort == GateAbortState.Running)
+                {
+                    _gateAbortHold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    hold = _gateAbortHold.Task;
+                    _gateAbortDone?.TrySetResult();
+                }
+                _gateAbort = GateAbortState.None;
+                if (hold is null) return true;
+            }
+            else return _gateAbort == GateAbortState.Skipping;
+        }
+        _logger.LogInformation("Abort block finished: holding the stream for the reset");
+        try { await hold.WaitAsync(ct); } catch (OperationCanceledException) { }
+        return true;
+    }
+
+    private void ResetGateAbort()
+    {
+        lock (_gateAbortLock)
+        {
+            _gateAbort = GateAbortState.None;
+            _gateAbortDone?.TrySetResult();
+            _gateAbortDone = null;
+            _gateAbortHold?.TrySetResult();
+            _gateAbortHold = null;
+        }
     }
 
     private void ResetDongleElse()
