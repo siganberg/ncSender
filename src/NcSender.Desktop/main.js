@@ -161,12 +161,104 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(winOptions);
+  setupAutoZoom();
   // Maximize is deferred to the `ready-to-show` handler in the app
   // lifecycle block; calling it here would force the window to appear
   // and defeat the `show: false` flash-suppression.
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+}
+
+// ── Auto-fit zoom ───────────────────────────────────────────────────────────
+//
+// The layout needs about FIT.w × FIT.h CSS pixels. On a smaller window (a
+// 1366×768 laptop, or a 1920×1080 screen at 125–150% Windows scaling) panels
+// get cut off, and users rarely think to press Ctrl −. So zoom out to fit,
+// exactly as Ctrl − would, never below MIN_ZOOM and never above 100%.
+//
+// A zoom the user picks (Ctrl +/−, Ctrl+wheel) wins: it is remembered and
+// auto-fit stops. Ctrl 0 hands control back to auto-fit. A kiosk is tuned
+// for its own screen and is left alone. ncSenderOS launches the app without
+// --kiosk (labwc maximizes it) but with an explicit --window-size and has
+// /etc/ncsender, so either marks one.
+const FIT = {
+  landscape: { w: 1600, h: 900 },
+  portrait: { w: 1080, h: 1700 },
+};
+const MIN_ZOOM = 0.6;
+const ZOOM_FILE = () => path.join(app.getPath('userData'), 'zoom.json');
+
+const isOsKiosk = () => isKiosk
+  || process.argv.some((a) => a.startsWith('--window-size'))
+  || (process.platform === 'linux' && require('fs').existsSync('/etc/ncsender'));
+
+let manualZoom = null;   // factor the user chose, or null for auto-fit
+let autoZoom = 1;
+
+function loadManualZoom() {
+  try {
+    const f = JSON.parse(require('fs').readFileSync(ZOOM_FILE(), 'utf8')).manual;
+    manualZoom = typeof f === 'number' && f > 0 ? f : null;
+  } catch { manualZoom = null; }
+}
+
+function saveManualZoom() {
+  try { require('fs').writeFileSync(ZOOM_FILE(), JSON.stringify({ manual: manualZoom })); } catch { /* best effort */ }
+}
+
+function fitZoomFactor() {
+  const [w, h] = mainWindow.getContentSize();   // DIPs = CSS px at 100%
+  const t = w >= h ? FIT.landscape : FIT.portrait;
+  const f = Math.min(1, w / t.w, h / t.h);
+  // Whole 5% steps, rounded down so the layout always fits.
+  return Math.max(MIN_ZOOM, Math.floor(f * 20) / 20);
+}
+
+function applyZoom() {
+  if (isOsKiosk() || !mainWindow || mainWindow.isDestroyed()) return;
+  const wc = mainWindow.webContents;
+  if (manualZoom !== null) {
+    if (Math.abs(wc.getZoomFactor() - manualZoom) > 0.001) wc.setZoomFactor(manualZoom);
+    return;
+  }
+  autoZoom = fitZoomFactor();
+  if (Math.abs(wc.getZoomFactor() - autoZoom) > 0.001) wc.setZoomFactor(autoZoom);
+}
+
+// After a zoom key or Ctrl+wheel, whatever Chromium settled on is the user's.
+function rememberUserZoom() {
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const f = mainWindow.webContents.getZoomFactor();
+    if (manualZoom === null && Math.abs(f - autoZoom) < 0.001) return;
+    manualZoom = f;
+    saveManualZoom();
+  }, 50);
+}
+
+function setupAutoZoom() {
+  if (isOsKiosk()) return;
+  loadManualZoom();
+  const wc = mainWindow.webContents;
+  wc.on('did-finish-load', applyZoom);
+  let resizeTimer = null;
+  mainWindow.on('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(applyZoom, 150);
+  });
+  wc.on('zoom-changed', rememberUserZoom);   // Ctrl+wheel / pinch
+  wc.on('before-input-event', (evt, input) => {
+    if (input.type !== 'keyDown' || !(input.control || input.meta) || input.alt) return;
+    if (input.key === '0') {
+      evt.preventDefault();
+      manualZoom = null;
+      saveManualZoom();
+      applyZoom();
+    } else if (['+', '=', '-', '_'].includes(input.key)) {
+      rememberUserZoom();
+    }
   });
 }
 
