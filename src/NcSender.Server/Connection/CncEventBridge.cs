@@ -877,32 +877,51 @@ public class CncEventBridge
         }
     }
 
-    // Continue: send `~` (cycle resume). If a safety door was opened while
-    // the M0 pause was active, grblHAL stacks Door on top of Hold — one `~`
-    // clears the Door state; the underlying M0 Hold releases on a second `~`
-    // after a short delay. When only one pause was active the second `~` is
-    // a harmless no-op (grblHAL ignores `~` in Idle/Run).
+    // Continue releases the M0 the dialog is paused on with one `~`. If the
+    // door was opened during the pause the controller is in Door, and the
+    // first `~` only brings it back to the underlying M0 Hold, so a second
+    // one follows 500 ms later. It used to be sent every time: when the
+    // program reached its NEXT M0 within those 500 ms (manual tool change,
+    // probe -> tool: "unload probe" then "install T1" with no movement in
+    // between), the spare `~` released that pause too and the TLS ran on an
+    // empty spindle with the "install T1" prompt still on screen.
     private async Task DispatchGateContinueAsync()
     {
         try
         {
-            await _controller.SendCommandAsync("~", new CommandOptions
-            {
-                DisplayCommand = "~ (Cycle Start)",
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            var statusAtContinue = _context.State.MachineState.Status;
+            await SendCycleStartAsync();
+            if (!IsDoorStatus(statusAtContinue)) return;
+
             await Task.Delay(500);
-            await _controller.SendCommandAsync("~", new CommandOptions
-            {
-                DisplayCommand = "~ (Cycle Start)",
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            if (NeedsSecondCycleStart(statusAtContinue, _context.State.MachineState.Status))
+                await SendCycleStartAsync();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Gate continue dispatch failed");
         }
     }
+
+    private Task SendCycleStartAsync() =>
+        _controller.SendCommandAsync("~", new CommandOptions
+        {
+            DisplayCommand = "~ (Cycle Start)",
+            Meta = new CommandMeta { SourceId = "system", Silent = true }
+        });
+
+    private static bool IsDoorStatus(string? status) =>
+        status?.StartsWith("Door", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// Whether Continue sends a second cycle start, 500 ms after the first.
+    /// Only when the pause had the door state stacked on it, and the machine
+    /// is still held: a plain M0 is released by the first one, and a second
+    /// would release the program's next M0.
+    /// </summary>
+    internal static bool NeedsSecondCycleStart(string? statusAtContinue, string? statusNow) =>
+        IsDoorStatus(statusAtContinue)
+        && (IsDoorStatus(statusNow) || statusNow?.StartsWith("Hold", StringComparison.OrdinalIgnoreCase) == true);
 
     private void LinkRapidOverrideToFeed(double previousFeed, double feed, double rapid)
     {
