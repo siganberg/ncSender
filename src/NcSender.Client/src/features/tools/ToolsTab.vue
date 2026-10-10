@@ -976,6 +976,12 @@ const editTool = (tool: Tool) => {
   editingTool.value = tool;
   const toolCopy = JSON.parse(JSON.stringify(tool));
 
+  // Tools saved without metadata (imports, plugins, the API) come back with
+  // no metadata/offsets at all; the form binds metadata.notes and offsets.*
+  // directly, so a missing object blanked the whole Tool Library tab.
+  toolCopy.metadata = { notes: '', image: '', sku: '', ...(toolCopy.metadata || {}) };
+  toolCopy.offsets = { tlo: 0, x: 0, y: 0, z: 0, ...(toolCopy.offsets || {}) };
+
   // Convert values to display units if in imperial mode
   const units = appStore.unitsPreference.value;
   if (units === 'imperial') {
@@ -1040,11 +1046,17 @@ const saveTool = async () => {
     // Convert values back to mm if in imperial mode
     const units = appStore.unitsPreference.value;
     if (units === 'imperial') {
-      toolData.diameter = toolData.diameter * 25.4;
-      toolData.offsets.tlo = toolData.offsets.tlo * 25.4;
-      toolData.offsets.x = (toolData.offsets.x || 0) * 25.4;
-      toolData.offsets.y = (toolData.offsets.y || 0) * 25.4;
-      toolData.offsets.z = (toolData.offsets.z || 0) * 25.4;
+      // The form shows inches rounded to 4 places, so converting an untouched
+      // value back drifted (8 mm saved as 8.001). A value still showing what
+      // Edit displayed keeps the tool's exact mm.
+      const orig = editingTool.value;
+      const toMm = (shown: number, mm: number | undefined) =>
+        mm != null && shown === parseFloat((mm / 25.4).toFixed(4)) ? mm : shown * 25.4;
+      toolData.diameter = toMm(toolData.diameter, orig?.diameter);
+      toolData.offsets.tlo = toMm(toolData.offsets.tlo, orig?.offsets?.tlo);
+      toolData.offsets.x = toMm(toolData.offsets.x || 0, orig ? (orig.offsets?.x || 0) : undefined);
+      toolData.offsets.y = toMm(toolData.offsets.y || 0, orig ? (orig.offsets?.y || 0) : undefined);
+      toolData.offsets.z = toMm(toolData.offsets.z || 0, orig ? (orig.offsets?.z || 0) : undefined);
     }
 
     console.log('Saving tool data:', JSON.stringify(toolData));
