@@ -48,6 +48,9 @@
           <span class="wiz__conn-dot"></span>
           <span>{{ connected ? 'Controller connected' : 'Waiting for controller' }}</span>
         </div>
+        <div class="wiz__rail-foot">
+          <button type="button" class="wiz__rail-close" @click="railClose">Close</button>
+        </div>
       </aside>
 
       <!-- Page -->
@@ -73,7 +76,7 @@
             <div class="wiz__facts">
               <span class="wiz__fact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>About five minutes</span>
               <span class="wiz__fact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z" /><path d="M9 12l2 2 4-4" /></svg>Nothing is written until you review it</span>
-              <span class="wiz__fact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>Run again any time from <strong class="wiz__path">Settings &gt; General</strong></span>
+              <span class="wiz__fact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>Run again any time from <strong class="wiz__path">Settings &gt; Setup</strong></span>
             </div>
             <div class="wiz__notice"><svg class="wiz__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01" /><path d="M11 12h1v4h1" /></svg><span><strong>Machine already set up and working?</strong> Skip this wizard. It is meant for a new controller, and re-applying settings to a working machine is not needed.</span></div>
           </div>
@@ -154,15 +157,18 @@
           <div v-else-if="step.id === 'homing'" class="wiz__form">
             <div class="wiz__row">
               <div class="wiz__row-text">
-                <div class="wiz__row-title">Enable homing ($22) <span class="wiz__reco">Recommended: On, 75</span></div>
+                <div class="wiz__row-title">Enable homing ($22)</div>
                 <div class="wiz__row-note">Recommended value 75: homing on, single-axis commands, machine origin set to 0 after homing, and locks that can be overridden. Homing is what makes soft limits and parking possible.</div>
               </div>
-              <ToggleSwitch v-model="homingEnabled" />
+              <div class="wiz__row-ctrl">
+                <RecoState :matches="homingEnabled && homingMask === RECOMMENDED_HOMING_MASK" value="On, 75" @apply="homingEnabled = true; homingMask = RECOMMENDED_HOMING_MASK" />
+                <ToggleSwitch v-model="homingEnabled" />
+              </div>
             </div>
             <div v-if="homingEnabled" class="wiz__advanced">
               <div class="wiz__bits-head">
                 <span class="wiz__field-label">Homing options <span class="wiz__unit">$22 = {{ homingMask }}</span></span>
-                <button type="button" class="wiz__link" :disabled="homingMask === RECOMMENDED_HOMING_MASK" @click="homingMask = RECOMMENDED_HOMING_MASK">Use recommended (75)</button>
+                <button type="button" class="wiz__btn-sm" :disabled="homingMask === RECOMMENDED_HOMING_MASK" @click="homingMask = RECOMMENDED_HOMING_MASK">Use recommended (75)</button>
               </div>
               <div class="wiz__bits">
                 <label v-for="opt in homingOptions" :key="opt.bit" class="wiz__bit">
@@ -213,25 +219,34 @@
           <div v-else-if="step.id === 'safety'" class="wiz__form">
             <div class="wiz__row">
               <div class="wiz__row-text">
-                <div class="wiz__row-title">Soft limits ($20) <span class="wiz__reco">Recommended: On</span></div>
+                <div class="wiz__row-title">Soft limits ($20)</div>
                 <div class="wiz__row-note">Reject any move that would leave the travel you entered. Needs homing, so the controller knows where it is.</div>
               </div>
-              <ToggleSwitch v-model="softLimits" :disabled="!homingEnabled" />
+              <div class="wiz__row-ctrl">
+                <RecoState :matches="softLimits" value="On" :disabled="!homingEnabled" @apply="softLimits = true" />
+                <ToggleSwitch v-model="softLimits" :disabled="!homingEnabled" />
+              </div>
             </div>
             <div v-if="!homingEnabled" class="wiz__notice">Soft limits stay off while homing is disabled.</div>
             <div class="wiz__row">
               <div class="wiz__row-text">
-                <div class="wiz__row-title">Hard limits ($21) <span class="wiz__reco">Recommended: Off</span></div>
+                <div class="wiz__row-title">Hard limits ($21)</div>
                 <div class="wiz__row-note">Stop the machine immediately if a limit switch triggers during a job. Electrical noise can trip it mid-cut, so leave it off unless your switches are well shielded and every one reads correctly.</div>
               </div>
-              <ToggleSwitch v-model="hardLimits" />
+              <div class="wiz__row-ctrl">
+                <RecoState :matches="!hardLimits" value="Off" @apply="hardLimits = false" />
+                <ToggleSwitch v-model="hardLimits" />
+              </div>
             </div>
             <div class="wiz__row">
               <div class="wiz__row-text">
-                <div class="wiz__row-title">Limit jog commands to travel ($40) <span class="wiz__reco">Recommended: On</span></div>
+                <div class="wiz__row-title">Limit jog commands to travel ($40)</div>
                 <div class="wiz__row-note">Clamp jog moves to the machine travel instead of raising an alarm when a jog would overshoot.</div>
               </div>
-              <ToggleSwitch v-model="limitJog" />
+              <div class="wiz__row-ctrl">
+                <RecoState :matches="limitJog" value="On" @apply="limitJog = true" />
+                <ToggleSwitch v-model="limitJog" />
+              </div>
             </div>
           </div>
 
@@ -266,8 +281,7 @@
 
         <footer class="wiz__foot">
           <div class="wiz__foot-left">
-            <button v-if="stepIndex === 0" type="button" class="wiz__btn wiz__btn--ghost" @click="skip">Skip for now</button>
-            <button v-else-if="!applied" type="button" class="wiz__btn wiz__btn--ghost" :disabled="applying" @click="stepIndex--">Back</button>
+            <button v-if="stepIndex > 0 && !applied" type="button" class="wiz__btn wiz__btn--ghost" :disabled="applying" @click="stepIndex--">Back</button>
           </div>
           <div class="wiz__foot-right">
             <button v-if="step.id !== 'review'" type="button" class="wiz__btn wiz__btn--primary" :disabled="step.id === 'connection' && !connected" @click="stepIndex++">Next</button>
@@ -279,6 +293,15 @@
           </div>
         </footer>
       </section>
+      <WizardCloseConfirm
+        v-if="confirmClose"
+        title="Close now?"
+        message="Settings are still being written to the controller. Closing now may leave some of them unchanged."
+        keep-label="Keep going"
+        close-label="Close anyway"
+        @keep="confirmClose = false"
+        @close="requestClose"
+      />
     </div>
   </Dialog>
 </template>
@@ -287,6 +310,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import Dialog from './Dialog.vue';
 import ToggleSwitch from './ToggleSwitch.vue';
+import RecoState from './RecoState.vue';
+import WizardCloseConfirm from './WizardCloseConfirm.vue';
 import ConnectionSetup from './ConnectionSetup.vue';
 import { api } from '@/lib/api.js';
 import { settingsStore } from '@/lib/settings-store.js';
@@ -581,6 +606,14 @@ const skip = async () => {
   emit('close', true);
 };
 const requestClose = () => emit('close', applied.value);
+// Close is always there; only stopping half-way through writing settings is
+// worth asking about. Otherwise it records the wizard as dismissed, as
+// "Skip for now" did, so it doesn't open again on the next start.
+const confirmClose = ref(false);
+const railClose = () => {
+  if (applying.value) { confirmClose.value = true; return; }
+  if (applied.value) finish(); else skip();
+};
 
 // Read the server's cache: it re-reads $$ on every connect, and asking for
 // a metadata refresh here would pile a 90 KB $ES/$ESH dump onto the connect
@@ -591,6 +624,7 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 
 <style scoped>
 .wiz {
+  position: relative;
   display: flex;
   width: min(980px, 94vw);
   height: min(820px, 92vh);
@@ -730,6 +764,7 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
   padding: 12px 14px; border-radius: 10px; border: 1px solid var(--color-border);
 }
 .wiz__row-title { font-weight: 600; color: var(--color-text-primary); }
+.wiz__row-ctrl { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .wiz__path { color: var(--color-accent); font-weight: 700; }
 .wiz__reco {
   display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; vertical-align: 1px;
@@ -766,6 +801,12 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 
 .wiz__advanced { margin-top: -6px; }
 .wiz__link { background: none; border: none; padding: 0; color: var(--color-accent); cursor: pointer; font: inherit; font-size: 0.88rem; text-decoration: underline; }
+.wiz__btn-sm {
+  padding: 5px 12px; border-radius: 999px; border: none; cursor: pointer;
+  background: var(--color-accent); color: #fff; font: inherit; font-size: 0.8rem; font-weight: 600;
+}
+.wiz__btn-sm:not(:disabled):hover { filter: brightness(1.08); }
+.wiz__btn-sm:disabled { opacity: 0.45; cursor: default; }
 .wiz__bits-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .wiz__link:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
 .wiz__bits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
@@ -847,6 +888,23 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 .wiz__alarm strong { color: #ff8888; }
 .wiz__spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; animation: wiz-spin 0.8s linear infinite; }
 @keyframes wiz-spin { to { transform: rotate(360deg); } }
+/* Close at the bottom of the left menu, as in Settings and the plugin dialogs. */
+.wiz__rail-foot {
+  padding-top: 14px; border-top: 1px solid var(--color-border);
+  display: flex; justify-content: center;
+}
+.wiz__rail-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 130px; min-height: 44px; padding: 12px 32px;
+  background: var(--gradient-accent, var(--color-accent)); border: none; border-radius: 8px;
+  color: #fff; cursor: pointer; font: inherit; font-size: 0.95rem; font-weight: 600; letter-spacing: 0.01em;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+.wiz__rail-close:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+.wiz__rail-close:active:not(:disabled) { transform: translateY(1px); }
+.wiz__rail-close:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 760px) { .wiz__rail-foot { display: none; } }
 
 @media (max-width: 760px) {
   .wiz { flex-direction: column; height: 92vh; }

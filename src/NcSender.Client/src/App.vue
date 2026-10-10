@@ -148,18 +148,6 @@
       <div class="tab-content">
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-panel tab-panel--general">
-          <div class="settings-section settings-section--wizard">
-            <div class="wizard-card">
-              <span class="wizard-card__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
-              </span>
-              <div class="wizard-card__text">
-                <h3 class="section-title wizard-card__title">Machine Setup Wizard</h3>
-                <div class="settings-note">Guided setup for a new controller: connection, travel, switches and probe, homing and safety limits, checked live on the machine.</div>
-              </div>
-              <button type="button" class="wizard-card__btn" @click="openSetupWizard">Run setup wizard</button>
-            </div>
-          </div>
           <div class="settings-section">
             <h3 class="section-title">CNC Connection Setup</h3>
             <ConnectionSetup />
@@ -544,6 +532,22 @@
                 </div>
                 <ToggleSwitch v-model="tlsAfterHome" />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Setup Tab: the guided set-up flows as tiles, each opening its own dialog -->
+        <div v-if="activeTab === 'setup'" class="tab-panel tab-panel--setup">
+          <div class="setup-intro">
+            <h3 class="section-title">Setup guides</h3>
+            <div class="settings-note">Step-by-step guides for setting up your machine. Run any of them again at any time.</div>
+          </div>
+          <div class="setup-grid">
+            <div class="setup-tile">
+              <span class="setup-tile__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg></span>
+              <h4 class="setup-tile__title">Machine Setup Wizard</h4>
+              <p class="setup-tile__note">Guided setup for a new controller: connection, travel, switches and probe, homing and safety limits, checked live on the machine.</p>
+              <button type="button" class="setup-tile__btn" @click="openSetupWizard">Run setup wizard</button>
             </div>
           </div>
         </div>
@@ -1476,6 +1480,7 @@ const fetchAlarmDescription = store.setLastAlarmCode;
 const activeTab = ref('general');
 const allSettingsTabs = [
   { id: 'general', label: 'General', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></svg>' },
+  { id: 'setup', label: 'Setup', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="m15 4-1 2-2 1 2 1 1 2 1-2 2-1-2-1z"/><path d="m4 20 10-10"/><path d="M19 13l-.5 1-1 .5 1 .5.5 1 .5-1 1-.5-1-.5z"/></svg>' },
   { id: 'tools', label: 'Tool Library', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8.5 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5M10.329 1.671a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 1 1-.707.707L10.329 2.378a.5.5 0 0 1 0-.707M14.5 7a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zM3.5 9a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5z"/></svg>' },
   { id: 'toolChanger', label: 'Tool Changer', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></svg>' },
   { id: 'keyboard', label: 'Controls', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>' },
@@ -3341,6 +3346,49 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   gap: var(--gap-lg);
   flex: 1;
 }
+
+/* Setup tab: guides as square tiles, three per row; more guides just add tiles. */
+.tab-panel--setup {
+  gap: 0;
+}
+.setup-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;
+  padding: 12px 20px 20px;
+}
+.setup-tile {
+  aspect-ratio: 1 / 1;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 20px; border-radius: 14px; border: 1px solid var(--color-border);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)), var(--color-surface) 70%);
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.setup-tile:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+.setup-tile__icon {
+  width: 52px; height: 52px; border-radius: 14px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-accent); color: #fff; margin-bottom: 6px;
+}
+.setup-tile__icon svg { width: 26px; height: 26px; }
+.setup-tile__title { margin: 0; font-size: 1.08rem; font-weight: 700; color: var(--color-text-primary); }
+.setup-tile__note { margin: 0; font-size: 0.86rem; line-height: 1.45; color: var(--color-text-secondary); }
+.setup-tile__btn {
+  margin-top: auto; align-self: stretch; padding: 10px 16px; border-radius: 10px; border: none; cursor: pointer;
+  background: var(--color-accent); color: #fff; font: inherit; font-weight: 600;
+  transition: filter 0.15s ease;
+}
+.setup-tile__btn:hover { filter: brightness(1.08); }
+/* Three per row in landscape, two in portrait (the kiosk's tall screen gives
+   the Settings panel about the same width either way, so go by orientation). */
+@media (orientation: portrait) { .setup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .setup-grid { grid-template-columns: 1fr; } .setup-tile { aspect-ratio: auto; } }
+.setup-intro {
+  padding: 20px 20px 4px;
+}
+.setup-intro .section-title { margin: 0 0 4px; }
 
 .tab-panel--general,
 .tab-panel--tool-changer {
