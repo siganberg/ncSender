@@ -396,7 +396,9 @@
 
       <!-- Out of bounds warning: the single place this is shown (pre-run and
            while running) so the Job Info card stays a plain info card. -->
-      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning">
+      <!-- Banners below hide while the alarm dialog is up: they share its
+           z-index, paint after it and covered its Unlock button. -->
+      <div class="out-of-bounds-warning" v-if="showOutOfBoundsWarning && !alarmMessage">
         <span class="out-of-bounds-warning__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
@@ -410,7 +412,7 @@
       <!-- Job start is measuring the loaded tool: nothing measured it since
            power-up, and the Z0 kept in the controller needs its length. -->
       <div
-        v-if="measureBeforeJobTool > 0 || measureAfterHomeTool > 0"
+        v-if="(measureBeforeJobTool > 0 || measureAfterHomeTool > 0) && !alarmMessage"
         class="zero-keep-step"
         role="status"
       >
@@ -450,7 +452,7 @@
            out-of-bounds warning, in blue; gone as soon as the step ends
            (ZERO_KEEP_END, tool change done, stop or alarm). -->
       <div
-        v-if="zeroKeepStepTool > 0"
+        v-if="zeroKeepStepTool > 0 && !alarmMessage"
         class="zero-keep-step"
         :class="{ 'zero-keep-step--raised': showOutOfBoundsWarning }"
         role="status"
@@ -468,7 +470,7 @@
       <!-- Z0 set before a Tool Length Reference: information only. The next
            tool setter run measures this tool and keeps the Z0. -->
       <div
-        v-if="tlrZeroNotice && !(zeroKeepStepTool > 0)"
+        v-if="tlrZeroNotice && !(zeroKeepStepTool > 0) && !alarmMessage"
         class="tlr-zero-notice"
         :class="{ 'tlr-zero-notice--raised': showOutOfBoundsWarning, 'tlr-zero-notice--problem': tlrZeroNotice === 'swapped' }"
         role="status"
@@ -6875,7 +6877,9 @@ body.theme-light .dot--rapid {
 .visualizer-dialog {
   position: absolute;
   inset: 0;
-  z-index: 11;
+  /* Above every banner and popup in the card (highest is 20) so nothing
+     can cover the Unlock button; only the file-loading overlay sits higher. */
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: center;
