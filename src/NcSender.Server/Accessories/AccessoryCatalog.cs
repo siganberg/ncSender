@@ -78,9 +78,9 @@ public static class AccessoryCatalog
         // the drawbar / tool / pressure sensors over the radio. Device name
         // "xio" (the board's firmware is the xIO).
         new AccessoryDefinition("xio", "Wireless I/O",
-            "siganberg/ncSender.xIO.releases", "firmware_xio_v", "xio",
+            "siganberg/ncSender.ncWirelessIO.releases", "firmware_ncwirelessio_v", "xio",
             Availability: "Coming Soon", PluginName: "Pneumatic ATC",
-            LicenseProduct: "ncsender.xio"),
+            LicenseProduct: "ncsender.wireless-io"),
 
         // Prototype, not a product yet.
         new AccessoryDefinition("ncprobe", "ncProbe",
