@@ -5862,7 +5862,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 /* Override Controls - bottom center above control buttons */
 .override-controls {
   position: absolute;
-  bottom: 92px;
+  bottom: 78px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -7031,7 +7031,7 @@ body.theme-light .dot--rapid {
 /* Out of bounds warning */
 .out-of-bounds-warning {
   position: absolute;
-  bottom: 200px;
+  bottom: 186px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -7090,7 +7090,7 @@ body.theme-light .dot--rapid {
    overlay, so it reads as "something is happening, look here". */
 .zero-keep-step {
   position: absolute;
-  bottom: 200px;
+  bottom: 186px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -7113,7 +7113,7 @@ body.theme-light .dot--rapid {
     oob-nudge 3s ease-in-out 0.6s infinite;
   will-change: transform;
 }
-.zero-keep-step--raised { bottom: 270px; }
+.zero-keep-step--raised { bottom: 256px; }
 .zero-keep-step > span { position: relative; z-index: 1; }
 .zero-keep-step::after {
   content: '';
@@ -7146,7 +7146,7 @@ body.theme-light .dot--rapid {
    be carried over. Raised above the out-of-bounds card when both show. */
 .tlr-zero-notice {
   position: absolute;
-  bottom: 200px;
+  bottom: 186px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -7170,7 +7170,7 @@ body.theme-light .dot--rapid {
   will-change: transform;
 }
 .tlr-zero-notice > span { position: relative; z-index: 1; }
-.tlr-zero-notice--raised { bottom: 270px; }
+.tlr-zero-notice--raised { bottom: 256px; }
 .tlr-zero-notice--problem { background: #e08a1e; border-color: #e08a1e; }
 .tlr-zero-notice__icon {
   flex: 0 0 auto;
