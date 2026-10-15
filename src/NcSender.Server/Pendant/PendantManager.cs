@@ -2688,9 +2688,12 @@ public class PendantManager : IPendantManager
         var aux = _lastSentOutputsCfg?.Aux;
         if (aux is not null)
         {
+            // Wireless I/O outputs aren't in MachineState: their state is in the
+            // bridge's own status line ("… out0=1 out1=0 …").
+            var bridgeStatus = _dongleDevices.GetDevice("xio")?.LastMessage;
             for (int i = 0; i < aux.Length && i < 32; i++)
             {
-                if (IsAuxOn(aux[i].On, ms)) auxMask |= (1u << i);
+                if (IsAuxOn(aux[i].On, ms, bridgeStatus)) auxMask |= (1u << i);
             }
         }
 
@@ -2865,9 +2868,16 @@ public class PendantManager : IPendantManager
     // Given an aux entry's "on" command (e.g. "M8", "M7", "M64 P2"),
     // return whether that pin/channel is currently on. Used to build
     // the aux state bitmask in the DRO push.
-    private static bool IsAuxOn(string onCmd, MachineState ms)
+    internal static bool IsAuxOn(string onCmd, MachineState ms, string? bridgeStatus = null)
     {
         if (string.IsNullOrEmpty(onCmd)) return false;
+        // A Wireless I/O output: read "out<n>=1" from the bridge's last status
+        // line. Without this the pendant always saw it off and kept sending
+        // "on", so it could switch the drawbar on but never off.
+        var bridge = System.Text.RegularExpressions.Regex.Match(onCmd.Trim(), @"^\(DONGLE:xio:out\s+(\d+)\s+1\)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (bridge.Success)
+            return bridgeStatus is not null
+                && System.Text.RegularExpressions.Regex.IsMatch(bridgeStatus, @"\bout" + bridge.Groups[1].Value + @"=1\b");
         if (onCmd == "M8") return ms.FloodCoolant;
         if (onCmd == "M7") return ms.MistCoolant;
         var m = System.Text.RegularExpressions.Regex.Match(onCmd, @"^M64\s+P(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -3068,12 +3078,19 @@ public class PendantManager : IPendantManager
             PendantJsonContext.Default.PendantToolListMsg);
     }
 
-    private static string DeriveOffFromOn(string onCmd)
+    internal static string DeriveOffFromOn(string onCmd)
     {
+        // Standard grblHAL mapping: M7/M8 → M9, M64 P<n> → M65 P<n>, and a
+        // Wireless I/O output "(DONGLE:xio:out <n> 1)" → "(DONGLE:xio:out <n> 0)".
+        // Same table as the client's lib/aux-outputs.ts; without the last row the
+        // pendant could switch a Wireless I/O output on but never off.
         if (string.IsNullOrEmpty(onCmd)) return "";
+        onCmd = onCmd.Trim();
         if (onCmd == "M7" || onCmd == "M8") return "M9";
         var m = System.Text.RegularExpressions.Regex.Match(onCmd, @"^M64\s+(P\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (m.Success) return $"M65 {m.Groups[1].Value}";
+        var bridge = System.Text.RegularExpressions.Regex.Match(onCmd, @"^\(DONGLE:xio:out\s+(\d+)\s+1\)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (bridge.Success) return $"(DONGLE:xio:out {bridge.Groups[1].Value} 0)";
         return "";
     }
 

@@ -2,6 +2,8 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electro
 const { spawn, execFile } = require('child_process');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
 
 // Disable Chromium sandbox on Linux so child processes (server) can use sudo
 // for updates. Without this, app.relaunch() loses --no-sandbox from the
@@ -12,7 +14,28 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('use-angle', 'gles');
 }
 
-const SERVER_PORT = 8090;
+// The port the server listens on is a user setting (Remote Control Port,
+// connection.serverPort), and the server binds it over ASPNETCORE_URLS. Read
+// the same settings.json the server does, or a changed port leaves this window
+// retrying 8090 forever on the startup logo.
+function settingsPath() {
+  const base = process.platform === 'win32'
+    ? (process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'))
+    : process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : (process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'));
+  return path.join(base, 'ncSender', 'settings.json');
+}
+
+function readServerPort() {
+  try {
+    const port = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'))?.connection?.serverPort;
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535) return port;
+  } catch { /* no settings yet, or unreadable: the server's default */ }
+  return 8090;
+}
+
+const SERVER_PORT = readServerPort();
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 const HEALTH_URL = `${SERVER_URL}/api/health`;
 
