@@ -112,11 +112,14 @@ public sealed class AccessoryService
                                             AssetPrefix = def.AssetPrefix };
             string? pendantAssetPrefix = null;
 
-            if (def.Id == AccessoryCatalog.WirelessUsbId)
+            if (AccessoryCatalog.IsDongle(def.Id))
             {
                 // Always the cable: it is the radio, so it is never behind one.
+                // The Wireless USB and the receiver share a USB id; the licence
+                // product the firmware reports says which row this one is.
                 info.Transport = "usb";
-                info.Connected = dongleLicence?.Connected ?? false;
+                info.Connected = (dongleLicence?.Connected ?? false)
+                    && string.Equals(dongleLicence!.Product, def.LicenseProduct, StringComparison.OrdinalIgnoreCase);
                 info.Licensed = dongleLicence?.Licensed;
                 info.DeviceId = dongleLicence?.DeviceId ?? "";
                 if (info.Connected)
@@ -260,7 +263,7 @@ public sealed class AccessoryService
     {
         var compact = LicenseClient.Compact(licenceJson);
 
-        if (def.Id == AccessoryCatalog.WirelessUsbId)
+        if (AccessoryCatalog.IsDongle(def.Id))
         {
             await _pendant.ImportDongleLicenseAsync(compact).ConfigureAwait(false);
             return;

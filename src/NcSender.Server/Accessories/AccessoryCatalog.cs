@@ -49,6 +49,18 @@ public static class AccessoryCatalog
     /// <summary>The Wireless USB, addressed as itself rather than as a peer.</summary>
     public const string WirelessUsbId = "wireless-usb";
 
+    /// <summary>
+    /// The headless receiver: the same radio firmware as the Wireless USB on its
+    /// own board, sold on its own. It answers on the Wireless USB's USB id and
+    /// tells the two apart only by the licence product it reports.
+    /// </summary>
+    public const string WirelessReceiverId = "wireless-receiver";
+
+    /// <summary>True for the radio the host is cabled to, whichever board it is.</summary>
+    public static bool IsDongle(string id)
+        => string.Equals(id, WirelessUsbId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(id, WirelessReceiverId, StringComparison.OrdinalIgnoreCase);
+
     public static readonly IReadOnlyList<AccessoryDefinition> All = new[]
     {
         // Always reached over USB: it is the radio, so it can never be on the
@@ -56,6 +68,14 @@ public static class AccessoryCatalog
         new AccessoryDefinition(WirelessUsbId, "Wireless USB",
             "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_dongle_v", null,
             LicenseProduct: "ncsender-wireless-usb"),
+
+        // Same radio firmware, built for the receiver board (no display, wired
+        // probe/toolsetter outputs). Only one of these two rows is ever
+        // connected: the cabled dongle is matched to a row by its licence product.
+        new AccessoryDefinition(WirelessReceiverId, "Wireless Receiver",
+            "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_receiver_v", null,
+            Availability: "Coming Soon",
+            LicenseProduct: "ncsender.wireless-receiver"),
 
         // The pendant's asset name depends on which board it is (pibot vs
         // ncsender). This prefix is the ncsender one; AccessoryService swaps

@@ -51,7 +51,7 @@ public static class AccessoryEndpoints
                 return Results.BadRequest(new ApiError(
                     info.UpdateCheckError ?? $"No firmware available for {def.Name}"));
 
-            var target = def.Id == AccessoryCatalog.WirelessUsbId
+            var target = AccessoryCatalog.IsDongle(def.Id)
                 ? NcSender.Server.Dongle.DongleOtaService.SelfDeviceName
                 : def.PeerName ?? def.Id;
 

@@ -44,7 +44,13 @@ public record DongleSendRequest(string Payload);
 /// The Wireless USB dongle's own license state, read via the "$LICENSE" line command.
 /// Connected=false when no dongle is present (DeviceId/Licensed then meaningless).
 /// </summary>
-public record DongleLicenseStatus(bool Connected, bool Licensed, string DeviceId);
+/// <param name="Product">
+/// Licence product the dongle firmware reports: "ncsender-wireless-usb" for the
+/// T-Dongle, "ncsender.wireless-receiver" for the headless receiver. Both answer
+/// on the same USB id, so this is what tells them apart.
+/// </param>
+public record DongleLicenseStatus(bool Connected, bool Licensed, string DeviceId,
+    string Product = "ncsender-wireless-usb");
 
 /// <summary>Body for POST /api/dongle/activate.</summary>
 public record DongleActivateRequest(string InstallationId);

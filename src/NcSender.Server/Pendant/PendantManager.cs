@@ -351,12 +351,13 @@ public class PendantManager : IPendantManager
         if (_dongleHandler is not { IsConnected: true })
             return new DongleLicenseStatus(Connected: false, Licensed: false, DeviceId: "");
 
-        // "$LICENSE" -> "$LICENSE:<0|1> <deviceId> ncsender-wireless-usb"
+        // "$LICENSE" -> "$LICENSE:<0|1> <deviceId> <product>"
         var reply = await QueryDongleAsync("$LICENSE",
             line => line.StartsWith("$LICENSE:", StringComparison.Ordinal), timeoutMs: 2000);
         var parts = reply["$LICENSE:".Length..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 2 && (parts[0] == "0" || parts[0] == "1"))
-            return new DongleLicenseStatus(Connected: true, Licensed: parts[0] == "1", DeviceId: parts[1]);
+            return new DongleLicenseStatus(Connected: true, Licensed: parts[0] == "1", DeviceId: parts[1],
+                Product: parts.Length >= 3 ? parts[2] : DongleProduct);
         throw new InvalidOperationException("Unexpected $LICENSE reply from dongle");
     }
 
@@ -424,7 +425,7 @@ public class PendantManager : IPendantManager
         using var http = new HttpClient();
         var activationResponse = await http.PostAsync(ActivationApiUrl,
             new StringContent(
-                $$$"""{"installationId":"{{{installationId}}}","machineHash":"{{{status.DeviceId}}}","product":"{{{DongleProduct}}}"}""",
+                $$$"""{"installationId":"{{{installationId}}}","machineHash":"{{{status.DeviceId}}}","product":"{{{status.Product}}}"}""",
                 System.Text.Encoding.UTF8, "application/json")
             { Headers = { { "X-Api-Key", ActivationApiKey } } });
 

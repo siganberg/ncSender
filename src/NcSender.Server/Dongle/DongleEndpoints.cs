@@ -101,10 +101,14 @@ public static class DongleEndpoints
             // very recovery path this feature is for. Only a marker naming a
             // DIFFERENT accessory is a refusal.
             var claims = NcSender.Server.Accessories.AccessoryCatalog.IdentifyImage(image);
+            // The receiver row flashes the same cabled radio as the Wireless
+            // USB, but its image must say "wireless-receiver".
             var expected = string.Equals(name, DongleOtaService.SelfDeviceName,
                                          StringComparison.OrdinalIgnoreCase)
                 ? NcSender.Server.Accessories.AccessoryCatalog.WirelessUsbId
                 : name;
+            if (NcSender.Server.Accessories.AccessoryCatalog.IsDongle(name))
+                name = DongleOtaService.SelfDeviceName;
             if (claims is not null && !string.Equals(claims, expected, StringComparison.OrdinalIgnoreCase))
                 return Results.BadRequest(new ApiError(
                     $"That firmware is for the {claims}, not the {expected}. " +

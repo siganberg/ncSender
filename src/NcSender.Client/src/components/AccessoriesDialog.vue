@@ -209,7 +209,7 @@
 
           <!-- Pairing — never offered for the Wireless USB: it is the radio,
                so it cannot be paired to itself. -->
-          <section class="acc-card" v-if="selected.id !== 'wireless-usb'">
+          <section class="acc-card" v-if="!isDongle(selected.id)">
             <div class="acc-card-header">
               <h3 class="acc-card-title">Pairing</h3>
               <button v-if="selected.paired" class="btn btn--danger-ghost"
@@ -322,6 +322,11 @@ const unpairTarget = ref<string | null>(null);
 // Which accessory the panel is showing. Defaults to whatever most wants
 // attention, so opening the dialog lands on the thing you came for.
 const selectedId = ref<string>('wireless-usb');
+
+// The cabled radio: the Wireless USB, or the receiver board running the same
+// firmware. Only one of the two rows is ever connected.
+const DONGLE_IDS = ['wireless-usb', 'wireless-receiver'];
+const isDongle = (id: string) => DONGLE_IDS.includes(id);
 const installationId = ref('');
 const activating = ref(false);
 const activationError = ref('');
@@ -343,7 +348,7 @@ const rows = computed(() => {
       // be reachable. This matters for the pendant, which the dongle relays
       // UNTAGGED and so never lists in $DEVICES: going by that list alone had
       // a connected pendant reporting "Not paired".
-      paired: a.id === 'wireless-usb'
+      paired: isDongle(a.id)
         ? a.connected
         : paired.has(a.id) || (a.connected && a.transport === 'wireless'),
     }));
@@ -413,7 +418,7 @@ function shortId(id: string) {
 const busy = computed(() => Object.keys(flashing).length > 0);
 
 const dongleReady = computed(() => {
-  const d = accessories.value.find(a => a.id === 'wireless-usb');
+  const d = accessories.value.find(a => isDongle(a.id) && a.connected);
   return !!d?.connected && d?.licensed === true;
 });
 
@@ -537,8 +542,9 @@ async function sendFirmware(target: Accessory, file: File) {
     const form = new FormData();
     form.append('file', file);
     if (target.deviceId) form.append('deviceId', target.deviceId);
-    // The dongle addresses itself by product id; peers by their radio name.
-    const name = target.id === 'wireless-usb' ? 'wireless-usb' : target.id;
+    // The dongle addresses itself by its row id (the server maps both dongle
+    // rows to the cabled radio); peers by their radio name.
+    const name = target.id;
     const res = await fetch(`${baseUrl}/api/dongle/devices/${name}/ota`, {
       method: 'POST', body: form,
     });
@@ -671,7 +677,13 @@ onMounted(() => {
   track('dongle:device-changed', refreshSoon);
   track('pendant:status-changed', refreshSoon);
 
-  const idOf = (d: any) => d?.device ?? '';
+  // The cabled radio reports progress as "wireless-usb" whichever board it
+  // is; credit it to the dongle row that is actually connected.
+  const idOf = (d: any) => {
+    const dev = d?.device ?? '';
+    if (dev !== 'wireless-usb') return dev;
+    return accessories.value.find(a => isDongle(a.id) && a.connected)?.id ?? dev;
+  };
   track('plugin-ota:progress', (d: any) => {
     const id = idOf(d); if (!id) return;
     flashing[id] = { percent: d.percent ?? 0, message: `Updating… ${d.percent ?? 0}%` };
