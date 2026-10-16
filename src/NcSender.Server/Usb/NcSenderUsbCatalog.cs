@@ -71,6 +71,8 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["ncSender ncProbe"]           = NcSenderUsbKind.NcProbe,
+            // nc3DAir: the ncProbe firmware on the vert board, under its own name.
+            ["ncSender nc3DAir"]          = NcSenderUsbKind.NcProbe,
             ["ncSender Wireless USB"]     = NcSenderUsbKind.WirelessDongle,
             ["ncSender Pendant"]          = NcSenderUsbKind.Pendant,
             ["ncSender AutoDustBoot"]     = NcSenderUsbKind.AutoDustBoot,

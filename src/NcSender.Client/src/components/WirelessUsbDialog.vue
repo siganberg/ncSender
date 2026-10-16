@@ -184,7 +184,8 @@ const deviceRows = computed(() => {
 // catalog entries render a row with a "Get One" link even when unpaired, which
 // would advertise hardware that isn't on sale.
 const DISPLAY_NAMES: Record<string, string> = {
-  ncprobe: 'ncProbe',
+  nc3dair: '3D Wireless Probe',
+  ncprobe: '3D Wireless Probe',   // builds before the nc3DAir rename
 };
 
 function prettyName(name: string): string {

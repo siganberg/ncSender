@@ -103,9 +103,9 @@ public static class AccessoryCatalog
             LicenseProduct: "ncsender.wireless-io"),
 
         // Prototype, not a product yet.
-        new AccessoryDefinition("ncprobe", "ncProbe",
-            "siganberg/ncSender.ncProbe.releases", "firmware_ncprobe_v", "ncprobe",
-            Availability: "Not available", LicenseProduct: "ncsender.ncprobe"),
+        new AccessoryDefinition("nc3dair", "3D Wireless Probe",
+            "siganberg/ncSender.nc3DAir.releases", "firmware_nc3dair_v", "nc3dair",
+            Availability: "Not available", LicenseProduct: "nc3DAir"),
     };
 
     /// <summary>

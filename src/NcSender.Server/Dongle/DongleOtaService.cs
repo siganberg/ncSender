@@ -130,7 +130,7 @@ public sealed class DongleOtaService : IDisposable
             // NcProbe router otherwise holds the cable, which both blocked the
             // wired path and let a wireless flash compete with live USB traffic
             // — that combination reset the dongle mid-transfer.
-            using var _hold = string.Equals(deviceName, "ncprobe", StringComparison.OrdinalIgnoreCase)
+            using var _hold = deviceName.ToLowerInvariant() is "nc3dair" or "ncprobe"
                 ? _ncprobe.SuspendForFlash()
                 : null;
 
@@ -308,7 +308,7 @@ public sealed class DongleOtaService : IDisposable
     // else simply falls through to the dongle.
     private static NcSenderUsbKind KindFor(string deviceName) => deviceName.ToLowerInvariant() switch
     {
-        "ncprobe"       => NcSenderUsbKind.NcProbe,
+        "nc3dair" or "ncprobe" => NcSenderUsbKind.NcProbe,
         "autodustboot" => NcSenderUsbKind.AutoDustBoot,
         // RGB is wireless-only for now: the C3 build exposes no wired OTA path,
         // so there is no cable dialect to prefer. Revisit if it gains one.

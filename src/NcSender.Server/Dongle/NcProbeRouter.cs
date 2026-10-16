@@ -23,7 +23,15 @@ namespace NcSender.Server.Dongle;
 /// </summary>
 public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
 {
-    private const string DeviceName = "ncprobe";
+    // The 3D Wireless Probe's device tag. Builds before the nc3DAir rename
+    // answer as "ncprobe"; both are accepted, and wireless commands go to
+    // whichever name the probe last spoke under.
+    private const string DeviceName = "nc3dair";
+    private const string LegacyDeviceName = "ncprobe";
+    private static bool IsProbeName(string name) =>
+        string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, LegacyDeviceName, StringComparison.OrdinalIgnoreCase);
+    private volatile string _wirelessName = DeviceName;
     private const int ScanIntervalMs = 4000;
     private const int IdentifyTimeoutMs = 800;
     private const int BaudRate = 115200;
@@ -86,14 +94,16 @@ public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
 
     private void OnWirelessMessage(string name, string payload)
     {
-        if (!string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)) return;
+        if (!IsProbeName(name)) return;
+        _wirelessName = name;
         if (UsbActive) return;   // wired wins — swallow wireless while USB is up
         Fire(payload);
     }
 
     private void OnWirelessConnectivity(string name, bool connected)
     {
-        if (!string.Equals(name, DeviceName, StringComparison.OrdinalIgnoreCase)) return;
+        if (!IsProbeName(name)) return;
+        if (connected) _wirelessName = name;
         if (UsbActive) return;
         FireConnectivity(connected);
     }
@@ -163,7 +173,8 @@ public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
                     catch { /* timeout ok */ }
 
                     var text = buf.ToString();
-                    if (text.Contains("$ID:" + DeviceName, StringComparison.Ordinal))
+                    if (text.Contains("$ID:" + DeviceName, StringComparison.Ordinal)
+                        || text.Contains("$ID:" + LegacyDeviceName, StringComparison.Ordinal))
                     {
                         matched = true;
                         break;
@@ -321,10 +332,14 @@ public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
     private void HandleUsbLine(string line)
     {
         // Only protocol frames — the XIAO shares this serial with LOGF debug
-        // lines, so we filter to the "@ncprobe " prefix that sendState() emits.
+        // lines, so we filter to the "@nc3dair " (or older "@ncprobe ") prefix
+        // that sendState() emits.
         const string tag = "@" + DeviceName + " ";
-        if (!line.StartsWith(tag, StringComparison.Ordinal)) return;
-        var payload = line.Substring(tag.Length);
+        const string legacyTag = "@" + LegacyDeviceName + " ";
+        string payload;
+        if (line.StartsWith(tag, StringComparison.Ordinal)) payload = line.Substring(tag.Length);
+        else if (line.StartsWith(legacyTag, StringComparison.Ordinal)) payload = line.Substring(legacyTag.Length);
+        else return;
         if (payload.Length == 0) return;
         Fire(payload);
     }
@@ -363,7 +378,7 @@ public sealed class NcProbeRouter : INcProbeSource, IHostedService, IDisposable
                 CloseUsb("write failed");
             }
         }
-        return _devices.SendAsync(DeviceName, command);
+        return _devices.SendAsync(_wirelessName, command);
     }
 
     private IEnumerable<string> EnumerateCandidatePorts()

@@ -212,7 +212,7 @@ public sealed class AccessoryService
     {
         var kind = peerName.ToLowerInvariant() switch
         {
-            "ncprobe"       => NcSenderUsbKind.NcProbe,
+            "nc3dair" or "ncprobe" => NcSenderUsbKind.NcProbe,
             "autodustboot" => NcSenderUsbKind.AutoDustBoot,
             "pendant"      => NcSenderUsbKind.Pendant,
             "xio"          => NcSenderUsbKind.Xio,
