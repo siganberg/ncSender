@@ -27,6 +27,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         public string? LastMessage;
         public bool WasConnected;
         public long LastBroadcastTicks;
+        public string? LastState;       // the payload's state=<…> token, if it has one
     }
 
     private readonly ILogger<DongleDeviceService> _logger;
@@ -177,15 +178,33 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             try { DeviceConnectivityChanged?.Invoke(name, true); }
             catch (Exception ex) { _logger.LogWarning(ex, "DeviceConnectivityChanged handler threw for '{Name}'", name); }
         }
+        // A change of the device's own state= token (e.g. the dust boot's
+        // moving -> expanded) is relayed straight away, past the throttle, so
+        // a UI following it never misses where a move ended.
+        var state = StateToken(payload);
         long lastBc;
-        lock (st) lastBc = st.LastBroadcastTicks;
-        if (justConnected || now - lastBc >= 1000)
+        bool stateChanged;
+        lock (st)
+        {
+            lastBc = st.LastBroadcastTicks;
+            stateChanged = state is not null && state != st.LastState;
+            if (state is not null) st.LastState = state;
+        }
+        if (justConnected || stateChanged || now - lastBc >= 1000)
         {
             lock (st) st.LastBroadcastTicks = now;
             _ = _broadcaster.Broadcast("dongle:device-message",
                 new DongleDeviceMessage { Name = name, Payload = payload },
                 NcSenderJsonContext.Default.DongleDeviceMessage);
         }
+    }
+
+    // The value of a "state=<…>" token in a status payload, or null.
+    public static string? StateToken(string payload)
+    {
+        foreach (var tok in payload.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            if (tok.StartsWith("state=", StringComparison.Ordinal)) return tok.Substring(6);
+        return null;
     }
 
     // Accept only [A-Za-z0-9_-], 1-32 chars — enough for real device names, rejects garbled framing.

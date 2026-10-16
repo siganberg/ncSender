@@ -835,6 +835,7 @@ import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand } from '../../lib/aux-outputs';
+import { dustBoot, watchDustBoot, dustBootCommand, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
 import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1262,6 +1263,12 @@ const getM64PinNumber = (onCommand: string): number | null => {
 const enabledIOSwitches = computed(() => {
   const enabled: Record<string, any> = {};
   const config = ioSwitchesConfig.value;
+
+  // A paired AutoDustBoot always gets its own switch, first in the list.
+  if (dustBoot.paired) {
+    enabled[DUST_BOOT_OUTPUT_ID] = { label: DUST_BOOT_NAME, on: DUST_BOOT_ON, off: DUST_BOOT_OFF, holdToActivate: false };
+    ioSwitchStates[DUST_BOOT_OUTPUT_ID] = dustBoot.expanded;
+  }
 
   // Support new auxOutputs array format
   if (Array.isArray(config)) {
@@ -4517,6 +4524,15 @@ const toggleIOSwitch = async (switchKey: string) => {
     const switchConfig = enabledIOSwitches.value[switchKey];
     const onCmd = (switchConfig.on || '').toUpperCase();
 
+    // AutoDustBoot: expand to the position saved on the boot, or retract.
+    if (switchKey === DUST_BOOT_OUTPUT_ID) {
+      const command = dustBootCommand(newState);
+      if (!command) { ioSwitchStates[switchKey] = currentState; return; } // no expand position saved yet
+      setDustBootTarget(newState);
+      await api.sendCommandViaWebSocket({ command, displayCommand: command });
+      return;
+    }
+
     // Use grblHAL realtime toggle bytes for flood/mist — bypasses planner buffer
     if (onCmd === 'M8' || onCmd === 'M7') {
       const realtimeByte = onCmd === 'M8' ? 0xA0 : 0xA1;
@@ -4538,6 +4554,7 @@ const toggleIOSwitch = async (switchKey: string) => {
   } catch (error) {
     console.error(`Failed to toggle ${switchKey}:`, error);
     ioSwitchStates[switchKey] = currentState; // Revert on error
+    if (switchKey === DUST_BOOT_OUTPUT_ID) dustBoot.expanded = currentState;
   }
 };
 
@@ -5385,6 +5402,10 @@ onMounted(async () => {
       }
     }
   }, { deep: true });
+
+  // The AutoDustBoot switch follows the boot, wherever a move came from.
+  watchDustBoot();
+  watch(() => dustBoot.expanded, (v) => { ioSwitchStates[DUST_BOOT_OUTPUT_ID] = v; });
 
   // Bridge output switches follow what the bridge reports (out0=… out3=).
   offBridgeMessage = api.on('dongle:device-message', (msg: any) => {

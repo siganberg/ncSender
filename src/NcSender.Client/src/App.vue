@@ -397,6 +397,21 @@
                   </tr>
                 </thead>
                 <tbody>
+                  <tr v-if="dustBoot.paired" class="aux-row--locked" title="Added for your paired AutoDustBoot. It can't be changed.">
+                    <td><ToggleSwitch :modelValue="true" disabled /></td>
+                    <td>{{ DUST_BOOT_NAME }}</td>
+                    <td class="command-cell">Expand</td>
+                    <td class="command-cell">Retract</td>
+                    <td><ToggleSwitch :modelValue="false" disabled /></td>
+                    <td>
+                      <span class="aux-lock" title="Added for your paired AutoDustBoot. It can't be changed.">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                          <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+                        </svg>
+                      </span>
+                    </td>
+                  </tr>
                   <tr v-for="(output, index) in auxOutputs" :key="output.id">
                     <td>
                       <ToggleSwitch v-model="output.enabled" @update:modelValue="saveAuxOutputs" />
@@ -1110,6 +1125,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import AccessoriesDialog from './components/AccessoriesDialog.vue';
 import { api } from './lib/api.js';
+import { dustBoot, watchDustBoot, DUST_BOOT_NAME } from './lib/dust-boot';
 import { BRIDGE_DEVICE, BRIDGE_OUTPUT_COUNT, bridgeOnCommand, bridgeOutputIndex, auxOffCommand } from './lib/aux-outputs';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
@@ -1959,6 +1975,7 @@ onMounted(() => {
   });
 
   refreshBridgePaired();
+  watchDustBoot();
   api.on('dongle:device-changed', refreshBridgePaired);
   api.on('plugin:close-modal', () => {
     showPluginModal.value = false;
@@ -3612,6 +3629,15 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-size: 0.9rem;
   color: var(--color-text-secondary);
   white-space: nowrap;
+}
+
+.aux-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-text-secondary);
 }
 
 .switch-edit-btn {
