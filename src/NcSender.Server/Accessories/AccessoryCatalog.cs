@@ -69,11 +69,12 @@ public static class AccessoryCatalog
             "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_dongle_v", null,
             LicenseProduct: "ncsender-wireless-usb"),
 
-        // Same radio firmware, built for the receiver board (no display, wired
-        // probe/toolsetter outputs). Only one of these two rows is ever
-        // connected: the cabled dongle is matched to a row by its licence product.
+        // The receiver board (no display, wired probe/toolsetter outputs), built
+        // from its own repo (ncsender.wireless-receiver) since 2026-10-16. Only
+        // one of these two rows is ever connected: the cabled dongle is matched
+        // to a row by its licence product.
         new AccessoryDefinition(WirelessReceiverId, "Wireless Receiver",
-            "siganberg/ncsender.wireless-dongle.releases", "firmware_wireless_receiver_v", null,
+            "siganberg/ncsender.wireless-receiver.releases", "firmware_wireless_receiver_v", null,
             Availability: "Coming Soon",
             LicenseProduct: "ncsender.wireless-receiver"),
 
