@@ -56,6 +56,47 @@ public class PluginDialogDispatcher
         }
     }
 
+    /// <summary>
+    /// The same dialog without the wait: returns its id at once and runs
+    /// <paramref name="onResponse"/> when the operator answers. For a plugin's
+    /// background work (a sensor watch), where blocking would hold the plugin
+    /// engine lock and stall every command until the dialog is answered. Not
+    /// called when the dialog is closed with <see cref="Close"/>.
+    /// </summary>
+    public string ShowDialogAsync(string pluginId, string title, string content, WsDialogOptions? options, Action<JsonElement> onResponse)
+    {
+        var dialogId = Guid.NewGuid().ToString("N");
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pending[dialogId] = tcs;
+
+        _logger.LogInformation("Dispatching plugin dialog {DialogId} from {PluginId} (no wait)", dialogId, pluginId);
+
+        _ = tcs.Task.ContinueWith(t =>
+        {
+            _pending.TryRemove(dialogId, out _);
+            if (!t.IsCompletedSuccessfully) return;
+            try { onResponse(t.Result); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Plugin dialog {DialogId} response handler failed", dialogId); }
+        }, TaskScheduler.Default);
+
+        _ = _broadcaster.Broadcast(
+            "plugin:show-dialog",
+            new WsShowDialog(pluginId, title, content, dialogId, options),
+            NcSenderJsonContext.Default.WsShowDialog);
+
+        return dialogId;
+    }
+
+    /// <summary>Close a dialog on every client without an answer.</summary>
+    public void Close(string dialogId)
+    {
+        if (_pending.TryRemove(dialogId, out var tcs)) tcs.TrySetCanceled();
+        _ = _broadcaster.Broadcast(
+            "plugin:close-dialog",
+            new WsCloseDialog(dialogId),
+            NcSenderJsonContext.Default.WsCloseDialog);
+    }
+
     public bool Resolve(string dialogId, JsonElement response)
     {
         if (_pending.TryRemove(dialogId, out var tcs))

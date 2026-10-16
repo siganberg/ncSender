@@ -125,7 +125,13 @@ public class JsPluginEngine : IJsPluginEngine
         lock (_lock)
         {
             // Remove existing engine if reloading
-            _plugins.Remove(pluginId);
+            // A reload replaces the engine: stop the old one's timers, or its
+            // setInterval callbacks keep running beside the new ones.
+            if (_plugins.Remove(pluginId, out var previous))
+            {
+                foreach (var t in previous.Timers.Values) t.Dispose();
+                previous.Timers.Clear();
+            }
 
             try
             {
@@ -721,9 +727,74 @@ public class JsPluginEngine : IJsPluginEngine
             var state = _serverContext.State;
             var obj = new JsObject(engine);
             obj.Set("senderStatus", JsValue.FromObject(engine, state.SenderStatus ?? ""));
+            // The tool the controller reports (its T, i.e. the Tool ID), and
+            // whether it is connected at all.
+            obj.Set("tool", JsValue.FromObject(engine, state.MachineState.Tool));
+            obj.Set("connected", JsValue.FromObject(engine, state.MachineState.Connected));
             obj.Set("jobStatus", state.JobLoaded?.Status is string js
                 ? JsValue.FromObject(engine, js) : JsValue.Null);
             return obj;
+        }));
+
+        // sendCommand(command, displayCommand?) — send one line to the
+        // controller, outside any command batch (e.g. M61 Q0 from a sensor
+        // watch). Does not wait; shown in the terminal like any other line.
+        ctx.Set("sendCommand", new ClrFunction(engine, "sendCommand", (_thisObj, args) =>
+        {
+            var command = args.Length > 0 && args[0].IsString() ? args[0].AsString().Trim() : "";
+            if (command.Length == 0) return JsValue.Undefined;
+            var display = args.Length > 1 && args[1].IsString() ? args[1].AsString() : command;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _cncController.SendCommandAsync(command, new NcSender.Core.Models.CommandOptions
+                    {
+                        DisplayCommand = display,
+                        Meta = new NcSender.Core.Models.CommandMeta { SourceId = $"plugin:{pluginId}" }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "pluginContext.sendCommand failed for {PluginId}: {Command}", pluginId, command);
+                }
+            });
+            return JsValue.Undefined;
+        }));
+
+        // showDialogAsync(title, content, options, callback) — showDialog
+        // without the wait: returns the dialog id, and callback(response)
+        // runs (under the engine lock) once the operator answers. For timers
+        // and other background work, where showDialog would hold the plugin
+        // lock and stall every command until it is answered.
+        // closeDialog(id) — take it down on every client, no callback.
+        ctx.Set("showDialogAsync", new ClrFunction(engine, "showDialogAsync", (_, args) =>
+        {
+            var title = args.Length > 0 && args[0].IsString() ? args[0].AsString() : "";
+            var content = args.Length > 1 && args[1].IsString() ? args[1].AsString() : "";
+            var options = args.Length > 2 ? JsValueToDialogOptions(args[2]) : null;
+            var callback = args.Length > 3 && args[3] is ObjectInstance fn ? (JsValue)fn : null;
+            var dialogId = _dialogs.ShowDialogAsync(pluginId, title, content, options, response =>
+            {
+                if (callback is null) return;
+                lock (_lock)
+                {
+                    // Reloaded or unloaded since: this engine is gone.
+                    if (!_plugins.TryGetValue(pluginId, out var s) || !ReferenceEquals(s.JintEngine, engine)) return;
+                    try { callback.Call(JsonElementToJsValue(engine, response)); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "plugin {PluginId} showDialogAsync callback threw", pluginId);
+                    }
+                }
+            });
+            return new JsString(dialogId);
+        }));
+
+        ctx.Set("closeDialog", new ClrFunction(engine, "closeDialog", (_, args) =>
+        {
+            if (args.Length > 0 && args[0].IsString()) _dialogs.Close(args[0].AsString());
+            return JsValue.Undefined;
         }));
 
         // setInterval(fn, ms) / clearInterval(id) — background timer for
@@ -746,7 +817,8 @@ public class JsPluginEngine : IJsPluginEngine
                 {
                     lock (_lock)
                     {
-                        if (!_plugins.TryGetValue(pluginId, out var s) || !s.Timers.ContainsKey(id))
+                        // Same engine only: timer ids restart at 1 after a reload.
+                        if (!_plugins.TryGetValue(pluginId, out var s) || !ReferenceEquals(s.JintEngine, engine) || !s.Timers.ContainsKey(id))
                             return;
                         try { ((JsValue)fn).Call(); }
                         catch (Exception ex)
