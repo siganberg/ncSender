@@ -1233,3 +1233,16 @@ export const createHomeIndicator = () => {
     return group;
 };
 
+export const setHomeIndicatorOpacity = (group, factor) => {
+    group.traverse((child) => {
+        if (!child.material) return;
+        child.material.userData.baseOpacity ??= child.material.opacity;
+        child.material.opacity = child.material.userData.baseOpacity * factor;
+    });
+};
+
+export const getOverlayOpacity = () => {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--overlay-alpha'));
+    return Number.isFinite(value) ? value / 100 : 1;
+};
+
