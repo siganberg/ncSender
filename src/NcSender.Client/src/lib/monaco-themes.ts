@@ -1,4 +1,9 @@
 import * as monaco from 'monaco-editor';
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+
+self.MonacoEnvironment = {
+  getWorker: () => new EditorWorker()
+};
 
 /**
  * Single shared Monaco theme used by every editor in the app and its plugins.
