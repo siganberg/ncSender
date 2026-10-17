@@ -21,12 +21,14 @@ import { gamepadBindingStore } from './gamepad-binding-store';
 import { getKeyboardManager } from './keyboard-manager';
 import { getGamepadManager } from './gamepad-manager';
 import { useMacroStore } from '../macro/store';
+import { syncPluginActions } from '../plugins/plugin-actions';
 import type { InitData } from '@/lib/init';
 
 export function initializeKeyboardShortcuts(initData?: InitData): void {
   keyBindingStore.bootstrap();
   gamepadBindingStore.bootstrap();
   registerCoreKeyboardActions();
+  syncPluginActions();
   getKeyboardManager();
   getGamepadManager();
 
