@@ -212,6 +212,7 @@ public class SettingsManager : ISettingsManager
             "autoFit": false,
             "accentColor": "#1abc9c",
             "gradientColor": "#34d399",
+            "overlayOpacity": 80,
             "autoClearConsole": true,
             "debugLogging": false,
             "unitsPreference": "metric",
