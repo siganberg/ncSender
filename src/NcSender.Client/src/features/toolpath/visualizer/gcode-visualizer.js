@@ -671,6 +671,7 @@ class GCodeVisualizer {
 
     render(gcodeString) {
         this.clear();
+        this.group.position.set(0, 0, 0);
 
         if (!gcodeString) return;
 
