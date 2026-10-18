@@ -229,6 +229,68 @@ public class GcodeStateAnalyzerTests
     }
 
     [Fact]
+    public void GenerateResumeSequence_TargetLineIsRapid_SkipsPlunge()
+    {
+        var state = new GcodeState
+        {
+            Tool = 3,
+            Units = "G21",
+            Plane = "G17",
+            Wcs = "G54",
+            PositioningMode = "G90",
+            MotionMode = "G1",
+            PositionX = 45.414,
+            PositionY = 53.351,
+            PositionZ = -5,
+            FeedRate = 1000,
+            SpindleState = "M3",
+            SpindleSpeed = 18000
+        };
+
+        var options = new StartFromLineRequest
+        {
+            StartLine = 14344,
+            ApproachHeight = 10,
+            PlungeFeedRate = 500,
+            TargetLineIsRapid = true
+        };
+
+        var sequence = _analyzer.GenerateResumeSequence(state, options);
+
+        // Should NOT lower Z at all — stay at safe retract height
+        Assert.True(sequence.All(s => !s.StartsWith("G0 Z") && !s.StartsWith("G1 Z")));
+    }
+
+    [Fact]
+    public void GenerateResumeSequence_TargetLineIsCut_DoesPlunge()
+    {
+        var state = new GcodeState
+        {
+            MotionMode = "G1",
+            PositionX = 45.414,
+            PositionY = 53.351,
+            PositionZ = -5,
+            FeedRate = 1000,
+            SpindleState = "M3",
+            SpindleSpeed = 18000
+        };
+
+        var options = new StartFromLineRequest
+        {
+            StartLine = 100,
+            ApproachHeight = 10,
+            PlungeFeedRate = 500,
+            TargetLineIsRapid = false
+        };
+
+        var sequence = _analyzer.GenerateResumeSequence(state, options);
+
+        // Should rapid to approach height AND plunge to cutting depth
+        Assert.Contains("G0 Z5.000", sequence);
+        Assert.Contains("G1 Z-5.000 F500", sequence);
+    }
+
+    [Fact]
     public void ParseWords_BasicGcode()
     {
         var words = GcodeStateAnalyzer.ParseWords("G0 X10.5 Y-20.3 Z0.1");
