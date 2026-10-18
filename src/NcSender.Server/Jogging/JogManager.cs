@@ -115,6 +115,7 @@ public class JogManager : IJogManager
         {
             await _controller.SendCommandAsync(cmd.Command, new CommandOptions
             {
+                DisplayCommand = cmd.DisplayCommand,
                 Meta = new CommandMeta { SourceId = "jog", Continuous = true, TimeoutMs = 500 }
             });
         }

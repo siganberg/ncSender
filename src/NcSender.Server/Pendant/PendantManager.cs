@@ -452,6 +452,7 @@ public class PendantManager : IPendantManager
         }
 
         _logger.LogInformation("Wireless USB dongle license activated");
+        await _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
     }
 
     /// <summary>
@@ -2217,15 +2218,29 @@ public class PendantManager : IPendantManager
 
         var jogCommand = $"$J=G21 G91 {axis}{distance} F{feedRate}";
 
-        await _controller.SendCommandAsync(jogCommand, new CommandOptions
+        // Route through CommandProcessor for door safety limiting (same as web UI)
+        var processorContext = new CommandProcessorContext
         {
-            Meta = new CommandMeta
+            MachineState = _serverContext.State.MachineState,
+            Meta = new CommandMeta { SourceId = "usb-pendant", SkipJogCancel = true, Silent = silent }
+        };
+
+        var result = await _commandProcessor.ProcessAsync(jogCommand, processorContext);
+        if (!result.ShouldContinue) return;
+
+        foreach (var cmd in result.Commands)
+        {
+            await _controller.SendCommandAsync(cmd.Command, new CommandOptions
             {
-                SourceId = "usb-pendant",
-                SkipJogCancel = true,
-                Silent = silent
-            }
-        });
+                DisplayCommand = cmd.DisplayCommand,
+                Meta = new CommandMeta
+                {
+                    SourceId = "usb-pendant",
+                    SkipJogCancel = true,
+                    Silent = silent
+                }
+            });
+        }
     }
 
     #endregion
