@@ -987,14 +987,19 @@
   />
 
   <!-- Firmware Flasher Dialog -->
-  <Dialog v-if="showFirmwareFlasher" @close="closeFirmwareFlasher" :show-header="true" size="small" height="680px">
-    <template #header>
-      <h2 class="dialog-title">Flash Firmware</h2>
-    </template>
+  <Dialog v-if="showFirmwareFlasher" @close="closeFirmwareFlasher" :show-header="true" size="small">
+    <template #title>Flash Firmware</template>
     <div class="firmware-flasher-container">
       <div class="flash-warning-box">
-        <strong>Warning</strong>
-        <p>This will disconnect your machine and flash new firmware. Make sure you have the correct firmware file for your controller.</p>
+        <svg class="flash-warning-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <div class="flash-warning-body">
+          <strong>Heads up</strong>
+          <p>Flashing disconnects the machine and replaces the current firmware. Make sure the file matches your controller before continuing.</p>
+        </div>
       </div>
 
       <div class="flash-form-group">
@@ -1084,15 +1089,20 @@
         </div>
       </div>
 
-      <div class="flash-button-row">
-        <button class="flash-btn-secondary" @click="closeFirmwareFlasher">Cancel</button>
-        <button
-          class="flash-btn-primary"
-          @click="startFirmwareFlash"
-          :disabled="firmwareFlashState.isFlashing || !firmwareFlashState.selectedPort || !firmwareFlashState.hexContent"
-        >
-          {{ firmwareFlashState.isFlashing ? 'Flashing...' : 'Flash Firmware' }}
-        </button>
+      <div class="flash-button-row" :class="{ 'flash-button-row--centered': flashIsFinished }">
+        <template v-if="flashIsFinished">
+          <button class="flash-btn-primary" @click="closeFirmwareFlasher">Close</button>
+        </template>
+        <template v-else>
+          <button class="flash-btn-secondary" @click="closeFirmwareFlasher" :disabled="firmwareFlashState.isFlashing">Cancel</button>
+          <button
+            class="flash-btn-primary"
+            @click="startFirmwareFlash"
+            :disabled="firmwareFlashState.isFlashing || !firmwareFlashState.selectedPort || !firmwareFlashState.hexContent"
+          >
+            {{ firmwareFlashState.isFlashing ? 'Flashing...' : 'Flash Firmware' }}
+          </button>
+        </template>
       </div>
     </div>
   </Dialog>
@@ -1231,6 +1241,14 @@ const firmwareFlashState = ref({
   hexFileName: '',
   selectedPort: ''
 });
+
+// Flash reached a terminal state — flip the footer to a single Close
+// button so the operator doesn't stare at Cancel + Flash Firmware after
+// the operation already finished.
+const flashIsFinished = computed(() => (
+  firmwareFlashState.value.status === 'success'
+  || firmwareFlashState.value.status === 'error'
+));
 
 const fetchFlashPorts = async () => {
   try {
@@ -4889,26 +4907,43 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .firmware-flasher-container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 18px;
+  padding: 20px;
 }
 
 .flash-warning-box {
-  padding: 12px;
-  background: rgba(237, 137, 54, 0.1);
-  border: 1px solid rgba(237, 137, 54, 0.3);
-  border-radius: 6px;
-  font-size: 0.85rem;
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, #ed8936 10%, transparent);
+  border: 1px solid color-mix(in srgb, #ed8936 28%, transparent);
+  border-radius: 10px;
+  color: var(--color-text-primary);
+}
+
+.flash-warning-icon {
+  flex-shrink: 0;
   color: #ed8936;
+  margin-top: 1px;
 }
 
-.flash-warning-box strong {
-  display: block;
-  margin-bottom: 4px;
+.flash-warning-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
-.flash-warning-box p {
+.flash-warning-body strong {
+  color: #ed8936;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.flash-warning-body p {
   margin: 0;
+  color: var(--color-text-secondary);
 }
 
 .flash-form-group {
@@ -5129,33 +5164,38 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 .flash-button-row {
   display: flex;
   gap: 12px;
-  justify-content: flex-end;
+  justify-content: center;
   margin-top: 8px;
+}
+
+.flash-button-row--centered {
+  justify-content: center;
 }
 
 .flash-btn-primary,
 .flash-btn-secondary {
-  padding: 10px 20px;
+  min-width: 130px;
+  padding: 10px 24px;
   border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .flash-btn-primary {
-  background: linear-gradient(135deg, #4a90e2, #357abd);
-  color: white;
+  background: var(--gradient-accent, linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 82%, black)));
+  color: var(--color-on-accent, #fff);
 }
 
 .flash-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
 .flash-btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -5167,6 +5207,12 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .flash-btn-secondary:hover:not(:disabled) {
   background: var(--color-surface);
+  border-color: var(--color-accent);
+}
+
+.flash-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .settings-link {
   background: none;
