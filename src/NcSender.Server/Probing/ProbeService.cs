@@ -51,10 +51,18 @@ public class ProbeService : IProbeService
                 var trimmed = cmd.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
-                await _controller.SendCommandAsync(trimmed, new CommandOptions
+                var result = await _controller.SendCommandAsync(trimmed, new CommandOptions
                 {
                     Meta = new CommandMeta { SourceId = "probe" }
                 });
+
+                // A rejected line leaves the routine half done (units, offsets,
+                // the probe's retract), so nothing after it may run: a controller
+                // that keeps executing after an error would move from the wrong
+                // state.
+                if (result.Status == "error")
+                    throw new InvalidOperationException(
+                        $"Probing stopped: the controller rejected '{trimmed}' ({result.ErrorMessage ?? "error"})");
             }
         }
         catch (Exception ex)
