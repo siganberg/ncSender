@@ -110,6 +110,7 @@ public partial class CncController : ICncController
     ];
 
     private volatile bool _isConnecting;
+    internal static TimeSpan TransportOpenTimeout = TimeSpan.FromSeconds(15);
     public bool IsConnected { get; private set; }
     public bool IsTransportOpen => _transport is not null;
     public string ConnectionStatus { get; private set; } = "disconnected";
@@ -178,13 +179,21 @@ public partial class CncController : ICncController
 
             try
             {
-                await transport.ConnectAsync(ct);
+                // Opening a serial port is synchronous and can block for good
+                // on a USB device whose firmware has hung. Without a bound,
+                // _isConnecting stayed set and every later connect was refused
+                // until ncSender restarted.
+                var open = Task.Run(() => transport.ConnectAsync(ct), ct);
+                if (await Task.WhenAny(open, Task.Delay(TransportOpenTimeout, ct)) != open)
+                    throw new TimeoutException($"Opening the connection did not finish within {TransportOpenTimeout.TotalSeconds:0} s");
+                await open;
             }
             catch (Exception ex)
             {
                 transport.LineReceived -= HandleIncomingData;
                 transport.ConnectionLost -= OnConnectionLost;
-                await transport.DisposeAsync();
+                // A transport stuck in its open call can block its dispose too.
+                _ = transport.DisposeAsync().AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
                 HandleConnectionError(ex);
                 throw;
             }
@@ -443,7 +452,7 @@ public partial class CncController : ICncController
                         else if (!arrived && _dongleDevices is not null) toWrite = dw.PauseLine() + "\n";
                     }
 
-                    await _transport.WriteAsync(toWrite, ct);
+                    await WriteTrackedAsync(toWrite, entry, ct);
 
                     LogCommandSent(entry.RawCommand, isRealTime: false, entry.Meta);
 
@@ -452,6 +461,7 @@ public partial class CncController : ICncController
                     // UI's busy state clears instead of spinning until reload.
                     if (_activeProtocol?.IsFireAndForget(entry.RawCommand) == true)
                     {
+                        DropReplySlots(entry);
                         var result = new CommandResult
                         {
                             Id = entry.Id,
@@ -488,6 +498,7 @@ public partial class CncController : ICncController
                         var msg = $"No 'ok' from controller within {timeout!.Value.TotalSeconds:0.##}s for: {entry.RawCommand}";
                         _logger.LogWarning(msg);
                         var err = new TimeoutException(msg);
+                        DropReplySlots(entry);
                         entry.Tcs.TrySetException(err);
                         EmitCommandAck(entry, "error", msg);
                         // Continue draining the queue — don't soft-reset. If the
@@ -587,6 +598,10 @@ public partial class CncController : ICncController
                 || cleanCommand.Contains('[')
                 || cleanCommand.Contains("NCSENDER_PAUSE", StringComparison.OrdinalIgnoreCase);
             commandToSend = (preserveCase ? cleanCommand : cleanCommand.ToUpperInvariant()) + "\n";
+            // The controller answers each line end, so a CR/LF pair would earn
+            // two replies; keep one terminator per line for the reply count.
+            if (commandToSend.Contains('\r'))
+                commandToSend = commandToSend.Replace("\r\n", "\n").Replace('\r', '\n');
         }
 
         // Track pending full status report request (0x87) from user
@@ -615,7 +630,7 @@ public partial class CncController : ICncController
             {
                 // Bypasses the queue like the command itself; the empty line's
                 // "ok" is unmatched, same as the immediate command's own.
-                await _transport!.WriteAsync("\n");
+                await WriteTrackedAsync("\n", null);
             }
             return await SendImmediateCommand(cleanCommand, commandToSend, commandId, displayCommand, meta);
         }
@@ -822,7 +837,7 @@ public partial class CncController : ICncController
 
         try
         {
-            await _transport!.WriteAsync(commandToSend);
+            await WriteTrackedAsync(commandToSend, null);
             LogCommandSent(command, isRealTime: false, meta);
 
             var ackResult = new CommandResult
@@ -893,6 +908,7 @@ public partial class CncController : ICncController
 
     public void FlushQueue(string reason)
     {
+        lock (_replyLock) _replySlots.Clear();
         ResetDongleElse();
         ResetGateAbort();
         // 1. Flush active command
@@ -1276,13 +1292,8 @@ public partial class CncController : ICncController
 
     private void HandleCommandOk()
     {
-        CommandEntry? cmd;
-        lock (_activeLock)
-        {
-            cmd = _activeCommand;
-        }
-
-        if (cmd is null)
+        var cmd = TakeReplyOwner(out var settles);
+        if (cmd is null || !settles)
             return;
 
         _pendingCommands.TryRemove(cmd.Id, out _);
@@ -1350,14 +1361,12 @@ public partial class CncController : ICncController
 
     private void HandleCommandError(string message, int? code)
     {
-        CommandEntry? cmd;
-        lock (_activeLock)
-        {
-            cmd = _activeCommand;
-        }
-
+        var cmd = TakeReplyOwner(out _, isError: true);
         if (cmd is null)
+        {
+            _logger.LogWarning("Controller error for a line sent outside the queue: {Message}", message);
             return;
+        }
 
         _pendingCommands.TryRemove(cmd.Id, out _);
 
@@ -1873,8 +1882,94 @@ public partial class CncController : ICncController
 
     #endregion
 
+    // One slot per line written, in write order: the controller answers every
+    // line (empty ones too) with exactly one ok/error, first in first out. A
+    // multi-line entry (a plugin's joined sequence) owns one slot per line and
+    // completes on its last reply; a line written outside the queue (coolant/aux
+    // bypass, its clear line) owns a null slot whose reply is absorbed. Without
+    // this the extra replies completed the commands queued after them early.
+    private readonly object _replyLock = new();
+    private readonly LinkedList<CommandEntry?> _replySlots = new();
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+    private async Task WriteTrackedAsync(string data, CommandEntry? owner, CancellationToken ct = default)
+    {
+        var lines = 0;
+        foreach (var c in data) if (c == '\n') lines++;
+        await _writeGate.WaitAsync(ct);
+        try
+        {
+            lock (_replyLock)
+            {
+                for (var i = 0; i < lines; i++) _replySlots.AddLast(owner);
+                if (owner is not null) owner.RepliesLeft = lines;
+            }
+            try
+            {
+                await _transport!.WriteAsync(data, ct);
+            }
+            catch
+            {
+                lock (_replyLock)
+                    for (var i = 0; i < lines && _replySlots.Count > 0; i++) _replySlots.RemoveLast();
+                throw;
+            }
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private void DropReplySlots(CommandEntry entry)
+    {
+        lock (_replyLock)
+        {
+            for (var node = _replySlots.First; node is not null;)
+            {
+                var next = node.Next;
+                if (ReferenceEquals(node.Value, entry)) _replySlots.Remove(node);
+                node = next;
+            }
+        }
+    }
+
+    // The entry a reply belongs to. `settles` is true when this reply finishes
+    // it: its last line, or the first error. Null means the reply belongs to
+    // nothing waiting (a bypass line, or an entry already settled). With no
+    // slots recorded (nothing written since a flush) the active entry takes it,
+    // as before.
+    private CommandEntry? TakeReplyOwner(out bool settles, bool isError = false)
+    {
+        settles = false;
+        CommandEntry? owner;
+        lock (_replyLock)
+        {
+            if (_replySlots.First is { } head)
+            {
+                _replySlots.RemoveFirst();
+                owner = head.Value;
+                if (owner is null || owner.Settled) return null;
+                owner.RepliesLeft--;
+                if (!isError && owner.RepliesLeft > 0) return owner;
+                owner.Settled = true;
+                settles = true;
+                return owner;
+            }
+        }
+        lock (_activeLock) owner = _activeCommand;
+        if (owner is null || owner.Settled) return null;
+        owner.Settled = true;
+        settles = true;
+        return owner;
+    }
+
     private class CommandEntry
     {
+        // Replies still owed for this entry's lines, and whether an ok/error
+        // has already completed it (see _replySlots).
+        public int RepliesLeft { get; set; }
+        public bool Settled { get; set; }
         public string Id { get; init; } = "";
         public string RawCommand { get; init; } = "";
         public string CommandToWrite { get; init; } = "";
