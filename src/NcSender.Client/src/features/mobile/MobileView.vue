@@ -228,10 +228,7 @@ const axisControlsDisabled = computed(() =>
   (senderStatus.value !== 'idle' && !senderStatus.value.includes('jog'))
 );
 
-const coolantDisabled = computed(() =>
-  viewDisabled.value ||
-  (senderStatus.value !== 'idle' && !senderStatus.value.includes('jog'))
-);
+const coolantDisabled = computed(() => viewDisabled.value);
 
 // Track window dimensions for orientation detection
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 375);
