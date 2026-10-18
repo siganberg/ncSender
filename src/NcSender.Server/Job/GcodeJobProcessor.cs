@@ -187,7 +187,8 @@ internal class GcodeJobProcessor
                 MachineState = _context.State.MachineState,
                 LineNumber = fileLineNumber,
                 Filename = job.Filename,
-                NextXYPosition = nextXY
+                NextXYPosition = nextXY,
+                Meta = new CommandMeta { SourceId = "job" }
             };
 
             var result = await _commandProcessor.ProcessAsync(numbered, processorContext);
