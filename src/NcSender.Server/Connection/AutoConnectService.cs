@@ -162,7 +162,13 @@ public class AutoConnectService : BackgroundService
 
             if (!_controller.IsConnected)
             {
-                _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
+                // Two different failures: the device never answered, or it
+                // answered and then the link dropped (e.g. firmware hung after
+                // boot). The old message blamed the greeting for both.
+                if (_controller.IsTransportOpen)
+                    _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
+                else
+                    _logger.LogInformation("Connection to {Port} dropped before the controller was ready, trying next port", port);
                 _controller.Disconnect();
             }
         }
