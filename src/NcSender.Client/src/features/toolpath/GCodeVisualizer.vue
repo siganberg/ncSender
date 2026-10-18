@@ -3560,9 +3560,10 @@ const clearFile = async () => {
   try {
     // Clear on server and notify all clients
     await api.clearGCode();
+    // Also clear locally immediately (don't rely solely on server broadcast)
+    handleGCodeClear();
   } catch (error) {
     console.error('Error clearing G-code:', error);
-    // Fallback to local clear if API fails
     handleGCodeClear();
   }
 };
@@ -4126,11 +4127,17 @@ const updatePointerOpacity = () => {
   if (!cuttingPointer) return;
 
   const opacity = props.view === 'top' ? 0.3 : 1.0;
-  cuttingPointer.traverse((child) => {
-    if (child.isMesh && child.material) {
-      child.material.opacity = opacity;
-    }
-  });
+  if (cuttingPointer.userData?.setOpacity) {
+    // The setter stores the value so the async OBJ load can apply it
+    // later (otherwise the Top-view fade is lost after a page refresh).
+    cuttingPointer.userData.setOpacity(opacity);
+  } else {
+    cuttingPointer.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.opacity = opacity;
+      }
+    });
+  }
 };
 
 // Watch for view changes
@@ -5559,7 +5566,8 @@ onMounted(async () => {
       try {
         const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
         const gcodeData = await getGCodeFromIDB();
-        if (gcodeData?.content) {
+        // Only load if IDB has matching filename (not stale from a previous session)
+        if (gcodeData?.content && gcodeData.filename === newValue) {
           await handleGCodeUpdate({
             filename: gcodeData.filename,
             content: gcodeData.content,
