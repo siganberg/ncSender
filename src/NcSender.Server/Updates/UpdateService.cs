@@ -227,25 +227,32 @@ public class UpdateService : IUpdateService
 
         var totalBytes = response.Content.Headers.ContentLength ?? 0;
         await using var contentStream = await response.Content.ReadAsStreamAsync();
-        await using var fileStream = File.Create(tempPath);
 
-        var buffer = new byte[81920];
-        long bytesRead = 0;
-        int read;
-
-        while ((read = await contentStream.ReadAsync(buffer)) > 0)
+        // Scope the file handle to this block so it is flushed and closed
+        // before the install step below can open the downloaded file.
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read));
-            bytesRead += read;
+            await using var fileStream = File.Create(tempPath);
 
-            if (totalBytes > 0)
+            var buffer = new byte[81920];
+            long bytesRead = 0;
+            int read;
+
+            while ((read = await contentStream.ReadAsync(buffer)) > 0)
             {
-                _status = new UpdateStatus
+                await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                bytesRead += read;
+
+                if (totalBytes > 0)
                 {
-                    Phase = "downloading",
-                    DownloadPercent = (double)bytesRead / totalBytes * 100
-                };
+                    _status = new UpdateStatus
+                    {
+                        Phase = "downloading",
+                        DownloadPercent = (double)bytesRead / totalBytes * 100
+                    };
+                }
             }
+
+            await fileStream.FlushAsync();
         }
 
         _downloadedAssetPath = tempPath;
