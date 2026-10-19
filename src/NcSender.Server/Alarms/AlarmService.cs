@@ -36,6 +36,8 @@ public class AlarmService : IAlarmService
 
     public string? GetAlarm(int id)
     {
+        if (_controller.ActiveProtocol?.StaticAlarmDescriptions is { } fixedList)
+            return fixedList.TryGetValue(id.ToString(), out var known) ? known : null;
         EnsureLoaded();
         if (_alarms is not null && _alarms.TryGetValue(id.ToString(), out var desc))
             return desc;
@@ -62,7 +64,7 @@ public class AlarmService : IAlarmService
             return;
 
         var protocol = _controller.ActiveProtocol;
-        if (protocol is null)
+        if (protocol is null || protocol.StaticAlarmDescriptions is not null)
             return;
 
         try

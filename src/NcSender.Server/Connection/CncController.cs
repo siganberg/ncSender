@@ -55,6 +55,10 @@ public partial class CncController : ICncController
 
     private IConnectionTransport? _transport;
     private IProtocolHandler? _activeProtocol;
+    // Set for controllers that can't run lines as written (classic Grbl).
+    private IGcodeTranslator? _translator;
+    // Completed by the next status report (see TranslationResult.Sync "?").
+    private TaskCompletionSource? _statusWaiter;
     private PeriodicTimer? _pollTimer;
     private CancellationTokenSource? _pollCts;
     private Task? _pollTask;
@@ -233,6 +237,7 @@ public partial class CncController : ICncController
         _hasReceivedGreeting = false;
         _greetingMessage = null;
         _activeProtocol = null;
+        _translator = null;
         EmitConnectionStatus("disconnected", false);
     }
 
@@ -252,6 +257,7 @@ public partial class CncController : ICncController
         _hasReceivedGreeting = false;
         _greetingMessage = null;
         _activeProtocol = null;
+        _translator = null;
 
         EmitConnectionStatus("verifying", false);
 
@@ -314,6 +320,7 @@ public partial class CncController : ICncController
         _hasReceivedGreeting = false;
         _greetingMessage = null;
         _activeProtocol = null;
+        _translator = null;
 
         StopPolling();
         FlushQueue("connection-lost");
@@ -344,6 +351,7 @@ public partial class CncController : ICncController
         _hasReceivedGreeting = false;
         _greetingMessage = null;
         _activeProtocol = null;
+        _translator = null;
         FlushQueue("connection-error");
         EmitConnectionStatus("error", false);
     }
@@ -450,6 +458,23 @@ public partial class CncController : ICncController
                         // the wait line goes out as the no-op comment it is.
                         if (dw.Else) _dongleElseWaitFailed = !arrived;
                         else if (!arrived && _dongleDevices is not null) toWrite = dw.PauseLine() + "\n";
+                    }
+
+                    if (_translator is { } translator)
+                    {
+                        var lines = SplitLines(toWrite);
+                        var first = lines.Length == 1 ? translator.Translate(lines[0]) : null;
+                        // The common case, one line that goes out as one line, keeps
+                        // the normal path (jog timeouts, fire-and-forget).
+                        if (first is { Kind: TranslationKind.Run, Steps: [{ Write: { } only, Message: null }] })
+                        {
+                            toWrite = only + "\n";
+                        }
+                        else
+                        {
+                            await RunTranslatedAsync(entry, lines, first, translator, ct);
+                            continue;
+                        }
                     }
 
                     await WriteTrackedAsync(toWrite, entry, ct);
@@ -626,6 +651,14 @@ public partial class CncController : ICncController
         // Coolant/aux commands bypass the queue — send immediately so they work during job execution
         if (IsCoolantOrAuxCommand(normalizedCommand: cleanCommand.ToUpperInvariant()))
         {
+            // Out of band too: the translator still decides what may go out.
+            if (_translator?.Translate(cleanCommand) is { } translated)
+            {
+                if (translated.Kind == TranslationKind.Fail)
+                    return RejectUnsent(cleanCommand, commandId, displayCommand, meta, $"{translated.Error} ({cleanCommand})");
+                if (translated is { Kind: TranslationKind.Run, Steps: [{ Write: { } only, Message: null }] })
+                    commandToSend = only + "\n";
+            }
             if (NeedsErrorStateClear(meta, cleanCommand))
             {
                 // Bypasses the queue like the command itself; the empty line's
@@ -817,6 +850,35 @@ public partial class CncController : ICncController
             || normalizedCommand.StartsWith("M65", StringComparison.Ordinal);
     }
 
+    // A command the controller can't run, answered without sending it.
+    private CommandResult RejectUnsent(string command, string commandId, string? displayCommand, CommandMeta? meta, string? error)
+    {
+        var normalized = command.ToUpperInvariant();
+        var pending = new CommandResult
+        {
+            Id = commandId,
+            Command = normalized,
+            DisplayCommand = displayCommand ?? command,
+            Meta = meta,
+            Status = "pending",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        CommandQueued?.Invoke(pending);
+        _logger.LogWarning("{Protocol} can't run '{Command}': {Reason}", _activeProtocol?.Name, command, error);
+        var result = new CommandResult
+        {
+            Id = commandId,
+            Command = normalized,
+            DisplayCommand = displayCommand ?? command,
+            Meta = meta,
+            Status = "error",
+            ErrorMessage = error,
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        CommandAcknowledged?.Invoke(result);
+        return result;
+    }
+
     private async Task<CommandResult> SendImmediateCommand(string command, string commandToSend, string commandId, string? displayCommand, CommandMeta? meta)
     {
         var display = displayCommand ?? command;
@@ -909,6 +971,8 @@ public partial class CncController : ICncController
     public void FlushQueue(string reason)
     {
         lock (_replyLock) _replySlots.Clear();
+        // Whatever o-word block was running is abandoned with the queue.
+        _translator?.OnLineFailed();
         ResetDongleElse();
         ResetGateAbort();
         // 1. Flush active command
@@ -1071,6 +1135,12 @@ public partial class CncController : ICncController
         // states and a crash; echoing them flooded the terminal. Drop them.
         if (IsControllerNoise(trimmedData)) return;
 
+        // Status reports too: the translator tells a report sent after the
+        // last reply from an older one.
+        _translator?.ObserveData(trimmedData);
+        if (_activeProtocol?.RedirectProtocol(trimmedData) is { } redirect)
+            SwitchProtocol(redirect);
+
         // Status report (<...>)
         if (trimmedData.EndsWith('>'))
         {
@@ -1101,6 +1171,7 @@ public partial class CncController : ICncController
 
             _rawStatusData = trimmedData;
             ParseStatusReport(trimmedData);
+            Interlocked.Exchange(ref _statusWaiter, null)?.TrySetResult();
 
             // Emit raw status to terminal for pending 0x87 full status request
             if (_pendingFullStatusSourceId is not null)
@@ -1230,6 +1301,8 @@ public partial class CncController : ICncController
             // Try greeting detection — selects protocol handler and starts polling
             if (!_hasReceivedGreeting)
                 TryDetectGreeting(trimmedData);
+            else if (_translator is not null && _activeProtocol?.MatchesGreeting(trimmedData) == true)
+                _translator.Reset();
 
             // Delegate to active protocol handler for controller-specific messages
             if (_activeProtocol is not null && _activeProtocol.TryHandleData(trimmedData, _lastStatus, out var stateChanged))
@@ -1270,6 +1343,7 @@ public partial class CncController : ICncController
             _hasReceivedGreeting = true;
             _greetingMessage = line;
             _activeProtocol = handler;
+            _translator = handler.CreateTranslator(() => _lastStatus);
             _verificationCts?.Cancel();
             _logger.LogInformation("Detected {Protocol} controller: {Greeting}", handler.Name, line);
 
@@ -1290,13 +1364,27 @@ public partial class CncController : ICncController
         }
     }
 
+    // The greeting picked one protocol and a later line proved it is another
+    // (see IProtocolHandler.RedirectProtocol). Its init commands still run.
+    private void SwitchProtocol(string cacheKey)
+    {
+        var next = Array.Find(_protocolHandlers, h => h.CacheKey == cacheKey);
+        if (next is null || ReferenceEquals(next, _activeProtocol)) return;
+        _logger.LogInformation("Controller greeted as {Old} but is {New}; switching", _activeProtocol?.Name, next.Name);
+        _activeProtocol = next;
+        _translator = next.CreateTranslator(() => _lastStatus);
+        var systemMeta = new CommandOptions { Meta = new CommandMeta { SourceId = "system" } };
+        foreach (var cmd in next.GetInitCommands())
+            _ = SendCommandAsync(cmd, systemMeta);
+        if (next.FullStatusRequestByte is { } statusByte && _transport is { } transport)
+            _ = Task.Run(async () => { try { await transport.WriteRawAsync([statusByte]); } catch { /* ignore */ } });
+    }
+
     private void HandleCommandOk()
     {
         var cmd = TakeReplyOwner(out var settles);
         if (cmd is null || !settles)
             return;
-
-        _pendingCommands.TryRemove(cmd.Id, out _);
 
         var result = new CommandResult
         {
@@ -1309,7 +1397,12 @@ public partial class CncController : ICncController
         };
 
         cmd.Tcs.TrySetResult(result);
-        CommandAcknowledged?.Invoke(result);
+        // A translated line is reported through the command it came from.
+        if (!cmd.Internal)
+        {
+            _pendingCommands.TryRemove(cmd.Id, out _);
+            CommandAcknowledged?.Invoke(result);
+        }
 
         // Track $X unlock
         if (string.Equals(cmd.RawCommand, "$X", StringComparison.OrdinalIgnoreCase))
@@ -1368,8 +1461,6 @@ public partial class CncController : ICncController
             return;
         }
 
-        _pendingCommands.TryRemove(cmd.Id, out _);
-
         var result = new CommandResult
         {
             Id = cmd.Id,
@@ -1383,7 +1474,13 @@ public partial class CncController : ICncController
         };
 
         cmd.Tcs.TrySetResult(result);
-        CommandAcknowledged?.Invoke(result);
+        if (!cmd.Internal)
+        {
+            _pendingCommands.TryRemove(cmd.Id, out _);
+            CommandAcknowledged?.Invoke(result);
+            // The translator already counted this line's modal words.
+            _translator?.OnLineFailed();
+        }
     }
 
     private string? GetActiveSourceId()
@@ -1970,6 +2067,9 @@ public partial class CncController : ICncController
         // has already completed it (see _replySlots).
         public int RepliesLeft { get; set; }
         public bool Settled { get; set; }
+        // One line of a translated command (see RunTranslatedAsync): its reply
+        // settles only this line, the command reports once at the end.
+        public bool Internal { get; init; }
         public string Id { get; init; } = "";
         public string RawCommand { get; init; } = "";
         public string CommandToWrite { get; init; } = "";
@@ -2075,6 +2175,131 @@ public partial class CncController : ICncController
     {
         _dongleElseBlock = DongleElseBlock.None;
         _dongleElseWaitFailed = false;
+    }
+
+    private static string[] SplitLines(string data)
+    {
+        var lines = data.Replace("\r", "").Split('\n');
+        // The terminator of the last line leaves one empty entry behind.
+        return lines.Length > 1 && lines[^1].Length == 0 ? lines[..^1] : lines;
+    }
+
+    // Runs a command line by line through the translator: each line is
+    // translated only after the previous one was answered, so expressions see
+    // the probe result or offset that line produced. The command completes
+    // once, after its last line, or fails at the first line that can't run.
+    private async Task RunTranslatedAsync(CommandEntry entry, string[] lines, TranslationResult? first,
+        IGcodeTranslator translator, CancellationToken ct)
+    {
+        var index = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var result = i == 0 && first is not null ? first : translator.Translate(lines[i]);
+            for (var syncs = 0; result.Kind == TranslationKind.Sync; syncs++)
+            {
+                if (syncs >= 3)
+                {
+                    result = TranslationResult.Failed("the controller's state could not be read");
+                    break;
+                }
+                if (result.SyncCommand == "?")
+                {
+                    if (!await RequestStatusAsync(ct))
+                    {
+                        FailTranslated(entry, translator, "no status report from the controller", null);
+                        return;
+                    }
+                    result = translator.Translate(lines[i]);
+                    continue;
+                }
+                var synced = await SendTranslatedLineAsync(entry, result.SyncCommand!, ++index, ct);
+                if (synced is null) return;
+                if (synced.Status != "success")
+                {
+                    FailTranslated(entry, translator, synced.ErrorMessage, synced.ErrorCode);
+                    return;
+                }
+                result = translator.Translate(lines[i]);
+            }
+
+            if (result.Kind == TranslationKind.Fail)
+            {
+                _logger.LogWarning("{Protocol} can't run '{Line}': {Reason}", _activeProtocol?.Name, lines[i].Trim(), result.Error);
+                FailTranslated(entry, translator, $"{result.Error} ({lines[i].Trim()})", null);
+                return;
+            }
+
+            foreach (var step in result.Steps)
+            {
+                if (step.Message is { } data)
+                {
+                    // As if the controller had echoed it.
+                    HandleIncomingData(data);
+                    continue;
+                }
+                var reply = await SendTranslatedLineAsync(entry, step.Write!, ++index, ct);
+                if (reply is null) return;
+                if (reply.Status != "success")
+                {
+                    FailTranslated(entry, translator, reply.ErrorMessage, reply.ErrorCode);
+                    return;
+                }
+            }
+        }
+        if (!entry.Tcs.Task.IsCompleted) CompleteUnsent(entry);
+    }
+
+    // Asks for a status report and waits until it has been parsed.
+    private async Task<bool> RequestStatusAsync(CancellationToken ct)
+    {
+        var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Interlocked.Exchange(ref _statusWaiter, waiter);
+        await _transport!.WriteRawAsync([(byte)'?'], ct);
+        var done = await Task.WhenAny(waiter.Task, Task.Delay(TimeSpan.FromSeconds(2), ct));
+        return done == waiter.Task;
+    }
+
+    // Null when the command was flushed while this line was out.
+    private async Task<CommandResult?> SendTranslatedLineAsync(CommandEntry parent, string line, int index, CancellationToken ct)
+    {
+        var sub = new CommandEntry
+        {
+            Id = $"{parent.Id}#{index}",
+            RawCommand = line,
+            CommandToWrite = line + "\n",
+            Meta = parent.Meta,
+            DisplayCommand = line,
+            Internal = true,
+            Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        await WriteTrackedAsync(sub.CommandToWrite, sub, ct);
+        LogCommandSent(line, isRealTime: false, parent.Meta);
+
+        var done = await Task.WhenAny(sub.Tcs.Task, parent.Tcs.Task).WaitAsync(ct);
+        if (done != sub.Tcs.Task)
+        {
+            DropReplySlots(sub);
+            return null;
+        }
+        return await sub.Tcs.Task;
+    }
+
+    private void FailTranslated(CommandEntry entry, IGcodeTranslator translator, string? message, int? code)
+    {
+        translator.OnLineFailed();
+        var result = new CommandResult
+        {
+            Id = entry.Id,
+            Command = entry.RawCommand,
+            DisplayCommand = entry.DisplayCommand,
+            Meta = entry.Meta,
+            Status = "error",
+            ErrorMessage = message,
+            ErrorCode = code,
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        entry.Tcs.TrySetResult(result);
+        CommandAcknowledged?.Invoke(result);
     }
 
     // Answer a line the controller never sees, as if it had said "ok".

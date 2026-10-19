@@ -107,4 +107,26 @@ public interface IProtocolHandler
     /// completes the command immediately instead of waiting forever.
     /// </summary>
     bool IsFireAndForget(string command) => false;
+
+    /// <summary>
+    /// A translator every queued line passes through just before it is written,
+    /// for controllers that can't run what the rest of ncSender sends (classic
+    /// Grbl has no expressions, parameters, o-words or M6). Null means lines go
+    /// out as they are, which is what grblHAL and FluidNC get.
+    /// </summary>
+    IGcodeTranslator? CreateTranslator(Func<MachineState> state) => null;
+
+    /// <summary>
+    /// Alarm descriptions for a controller that can't list its own (no $EA).
+    /// Null means they are fetched with <see cref="AlarmFetchCommand"/>.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? StaticAlarmDescriptions => null;
+
+    /// <summary>
+    /// When a data line proves the controller is really another protocol (a
+    /// grblHAL build announcing itself with the classic Grbl greeting answers
+    /// $I with [NEWOPT:...]), the <see cref="CacheKey"/> of the protocol to
+    /// switch to. Null keeps this one.
+    /// </summary>
+    string? RedirectProtocol(string line) => null;
 }
