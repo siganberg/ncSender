@@ -82,6 +82,10 @@
                      : selected.licensed === false ? 'Not activated' : '—' }}
                 </div>
               </div>
+              <div class="acc-field" v-if="selected.connected && selected.batteryState">
+                <label>Battery</label>
+                <div class="acc-value" :class="{ 'acc-value--low': selected.batteryLow }">{{ batteryText(selected) }}</div>
+              </div>
               <div class="acc-field acc-field--wide" v-if="selected.deviceId">
                 <label>Device ID</label>
                 <button type="button" class="acc-copy" :title="selected.deviceId"
@@ -303,6 +307,8 @@ interface Accessory {
   pluginName?: string | null;
   assetPrefix?: string;
   paired?: boolean;
+  batteryState?: 'battery' | 'charging' | 'full' | 'usb' | null;
+  batteryPercent?: number | null; batteryMv?: number | null; batteryLow?: boolean;
 }
 
 const loading = ref(true);
@@ -430,6 +436,16 @@ function dotClass(a: Accessory) {
   if (a.connected) return 'dot--on';
   return a.paired ? 'dot--idle' : '';
 }
+// "20% · 3.65 V", "Charging · 72% · 3.95 V", "Full · 4.18 V" or "Charging / USB".
+function batteryText(a: Accessory) {
+  if (a.batteryState === 'usb') return 'Charging / USB';
+  const volts = `${((a.batteryMv ?? 0) / 1000).toFixed(2)} V`;
+  if (a.batteryState === 'full') return `Full · ${volts}`;
+  const level = `${a.batteryPercent}% · ${volts}`;
+  if (a.batteryState === 'charging') return `Charging · ${level}`;
+  return a.batteryLow ? `${level} · Low` : level;
+}
+
 function nameFor(id: string | null) {
   return accessories.value.find(a => a.id === id)?.name ?? id ?? '';
 }
@@ -675,6 +691,17 @@ onMounted(() => {
   const track = (ev: string, fn: (d: any) => void) => { offs.push(api.on(ev, fn)); };
 
   track('dongle:device-changed', refreshSoon);
+  // A battery heartbeat ("0:H:12:B3648:P") changes its B field when the
+  // device re-measures, about every 30 s; that is when the level can move.
+  const lastBattery: Record<string, string> = {};
+  track('dongle:device-message', (d: any) => {
+    const fields = String(d?.payload ?? '').trim().split(':');
+    if (fields.length < 5 || fields[1] !== 'H') return;
+    const b = fields[fields.length - 2];
+    if (!b.startsWith('B') || lastBattery[d.name] === b) return;
+    lastBattery[d.name] = b;
+    refreshSoon();
+  });
   track('pendant:status-changed', refreshSoon);
 
   // The cabled radio reports progress as "wireless-usb" whichever board it
@@ -876,6 +903,7 @@ onUnmounted(() => {
 .acc-field label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; color: var(--color-text-secondary); text-transform: uppercase; }
 .acc-value { font-size: 0.95rem; color: var(--color-text-primary); line-height: 1.3; }
 .acc-value--mono { font-family: var(--font-mono, monospace); font-size: 0.8rem; }
+.acc-value--low { color: #e0a030; }
 .acc-field--wide { grid-column: 1 / -1; }
 
 /* The id is long, opaque and the one thing here anyone needs to paste

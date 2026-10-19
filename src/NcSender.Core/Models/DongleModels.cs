@@ -35,6 +35,14 @@ public class DongleDeviceInfo
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Transport { get; set; }
+
+    /// <summary>Smoothed cell voltage from the device's heartbeat, for battery-powered devices.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BatteryMv { get; set; }
+
+    /// <summary>"battery", "charging" (BatteryMv is charge-inflated) or "usb" (a cable, no reading).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BatteryState { get; set; }
 }
 
 /// <summary>Body for POST /api/dongle/devices/{name}/send.</summary>
