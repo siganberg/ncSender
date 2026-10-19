@@ -30,6 +30,7 @@ public class ProtocolCapabilityTests
     {
         Assert.Null(p.CreateTranslator(() => new MachineState()));
         Assert.Null(p.StaticAlarmDescriptions);
+        Assert.Null(p.StaticSettingDefinitions);
         Assert.Null(p.RedirectProtocol("[NEWOPT:ENUMS]"));
     }
 
@@ -42,5 +43,27 @@ public class ProtocolCapabilityTests
         Assert.False(p.SupportsOverrideControl);
         Assert.Equal("grblhal", p.RedirectProtocol("[NEWOPT:ENUMS]"));
         Assert.Null(p.RedirectProtocol("[OPT:V,15,128]"));
+    }
+
+    // Only FluidNC keeps a config.yaml for the Config tab; Grbl can't list
+    // its settings either, but gets the Firmware tab from its fixed list.
+    [Fact]
+    public void Only_FluidNc_has_a_config_file()
+    {
+        Assert.True(((IProtocolHandler)new FluidNcProtocol()).SupportsConfigFile);
+        Assert.False(((IProtocolHandler)new GrblProtocol()).SupportsConfigFile);
+        Assert.False(((IProtocolHandler)new GrblHalProtocol()).SupportsConfigFile);
+    }
+
+    [Fact]
+    public void Grbl_describes_its_settings()
+    {
+        var defs = ((IProtocolHandler)new GrblProtocol()).StaticSettingDefinitions!;
+        Assert.Equal("Homing cycle enable", defs[22].Name);
+        Assert.Equal(0, defs[22].DataType);
+        Assert.Equal("X,Y,Z", defs[23].Format);
+        Assert.Equal("step/mm", defs[100].Unit);
+        Assert.Equal("Z-axis maximum travel", defs[132].Name);
+        Assert.All(defs.Values, d => Assert.NotNull(d.Group));
     }
 }

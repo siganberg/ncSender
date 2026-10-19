@@ -56,9 +56,15 @@ public interface IProtocolHandler
 
     /// <summary>
     /// Whether this protocol supports dynamic setting enumeration ($EG, $ES, $ESH).
-    /// If false, GetStaticSettingDefinitions() provides the metadata.
+    /// If false, <see cref="StaticSettingDefinitions"/> provides the metadata.
     /// </summary>
     bool SupportsSettingEnumeration => true;
+
+    /// <summary>
+    /// Whether the controller keeps its settings in a config file the Config
+    /// tab can edit (FluidNC config.yaml over HTTP).
+    /// </summary>
+    bool SupportsConfigFile => false;
 
     /// <summary>
     /// Whether the controller understands override control (M51) and the
@@ -121,6 +127,13 @@ public interface IProtocolHandler
     /// Null means they are fetched with <see cref="AlarmFetchCommand"/>.
     /// </summary>
     IReadOnlyDictionary<string, string>? StaticAlarmDescriptions => null;
+
+    /// <summary>
+    /// Setting names, units and types for a controller with a fixed settings
+    /// list it can't describe itself (no $ES). Null means there is no Firmware
+    /// tab unless <see cref="SupportsSettingEnumeration"/> is set.
+    /// </summary>
+    IReadOnlyDictionary<int, FirmwareSetting>? StaticSettingDefinitions => null;
 
     /// <summary>
     /// When a data line proves the controller is really another protocol (a

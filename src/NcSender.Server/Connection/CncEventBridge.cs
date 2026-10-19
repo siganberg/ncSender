@@ -616,8 +616,9 @@ public class CncEventBridge
         if (_controller.ActiveProtocol is not null && _controller.ActiveProtocol.MatchesGreeting(data))
         {
             _context.State.GreetingMessage = data;
-            _context.State.DisplayFirmware = _controller.ActiveProtocol.SupportsSettingEnumeration;
-            _context.State.DisplayConfig = !_controller.ActiveProtocol.SupportsSettingEnumeration;
+            _context.State.DisplayFirmware = _controller.ActiveProtocol.SupportsSettingEnumeration
+                || _controller.ActiveProtocol.StaticSettingDefinitions is not null;
+            _context.State.DisplayConfig = _controller.ActiveProtocol.SupportsConfigFile;
             _ = _broadcaster.Broadcast("initial-greeting",
                 System.Text.Json.JsonSerializer.SerializeToElement(data, NcSenderJsonContext.Default.String));
 

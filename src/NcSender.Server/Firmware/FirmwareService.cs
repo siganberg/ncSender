@@ -134,19 +134,23 @@ public class FirmwareService : IFirmwareService
                 Timestamp = DateTime.UtcNow.ToString("o")
             };
 
+            var staticDefs = _controller.ActiveProtocol?.StaticSettingDefinitions;
             foreach (var (id, value) in currentValues)
             {
-                if (_cached.Settings.TryGetValue(id, out var existing))
+                if (_cached.Settings.TryGetValue(id, out var existing) && !string.IsNullOrEmpty(existing.Name))
                 {
                     existing.Value = value;
                 }
                 else
                 {
-                    _cached.Settings[id] = new FirmwareSetting
-                    {
-                        Id = int.TryParse(id, out var n) ? n : 0,
-                        Value = value
-                    };
+                    var n = int.TryParse(id, out var parsed) ? parsed : 0;
+                    var setting = staticDefs is not null && staticDefs.TryGetValue(n, out var def)
+                        ? CopyDefinition(def)
+                        : existing ?? new FirmwareSetting { Id = n };
+                    setting.Value = value;
+                    _cached.Settings[id] = setting;
+                    if (setting.Group is { } group)
+                        _cached.Groups.TryAdd(group.Id.ToString(), group);
                 }
             }
 
@@ -343,6 +347,19 @@ public class FirmwareService : IFirmwareService
             _logger.LogWarning(ex, "Failed to save firmware cache");
         }
     }
+
+    private static FirmwareSetting CopyDefinition(FirmwareSetting d) => new()
+    {
+        Id = d.Id,
+        GroupId = d.GroupId,
+        Group = d.Group,
+        Name = d.Name,
+        Unit = d.Unit,
+        DataType = d.DataType,
+        Format = d.Format,
+        Min = d.Min,
+        Max = d.Max
+    };
 
     private static bool HasNamedSettings(FirmwareData? data)
     {

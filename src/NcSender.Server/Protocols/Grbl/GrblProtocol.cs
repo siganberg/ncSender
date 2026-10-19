@@ -35,6 +35,8 @@ public partial class GrblProtocol : IProtocolHandler
 
     // A grblHAL build can be set to greet like classic Grbl; its $I still
     // lists [NEWOPT:...], which Grbl never sends.
+    public IReadOnlyDictionary<int, FirmwareSetting> StaticSettingDefinitions => GrblSettings.Definitions;
+
     public string? RedirectProtocol(string line) =>
         line.StartsWith("[NEWOPT:", StringComparison.Ordinal) ? "grblhal" : null;
 
