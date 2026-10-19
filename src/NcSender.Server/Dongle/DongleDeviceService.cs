@@ -28,6 +28,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         public bool WasConnected;
         public long LastBroadcastTicks;
         public string? LastState;       // the payload's state=<…> token, if it has one
+        public readonly BatteryReading Battery = new();
     }
 
     private readonly ILogger<DongleDeviceService> _logger;
@@ -76,12 +77,23 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     {
         var last = st.LastSeenTicks;
         var sinceMs = last == 0 ? -1 : now - last;
+        int? batteryMv;
+        string? batteryState;
+        lock (st)
+        {
+            batteryMv = st.Battery.Millivolts;
+            batteryState = st.Battery.OnUsb ? "usb"
+                : batteryMv is null ? null
+                : st.Battery.Charging ? "charging" : "battery";
+        }
         return new DongleDeviceInfo
         {
             Name = name,
             Connected = last != 0 && sinceMs >= 0 && sinceMs < ConnectedWindowMs,
             LastSeenMs = sinceMs,
             LastMessage = st.LastMessage,
+            BatteryMv = batteryMv,
+            BatteryState = batteryState,
             Transport = _wiredSenders.ContainsKey(name) ? "usb" : (last != 0 ? "wireless" : null)
         };
     }
@@ -155,6 +167,8 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             // Letting one replace the status line hid the device's fields from
             // DONGLE_WAIT (a sensor check) until the next status, up to 2 s.
             if (!payload.StartsWith('$')) st.LastMessage = payload;
+            if (justConnected) st.Battery.Clear();
+            st.Battery.Observe(payload, now);
             st.WasConnected = true;
         }
 
