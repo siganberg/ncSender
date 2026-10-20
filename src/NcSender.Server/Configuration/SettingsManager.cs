@@ -261,6 +261,7 @@ public class SettingsManager : ISettingsManager
             "tlsAfterHome": false,
             "tipsOnStartup": true,
             "setupWizardCompleted": false,
+            "machineProfile": "",
             "useControllerMacros": false,
             "remoteControl": {
                 "enabled": false

@@ -151,6 +151,7 @@ public class FirmwareService : IFirmwareService
             }
 
             _cached.Timestamp = DateTime.UtcNow.ToString("o");
+            _cached.Board = ParseBoard(versionResponse);
 
             // Never persist a cache without setting metadata — if we did,
             // FirmwareVersion would match on the next launch and the structure
@@ -240,6 +241,21 @@ public class FirmwareService : IFirmwareService
                 // [VER:1.1f.20250407:]
                 var content = trimmed[5..^1]; // strip [VER: and ]
                 return content;
+            }
+        }
+        return null;
+    }
+
+    // [BOARD:SuperLongBoard Ext] -> "SuperLongBoard Ext"; null when $I has none.
+    internal static string? ParseBoard(string response)
+    {
+        foreach (var line in response.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("[BOARD:", StringComparison.OrdinalIgnoreCase) && trimmed.EndsWith(']'))
+            {
+                var name = trimmed[7..^1].Trim();
+                return name.Length > 0 ? name : null;
             }
         }
         return null;

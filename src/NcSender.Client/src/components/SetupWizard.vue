@@ -86,6 +86,51 @@
             <ConnectionSetup idle-hint="Save the connection and ncSender will connect on its own. Next unlocks once the controller answers." />
           </div>
 
+          <!-- Machine profile (only when there are profiles for this firmware) -->
+          <div v-else-if="step.id === 'machine'" class="wiz__form wiz__form--fill">
+            <p class="wiz__muted">Pick your machine and the next pages start from its settings, ready to check. Nothing is written until Review, except switch and motor fault inversions, which go out when their page opens.</p>
+            <div class="wiz__starts" role="radiogroup">
+              <button type="button" role="radio" class="wiz__start" :class="{ 'is-active': startMode === 'known' }" :aria-checked="startMode === 'known'" @click="startMode = 'known'">
+                <span class="wiz__start-title">Known machine</span>
+                <span class="wiz__start-note">Pick from {{ machineProfiles.length }} machine profiles</span>
+              </button>
+              <button type="button" role="radio" class="wiz__start" :class="{ 'is-active': startMode === 'custom' }" :aria-checked="startMode === 'custom'" @click="pickCustom">
+                <span class="wiz__start-title">Custom or other</span>
+                <span class="wiz__start-note">Use the controller's current settings</span>
+              </button>
+            </div>
+            <template v-if="startMode === 'known'">
+              <div class="wiz__search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+                <input v-model="profileQuery" type="search" class="wiz__input" placeholder="Search brand, model or size" />
+              </div>
+              <p v-if="fwBoard" class="wiz__field-hint wiz__board">Your controller reports {{ fwBoard }}. Machines built on it are listed first.</p>
+              <div class="wiz__profiles" role="radiogroup" aria-label="Your machine">
+                <table class="wiz__table wiz__profile-table">
+                  <thead>
+                    <tr>
+                      <th>Brand</th>
+                      <th>Model</th>
+                      <th>Size</th>
+                      <th class="wiz__num">Travel X × Y × Z ({{ unitLabel }})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in filteredProfiles" :key="p.id" class="wiz__profile" :class="{ 'is-active': profile?.id === p.id }" role="radio" :aria-checked="profile?.id === p.id" tabindex="0" @click="pickProfile(p)" @keydown.enter.space.prevent="pickProfile(p)">
+                      <td>{{ p.brand }}</td>
+                      <td><strong>{{ p.model }}</strong><span v-if="p.id === lastProfileId" class="wiz__reco">Last used</span><span v-if="fitsBoard(p, fwBoard)" class="wiz__reco wiz__reco--board">Your board</span></td>
+                      <td>{{ p.size }}</td>
+                      <td class="wiz__num">{{ travelText(p) }}</td>
+                    </tr>
+                    <tr v-if="filteredProfiles.length === 0">
+                      <td colspan="4" class="wiz__profile-none">No machine matches. Try fewer words, or start from Custom or other.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <div v-if="profile" class="wiz__notice wiz__notice--ok"><svg class="wiz__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></svg><span>Using the {{ profile.brand }} {{ profile.model }} {{ profile.size }} settings. The next pages show them, ready to check.</span></div>
+          </div>
 
           <div v-else-if="step.id === 'travel'" class="wiz__form wiz__form--roomy">
             <p class="wiz__muted">Enter how far each axis can move from one end to the other. These become $130, $131 and $132 (max travel), which the soft limits and the work area in the visualizer are built on.</p>
@@ -127,29 +172,62 @@
             <div v-if="writeError" class="wiz__error">{{ writeError }}</div>
           </div>
 
-          <!-- Motor fault (only when the board has $744) -->
-          <div v-else-if="step.id === 'motor'" class="wiz__form">
-              <div class="wiz__section">
-                <div class="wiz__row-title">Motor fault inputs ($744 enable, $745 invert)</div>
-                <div class="wiz__row-note">Closed-loop steppers and servo drives report a fault on a dedicated input. Enabling it lets the controller stop the moment a drive faults, so it is recommended on. If a healthy motor raises a motor fault alarm as soon as you enable it, the input reads backwards: turn on Invert for that axis. Both are sent to the controller right away.</div>
-              </div>
-              <div class="wiz__pins">
-                <div v-for="ax in faultAxes" :key="'mf' + ax" class="wiz__pin wiz__pin--fault">
-                  <div class="wiz__pin-name">{{ ax }} motor fault</div>
-                  <label class="wiz__toggle-row">
-                    <span>Enable</span>
-                    <ToggleSwitch :model-value="(motorFaultEnable & faultBit(ax)) !== 0" :disabled="!connected || writing" @update:model-value="(v: boolean) => setMotorFault('744', faultBit(ax), v)" />
-                  </label>
-                  <label class="wiz__toggle-row">
-                    <span>Invert</span>
-                    <ToggleSwitch :model-value="(motorFaultInvert & faultBit(ax)) !== 0" :disabled="!connected || writing || (motorFaultEnable & faultBit(ax)) === 0" @update:model-value="(v: boolean) => setMotorFault('745', faultBit(ax), v)" />
-                  </label>
-                </div>
-              </div>
-            <div v-if="inAlarm" class="wiz__alarm">
-              <span class="wiz__alarm-text"><strong>Controller alarm.</strong> {{ alarmText }} A healthy motor faulting right after Enable means the input reads backwards: turn on Invert for that axis, then unlock.</span>
-              <button type="button" class="wiz__btn wiz__btn--danger" :disabled="unlocking" @click="unlock">{{ unlocking ? 'Unlocking…' : 'Unlock' }}</button>
+          <!-- Motors: steps, max rate, acceleration, direction; fault inputs when the board has $744 -->
+          <div v-else-if="step.id === 'motors'" class="wiz__form">
+            <p class="wiz__muted">How far each motor moves per step, how fast and how hard it can go, and which way it turns. Change these only if you know your machine's numbers; they are written from Review.</p>
+            <div class="wiz__table-wrap">
+              <table class="wiz__table wiz__motors">
+                <thead>
+                  <tr>
+                    <th>Axis</th>
+                    <th>Steps <span class="wiz__unit">/{{ unitLabel }}</span></th>
+                    <th>Max rate <span class="wiz__unit">{{ unitLabel }}/min</span></th>
+                    <th>Acceleration <span class="wiz__unit">{{ unitLabel }}/s²</span></th>
+                    <th>Reverse direction</th>
+                    <template v-if="hasMotorFault">
+                      <th>Fault enable</th>
+                      <th>Fault invert</th>
+                    </template>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="ax in motorAxes" :key="'m' + ax">
+                    <td class="wiz__motor-axis">{{ ax }}</td>
+                    <td>
+                      <span class="wiz__axis-input wiz__motor-input" :class="{ 'has-unit': !isLinear(ax) }">
+                        <input type="number" step="any" min="0" class="wiz__input" :value="showSteps(ax)" @change="setSteps(ax, ($event.target as HTMLInputElement).value)" />
+                        <span v-if="!isLinear(ax)" class="wiz__axis-unit">/°</span>
+                      </span>
+                    </td>
+                    <td>
+                      <span class="wiz__axis-input wiz__motor-input" :class="{ 'has-unit': !isLinear(ax) }">
+                        <input type="number" step="any" min="0" class="wiz__input" :value="showPerMm(ax, maxRate[ax])" @change="setPerMm(maxRate, ax, ($event.target as HTMLInputElement).value)" />
+                        <span v-if="!isLinear(ax)" class="wiz__axis-unit">°/min</span>
+                      </span>
+                    </td>
+                    <td>
+                      <span class="wiz__axis-input wiz__motor-input" :class="{ 'has-unit': !isLinear(ax) }">
+                        <input type="number" step="any" min="0" class="wiz__input" :value="showPerMm(ax, accel[ax])" @change="setPerMm(accel, ax, ($event.target as HTMLInputElement).value)" />
+                        <span v-if="!isLinear(ax)" class="wiz__axis-unit">°/s²</span>
+                      </span>
+                    </td>
+                    <td><ToggleSwitch :model-value="(dirInvert & (1 << motorIndex(ax))) !== 0" @update:model-value="(v: boolean) => toggleDir(ax, v)" /></td>
+                    <template v-if="hasMotorFault">
+                      <td><ToggleSwitch :model-value="(motorFaultEnable & faultBit(ax)) !== 0" :disabled="!connected || writing" @update:model-value="(v: boolean) => setMotorFault('744', faultBit(ax), v)" /></td>
+                      <td><ToggleSwitch :model-value="(motorFaultInvert & faultBit(ax)) !== 0" :disabled="!connected || writing || (motorFaultEnable & faultBit(ax)) === 0" @update:model-value="(v: boolean) => setMotorFault('745', faultBit(ax), v)" /></td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
             </div>
+
+            <template v-if="hasMotorFault">
+              <p class="wiz__row-note">Fault inputs ($744, $745) are for closed-loop steppers and servo drives: Enable stops the controller the moment a drive faults. If a healthy motor raises a fault alarm right after Enable, the input reads backwards, so turn on Invert. Both are sent to the controller right away.</p>
+              <div v-if="inAlarm" class="wiz__alarm">
+                <span class="wiz__alarm-text"><strong>Controller alarm.</strong> {{ alarmText }} A healthy motor faulting right after Enable means the input reads backwards: turn on Invert for that axis, then unlock.</span>
+                <button type="button" class="wiz__btn wiz__btn--danger" :disabled="unlocking" @click="unlock">{{ unlocking ? 'Unlocking…' : 'Unlock' }}</button>
+              </div>
+            </template>
             <div v-if="writeError" class="wiz__error">{{ writeError }}</div>
           </div>
 
@@ -317,6 +395,7 @@ import { api } from '@/lib/api.js';
 import { settingsStore } from '@/lib/settings-store.js';
 import { useAppStore } from '@/composables/use-app-store';
 import { mmToInches, inchesToMm } from '@/lib/units';
+import { firmwareBuild, fitsBoard, profilesFor, profileSettings, type FirmwareKind, type MachineProfile } from './setup-wizard/machine-profiles';
 
 const emit = defineEmits<{ (e: 'close', completed: boolean): void }>();
 const store = useAppStore();
@@ -325,21 +404,23 @@ const store = useAppStore();
 const ALL_STEPS = [
   { id: 'welcome', label: 'Welcome', title: 'Set up your machine', subtitle: 'A few controller settings, checked live, in about five minutes.' },
   { id: 'connection', label: 'Connection', title: 'Connect to the controller', subtitle: 'How ncSender reaches the board.' },
+  { id: 'machine', label: 'Machine', title: 'Your machine', subtitle: "Start from a known machine's settings, or from what the controller has." },
   { id: 'travel', label: 'Travel', title: 'Machine travel', subtitle: 'How far each axis can move.' },
   { id: 'pins', label: 'Switches & probe', title: 'Limit switches and probe', subtitle: 'Confirm each input reads the right way round.' },
-  { id: 'motor', label: 'Motor fault', title: 'Motor fault inputs', subtitle: 'For closed-loop steppers and servo drives.' },
+  { id: 'motors', label: 'Motors', title: 'Motors', subtitle: 'Steps, speed, acceleration and direction for each axis.' },
   { id: 'homing', label: 'Homing', title: 'Homing', subtitle: 'Enable homing and pick the home corner.' },
   { id: 'safety', label: 'Safety', title: 'Safety limits', subtitle: 'Keep jogs and jobs inside the machine.' },
   { id: 'review', label: 'Review', title: 'Review and apply', subtitle: 'Everything that will be written to the controller.' },
 ];
-// The motor fault page only exists when the board reports $744.
-const steps = computed(() => ALL_STEPS.filter(st => st.id !== 'motor' || hasMotorFault.value));
+// The machine page only exists when there are profiles for the connected firmware.
+const steps = computed(() => ALL_STEPS.filter(st => st.id !== 'machine' || machineProfiles.value.length > 0));
 const stepIndex = ref(0);
 const step = computed(() => steps.value[stepIndex.value] ?? steps.value[0]);
 
 const ICON = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 const welcomeCards = [
   { title: 'Connection', note: 'USB or Ethernet to the controller.', icon: ICON('<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>') },
+  { title: 'Machine', note: "Start from a known machine's settings.", icon: ICON('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/>') },
   { title: 'Travel', note: 'How far X, Y and Z can move.', icon: ICON('<path d="M3 12h18"/><path d="M6 9l-3 3 3 3"/><path d="M18 9l3 3-3 3"/><path d="M12 3v18"/>') },
   { title: 'Switches & probe', note: 'Checked live, inverted if they read backwards.', icon: ICON('<path d="M4 14h4l2-6 4 12 2-6h4"/>') },
   { title: 'Homing', note: 'Recommended options and the home corner.', icon: ICON('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>') },
@@ -356,6 +437,11 @@ const seedHomeCorner = () => {
 type FwSetting = { id: number; value: string; format?: string | null; name?: string; halDetails?: string[] };
 const fw = ref<Record<string, FwSetting>>({});
 const fwLoaded = ref(false);
+// Which firmware answered ("grblhal", "fluidnc") and its build date; kept
+// through a disconnect so the steps don't change under the user.
+const fwKind = ref<string | null>(null);
+const fwBuild = ref(0);
+const fwBoard = ref<string | null>(null);
 const connected = computed(() => !!store.isConnected.value);
 const fwText = (id: string) => fw.value[id]?.value ?? '?';
 const fwNum = (id: string, fallback = 0) => {
@@ -367,8 +453,12 @@ const loadFirmware = async (refresh: boolean) => {
   try {
     const data = await api.getFirmwareSettings({ refresh });
     fw.value = (data?.settings ?? {}) as Record<string, FwSetting>;
+    if (data?.protocol) fwKind.value = data.protocol;
+    fwBuild.value = firmwareBuild(data?.firmwareVersion);
+    if (data?.board) fwBoard.value = data.board;
     fwLoaded.value = true;
     seedFromFirmware();
+    if (profile.value) applyProfile(profile.value);
   } catch (err) {
     console.error('Setup wizard: failed to load firmware settings', err);
   }
@@ -475,13 +565,34 @@ const unlock = async () => {
   finally { setTimeout(() => { unlocking.value = false; }, 1500); }
 };
 
+// ---- Motors: steps/mm ($100+), max rate ($110+), acceleration ($120+), direction ($3) ----
+// A shows when the board has a fourth axis. Its values are in degrees, so
+// they are never converted to inches.
+const motorAxes = computed(() => (fw.value['103'] ? ['X', 'Y', 'Z', 'A'] : ['X', 'Y', 'Z']));
+const motorIndex = (ax: string) => 'XYZABC'.indexOf(ax);
+const stepsPer = reactive<Record<string, number>>({});
+const maxRate = reactive<Record<string, number>>({});
+const accel = reactive<Record<string, number>>({});
+const dirInvert = ref(0);
+const isLinear = (ax: string) => ax !== 'A';
+const scale = (ax: string) => (isImperial.value && isLinear(ax) ? 25.4 : 1);
+// Steps per inch is 25.4 times steps per mm; inches per minute is mm / 25.4.
+const showSteps = (ax: string) => Number(((stepsPer[ax] ?? 0) * scale(ax)).toFixed(4));
+const showPerMm = (ax: string, mm: number | undefined) => Number(((mm ?? 0) / scale(ax)).toFixed(isImperial.value && isLinear(ax) ? 3 : 1));
+const readNum = (raw: string) => { const n = parseFloat(raw); return Number.isFinite(n) && n > 0 ? n : null; };
+const setSteps = (ax: string, raw: string) => { const n = readNum(raw); if (n != null) stepsPer[ax] = n / scale(ax); };
+const setPerMm = (target: Record<string, number>, ax: string, raw: string) => { const n = readNum(raw); if (n != null) target[ax] = n * scale(ax); };
+const toggleDir = (ax: string, on: boolean) => {
+  const bit = 1 << motorIndex(ax);
+  dirInvert.value = on ? (dirInvert.value | bit) : (dirInvert.value & ~bit);
+};
+
 // ---- Motor fault inputs ($744 enable mask, $745 invert mask), when the board has them ----
 const motorFaultEnable = ref(0);
 const motorFaultInvert = ref(0);
 const hasMotorFault = computed(() => !!fw.value['744']);
-// Axis letters in bit order; A only when the board reports a 4th axis travel.
-const faultAxes = computed(() => (fw.value['133'] ? ['X', 'Y', 'Z', 'A'] : ['X', 'Y', 'Z']));
-const faultBit = (ax: string) => 1 << faultAxes.value.indexOf(ax);
+// One bit per axis, in X Y Z A order, as in the motor table.
+const faultBit = (ax: string) => 1 << motorIndex(ax);
 const setMotorFault = async (id: '744' | '745', bit: number, on: boolean) => {
   const target = id === '744' ? motorFaultEnable : motorFaultInvert;
   const next = on ? (target.value | bit) : (target.value & ~bit);
@@ -525,12 +636,98 @@ const pullOff = ref(3);
 const softLimits = ref(false);
 const limitJog = ref(false);
 
+// ---- Machine profile ----
+// Picking a known machine fills the later pages with its settings; they are
+// still checked page by page and written only from Review. The two input
+// pages send theirs live as usual, when they open.
+const machineProfiles = computed(() => profilesFor(fwKind.value));
+const profile = ref<MachineProfile | null>(null);
+const profileQuery = ref('');
+// Every word typed must appear in the brand, model or size ("alt 4x8").
+// Machines built on the connected board come first.
+const filteredProfiles = computed(() => {
+  const words = profileQuery.value.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = machineProfiles.value.filter((p) => {
+    const text = `${p.brand} ${p.model} ${p.size}`.toLowerCase();
+    return words.every(w => text.includes(w));
+  });
+  return [...hits.filter(p => fitsBoard(p, fwBoard.value)), ...hits.filter(p => !fitsBoard(p, fwBoard.value))];
+});
+const travelText = (p: MachineProfile) => {
+  const set = p.firmware[(fwKind.value ?? 'grblhal') as FirmwareKind] ?? {};
+  return ['130', '131', '132'].map(id => (set[id] ? displayLen(parseFloat(set[id])) : '?')).join(' × ');
+};
+const lastProfileId = ref('');
+// Settings carried over from a profile that no page edits ($23-$26, $44-$46).
+const EXTRA_IDS = ['23', '24', '25', '26', '44', '45', '46'];
+const extras = ref<Record<string, string>>({});
+
+const startMode = ref<'custom' | 'known'>('known');
+const pickCustom = () => {
+  startMode.value = 'custom';
+  profileQuery.value = '';
+  profile.value = null;
+  seedFromFirmware();
+};
+const pickProfile = (p: MachineProfile) => {
+  profile.value = p;
+  seedFromFirmware();
+  applyProfile(p);
+};
+
+const applyProfile = (p: MachineProfile) => {
+  const set = profileSettings(p, (fwKind.value ?? 'grblhal') as FirmwareKind, fwBuild.value);
+  const has = (id: string) => id in set && !!fw.value[id];
+  const num = (id: string) => parseFloat(set[id]);
+  for (const ax of axes) if (has(travelIds[ax])) travel[ax] = num(travelIds[ax]);
+  for (const ax of motorAxes.value) {
+    const i = motorIndex(ax);
+    if (has(String(100 + i))) stepsPer[ax] = num(String(100 + i));
+    if (has(String(110 + i))) maxRate[ax] = num(String(110 + i));
+    if (has(String(120 + i))) accel[ax] = num(String(120 + i));
+  }
+  if (has('3')) dirInvert.value = num('3');
+  if (has('5')) limitInvert.value = num('5');
+  if (has('6')) probeInvert.value = probeIsBitfield.value ? num('6') : (num('6') & 1);
+  if (has('21')) hardLimits.value = num('21') !== 0;
+  if (has('22')) { homingMask.value = num('22'); homingEnabled.value = (homingMask.value & 1) !== 0; }
+  if (has('27')) pullOff.value = num('27');
+  if (has('20')) softLimits.value = num('20') !== 0;
+  if (has('40')) limitJog.value = num('40') !== 0;
+  if (has('744')) motorFaultEnable.value = num('744');
+  if (has('745')) motorFaultInvert.value = num('745');
+  extras.value = Object.fromEntries(EXTRA_IDS.filter(has).map(id => [id, set[id]]));
+};
+
+// The input pages show live states, so a profile's inversions go out as the
+// page opens, the same way a toggle there does.
+const syncLive = async (pairs: [string, number][]) => {
+  for (const [id, value] of pairs) {
+    if (!fw.value[id] || !connected.value) continue;
+    if (Math.abs(fwNum(id, NaN) - value) < 1e-6) continue;
+    try { await writeSetting(id, value); } catch { /* surfaced via writeError */ }
+  }
+};
+
+// A machine picked on an earlier run is marked in the list, but not applied.
+const seedProfilePick = () => {
+  lastProfileId.value = (settingsStore.data as any)?.machineProfile ?? '';
+};
+
 // ---- Seed from firmware ----
 const seedFromFirmware = () => {
   for (const ax of axes) travel[ax] = fwNum(travelIds[ax], travel[ax]);
   limitInvert.value = fwNum('5', 0);
   probeInvert.value = fwNum('6', 0);
   hardLimits.value = fwNum('21', 0) !== 0;
+  for (const ax of motorAxes.value) {
+    const i = motorIndex(ax);
+    stepsPer[ax] = fwNum(String(100 + i), 0);
+    maxRate[ax] = fwNum(String(110 + i), 0);
+    accel[ax] = fwNum(String(120 + i), 0);
+  }
+  dirInvert.value = fwNum('3', 0);
+  extras.value = {};
   motorFaultEnable.value = fwNum('744', 0);
   motorFaultInvert.value = fwNum('745', 0);
   homingMask.value = fwNum('22', 0);
@@ -542,16 +739,35 @@ const seedFromFirmware = () => {
 
 // ---- Review / apply ----
 const fmtNum = (n: number) => Number(n.toFixed(3)).toString();
+const fmtPrecise = (n: number) => Number(n.toFixed(6)).toString();
+// In write order: the machine first, then homing and limits, $20 after $22
+// (soft limits refuse to switch on before homing is enabled) and the motor
+// fault enable last, once its inversion is in.
 const desired = computed(() => ([
+  { id: '3', name: 'Direction invert mask', to: String(dirInvert.value) },
+  ...motorAxes.value.flatMap((ax) => {
+    const i = motorIndex(ax);
+    return [
+      // The rotary axis is in degrees: its names say so.
+      { id: String(100 + i), name: isLinear(ax) ? `${ax} steps per mm` : `${ax} steps per degree`, to: fmtPrecise(stepsPer[ax] ?? 0) },
+      { id: String(110 + i), name: isLinear(ax) ? `${ax} max rate (mm/min)` : `${ax} max rate (°/min)`, to: fmtNum(maxRate[ax] ?? 0) },
+      { id: String(120 + i), name: isLinear(ax) ? `${ax} acceleration (mm/s²)` : `${ax} acceleration (°/s²)`, to: fmtNum(accel[ax] ?? 0) },
+    ];
+  }),
   { id: '130', name: 'X max travel (mm)', to: fmtNum(travel.X) },
   { id: '131', name: 'Y max travel (mm)', to: fmtNum(travel.Y) },
   { id: '132', name: 'Z max travel (mm)', to: fmtNum(travel.Z) },
+  { id: '5', name: 'Limit switch invert mask', to: String(limitInvert.value) },
+  { id: '6', name: 'Probe invert', to: String(probeInvert.value) },
+  ...Object.entries(extras.value).map(([id, to]) => ({ id, name: fw.value[id]?.name ?? '', to })),
   { id: '21', name: 'Hard limits', to: hardLimits.value ? '1' : '0' },
   { id: '22', name: 'Homing cycle', to: String(homingEnabled.value ? homingMask.value : (homingMask.value & ~1)) },
   { id: '27', name: 'Homing pull-off (mm)', to: fmtNum(pullOff.value) },
   { id: '20', name: 'Soft limits', to: softLimits.value ? '1' : '0' },
   { id: '40', name: 'Limit jog commands', to: limitJog.value ? '1' : '0' },
-]));
+  { id: '745', name: 'Motor fault invert mask', to: String(motorFaultInvert.value) },
+  { id: '744', name: 'Motor fault enable mask', to: String(motorFaultEnable.value) },
+].filter(d => !!fw.value[d.id])));
 const pendingChanges = computed(() => desired.value
   .map(d => ({ ...d, from: fw.value[d.id]?.value ?? '?' }))
   .filter(d => {
@@ -567,7 +783,7 @@ const applyError = ref('');
 const persistCompletion = async () => {
   try {
     const { updateSettings } = await import('@/lib/settings-store.js');
-    await updateSettings({ setupWizardCompleted: true, homeLocation: homeCorner.value });
+    await updateSettings({ setupWizardCompleted: true, homeLocation: homeCorner.value, machineProfile: profile.value?.id ?? '' });
   } catch (err) { console.error('Setup wizard: failed to save completion', err); }
 };
 
@@ -618,8 +834,13 @@ const railClose = () => {
 // Read the server's cache: it re-reads $$ on every connect, and asking for
 // a metadata refresh here would pile a 90 KB $ES/$ESH dump onto the connect
 // queries. Every write on the way through updates the cache as it goes.
-onMounted(() => { loadFirmware(false); seedHomeCorner(); });
-watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
+onMounted(() => { loadFirmware(false); seedHomeCorner(); seedProfilePick(); });
+watch(() => step.value.id, (id) => {
+  if (id === 'pins') syncLive([['5', limitInvert.value], ['6', probeInvert.value]]);
+  if (id === 'motors' && hasMotorFault.value) syncLive([['745', motorFaultInvert.value], ['744', motorFaultEnable.value]]);
+});
+// The cache read before connecting has no firmware kind yet, so read it again.
+watch(connected, (on) => { if (on && (!fwLoaded.value || !fwKind.value)) loadFirmware(false); });
 </script>
 
 <style scoped>
@@ -778,7 +999,6 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
   display: grid; grid-template-columns: 1fr 80px 130px; align-items: center; gap: 12px;
   padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border);
 }
-.wiz__pin--fault { grid-template-columns: 1fr 130px 130px; }
 .wiz__section { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .wiz__pin-name { font-weight: 600; color: var(--color-text-primary); }
 .wiz__pin-setting { margin-left: 8px; font-size: 0.75rem; font-weight: 500; color: var(--color-text-secondary); }
@@ -856,6 +1076,39 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 .wiz__bed-caption strong { color: var(--color-text-primary); font-size: 1.05rem; }
 
 .wiz__table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.wiz__table-wrap { overflow-x: auto; }
+.wiz__motors td { vertical-align: middle; }
+.wiz__motors th:nth-child(n + 5), .wiz__motors td:nth-child(n + 5) { text-align: center; }
+.wiz__motor-axis { font-weight: 800; font-size: 1.05rem; }
+.wiz__motor-input { min-width: 110px; }
+.wiz__motor-input .wiz__input { font-size: 1rem; padding-right: 12px; }
+/* Linear units are in the column header; only the rotary axis says its own. */
+.wiz__motor-input.has-unit .wiz__input { padding-right: 56px; }
+.wiz__starts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.wiz__start {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;
+  padding: 14px 16px; border-radius: 12px; cursor: pointer; text-align: left;
+  border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary);
+}
+.wiz__start.is-active { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface)); }
+.wiz__start-title { font-weight: 700; }
+.wiz__start-note { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.4; }
+.wiz__search { position: relative; display: flex; }
+.wiz__search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: var(--color-text-secondary); pointer-events: none; }
+.wiz__search .wiz__input { width: 100%; padding-left: 40px; }
+/* The machine list takes the rest of the page and scrolls only past that. */
+.wiz__form--fill { height: 100%; }
+.wiz__profiles { flex: 1 1 auto; min-height: 180px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; }
+.wiz__profile-table th { position: sticky; top: 0; background: var(--color-surface); z-index: 1; }
+.wiz__profile { cursor: pointer; }
+.wiz__profile:hover td { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+.wiz__profile:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.wiz__profile.is-active td { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+.wiz__profile.is-active td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+.wiz__board { margin: -4px 0 0; }
+.wiz__reco--board { background: color-mix(in srgb, #28a745 16%, transparent); color: #28a745; }
+.wiz__profile-none { text-align: center; color: var(--color-text-secondary); padding: 16px; }
+.wiz__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wiz__table th { text-align: left; font-weight: 600; color: var(--color-text-secondary); padding: 6px 10px; border-bottom: 1px solid var(--color-border); }
 .wiz__table td { padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent); color: var(--color-text-primary); }
 .wiz__table code { color: var(--color-text-secondary); margin-right: 6px; }
@@ -907,6 +1160,7 @@ watch(connected, (on) => { if (on && !fwLoaded.value) loadFirmware(false); });
 @media (max-width: 760px) { .wiz__rail-foot { display: none; } }
 
 @media (max-width: 760px) {
+  .wiz__starts { grid-template-columns: 1fr; }
   .wiz { flex-direction: column; height: 92vh; }
   .wiz__rail { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; border-right: none; border-bottom: 1px solid var(--color-border); overflow-x: auto; }
   .wiz__brand, .wiz__conn { display: none; }
