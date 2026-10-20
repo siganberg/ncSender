@@ -126,7 +126,7 @@ public partial class GrblHalProtocol : IProtocolHandler
         return false;
     }
 
-    private static void ParseParam(string data, MachineState state, ref bool changed)
+    internal static void ParseParam(string data, MachineState state, ref bool changed)
     {
         var content = data[7..^1];
         if (content.StartsWith("_TOOL_OFFSET="))

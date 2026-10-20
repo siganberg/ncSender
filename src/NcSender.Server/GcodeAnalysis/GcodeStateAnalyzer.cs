@@ -114,18 +114,21 @@ public class GcodeStateAnalyzer : IGcodeAnalyzer
                     state.Tool = (int)word.Value;
                     break;
                 case 'X':
+                    state.HasPositionX = true;
                     if (state.PositioningMode == "G90")
                         state.PositionX = word.Value;
                     else
                         state.PositionX += word.Value;
                     break;
                 case 'Y':
+                    state.HasPositionY = true;
                     if (state.PositioningMode == "G90")
                         state.PositionY = word.Value;
                     else
                         state.PositionY += word.Value;
                     break;
                 case 'Z':
+                    state.HasPositionZ = true;
                     if (state.PositioningMode == "G90")
                         state.PositionZ = word.Value;
                     else

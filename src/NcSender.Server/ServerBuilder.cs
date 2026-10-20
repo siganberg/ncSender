@@ -10,6 +10,7 @@ using NcSender.Server.CommandProcessor;
 using NcSender.Server.Config;
 using NcSender.Server.Configuration;
 using NcSender.Server.Connection;
+using NcSender.Server.Protocols.Grbl;
 using NcSender.Server.Protocols.GrblHal;
 using NcSender.Server.Protocols.FluidNc;
 using NcSender.Server.Firmware;
@@ -97,6 +98,8 @@ public static class ServerBuilder
 
         // Phase 2 DI registrations
         builder.Services.AddSingleton<IServerContext, ServerContext>();
+        // Classic Grbl first: grblHAL's greeting match also accepts its greeting.
+        builder.Services.AddSingleton<IProtocolHandler, GrblProtocol>();
         builder.Services.AddSingleton<IProtocolHandler, GrblHalProtocol>();
         builder.Services.AddSingleton<IProtocolHandler, FluidNcProtocol>();
         builder.Services.AddSingleton<ICncController, CncController>();
