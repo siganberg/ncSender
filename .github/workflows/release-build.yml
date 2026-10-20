@@ -84,6 +84,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Fetch machine profiles
+        shell: bash
+        run: .scripts/fetch-machine-profiles.sh
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -137,6 +141,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Fetch machine profiles
+        shell: bash
+        run: .scripts/fetch-machine-profiles.sh
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -192,6 +200,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Fetch machine profiles
+        shell: bash
+        run: .scripts/fetch-machine-profiles.sh
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -250,6 +262,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Fetch machine profiles
+        shell: bash
+        run: .scripts/fetch-machine-profiles.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
@@ -306,6 +322,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Fetch machine profiles
+        shell: bash
+        run: .scripts/fetch-machine-profiles.sh
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5

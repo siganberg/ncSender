@@ -104,7 +104,15 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input v-model="profileQuery" type="search" class="wiz__input" placeholder="Search brand, model or size" />
               </div>
-              <p v-if="fwBoard" class="wiz__field-hint wiz__board">Your controller reports {{ fwBoard }}. Machines built on it are listed first.</p>
+              <div class="wiz__list-info">
+                <span class="wiz__field-hint">
+                  <template v-if="fwBoard">Your controller reports {{ fwBoard }}. Machines built on it are listed first. </template>
+                  <template v-if="profileCheckFailed">Couldn't reach the machine list online. </template>
+                  <template v-if="profileSource === 'online' || (profileSource === 'cache' && profileDate)">Machine list from {{ profileDate }}.</template>
+                  <template v-else-if="profileSource === 'bundled'">Using the machine list built into this version.</template>
+                </span>
+                <button type="button" class="wiz__btn-sm" :disabled="checkingProfiles" @click="loadProfiles(true)">{{ checkingProfiles ? 'Checking…' : 'Check for updates' }}</button>
+              </div>
               <div class="wiz__profiles" role="radiogroup" aria-label="Your machine">
                 <table class="wiz__table wiz__profile-table">
                   <thead>
@@ -640,7 +648,31 @@ const limitJog = ref(false);
 // Picking a known machine fills the later pages with its settings; they are
 // still checked page by page and written only from Review. The two input
 // pages send theirs live as usual, when they open.
-const machineProfiles = computed(() => profilesFor(fwKind.value));
+const allProfiles = ref<MachineProfile[]>([]);
+// Where the list came from: "online", "cache" (saved copy) or "bundled" (built in).
+const profileSource = ref('');
+const profileFetchedAt = ref<string | null>(null);
+const checkingProfiles = ref(false);
+// A Check for updates that could not reach GitHub, so the user knows why nothing changed.
+const profileCheckFailed = ref(false);
+const loadProfiles = async (refresh: boolean) => {
+  checkingProfiles.value = true;
+  profileCheckFailed.value = false;
+  try {
+    const data: any = await api.getMachineProfiles({ refresh });
+    allProfiles.value = Array.isArray(data?.profiles) ? data.profiles : [];
+    profileSource.value = data?.source ?? '';
+    profileFetchedAt.value = data?.fetchedAt ?? null;
+    profileCheckFailed.value = refresh && profileSource.value !== 'online';
+  } catch (err) {
+    profileCheckFailed.value = refresh;
+    console.error('Setup wizard: failed to load machine profiles', err);
+  } finally {
+    checkingProfiles.value = false;
+  }
+};
+const profileDate = computed(() => (profileFetchedAt.value ? new Date(profileFetchedAt.value).toLocaleDateString() : ''));
+const machineProfiles = computed(() => profilesFor(allProfiles.value, fwKind.value));
 const profile = ref<MachineProfile | null>(null);
 const profileQuery = ref('');
 // Every word typed must appear in the brand, model or size ("alt 4x8").
@@ -834,7 +866,7 @@ const railClose = () => {
 // Read the server's cache: it re-reads $$ on every connect, and asking for
 // a metadata refresh here would pile a 90 KB $ES/$ESH dump onto the connect
 // queries. Every write on the way through updates the cache as it goes.
-onMounted(() => { loadFirmware(false); seedHomeCorner(); seedProfilePick(); });
+onMounted(() => { loadFirmware(false); loadProfiles(false); seedHomeCorner(); seedProfilePick(); });
 watch(() => step.value.id, (id) => {
   if (id === 'pins') syncLive([['5', limitInvert.value], ['6', probeInvert.value]]);
   if (id === 'motors' && hasMotorFault.value) syncLive([['745', motorFaultInvert.value], ['744', motorFaultEnable.value]]);
@@ -1105,7 +1137,8 @@ watch(connected, (on) => { if (on && (!fwLoaded.value || !fwKind.value)) loadFir
 .wiz__profile:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .wiz__profile.is-active td { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
 .wiz__profile.is-active td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
-.wiz__board { margin: -4px 0 0; }
+.wiz__list-info { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: -4px; }
+.wiz__list-info .wiz__field-hint { min-width: 0; flex: 1 1 260px; }
 .wiz__reco--board { background: color-mix(in srgb, #28a745 16%, transparent); color: #28a745; }
 .wiz__profile-none { text-align: center; color: var(--color-text-secondary); padding: 16px; }
 .wiz__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
