@@ -77,6 +77,7 @@ export interface PluginListItem {
 }
 
 export interface ToolMenuItem {
+  id?: string;
   pluginId: string;
   label: string;
   clientOnly?: boolean;
