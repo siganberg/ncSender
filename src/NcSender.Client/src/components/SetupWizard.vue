@@ -102,7 +102,7 @@
             <template v-if="startMode === 'known'">
               <div class="wiz__search">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
-                <input v-model="profileQuery" type="search" class="wiz__input" placeholder="Search brand, model or size" />
+                <input v-model="profileQuery" type="search" class="wiz__input" placeholder="Search brand, model, size or controller" />
               </div>
               <div class="wiz__list-info">
                 <span class="wiz__field-hint">
@@ -120,18 +120,20 @@
                       <th>Brand</th>
                       <th>Model</th>
                       <th>Size</th>
+                      <th>Controller</th>
                       <th class="wiz__num">Travel X × Y × Z ({{ unitLabel }})</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="p in filteredProfiles" :key="p.id" class="wiz__profile" :class="{ 'is-active': profile?.id === p.id }" role="radio" :aria-checked="profile?.id === p.id" tabindex="0" @click="pickProfile(p)" @keydown.enter.space.prevent="pickProfile(p)">
                       <td>{{ p.brand }}</td>
-                      <td><strong>{{ p.model }}</strong><span v-if="p.id === lastProfileId" class="wiz__reco">Last used</span><span v-if="fitsBoard(p, fwBoard)" class="wiz__reco wiz__reco--board">Your board</span></td>
+                      <td><strong>{{ p.model }}</strong><span v-if="p.id === lastProfileId" class="wiz__reco">Last used</span></td>
                       <td>{{ p.size }}</td>
+                      <td>{{ p.boards?.length ? p.boards.join(', ') : '—' }}</td>
                       <td class="wiz__num">{{ travelText(p) }}</td>
                     </tr>
                     <tr v-if="filteredProfiles.length === 0">
-                      <td colspan="4" class="wiz__profile-none">No machine matches. Try fewer words, or start from Custom or other.</td>
+                      <td colspan="5" class="wiz__profile-none">No machine matches. Try fewer words, or start from Custom or other.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -675,12 +677,12 @@ const profileDate = computed(() => (profileFetchedAt.value ? new Date(profileFet
 const machineProfiles = computed(() => profilesFor(allProfiles.value, fwKind.value));
 const profile = ref<MachineProfile | null>(null);
 const profileQuery = ref('');
-// Every word typed must appear in the brand, model or size ("alt 4x8").
+// Every word typed must appear in the brand, model, size or controller ("alt 4x8").
 // Machines built on the connected board come first.
 const filteredProfiles = computed(() => {
   const words = profileQuery.value.toLowerCase().split(/\s+/).filter(Boolean);
   const hits = machineProfiles.value.filter((p) => {
-    const text = `${p.brand} ${p.model} ${p.size}`.toLowerCase();
+    const text = `${p.brand} ${p.model} ${p.size} ${(p.boards ?? []).join(' ')}`.toLowerCase();
     return words.every(w => text.includes(w));
   });
   return [...hits.filter(p => fitsBoard(p, fwBoard.value)), ...hits.filter(p => !fitsBoard(p, fwBoard.value))];
@@ -884,6 +886,8 @@ watch(connected, (on) => { if (on && (!fwLoaded.value || !fwKind.value)) loadFir
   border-radius: 16px;
   overflow: hidden;
 }
+/* A portrait screen (the kiosk) has the height to spare: use it. */
+@media (orientation: portrait) { .wiz { height: min(1240px, 86vh); } }
 
 /* ---- Rail ---- */
 .wiz__rail {
@@ -1139,7 +1143,6 @@ watch(connected, (on) => { if (on && (!fwLoaded.value || !fwKind.value)) loadFir
 .wiz__profile.is-active td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
 .wiz__list-info { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: -4px; }
 .wiz__list-info .wiz__field-hint { min-width: 0; flex: 1 1 260px; }
-.wiz__reco--board { background: color-mix(in srgb, #28a745 16%, transparent); color: #28a745; }
 .wiz__profile-none { text-align: center; color: var(--color-text-secondary); padding: 16px; }
 .wiz__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wiz__table th { text-align: left; font-weight: 600; color: var(--color-text-secondary); padding: 6px 10px; border-bottom: 1px solid var(--color-border); }
