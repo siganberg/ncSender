@@ -176,6 +176,25 @@ public class CncControllerGrblTests : IDisposable
         Assert.Equal("success", (await Done(job)).Status);
     }
 
+    // Shapeoko report: a held jog asks for the whole travel; the clamp must
+    // learn $130-$132 from the controller's own $$ reply, or Grbl answers
+    // error:15 and the machine never moves.
+    [Fact]
+    public async Task Grbl_HeldJog_IsShortenedToTheTravelFromDollarDollar()
+    {
+        Greet("Grbl 1.1h ['$' for help]");
+        _controller.HandleIncomingData("$130=1237.000");
+        _controller.HandleIncomingData("$131=1237.000");
+        _controller.HandleIncomingData("$132=150.000");
+        _controller.HandleIncomingData("<Home|MPos:-100.000,-100.000,-10.000|FS:0,0>");
+        _controller.HandleIncomingData("<Idle|MPos:-100.000,-100.000,-10.000|FS:0,0>");
+
+        var jog = _controller.SendCommandAsync("$J=G21 G91 Z145 F1500", new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
+        await WaitForWrite("$J=G21 G91 Z9.99 F1500\n");
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await Done(jog)).Status);
+    }
+
     [Fact]
     public async Task GrblHal_LinesGoOutUntouched()
     {

@@ -90,6 +90,20 @@ public partial class GrblProtocol : IProtocolHandler
             GrblHal.GrblHalProtocol.ParseParam(line, state, ref stateChanged);
             return true;
         }
+        // Max travel, for GrblTranslator's jog clamp: it reads this state,
+        // not the app's (which gets travel from the firmware service).
+        // Not consumed, so the line still reaches everything else.
+        var travel = MaxTravelPattern().Match(line);
+        if (travel.Success && double.TryParse(travel.Groups[2].Value, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var mm))
+        {
+            switch (travel.Groups[1].Value)
+            {
+                case "0": state.MaxTravelX = mm; break;
+                case "1": state.MaxTravelY = mm; break;
+                case "2": state.MaxTravelZ = mm; break;
+            }
+        }
         return false;
     }
 
@@ -112,4 +126,7 @@ public partial class GrblProtocol : IProtocolHandler
     private static partial Regex StateChangePattern();
 
     public bool NeedsGCodeStateRefresh(string command) => StateChangePattern().IsMatch(command);
+
+    [GeneratedRegex(@"^\$13([012])=([-+]?\d*\.?\d+)")]
+    private static partial Regex MaxTravelPattern();
 }
