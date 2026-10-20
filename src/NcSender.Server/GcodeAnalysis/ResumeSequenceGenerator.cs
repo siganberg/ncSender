@@ -31,8 +31,12 @@ public static class ResumeSequenceGenerator
         // Restore actual positioning mode after positioning is complete
         commands.Add("G90");
 
-        // Move to XY position
-        commands.Add($"G0 X{Fmt(state.PositionX)} Y{Fmt(state.PositionY)}");
+        // Move to XY position, only for axes the file has set before the start
+        // line (from line 1 nothing has, and X0 Y0 would be a guess)
+        var xy = (state.HasPositionX ? $" X{Fmt(state.PositionX)}" : "")
+               + (state.HasPositionY ? $" Y{Fmt(state.PositionY)}" : "");
+        if (xy.Length > 0)
+            commands.Add("G0" + xy);
 
         // Spindle
         var spindleActive = state.SpindleState is "M3" or "M4";
@@ -60,7 +64,13 @@ public static class ResumeSequenceGenerator
 
         // Z movement — if state Z is at or above 0 (retract height), just rapid there
         // directly. Only add approach height when plunging into material (negative Z).
-        if (options.TargetLineIsRapid && state.PositionZ < 0)
+        if (!state.HasPositionZ)
+        {
+            // No Z given yet: stay at the safe retract height. A rapid to the
+            // default Z0 plunged to the bottom of the stock on files whose Z0
+            // is the table.
+        }
+        else if (options.TargetLineIsRapid && state.PositionZ < 0)
         {
             // Target line is a rapid move (G0) — don't lower Z at all.
             // Stay at safe retract height and let the G-code handle Z when cutting resumes.

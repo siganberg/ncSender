@@ -297,4 +297,72 @@ public class GrblTranslatorTests
         Run("#1 = [#<_metric> + #<_absolute> + #5220 + #5400]");
         Assert.Equal("G0 X3", Single("G0 X#1"));
     }
+
+    // A job numbers every line, so the program delimiter comes as "N1 %".
+    [Theory]
+    [InlineData("%")]
+    [InlineData("N1 %")]
+    [InlineData("N7169 %")]
+    public void ProgramDelimiter_IsDropped(string line) => Assert.Empty(Writes(Run(line)));
+
+    // Shapeoko: homed at -1.5 with 1237 mm of travel, holding jog asked for
+    // the whole travel and Grbl answered error:15.
+    private void Homed(string mpos)
+    {
+        _state.Homed = true;
+        _state.MPos = mpos;
+        _state.MaxTravelX = 1237;
+        _state.MaxTravelY = 1237;
+        _state.MaxTravelZ = 100;
+    }
+
+    [Fact]
+    public void Jog_IsShortenedToEndInsideTheTravel()
+    {
+        Homed("-2.500,-2.500,-1.500");
+        Assert.Equal("$J=G21 G91 X-1234.49 Y-1234.49 F3000", Single("$J=G21 G91 X-1237 Y-1237 F3000"));
+    }
+
+    [Fact]
+    public void Jog_TowardTheHomeEnd_StopsShortOfZero()
+    {
+        Homed("-2.500,-2.500,-1.500");
+        Assert.Equal("$J=G21 G91 Z1.49 F1500", Single("$J=G21 G91 Z100 F1500"));
+    }
+
+    [Fact]
+    public void Jog_InsideTheTravel_IsUnchanged()
+    {
+        Homed("-500.000,-500.000,-10.000");
+        Assert.Equal("$J=G21 G91 X-1 Y-1 F3000", Single("$J=G21 G91 X-1 Y-1 F3000"));
+    }
+
+    [Fact]
+    public void Jog_InInches_IsShortenedInInches()
+    {
+        Homed("-2.500,-2.500,-1.500");
+        Assert.Equal("$J=G20 G91 Z0.059 F60", Single("$J=G20 G91 Z4 F60"));
+    }
+
+    [Fact]
+    public void Jog_AtTheLimit_SendsNothing()
+    {
+        Homed("-1236.995,-500.000,-10.000");
+        Assert.Empty(Writes(Run("$J=G21 G91 X-50 F3000")));
+    }
+
+    [Fact]
+    public void Jog_BeforeHoming_IsUnchanged()
+    {
+        _state.MPos = "0.000,0.000,0.000";
+        _state.MaxTravelX = 1237;
+        Assert.Equal("$J=G21 G91 X-2000 F3000", Single("$J=G21 G91 X-2000 F3000"));
+    }
+
+    [Fact]
+    public void AbsoluteJog_IsUnchanged()
+    {
+        Homed("-2.500,-2.500,-1.500");
+        Assert.Equal("$J=G53 G90 X-10 F3000", Single("$J=G53 G90 X-10 F3000"));
+    }
 }

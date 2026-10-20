@@ -72,7 +72,8 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
     public TranslationResult Translate(string line)
     {
         var src = line.Trim();
-        if (src.Length == 0 || src == "%") return TranslationResult.Nothing;
+        // A job numbers every line, so the program delimiter arrives as "N1 %".
+        if (src.Length == 0 || NcSender.Core.Utils.GcodePatterns.StripNNumber(src).Trim() == "%") return TranslationResult.Nothing;
 
         if (src[0] == '$')
         {
@@ -84,6 +85,11 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
                 return src[3..].Trim().Equals("_tool_offset", StringComparison.OrdinalIgnoreCase)
                     ? TranslationResult.Run(TranslationStep.Report($"[PARAM:_TOOL_OFFSET={(_tlo != 0 ? 1 : 0)}]"))
                     : TranslationResult.Nothing;
+            }
+            if (src.StartsWith("$J=", StringComparison.OrdinalIgnoreCase))
+            {
+                var jog = ClampJog(src);
+                return jog is null ? TranslationResult.Nothing : TranslationResult.Run(TranslationStep.Line(jog));
             }
             return TranslationResult.Run(TranslationStep.Line(src));
         }
@@ -289,6 +295,59 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
     }
 
     // ---- words ----
+
+    // Continuous jog asks for the axis's whole travel and relies on the
+    // controller to stop at the soft limit, as grblHAL does. Grbl instead
+    // rejects a jog that would end past it (error:15), so once homed an
+    // incremental jog is shortened to end inside the travel: machine
+    // positions run from -max travel to 0. Null when nothing is left to move.
+    private string? ClampJog(string line)
+    {
+        var s = _state();
+        if (!s.Homed) return line;
+        var body = line[3..];
+        if (!JogIncrementalPattern().IsMatch(body)) return line;
+
+        var mpos = s.MPos.Split(',');
+        var travel = new[] { s.MaxTravelX, s.MaxTravelY, s.MaxTravelZ };
+        var scale = JogInchPattern().IsMatch(body) ? 25.4 : 1.0;
+        var moving = false;
+        var clamped = JogAxisPattern().Replace(body, m =>
+        {
+            var axis = char.ToUpperInvariant(m.Groups[1].Value[0]) - 'X';
+            if (axis >= mpos.Length || travel[axis] <= 0
+                || !double.TryParse(mpos[axis], NumberStyles.Float, CultureInfo.InvariantCulture, out var pos)
+                || !double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var dist))
+            {
+                moving = true;
+                return m.Value;
+            }
+            // Not in the -travel..0 layout (a build that homes to positive
+            // space): leave the jog to the controller.
+            if (pos > 0.001 || pos < -travel[axis] - 0.001)
+            {
+                moving = true;
+                return m.Value;
+            }
+            const double margin = 0.01;
+            var target = Math.Clamp(pos + dist * scale, -travel[axis] + margin, -margin);
+            var allowed = (target - pos) / scale;
+            // Already at the limit (or inside the margin): no move that way.
+            if (Math.Abs(allowed) < 0.001 || Math.Sign(allowed) != Math.Sign(dist)) return "";
+            moving = true;
+            return m.Groups[1].Value + allowed.ToString("0.###", CultureInfo.InvariantCulture);
+        });
+        return moving ? "$J=" + Regex.Replace(clamped.Trim(), @"\s{2,}", " ") : null;
+    }
+
+    [GeneratedRegex(@"\bG91\b", RegexOptions.IgnoreCase)]
+    private static partial Regex JogIncrementalPattern();
+
+    [GeneratedRegex(@"\bG20\b", RegexOptions.IgnoreCase)]
+    private static partial Regex JogInchPattern();
+
+    [GeneratedRegex(@"\b([XYZ])\s*([-+]?\d*\.?\d+)", RegexOptions.IgnoreCase)]
+    private static partial Regex JogAxisPattern();
 
     private sealed record Word(char Letter, double Value, string? Literal);
     private sealed record ParsedLine(List<Word> Words, List<(NgcParamRef Target, double Value)> Assignments);
