@@ -1187,7 +1187,6 @@ const getHomeIconTexture = () => {
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    texture.needsUpdate = true;
 
     cachedHomeIconTexture = texture;
     return texture;
