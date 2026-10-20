@@ -304,6 +304,17 @@
                   <button class="reset-colors-button" @click="resetColors">Reset</button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div class="setting-item-content">
+                  <label class="setting-label">Visualizer Overlay Opacity</label>
+                  <div class="settings-note">
+                    How solid the buttons and panels over the toolpath are. Lower lets more of the toolpath show through.
+                  </div>
+                </div>
+                <select class="setting-select" v-model="overlayOpacity" @change="saveOverlayOpacity">
+                  <option v-for="v in [50, 60, 70, 80, 90, 100]" :key="v" :value="v">{{ v === 100 ? 'Solid (100%)' : `${v}%` }}</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1543,6 +1554,7 @@ watch(defaultView, (newView) => {
 // Color customization (from settings store)
 const accentColor = ref(initialSettings?.accentColor || '#1abc9c');
 const gradientColor = ref(initialSettings?.gradientColor || '#34d399');
+const overlayOpacity = ref(initialSettings?.overlayOpacity ?? 80);
 
 const currentGradient = computed(() => {
   return `linear-gradient(135deg, ${accentColor.value} 0%, ${gradientColor.value} 100%)`;
@@ -2090,6 +2102,10 @@ onMounted(() => {
       if (detail.accentColor) accentColor.value = detail.accentColor;
       if (detail.gradientColor) gradientColor.value = detail.gradientColor;
       applyColors();
+    }
+    if (detail?.overlayOpacity !== undefined) {
+      overlayOpacity.value = detail.overlayOpacity;
+      applyOverlayOpacity();
     }
   });
 });
@@ -2700,6 +2716,7 @@ const updateGradientColor = (color: string) => {
 const applyColors = () => {
   const root = document.documentElement;
   root.style.setProperty('--color-accent', accentColor.value);
+  root.style.setProperty('--color-gradient', gradientColor.value);
   root.style.setProperty('--gradient-accent', currentGradient.value);
   // Notify listeners (e.g., 3D viewport) that accent color changed
   try {
@@ -2728,6 +2745,21 @@ const resetColors = async () => {
   await updateSettings({
     accentColor: defaultAccent,
     gradientColor: defaultGradient
+  });
+};
+
+const applyOverlayOpacity = () => {
+  const value = Number(overlayOpacity.value);
+  overlayOpacity.value = Number.isFinite(value) ? Math.min(100, Math.max(50, Math.round(value / 10) * 10)) : 80;
+  document.documentElement.style.setProperty('--overlay-alpha', `${overlayOpacity.value}%`);
+  window.dispatchEvent(new CustomEvent('overlay-opacity-change'));
+};
+
+const saveOverlayOpacity = async () => {
+  applyOverlayOpacity();
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({
+    overlayOpacity: Number(overlayOpacity.value)
   });
 };
 
@@ -3035,6 +3067,7 @@ onMounted(async () => {
 
   // Apply colors after settings are loaded
   applyColors();
+  applyOverlayOpacity();
 
   // Use pre-loaded plugins if available
   const plugins = getPluginsFromInit();
