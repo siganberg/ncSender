@@ -24,7 +24,7 @@ public class ProbeService : IProbeService
         _logger = logger;
     }
 
-    public async Task StartAsync(Dictionary<string, JsonElement>? options, List<string>? commands)
+    public async Task<ProbeResult> StartAsync(Dictionary<string, JsonElement>? options, List<string>? commands)
     {
         if (!_controller.IsConnected)
             throw new InvalidOperationException("Controller not connected");
@@ -38,6 +38,11 @@ public class ProbeService : IProbeService
             commands = generated;
         }
 
+        var measurement = CenterMeasurement.For(commands,
+            options is null ? 2 : ProbeCommandGenerator.GetDouble(options, "toolDiameter", 2));
+        Action<string, string?>? onData = measurement is null ? null : (data, _) => { if (data is not null) measurement.OnData(data); };
+        if (onData is not null) _controller.DataReceived += onData;
+
         _context.State.MachineState.IsProbing = true;
         _context.UpdateSenderStatus();
         await _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
@@ -50,6 +55,7 @@ public class ProbeService : IProbeService
             {
                 var trimmed = cmd.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                measurement?.OnCommand(trimmed);
 
                 var result = await _controller.SendCommandAsync(trimmed, new CommandOptions
                 {
@@ -64,6 +70,8 @@ public class ProbeService : IProbeService
                     throw new InvalidOperationException(
                         $"Probing stopped: the controller rejected '{trimmed}' ({result.ErrorMessage ?? "error"})");
             }
+
+            return measurement?.Result() ?? new ProbeResult();
         }
         catch (Exception ex)
         {
@@ -72,6 +80,7 @@ public class ProbeService : IProbeService
         }
         finally
         {
+            if (onData is not null) _controller.DataReceived -= onData;
             _context.State.MachineState.IsProbing = false;
             _context.UpdateSenderStatus();
             await _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);

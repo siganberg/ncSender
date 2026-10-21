@@ -258,7 +258,7 @@ public static class ProbeCommandGenerator
         return el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
     }
 
-    private static double GetDouble(Dictionary<string, JsonElement> opts, string key, double defaultValue = 0)
+    internal static double GetDouble(Dictionary<string, JsonElement> opts, string key, double defaultValue = 0)
     {
         if (!opts.TryGetValue(key, out var el))
             return defaultValue;

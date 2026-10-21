@@ -125,6 +125,7 @@ namespace NcSender.Server.Infrastructure;
 [JsonSerializable(typeof(CncError))]
 // API response records (AOT-safe replacements for anonymous types)
 [JsonSerializable(typeof(ApiSuccess))]
+[JsonSerializable(typeof(ProbeStartResponse))]
 [JsonSerializable(typeof(ApiSuccessMessage))]
 [JsonSerializable(typeof(ApiError))]
 [JsonSerializable(typeof(HealthResponse))]

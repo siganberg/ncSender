@@ -565,6 +565,11 @@
               </div>
             </template>
 
+            <!-- What the last Center probe measured, under the fields it was probed with -->
+            <div v-if="measuredSize && measuredSize.axis === probingAxis" class="probe-hint probe-hint--result">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
+              <span><strong>Measured size:</strong> X {{ measuredSize.x != null ? formatCoord(measuredSize.x) : '—' }} × Y {{ measuredSize.y != null ? formatCoord(measuredSize.y) : '—' }} {{ lengthUnit }}</span>
+            </div>
           </div>
           <div class="probe-card probe-card--preview">
             <div class="probe-connection-test">
@@ -783,6 +788,9 @@ const formatDiameter = (mm: number) =>
 
 const coordAxes = ['x', 'y', 'z'] as const;
 const formatCoord = (mm: number) => (isImperial.value ? mmToInches(mm).toFixed(4) : mm.toFixed(3));
+
+/** The hole or part size the last Center probe measured (mm), for the axis it ran. */
+const measuredSize = ref<{ axis: string; x: number | null; y: number | null } | null>(null);
 
 
 // AutoZero Touch probe state
@@ -1686,8 +1694,12 @@ const handleStartProbe = async () => {
     };
 
     console.log('[Probe] Starting probe operation:', options);
+    measuredSize.value = null;
     const result = await startProbeOperation(options);
     console.log('[Probe] Probe operation started:', result);
+    if (result?.measuredX != null || result?.measuredY != null) {
+      measuredSize.value = { axis: options.probingAxis, x: result.measuredX ?? null, y: result.measuredY ?? null };
+    }
   } catch (error) {
     console.error('[Probe] Error starting probe:', error);
   }
@@ -1711,6 +1723,8 @@ const handleStartProbe = async () => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  /* The dialog's own corners: the rail's background would square them off. */
+  border-radius: 16px;
   color: var(--color-text-primary);
 }
 
@@ -2025,7 +2039,7 @@ const handleStartProbe = async () => {
    fixed height also keeps it steady when switching tabs. */
 @media (orientation: portrait) {
   :deep(.dialog) {
-    height: min(65vh, 920px) !important;
+    height: min(calc(65vh + 50px), 970px) !important;
   }
 }
 
@@ -2113,6 +2127,18 @@ const handleStartProbe = async () => {
 
 .probe-hint strong {
   font-weight: 600;
+}
+
+/* A result, not an instruction: solid accent so it stands out. */
+.probe-hint--result {
+  margin-top: 4px;
+  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.probe-hint--result .probe-hint__icon {
+  color: inherit;
 }
 
 .probe-control-row {
