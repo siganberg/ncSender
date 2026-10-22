@@ -23,6 +23,9 @@ public class DrawbarInterlockTests
             .Callback<string, System.Text.Json.JsonElement>((t, e) => { lock (_broadcasts) _broadcasts.Add((t, e.GetRawText())); })
             .Returns(Task.CompletedTask);
         _svc = new DongleDeviceService(NullLogger<DongleDeviceService>.Instance, broadcaster.Object);
+        // The radio here never answers; these tests are about the interlock, not the resends.
+        _svc.OutputAttempts = 1;
+        _svc.OutputAckTimeoutMs = 1;
         _svc.SetSender(line => { _radio.Add(line); return Task.CompletedTask; });
         _svc.SpindleActive = () => _spindle;
         // OUT1 (out 0) is the drawbar.
