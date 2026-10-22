@@ -18,6 +18,26 @@ public class ThreeDProbeStrategyTests
         yield return new object[] { "Outer", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30) };
     }
 
+    public static IEnumerable<object[]> SingleAxisCenterRoutines()
+    {
+        yield return new object[] { "Inner X", "X", ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, axes: "X") };
+        yield return new object[] { "Inner Y", "Y", ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, axes: "Y") };
+        yield return new object[] { "Outer X", "X", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, axes: "X") };
+        yield return new object[] { "Outer Y", "Y", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, axes: "Y") };
+    }
+
+    [Theory]
+    [MemberData(nameof(SingleAxisCenterRoutines))]
+    public void CenterRoutine_SingleAxis_ProbesAndZeroesOnlyThatAxis(string label, string axis, List<string> routine)
+    {
+        var other = axis == "X" ? "Y" : "X";
+        Assert.Contains(routine, l => l.StartsWith($"#<{axis}1> ="));
+        Assert.Contains(routine, l => l.StartsWith($"#<{axis}2> ="));
+        Assert.DoesNotContain(routine, l => l.Contains($"#<{other}1>") || l.Contains($"#<{other}2>"));
+        Assert.DoesNotContain(routine, l => l.StartsWith("G38") && l.Contains(other));
+        Assert.Equal($"G10 L20 {axis}0", Assert.Single(routine, l => l.StartsWith("G10 L20")));
+    }
+
     [Theory]
     [MemberData(nameof(CenterRoutines))]
     public void CenterRoutine_DoesNotEmitFluidNcIncompatibleSyntax(string label, List<string> routine)

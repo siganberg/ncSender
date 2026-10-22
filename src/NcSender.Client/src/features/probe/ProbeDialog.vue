@@ -157,8 +157,27 @@
                 </div>
               </div>
 
-              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
+              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
                 <div class="probe-control-group">
+                  <label class="probe-label">Center Axes</label>
+                  <div class="probe-segmented" role="radiogroup">
+                    <button
+                      v-for="axes in ['X', 'XY', 'Y']"
+                      :key="axes"
+                      type="button"
+                      role="radio"
+                      class="probe-segmented__option"
+                      :class="{ 'is-active': centerAxes === axes }"
+                      :aria-checked="centerAxes === axes"
+                      :disabled="isProbing"
+                      @click="centerAxes = axes"
+                    >{{ axes }}</button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
+                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerX }">
                   <label class="probe-label">X Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
@@ -169,7 +188,7 @@
                       :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.xDimension }"
-                      :disabled="isProbing"
+                      :disabled="isProbing || !centerX"
                       @input="validateXDimension"
                       @blur="handleXDimensionBlur"
                     />
@@ -178,7 +197,7 @@
                   </div>
                 </div>
 
-                <div class="probe-control-group">
+                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerY }">
                   <label class="probe-label">Y Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
@@ -189,7 +208,7 @@
                       :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.yDimension }"
-                      :disabled="isProbing"
+                      :disabled="isProbing || !centerY"
                       @input="validateYDimension"
                       @blur="handleYDimensionBlur"
                     />
@@ -568,7 +587,7 @@
             <!-- What the last Center probe measured, under the fields it was probed with -->
             <div v-if="measuredSize && measuredSize.axis === probingAxis" class="probe-hint probe-hint--result">
               <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
-              <span><strong>Measured size:</strong> X {{ measuredSize.x != null ? formatCoord(measuredSize.x) : '—' }} × Y {{ measuredSize.y != null ? formatCoord(measuredSize.y) : '—' }} {{ lengthUnit }}</span>
+              <span><strong>Measured size:</strong> <template v-if="measuredSize.x != null">X {{ formatCoord(measuredSize.x) }}</template><template v-if="measuredSize.x != null && measuredSize.y != null"> × </template><template v-if="measuredSize.y != null">Y {{ formatCoord(measuredSize.y) }}</template> {{ lengthUnit }}</span>
             </div>
           </div>
           <div class="probe-card probe-card--preview">
@@ -684,6 +703,10 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
+// Center probes: both axes, or one when the part only leaves room to probe one way.
+const centerAxes = ref('XY');
+const centerX = computed(() => centerAxes.value !== 'Y');
+const centerY = computed(() => centerAxes.value !== 'X');
 const appStore = useAppStore();
 const jogStep = ref(appStore.unitsPreference.value === 'imperial' ? 0.1 : 1);
 const jogFeedRate = ref(appStore.unitsPreference.value === 'imperial' ? 100 : 3000);
@@ -1255,6 +1278,16 @@ watch(() => probeType.value, () => {
   }
 });
 
+watch(() => centerAxes.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { '3d-probe': { centerAxes: value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save centerAxes setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 watch(() => probeZFirst.value, async (value) => {
   if (!isInitialLoad) {
     try {
@@ -1363,6 +1396,9 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['3d-probe']?.rapidMovement === 'number') {
           rapidMovement.value = settings.probe['3d-probe'].rapidMovement;
           originalValues.value.rapidMovement = settings.probe['3d-probe'].rapidMovement;
+        }
+        if (['XY', 'X', 'Y'].includes(settings.probe?.['3d-probe']?.centerAxes)) {
+          centerAxes.value = settings.probe['3d-probe'].centerAxes;
         }
         if (typeof settings.probe?.['3d-probe']?.probeZFirst === 'boolean') {
           probeZFirst.value = settings.probe['3d-probe'].probeZFirst;
@@ -1678,6 +1714,7 @@ const handleStartProbe = async () => {
       yDimension: yDimension.value,
       rapidMovement: rapidMovement.value,
       probeZFirst: probeZFirst.value,
+      centerAxes: centerAxes.value,
       toolDiameter: ballPointDiameter.value || 6,
       zPlunge: zPlunge.value,
       zOffset: zOffset.value,
@@ -2149,6 +2186,53 @@ const handleStartProbe = async () => {
 .probe-control-row > .probe-control-group {
   flex: 1 1 0;
   min-width: 0;
+}
+
+.probe-control-row--half {
+  justify-content: center;
+}
+
+.probe-control-row--half > .probe-control-group {
+  flex: 0 1 calc(50% - 6px);
+}
+
+.probe-control-row--half .probe-label {
+  text-align: center;
+}
+
+/* X | XY | Y: which axes a Center probe centres on */
+.probe-segmented {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+
+.probe-segmented__option {
+  flex: 1 1 0;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.probe-segmented__option + .probe-segmented__option {
+  border-left: 1px solid var(--color-border);
+}
+
+.probe-segmented__option.is-active {
+  color: #fff;
+  background: var(--color-accent);
+}
+
+.probe-segmented__option:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .probe-control-row + .probe-help {
