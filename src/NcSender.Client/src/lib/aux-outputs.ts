@@ -75,3 +75,12 @@ export function auxOffCommand(on: string | undefined | null): string {
   }
   return '';
 }
+
+/** Quick: an output that turns itself off this many seconds after it's turned on. */
+export const AUX_QUICK_SECS = [0.5, 1, 1.5, 2, 3];
+
+/** A saved Quick time, or 0 (off) when it isn't one of AUX_QUICK_SECS. */
+export function auxQuickSec(value: unknown): number {
+  const n = Number(value);
+  return AUX_QUICK_SECS.includes(n) ? n : 0;
+}

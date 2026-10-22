@@ -349,7 +349,7 @@
             <span class="slider"></span>
           </label>
           <span class="spindle-toggle-name">
-            {{ switchConfig.label }}<sup v-if="switchConfig.holdToActivate" class="hold-sup">Hold</sup>
+            {{ switchConfig.label }}<span v-if="switchConfig.holdToActivate || switchConfig.quickSec" class="aux-badges"><span v-if="switchConfig.holdToActivate" class="hold-sup">Hold</span><span v-if="switchConfig.quickSec" class="hold-sup">AutoOff</span></span>
           </span>
         </div>
       </div>
@@ -834,7 +834,7 @@ import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
-import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand } from '../../lib/aux-outputs';
+import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand, auxQuickSec } from '../../lib/aux-outputs';
 import { dustBoot, watchDustBoot, dustBootCommand, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
 import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
@@ -1280,6 +1280,7 @@ const enabledIOSwitches = computed(() => {
           on: output.on,
           off: getOffCommand(output.on),
           holdToActivate: output.holdToActivate === true,
+          quickSec: auxQuickSec(output.quickSec),
         };
         // Initialize state if not exists
         if (!(key in ioSwitchStates)) {
@@ -4522,10 +4523,24 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
   requestRender();
 });
 
+// Quick outputs (Settings > Auxiliary I/O) turn themselves off again after
+// their time, so a drawbar or blow-off uses air only for that moment.
+const auxQuickTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
 const toggleIOSwitch = async (switchKey: string) => {
   const currentState = ioSwitchStates[switchKey];
   const newState = !currentState;
   ioSwitchStates[switchKey] = newState;
+
+  clearTimeout(auxQuickTimers[switchKey]);
+  delete auxQuickTimers[switchKey];
+  const quickSec = enabledIOSwitches.value[switchKey]?.quickSec;
+  if (newState && quickSec) {
+    auxQuickTimers[switchKey] = setTimeout(() => {
+      delete auxQuickTimers[switchKey];
+      if (ioSwitchStates[switchKey]) toggleIOSwitch(switchKey);
+    }, quickSec * 1000);
+  }
 
   try {
     const switchConfig = enabledIOSwitches.value[switchKey];
@@ -6659,6 +6674,21 @@ h2 {
 .switch--hold.is-on .slider { background-color: var(--color-accent); }
 .switch--hold.is-on .slider::before { transform: translateX(calc(var(--switch-width) - var(--switch-height))); }
 .switch--hold.is-disabled { opacity: 0.5; cursor: not-allowed; }
+/* Hold and Quick badges stack, so they take one badge's width. */
+.aux-badges {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.aux-badges .hold-sup {
+  margin-left: 0;
+  vertical-align: baseline;
+  text-align: center;
+}
+
 .hold-sup {
   font-size: 8px;
   font-weight: 700;

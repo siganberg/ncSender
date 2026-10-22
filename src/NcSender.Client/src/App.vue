@@ -381,18 +381,16 @@
                 <colgroup>
                   <col class="col-enabled">
                   <col class="col-name">
-                  <col class="col-on">
-                  <col class="col-off">
-                  <col class="col-hold">
+                  <col class="col-output">
+                  <col class="col-badges">
                   <col class="col-actions">
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Enabled</th>
                     <th>Name</th>
-                    <th>On</th>
-                    <th>Off</th>
-                    <th title="Require 1-second hold to activate — protects against accidental clicks on safety-critical outputs (e.g. pneumatic collet release).">Hold</th>
+                    <th>Output</th>
+                    <th>Options</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -400,9 +398,11 @@
                   <tr v-if="dustBoot.paired" class="aux-row--locked" title="Added for your paired AutoDustBoot. It can't be changed.">
                     <td><ToggleSwitch :modelValue="true" disabled /></td>
                     <td>{{ DUST_BOOT_NAME }}</td>
-                    <td class="command-cell">Expand</td>
-                    <td class="command-cell">Retract</td>
-                    <td><ToggleSwitch :modelValue="false" disabled /></td>
+                    <td class="aux-command">
+                      <span>Expand</span>
+                      <span class="aux-command__off">Retract</span>
+                    </td>
+                    <td></td>
                     <td>
                       <span class="aux-lock" title="Added for your paired AutoDustBoot. It can't be changed.">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -416,55 +416,25 @@
                     <td>
                       <ToggleSwitch v-model="output.enabled" @update:modelValue="saveAuxOutputs" />
                     </td>
-                    <template v-if="editingAuxIndex === index">
-                      <td>
-                        <input type="text" v-model="auxEditState.name" class="aux-inline-input" placeholder="Name" />
-                      </td>
-                      <td>
-                        <select v-model="auxEditState.on" class="aux-inline-select">
-                          <option v-for="cmd in availableOnCommands" :key="cmd.value" :value="cmd.value">{{ cmd.label }}</option>
-                        </select>
-                      </td>
-                      <td class="command-cell">{{ auxCommandLabel(getOffCommand(auxEditState.on)) }}</td>
-                      <td></td>
-                      <td>
-                        <div class="aux-actions-cell">
-                          <button class="aux-btn-save" @click="saveAuxEdit" title="Save">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          </button>
-                          <button class="aux-btn-cancel" @click="cancelAuxEdit" title="Cancel">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                          </button>
-                          <button class="aux-btn-delete" @click="deleteAuxOutput(index)" title="Delete">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <polyline points="3 6 5 6 21 6"></polyline>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    </template>
-                    <template v-else>
-                      <td>{{ output.name }}</td>
-                      <td class="command-cell">{{ auxCommandLabel(output.on) }}</td>
-                      <td class="command-cell">{{ auxCommandLabel(getOffCommand(output.on)) }}</td>
-                      <td>
-                        <ToggleSwitch v-model="output.holdToActivate" @update:modelValue="saveAuxOutputs" />
-                      </td>
-                      <td>
-                        <button class="switch-edit-btn" @click="startAuxEdit(index)" title="Edit">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                      </td>
-                    </template>
+                    <td>{{ output.name }}</td>
+                    <td class="aux-command">
+                      <span>{{ auxCommandLabel(output.on) }}</span>
+                      <span v-if="auxOffLabel(output.on)" class="aux-command__off">Off: {{ auxOffLabel(output.on) }}</span>
+                    </td>
+                    <td>
+                      <span v-if="output.holdToActivate || output.quickSec" class="aux-badges">
+                        <span v-if="output.holdToActivate" class="aux-badge">Hold</span>
+                        <span v-if="output.quickSec" class="aux-badge">AutoOff</span>
+                      </span>
+                    </td>
+                    <td>
+                      <button class="switch-edit-btn" @click="startAuxEdit(index)" title="Edit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -932,6 +902,16 @@
        (POST /api/gate/ensure-homed). GateHost renders it. -->
 
   <!-- Units Change Confirmation Dialog -->
+  <AuxOutputDialog
+    v-if="editingAuxIndex !== null"
+    :output="auxEditState"
+    :is-new="editingAuxIndex === -1"
+    :commands="availableOnCommands"
+    :off-label="auxOffLabel"
+    @save="saveAuxEdit"
+    @delete="deleteEditingAux"
+    @cancel="cancelAuxEdit"
+  />
   <Dialog v-if="showUnitsConfirmDialog" @close="showUnitsConfirmDialog = false" :show-header="false" size="small" :z-index="10001">
     <ConfirmPanel
       title="Change Units"
@@ -1128,6 +1108,7 @@ import PluginDialog from './components/PluginDialog.vue';
 import GateHost from './components/GateHost.vue';
 import ModalDialog from './components/ModalDialog.vue';
 import ToggleSwitch from './components/ToggleSwitch.vue';
+import AuxOutputDialog, { type AuxOutputForm } from './components/AuxOutputDialog.vue';
 import TipsDialog from './components/TipsDialog.vue';
 import SetupWizard from './components/SetupWizard.vue';
 import ConnectionSetup from './components/ConnectionSetup.vue';
@@ -1136,7 +1117,7 @@ import ColorPicker from './components/ColorPicker.vue';
 import AccessoriesDialog from './components/AccessoriesDialog.vue';
 import { api } from './lib/api.js';
 import { dustBoot, watchDustBoot, DUST_BOOT_NAME } from './lib/dust-boot';
-import { BRIDGE_DEVICE, BRIDGE_OUTPUT_COUNT, bridgeOnCommand, bridgeOutputIndex, auxOffCommand } from './lib/aux-outputs';
+import { BRIDGE_DEVICE, BRIDGE_OUTPUT_COUNT, bridgeOnCommand, bridgeOutputIndex, auxOffCommand, auxQuickSec } from './lib/aux-outputs';
 import { getApiBaseUrl } from './lib/api-base';
 import { getSettings, settingsStore } from './lib/settings-store.js';
 import { getPluginsFromInit, getInitData } from './lib/init';
@@ -1736,6 +1717,7 @@ const loadAuxOutputs = () => {
       name: item.name || `Output ${index + 1}`,
       on: item.on || 'M8',
       holdToActivate: item.holdToActivate ?? false,
+      quickSec: auxQuickSec(item.quickSec),
     }));
   }
   // Migrate from old ioSwitches format
@@ -1749,6 +1731,7 @@ const loadAuxOutputs = () => {
         name: oldFormat.flood.name || 'Flood',
         on: oldFormat.flood.on || 'M8',
         holdToActivate: false,
+        quickSec: 0,
       });
     }
     if (oldFormat.mist) {
@@ -1758,25 +1741,28 @@ const loadAuxOutputs = () => {
         name: oldFormat.mist.name || 'Mist',
         on: oldFormat.mist.on || 'M7',
         holdToActivate: false,
+        quickSec: 0,
       });
     }
     if (outputs.length > 0) return outputs;
   }
   // Default outputs
   return [
-    { id: 'flood', enabled: true, name: 'Flood', on: 'M8', holdToActivate: false },
-    { id: 'mist', enabled: true, name: 'Mist', on: 'M7', holdToActivate: false },
+    { id: 'flood', enabled: true, name: 'Flood', on: 'M8', holdToActivate: false, quickSec: 0 },
+    { id: 'mist', enabled: true, name: 'Mist', on: 'M7', holdToActivate: false, quickSec: 0 },
   ];
 };
 
 const auxOutputs = reactive(loadAuxOutputs());
 
-// Auxiliary Output inline edit state
+// Auxiliary Output being edited in AuxOutputDialog: its index, -1 for a new
+// one, null when the dialog is closed.
 const editingAuxIndex = ref<number | null>(null);
-const auxEditState = reactive({
+const auxEditState = reactive<AuxOutputForm>({
   name: '',
   on: '',
   holdToActivate: false,
+  quickSec: 0,
 });
 
 const availableOnCommands = computed(() => {
@@ -1804,6 +1790,13 @@ const auxCommandLabel = (command: string): string => {
   return index === null ? command : `Wireless I/O OUT${index + 1}`;
 };
 
+// The off command, shown under the on command when it reads differently
+// (a Wireless I/O output is the same OUTn both ways).
+const auxOffLabel = (on: string): string => {
+  const off = auxCommandLabel(getOffCommand(on));
+  return off && off !== auxCommandLabel(on) ? off : '';
+};
+
 // Is an Wireless I/O paired with the Wireless USB?
 const bridgePaired = ref(false);
 const refreshBridgePaired = async () => {
@@ -1822,6 +1815,7 @@ const startAuxEdit = (index: number) => {
   auxEditState.name = auxOutputs[index].name;
   auxEditState.on = auxOutputs[index].on;
   auxEditState.holdToActivate = auxOutputs[index].holdToActivate ?? false;
+  auxEditState.quickSec = auxQuickSec(auxOutputs[index].quickSec);
 };
 
 const cancelAuxEdit = () => {
@@ -1837,37 +1831,40 @@ const saveAuxOutputs = async () => {
       name: o.name,
       on: o.on,
       holdToActivate: o.holdToActivate ?? false,
+      quickSec: auxQuickSec(o.quickSec),
     }))
   });
 };
 
-const saveAuxEdit = async () => {
+const saveAuxEdit = async (value: AuxOutputForm) => {
   const index = editingAuxIndex.value;
   if (index === null) return;
-
-  auxOutputs[index].name = auxEditState.name.trim() || `Output ${index + 1}`;
-  auxOutputs[index].on = auxEditState.on;
-  auxOutputs[index].holdToActivate = auxEditState.holdToActivate;
+  const fields = {
+    name: value.name || `Output ${index === -1 ? auxOutputs.length + 1 : index + 1}`,
+    on: value.on,
+    holdToActivate: value.holdToActivate,
+    quickSec: auxQuickSec(value.quickSec),
+  };
+  if (index === -1) auxOutputs.push({ id: `aux-${Date.now()}`, enabled: true, ...fields });
+  else Object.assign(auxOutputs[index], fields);
 
   await saveAuxOutputs();
   editingAuxIndex.value = null;
 };
 
-const addAuxOutput = async () => {
-  const newId = `aux-${Date.now()}`;
-  auxOutputs.push({
-    id: newId,
-    enabled: true,
-    name: `Output ${auxOutputs.length + 1}`,
-    on: 'M8',
-    holdToActivate: false,
-  });
-  await saveAuxOutputs();
-  // Start editing the new output
-  startAuxEdit(auxOutputs.length - 1);
+// Add Output opens the dialog empty; nothing is saved until Save.
+const addAuxOutput = () => {
+  editingAuxIndex.value = -1;
+  auxEditState.name = `Output ${auxOutputs.length + 1}`;
+  auxEditState.on = 'M8';
+  auxEditState.holdToActivate = false;
+  auxEditState.quickSec = 0;
 };
 
-const deleteAuxOutput = async (index: number) => {
+const deleteEditingAux = async () => {
+  const index = editingAuxIndex.value;
+  editingAuxIndex.value = null;
+  if (index === null || index < 0) return;
   auxOutputs.splice(index, 1);
   await saveAuxOutputs();
 };
@@ -3594,7 +3591,7 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
 
 .io-switches-table {
   width: 100%;
-  min-width: 560px;
+  min-width: 480px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -3628,14 +3625,47 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   vertical-align: middle;
 }
 
-/* Column widths using colgroup in template. Values tuned so 6 columns
-   fit a ~520px min table width without visual overlap. */
-.io-switches-table .col-enabled { width: 60px; }
-.io-switches-table .col-name { width: auto; }
-.io-switches-table .col-on { width: 110px; }
-.io-switches-table .col-off { width: 80px; }
-.io-switches-table .col-hold { width: 60px; }
-.io-switches-table .col-actions { width: 130px; }
+/* Column widths using colgroup in template. Name and Output share what the
+   narrow columns leave; editing is in AuxOutputDialog. */
+.io-switches-table .col-enabled { width: 72px; }
+.io-switches-table .col-name { width: 32%; }
+.io-switches-table .col-output { width: auto; }
+.io-switches-table .col-badges { width: 190px; }
+.io-switches-table .col-actions { width: 64px; }
+
+.io-switches-table td.aux-command {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.io-switches-table td.aux-command span {
+  display: block;
+}
+
+.io-switches-table td.aux-command .aux-command__off {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+/* Hold and AutoOff badges: side by side, stacking when the column is narrow. */
+.aux-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.aux-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--color-accent);
+}
 
 .io-switches-table th:nth-child(1),
 .io-switches-table td:nth-child(1) {
@@ -3646,7 +3676,6 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   font-family: monospace;
   font-size: 0.9rem;
   color: var(--color-text-secondary);
-  white-space: nowrap;
 }
 
 .aux-lock {
@@ -3720,8 +3749,28 @@ const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'));
   text-align: center;
 }
 
+/* Big enough to tap on the touchscreen. */
 .io-switches-table .switch-edit-btn {
   display: inline-flex;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  opacity: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+}
+
+.io-switches-table .switch-edit-btn svg,
+.io-switches-table .aux-lock svg {
+  width: 18px;
+  height: 18px;
+}
+
+.io-switches-table .aux-lock {
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-secondary);
 }
 
 .aux-btn-save,
