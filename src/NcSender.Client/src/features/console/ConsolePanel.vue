@@ -565,7 +565,6 @@ import { api } from './api';
 import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../plugins/api';
 import { getCommandHistoryFromInit } from '@/lib/init';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
-import { isTerminalIDBEnabled } from '../../lib/terminal-store.js';
 import { useConsoleStore } from './store';
 import { useAppStore } from '../../composables/use-app-store';
 import { ensureHomed } from '../../composables/useUnhomedGuard';
@@ -1246,22 +1245,10 @@ const isSenderIdle = computed(() => normalizedSenderStatus.value === 'idle');
 
 // Messages to filter from terminal display
 // These are still broadcast to clients but hidden from terminal history
-const TERMINAL_FILTERED_MESSAGES = [
-  '$NCSENDER_'
-];
-
-function shouldFilterFromTerminal(message: string): boolean {
-  if (typeof message !== 'string') return false;
-  return TERMINAL_FILTERED_MESSAGES.some(filterTerm => message.startsWith(filterTerm));
-}
-
-// Filter console lines to hide job-runner chatter but show probing commands
-// Also filter out $NCSENDER_ commands from terminal display
-const terminalLines = computed(() => (props.lines || []).filter(l => {
-  if (l?.sourceId === 'job') return false;
-  if (shouldFilterFromTerminal(l?.message)) return false;
-  return true;
-}));
+// The store leaves job chatter and $NCSENDER_ commands out as lines arrive,
+// so this is the store's list as is: re-filtering up to CONSOLE_MAX_LINES on
+// every line made each pendant jog (with Show G-Code on) cost a full pass.
+const terminalLines = computed(() => props.lines || []);
 
 // Plugin Tools state
 const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);
@@ -1897,6 +1884,23 @@ watch(autoScroll, (newValue) => {
   }
 });
 
+// New lines arrive in bursts (a pendant jog stream, controller responses):
+// scroll at most once per frame, after Vue has rendered them.
+let terminalScrollPending = false;
+function scheduleTerminalScroll() {
+  if (terminalScrollPending) return;
+  terminalScrollPending = true;
+  requestAnimationFrame(() => {
+    terminalScrollPending = false;
+    if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
+      scrollTerminalToBottom(scrollerRef.value);
+    }
+    if (showTerminalModal.value && autoScrollTerminalModal.value && modalTerminalScrollerRef.value) {
+      scrollTerminalToBottom(modalTerminalScrollerRef.value);
+    }
+  });
+}
+
 function scrollTerminalToBottom(scroller: any) {
   if (!scroller) return;
   scroller.scrollToItem(terminalLines.value.length - 1);
@@ -1930,21 +1934,12 @@ onMounted(async () => {
   if (autoScroll.value && scrollerRef.value) {
     scrollTerminalToBottom(scrollerRef.value);
   }
-  stopAutoScrollBindings = store.startAutoScrollBindings(async (evt) => {
+  stopAutoScrollBindings = store.startAutoScrollBindings((evt) => {
     // Skip auto-scroll for job events (they're not shown in terminal)
     if (evt?.sourceId === 'job') return;
-
-    if (activeTab.value === 'terminal' && autoScroll.value && scrollerRef.value) {
-      await nextTick();
-      scrollTerminalToBottom(scrollerRef.value);
-    }
-
-    // Also auto-scroll modal if open
-    if (showTerminalModal.value && autoScrollTerminalModal.value && modalTerminalScrollerRef.value) {
-      await nextTick();
-      scrollTerminalToBottom(modalTerminalScrollerRef.value);
-    }
+    scheduleTerminalScroll();
   });
+
 });
 
 onBeforeUnmount(() => {
@@ -1954,14 +1949,8 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(() => props.lines, async () => {
-  if (activeTab.value === 'terminal' && autoScroll.value) {
-    await nextTick();
-    if (scrollerRef.value) {
-      scrollTerminalToBottom(scrollerRef.value);
-    }
-  }
-}, { deep: true });
+// No deep watch on the lines: it walked every line (and its meta) on each
+// change. New lines and results scroll through startAutoScrollBindings.
 
 // Load plugin tool menu items
 const loadToolMenuItems = async () => {
