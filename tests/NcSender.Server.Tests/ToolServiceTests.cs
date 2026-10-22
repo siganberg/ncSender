@@ -63,6 +63,21 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddTool_ProbeSlotPastMagazine_Succeeds()
+    {
+        Magazine(15);
+        _settings.Setup(s => s.GetSetting<bool>("tool.probe", false)).Returns(true);
+        _settings.Setup(s => s.GetSetting<int>("tool.probeToolNumber", 99)).Returns(99);
+        var svc = CreateService();
+
+        var result = await svc.AddAsync(new ToolInfo { Name = "3D Probe", ToolNumber = 99, Type = "probe", Diameter = 1 });
+
+        Assert.Equal(99, result.ToolNumber);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AddAsync(new ToolInfo { Name = "Past", ToolNumber = 16, Type = "flat", Diameter = 6 }));
+    }
+
+    [Fact]
     public async Task AddTool_MissingName_Throws()
     {
         var svc = CreateService();

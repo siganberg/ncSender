@@ -164,9 +164,10 @@ public class ToolService : IToolService
         if (tool.ToolNumber.HasValue && tools.Any(t => t.ToolNumber == tool.ToolNumber))
             throw new InvalidOperationException($"Tool number {tool.ToolNumber} already exists");
 
-        // Check magazine size
+        // Check magazine size (the probe slot sits past the magazine)
         var magazineSize = _settings.GetSetting<int>("tool.count", 0);
-        if (magazineSize > 0 && tool.ToolNumber > magazineSize)
+        var probeSlot = _settings.GetSetting<bool>("tool.probe", false) ? _settings.GetSetting<int>("tool.probeToolNumber", 99) : -1;
+        if (magazineSize > 0 && tool.ToolNumber > magazineSize && tool.ToolNumber != probeSlot)
             throw new InvalidOperationException($"Tool number {tool.ToolNumber} exceeds magazine size ({magazineSize})");
 
         if (tool.Id <= 0)
