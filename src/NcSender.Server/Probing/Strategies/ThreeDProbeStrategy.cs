@@ -186,7 +186,8 @@ public static class ThreeDProbeStrategy
             $"#<RAPID_SEARCH> = {F(rapidMovement)}",
             "G21 (mm mode)",
             "G91 (incremental)",
-            $"G38.3 Z-{F(zPlunge + 4)}  F{searchFeed}"
+            // Z-Plunge is the drop from where the user started the probe.
+            $"G38.3 Z-{F(zPlunge)}  F{searchFeed}"
         };
 
         if (probeX)
@@ -235,7 +236,7 @@ public static class ThreeDProbeStrategy
         }
 
         code.Add($"G10 L20 {Zeroed(probeX, probeY)}");
-        code.Add($"G0 Z{F(zPlunge + 4)}");
+        code.Add($"G0 Z{F(zPlunge)}");
         code.Add("G90");
         code.Add("G[#<return_units>]");
 
@@ -256,7 +257,10 @@ public static class ThreeDProbeStrategy
         const int bounce = 2;
         const int maxSearchLimit = 30;
         const int safeDistance = 5;
-        var zHop = zPlunge + ZParkHeight;
+        // After a Z probe the probe parks ZParkHeight above the top: it drops to
+        // Z-Plunge below the top and crosses ZParkHeight above it. Without one it
+        // drops Z-Plunge and lifts back to the height the user started it at.
+        var zHop = probeZFirst ? zPlunge + ZParkHeight : zPlunge;
 
         var safeRapidX = halfX + toolDiameter + safeDistance;
         var safeRapidY = halfY + toolDiameter + safeDistance;

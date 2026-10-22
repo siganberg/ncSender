@@ -27,6 +27,26 @@ public class ThreeDProbeStrategyTests
     }
 
     [Theory]
+    [InlineData("Inner", false, 3)]
+    [InlineData("Outer", false, 3)]
+    [InlineData("Outer", true, 7)]
+    public void CenterRoutine_DropsAndLiftsZPlungeFromStart_OrBelowTopAfterZProbe(string kind, bool probeZFirst, double move)
+    {
+        // Without a Z probe every drop is exactly Z-Plunge and every lift goes back
+        // to where the user started the probe; after one, Z-Plunge is below the top.
+        var routine = kind == "Inner"
+            ? ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, zPlunge: 3)
+            : ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, probeZFirst: probeZFirst, zPlunge: 3);
+        var center = routine.SkipWhile(l => l != $"(Probing Center - {kind})").ToList();
+        var drops = center.Where(l => l.StartsWith("G38.3 Z-")).ToList();
+        var lifts = center.Where(l => l.StartsWith("G0 Z")).ToList();
+        Assert.NotEmpty(drops);
+        Assert.All(drops, l => Assert.StartsWith($"G38.3 Z-{move} ", l));
+        Assert.Equal(drops.Count, lifts.Count);
+        Assert.All(lifts, l => Assert.Equal($"G0 Z{move}", l));
+    }
+
+    [Theory]
     [MemberData(nameof(SingleAxisCenterRoutines))]
     public void CenterRoutine_SingleAxis_ProbesAndZeroesOnlyThatAxis(string label, string axis, List<string> routine)
     {

@@ -157,6 +157,8 @@
                 </div>
               </div>
 
+              <p v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-help">{{ zPlungeBelowTop ? 'How far below the top the probe goes to touch the sides.' : 'How far the probe drops from where you start it to touch the sides. It goes back up to that height to move between sides.' }}</p>
+
               <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
                 <div class="probe-control-group">
                   <label class="probe-label">Center Axes</label>
@@ -624,7 +626,7 @@
             </div>
             <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-hint">
               <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span><strong>Important:</strong> Position the probe 3-5mm above at the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}. Measure dimension as close as possible to prevent probe damage.</span>
+              <span><strong>Important:</strong> Position the probe above the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}, high enough to clear it. Measure dimension as close as possible to prevent probe damage.</span>
             </div>
           </div>
         </div>
@@ -705,6 +707,9 @@ const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
 // Center probes: both axes, or one when the part only leaves room to probe one way.
 const centerAxes = ref('XY');
+// Z-Plunge is the depth below the top after a Z probe (XYZ, or Center - Outer with
+// Probe Z First); otherwise it is the drop from where the user started the probe.
+const zPlungeBelowTop = computed(() => probingAxis.value === 'XYZ' || (probingAxis.value === 'Center - Outer' && probeZFirst.value));
 const centerX = computed(() => centerAxes.value !== 'Y');
 const centerY = computed(() => centerAxes.value !== 'X');
 const appStore = useAppStore();
