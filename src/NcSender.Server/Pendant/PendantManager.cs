@@ -156,6 +156,10 @@ public class PendantManager : IPendantManager
         // Subscribe to status reports for DRO broadcasting
         _controller.StatusReportReceived += OnStatusReportReceived;
 
+        // The pendant's AutoDustBoot page follows every status the boot sends.
+        _dongleDevices.DeviceMessageReceived += (name, payload) => { if (name == DustBootDevice) _ = SendAdbStatus(); };
+        _dongleDevices.DeviceConnectivityChanged += (name, connected) => { if (name == DustBootDevice) _ = SendAdbStatus(); };
+
         _settingsManager.SettingsSaved += OnSettingsSaved;
 
         // The USB scanner runs for the life of the process, independent of the
@@ -1865,6 +1869,11 @@ public class PendantManager : IPendantManager
                 _ = HandlePendantAuxAsync(data.Substring(4));
                 return;
             }
+            if (data.StartsWith("ADB ", StringComparison.Ordinal))
+            {
+                _ = HandlePendantAdbAsync(data.Substring(4).Trim());
+                return;
+            }
             if (data.StartsWith("SLOT ", StringComparison.Ordinal))
             {
                 if (int.TryParse(data.AsSpan(5).Trim(), out var slot) && slot > 0)
@@ -2093,6 +2102,8 @@ public class PendantManager : IPendantManager
                 await SendOutputsConfig(force: true);
                 await Task.Delay(200);
                 await SendToolList(force: true);
+                await Task.Delay(200);
+                await SendAdbStatus(force: true);
                 await Task.Delay(200);
                 await _serialHandler.SendMessageAsync(
                     new PendantTypeMsg("request:metadata"),
@@ -2361,6 +2372,60 @@ public class PendantManager : IPendantManager
         return _dustBootExpanded;
     }
 
+    // AutoDustBoot page: the boot's status, sent whenever it changes. The boot
+    // reports every 500 ms; no UI throttle here, or the position lags a jog.
+    private const int EspNowMaxBytes = 246;
+    private readonly object _adbLock = new();
+    private string? _lastSentAdb;
+
+    private Task SendAdbStatus(bool force = false)
+    {
+        var handler = _serialHandler;
+        if (handler is not { IsConnected: true } || !_pendantConnected)
+            return Task.CompletedTask;
+
+        var device = _dongleDevices.GetDevice(DustBootDevice);
+        var paired = device is not null;
+        // seq changes on every line and says nothing to the pendant.
+        var status = paired ? Regex.Replace(device!.LastMessage ?? "", @"\s*\bseq=\S+", "").Trim() : "";
+        var msg = new PendantAdbStatusMsg("adb-status", paired, device?.Connected == true, status);
+        var json = JsonSerializer.Serialize(msg, PendantJsonContext.Default.PendantAdbStatusMsg);
+        if (json.Length > EspNowMaxBytes)
+        {
+            msg = msg with { Status = Regex.Replace(status, @"\s*\bver=\S+", "").Trim() };
+            json = JsonSerializer.Serialize(msg, PendantJsonContext.Default.PendantAdbStatusMsg);
+        }
+        lock (_adbLock)
+        {
+            if (!force && json == _lastSentAdb) return Task.CompletedTask;
+            _lastSentAdb = json;
+        }
+        return handler.SendRawAsync(json);
+    }
+
+    // "ADB <payload>" from the pendant's AutoDustBoot page, forwarded to the
+    // boot as the API's /api/dongle/devices/autodustboot/send does. Only the
+    // boot's own commands get through.
+    private static readonly Regex AdbCommand = new(@"^(?:up|down|stop|stepup|stepdown|home|save|status|goto:(\d{1,6}))$", RegexOptions.Compiled);
+
+    private async Task HandlePendantAdbAsync(string payload)
+    {
+        var m = AdbCommand.Match(payload);
+        if (!m.Success || (m.Groups[1].Success && int.Parse(m.Groups[1].Value) > 200000))
+        {
+            _logger.LogWarning("Pendant ADB '{Payload}' dropped: not an AutoDustBoot command", payload);
+            return;
+        }
+        try
+        {
+            await _dongleDevices.SendAsync(DustBootDevice, payload);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pendant ADB '{Payload}' failed", payload);
+        }
+    }
+
     private async Task HandlePendantAuxAsync(string payload)
     {
         try
@@ -2624,7 +2689,7 @@ public class PendantManager : IPendantManager
             // Unchanged configs are skipped, so connect/disconnect edges cost nothing.
             _ = Task.Run(async () =>
             {
-                try { await Task.Delay(300); await SendOutputsConfig(); }
+                try { await Task.Delay(300); await SendOutputsConfig(); await Task.Delay(200); await SendAdbStatus(); }
                 catch (Exception ex) { _logger.LogWarning(ex, "Failed to push outputs to the pendant"); }
             });
             return;
