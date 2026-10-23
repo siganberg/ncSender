@@ -36,7 +36,9 @@ public record PendantAuxOutput(
     string On,
     string Off,
     bool Enabled,
-    bool HoldToActivate);
+    bool HoldToActivate,
+    // Auto Off: seconds after On that the server sends Off (0 = stays on).
+    double QuickSec = 0);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(PendantTypeMsg))]

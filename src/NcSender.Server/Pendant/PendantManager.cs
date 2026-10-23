@@ -2251,6 +2251,116 @@ public class PendantManager : IPendantManager
     // the last config we pushed (so we only ever send commands the user
     // explicitly configured in Settings > Auxiliary I/O), then routes
     // the matching on/off command through the normal command processor.
+    // Auto Off (Settings > Auxiliary I/O): an output the pendant turns on is
+    // turned off again by the server after its time, so the Off still goes
+    // out if the pendant sleeps or loses its radio in between.
+    private static readonly double[] AutoOffSeconds = [0.5, 1, 1.5, 2, 3];
+    private readonly Dictionary<string, CancellationTokenSource> _auxAutoOff = new();
+
+    private static double ReadAutoOffSeconds(System.Text.Json.Nodes.JsonNode? node)
+    {
+        if (node is not System.Text.Json.Nodes.JsonValue value || !value.TryGetValue<double>(out var sec)) return 0;
+        return AutoOffSeconds.Contains(sec) ? sec : 0;
+    }
+
+    private void CancelAuxAutoOff(string id)
+    {
+        lock (_auxAutoOff)
+        {
+            if (!_auxAutoOff.Remove(id, out var cts)) return;
+            cts.Cancel();
+            cts.Dispose();
+        }
+    }
+
+    private void ScheduleAuxAutoOff(string id, string offCmd, double seconds)
+    {
+        var cts = new CancellationTokenSource();
+        lock (_auxAutoOff) _auxAutoOff[id] = cts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(seconds), cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            lock (_auxAutoOff)
+            {
+                if (!_auxAutoOff.TryGetValue(id, out var current) || current != cts) return;
+                _auxAutoOff.Remove(id);
+            }
+            cts.Dispose();
+            _logger.LogInformation("Pendant AUX '{Id}' Auto Off after {Sec}s → {Cmd}", id, seconds, offCmd);
+            try { await HandleCncCommandCoreAsync(offCmd); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Pendant AUX '{Id}' Auto Off failed", id); }
+        });
+    }
+
+    // AutoDustBoot on the pendant's Outputs screen (see the client's
+    // lib/dust-boot.ts). It has no expand command of its own: retract is
+    // goto:0 and expand is goto:<counts> to the position saved on the boot,
+    // read from the expand= of its last status line.
+    private const string DustBootDevice = "autodustboot";
+    private const string DustBootOn = "(DONGLE:autodustboot:goto:expand)";
+    private const string DustBootOff = "(DONGLE:autodustboot:goto:0)";
+    private static readonly int DustBootRetractedCounts = (int)Math.Round(0.3 * 505.7);   // within 0.3 mm of home
+    private const int DustBootPendingMs = 2500;
+    private bool _dustBootExpanded;
+    private long _dustBootPendingUntil;
+
+    private static long? DustBootField(string? status, string pattern)
+    {
+        if (status is null) return null;
+        var m = Regex.Match(status, pattern);
+        return m.Success && long.TryParse(m.Groups[1].Value, out var v) ? v : null;
+    }
+
+    private async Task HandleDustBootAuxAsync(bool on)
+    {
+        string cmd;
+        if (on)
+        {
+            var status = _dongleDevices.GetDevice(DustBootDevice)?.LastMessage;
+            var expand = DustBootField(status, @"\b(?:expand|saved)=(-?\d+)") ?? 0;
+            if (expand <= 0)
+            {
+                _logger.LogInformation("Pendant AUX 'autodustboot on' not sent: no expand position saved on the boot");
+                return;
+            }
+            cmd = $"(DONGLE:{DustBootDevice}:goto:{expand})";
+        }
+        else
+        {
+            cmd = DustBootOff;
+        }
+        _logger.LogInformation("Pendant AUX 'autodustboot {State}' → {Cmd}", on ? "on" : "off", cmd);
+        // Show the target until the boot reports where it stopped.
+        _dustBootExpanded = on;
+        _dustBootPendingUntil = Environment.TickCount64 + DustBootPendingMs;
+        await HandleCncCommandCoreAsync(cmd);
+    }
+
+    // Whether the boot shows as expanded. While it is moving its position says
+    // nothing about where it is going, so the target is kept until it stops;
+    // a status sent before it picked up a new command doesn't flip it back.
+    private bool DustBootIsOn()
+    {
+        var status = _dongleDevices.GetDevice(DustBootDevice)?.LastMessage;
+        var state = status is null ? null : Regex.Match(status, @"\bstate=(\S+)") is { Success: true } sm ? sm.Groups[1].Value : null;
+        if (state is "moving" or "homing")
+        {
+            _dustBootPendingUntil = 0;
+            return _dustBootExpanded;
+        }
+        if (Environment.TickCount64 < _dustBootPendingUntil) return _dustBootExpanded;
+        if (DustBootField(status, @"\bpos=(-?\d+)") is long pos)
+            _dustBootExpanded = pos > DustBootRetractedCounts;
+        return _dustBootExpanded;
+    }
+
     private async Task HandlePendantAuxAsync(string payload)
     {
         try
@@ -2263,6 +2373,11 @@ public class PendantManager : IPendantManager
             }
             var id = parts[0];
             var state = parts[1].Trim().ToLowerInvariant();
+            if (id == DustBootDevice)
+            {
+                await HandleDustBootAuxAsync(state == "on");
+                return;
+            }
             var aux = _lastSentOutputsCfg?.Aux;
             if (aux is null)
             {
@@ -2279,7 +2394,12 @@ public class PendantManager : IPendantManager
                     return;
                 }
                 _logger.LogInformation("Pendant AUX '{Id} {State}' → {Cmd}", id, state, cmd);
+                // Any tap ends a running Auto Off timer; a second tap before
+                // it fires is simply the Off.
+                CancelAuxAutoOff(id);
                 await HandleCncCommandCoreAsync(cmd);
+                if (state == "on" && entry.QuickSec > 0 && !string.IsNullOrEmpty(entry.Off))
+                    ScheduleAuxAutoOff(id, entry.Off, entry.QuickSec);
                 return;
             }
             var known = string.Join(",", aux.Select(a => a.Id));
@@ -2498,6 +2618,17 @@ public class PendantManager : IPendantManager
     // treats gate:show as an upsert).
     private void OnBroadcastToPendant(string type, JsonElement data)
     {
+        if (type == "dongle:device-changed")
+        {
+            // The AutoDustBoot output is there while the boot is paired.
+            // Unchanged configs are skipped, so connect/disconnect edges cost nothing.
+            _ = Task.Run(async () =>
+            {
+                try { await Task.Delay(300); await SendOutputsConfig(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to push outputs to the pendant"); }
+            });
+            return;
+        }
         if (type == "tools-updated")
         {
             // Tool Library edited: refresh the pendant's tool picker.
@@ -2709,7 +2840,8 @@ public class PendantManager : IPendantManager
             var bridgeStatus = _dongleDevices.GetDevice("xio")?.LastMessage;
             for (int i = 0; i < aux.Length && i < 32; i++)
             {
-                if (IsAuxOn(aux[i].On, ms, bridgeStatus)) auxMask |= (1u << i);
+                var isOn = aux[i].Id == DustBootDevice ? DustBootIsOn() : IsAuxOn(aux[i].On, ms, bridgeStatus);
+                if (isOn) auxMask |= (1u << i);
             }
         }
 
@@ -3007,6 +3139,9 @@ public class PendantManager : IPendantManager
 
         var auxNode = _settingsManager.GetSetting("auxOutputs");
         var auxList = new List<PendantAuxOutput>();
+        // A paired AutoDustBoot comes first, as on the visualizer.
+        if (_dongleDevices.GetDevice(DustBootDevice) is not null)
+            auxList.Add(new PendantAuxOutput(DustBootDevice, "AutoDustBoot", DustBootOn, DustBootOff, true, false));
         if (auxNode is System.Text.Json.Nodes.JsonArray arr)
         {
             foreach (var item in arr)
@@ -3019,8 +3154,9 @@ public class PendantManager : IPendantManager
                 var onCmd    = obj["on"]?.GetValue<string>() ?? "";
                 var offCmd   = obj["off"]?.GetValue<string>() ?? DeriveOffFromOn(onCmd);
                 var hold     = obj["holdToActivate"]?.GetValue<bool>() ?? false;
+                var quickSec = ReadAutoOffSeconds(obj["quickSec"]);
                 if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name)) continue;
-                auxList.Add(new PendantAuxOutput(id, name, onCmd, offCmd, true, hold));
+                auxList.Add(new PendantAuxOutput(id, name, onCmd, offCmd, true, hold, quickSec));
             }
         }
 
@@ -3029,7 +3165,7 @@ public class PendantManager : IPendantManager
         // case (see GCodeVisualizer.vue's ioSwitchesConfig fallback). Without
         // this the pendant Outputs screen is blank for anyone who never
         // added a custom aux, even though M7/M8 are always available.
-        if (auxList.Count == 0)
+        if (auxList.All(a => a.Id == DustBootDevice))
         {
             auxList.Add(new PendantAuxOutput("flood", "Flood", "M8", "M9", true, false));
             auxList.Add(new PendantAuxOutput("mist",  "Mist",  "M7", "M9", true, false));
