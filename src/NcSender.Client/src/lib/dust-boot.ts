@@ -11,6 +11,8 @@
 // expand is "goto:<counts>" to the position saved on the boot, which it reports
 // as expand=<counts> in every status line. The saved "on" command carries the
 // placeholder "goto:expand"; dustBootCommand() fills in the counts when sent.
+// The switch sends it straight to the boot (sendDustBoot), not through the
+// controller's queue.
 
 import { reactive } from 'vue';
 import { api } from './api.js';
@@ -60,6 +62,24 @@ export const isDustBootCommand = (command: string | undefined | null): boolean =
 export function dustBootCommand(on: boolean): string | null {
   if (!on) return DUST_BOOT_OFF;
   return dustBoot.expand > 0 ? `(DONGLE:${DUST_BOOT_DEVICE}:goto:${dustBoot.expand})` : null;
+}
+
+/**
+ * Send the switch's on/off straight to the boot over the Wireless USB. The
+ * boot is not on the controller, so this doesn't wait behind queued G-code.
+ * Returns false when expand has no saved position to go to.
+ */
+export async function sendDustBoot(on: boolean): Promise<boolean> {
+  const command = dustBootCommand(on);
+  if (!command) return false;
+  const payload = command.slice(`(DONGLE:${DUST_BOOT_DEVICE}:`.length, -1);   // "goto:<counts>"
+  const res = await fetch(`${api.baseUrl}/api/dongle/devices/${DUST_BOOT_DEVICE}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload }),
+  });
+  if (!res.ok) throw new Error(`AutoDustBoot send failed: ${res.status}`);
+  return true;
 }
 
 /** Fields from a boot status line ("status pos=-3 expand=46524 state=home"). */

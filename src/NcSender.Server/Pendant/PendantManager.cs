@@ -2331,6 +2331,11 @@ public class PendantManager : IPendantManager
 
     private async Task HandleDustBootAuxAsync(bool on)
     {
+        if (on && _serverContext.State.MachineState.IsToolChanging)
+        {
+            _logger.LogInformation("Pendant AUX 'autodustboot on' refused: no expand during a tool change");
+            return;
+        }
         string cmd;
         if (on)
         {
@@ -2341,17 +2346,19 @@ public class PendantManager : IPendantManager
                 _logger.LogInformation("Pendant AUX 'autodustboot on' not sent: no expand position saved on the boot");
                 return;
             }
-            cmd = $"(DONGLE:{DustBootDevice}:goto:{expand})";
+            cmd = $"goto:{expand}";
         }
         else
         {
-            cmd = DustBootOff;
+            cmd = "goto:0";
         }
         _logger.LogInformation("Pendant AUX 'autodustboot {State}' → {Cmd}", on ? "on" : "off", cmd);
         // Show the target until the boot reports where it stopped.
         _dustBootExpanded = on;
         _dustBootPendingUntil = Environment.TickCount64 + DustBootPendingMs;
-        await HandleCncCommandCoreAsync(cmd);
+        // Straight to the boot, not through the controller's queue: it is not
+        // on the controller, so it moves at once even with a job queued.
+        await _dongleDevices.SendAsync(DustBootDevice, cmd);
     }
 
     // Whether the boot shows as expanded. While it is moving its position says
@@ -2414,6 +2421,11 @@ public class PendantManager : IPendantManager
         if (!m.Success || (m.Groups[1].Success && int.Parse(m.Groups[1].Value) > 200000))
         {
             _logger.LogWarning("Pendant ADB '{Payload}' dropped: not an AutoDustBoot command", payload);
+            return;
+        }
+        if (NcSender.Server.Dongle.DustBootGuard.Blocks(DustBootDevice, payload, _serverContext.State.MachineState.IsToolChanging))
+        {
+            _logger.LogInformation("Pendant ADB '{Payload}' refused: no expand during a tool change", payload);
             return;
         }
         try

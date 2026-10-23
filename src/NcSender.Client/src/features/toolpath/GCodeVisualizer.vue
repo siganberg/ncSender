@@ -332,10 +332,10 @@
           <div
             v-if="switchConfig.holdToActivate"
             class="switch switch--hold"
-            :class="{ 'is-on': ioSwitchStates[key], 'is-disabled': isCoolantDisabled }"
+            :class="{ 'is-on': ioSwitchStates[key], 'is-disabled': isIOSwitchDisabled(key) }"
             role="switch"
             :aria-checked="ioSwitchStates[key]"
-            :aria-disabled="isCoolantDisabled"
+            :aria-disabled="isIOSwitchDisabled(key)"
           >
             <span class="slider"></span>
           </div>
@@ -344,7 +344,7 @@
               type="checkbox"
               :checked="ioSwitchStates[key]"
               @change="toggleIOSwitch(key)"
-              :disabled="isCoolantDisabled"
+              :disabled="isIOSwitchDisabled(key)"
             >
             <span class="slider"></span>
           </label>
@@ -835,7 +835,7 @@ import GCodeVisualizer from './visualizer/gcode-visualizer.js';
 import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand, auxQuickSec } from '../../lib/aux-outputs';
-import { dustBoot, watchDustBoot, dustBootCommand, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
+import { dustBoot, watchDustBoot, dustBootCommand, sendDustBoot, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
 import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1109,6 +1109,10 @@ const canStop = computed(() => {
 const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+// The AutoDustBoot is also locked during a tool change: lowered at the rack it
+// hits it (the server refuses an expand then too).
+const isIOSwitchDisabled = (key: string) =>
+  isCoolantDisabled.value || (key === DUST_BOOT_OUTPUT_ID && isToolChanging.value);
 
 // Spindle run. Stricter than the I/O switches: those are coolant and aux
 // outputs, this spins a cutter, so it also refuses while a job owns the
@@ -4547,11 +4551,11 @@ const toggleIOSwitch = async (switchKey: string) => {
     const onCmd = (switchConfig.on || '').toUpperCase();
 
     // AutoDustBoot: expand to the position saved on the boot, or retract.
+    // Sent straight to the boot, so it moves at once even with a job queued.
     if (switchKey === DUST_BOOT_OUTPUT_ID) {
-      const command = dustBootCommand(newState);
-      if (!command) { ioSwitchStates[switchKey] = currentState; return; } // no expand position saved yet
+      if (isToolChanging.value || !dustBootCommand(newState)) { ioSwitchStates[switchKey] = currentState; return; } // no expand position saved yet
       setDustBootTarget(newState);
-      await api.sendCommandViaWebSocket({ command, displayCommand: command });
+      await sendDustBoot(newState);
       return;
     }
 

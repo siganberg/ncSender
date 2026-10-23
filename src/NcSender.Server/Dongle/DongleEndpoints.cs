@@ -31,12 +31,14 @@ public static class DongleEndpoints
         });
 
         // Send a raw payload to a named device (framed as "@name payload" on the dongle).
-        app.MapPost("/api/dongle/devices/{name}/send", async (string name, DongleSendRequest req, IDongleDeviceService dongle) =>
+        app.MapPost("/api/dongle/devices/{name}/send", async (string name, DongleSendRequest req, IDongleDeviceService dongle, IServerContext context) =>
         {
             if (string.IsNullOrWhiteSpace(name))
                 return Results.BadRequest(new ApiError("Device name is required"));
             if (string.IsNullOrWhiteSpace(req.Payload))
                 return Results.BadRequest(new ApiError("Payload is required"));
+            if (DustBootGuard.Blocks(name.Trim(), req.Payload, context.State.MachineState.IsToolChanging))
+                return Results.Conflict(new ApiError("The AutoDustBoot can't expand during a tool change"));
             await dongle.SendAsync(name.Trim(), req.Payload.Trim());
             return Results.Ok(new ApiSuccess(true));
         });
