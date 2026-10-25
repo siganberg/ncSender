@@ -3911,6 +3911,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
   }
 
   camera.lookAt(cameraTarget);
+  requestRender(true);
 };
 
 const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split') => {
@@ -3938,6 +3939,7 @@ const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split'
   if (viewType === 'split') {
     // For split view, update all split cameras to fit bounds
     updateSplitViewCameras();
+    requestRender(true);
   } else {
     if (spindleViewMode.value) {
       // In spindle view mode, center at origin
