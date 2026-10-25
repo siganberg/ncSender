@@ -52,10 +52,17 @@
               v-for="preset in presets"
               :key="preset.id"
               :class="['view-button', { active: view === preset.id }]"
-              @click="handleViewButtonClick(preset.id)"
+              :title="viewButtonTitle(preset.id)"
+              @click="onViewButtonClick(preset.id)"
+              @pointerdown="startViewButtonPress(preset.id, $event)"
+              @pointerup="cancelViewButtonPress"
+              @pointerleave="cancelViewButtonPress"
+              @pointercancel="cancelViewButtonPress"
+              @contextmenu.prevent
             >
               {{ preset.label }}
             </button>
+            <div v-if="viewButtonNotice" class="view-button-notice" role="status">{{ viewButtonNotice }}</div>
           </div>
           <div class="toggle-group">
             <div class="spindle-toggle">
@@ -879,6 +886,99 @@ const presets = [
   { id: 'iso', label: '3D' },
   { id: 'split', label: 'Split' }
 ] as const;
+
+// Top view: tilted (the default) or straight down, toggled by holding Top
+const TOP_VIEW_TILT = 0.05;
+// Local copy, synced from the settings-changed broadcast and on reconnect,
+// never from a save's full settings reply (it can hold an older value)
+type IsoViewAngle = { theta: number; phi: number } | null;
+const viewSettings: { topViewTilt?: boolean; isoViewAngle?: IsoViewAngle } = {};
+const viewSettingsVersion = ref(0);
+const pendingViewSaves = { topViewTilt: 0, isoViewAngle: 0 };
+const viewSetting = <K extends keyof typeof viewSettings>(key: K) => {
+  if (!(key in viewSettings)) viewSettings[key] = getSettings()?.[key] ?? (key === 'topViewTilt' ? true : null);
+  return viewSettings[key];
+};
+const setViewSetting = <K extends keyof typeof viewSettings>(key: K, value: (typeof viewSettings)[K]) => {
+  viewSettings[key] = value;
+  viewSettingsVersion.value++;
+  pendingViewSaves[key]++;
+  updateSettings({ [key]: value }).catch((error: any) => {
+    console.error('[GCodeVisualizer] Failed to save view setting.', JSON.stringify({ key, error: error?.message }));
+  }).finally(() => { pendingViewSaves[key]--; });
+};
+const applyViewSettingsChange = (changed: Record<string, any>) => {
+  const keys = (['topViewTilt', 'isoViewAngle'] as const).filter((key) => key in changed && !pendingViewSaves[key]);
+  keys.forEach((key) => { viewSettings[key] = changed[key]; });
+  if (keys.length) viewSettingsVersion.value++;
+};
+const viewSettingsUnsubscribers = [
+  api.on('settings-changed', (changed: Record<string, any> | null) => { if (changed) applyViewSettingsChange(changed); }),
+  api.on('connected', async () => {
+    const version = viewSettingsVersion.value;
+    try {
+      const settings = await api.getSettings();
+      if (settings && version === viewSettingsVersion.value) applyViewSettingsChange(settings);
+    } catch (error: any) {
+      console.error('[GCodeVisualizer] Failed to reload view settings.', JSON.stringify({ error: error?.message }));
+    }
+  }),
+];
+onUnmounted(() => viewSettingsUnsubscribers.forEach((unsubscribe) => unsubscribe()));
+const isTopViewTilted = () => viewSetting('topViewTilt') !== false;
+const placeTopCamera = (cam: THREE.OrthographicCamera, center: THREE.Vector3, distance: number) => {
+  if (isTopViewTilted()) {
+    cam.position.set(center.x, center.y - distance * Math.sin(TOP_VIEW_TILT), center.z + distance * Math.cos(TOP_VIEW_TILT));
+    cam.up.set(0, 0, 1);
+  } else {
+    cam.position.set(center.x, center.y, center.z + distance);
+    cam.up.set(0, 1, 0);
+  }
+};
+
+// 3D view: the angle it was last turned to, or the default diagonal
+const ISO_POLAR_EPSILON = 0.05;
+const savedIsoViewAngle = () => {
+  const angle = viewSetting('isoViewAngle');
+  if (!angle || typeof angle !== 'object' || !Number.isFinite(angle.theta) || !Number.isFinite(angle.phi)) return null;
+  return { theta: angle.theta, phi: Math.max(ISO_POLAR_EPSILON, Math.min(Math.PI - ISO_POLAR_EPSILON, angle.phi)) };
+};
+const isoViewDirection = (angle: { theta: number; phi: number }) => new THREE.Vector3(
+  Math.sin(angle.phi) * Math.cos(angle.theta),
+  Math.sin(angle.phi) * Math.sin(angle.theta),
+  Math.cos(angle.phi)
+);
+// Size on screen of a box seen from the saved 3D angle, with the view's
+// target `targetDrop` below the box's center
+const isoProjectedSize = (sizeX: number, sizeY: number, sizeZ: number, targetDrop: number) => {
+  const angle = savedIsoViewAngle();
+  if (!angle) return null;
+  const back = isoViewDirection(angle);
+  const right = new THREE.Vector3(0, 0, 1).cross(back).normalize();
+  const up = back.clone().cross(right);
+  return {
+    width: Math.abs(right.x) * sizeX + Math.abs(right.y) * sizeY + Math.abs(right.z) * sizeZ,
+    height: Math.abs(up.x) * sizeX + Math.abs(up.y) * sizeY + Math.abs(up.z) * sizeZ + 2 * Math.abs(up.z) * targetDrop,
+  };
+};
+// A saved angle is measured from the target, so it is placed from there
+const placeIsoCamera = (cam: THREE.OrthographicCamera, base: THREE.Vector3, target: THREE.Vector3, distance: number) => {
+  const angle = savedIsoViewAngle();
+  if (angle) {
+    cam.position.copy(target).addScaledVector(isoViewDirection(angle), distance * 0.7 * Math.sqrt(3));
+  } else {
+    cam.position.set(base.x + distance * 0.7, base.y - distance * 0.7, base.z + distance * 0.7);
+  }
+  cam.up.set(0, 0, 1);
+};
+const saveIsoViewAngle = (cam: THREE.OrthographicCamera, target: THREE.Vector3) => {
+  const offset = cam.position.clone().sub(target);
+  const radius = offset.length();
+  if (!(radius > 1e-6)) return;
+  const theta = Math.atan2(offset.y, offset.x);
+  const phi = Math.acos(Math.max(-1, Math.min(1, offset.z / radius)));
+  setViewSetting('isoViewAngle', { theta, phi });
+};
 
 const DEFAULT_GRID_SIZE_MM = 400;
 const DEFAULT_Z_TRAVEL_MM = 100;
@@ -1886,6 +1986,7 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let isRotating = false;
+let rotatedSinceDown = false;
 let isPanning = false;
 let cameraTarget = new THREE.Vector3(0, 0, 0);
 let pendingResizeFrame: number | null = null;
@@ -2002,8 +2103,7 @@ const initThreeJS = () => {
   );
   // Position camera to match the initial view prop (avoids orientation flash)
   if (props.view === 'top') {
-    camera.position.set(0, -100 * Math.sin(0.05), 100 * Math.cos(0.05));
-    camera.up.set(0, 0, 1);
+    placeTopCamera(camera, new THREE.Vector3(0, 0, 0), 100);
   } else if (props.view === 'front') {
     camera.position.set(0, -100, 0);
     camera.up.set(0, 0, 1);
@@ -2430,6 +2530,7 @@ const onMouseMove = (event: MouseEvent) => {
 
   if (isRotating) {
     const rotationSpeed = 0.005;
+    if (deltaX !== 0 || deltaY !== 0) rotatedSinceDown = true;
 
     const offset = activeCamera.position.clone().sub(activeTarget);
     const radius = offset.length();
@@ -2491,8 +2592,14 @@ const onMouseUp = (event: MouseEvent | Event) => {
     }
   }
 
+  if (isRotating && rotatedSinceDown) {
+    if (props.view === 'iso' && camera) saveIsoViewAngle(camera, cameraTarget);
+    else if (props.view === 'split' && activeSplitViewport === 'iso' && splitIsoCamera) saveIsoViewAngle(splitIsoCamera, splitIsoCameraTarget);
+  }
+
   isDragging = false;
   isRotating = false;
+  rotatedSinceDown = false;
   isPanning = false;
   activeSplitViewport = null;
 };
@@ -3841,10 +3948,11 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
     case 'iso':
     default:
       // 3D view: calculate the projected size for isometric view
-      // The camera is positioned at (0.7, -0.7, 0.7), so we need to calculate
-      // the apparent size from this viewing angle
-      const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY); // XY diagonal
-      const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7); // Include Z height
+      // The camera is positioned at (0.7, -0.7, 0.7) unless an angle is saved,
+      // so we need to calculate the apparent size from this viewing angle
+      const saved = isoProjectedSize(sizeX, sizeY, sizeZ, bounds.size.z * 0.2);
+      const projectedWidth = saved ? saved.width : Math.sqrt(sizeX * sizeX + sizeY * sizeY); // XY diagonal
+      const projectedHeight = saved ? saved.height : Math.max(sizeZ, projectedWidth * 0.7); // Include Z height
 
       if (projectedWidth / aspect > projectedHeight) {
         frustumWidth = projectedWidth;
@@ -3887,12 +3995,7 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
 
   switch (currentView) {
     case 'top':
-      camera.position.set(
-        bounds.center.x,
-        bounds.center.y - distance * Math.sin(0.05),
-        bounds.center.z + distance * Math.cos(0.05),
-      );
-      camera.up.set(0, 0, 1);
+      placeTopCamera(camera, bounds.center, distance);
       break;
     case 'front':
       camera.position.set(bounds.center.x, bounds.center.y - distance, bounds.center.z);
@@ -3900,18 +4003,80 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
       break;
     case 'iso':
     default:
-      // Isometric 3D view with Z up
-      camera.position.set(
-        bounds.center.x + distance * 0.7,
-        bounds.center.y - distance * 0.7,
-        bounds.center.z + distance * 0.7
-      );
-      camera.up.set(0, 0, 1);
+      // 3D view with Z up, at the last angle it was turned to
+      placeIsoCamera(camera, bounds.center, cameraTarget, distance);
       break;
   }
 
   camera.lookAt(cameraTarget);
   requestRender(true);
+};
+
+// Hold Top: tilt or straight down. Hold or double press 3D: default angle.
+const VIEW_BUTTON_LONG_PRESS_MS = 500;
+const VIEW_BUTTON_DOUBLE_PRESS_MS = 500;
+let viewButtonPressTimer: number | null = null;
+let viewButtonLongPressed = false;
+let lastIsoButtonClick = 0;
+const viewButtonNotice = ref('');
+let viewButtonNoticeTimer: number | null = null;
+const showViewButtonNotice = (text: string) => {
+  viewButtonNotice.value = text;
+  if (viewButtonNoticeTimer !== null) clearTimeout(viewButtonNoticeTimer);
+  viewButtonNoticeTimer = window.setTimeout(() => { viewButtonNotice.value = ''; viewButtonNoticeTimer = null; }, 1600);
+};
+const viewButtonTitle = (viewType: string) => {
+  void viewSettingsVersion.value;
+  if (viewType === 'top') return isTopViewTilted() ? 'Top view, slightly tilted. Hold to look straight down.' : 'Top view, straight down. Hold to tilt it slightly.';
+  if (viewType === 'iso') return savedIsoViewAngle() ? '3D view, at the angle you last turned it to. Double press or hold to reset the angle.' : '3D view. Double press or hold to reset the angle.';
+  return undefined;
+};
+const cancelViewButtonPress = () => {
+  if (viewButtonPressTimer !== null) {
+    clearTimeout(viewButtonPressTimer);
+    viewButtonPressTimer = null;
+  }
+};
+onUnmounted(() => {
+  cancelViewButtonPress();
+  if (viewButtonNoticeTimer !== null) clearTimeout(viewButtonNoticeTimer);
+});
+const startViewButtonPress = (viewType: 'top' | 'front' | 'iso' | 'split', event: PointerEvent) => {
+  cancelViewButtonPress();
+  viewButtonLongPressed = false;
+  if (viewType !== 'top' && viewType !== 'iso') return;
+  if (!event.isPrimary || event.button !== 0) return;
+  viewButtonPressTimer = window.setTimeout(() => {
+    viewButtonPressTimer = null;
+    viewButtonLongPressed = true;
+    if (viewType === 'top') {
+      setViewSetting('topViewTilt', !isTopViewTilted());
+      showViewButtonNotice(isTopViewTilted() ? 'Top: tilted 2.9°' : 'Top: straight down (0°)');
+    } else {
+      setViewSetting('isoViewAngle', null);
+      showViewButtonNotice('3D: default angle');
+    }
+    handleViewButtonClick(viewType);
+  }, VIEW_BUTTON_LONG_PRESS_MS);
+};
+const onViewButtonClick = (viewType: 'top' | 'front' | 'iso' | 'split') => {
+  if (viewButtonLongPressed) {
+    viewButtonLongPressed = false;
+    return;
+  }
+  // The first press opens 3D at the saved angle; a second one soon after
+  // goes to the default angle.
+  if (viewType === 'iso') {
+    const now = Date.now(), double = now - lastIsoButtonClick < VIEW_BUTTON_DOUBLE_PRESS_MS;
+    lastIsoButtonClick = double ? 0 : now;
+    if (double) {
+      setViewSetting('isoViewAngle', null);
+      showViewButtonNotice('3D: default angle');
+    }
+  } else {
+    lastIsoButtonClick = 0;
+  }
+  handleViewButtonClick(viewType);
 };
 
 const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split') => {
@@ -4063,8 +4228,9 @@ const updateSplitViewCameras = () => {
 
   // Iso camera (bottom half - full width)
   const isoAspect = width / halfHeight;
-  const projectedWidth = Math.sqrt(sizeX * sizeX + sizeY * sizeY);
-  const projectedHeight = Math.max(sizeZ, projectedWidth * 0.7);
+  const saved = isoProjectedSize(sizeX, sizeY, sizeZ, bounds.size.z * 0.2);
+  const projectedWidth = saved ? saved.width : Math.sqrt(sizeX * sizeX + sizeY * sizeY);
+  const projectedHeight = saved ? saved.height : Math.max(sizeZ, projectedWidth * 0.7);
   let isoFrustumWidth, isoFrustumHeight;
   if (projectedWidth / isoAspect > projectedHeight) {
     isoFrustumWidth = projectedWidth;
@@ -4079,12 +4245,7 @@ const updateSplitViewCameras = () => {
   splitIsoCamera.bottom = -isoFrustumHeight / 2;
   const isoDistance = Math.max(sizeX, sizeY, sizeZ) * 2.2;
   splitIsoCameraTarget.set(bounds.center.x, bounds.center.y, bounds.center.z - bounds.size.z * 0.2);
-  splitIsoCamera.position.set(
-    bounds.center.x + isoDistance * 0.7,
-    bounds.center.y - isoDistance * 0.7,
-    bounds.center.z + isoDistance * 0.7
-  );
-  splitIsoCamera.up.set(0, 0, 1);
+  placeIsoCamera(splitIsoCamera, bounds.center, splitIsoCameraTarget, isoDistance);
   splitIsoCamera.lookAt(splitIsoCameraTarget);
   splitIsoCamera.updateProjectionMatrix();
 };
@@ -4103,12 +4264,7 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso' | 'split') => {
     case 'top':
       // Top view - looking down along Z axis with proper CNC orientation
       // Y points up on screen, X points right on screen
-      camera.position.set(
-        center.x,
-        center.y - distance * Math.sin(0.05),
-        center.z + distance * Math.cos(0.05),
-      );
-      camera.up.set(0, 0, 1);
+      placeTopCamera(camera, center, distance);
       break;
     case 'front':
       // Front view - looking along Y axis with Z up
@@ -4116,13 +4272,7 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso' | 'split') => {
       camera.up.set(0, 0, 1); // Z axis points up in front view
       break;
     case 'iso':
-      // Isometric 3D view with Z up
-      camera.position.set(
-        center.x + distance * 0.7,
-        center.y - distance * 0.7,
-        center.z + distance * 0.7
-      );
-      camera.up.set(0, 0, 1); // Z axis points up in 3D view
+      placeIsoCamera(camera, center, cameraTarget, distance / (0.7 * Math.sqrt(3)));
       break;
   }
 
@@ -6589,6 +6739,7 @@ h2 {
 .preset-buttons {
   display: flex;
   gap: var(--gap-xs);
+  position: relative;
 }
 
 .toggle-group {
@@ -6624,6 +6775,26 @@ h2 {
   color: var(--color-text-secondary);
   font-size: 16px;
   font-weight: 500;
+  /* Double tap and hold are presses, not zoom, selection or callout */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.view-button-notice {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .view-button.active {
