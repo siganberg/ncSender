@@ -31,6 +31,7 @@
         <div
           class="plugin-dialog-content"
           ref="dialogContent"
+          :key="contentKey"
           v-html="dialogData.content"
         ></div>
       </div>
@@ -58,6 +59,9 @@ const dialogData = ref<PluginDialogData>({
   options: {}
 });
 const dialogContent = ref<HTMLDivElement | null>(null);
+// Rebuilds the content for each new dialog so its scripts start fresh
+const contentKey = ref(0);
+let showGeneration = 0;
 
 let unsubscribe: (() => void) | null = null;
 
@@ -66,7 +70,18 @@ const isClosable = computed(() => {
 });
 
 const handlePluginDialog = async (data: PluginDialogData) => {
+  // Same dialog again while open: keep its elements and don't rerun its scripts
+  if (show.value
+    && data.pluginId === dialogData.value.pluginId
+    && data.title === dialogData.value.title
+    && data.content === dialogData.value.content) {
+    dialogData.value = data;
+    return;
+  }
+
+  const generation = ++showGeneration;
   dialogData.value = data;
+  contentKey.value++;
   show.value = true;
 
   // Send initial server state to plugin
@@ -80,9 +95,9 @@ const handlePluginDialog = async (data: PluginDialogData) => {
     console.warn('Failed to get initial server state for plugin:', error);
   }
 
-  // Execute scripts after DOM is updated
+  // Execute scripts after DOM is updated, for the latest dialog only
   nextTick(() => {
-    executeScripts();
+    if (generation === showGeneration) executeScripts();
   });
 };
 
