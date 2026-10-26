@@ -3048,14 +3048,11 @@ public class PendantManager : IPendantManager
             else if (!isFull) sb.Append("|N:");
         }
 
-        // Units preference — "in" only when imperial. Omitted for mm
-        // so the packet stays compact and old pendants keep working
-        // (absence = mm on the pendant parser).
+        // Units preference, on a full frame and whenever it changes. The
+        // switch back to mm has to go out on the delta too: the pendant's jog
+        // steps follow the units, so it can't wait for the next full frame.
         if (isFull || current.Units != prev!.Units)
-        {
-            if (current.Units == "in") sb.Append("|U:in");
-            else if (isFull) sb.Append("|U:mm");
-        }
+            sb.Append(current.Units == "in" ? "|U:in" : "|U:mm");
 
         _lastSentDro = current;
         var droLine = sb.ToString();
