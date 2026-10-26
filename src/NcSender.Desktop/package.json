@@ -24,6 +24,7 @@
   "build": {
     "appId": "com.franciscreation.ncsender",
     "productName": "ncSender",
+    "afterPack": "scripts/afterPack.js",
     "directories": {
       "output": "dist-electron"
     },
@@ -51,7 +52,10 @@
     "mac": {
       "target": "dmg",
       "icon": "Assets/icon.icns",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "ncSender connects to your CNC controller and accessories on the local network."
+      }
     },
     "linux": {
       "target": "deb",
