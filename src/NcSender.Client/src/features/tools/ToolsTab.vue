@@ -91,8 +91,8 @@
             <td class="col-tool-id">
               <div class="tool-id-cell tool-id-cell--clickable" @click.stop="openSlotSelector(tool, $event)">
                 <span class="tool-id-text">{{ tool.toolId }}</span>
-                <span v-if="tool.toolNumber !== null" class="tool-number-badge">{{ slotLabel(tool.toolNumber) }}</span>
-                <span v-else class="tool-slot-placeholder">No Slot</span>
+                <span v-if="hasSlot(tool)" class="tool-number-badge">{{ slotLabel(tool.toolNumber!) }}</span>
+                <span v-else-if="(props.toolCount || 0) > 0" class="tool-slot-placeholder">No Slot</span>
               </div>
             </td>
             <td class="col-description">{{ tool.name }}</td>
@@ -597,6 +597,12 @@ const appStore = useAppStore();
 const maxToolCount = computed(() => props.maxToolCount ?? 0);
 // The probe's slot number, or null when there is no Probe button.
 const probeSlot = computed<number | null>(() => (props.showProbeButton ? (props.probeToolNumber || 99) : null));
+// A slot outside the current magazine (left from a bigger one, or from a
+// tool changer that is now off) isn't shown; it is kept, so it comes back
+// with the magazine.
+const hasSlot = (tool: Tool) =>
+  tool.toolNumber !== null
+  && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');

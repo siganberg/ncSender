@@ -5072,7 +5072,9 @@ const setMarkerBitVisible = (visible: boolean) => {
 };
 
 const updateBitVisibilityFromTool = () => {
-  const gated = numberOfToolsToShow.value > 0 || showManualTool.value;
+  // Any tool changer (a magazine or a plugin, either tool numbering) knows
+  // whether a tool is loaded; only without one is there no T0 to go by.
+  const gated = numberOfToolsToShow.value > 0 || showManualTool.value || !!toolChangerSource.value;
   const visible = !gated ? true : (props.currentTool ?? 0) > 0;
   setMarkerBitVisible(visible);
   // Renderer only redraws on demand — kick it so the bit
@@ -5082,7 +5084,7 @@ const updateBitVisibilityFromTool = () => {
 };
 
 watch(
-  () => [props.currentTool, numberOfToolsToShow.value, showManualTool.value] as const,
+  () => [props.currentTool, numberOfToolsToShow.value, showManualTool.value, toolChangerSource.value] as const,
   updateBitVisibilityFromTool,
   { flush: 'post' }
 );
