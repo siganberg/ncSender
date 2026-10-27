@@ -1174,16 +1174,18 @@ const saveTool = async () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(toolData)
-      });
+      }).catch(() => null);
 
-      if (!response.ok) {
-        saveErrorMessage.value = 'Failed to add tool: ' + await readError(response);
+      if (!response?.ok) {
+        saveErrorMessage.value = 'Failed to add tool: ' + (response ? await readError(response) : 'the server didn\'t answer');
         if (holder) {
-          await fetch(`${api.baseUrl}/api/tools/${holder.id}`, {
+          const restored = await fetch(`${api.baseUrl}/api/tools/${holder.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(holder)
-          }).catch(() => {});
+          }).then(r => r.ok, () => false);
+          if (!restored) saveErrorMessage.value += `. Tool #${holder.toolId} was left without a slot`;
+          await loadTools();
         }
         showSaveErrorDialog.value = true;
         return;
