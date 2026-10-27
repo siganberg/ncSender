@@ -354,7 +354,7 @@
     >
 
     <!-- Save Error Dialog -->
-    <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small">
+    <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small" :z-index="100000">
       <ConfirmPanel
         title="Error Saving Tool"
         :message="saveErrorMessage"
@@ -954,11 +954,12 @@ const getToolNumberInfo = (num: number) => {
   const assignedTool = tools.value.find(t => t.toolNumber === num && t.id !== editingTool.value?.id);
 
   if (assignedTool) {
-    // If editing, show "Swap with", if adding new, show "Already assigned to"
+    // Editing swaps the two tools' slots; a new tool has no slot to give back,
+    // so it takes the slot and the other tool is left without one
     const toolInfo = `#${assignedTool.toolId} - ${assignedTool.name}`;
     return editingTool.value
       ? ` (Swap with: ${toolInfo})`
-      : ` (Already assigned to: ${toolInfo})`;
+      : ` (Takes it from: ${toolInfo})`;
   }
 
   return '';
@@ -1149,7 +1150,26 @@ const saveTool = async () => {
         }
       }
     } else {
-      // Add new tool
+      // Add new tool. The server refuses a slot another tool holds, so that
+      // tool gives it up first, and gets it back if the add fails.
+      const holder = toolData.toolNumber !== null && toolData.toolNumber !== undefined
+        ? tools.value.find(t => t.toolNumber === toolData.toolNumber)
+        : undefined;
+
+      if (holder) {
+        const unassignResponse = await fetch(`${api.baseUrl}/api/tools/${holder.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...holder, toolNumber: null })
+        });
+
+        if (!unassignResponse.ok) {
+          saveErrorMessage.value = 'Failed to unassign conflicting tool: ' + await readError(unassignResponse);
+          showSaveErrorDialog.value = true;
+          return;
+        }
+      }
+
       const response = await fetch(`${api.baseUrl}/api/tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1158,6 +1178,13 @@ const saveTool = async () => {
 
       if (!response.ok) {
         saveErrorMessage.value = 'Failed to add tool: ' + await readError(response);
+        if (holder) {
+          await fetch(`${api.baseUrl}/api/tools/${holder.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(holder)
+          }).catch(() => {});
+        }
         showSaveErrorDialog.value = true;
         return;
       }
