@@ -298,13 +298,15 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
 
     // Continuous jog asks for the axis's whole travel and relies on the
     // controller to stop at the soft limit, as grblHAL does. Grbl instead
-    // rejects a jog that would end past it (error:15), so once homed an
-    // incremental jog is shortened to end inside the travel: machine
-    // positions run from -max travel to 0. Null when nothing is left to move.
+    // rejects a jog that would end past it (error:15), so with soft limits on
+    // an incremental jog is shortened to end inside the travel: machine
+    // positions run from -max travel to 0. Grbl checks this homed or not (an
+    // unlock with $X keeps it on), so the clamp goes by $20; before $$ has
+    // been read, by homed. Null when nothing is left to move.
     private string? ClampJog(string line)
     {
         var s = _state();
-        if (!s.Homed) return line;
+        if (!(s.SoftLimits ?? s.Homed)) return line;
         var body = line[3..];
         if (!JogIncrementalPattern().IsMatch(body)) return line;
 

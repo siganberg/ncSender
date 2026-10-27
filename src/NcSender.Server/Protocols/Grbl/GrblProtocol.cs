@@ -93,6 +93,8 @@ public partial class GrblProtocol : IProtocolHandler
         // Max travel, for GrblTranslator's jog clamp: it reads this state,
         // not the app's (which gets travel from the firmware service).
         // Not consumed, so the line still reaches everything else.
+        var soft = SoftLimitsPattern().Match(line);
+        if (soft.Success) state.SoftLimits = soft.Groups[1].Value != "0";
         var travel = MaxTravelPattern().Match(line);
         if (travel.Success && double.TryParse(travel.Groups[2].Value, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var mm))
@@ -129,4 +131,7 @@ public partial class GrblProtocol : IProtocolHandler
 
     [GeneratedRegex(@"^\$13([012])=([-+]?\d*\.?\d+)")]
     private static partial Regex MaxTravelPattern();
+
+    [GeneratedRegex(@"^\$20=(\d+)")]
+    private static partial Regex SoftLimitsPattern();
 }

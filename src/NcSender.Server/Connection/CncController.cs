@@ -1499,6 +1499,22 @@ public partial class CncController : ICncController
 
     #region Status Report Parser
 
+    // "x,y,z" + "x,y,z", per axis, 3 decimals. Axes missing from b count as 0.
+    private static string AddPositions(string a, string b)
+    {
+        var aParts = a.Split(',');
+        var bParts = b.Split(',');
+        var sum = new string[aParts.Length];
+        for (var i = 0; i < aParts.Length; i++)
+        {
+            double.TryParse(aParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var x);
+            var y = 0.0;
+            if (i < bParts.Length) double.TryParse(bParts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
+            sum[i] = (x + y).ToString("F3", CultureInfo.InvariantCulture);
+        }
+        return string.Join(",", sum);
+    }
+
     // Blank lines, and status-report fragments: a real report is one whole
     // "<…>" (the transports split inline reports out of longer lines), so a
     // line with only one of the brackets is a torn report, never a response.
@@ -1541,6 +1557,7 @@ public partial class CncController : ICncController
             && int.TryParse(stateParts[1], out var alarmSub) && alarmSub > 0
             ? alarmSub : null;
 
+        var reportedWPos = false;
         for (var i = 1; i < parts.Length; i++)
         {
             var colonIdx = parts[i].IndexOf(':');
@@ -1618,10 +1635,12 @@ public partial class CncController : ICncController
 
                 case "MPos":
                     _lastStatus.MPos = value;
+                    reportedWPos = false;
                     break;
 
                 case "WPos":
                     _lastStatus.WPos = value;
+                    reportedWPos = true;
                     break;
 
                 case "WCO":
@@ -1656,9 +1675,17 @@ public partial class CncController : ICncController
         // is available — FluidNC status reports omit WCO entirely.
         _activeProtocol?.PostProcessStatus(_lastStatus, prevStatus ?? "");
 
+        // Grbl set to report work position ($10 bit 0 clear) sends WPos and
+        // no MPos: machine position is WPos + WCO, and everything else (the
+        // DRO, the jog clamp, limits) works from MPos.
+        if (reportedWPos)
+        {
+            if (!string.IsNullOrEmpty(_lastStatus.WCO))
+                _lastStatus.MPos = AddPositions(_lastStatus.WPos, _lastStatus.WCO);
+        }
         // Compute wPos from MPos - WCO (GRBL typically only sends MPos + WCO)
         // V1 client computes work coords client-side, but we store WPos for internal use
-        if (!string.IsNullOrEmpty(_lastStatus.MPos) && !string.IsNullOrEmpty(_lastStatus.WCO))
+        else if (!string.IsNullOrEmpty(_lastStatus.MPos) && !string.IsNullOrEmpty(_lastStatus.WCO))
         {
             var mParts = _lastStatus.MPos.Split(',');
             var wcoParts = _lastStatus.WCO.Split(',');

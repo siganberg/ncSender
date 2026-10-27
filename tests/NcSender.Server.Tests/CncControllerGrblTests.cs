@@ -195,6 +195,54 @@ public class CncControllerGrblTests : IDisposable
         Assert.Equal("success", (await Done(jog)).Status);
     }
 
+    // Unlocked with $X instead of homing: Grbl still checks soft limits, so
+    // the held jog has to be shortened all the same.
+    [Fact]
+    public async Task Grbl_HeldJog_IsShortenedWhenUnlockedWithSoftLimitsOn()
+    {
+        Greet("Grbl 1.1f ['$' for help]");
+        _controller.HandleIncomingData("$20=1");
+        _controller.HandleIncomingData("$130=851.154");
+        _controller.HandleIncomingData("<Idle|MPos:-100.000,-100.000,-10.000|FS:0,0>");
+
+        var jog = _controller.SendCommandAsync("$J=G21 G91 X-851.154 F3000", new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
+        await WaitForWrite("$J=G21 G91 X-751.144 F3000\n");
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await Done(jog)).Status);
+    }
+
+    // Soft limits off: Grbl doesn't check travel, nothing to shorten.
+    [Fact]
+    public async Task Grbl_HeldJog_IsLeftAloneWithSoftLimitsOff()
+    {
+        Greet("Grbl 1.1f ['$' for help]");
+        _controller.HandleIncomingData("$20=0");
+        _controller.HandleIncomingData("$130=851.154");
+        _controller.HandleIncomingData("<Idle|MPos:-100.000,-100.000,-10.000|FS:0,0>");
+
+        var jog = _controller.SendCommandAsync("$J=G21 G91 X-851.154 F3000", new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
+        await WaitForWrite("$J=G21 G91 X-851.154 F3000\n");
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await Done(jog)).Status);
+    }
+
+    // $10=0/2: Grbl reports WPos only. Machine position is WPos + WCO, which
+    // the clamp needs.
+    [Fact]
+    public async Task Grbl_HeldJog_IsShortenedFromAWorkPositionReport()
+    {
+        Greet("Grbl 1.1f ['$' for help]");
+        _controller.HandleIncomingData("$20=1");
+        _controller.HandleIncomingData("$130=851.154");
+        _controller.HandleIncomingData("<Idle|WPos:22.070,7.274,2.836|FS:0,0|WCO:-122.070,-50.000,-20.000>");
+        _controller.HandleIncomingData("<Idle|WPos:22.070,7.274,2.836|FS:0,0>");
+
+        var jog = _controller.SendCommandAsync("$J=G21 G91 X851.154 F3000", new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
+        await WaitForWrite("$J=G21 G91 X99.99 F3000\n");
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await Done(jog)).Status);
+    }
+
     [Fact]
     public async Task GrblHal_LinesGoOutUntouched()
     {
