@@ -137,14 +137,18 @@ public class FirmwareService : IFirmwareService
             var staticDefs = _controller.ActiveProtocol?.StaticSettingDefinitions;
             foreach (var (id, value) in currentValues)
             {
-                if (_cached.Settings.TryGetValue(id, out var existing) && !string.IsNullOrEmpty(existing.Name))
+                var n = int.TryParse(id, out var parsed) ? parsed : 0;
+                // A built-in definition always wins over the cache, so a cache
+                // written by an older version picks up new names and descriptions.
+                var hasDef = staticDefs is not null && staticDefs.ContainsKey(n);
+                if (!hasDef && _cached.Settings.TryGetValue(id, out var existing) && !string.IsNullOrEmpty(existing.Name))
                 {
                     existing.Value = value;
                 }
                 else
                 {
-                    var n = int.TryParse(id, out var parsed) ? parsed : 0;
-                    var setting = staticDefs is not null && staticDefs.TryGetValue(n, out var def)
+                    _cached.Settings.TryGetValue(id, out existing);
+                    var setting = hasDef && staticDefs!.TryGetValue(n, out var def)
                         ? CopyDefinition(def)
                         : existing ?? new FirmwareSetting { Id = n };
                     setting.Value = value;
@@ -374,7 +378,8 @@ public class FirmwareService : IFirmwareService
         DataType = d.DataType,
         Format = d.Format,
         Min = d.Min,
-        Max = d.Max
+        Max = d.Max,
+        HalDetails = d.HalDetails is null ? null : [.. d.HalDetails]
     };
 
     private static bool HasNamedSettings(FirmwareData? data)

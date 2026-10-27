@@ -65,5 +65,7 @@ public class ProtocolCapabilityTests
         Assert.Equal("step/mm", defs[100].Unit);
         Assert.Equal("Z-axis maximum travel", defs[132].Name);
         Assert.All(defs.Values, d => Assert.NotNull(d.Group));
+        // Every setting carries a description where the Firmware tab reads it.
+        Assert.All(defs.Values, d => Assert.False(string.IsNullOrWhiteSpace(d.HalDetails?[4])));
     }
 }
