@@ -22,6 +22,13 @@ public interface IGcodeTranslator
 
     /// <summary>Controller reset or queue flushed: drop o-word state, parser state is back to defaults.</summary>
     void Reset();
+
+    /// <summary>
+    /// A controller line as ncSender should read it. Lets a translator make up
+    /// for what the controller gets wrong or forgets (classic Grbl's tool);
+    /// unchanged by default.
+    /// </summary>
+    string CorrectReport(string line) => line;
 }
 
 public enum TranslationKind

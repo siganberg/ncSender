@@ -27,7 +27,7 @@ public class CncControllerGrblTests : IDisposable
         _controller = new CncController(
             NullLogger<CncController>.Instance,
             new Mock<ISettingsManager>().Object,
-            [new GrblProtocol(), new GrblHalProtocol(), new FluidNcProtocol()],
+            [new GrblProtocol { ToolFile = null }, new GrblHalProtocol(), new FluidNcProtocol()],
             new Mock<IDongleDeviceService>().Object);
         SetPrivate(_controller, "_transport", _transport);
         SetPrivate(_controller, "IsConnected", true);
@@ -123,6 +123,9 @@ public class CncControllerGrblTests : IDisposable
         Greet("Grbl 1.1h ['$' for help]");
         var seq = _controller.SendCommandAsync("G0 Z[#5223 + 1]", Plugin());
 
+        // Grbl only answers $# when Idle: the dwell lets motion finish first.
+        await WaitForWrite("G4 P0\n");
+        _controller.HandleIncomingData("ok");
         await WaitForWrite("$#\n");
         _controller.HandleIncomingData("[G54:0.000,0.000,-40.000]");
         _controller.HandleIncomingData("ok");
@@ -241,6 +244,25 @@ public class CncControllerGrblTests : IDisposable
         await WaitForWrite("$J=G21 G91 X99.99 F3000\n");
         _controller.HandleIncomingData("ok");
         Assert.Equal("success", (await Done(jog)).Status);
+    }
+
+    // Grbl takes its tool from each line's T word, so after a tool change the
+    // next line without one makes $G read T0. The tool is the one ncSender set.
+    [Fact]
+    public async Task Grbl_ToolSurvivesLinesWithoutATWord()
+    {
+        Greet("Grbl 1.1f ['$' for help]");
+        var seq = _controller.SendCommandAsync("M61 Q1\nG53 G0 Z-5", Plugin());
+        await WaitForWrite("G4 P0\n");
+        _controller.HandleIncomingData("ok");
+        await WaitForWrite("T1\n");
+        _controller.HandleIncomingData("ok");
+        await WaitForWrite("G53 G0 Z-5\n");
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await Done(seq)).Status);
+
+        _controller.HandleIncomingData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal(1, _controller.LastStatus.Tool);
     }
 
     [Fact]

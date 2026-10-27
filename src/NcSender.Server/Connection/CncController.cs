@@ -1137,6 +1137,7 @@ public partial class CncController : ICncController
 
         // Status reports too: the translator tells a report sent after the
         // last reply from an older one.
+        if (_translator is { } correcting) trimmedData = correcting.CorrectReport(trimmedData);
         _translator?.ObserveData(trimmedData);
         if (_activeProtocol?.RedirectProtocol(trimmedData) is { } redirect)
             SwitchProtocol(redirect);
@@ -2224,7 +2225,7 @@ public partial class CncController : ICncController
             var result = i == 0 && first is not null ? first : translator.Translate(lines[i]);
             for (var syncs = 0; result.Kind == TranslationKind.Sync; syncs++)
             {
-                if (syncs >= 3)
+                if (syncs >= 4)
                 {
                     result = TranslationResult.Failed("the controller's state could not be read");
                     break;

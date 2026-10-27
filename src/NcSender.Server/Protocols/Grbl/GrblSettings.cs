@@ -61,7 +61,7 @@ internal static class GrblSettings
             "How closely arcs (G2/G3) are followed when they are broken into short lines. The default 0.002 rarely needs changing.",
             "mm");
         Add(13, General, "Report in inches", Bool,
-            "Reports positions and offsets in inches instead of mm. Keep this off: ncSender reads positions in mm, so with it on the DRO and visualizer show the wrong position. To work in inches, switch units in ncSender instead.");
+            "Reports positions, offsets and feed in inches instead of mm. ncSender converts either way, so the DRO is right with it on or off; to work in inches, switch units in ncSender.");
         Add(20, Limits, "Soft limits enable", Bool,
             "Rejects any move that would go past the machine's travel ($130-$132). Needs homing enabled and correct travel settings, and the machine homed so its position is known.");
         Add(21, Limits, "Hard limits enable", Bool,

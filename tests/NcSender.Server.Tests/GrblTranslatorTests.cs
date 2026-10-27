@@ -70,9 +70,11 @@ public class GrblTranslatorTests
     public void ProbeResult_InWorkCoordinates_AfterReadingOffsets()
     {
         _t.ObserveData("[PRB:10.000,20.000,-45.000:1]");
+        // Grbl answers $# only when Idle: let motion finish first.
         var first = _t.Translate("#<z> = #5063");
         Assert.Equal(TranslationKind.Sync, first.Kind);
-        Assert.Equal("$#", first.SyncCommand);
+        Assert.Equal("G4 P0", first.SyncCommand);
+        Assert.Equal("$#", _t.Translate("#<z> = #5063").SyncCommand);
         Assert.Empty(Writes(_t.Translate("#<z> = #5063")));
         Assert.Equal("G0 Z5", Single("G0 Z[#<z>]"));
         Assert.Equal("G0 X1", Single("G0 X#5070"));
@@ -217,10 +219,19 @@ public class GrblTranslatorTests
     }
 
     [Fact]
-    public void M61_SetsTheToolWithATWord() => Assert.Equal("T4", Single("M61 Q4"));
+    public void M61_SetsTheToolWithATWord() => Assert.Equal("T4", Writes(Run("M61 Q4")).Last());
 
     [Fact]
     public void ProbeSelect_IsDropped() => Assert.Empty(Run("G65 P5 Q1").Steps);
+
+    // Tool changer plugins skip grblHAL's spindle-at-speed wait with G65 P6;
+    // Grbl never waits, so it goes.
+    [Fact]
+    public void SpindleWaitSkip_IsDropped()
+    {
+        Assert.Empty(Run("G65P6").Steps);
+        Assert.Empty(Run("G65 P6").Steps);
+    }
 
     [Fact]
     public void SystemCommands_PassThrough_ExceptParameterQueries()
@@ -273,7 +284,176 @@ public class GrblTranslatorTests
         Run("#1 = [#<_metric> * 10 + #<_absolute>]");
         Assert.Equal("G0 X0", Single("G0 X#1"));
         Assert.Equal("G0 X2", Single("G0 X#5220"));
-        Assert.Equal("G0 X2", Single("G0 X#<_current_tool>"));
+        // Not the tool: Grbl's T is only the last line's T word.
+        Assert.Equal("G0 X0", Single("G0 X#<_current_tool>"));
+    }
+
+    // The tool changes once the moves before M61 are done, not as it is read.
+    [Fact]
+    public void SetTool_WaitsForQueuedMoves()
+    {
+        Assert.Equal(["G4 P0", "T0"], Writes(Run("M61 Q0")));
+    }
+
+    [Fact]
+    public void Tool_IsTheLastTWordSent()
+    {
+        Run("M61 Q3");
+        Run("G0 X1");
+        const string report = "[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]";
+        _t.ObserveData(report);
+        Assert.Equal("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T3 F0 S0]", _t.CorrectReport(report));
+        Assert.Equal("G0 X3", Single("G0 X#<_current_tool>"));
+    }
+
+    // A reset clears Grbl's tool length offset, not the measured tool: it goes
+    // back before the next line, so the work Z doesn't jump after a Stop.
+    // The parser state is read first: the units are whatever Grbl came back in.
+    [Fact]
+    public void ToolLengthOffset_IsRestoredAfterAReset()
+    {
+        Run("G43.1 Z-36.141");
+        _t.Reset();
+        Assert.Equal("$G", _t.Translate("$G").SyncCommand);
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal("G43.1 Z-36.141", _t.Translate("$G").SyncCommand);
+        Assert.Equal(TranslationKind.Run, _t.Translate("$G").Kind);
+        Assert.Equal("G0 X1", Single("G0 X1"));
+    }
+
+    // Nomad report: a startup line left Grbl in G20 after the reset, and the
+    // offset went back as -25.25 inches (-641 mm).
+    [Fact]
+    public void ToolLengthOffset_IsRestoredInTheUnitsGrblIsIn()
+    {
+        Run("G43.1 Z-25.25");
+        _t.Reset();
+        Assert.Equal("$G", _t.Translate("$G").SyncCommand);
+        _t.ObserveData("[GC:G0 G54 G17 G20 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal("G43.1 Z-0.99409", _t.Translate("$G").SyncCommand);
+    }
+
+    // Nomad report, again: an "ok" left from the reset answered the $G before
+    // its [GC:] arrived, and the offset went out in the wrong units.
+    [Fact]
+    public void ToolLengthOffset_WaitsForTheParserReportItself()
+    {
+        Run("G43.1 Z-32.822");
+        _t.Reset();
+        Assert.Equal("$G", _t.Translate("$G").SyncCommand);
+        Assert.Equal(TranslationKind.Run, _t.Translate("$G").Kind);     // no report yet: not now
+        _t.ObserveData("[GC:G0 G54 G17 G20 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal("G43.1 Z-1.2922", _t.Translate("G0 X1").SyncCommand);
+    }
+
+    // No bounce after a Stop: until the restore lands, the reports carry the
+    // offset Grbl dropped (WCO.Z short by it, WPos.Z long by it).
+    [Fact]
+    public void ToolLengthOffset_ReportsKeepItUntilItIsBack()
+    {
+        Run("G43.1 Z-25.25");
+        _t.CorrectReport("<Idle|WPos:0.000,0.000,5.000|FS:0,0|WCO:0.000,0.000,-97.275>");
+        _t.Reset();
+        Assert.Equal("<Idle|WPos:0.000,0.000,5.000|FS:0,0|WCO:0.000,0.000,-97.275>",
+            _t.CorrectReport("<Idle|WPos:0.000,0.000,-20.250|FS:0,0|WCO:0.000,0.000,-72.025>"));
+        Assert.Equal("<Idle|WPos:0.000,0.000,5.000|FS:0,0>",
+            _t.CorrectReport("<Idle|WPos:0.000,0.000,-20.250|FS:0,0>"));
+        // The restore landed: Grbl's own report has it, and is passed on as is.
+        Assert.Equal("<Idle|WPos:0.000,0.000,5.000|FS:0,0|WCO:0.000,0.000,-97.275>",
+            _t.CorrectReport("<Idle|WPos:0.000,0.000,5.000|FS:0,0|WCO:0.000,0.000,-97.275>"));
+        Assert.Equal("<Idle|WPos:0.000,0.000,5.000|FS:0,0>",
+            _t.CorrectReport("<Idle|WPos:0.000,0.000,5.000|FS:0,0>"));
+    }
+
+    [Fact]
+    public void ToolLengthOffset_ReportsStopMaskingWhenTheOffsetIsClearedMeanwhile()
+    {
+        Run("G43.1 Z-25.25");
+        _t.CorrectReport("<Idle|WPos:0.000,0.000,5.000|FS:0,0|WCO:0.000,0.000,-97.275>");
+        _t.Reset();
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        Run("G49");
+        Assert.Equal("<Idle|WPos:0.000,0.000,-20.250|FS:0,0>",
+            _t.CorrectReport("<Idle|WPos:0.000,0.000,-20.250|FS:0,0>"));
+    }
+
+    [Fact]
+    public void ToolLengthOffset_WaitsOutAnAlarmAndCoolant()
+    {
+        Run("G43.1 Z-10");
+        _t.Reset();
+        _state.Status = "Alarm";
+        Assert.Equal(TranslationKind.Run, _t.Translate("$X").Kind);
+        _state.Status = "Idle";
+        Assert.Equal(TranslationKind.Run, _t.Translate("M8").Kind);
+        Assert.Equal("$G", _t.Translate("G0 X1").SyncCommand);
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M8 T0 F0 S0]");
+        Assert.Equal("G43.1 Z-10", _t.Translate("G0 X1").SyncCommand);
+    }
+
+    [Fact]
+    public void ToolLengthOffset_ClearedWithG49_IsNotRestored()
+    {
+        Run("G43.1 Z-10");
+        Run("G49");
+        _t.Reset();
+        Assert.Equal("G0 X1", Single("G0 X1"));
+    }
+
+    // $13=1: Grbl reports in inches; ncSender reads mm.
+    [Fact]
+    public void ReportInches_PositionsOffsetsAndFeedAreConvertedToMm()
+    {
+        _t.ObserveData("$13=1");
+        Assert.Equal("<Idle|WPos:25.400,-50.800,12.700|Bf:14,128|FS:254.000,10000|WCO:-25.400,0.000,-6.350>",
+            _t.CorrectReport("<Idle|WPos:1.0000,-2.0000,0.5000|Bf:14,128|FS:10.000,10000|WCO:-1.0000,0.0000,-0.2500>"));
+        Assert.Equal("[G54:25.400,-50.800,-12.700]", _t.CorrectReport("[G54:1.0000,-2.0000,-0.5000]"));
+        Assert.Equal("[PRB:25.400,0.000,-2.540:1]", _t.CorrectReport("[PRB:1.0000,0.0000,-0.1000:1]"));
+        Assert.Equal("[TLO:-25.400]", _t.CorrectReport("[TLO:-1.0000]"));
+        Assert.Equal("[MSG:Caution: Unlocked]", _t.CorrectReport("[MSG:Caution: Unlocked]"));
+    }
+
+    [Fact]
+    public void ReportInches_Off_LeavesReportsAlone()
+    {
+        _t.ObserveData("$13=0");
+        Assert.Equal("<Idle|MPos:1.000,2.000,3.000|FS:0,0>", _t.CorrectReport("<Idle|MPos:1.000,2.000,3.000|FS:0,0>"));
+        Assert.Equal("[G54:1.000,2.000,3.000]", _t.CorrectReport("[G54:1.000,2.000,3.000]"));
+    }
+
+    // Setting it from the Firmware tab takes effect without a new $$.
+    [Fact]
+    public void ReportInches_FollowsTheSettingAsItIsWritten()
+    {
+        Assert.Empty(Writes(Run("$13=1")).Where(w => w != "$13=1"));
+        Assert.Equal("[G54:25.400,0.000,0.000]", _t.CorrectReport("[G54:1.0000,0.0000,0.0000]"));
+    }
+
+    // Grbl forgets the tool on power-up; ncSender keeps it between runs.
+    [Fact]
+    public void Tool_IsKeptBetweenRuns()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"grbl-tool-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var first = new GrblTranslator(() => _state, file);
+            first.Translate("M61 Q4");
+            var next = new GrblTranslator(() => new MachineState(), file);
+            Assert.Equal("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T4 F0 S0]",
+                next.CorrectReport("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]"));
+        }
+        finally { File.Delete(file); }
+    }
+
+    // A reset clears Grbl's tool, not the one in the spindle.
+    [Fact]
+    public void Tool_SurvivesAReset()
+    {
+        Run("T2");
+        _t.Reset();
+        Assert.Equal("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T2 F0 S0]",
+            _t.CorrectReport("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]"));
+        Assert.Equal("<Idle|MPos:0,0,0|FS:0,0>", _t.CorrectReport("<Idle|MPos:0,0,0|FS:0,0>"));
     }
 
     [Fact]
@@ -295,7 +475,8 @@ public class GrblTranslatorTests
         Single("G20 G91 G56 T5");
         _t.Reset();
         Run("#1 = [#<_metric> + #<_absolute> + #5220 + #5400]");
-        Assert.Equal("G0 X3", Single("G0 X#1"));
+        // G21 G90 G54, and the tool is kept: 1 + 1 + 1 + 5.
+        Assert.Equal("G0 X8", Single("G0 X#1"));
     }
 
     // A job numbers every line, so the program delimiter comes as "N1 %".

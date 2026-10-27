@@ -35,7 +35,13 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
     private double _feed;
     private int _tool;
     // G43.1 offset in mm (Grbl clears it on reset).
-    private double _tlo;
+    private double _tlo;            // mm
+    private bool _restoreTlo;       // reset cleared Grbl's G43.1; resend it
+    private bool _reportInches;     // $13=1: positions, offsets and feed come in inches
+    private bool _parserSeen;       // a [GC:] report came in since the last reset
+    private bool _maskTlo;          // reports lack the offset until the restore lands
+    private double? _wcoZ;          // last WCO.Z with the offset in it (mm)
+    private bool _parserAsked;      // $G sent for it
 
     private readonly double[] _probe = new double[3];
     private bool _probeOk;
@@ -43,6 +49,7 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
     // Offsets come from $# (parsed into MachineState). After a line that
     // changes them, the next read asks for $# again first.
     private bool _offsetsStale = true;
+    private bool _drained;   // G4 P0 sent, $# next
     // A line was rejected after its modal words were already counted.
     private bool _modalStale;
     // Pin states come from status reports; one older than the last reply may
@@ -57,15 +64,165 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
         public bool Taken { get; set; } = active;
     }
 
-    public GrblTranslator(Func<MachineState> state)
+    // Where the current tool is kept between runs (null: not kept). Grbl
+    // forgets it on power-up; the tool in the spindle doesn't go anywhere.
+    private readonly string? _toolFile;
+
+    public GrblTranslator(Func<MachineState> state, string? toolFile = null)
     {
+        _toolFile = toolFile;
         _state = state;
         var s = state();
         // Units, distance mode and feed start at Grbl's defaults; the $G
         // sent on connect seeds them from the reply.
         _coordSystem = CoordIndex(s.Workspace) ?? 1;
-        _tool = s.Tool;
+        _tool = LoadTool() ?? s.Tool;
     }
+
+    private int? LoadTool()
+    {
+        try
+        {
+            return _toolFile is not null && File.Exists(_toolFile)
+                && int.TryParse(File.ReadAllText(_toolFile).Trim(), out var t) && t >= 0 ? t : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    private void SetTool(int tool)
+    {
+        if (tool == _tool) return;
+        _tool = tool;
+        if (_toolFile is null) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_toolFile)!);
+            File.WriteAllText(_toolFile, tool.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    // Grbl doesn't keep the tool: it takes it from each line's T word (a line
+    // without one reads back as T0) and a reset clears it. ncSender keeps the
+    // last T it sent, through resets too (the tool in the spindle doesn't
+    // change), and reports that in the parser state.
+    //
+    // With $13=1 Grbl reports positions, offsets, probe results and feed in
+    // inches; everything in ncSender reads them as mm, so they are converted
+    // here (the DRO otherwise moves 1/25.4 of the real distance).
+    public string CorrectReport(string line)
+    {
+        if (line.StartsWith("[GC:", StringComparison.Ordinal) && line.EndsWith(']'))
+            return GcToolPattern().Replace(line, $"T{_tool}");
+        if (line.StartsWith('<') && line.EndsWith('>'))
+        {
+            if (!_reportInches && !_maskTlo) { NoteWco(line); return line; }
+            var fields = line[1..^1].Split('|');
+            if (_reportInches)
+            {
+                for (var i = 1; i < fields.Length; i++)
+                {
+                    var colon = fields[i].IndexOf(':');
+                    if (colon < 0) continue;
+                    var key = fields[i][..colon];
+                    var values = fields[i][(colon + 1)..];
+                    fields[i] = key switch
+                    {
+                        "MPos" or "WPos" or "WCO" => $"{key}:{ToMm(values, int.MaxValue)}",
+                        "FS" or "F" => $"{key}:{ToMm(values, 1)}",   // feed only, not the spindle speed
+                        _ => fields[i],
+                    };
+                }
+            }
+            if (_maskTlo) MaskLostTlo(fields);
+            var corrected = "<" + string.Join('|', fields) + ">";
+            NoteWco(corrected);
+            return corrected;
+        }
+        if (!_reportInches) return line;
+        if (OffsetReportPattern().Match(line) is { Success: true } m)
+            return $"[{m.Groups[1].Value}:{ToMm(m.Groups[2].Value, int.MaxValue)}{m.Groups[3].Value}]";
+        return line;
+    }
+
+    // Between a reset and the G43.1 that puts the tool length offset back, Grbl
+    // reports Z without it, and the DRO and visualizer jump away and back.
+    // Until its own report includes the offset again, add it here.
+    // WCO = workspace + G92 + TLO, so without it WCO.Z is short by the offset
+    // and WPos.Z (MPos - WCO) long by it. MPos is the real position: untouched.
+    private void MaskLostTlo(string[] fields)
+    {
+        var wco = Array.FindIndex(fields, f => f.StartsWith("WCO:", StringComparison.Ordinal));
+        if (wco >= 0)
+        {
+            var z = AxisValue(fields[wco], 2);
+            if (z is null || _wcoZ is null || Math.Abs(z.Value - _wcoZ.Value) < 0.002)
+            {
+                _maskTlo = false;   // the offset is back (or the report says something else)
+                return;
+            }
+            if (Math.Abs(z.Value + _tlo - _wcoZ.Value) >= 0.002)
+            {
+                _maskTlo = false;   // the offsets changed some other way: report them as they are
+                return;
+            }
+            fields[wco] = ShiftAxis(fields[wco], 2, _tlo);
+        }
+        var wpos = Array.FindIndex(fields, f => f.StartsWith("WPos:", StringComparison.Ordinal));
+        if (wpos >= 0) fields[wpos] = ShiftAxis(fields[wpos], 2, -_tlo);
+    }
+
+    // The last WCO.Z reported with the offset in it, in mm.
+    private void NoteWco(string status)
+    {
+        if (_maskTlo) return;
+        var start = status.IndexOf("|WCO:", StringComparison.Ordinal);
+        if (start < 0) return;
+        var end = status.IndexOfAny(['|', '>'], start + 5);
+        if (end < 0) return;
+        _wcoZ = AxisValue(status[(start + 1)..end], 2);
+    }
+
+    private static double? AxisValue(string field, int axis)
+    {
+        var parts = field[(field.IndexOf(':') + 1)..].Split(',');
+        return axis < parts.Length && double.TryParse(parts[axis], NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+
+    private static string ShiftAxis(string field, int axis, double by)
+    {
+        var colon = field.IndexOf(':');
+        var parts = field[(colon + 1)..].Split(',');
+        if (axis < parts.Length && double.TryParse(parts[axis], NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+            parts[axis] = (v + by).ToString("0.000", CultureInfo.InvariantCulture);
+        return field[..(colon + 1)] + string.Join(',', parts);
+    }
+
+    // The first `count` comma-separated values, inches to mm.
+    private static string ToMm(string values, int count)
+    {
+        var parts = values.Split(',');
+        for (var i = 0; i < parts.Length && i < count; i++)
+            if (double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+                parts[i] = (v * 25.4).ToString("0.000", CultureInfo.InvariantCulture);
+        return string.Join(',', parts);
+    }
+
+    // [PRB:x,y,z:1], [G54:x,y,z] .. [G59:], [G28:], [G30:], [G92:], [TLO:z].
+    [GeneratedRegex(@"^\[(PRB|G5[4-9]|G28|G30|G92|TLO):([-0-9.,]+)(:[01])?\]$")]
+    private static partial Regex OffsetReportPattern();
+
+    [GeneratedRegex(@"(?<=[\[: ])T\d+(?=[ \]])")]
+    private static partial Regex GcToolPattern();
+
+    [GeneratedRegex(@"^(N\d+\s*)?M0*[789]\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex CoolantOnlyPattern();
+
+    // $13 from the $$ reply, or as the Firmware tab writes it.
+    [GeneratedRegex(@"^\$13\s*=\s*(\d+)")]
+    private static partial Regex ReportInchesPattern();
 
     private bool Skipping => _branches.Any(b => !b.Active || b.ParentSkipping);
 
@@ -75,9 +232,33 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
         // A job numbers every line, so the program delimiter arrives as "N1 %".
         if (src.Length == 0 || NcSender.Core.Utils.GcodePatterns.StripNNumber(src).Trim() == "%") return TranslationResult.Nothing;
 
+        // Not into an alarm (Grbl rejects G-code there): it goes back on the
+        // first line after $H or $X. Not on a coolant line either: those skip
+        // the queue, which is what runs the sync.
+        if (_restoreTlo && !_state().Status.StartsWith("Alarm", StringComparison.OrdinalIgnoreCase)
+            && !CoolantOnlyPattern().IsMatch(src))
+        {
+            // In the units Grbl is in now, so only once its [GC:] report has
+            // actually come in: an "ok" left over from the reset can answer
+            // the $G before the report does.
+            if (_parserSeen)
+            {
+                _restoreTlo = false;
+                if (_tlo != 0) return TranslationResult.Sync($"G43.1 Z{Fmt(_tlo * UnitScale)}");
+            }
+            else if (!_parserAsked)
+            {
+                _parserAsked = true;
+                _modalStale = false;
+                return TranslationResult.Sync("$G");
+            }
+        }
+
         if (src[0] == '$')
         {
             if (Skipping) return TranslationResult.Nothing;
+            if (ReportInchesPattern().Match(src) is { Success: true } inches)
+                _reportInches = inches.Groups[1].Value != "0";
             // grblHAL's named-parameter queries. Grbl can't answer them; the one
             // ncSender relies on (is a tool length offset active) is known here.
             if (src.StartsWith("$#=", StringComparison.Ordinal))
@@ -104,7 +285,8 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
             if (OWordPattern().IsMatch(code)) return Flow(code);
             if (Skipping) return TranslationResult.Nothing;
 
-            if (_modalStale && code.Length > 0)
+            // Not on a coolant line: those skip the queue, which runs the sync.
+            if (_modalStale && code.Length > 0 && !CoolantOnlyPattern().IsMatch(src))
             {
                 _modalStale = false;
                 return TranslationResult.Sync("$G");
@@ -115,6 +297,10 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
             if (code.Length == 0) return new TranslationResult(TranslationKind.Run, steps);
 
             var parsed = Parse(code);
+            // M61 sets the tool as Grbl reads the line, ahead of the moves
+            // still queued before it (the bit disappeared before the machine
+            // even left for the manual tool change). Let them finish first.
+            if (parsed.Words.Any(w => Is(w, 'M', 61))) steps.Add(TranslationStep.Line("G4 P0"));
             var lines = Rewrite(parsed.Words, out var pauseTool);
             foreach (var l in lines)
             {
@@ -135,6 +321,14 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
         }
         catch (OffsetsNeeded)
         {
+            // Grbl answers $# only when Idle (error:8 while a move is still
+            // running), so let queued motion finish first.
+            if (!_drained)
+            {
+                _drained = true;
+                return TranslationResult.Sync("G4 P0");
+            }
+            _drained = false;
             _offsetsStale = false;
             return TranslationResult.Sync("$#");
         }
@@ -150,6 +344,11 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
 
     public void ObserveData(string line)
     {
+        if (ReportInchesPattern().Match(line) is { Success: true } inches)
+        {
+            _reportInches = inches.Groups[1].Value != "0";
+            return;
+        }
         if (line.StartsWith('<'))
         {
             _statusStale = false;
@@ -173,6 +372,7 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
         }
         else if (line.StartsWith("[GC:", StringComparison.Ordinal) && line.EndsWith(']'))
         {
+            _parserSeen = true;
             foreach (var mode in line[4..^1].Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
                 switch (mode)
@@ -182,8 +382,10 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
                     case "G90": _absolute = true; break;
                     case "G91": _absolute = false; break;
                     default:
+                        // Not the T in it: Grbl sets its tool from each line's
+                        // T word, so any line without one reads back as T0.
+                        // The tool is the last T ncSender sent (CorrectReport).
                         if (CoordIndex(mode) is { } cs) _coordSystem = cs;
-                        else if (mode.Length > 1 && mode[0] == 'T' && int.TryParse(mode[1..], out var t)) _tool = t;
                         else if (mode.Length > 1 && mode[0] == 'F'
                                  && double.TryParse(mode[1..], NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) _feed = f;
                         break;
@@ -195,21 +397,31 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
     public void OnLineFailed()
     {
         _branches.Clear();
+        _drained = false;
         _modalStale = true;
         _offsetsStale = true;
     }
 
     public void Reset()
     {
-        // Grbl's gc_init(): G21 G90 G54, no tool, no feed.
+        // Grbl's gc_init(): G21 G90 G54, no feed, no tool length offset. The
+        // tool stays (see CorrectReport), and so does the offset: the tool in
+        // the spindle is still the one measured, so it goes back to Grbl
+        // before the next line (grblHAL keeps it through a reset).
         _branches.Clear();
+        _drained = false;
         _metric = true;
         _absolute = true;
         _coordSystem = 1;
         _feed = 0;
-        _tool = 0;
-        _tlo = 0;
-        _modalStale = false;
+        _restoreTlo = _tlo != 0;
+        _maskTlo = _restoreTlo && _wcoZ is not null;
+        _parserSeen = false;
+        _parserAsked = false;
+        // The startup lines ($N0/$N1) run after a reset and can change any of
+        // that (a G20 there leaves Grbl in inches), so read the parser state
+        // back before the next line rather than assume it.
+        _modalStale = true;
         _offsetsStale = true;
     }
 
@@ -400,9 +612,12 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
         }
 
         // G65 P5 Qn picks the probe input on grblHAL; Grbl has one probe.
+        // G65 P6 skips grblHAL's wait for the spindle to reach speed (tool
+        // changer plugins send it around their spin-on moves); Grbl never
+        // waits, so there is nothing to skip.
         if (words.Any(w => Is(w, 'G', 65)))
         {
-            if (words.Any(w => Is(w, 'P', 5)))
+            if (words.Any(w => Is(w, 'P', 5) || Is(w, 'P', 6)))
             {
                 line.RemoveAll(w => Is(w, 'G', 65) || w.Letter is 'P' or 'Q');
             }
@@ -470,6 +685,9 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
                     else if (Is(w, 'G', 10) || Is(w, 'G', 92) || Is(w, 'G', 92.1) || Is(w, 'G', 43.1) || Is(w, 'G', 49))
                     {
                         _offsetsStale = true;
+                        // Offsets set anew: report them as Grbl does.
+                        _maskTlo = false;
+                        if (Is(w, 'G', 49) || Is(w, 'G', 43.1)) _restoreTlo = false;
                         if (Is(w, 'G', 49)) _tlo = 0;
                         else if (Is(w, 'G', 43.1))
                             _tlo = (words.FirstOrDefault(x => x.Letter == 'Z')?.Value ?? 0) / UnitScale;
@@ -478,7 +696,7 @@ public sealed partial class GrblTranslator : IGcodeTranslator, INgcParameters
                         _coordSystem = (int)Math.Round(w.Value) - 53;
                     break;
                 case 'F': _feed = w.Value; break;
-                case 'T': _tool = (int)Math.Round(w.Value); break;
+                case 'T': SetTool((int)Math.Round(w.Value)); break;
                 case 'M':
                     if (Is(w, 'M', 2) || Is(w, 'M', 30)) { _absolute = true; _coordSystem = 1; }
                     break;

@@ -25,13 +25,19 @@ public partial class GrblProtocol : IProtocolHandler
 
     public bool MatchesGreeting(string line) => GreetingPattern().IsMatch(line.Trim());
 
-    public string[] GetInitCommands() => ["$G", "$#=_tool_offset", "$I", "$#"];
+    // $$ first: $13 decides whether the offsets ($#) and positions come in
+    // inches (GrblTranslator.CorrectReport).
+    public string[] GetInitCommands() => ["$$", "$G", "$#=_tool_offset", "$I", "$#"];
 
     public bool SupportsSettingEnumeration => false;
 
     public bool SupportsOverrideControl => false;
 
-    public IGcodeTranslator CreateTranslator(Func<MachineState> state) => new GrblTranslator(state);
+    // grblHAL keeps the current tool itself; Grbl doesn't, so ncSender keeps
+    // it in this file (null: not kept, for tests).
+    public string? ToolFile { get; init; } = Path.Combine(Infrastructure.PathUtils.GetUserDataDir(), "grbl-tool.txt");
+
+    public IGcodeTranslator CreateTranslator(Func<MachineState> state) => new GrblTranslator(state, ToolFile);
 
     // A grblHAL build can be set to greet like classic Grbl; its $I still
     // lists [NEWOPT:...], which Grbl never sends.

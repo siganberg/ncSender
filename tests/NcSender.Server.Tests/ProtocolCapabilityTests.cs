@@ -37,7 +37,7 @@ public class ProtocolCapabilityTests
     [Fact]
     public void Grbl_translates_and_lists_its_own_alarms()
     {
-        IProtocolHandler p = new GrblProtocol();
+        IProtocolHandler p = new GrblProtocol { ToolFile = null };
         Assert.NotNull(p.CreateTranslator(() => new MachineState()));
         Assert.Equal(9, p.StaticAlarmDescriptions!.Count);
         Assert.False(p.SupportsOverrideControl);
@@ -51,14 +51,14 @@ public class ProtocolCapabilityTests
     public void Only_FluidNc_has_a_config_file()
     {
         Assert.True(((IProtocolHandler)new FluidNcProtocol()).SupportsConfigFile);
-        Assert.False(((IProtocolHandler)new GrblProtocol()).SupportsConfigFile);
+        Assert.False(((IProtocolHandler)new GrblProtocol { ToolFile = null }).SupportsConfigFile);
         Assert.False(((IProtocolHandler)new GrblHalProtocol()).SupportsConfigFile);
     }
 
     [Fact]
     public void Grbl_describes_its_settings()
     {
-        var defs = ((IProtocolHandler)new GrblProtocol()).StaticSettingDefinitions!;
+        var defs = ((IProtocolHandler)new GrblProtocol { ToolFile = null }).StaticSettingDefinitions!;
         Assert.Equal("Homing cycle enable", defs[22].Name);
         Assert.Equal(0, defs[22].DataType);
         Assert.Equal("X,Y,Z", defs[23].Format);
