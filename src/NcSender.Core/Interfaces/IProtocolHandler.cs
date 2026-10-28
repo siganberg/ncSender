@@ -87,14 +87,6 @@ public interface IProtocolHandler
     bool TryHandleData(string line, MachineState state, out bool stateChanged);
 
     /// <summary>
-    /// Returns true if a line already consumed by TryHandleData should also be
-    /// hidden from the terminal echo (e.g. FluidNC's spindle-sync chatter, which
-    /// only feeds the RPM gauge). Defaults to false so handled lines keep
-    /// appearing in the terminal exactly as before.
-    /// </summary>
-    bool ShouldSuppressEcho(string line) => false;
-
-    /// <summary>
     /// Parse an error line and return the error code and message.
     /// Returns true if this handler recognized the error format.
     /// </summary>
@@ -116,9 +108,11 @@ public interface IProtocolHandler
 
     /// <summary>
     /// A translator every queued line passes through just before it is written,
-    /// for controllers that can't run what the rest of ncSender sends (classic
-    /// Grbl has no expressions, parameters, o-words or M6). Null means lines go
-    /// out as they are, which is what grblHAL and FluidNC get.
+    /// for controllers that can't run what the rest of ncSender sends, and that
+    /// corrects what they report, so everything else only sees grblHAL (classic
+    /// Grbl has no expressions, parameters, o-words or M6; FluidNC reports
+    /// differently and lacks a few grblHAL codes). Null means lines go out as
+    /// they are: grblHAL.
     /// </summary>
     IGcodeTranslator? CreateTranslator(Func<MachineState> state) => null;
 

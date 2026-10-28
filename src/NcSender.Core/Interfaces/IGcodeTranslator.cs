@@ -25,10 +25,11 @@ public interface IGcodeTranslator
 
     /// <summary>
     /// A controller line as ncSender should read it. Lets a translator make up
-    /// for what the controller gets wrong or forgets (classic Grbl's tool);
-    /// unchanged by default.
+    /// for what the controller gets wrong or forgets (classic Grbl's tool) or
+    /// reports in its own way (FluidNC); unchanged by default. Null drops the
+    /// line: nothing in ncSender should see it.
     /// </summary>
-    string CorrectReport(string line) => line;
+    string? CorrectReport(string line) => line;
 }
 
 public enum TranslationKind

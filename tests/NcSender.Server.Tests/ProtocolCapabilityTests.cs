@@ -7,8 +7,8 @@ using NcSender.Server.Protocols.GrblHal;
 namespace NcSender.Server.Tests;
 
 // Tool changer plugins wrap a change in M51 (hold the spindle override at
-// 100%) only when the controller understands it: FluidNC rejects M51, and a
-// rejected line stops the tool change.
+// 100%) only when the controller understands it, or when its translator takes
+// the M51 out (FluidNC): a rejected line stops the tool change.
 public class ProtocolCapabilityTests
 {
     [Fact]
@@ -16,13 +16,35 @@ public class ProtocolCapabilityTests
         Assert.True(((IProtocolHandler)new GrblHalProtocol()).SupportsOverrideControl);
 
     [Fact]
-    public void FluidNc_does_not_support_override_control() =>
-        Assert.False(((IProtocolHandler)new FluidNcProtocol()).SupportsOverrideControl);
+    public void FluidNc_takes_override_control_through_its_translator()
+    {
+        IProtocolHandler p = new FluidNcProtocol();
+        Assert.True(p.SupportsOverrideControl);
+        Assert.IsType<FluidNcTranslator>(p.CreateTranslator(() => new MachineState()));
+    }
 
-    // The Grbl members default to today's behaviour, so grblHAL and FluidNC
-    // send every line exactly as before.
+    // FluidNC reports no WCS: or T:, so the parser state is read back after
+    // what changes them; a comment changes nothing.
+    [Theory]
+    [InlineData("M61 Q2", true)]
+    [InlineData("M6 T3", true)]
+    [InlineData("T4", true)]
+    [InlineData("G55", true)]
+    [InlineData("G90 G94 G56", true)]
+    [InlineData("M30", true)]
+    [InlineData("M2", true)]
+    [InlineData("G54.1 P2", false)]
+    [InlineData("M600", false)]
+    [InlineData("M62 P1", false)]
+    [InlineData("(UNLOAD CURRENT TOOL T1)", false)]
+    [InlineData("G0 X1 ; to T2", false)]
+    [InlineData("G1 X5 F500", false)]
+    public void FluidNc_reads_the_parser_state_back_after_tool_and_workspace_changes(string line, bool refresh) =>
+        Assert.Equal(refresh, ((IProtocolHandler)new FluidNcProtocol()).NeedsGCodeStateRefresh(line));
+
+    // grblHAL is what everything is written for: lines go out as they are.
     public static IEnumerable<object[]> Existing() =>
-        [[new GrblHalProtocol()], [new FluidNcProtocol()]];
+        [[new GrblHalProtocol()]];
 
     [Theory]
     [MemberData(nameof(Existing))]

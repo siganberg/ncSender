@@ -1137,7 +1137,13 @@ public partial class CncController : ICncController
 
         // Status reports too: the translator tells a report sent after the
         // last reply from an older one.
-        if (_translator is { } correcting) trimmedData = correcting.CorrectReport(trimmedData);
+        if (_translator is { } correcting)
+        {
+            // Null: a line that means nothing to ncSender (FluidNC's spindle
+            // speed chatter, already folded into the status report).
+            if (correcting.CorrectReport(trimmedData) is not { } corrected) return;
+            trimmedData = corrected;
+        }
         _translator?.ObserveData(trimmedData);
         if (_activeProtocol?.RedirectProtocol(trimmedData) is { } redirect)
             SwitchProtocol(redirect);
@@ -1197,19 +1203,10 @@ public partial class CncController : ICncController
             var sourceId = GetActiveSourceId();
             DataReceived?.Invoke(trimmedData, sourceId);
         }
-        // G92 offset (current G92 modal offset) — needed for FluidNC WCO synthesis
+        // G92 offset (current G92 modal offset), for GrblTranslator's #5211-#5213
         else if (trimmedData.StartsWith("[G92:", StringComparison.Ordinal) && trimmedData[^1] == ']')
         {
             _lastStatus.G92Offset = trimmedData[5..^1];
-            LogControllerData(trimmedData);
-            var sourceId = GetActiveSourceId();
-            DataReceived?.Invoke(trimmedData, sourceId);
-        }
-        // Tool Length Offset (Z-only) — needed for FluidNC WCO synthesis
-        else if (trimmedData.StartsWith("[TLO:", StringComparison.Ordinal) && trimmedData[^1] == ']')
-        {
-            if (double.TryParse(trimmedData[5..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var tlo))
-                _lastStatus.Tlo = tlo;
             LogControllerData(trimmedData);
             var sourceId = GetActiveSourceId();
             DataReceived?.Invoke(trimmedData, sourceId);
@@ -1316,11 +1313,7 @@ public partial class CncController : ICncController
                 }
                 if (stateChanged)
                     StatusReportReceived?.Invoke(_lastStatus);
-                if (!_activeProtocol.ShouldSuppressEcho(trimmedData))
-                {
-                    var sourceId = GetActiveSourceId();
-                    DataReceived?.Invoke(trimmedData, sourceId);
-                }
+                DataReceived?.Invoke(trimmedData, GetActiveSourceId());
                 return;
             }
 
@@ -1671,9 +1664,7 @@ public partial class CncController : ICncController
             _lastStatus.Pn = _activeProtocol.NormalizePinState(_lastStatus.Pn, _lastStatus.ActiveProbe, tlsIdx, _lastStatus.ProbeCount);
         }
 
-        // Protocol-specific post-processing (e.g. homing detection, WCO synthesis
-        // for FluidNC). Must run before wPos computation so the synthesized WCO
-        // is available — FluidNC status reports omit WCO entirely.
+        // Protocol-specific post-processing (homing detection, axes from MPos).
         _activeProtocol?.PostProcessStatus(_lastStatus, prevStatus ?? "");
 
         // Grbl set to report work position ($10 bit 0 clear) sends WPos and
@@ -1855,14 +1846,9 @@ public partial class CncController : ICncController
 
         // If the active workspace offset changed, update WCO to stay in sync.
         // WCO = workspaceOffset + G92 + TLO. The G92+TLO portion is unchanged,
-        // so newWCO = newOffset + (oldWCO - oldOffset).
-        // This prevents stale WCO on controllers that don't report WCO every cycle (e.g. FluidNC).
-        // Skip if a full status request (0x87) is pending — the real WCO will arrive in
-        // the status report. Recalculating here with stale oldWCO causes a visual bounce.
-        // If the active workspace offset changed, update WCO to stay in sync.
-        // WCO = workspaceOffset + G92 + TLO. The G92+TLO portion is unchanged,
-        // so newWCO = newOffset + (oldWCO - oldOffset).
-        // This prevents stale WCO on controllers that don't report WCO every cycle (e.g. FluidNC).
+        // so newWCO = newOffset + (oldWCO - oldOffset). Controllers that report
+        // WCO only every few cycles (classic Grbl, FluidNC) otherwise show the
+        // old offset until the next one.
         //
         // Skip recalculation if the current WCO already reflects the new offset
         // (i.e., a 0x87 status report with the real WCO arrived before $#).

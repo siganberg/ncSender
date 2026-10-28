@@ -74,7 +74,7 @@ public class CncControllerGrblTests : IDisposable
         Greet(greeting);
         Assert.Equal(expected, _controller.ActiveProtocol?.Name);
         var translator = GetPrivate(_controller, "_translator");
-        Assert.Equal(expected == "Grbl", translator is not null);
+        Assert.Equal(expected is "Grbl" or "FluidNC", translator is not null);
     }
 
     [Fact]
@@ -274,6 +274,17 @@ public class CncControllerGrblTests : IDisposable
         _controller.HandleIncomingData("ok");
         _controller.HandleIncomingData("ok");
         Assert.Equal("success", (await Done(seq)).Status);
+    }
+
+    // The tool library's TLO writeback listens for [TLO:] in the data stream.
+    [Theory]
+    [InlineData("GrblHAL 1.1f ['$' or '$HELP' for help]")]
+    [InlineData("Grbl 4.0 [FluidNC v4.0.3 (esp32-wifi) '$' for help]")]
+    public void TloReport_ReachesDataListeners(string greeting)
+    {
+        Greet(greeting);
+        _controller.HandleIncomingData("[TLO:0.000,0.000,-12.345]");
+        lock (_data) Assert.Contains("[TLO:0.000,0.000,-12.345]", _data);
     }
 
     private static object? GetPrivate(object target, string name) =>

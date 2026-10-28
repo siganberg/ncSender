@@ -130,7 +130,7 @@ public partial class GrblProtocol : IProtocolHandler
 
     // Status reports carry no WCS: or T: field, so the parser state is read
     // back after anything that changes them.
-    [GeneratedRegex(@"G5[4-9](?![.\d])|M0*2(?!\d)|M30|T\d", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"G5[4-9](?![.\d])|M0*2(?!\d)|M30|M0*61(?!\d)|T\d", RegexOptions.IgnoreCase)]
     private static partial Regex StateChangePattern();
 
     public bool NeedsGCodeStateRefresh(string command) => StateChangePattern().IsMatch(command);

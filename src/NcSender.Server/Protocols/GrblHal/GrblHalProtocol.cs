@@ -5,17 +5,32 @@ using NcSender.Core.Models;
 
 namespace NcSender.Server.Protocols.GrblHal;
 
+/// <summary>
+/// grblHAL, the controller everything in ncSender is written for. Other
+/// controllers either build on this handler and translate the difference
+/// (FluidNC) or have their own (classic Grbl); the rest of ncSender only ever
+/// sees grblHAL behaviour.
+/// </summary>
 public partial class GrblHalProtocol : IProtocolHandler
 {
     [GeneratedRegex(@"^P(\d+)")]
     private static partial Regex PinNumberPattern();
 
-    public string Name => "grblHAL";
-    public string CacheKey => "grblhal";
-    public byte? FullStatusRequestByte => 0x87;
+    public virtual string Name => "grblHAL";
+    public virtual string CacheKey => "grblhal";
+    public virtual byte? FullStatusRequestByte => 0x87;
     public string AlarmFetchCommand => "$EA";
+    public virtual string? ErrorFetchCommand => null;
+    public virtual bool SupportsSettingEnumeration => true;
+    public virtual bool SupportsConfigFile => false;
 
-    public bool MatchesGreeting(string line)
+    public virtual IGcodeTranslator? CreateTranslator(Func<MachineState> state) => null;
+
+    public virtual void PostProcessStatus(MachineState state, string previousStatus) { }
+
+    public virtual bool NeedsGCodeStateRefresh(string command) => false;
+
+    public virtual bool MatchesGreeting(string line)
     {
         // Canonical Grbl ready greeting: "Grbl X.Y... '$' for help" or
         // "GrblHAL X.Y... '$' or '$HELP' for help". Excludes FluidNC, which
