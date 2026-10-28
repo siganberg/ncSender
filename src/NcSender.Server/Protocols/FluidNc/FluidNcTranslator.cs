@@ -11,7 +11,8 @@ namespace NcSender.Server.Protocols.FluidNc;
 /// IF/ELSE and M62-M66, so most lines go out as written. What differs:
 /// <list type="bullet">
 /// <item>Sent: no M51 (override control) or G65 P6, no $EA/$EE/$ES lists or
-/// $pinstate, no $#=name query, and no minus straight before a bracket.</item>
+/// $pinstate, no $#=name query, no minus straight before a bracket, and the
+/// probe position (#5061-#5069) in machine, not work, coordinates.</item>
 /// <item>Reported: no H: field, no measured spindle speed in FS (it streams
 /// the VFD's reading as a message instead), (MSG, ...) comments echoed as
 /// [MSG:INFO: MSG, ...], alarms listed as "N: text", and the line number of
@@ -119,7 +120,7 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         }
 
         // Most job lines: nothing to change. Every rewrite below needs one of these.
-        if (line.IndexOf('$') < 0 && line.IndexOf('[') < 0
+        if (line.IndexOf('$') < 0 && line.IndexOf('[') < 0 && line.IndexOf('#') < 0
             && line.IndexOf('M', StringComparison.OrdinalIgnoreCase) < 0
             && line.IndexOf('G', StringComparison.OrdinalIgnoreCase) < 0)
             return Pass(line);
@@ -161,6 +162,9 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         // the same value with the minus inside the brackets runs.
         if (rewritten.Contains("-[", StringComparison.Ordinal))
             rewritten = MoveMinusInside(rewritten);
+
+        if (rewritten.Contains("#", StringComparison.Ordinal))
+            rewritten = ProbeInWorkCoordinates(rewritten);
 
         return Pass(rewritten);
     }
@@ -241,6 +245,14 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         // Any other parameter: FluidNC prints it, and the print comes back as
         // grblHAL's [PARAM:] (CorrectReport).
         string reference;
+        if (ProbeParamPattern().IsMatch("#" + name))
+        {
+            // The probe position goes through the work coordinates first
+            // (FluidNC's print takes a parameter, not an expression).
+            return TranslationResult.Run(
+                TranslationStep.Line($"#<{ParamScratch}> = {ProbeInWorkCoordinates("#" + name)}"),
+                TranslationStep.Line($"(PRINT, {ParamPrintTag} {name}=#<{ParamScratch}>)"));
+        }
         if (name.All(char.IsDigit)) reference = "#" + name;
         else if (ParamNamePattern().IsMatch(name)) reference = $"#<{name}>";
         else return null;
@@ -248,6 +260,7 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
     }
 
     private const string ParamPrintTag = "NCSENDER_PARAM";
+    private const string ParamScratch = "_ncsender_param";
 
     public void ObserveData(string line)
     {
@@ -494,6 +507,36 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         return sb.ToString();
     }
 
+    // grblHAL's #5061-#5069 (the last probe position) are in the current work
+    // coordinates: machine position minus the workspace, G92 and tool length
+    // offsets. FluidNC's are the machine position, so a tool setter routine
+    // that adds the workspace offset back counted it twice. Each read becomes
+    // grblHAL's value, outside comments; a write (#5063 = ...) is left alone.
+    internal static string ProbeInWorkCoordinates(string line)
+    {
+        var sb = new StringBuilder(line.Length + 48);
+        var comment = 0;
+        var start = 0;
+        for (var i = 0; i <= line.Length; i++)
+        {
+            var c = i < line.Length ? line[i] : '\0';
+            if (i < line.Length && c != '(' && !(c == ')' && comment > 0)) continue;
+            var segment = line[start..i];
+            sb.Append(comment == 0 ? ProbeParamPattern().Replace(segment, m =>
+            {
+                var axis = m.Groups[1].Value[0] - '1';
+                return $"[#506{m.Groups[1].Value} - #[#5220 * 20 + {5201 + axis}] - #521{m.Groups[1].Value} - #540{m.Groups[1].Value}]";
+            }) : segment);
+            if (i < line.Length)
+            {
+                sb.Append(c);
+                if (c == '(') comment++; else comment--;
+            }
+            start = i + 1;
+        }
+        return sb.ToString();
+    }
+
     private static int MatchingBracket(string line, int open)
     {
         var depth = 0;
@@ -504,6 +547,9 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         }
         return -1;
     }
+
+    [GeneratedRegex(@"#\s*506([1-9])(?!\d)(?!\s*=)")]
+    private static partial Regex ProbeParamPattern();
 
     [GeneratedRegex(@"M0*51(?!\d)\s*(P\s*(\[[^\]]*\]+|[-+]?[\d.]+))?", RegexOptions.IgnoreCase)]
     private static partial Regex M51Pattern();

@@ -24,10 +24,11 @@ reads 0), o-word `IF`/`ELSE`/`ENDIF`, `G43.1`/`G49`, `G10 L2/L20`, `G38.x`,
 | `M51 P...` (override control) | Dropped. Tool changes run at the override the operator set. |
 | `G65 P6` (skip at-speed wait) | Dropped: FluidNC has no wait to skip. Other `G65` macros fail with a reason. |
 | `X-[expr]` | `X[-[expr]]` (FluidNC rejects a minus straight before a bracket). |
+| `#5061`-`#5069` (last probe position) | `[#5063 - workspace - G92 - TLO]`: FluidNC's are machine coordinates, grblHAL's are work coordinates. |
 | `$EA` | `$A`; its `N: text` lines come back as `[ALARMCODE:N\|\|text]`. |
 | `$EE`, `$EG`, `$ES`, `$ESH`, `$pinstate` | Answered without the controller (nothing to list). |
 | `$#=_tool_offset` | `$#`, answered as `[PARAM:_TOOL_OFFSET=0\|1]` from its `[TLO:]`. |
-| `$#=5063`, `$#=_name` | `(PRINT, ...)`, answered as `[PARAM:5063=...]`. |
+| `$#=5063`, `$#=_name` | `(PRINT, ...)`, answered as `[PARAM:5063=...]` (a probe position in work coordinates). |
 
 ## Reported: translated
 

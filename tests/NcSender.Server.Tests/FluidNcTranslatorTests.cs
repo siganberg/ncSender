@@ -166,8 +166,36 @@ public class FluidNcTranslatorTests
         Assert.Equal(TranslationKind.Sync, _t.Translate("$#=_tool_offset").Kind);
     }
 
+    // FluidNC's probe position is the machine position; grblHAL's is in the
+    // current work coordinates. The plugins' tool setter adds the workspace
+    // offset back, so without this the offset counted twice.
     [Theory]
-    [InlineData("$#=5063", "(PRINT, NCSENDER_PARAM 5063=#5063)")]
+    [InlineData("#<_nc_last_tlo> = [#5063 + #<_cur_wcs_z_ofs>]",
+                "#<_nc_last_tlo> = [[#5063 - #[#5220 * 20 + 5203] - #5213 - #5403] + #<_cur_wcs_z_ofs>]")]
+    [InlineData("#100 = #5061", "#100 = [#5061 - #[#5220 * 20 + 5201] - #5211 - #5401]")]
+    [InlineData("G0 X#5062 (back to #5062)", "G0 X[#5062 - #[#5220 * 20 + 5202] - #5212 - #5402] (back to #5062)")]
+    public void ProbePosition_IsReadInWorkCoordinates(string line, string expected) =>
+        Assert.Equal(expected, Written(_t.Translate(line)));
+
+    [Theory]
+    [InlineData("#5063 = 0")]
+    [InlineData("#50631 = #50632")]
+    [InlineData("#5070 = 1")]
+    [InlineData("(probe #5063)")]
+    public void ProbePosition_OtherwiseLeftAlone(string line) =>
+        Assert.Equal(line, Written(_t.Translate(line)));
+
+    [Fact]
+    public void ProbePositionQuery_IsPrintedInWorkCoordinates()
+    {
+        var r = _t.Translate("$#=5063");
+        Assert.Equal(TranslationKind.Run, r.Kind);
+        Assert.Equal(["#<_ncsender_param> = [#5063 - #[#5220 * 20 + 5203] - #5213 - #5403]",
+                      "(PRINT, NCSENDER_PARAM 5063=#<_ncsender_param>)"], r.Steps.Select(s => s.Write));
+    }
+
+    [Theory]
+    [InlineData("$#=5220", "(PRINT, NCSENDER_PARAM 5220=#5220)")]
     [InlineData("$#=_metric", "(PRINT, NCSENDER_PARAM _metric=#<_metric>)")]
     public void ParameterQuery_IsPrinted(string line, string expected) =>
         Assert.Equal(expected, Written(_t.Translate(line)));
