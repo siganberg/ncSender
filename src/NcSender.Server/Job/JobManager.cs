@@ -1,5 +1,6 @@
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Server.CommandProcessor;
 using NcSender.Server.Infrastructure;
 
 namespace NcSender.Server.Job;
@@ -318,7 +319,7 @@ public class JobManager : IJobManager
         return false;
     }
 
-    private async Task ExecuteEventGcode(string settingsKey)
+    internal async Task ExecuteEventGcode(string settingsKey)
     {
         var enabled = _settingsManager.GetSetting<bool?>($"events.{settingsKey}Enabled");
         if (enabled == false) return;
@@ -345,13 +346,33 @@ public class JobManager : IJobManager
             return;
         }
 
+        // Each line goes through the command processor like a job or macro
+        // line, so $PARK, $TLS and M6 work here and the door check applies.
         foreach (var line in lines)
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
             try
             {
-                await _controller.SendCommandAsync(line, meta);
+                var result = await _commandProcessor.ProcessAsync(line, new CommandProcessorContext
+                {
+                    Meta = meta.Meta,
+                    MachineState = _context.State.MachineState,
+                    Filename = _context.State.JobLoaded?.Filename,
+                });
+                if (!result.ShouldContinue)
+                {
+                    _logger.LogWarning("Event G-code line not run: {Line} ({Reason})", line, result.SkipReason);
+                    break;
+                }
+                var sent = await ExpandedCommandSender.SendAsync(_controller, _broadcaster, _logger, result.Commands,
+                    cmd => new CommandOptions
+                    {
+                        DisplayCommand = cmd.DisplayCommand ?? cmd.Command,
+                        Meta = cmd.Meta ?? meta.Meta
+                    });
+                if (sent?.Status == "error")
+                    break;
             }
             catch (Exception ex)
             {
