@@ -3850,6 +3850,12 @@ const rememberCamera = () => {
     rememberCameraTimer = null;
   }
   if (!cameraMovedView || !camera) return;
+  // A camera sitting on its target has no direction and reads back as a
+  // spun top-down view
+  if (camera.position.distanceTo(cameraTarget) < 1e-3) {
+    cameraMovedView = null;
+    return;
+  }
   cameraMemory[cameraMovedView] = {
     position: camera.position.toArray(),
     target: cameraTarget.toArray(),
@@ -3887,6 +3893,11 @@ const restoreCamera = (view: string) => {
   if (!saved || !isVector(saved.position) || !isVector(saved.target)) return;
   const position = new THREE.Vector3().fromArray(saved.position);
   const target = new THREE.Vector3().fromArray(saved.target);
+  if (position.distanceTo(target) < 1e-3) {
+    delete cameraMemory[view];
+    saveCameraMemory();
+    return;
+  }
   if (saved.height && saved.height > 0) {
     const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
     camera.top = saved.height / 2;
@@ -3897,9 +3908,9 @@ const restoreCamera = (view: string) => {
     cameraTarget.copy(target);
     camera.position.copy(position);
   } else {
-    const direction = position.sub(target);
-    if (direction.lengthSq() === 0) return;
-    camera.position.copy(cameraTarget).addScaledVector(direction.normalize(), camera.position.distanceTo(cameraTarget));
+    const distance = camera.position.distanceTo(cameraTarget);
+    if (distance < 1e-3) return;
+    camera.position.copy(cameraTarget).addScaledVector(position.sub(target).normalize(), distance);
   }
   camera.lookAt(cameraTarget);
   updatePointerScale();
@@ -4027,7 +4038,9 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
   camera.up.set(0, 0, 1);
 
   // Position camera based on view type
-  const distance = Math.max(sizeX, sizeY, sizeZ) * 2.2; // Step back a little further for breathing room
+  // Floored: before the grid or program has a size, 0 would put the camera
+  // on its target (orthographic, so the distance never changes the zoom)
+  const distance = Math.max(Math.max(sizeX, sizeY, sizeZ) * 2.2, 100);
 
   switch (currentView) {
     case 'top':
