@@ -260,12 +260,11 @@ async function handleClose() {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--color-surface);
+  background: var(--color-surface-overlay);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   padding: 10px 12px;
   box-shadow: var(--shadow-subtle, 0 4px 12px -10px rgba(0,0,0,0.3));
-  opacity: 0.8; /* allow seeing toolpath beneath */
 }
 
 .header { display: flex; align-items: baseline; justify-content: space-between; }

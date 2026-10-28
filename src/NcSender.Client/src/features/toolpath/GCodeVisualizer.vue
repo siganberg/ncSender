@@ -832,7 +832,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from
 import { getAlarmHelp } from '@/lib/alarm-help';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, setHomeIndicatorOpacity, getOverlayOpacity, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
 import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand, auxQuickSec } from '../../lib/aux-outputs';
 import { dustBoot, watchDustBoot, dustBootCommand, sendDustBoot, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
@@ -1940,6 +1940,12 @@ const disposeHomeIndicator = () => {
   homeIndicatorGroup = null;
 };
 
+const handleOverlayOpacityChange = () => {
+  if (!homeIndicatorGroup) return;
+  setHomeIndicatorOpacity(homeIndicatorGroup, getOverlayOpacity());
+  requestRender();
+};
+
 const computeMachineOriginPosition = () => {
   // Machine home (origin) is always at machine z=0 — the top of the
   // wireframe envelope. Used to be tied to gridZLevel (WCO.z), which
@@ -1959,6 +1965,7 @@ const refreshHomeIndicator = () => {
   }
 
   homeIndicatorGroup = createHomeIndicator();
+  setHomeIndicatorOpacity(homeIndicatorGroup, getOverlayOpacity());
   scene.add(homeIndicatorGroup);
 
   const basePosition = computeMachineOriginPosition();
@@ -5324,6 +5331,7 @@ onMounted(async () => {
 
   initThreeJS();
   window.addEventListener('resize', handleResize);
+  window.addEventListener('overlay-opacity-change', handleOverlayOpacityChange);
 
   // Listen for settings changes (partial/delta updates)
   window.addEventListener('settings-changed', (event: any) => {
@@ -5647,6 +5655,7 @@ onUnmounted(() => {
   }
 
   window.removeEventListener('resize', handleResize);
+  window.removeEventListener('overlay-opacity-change', handleOverlayOpacityChange);
   window.removeEventListener('mouseup', onMouseUp);
   window.removeEventListener('touchend', onTouchEnd);
 
@@ -5926,7 +5935,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .override-panel {
   /* Slightly more opaque instead of backdrop-filter: a blur over the live
      WebGL canvas re-samples the canvas on every 3D frame. */
-  background: color-mix(in srgb, var(--color-surface-muted) 92%, transparent);
+  background: var(--color-surface-muted-overlay);
   border-radius: var(--radius-small);
   padding: 8px 16px 16px;
   /* Fixed, not min-: the spindle panel swaps between three different sets
@@ -5977,7 +5986,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .override-current {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
-  background: var(--color-surface);
+  background: var(--color-surface-overlay);
   color: var(--color-text-primary);
   font-weight: 600;
   cursor: pointer;
@@ -6043,11 +6052,11 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .spindle-run__value { position: relative; }
 .spindle-run__value.is-open {
   border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-overlay));
 }
 
 .spindle-run__stop {
-  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.85));
+  background: linear-gradient(135deg, color-mix(in srgb, #ff6b6b max(var(--overlay-alpha), 90%), transparent), color-mix(in srgb, #ff6b6b calc(max(var(--overlay-alpha), 90%) * 0.85), transparent));
   border-color: transparent;
   color: #fff !important;
   font-size: 1.05rem;
@@ -6159,7 +6168,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   justify-content: center;
   width: 122px;
   height: 32px;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
@@ -6187,7 +6196,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   padding: 10px 20px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
@@ -6228,7 +6237,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 
 .tools-legend__item.active {
   opacity: 1;
-  background: var(--color-accent);
+  background: var(--color-accent-overlay);
   color: #fff;
   transform: none;
   cursor: default;
@@ -6553,17 +6562,17 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 }
 
 .clear-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
 .upload-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
 .folder-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
@@ -6620,14 +6629,14 @@ h2 {
   min-height: 50px;
   padding: 0 16px;
   cursor: pointer;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-secondary);
   font-size: 16px;
   font-weight: 500;
 }
 
 .view-button.active {
-  background: var(--gradient-accent);
+  background: var(--gradient-accent-overlay);
   color: #fff;
 }
 
@@ -6677,7 +6686,7 @@ h2 {
   z-index: 1;
 }
 .switch--hold { cursor: pointer; }
-.switch--hold.is-on .slider { background-color: var(--color-accent); }
+.switch--hold.is-on .slider { background-color: var(--color-accent-overlay); }
 .switch--hold.is-on .slider::before { transform: translateX(calc(var(--switch-width) - var(--switch-height))); }
 .switch--hold.is-disabled { opacity: 0.5; cursor: not-allowed; }
 /* Hold and Quick badges stack, so they take one badge's width. */
@@ -6734,7 +6743,7 @@ h2 {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: color-mix(in srgb, #ccc var(--overlay-alpha), transparent);
   transition: 0.3s;
   border-radius: var(--switch-height);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
@@ -6753,7 +6762,7 @@ h2 {
 }
 
 input:checked + .slider {
-  background-color: var(--color-accent);
+  background-color: var(--color-accent-overlay);
 }
 
 input:checked + .slider:before {
@@ -7305,6 +7314,13 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn {
+  --btn-color: var(--color-accent);
+  --btn-fade: 0.8;
+  --btn-color-end: var(--btn-color);
+  --btn-alpha: var(--overlay-alpha);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--btn-color) var(--btn-alpha), transparent),
+    color-mix(in srgb, var(--btn-color-end) calc(var(--btn-alpha) * var(--btn-fade)), transparent));
   border: none;
   border-radius: var(--radius-medium);
   padding: 18px 22px;
@@ -7329,7 +7345,8 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--primary {
-  background: var(--gradient-accent);
+  --btn-color-end: var(--color-gradient);
+  --btn-fade: 1;
   color: white;
   box-shadow: 0 4px 12px -4px rgba(26, 188, 156, 0.5);
 }
@@ -7339,18 +7356,20 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--secondary {
-  background: var(--color-surface-muted);
+  --btn-color: var(--color-surface-muted);
+  --btn-fade: 1;
   color: var(--color-text-primary);
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1);
 }
 
 .control-btn--secondary:hover {
-  background: var(--color-surface);
+  --btn-color: var(--color-surface);
   box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.15);
 }
 
 .control-btn--danger {
-  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8));
+  --btn-color: #ff6b6b;
+  --btn-alpha: max(var(--overlay-alpha), 90%);
   color: white;
   box-shadow: 0 4px 12px -4px rgba(255, 107, 107, 0.5);
 }
@@ -7360,7 +7379,7 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--start-from-line {
-  background: linear-gradient(135deg, #8b5cf6, rgba(139, 92, 246, 0.8));
+  --btn-color: #8b5cf6;
   color: white;
   box-shadow: 0 4px 12px -4px rgba(139, 92, 246, 0.5);
 }
@@ -7396,7 +7415,7 @@ body.theme-light .dot--rapid {
   justify-content: center;
   gap: 0;
   padding: 0;
-  background: var(--gradient-accent, var(--color-accent));
+  background: var(--gradient-accent-overlay);
   color: #fff;
   border: none;
   border-radius: var(--radius-small);
@@ -7709,6 +7728,13 @@ body.theme-light .dot--rapid {
 
 .move-to-btn-secondary:hover {
   background: var(--color-surface-hover, rgba(255,255,255,0.15));
+}
+
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .control-btn { background: linear-gradient(135deg, var(--btn-color), var(--btn-color-end)); }
+  .slider { background-color: #ccc; }
+  .spindle-run__value.is-open { background: var(--color-surface-muted); }
+  .spindle-run__stop { background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.85)); }
 }
 
 </style>
