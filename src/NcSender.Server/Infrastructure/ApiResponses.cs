@@ -43,7 +43,7 @@ public record InitResponse(
 public record AlarmResponse(int Id, string Description);
 
 // === ConfigEndpoints ===
-public record ConfigResponse(string Content, bool CanSave);
+public record ConfigResponse(string Content, bool CanSave, string? Filename = null);
 
 // === GcodeFileEndpoints ===
 public record UploadSuccessResponse(bool Success, string Filename);
