@@ -83,7 +83,7 @@ public class CommandProcessor : ICommandProcessor
         // 4b. $NCSENDER_PARK: the jog panel's Park, from a program or macro
         if (GcodePatterns.IsParkCommand(command))
         {
-            return HandlePark(command, processorContext);
+            return await HandleParkAsync(command, processorContext);
         }
 
         // 5. Check if this is a valid M6 command
@@ -555,17 +555,20 @@ public class CommandProcessor : ICommandProcessor
 
     // The parking location is read when the line runs, not when the
     // program was written, so moving Park later moves where programs end.
-    // Like the Park button: up to Safe Z (never down), then across in X Y.
-    private CommandProcessorResult HandlePark(string command, CommandProcessorContext ctx)
+    // Up to Safe Z (or stays higher: unlike the Park button it never moves
+    // down), then across in X Y. Each move goes back through the pipeline,
+    // so door checks and plugins see it like a typed move. Refused in a job,
+    // it stops the job with the reason rather than finishing unparked.
+    private async Task<CommandProcessorResult> HandleParkAsync(string command, CommandProcessorContext ctx)
     {
         var ms = ctx.MachineState;
         if (ms.HomingCycle is > 0 && !ms.Homed)
-            return CreateBlockedResult(ctx, command, "home the machine first");
+            return RefusePark(ctx, "home the machine first");
 
         var loc = _settingsManager.GetSetting<string>("parkingLocation", "") ?? "";
         var park = ParseMachinePosition(loc);
         if (park is null)
-            return CreateBlockedResult(ctx, command, "no parking location set; double-tap Park to save one");
+            return RefusePark(ctx, "no parking location set; double-tap Park to save one");
 
         var safeZ = _settingsManager.GetSetting<double>("safeZHeight", -5);
         var z = safeZ;
@@ -573,19 +576,63 @@ public class CommandProcessor : ICommandProcessor
         if (mpos.Length >= 3 && double.TryParse(mpos[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var currentZ))
             z = Math.Max(safeZ, currentZ);
 
-        var lift = string.Format(CultureInfo.InvariantCulture, "G53 G21 G90 G0 Z{0:F3}", z);
-        var across = string.Format(CultureInfo.InvariantCulture, "G53 G21 G90 G0 X{0:F3} Y{1:F3}", park.X, park.Y);
+        var moves = new[]
+        {
+            string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 Z{0:F3}", z),
+            string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 X{0:F3} Y{1:F3}", park.X, park.Y)
+        };
         _logger.LogInformation("$NCSENDER_PARK: to X{X:F3} Y{Y:F3} at Z{Z:F3}", park.X, park.Y, z);
 
+        var output = new List<ProcessedCommand>
+        {
+            new() { Command = "(Park)", DisplayCommand = "(Park)", IsOriginal = false, Meta = ctx.Meta }
+        };
+        foreach (var move in moves)
+        {
+            var childCtx = new CommandProcessorContext
+            {
+                CommandId = ctx.CommandId,
+                Meta = ctx.Meta,
+                MachineState = ctx.MachineState,
+                LineNumber = ctx.LineNumber,
+                Filename = ctx.Filename,
+                NextXYPosition = ctx.NextXYPosition,
+                SafeZHeight = ctx.SafeZHeight,
+            };
+            var childResult = await Pipeline.ProcessAsync(move, childCtx);
+            if (childResult.Error is not null || !childResult.ShouldContinue)
+            {
+                var reason = childResult.Error ?? childResult.SkipReason ?? "a park move was refused";
+                return new CommandProcessorResult
+                {
+                    ShouldContinue = false,
+                    SkipReason = reason,
+                    Error = IsJob(ctx) ? $"Park: {reason}" : null
+                };
+            }
+            // Shown as the moves themselves, not as the $NCSENDER_PARK line.
+            foreach (var c in childResult.Commands)
+            {
+                if (c.IsOriginal) { c.IsOriginal = false; c.DisplayCommand ??= c.Command; }
+                output.Add(c);
+            }
+        }
+
+        return new CommandProcessorResult { ShouldContinue = true, Commands = output };
+    }
+
+    private static bool IsJob(CommandProcessorContext ctx) => ctx.Meta?.SourceId == "job";
+
+    // Shown in the terminal as "Park ... (BLOCKED - reason)": rows starting
+    // with $NCSENDER_ are hidden there.
+    private CommandProcessorResult RefusePark(CommandProcessorContext ctx, string reason)
+    {
+        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, "Park ($NCSENDER_PARK)", reason, ctx.Meta?.SourceId);
         return new CommandProcessorResult
         {
-            ShouldContinue = true,
-            Commands =
-            [
-                new() { Command = "(Park)", DisplayCommand = "(Park)", IsOriginal = false, Meta = ctx.Meta },
-                new() { Command = lift, DisplayCommand = lift, IsOriginal = false, Meta = ctx.Meta },
-                new() { Command = across, DisplayCommand = across, IsOriginal = false, Meta = ctx.Meta }
-            ]
+            ShouldContinue = false,
+            SkipReason = $"Command blocked: {reason}",
+            Error = IsJob(ctx) ? $"Park: {reason}" : null
         };
     }
 
