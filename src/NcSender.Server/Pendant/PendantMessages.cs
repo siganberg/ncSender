@@ -36,9 +36,17 @@ public record PendantAuxOutput(
     string On,
     string Off,
     bool Enabled,
-    bool HoldToActivate);
+    bool HoldToActivate,
+    // Auto Off: seconds after On that the server sends Off (0 = stays on).
+    double QuickSec = 0);
+
+// AutoDustBoot page on the pendant, shown while the boot is paired. Status is
+// the boot's own status line ("status pos=0 expand=39950 state=home homed=1 …"),
+// trimmed to fit one ESP-NOW frame.
+public record PendantAdbStatusMsg(string Type, bool Paired, bool Connected, string Status);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(PendantAdbStatusMsg))]
 [JsonSerializable(typeof(PendantTypeMsg))]
 [JsonSerializable(typeof(PendantToolListMsg))]
 [JsonSerializable(typeof(PendantTypeDataMsg))]

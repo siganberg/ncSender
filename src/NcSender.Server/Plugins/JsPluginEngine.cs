@@ -297,7 +297,9 @@ public class JsPluginEngine : IJsPluginEngine
                     // Plugins use this to decide whether to inject job-start
                     // side effects that would be wrong in manual contexts.
                     var jobLoaded = _serverContext.State.JobLoaded;
-                    var jobRunning = jobLoaded is not null && jobLoaded.Status == "running";
+                    // A paused job is still running: reporting it as stopped made
+                    // its resume look like a new job start, and the AutoDustBoot retracted.
+                    var jobRunning = jobLoaded is not null && jobLoaded.Status is "running" or "paused";
                     jsContext.Set("jobRunning", JsValue.FromObject(engine, jobRunning));
                     // Laser mode (Pro): the laser head is active, so plugins that
                     // drive spindle-side hardware (dust boot, clamps) stand

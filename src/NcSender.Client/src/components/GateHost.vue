@@ -4,6 +4,7 @@
     <Dialog
       :show-header="false"
       size="small"
+      max-width="min(660px, 94vw)"
       :close-on-backdrop-click="false"
       :z-index="10050 + index"
     >

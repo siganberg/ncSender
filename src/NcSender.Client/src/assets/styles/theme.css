@@ -7,6 +7,7 @@
   --color-text-secondary: #5e6b75;
   --color-border: rgba(20, 20, 20, 0.08);
   --color-accent: #1abc9c;
+  --color-gradient: #34d399;
   --gradient-accent: linear-gradient(135deg, #1abc9c 0%, rgba(26, 188, 156, 0.2) 100%);
   --shadow-elevated: 0 12px 24px -12px rgba(20, 20, 20, 0.25);
   --radius-medium: 16px;
@@ -16,6 +17,23 @@
   --gap-md: 24px;
   --gap-lg: 32px;
   --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --overlay-alpha: 100%;
+}
+
+body {
+  --color-surface-overlay: color-mix(in srgb, var(--color-surface) var(--overlay-alpha), transparent);
+  --color-surface-muted-overlay: color-mix(in srgb, var(--color-surface-muted) var(--overlay-alpha), transparent);
+  --color-accent-overlay: color-mix(in srgb, var(--color-accent) var(--overlay-alpha), transparent);
+  --gradient-accent-overlay: linear-gradient(135deg, var(--color-accent-overlay) 0%, color-mix(in srgb, var(--color-gradient) var(--overlay-alpha), transparent) 100%);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  body {
+    --color-surface-overlay: var(--color-surface);
+    --color-surface-muted-overlay: var(--color-surface-muted);
+    --color-accent-overlay: var(--color-accent);
+    --gradient-accent-overlay: var(--gradient-accent);
+  }
 }
 
 @media (prefers-color-scheme: dark) {

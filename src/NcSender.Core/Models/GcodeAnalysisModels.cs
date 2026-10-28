@@ -16,6 +16,12 @@ public class GcodeState
     public double PositionX { get; set; }
     public double PositionY { get; set; }
     public double PositionZ { get; set; }
+
+    // False until a line before the start line sets the axis; the resume
+    // sequence must not move an axis to a position the file never gave.
+    public bool HasPositionX { get; set; }
+    public bool HasPositionY { get; set; }
+    public bool HasPositionZ { get; set; }
     public Dictionary<int, bool> AuxOutputs { get; set; } = new();
 }
 

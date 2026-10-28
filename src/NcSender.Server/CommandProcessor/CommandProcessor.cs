@@ -149,8 +149,11 @@ public class CommandProcessor : ICommandProcessor
             _logger.LogInformation("Same-tool M6 detected: T{Tool} (current: T{Current}) - skipping",
                 sameToolCheck.ToolNumber, currentTool);
 
+            // Same reason as BroadcastCommandStatus: an id-less skip needs its own row.
+            if (string.IsNullOrEmpty(processorContext.CommandId))
+                processorContext.CommandId = Guid.NewGuid().ToString();
             _ = _broadcaster.Broadcast("cnc-command", new WsCncCommandStatus(
-                processorContext.CommandId ?? "",
+                processorContext.CommandId,
                 command.Trim().ToUpperInvariant(),
                 skipMessage,
                 "pending",
@@ -159,7 +162,7 @@ public class CommandProcessor : ICommandProcessor
             ), NcSenderJsonContext.Default.WsCncCommandStatus);
 
             _ = _broadcaster.Broadcast("cnc-command-result", new WsCncCommandStatus(
-                processorContext.CommandId ?? "",
+                processorContext.CommandId,
                 command.Trim().ToUpperInvariant(),
                 skipMessage,
                 "success",
@@ -595,8 +598,14 @@ public class CommandProcessor : ICommandProcessor
         CommandProcessorContext ctx, string command, string displayCommand,
         string status, string eventType = "cnc-command")
     {
+        // Pendant and plugin commands arrive without an id. The terminal
+        // keys its rows by id, so every no-op or block from those sources
+        // used to collapse into one row that kept being rewritten. Mint an
+        // id once per command so the pending/result pair still matches.
+        if (string.IsNullOrEmpty(ctx.CommandId))
+            ctx.CommandId = Guid.NewGuid().ToString();
         _ = _broadcaster.Broadcast(eventType, new WsCncCommandStatus(
-            ctx.CommandId ?? "",
+            ctx.CommandId,
             command,
             displayCommand,
             status,

@@ -87,7 +87,8 @@ public static class ProbeCommandGenerator
                 GetDouble(opts, "yDimension", 0),
                 GetDouble(opts, "toolDiameter", 2),
                 GetDouble(opts, "rapidMovement", 2000),
-                GetDouble(opts, "zPlunge", 3)),
+                GetDouble(opts, "zPlunge", 3),
+                CenterAxes(opts)),
 
             "Center - Outer" => ThreeDProbeStrategy.GetCenterOuterRoutine(
                 GetDouble(opts, "xDimension", 0),
@@ -96,11 +97,22 @@ public static class ProbeCommandGenerator
                 GetDouble(opts, "rapidMovement", 2000),
                 GetBool(opts, "probeZFirst", false),
                 GetDouble(opts, "zPlunge", 3),
-                GetDouble(opts, "zOffset", 0)),
+                GetDouble(opts, "zOffset", 0),
+                axes: CenterAxes(opts)),
 
             _ => AddError(errors, "Invalid probing axis for 3D probe")
         };
     }
+
+    /// <summary>The axes a Center probe centres on: "XY" (both), "X" or "Y"
+    /// (one, when the part only gives room to probe one way).</summary>
+    private static string CenterAxes(Dictionary<string, JsonElement> opts) =>
+        GetString(opts, "centerAxes")?.Trim().ToUpperInvariant() switch
+        {
+            "X" => "X",
+            "Y" => "Y",
+            _ => "XY",
+        };
 
     private static List<string>? GenerateStandardBlock(
         string axis, Dictionary<string, JsonElement> opts, List<string> errors)
@@ -258,7 +270,7 @@ public static class ProbeCommandGenerator
         return el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
     }
 
-    private static double GetDouble(Dictionary<string, JsonElement> opts, string key, double defaultValue = 0)
+    internal static double GetDouble(Dictionary<string, JsonElement> opts, string key, double defaultValue = 0)
     {
         if (!opts.TryGetValue(key, out var el))
             return defaultValue;

@@ -162,10 +162,12 @@ public static class ThreeDProbeStrategy
 
     public static List<string> GetCenterInnerRoutine(
         double xDimension, double yDimension, double toolDiameter = 2,
-        double rapidMovement = 2000, double zPlunge = 3)
+        double rapidMovement = 2000, double zPlunge = 3, string axes = "XY")
     {
         var halfX = xDimension / 2;
         var halfY = yDimension / 2;
+        var probeX = axes != "Y";
+        var probeY = axes != "X";
         const int searchFeed = 150;
         const int slowFeed = 75;
         const int bounce = 2;
@@ -184,49 +186,57 @@ public static class ThreeDProbeStrategy
             $"#<RAPID_SEARCH> = {F(rapidMovement)}",
             "G21 (mm mode)",
             "G91 (incremental)",
-            $"G38.3 Z-{F(zPlunge + 4)}  F{searchFeed}"
+            // Z-Plunge is the drop from where the user started the probe.
+            $"G38.3 Z-{F(zPlunge)}  F{searchFeed}"
         };
 
-        if (safeRapidX > 0)
-            code.Add($"G38.3 X-{F(safeRapidX)} F#<RAPID_SEARCH>");
+        if (probeX)
+        {
+            if (safeRapidX > 0)
+                code.Add($"G38.3 X-{F(safeRapidX)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.2 X-{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 X{bounce}");
-        code.Add($"G38.2 X-3 F{slowFeed}");
-        code.Add("#<X1> = #5061");
-        code.Add($"G0 X{F(halfX)}");
+            code.Add($"G38.2 X-{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 X{bounce}");
+            code.Add($"G38.2 X-3 F{slowFeed}");
+            code.Add("#<X1> = #5061");
+            code.Add($"G0 X{F(halfX)}");
 
-        if (safeRapidX > 0)
-            code.Add($"G38.3 X{F(safeRapidX - toolDiameter / 2)} F#<RAPID_SEARCH>");
+            if (safeRapidX > 0)
+                code.Add($"G38.3 X{F(safeRapidX - toolDiameter / 2)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.2 X{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 X-{bounce}");
-        code.Add($"G38.2 X3 F{slowFeed}");
-        code.Add("#<X2> = #5061");
-        // FluidNC rejects "G0 X-[expr]" (leading minus on a bracketed
-        // expression — invalid per LinuxCNC G-code spec). Swap operands so the
-        // result is naturally negative; grblHAL accepts both forms. (issue #55)
-        code.Add("G0 X[[#<X1>-#<X2>]/2]");
+            code.Add($"G38.2 X{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 X-{bounce}");
+            code.Add($"G38.2 X3 F{slowFeed}");
+            code.Add("#<X2> = #5061");
+            // FluidNC rejects "G0 X-[expr]" (leading minus on a bracketed
+            // expression — invalid per LinuxCNC G-code spec). Swap operands so the
+            // result is naturally negative; grblHAL accepts both forms. (issue #55)
+            code.Add("G0 X[[#<X1>-#<X2>]/2]");
+        }
 
-        if (safeRapidY > 0)
-            code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
+        if (probeY)
+        {
+            if (safeRapidY > 0)
+                code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.2 Y-{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 Y{bounce}");
-        code.Add($"G38.2 Y-3 F{slowFeed}");
-        code.Add("#<Y1> = #5062");
-        code.Add($"G0 Y{F(halfY)}");
+            code.Add($"G38.2 Y-{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 Y{bounce}");
+            code.Add($"G38.2 Y-3 F{slowFeed}");
+            code.Add("#<Y1> = #5062");
+            code.Add($"G0 Y{F(halfY)}");
 
-        if (safeRapidY > 0)
-            code.Add($"G38.3 Y{F(safeRapidY - toolDiameter / 2)} F#<RAPID_SEARCH>");
+            if (safeRapidY > 0)
+                code.Add($"G38.3 Y{F(safeRapidY - toolDiameter / 2)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.2 Y{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 Y-{bounce}");
-        code.Add($"G38.2 Y3 F{slowFeed}");
-        code.Add("#<Y2> = #5062");
-        code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
-        code.Add("G10 L20 X0 Y0");
-        code.Add($"G0 Z{F(zPlunge + 4)}");
+            code.Add($"G38.2 Y{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 Y-{bounce}");
+            code.Add($"G38.2 Y3 F{slowFeed}");
+            code.Add("#<Y2> = #5062");
+            code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
+        }
+
+        code.Add($"G10 L20 {Zeroed(probeX, probeY)}");
+        code.Add($"G0 Z{F(zPlunge)}");
         code.Add("G90");
         code.Add("G[#<return_units>]");
 
@@ -236,16 +246,21 @@ public static class ThreeDProbeStrategy
     public static List<string> GetCenterOuterRoutine(
         double xDimension, double yDimension, double toolDiameter = 2,
         double rapidMovement = 2000, bool probeZFirst = false,
-        double zPlunge = 3, double zOffset = 0)
+        double zPlunge = 3, double zOffset = 0, string axes = "XY")
     {
         var halfX = xDimension / 2;
         var halfY = yDimension / 2;
+        var probeX = axes != "Y";
+        var probeY = axes != "X";
         const int searchFeed = 150;
         const int slowFeed = 75;
         const int bounce = 2;
         const int maxSearchLimit = 30;
         const int safeDistance = 5;
-        var zHop = zPlunge + ZParkHeight;
+        // After a Z probe the probe parks ZParkHeight above the top: it drops to
+        // Z-Plunge below the top and crosses ZParkHeight above it. Without one it
+        // drops Z-Plunge and lifts back to the height the user started it at.
+        var zHop = probeZFirst ? zPlunge + ZParkHeight : zPlunge;
 
         var safeRapidX = halfX + toolDiameter + safeDistance;
         var safeRapidY = halfY + toolDiameter + safeDistance;
@@ -263,63 +278,73 @@ public static class ThreeDProbeStrategy
         code.Add("G21 (mm mode)");
         code.Add("G91 (incremental)");
 
-        if (safeRapidX > 0)
-            code.Add($"G38.3 X-{F(safeRapidX)} F#<RAPID_SEARCH>");
+        if (probeX)
+        {
+            if (safeRapidX > 0)
+                code.Add($"G38.3 X-{F(safeRapidX)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.3 Z-{F(zHop)} F200");
-        code.Add($"G38.2 X{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 X-{bounce}");
-        code.Add($"G38.2 X{F(bounce + 1)} F{slowFeed}");
-        code.Add("#<X1> = #5061");
-        code.Add($"G0 X-{bounce}");
-        code.Add($"G0 Z{F(zHop)}");
-        code.Add($"G0 X{bounce}");
-        code.Add($"G0 X{F(halfX)}");
+            code.Add($"G38.3 Z-{F(zHop)} F200");
+            code.Add($"G38.2 X{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 X-{bounce}");
+            code.Add($"G38.2 X{F(bounce + 1)} F{slowFeed}");
+            code.Add("#<X1> = #5061");
+            code.Add($"G0 X-{bounce}");
+            code.Add($"G0 Z{F(zHop)}");
+            code.Add($"G0 X{bounce}");
+            code.Add($"G0 X{F(halfX)}");
 
-        if (safeRapidX > 0)
-            code.Add($"G38.3 X{F(safeRapidX)} F#<RAPID_SEARCH>");
+            if (safeRapidX > 0)
+                code.Add($"G38.3 X{F(safeRapidX)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.3 Z-{F(zHop)} F200");
-        code.Add($"G38.2 X-{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 X{bounce}");
-        code.Add($"G38.2 X-{F(bounce + 1)} F{slowFeed}");
-        code.Add("#<X2> = #5061");
-        code.Add($"G0 X{bounce}");
-        code.Add($"G0 Z{F(zHop)}");
-        code.Add($"G0 X-{bounce}");
-        code.Add("G0 X[[#<X1>-#<X2>]/2]");
+            code.Add($"G38.3 Z-{F(zHop)} F200");
+            code.Add($"G38.2 X-{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 X{bounce}");
+            code.Add($"G38.2 X-{F(bounce + 1)} F{slowFeed}");
+            code.Add("#<X2> = #5061");
+            code.Add($"G0 X{bounce}");
+            code.Add($"G0 Z{F(zHop)}");
+            code.Add($"G0 X-{bounce}");
+            code.Add("G0 X[[#<X1>-#<X2>]/2]");
+        }
 
-        if (safeRapidY > 0)
-            code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
+        if (probeY)
+        {
+            if (safeRapidY > 0)
+                code.Add($"G38.3 Y-{F(safeRapidY)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.3 Z-{F(zHop)} F200");
-        code.Add($"G38.2 Y{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 Y-{bounce}");
-        code.Add($"G38.2 Y+{F(bounce + 1)} F{slowFeed}");
-        code.Add("#<Y1> = #5062");
-        code.Add($"G0 Y-{bounce}");
-        code.Add($"G0 Z{F(zHop)}");
-        code.Add($"G0 Y{bounce}");
-        code.Add($"G0 Y{F(halfY)}");
+            code.Add($"G38.3 Z-{F(zHop)} F200");
+            code.Add($"G38.2 Y{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 Y-{bounce}");
+            code.Add($"G38.2 Y+{F(bounce + 1)} F{slowFeed}");
+            code.Add("#<Y1> = #5062");
+            code.Add($"G0 Y-{bounce}");
+            code.Add($"G0 Z{F(zHop)}");
+            code.Add($"G0 Y{bounce}");
+            code.Add($"G0 Y{F(halfY)}");
 
-        if (safeRapidY > 0)
-            code.Add($"G38.3 Y{F(safeRapidY)} F#<RAPID_SEARCH>");
+            if (safeRapidY > 0)
+                code.Add($"G38.3 Y{F(safeRapidY)} F#<RAPID_SEARCH>");
 
-        code.Add($"G38.3 Z-{F(zHop)} F200");
-        code.Add($"G38.2 Y-{maxSearchLimit} F{searchFeed}");
-        code.Add($"G0 Y{bounce}");
-        code.Add($"G38.2 Y-{F(bounce + 1)} F{slowFeed}");
-        code.Add("#<Y2> = #5062");
-        code.Add($"G0 Y{bounce}");
-        code.Add($"G0 Z{F(zHop)}");
-        code.Add($"G0 Y-{bounce}");
-        code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
-        code.Add("G10 L20 X0 Y0");
+            code.Add($"G38.3 Z-{F(zHop)} F200");
+            code.Add($"G38.2 Y-{maxSearchLimit} F{searchFeed}");
+            code.Add($"G0 Y{bounce}");
+            code.Add($"G38.2 Y-{F(bounce + 1)} F{slowFeed}");
+            code.Add("#<Y2> = #5062");
+            code.Add($"G0 Y{bounce}");
+            code.Add($"G0 Z{F(zHop)}");
+            code.Add($"G0 Y-{bounce}");
+            code.Add("G0 Y[[#<Y1>-#<Y2>]/2]");
+        }
+        code.Add($"G10 L20 {Zeroed(probeX, probeY)}");
         code.Add("G90");
         code.Add("G[#<return_units>]");
 
         return code;
     }
+
+    /// <summary>The zero a Center probe sets: only the axes it centred on.</summary>
+    private static string Zeroed(bool x, bool y) =>
+        x && y ? "X0 Y0" : x ? "X0" : "Y0";
 
     private static string F(double value) =>
         value.ToString(CultureInfo.InvariantCulture);

@@ -157,8 +157,29 @@
                 </div>
               </div>
 
-              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
+              <p v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-help">{{ zPlungeBelowTop ? 'How far below the top the probe goes to touch the sides.' : 'How far the probe drops from where you start it to touch the sides. It goes back up to that height to move between sides.' }}</p>
+
+              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
                 <div class="probe-control-group">
+                  <label class="probe-label">Center Axes</label>
+                  <div class="probe-segmented" role="radiogroup">
+                    <button
+                      v-for="axes in ['X', 'XY', 'Y']"
+                      :key="axes"
+                      type="button"
+                      role="radio"
+                      class="probe-segmented__option"
+                      :class="{ 'is-active': centerAxes === axes }"
+                      :aria-checked="centerAxes === axes"
+                      :disabled="isProbing"
+                      @click="centerAxes = axes"
+                    >{{ axes }}</button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
+                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerX }">
                   <label class="probe-label">X Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
@@ -169,7 +190,7 @@
                       :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.xDimension }"
-                      :disabled="isProbing"
+                      :disabled="isProbing || !centerX"
                       @input="validateXDimension"
                       @blur="handleXDimensionBlur"
                     />
@@ -178,7 +199,7 @@
                   </div>
                 </div>
 
-                <div class="probe-control-group">
+                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerY }">
                   <label class="probe-label">Y Dimension</label>
                   <div class="probe-input-with-unit probe-input-wrapper">
                     <input
@@ -189,7 +210,7 @@
                       :max="lim(1000)"
                       class="probe-input"
                       :class="{ 'probe-input--error': errors.yDimension }"
-                      :disabled="isProbing"
+                      :disabled="isProbing || !centerY"
                       @input="validateYDimension"
                       @blur="handleYDimensionBlur"
                     />
@@ -565,6 +586,11 @@
               </div>
             </template>
 
+            <!-- What the last Center probe measured, under the fields it was probed with -->
+            <div v-if="measuredSize && measuredSize.axis === probingAxis" class="probe-hint probe-hint--result">
+              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
+              <span><strong>Measured size:</strong> <template v-if="measuredSize.x != null">X {{ formatCoord(measuredSize.x) }}</template><template v-if="measuredSize.x != null && measuredSize.y != null"> × </template><template v-if="measuredSize.y != null">Y {{ formatCoord(measuredSize.y) }}</template> {{ lengthUnit }}</span>
+            </div>
           </div>
           <div class="probe-card probe-card--preview">
             <div class="probe-connection-test">
@@ -600,7 +626,7 @@
             </div>
             <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-hint">
               <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span><strong>Important:</strong> Position the probe 3-5mm above at the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}. Measure dimension as close as possible to prevent probe damage.</span>
+              <span><strong>Important:</strong> Position the probe above the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}, high enough to clear it. Measure dimension as close as possible to prevent probe damage.</span>
             </div>
           </div>
         </div>
@@ -679,6 +705,13 @@ const xDimension = ref(100);
 const yDimension = ref(100);
 const rapidMovement = ref(2000);
 const probeZFirst = ref(false);
+// Center probes: both axes, or one when the part only leaves room to probe one way.
+const centerAxes = ref('XY');
+// Z-Plunge is the depth below the top after a Z probe (XYZ, or Center - Outer with
+// Probe Z First); otherwise it is the drop from where the user started the probe.
+const zPlungeBelowTop = computed(() => probingAxis.value === 'XYZ' || (probingAxis.value === 'Center - Outer' && probeZFirst.value));
+const centerX = computed(() => centerAxes.value !== 'Y');
+const centerY = computed(() => centerAxes.value !== 'X');
 const appStore = useAppStore();
 const jogStep = ref(appStore.unitsPreference.value === 'imperial' ? 0.1 : 1);
 const jogFeedRate = ref(appStore.unitsPreference.value === 'imperial' ? 100 : 3000);
@@ -783,6 +816,9 @@ const formatDiameter = (mm: number) =>
 
 const coordAxes = ['x', 'y', 'z'] as const;
 const formatCoord = (mm: number) => (isImperial.value ? mmToInches(mm).toFixed(4) : mm.toFixed(3));
+
+/** The hole or part size the last Center probe measured (mm), for the axis it ran. */
+const measuredSize = ref<{ axis: string; x: number | null; y: number | null } | null>(null);
 
 
 // AutoZero Touch probe state
@@ -1247,6 +1283,16 @@ watch(() => probeType.value, () => {
   }
 });
 
+watch(() => centerAxes.value, async (value) => {
+  if (!isInitialLoad) {
+    try {
+      await updateSettings({ probe: { '3d-probe': { centerAxes: value } } });
+    } catch (error) {
+      console.error('[ProbeDialog] Failed to save centerAxes setting', JSON.stringify({ error: error.message }));
+    }
+  }
+});
+
 watch(() => probeZFirst.value, async (value) => {
   if (!isInitialLoad) {
     try {
@@ -1355,6 +1401,9 @@ watch(() => props.show, async (isShown) => {
         if (typeof settings.probe?.['3d-probe']?.rapidMovement === 'number') {
           rapidMovement.value = settings.probe['3d-probe'].rapidMovement;
           originalValues.value.rapidMovement = settings.probe['3d-probe'].rapidMovement;
+        }
+        if (['XY', 'X', 'Y'].includes(settings.probe?.['3d-probe']?.centerAxes)) {
+          centerAxes.value = settings.probe['3d-probe'].centerAxes;
         }
         if (typeof settings.probe?.['3d-probe']?.probeZFirst === 'boolean') {
           probeZFirst.value = settings.probe['3d-probe'].probeZFirst;
@@ -1670,6 +1719,7 @@ const handleStartProbe = async () => {
       yDimension: yDimension.value,
       rapidMovement: rapidMovement.value,
       probeZFirst: probeZFirst.value,
+      centerAxes: centerAxes.value,
       toolDiameter: ballPointDiameter.value || 6,
       zPlunge: zPlunge.value,
       zOffset: zOffset.value,
@@ -1686,8 +1736,12 @@ const handleStartProbe = async () => {
     };
 
     console.log('[Probe] Starting probe operation:', options);
+    measuredSize.value = null;
     const result = await startProbeOperation(options);
     console.log('[Probe] Probe operation started:', result);
+    if (result?.measuredX != null || result?.measuredY != null) {
+      measuredSize.value = { axis: options.probingAxis, x: result.measuredX ?? null, y: result.measuredY ?? null };
+    }
   } catch (error) {
     console.error('[Probe] Error starting probe:', error);
   }
@@ -1711,6 +1765,8 @@ const handleStartProbe = async () => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  /* The dialog's own corners: the rail's background would square them off. */
+  border-radius: 16px;
   color: var(--color-text-primary);
 }
 
@@ -2025,7 +2081,7 @@ const handleStartProbe = async () => {
    fixed height also keeps it steady when switching tabs. */
 @media (orientation: portrait) {
   :deep(.dialog) {
-    height: min(65vh, 920px) !important;
+    height: min(calc(65vh + 50px), 970px) !important;
   }
 }
 
@@ -2115,6 +2171,18 @@ const handleStartProbe = async () => {
   font-weight: 600;
 }
 
+/* A result, not an instruction: solid accent so it stands out. */
+.probe-hint--result {
+  margin-top: 4px;
+  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.probe-hint--result .probe-hint__icon {
+  color: inherit;
+}
+
 .probe-control-row {
   display: flex;
   gap: 12px;
@@ -2123,6 +2191,53 @@ const handleStartProbe = async () => {
 .probe-control-row > .probe-control-group {
   flex: 1 1 0;
   min-width: 0;
+}
+
+.probe-control-row--half {
+  justify-content: center;
+}
+
+.probe-control-row--half > .probe-control-group {
+  flex: 0 1 calc(50% - 6px);
+}
+
+.probe-control-row--half .probe-label {
+  text-align: center;
+}
+
+/* X | XY | Y: which axes a Center probe centres on */
+.probe-segmented {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+
+.probe-segmented__option {
+  flex: 1 1 0;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.probe-segmented__option + .probe-segmented__option {
+  border-left: 1px solid var(--color-border);
+}
+
+.probe-segmented__option.is-active {
+  color: #fff;
+  background: var(--color-accent);
+}
+
+.probe-segmented__option:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .probe-control-row + .probe-help {

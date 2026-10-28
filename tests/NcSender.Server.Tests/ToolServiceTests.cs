@@ -63,6 +63,60 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddTool_ProbeSlotPastMagazine_Succeeds()
+    {
+        Magazine(15);
+        _settings.Setup(s => s.GetSetting<bool>("tool.probe", false)).Returns(true);
+        _settings.Setup(s => s.GetSetting<int>("tool.probeToolNumber", 99)).Returns(99);
+        var svc = CreateService();
+
+        var result = await svc.AddAsync(new ToolInfo { Name = "3D Probe", ToolNumber = 99, Type = "probe", Diameter = 1 });
+
+        Assert.Equal(99, result.ToolNumber);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AddAsync(new ToolInfo { Name = "Past", ToolNumber = 16, Type = "flat", Diameter = 6 }));
+    }
+
+    [Fact]
+    public async Task AddTool_TakenSlot_Throws()
+    {
+        var svc = CreateService();
+        await svc.AddAsync(new ToolInfo { Name = "First", ToolNumber = 3, Type = "flat", Diameter = 6 });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AddAsync(new ToolInfo { Name = "Second", ToolNumber = 3, Type = "flat", Diameter = 6 }));
+    }
+
+    [Fact]
+    public async Task AddTool_TakeSlot_UnassignsHolder()
+    {
+        var svc = CreateService();
+        var first = await svc.AddAsync(new ToolInfo { Name = "First", ToolNumber = 3, Type = "flat", Diameter = 6 });
+
+        var second = await svc.AddAsync(new ToolInfo { Name = "Second", ToolNumber = 3, Type = "flat", Diameter = 6 }, takeSlot: true);
+
+        var tools = await svc.GetAllAsync();
+        Assert.Equal(3, tools.Single(t => t.Id == second.Id).ToolNumber);
+        Assert.Null(tools.Single(t => t.Id == first.Id).ToolNumber);
+    }
+
+    [Fact]
+    public async Task AddTool_TakeSlotPastMagazine_KeepsHolder()
+    {
+        Magazine(4);
+        var svc = CreateService();
+        var first = await svc.AddAsync(new ToolInfo { Name = "First", ToolNumber = 3, Type = "flat", Diameter = 6 });
+
+        Magazine(2);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AddAsync(new ToolInfo { Name = "Second", ToolNumber = 3, Type = "flat", Diameter = 6 }, takeSlot: true));
+
+        var tools = await svc.GetAllAsync();
+        Assert.Equal(3, tools.Single(t => t.Id == first.Id).ToolNumber);
+        Assert.Single(tools);
+    }
+
+    [Fact]
     public async Task AddTool_MissingName_Throws()
     {
         var svc = CreateService();

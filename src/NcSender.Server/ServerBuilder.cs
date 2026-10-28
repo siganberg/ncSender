@@ -10,9 +10,11 @@ using NcSender.Server.CommandProcessor;
 using NcSender.Server.Config;
 using NcSender.Server.Configuration;
 using NcSender.Server.Connection;
+using NcSender.Server.Protocols.Grbl;
 using NcSender.Server.Protocols.GrblHal;
 using NcSender.Server.Protocols.FluidNc;
 using NcSender.Server.Firmware;
+using NcSender.Server.MachineProfiles;
 using NcSender.Server.GcodeFiles;
 using NcSender.Server.Infrastructure;
 using NcSender.Server.Job;
@@ -96,6 +98,8 @@ public static class ServerBuilder
 
         // Phase 2 DI registrations
         builder.Services.AddSingleton<IServerContext, ServerContext>();
+        // Classic Grbl first: grblHAL's greeting match also accepts its greeting.
+        builder.Services.AddSingleton<IProtocolHandler, GrblProtocol>();
         builder.Services.AddSingleton<IProtocolHandler, GrblHalProtocol>();
         builder.Services.AddSingleton<IProtocolHandler, FluidNcProtocol>();
         builder.Services.AddSingleton<ICncController, CncController>();
@@ -125,6 +129,7 @@ public static class ServerBuilder
         builder.Services.AddHostedService<NcSender.Server.Tools.TloWritebackListener>();
         builder.Services.AddHostedService<NcSender.Server.Tools.ToolLengthOnAbort>();
         builder.Services.AddSingleton<IFirmwareService, FirmwareService>();
+        builder.Services.AddSingleton<MachineProfileService>();
         builder.Services.AddSingleton<IConfigService, ConfigService>();
         builder.Services.AddSingleton<IAlarmService, AlarmService>();
         builder.Services.AddSingleton<IErrorService, ErrorService>();
@@ -398,6 +403,7 @@ public static class ServerBuilder
         MacroEndpoints.Map(app);
         ToolEndpoints.Map(app);
         FirmwareEndpoints.Map(app);
+        MachineProfileEndpoints.Map(app);
         ConfigEndpoints.Map(app);
         AlarmEndpoints.Map(app);
         LogEndpoints.Map(app);

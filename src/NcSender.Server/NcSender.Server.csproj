@@ -25,6 +25,11 @@
     <RdXmlFile Include="rd.xml" />
   </ItemGroup>
 
+  <!-- The latest released machine profiles; CI downloads a fresh copy before building. -->
+  <ItemGroup>
+    <EmbeddedResource Include="MachineProfiles\machine-profiles.json" LogicalName="NcSender.Server.MachineProfiles.machine-profiles.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="NcSender.Server.Tests" />
   </ItemGroup>

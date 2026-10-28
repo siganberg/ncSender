@@ -2,6 +2,10 @@ namespace NcSender.Server.Infrastructure;
 
 public static class PathUtils
 {
+    // Set by the test assembly so no test reads or writes the real user data
+    // (one deleted the loaded program's cache).
+    internal static string? DataDirOverride { get; set; }
+
     /// <summary>
     /// Returns the platform-specific user data directory for ncSender.
     /// Windows:  %APPDATA%\ncSender
@@ -10,6 +14,7 @@ public static class PathUtils
     /// </summary>
     public static string GetUserDataDir()
     {
+        if (DataDirOverride is { } overridden) return overridden;
         string basePath;
 
         if (OperatingSystem.IsWindows())

@@ -134,23 +134,32 @@ public class FirmwareService : IFirmwareService
                 Timestamp = DateTime.UtcNow.ToString("o")
             };
 
+            var staticDefs = _controller.ActiveProtocol?.StaticSettingDefinitions;
             foreach (var (id, value) in currentValues)
             {
-                if (_cached.Settings.TryGetValue(id, out var existing))
+                var n = int.TryParse(id, out var parsed) ? parsed : 0;
+                // A built-in definition always wins over the cache, so a cache
+                // written by an older version picks up new names and descriptions.
+                var hasDef = staticDefs is not null && staticDefs.ContainsKey(n);
+                if (!hasDef && _cached.Settings.TryGetValue(id, out var existing) && !string.IsNullOrEmpty(existing.Name))
                 {
                     existing.Value = value;
                 }
                 else
                 {
-                    _cached.Settings[id] = new FirmwareSetting
-                    {
-                        Id = int.TryParse(id, out var n) ? n : 0,
-                        Value = value
-                    };
+                    _cached.Settings.TryGetValue(id, out existing);
+                    var setting = hasDef && staticDefs!.TryGetValue(n, out var def)
+                        ? CopyDefinition(def)
+                        : existing ?? new FirmwareSetting { Id = n };
+                    setting.Value = value;
+                    _cached.Settings[id] = setting;
+                    if (setting.Group is { } group)
+                        _cached.Groups.TryAdd(group.Id.ToString(), group);
                 }
             }
 
             _cached.Timestamp = DateTime.UtcNow.ToString("o");
+            _cached.Board = ParseBoard(versionResponse);
 
             // Never persist a cache without setting metadata — if we did,
             // FirmwareVersion would match on the next launch and the structure
@@ -240,6 +249,21 @@ public class FirmwareService : IFirmwareService
                 // [VER:1.1f.20250407:]
                 var content = trimmed[5..^1]; // strip [VER: and ]
                 return content;
+            }
+        }
+        return null;
+    }
+
+    // [BOARD:SuperLongBoard Ext] -> "SuperLongBoard Ext"; null when $I has none.
+    internal static string? ParseBoard(string response)
+    {
+        foreach (var line in response.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("[BOARD:", StringComparison.OrdinalIgnoreCase) && trimmed.EndsWith(']'))
+            {
+                var name = trimmed[7..^1].Trim();
+                return name.Length > 0 ? name : null;
             }
         }
         return null;
@@ -343,6 +367,20 @@ public class FirmwareService : IFirmwareService
             _logger.LogWarning(ex, "Failed to save firmware cache");
         }
     }
+
+    private static FirmwareSetting CopyDefinition(FirmwareSetting d) => new()
+    {
+        Id = d.Id,
+        GroupId = d.GroupId,
+        Group = d.Group,
+        Name = d.Name,
+        Unit = d.Unit,
+        DataType = d.DataType,
+        Format = d.Format,
+        Min = d.Min,
+        Max = d.Max,
+        HalDetails = d.HalDetails is null ? null : [.. d.HalDetails]
+    };
 
     private static bool HasNamedSettings(FirmwareData? data)
     {

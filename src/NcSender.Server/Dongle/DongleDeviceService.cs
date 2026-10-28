@@ -28,6 +28,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         public bool WasConnected;
         public long LastBroadcastTicks;
         public string? LastState;       // the payload's state=<…> token, if it has one
+        public readonly BatteryReading Battery = new();
     }
 
     private readonly ILogger<DongleDeviceService> _logger;
@@ -76,12 +77,23 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     {
         var last = st.LastSeenTicks;
         var sinceMs = last == 0 ? -1 : now - last;
+        int? batteryMv;
+        string? batteryState;
+        lock (st)
+        {
+            batteryMv = st.Battery.Millivolts;
+            batteryState = st.Battery.OnUsb ? "usb"
+                : batteryMv is null ? null
+                : st.Battery.Charging ? "charging" : "battery";
+        }
         return new DongleDeviceInfo
         {
             Name = name,
             Connected = last != 0 && sinceMs >= 0 && sinceMs < ConnectedWindowMs,
             LastSeenMs = sinceMs,
             LastMessage = st.LastMessage,
+            BatteryMv = batteryMv,
+            BatteryState = batteryState,
             Transport = _wiredSenders.ContainsKey(name) ? "usb" : (last != 0 ? "wireless" : null)
         };
     }
@@ -155,8 +167,12 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
             // Letting one replace the status line hid the device's fields from
             // DONGLE_WAIT (a sensor check) until the next status, up to 2 s.
             if (!payload.StartsWith('$')) st.LastMessage = payload;
+            if (justConnected) st.Battery.Clear();
+            st.Battery.Observe(payload, now);
             st.WasConnected = true;
         }
+
+        ResolvePendingOutputs(name, payload);
 
         // The device's own interlock refused a drawbar release (something got
         // past the host's check, e.g. the spindle started a moment earlier).
@@ -248,6 +264,70 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     public Func<bool>? SpindleActive { get; set; }
 
+    // Output commands ("out <n> <0|1>", "lo <n> <0|1>") over the radio are
+    // confirmed: the device answers "$OK out <n> <v>", and a command it never
+    // answered is sent again. One lost ESP-NOW packet otherwise left a drawbar
+    // shut (a manual swap's Release that did nothing). Sending again is safe:
+    // the command sets a level, it doesn't toggle.
+    private static readonly System.Text.RegularExpressions.Regex OutputCommand =
+        new(@"^(out|lo)\s+(\d+)\s+([01])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex OutputReply =
+        new(@"^\$OK\s+(out|lo)\s+(\d+)\s+([01])\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private sealed class PendingOutput
+    {
+        public required string Value;
+        public readonly TaskCompletionSource<bool> Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+    // Keyed "<device>:<out|lo>:<n>": the last command per output, so a retry
+    // never overrides a newer command for the same output.
+    private readonly ConcurrentDictionary<string, PendingOutput> _pendingOutputs = new(StringComparer.OrdinalIgnoreCase);
+
+    internal int OutputAckTimeoutMs { get; set; } = 300;
+    internal int OutputAttempts { get; set; } = 3;
+
+    private static string OutputKey(string name, string kind, string index) => $"{name}:{kind.ToLowerInvariant()}:{index}";
+
+    private async Task SendConfirmedAsync(Func<string, Task> sender, string name, string payload, string key, string value)
+    {
+        var pending = new PendingOutput { Value = value };
+        _pendingOutputs[key] = pending;
+        try
+        {
+            for (var attempt = 1; attempt <= OutputAttempts; attempt++)
+            {
+                await sender($"@{name} {payload}").ConfigureAwait(false);
+                var done = await Task.WhenAny(pending.Done.Task, Task.Delay(OutputAckTimeoutMs)).ConfigureAwait(false);
+                if (done == pending.Done.Task) return;              // confirmed, or refused by the device
+                if (!_pendingOutputs.TryGetValue(key, out var now) || now != pending) return;   // a newer command took over
+                if (attempt < OutputAttempts)
+                    _logger.LogWarning("No reply from {Name} to '{Payload}', sending again ({Attempt}/{Attempts})", name, payload, attempt + 1, OutputAttempts);
+            }
+            _logger.LogWarning("{Name} never confirmed '{Payload}' after {Attempts} sends", name, payload, OutputAttempts);
+        }
+        finally
+        {
+            _pendingOutputs.TryRemove(new KeyValuePair<string, PendingOutput>(key, pending));
+        }
+    }
+
+    // A reply from the device ends the matching wait: "$OK out <n> <v>" with
+    // the commanded level confirms it; an "$ERR:…" refuses every pending one.
+    private void ResolvePendingOutputs(string name, string payload)
+    {
+        if (_pendingOutputs.IsEmpty || !payload.StartsWith('$')) return;
+        var ok = OutputReply.Match(payload);
+        if (ok.Success)
+        {
+            if (_pendingOutputs.TryGetValue(OutputKey(name, ok.Groups[1].Value, ok.Groups[2].Value), out var p) && p.Value == ok.Groups[3].Value)
+                p.Done.TrySetResult(true);
+            return;
+        }
+        if (payload.StartsWith("$ERR", StringComparison.OrdinalIgnoreCase))
+            foreach (var kv in _pendingOutputs)
+                if (kv.Key.StartsWith(name + ":", StringComparison.OrdinalIgnoreCase)) kv.Value.Done.TrySetResult(false);
+    }
+
     public Task SendAsync(string name, string payload)
     {
         // An output the device reports as a drawbar ("dr=" mask) never switches
@@ -261,7 +341,11 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         }
         if (_wiredSenders.TryGetValue(name, out var wired)) return wired(payload);
         var sender = _sender;
-        return sender is null ? Task.CompletedTask : sender($"@{name} {payload}");
+        if (sender is null) return Task.CompletedTask;
+        var output = OutputCommand.Match(payload.Trim());
+        if (output.Success)
+            return SendConfirmedAsync(sender, name, payload, OutputKey(name, output.Groups[1].Value, output.Groups[2].Value), output.Groups[3].Value);
+        return sender($"@{name} {payload}");
     }
 
     internal bool IsRefusedDrawbarRelease(string name, string payload)

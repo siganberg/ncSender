@@ -15,8 +15,8 @@ public static class ProbeEndpoints
         {
             try
             {
-                await svc.StartAsync(request.Options ?? request.ExtensionData, request.Commands);
-                return Results.Ok(new ApiSuccess(true));
+                var result = await svc.StartAsync(request.Options ?? request.ExtensionData, request.Commands);
+                return Results.Ok(new ProbeStartResponse(true, result.MeasuredX, result.MeasuredY));
             }
             catch (InvalidOperationException ex)
             {

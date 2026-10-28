@@ -56,4 +56,20 @@ public class AccessoryInfo
     /// check the device itself makes and boots as the wrong product.
     /// </summary>
     public string AssetPrefix { get; set; } = "";
+
+    /// <summary>
+    /// Null for a device with no battery reading. "battery", "charging",
+    /// "full" (charging and at the top of the curve) or "usb" (a cable, no
+    /// cell reading, so no level).
+    /// </summary>
+    public string? BatteryState { get; set; }
+
+    /// <summary>Charge 0-100. While charging it reads high, so it is a guide only.</summary>
+    public int? BatteryPercent { get; set; }
+
+    /// <summary>Smoothed cell voltage behind <see cref="BatteryPercent"/>.</summary>
+    public int? BatteryMv { get; set; }
+
+    /// <summary>Below the low threshold on battery; never set while charging.</summary>
+    public bool BatteryLow { get; set; }
 }

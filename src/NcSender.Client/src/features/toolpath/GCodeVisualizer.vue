@@ -332,10 +332,10 @@
           <div
             v-if="switchConfig.holdToActivate"
             class="switch switch--hold"
-            :class="{ 'is-on': ioSwitchStates[key], 'is-disabled': isCoolantDisabled }"
+            :class="{ 'is-on': ioSwitchStates[key], 'is-disabled': isIOSwitchDisabled(key) }"
             role="switch"
             :aria-checked="ioSwitchStates[key]"
-            :aria-disabled="isCoolantDisabled"
+            :aria-disabled="isIOSwitchDisabled(key)"
           >
             <span class="slider"></span>
           </div>
@@ -344,12 +344,12 @@
               type="checkbox"
               :checked="ioSwitchStates[key]"
               @change="toggleIOSwitch(key)"
-              :disabled="isCoolantDisabled"
+              :disabled="isIOSwitchDisabled(key)"
             >
             <span class="slider"></span>
           </label>
           <span class="spindle-toggle-name">
-            {{ switchConfig.label }}<sup v-if="switchConfig.holdToActivate" class="hold-sup">Hold</sup>
+            {{ switchConfig.label }}<span v-if="switchConfig.holdToActivate || switchConfig.quickSec" class="aux-badges"><span v-if="switchConfig.holdToActivate" class="hold-sup">Hold</span><span v-if="switchConfig.quickSec" class="hold-sup">AutoOff</span></span>
           </span>
         </div>
       </div>
@@ -832,10 +832,10 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from
 import { getAlarmHelp } from '@/lib/alarm-help';
 import * as THREE from 'three';
 import GCodeVisualizer from './visualizer/gcode-visualizer.js';
-import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, generateCuttingPointer } from './visualizer/helpers.js';
+import { createGridLines, createGridTickLabels, createWorkspaceOutline, createSideViewGrid, createCoordinateAxes, createDynamicAxisLabels, createHomeIndicator, setHomeIndicatorOpacity, getOverlayOpacity, generateCuttingPointer } from './visualizer/helpers.js';
 import { api } from './api';
-import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand } from '../../lib/aux-outputs';
-import { dustBoot, watchDustBoot, dustBootCommand, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
+import { BRIDGE_DEVICE, bridgeOutputIndex, parseBridgeOutputs, auxOffCommand, auxQuickSec } from '../../lib/aux-outputs';
+import { dustBoot, watchDustBoot, dustBootCommand, sendDustBoot, setDustBootTarget, DUST_BOOT_OUTPUT_ID, DUST_BOOT_NAME, DUST_BOOT_ON, DUST_BOOT_OFF } from '../../lib/dust-boot';
 import { useSpindleControl } from '../../composables/useSpindleControl';
 import { getToolsFromInit } from '@/lib/init';
 import { getSettings, updateSettings, settingsStore } from '../../lib/settings-store.js';
@@ -1109,6 +1109,10 @@ const canStop = computed(() => {
 const isToolActionsDisabled = computed(() => isToolChanging.value || isJobRunning.value || isConnecting.value || isAlarm.value || isHoming.value);
 const isProbeDisabled = computed(() => isJobRunning.value || isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
 const isCoolantDisabled = computed(() => isConnecting.value || isAlarm.value || isHomingRequired.value || isHoming.value);
+// The AutoDustBoot is also locked during a tool change: lowered at the rack it
+// hits it (the server refuses an expand then too).
+const isIOSwitchDisabled = (key: string) =>
+  isCoolantDisabled.value || (key === DUST_BOOT_OUTPUT_ID && isToolChanging.value);
 
 // Spindle run. Stricter than the I/O switches: those are coolant and aux
 // outputs, this spins a cutter, so it also refuses while a job owns the
@@ -1280,6 +1284,7 @@ const enabledIOSwitches = computed(() => {
           on: output.on,
           off: getOffCommand(output.on),
           holdToActivate: output.holdToActivate === true,
+          quickSec: auxQuickSec(output.quickSec),
         };
         // Initialize state if not exists
         if (!(key in ioSwitchStates)) {
@@ -1935,6 +1940,12 @@ const disposeHomeIndicator = () => {
   homeIndicatorGroup = null;
 };
 
+const handleOverlayOpacityChange = () => {
+  if (!homeIndicatorGroup) return;
+  setHomeIndicatorOpacity(homeIndicatorGroup, getOverlayOpacity());
+  requestRender();
+};
+
 const computeMachineOriginPosition = () => {
   // Machine home (origin) is always at machine z=0 — the top of the
   // wireframe envelope. Used to be tied to gridZLevel (WCO.z), which
@@ -1954,6 +1965,7 @@ const refreshHomeIndicator = () => {
   }
 
   homeIndicatorGroup = createHomeIndicator();
+  setHomeIndicatorOpacity(homeIndicatorGroup, getOverlayOpacity());
   scene.add(homeIndicatorGroup);
 
   const basePosition = computeMachineOriginPosition();
@@ -3560,9 +3572,10 @@ const clearFile = async () => {
   try {
     // Clear on server and notify all clients
     await api.clearGCode();
+    // Also clear locally immediately (don't rely solely on server broadcast)
+    handleGCodeClear();
   } catch (error) {
     console.error('Error clearing G-code:', error);
-    // Fallback to local clear if API fails
     handleGCodeClear();
   }
 };
@@ -4126,11 +4139,17 @@ const updatePointerOpacity = () => {
   if (!cuttingPointer) return;
 
   const opacity = props.view === 'top' ? 0.3 : 1.0;
-  cuttingPointer.traverse((child) => {
-    if (child.isMesh && child.material) {
-      child.material.opacity = opacity;
-    }
-  });
+  if (cuttingPointer.userData?.setOpacity) {
+    // The setter stores the value so the async OBJ load can apply it
+    // later (otherwise the Top-view fade is lost after a page refresh).
+    cuttingPointer.userData.setOpacity(opacity);
+  } else {
+    cuttingPointer.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.opacity = opacity;
+      }
+    });
+  }
 };
 
 // Watch for view changes
@@ -4515,21 +4534,35 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
   requestRender();
 });
 
+// Quick outputs (Settings > Auxiliary I/O) turn themselves off again after
+// their time, so a drawbar or blow-off uses air only for that moment.
+const auxQuickTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
 const toggleIOSwitch = async (switchKey: string) => {
   const currentState = ioSwitchStates[switchKey];
   const newState = !currentState;
   ioSwitchStates[switchKey] = newState;
+
+  clearTimeout(auxQuickTimers[switchKey]);
+  delete auxQuickTimers[switchKey];
+  const quickSec = enabledIOSwitches.value[switchKey]?.quickSec;
+  if (newState && quickSec) {
+    auxQuickTimers[switchKey] = setTimeout(() => {
+      delete auxQuickTimers[switchKey];
+      if (ioSwitchStates[switchKey]) toggleIOSwitch(switchKey);
+    }, quickSec * 1000);
+  }
 
   try {
     const switchConfig = enabledIOSwitches.value[switchKey];
     const onCmd = (switchConfig.on || '').toUpperCase();
 
     // AutoDustBoot: expand to the position saved on the boot, or retract.
+    // Sent straight to the boot, so it moves at once even with a job queued.
     if (switchKey === DUST_BOOT_OUTPUT_ID) {
-      const command = dustBootCommand(newState);
-      if (!command) { ioSwitchStates[switchKey] = currentState; return; } // no expand position saved yet
+      if (isToolChanging.value || !dustBootCommand(newState)) { ioSwitchStates[switchKey] = currentState; return; } // no expand position saved yet
       setDustBootTarget(newState);
-      await api.sendCommandViaWebSocket({ command, displayCommand: command });
+      await sendDustBoot(newState);
       return;
     }
 
@@ -5046,7 +5079,9 @@ const setMarkerBitVisible = (visible: boolean) => {
 };
 
 const updateBitVisibilityFromTool = () => {
-  const gated = numberOfToolsToShow.value > 0 || showManualTool.value;
+  // Any tool changer (a magazine or a plugin, either tool numbering) knows
+  // whether a tool is loaded; only without one is there no T0 to go by.
+  const gated = numberOfToolsToShow.value > 0 || showManualTool.value || !!toolChangerSource.value;
   const visible = !gated ? true : (props.currentTool ?? 0) > 0;
   setMarkerBitVisible(visible);
   // Renderer only redraws on demand — kick it so the bit
@@ -5056,7 +5091,7 @@ const updateBitVisibilityFromTool = () => {
 };
 
 watch(
-  () => [props.currentTool, numberOfToolsToShow.value, showManualTool.value] as const,
+  () => [props.currentTool, numberOfToolsToShow.value, showManualTool.value, toolChangerSource.value] as const,
   updateBitVisibilityFromTool,
   { flush: 'post' }
 );
@@ -5296,6 +5331,7 @@ onMounted(async () => {
 
   initThreeJS();
   window.addEventListener('resize', handleResize);
+  window.addEventListener('overlay-opacity-change', handleOverlayOpacityChange);
 
   // Listen for settings changes (partial/delta updates)
   window.addEventListener('settings-changed', (event: any) => {
@@ -5559,7 +5595,8 @@ onMounted(async () => {
       try {
         const { getGCodeFromIDB } = await import('../../lib/gcode-store.js');
         const gcodeData = await getGCodeFromIDB();
-        if (gcodeData?.content) {
+        // Only load if IDB has matching filename (not stale from a previous session)
+        if (gcodeData?.content && gcodeData.filename === newValue) {
           await handleGCodeUpdate({
             filename: gcodeData.filename,
             content: gcodeData.content,
@@ -5618,6 +5655,7 @@ onUnmounted(() => {
   }
 
   window.removeEventListener('resize', handleResize);
+  window.removeEventListener('overlay-opacity-change', handleOverlayOpacityChange);
   window.removeEventListener('mouseup', onMouseUp);
   window.removeEventListener('touchend', onTouchEnd);
 
@@ -5897,7 +5935,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .override-panel {
   /* Slightly more opaque instead of backdrop-filter: a blur over the live
      WebGL canvas re-samples the canvas on every 3D frame. */
-  background: color-mix(in srgb, var(--color-surface-muted) 92%, transparent);
+  background: var(--color-surface-muted-overlay);
   border-radius: var(--radius-small);
   padding: 8px 16px 16px;
   /* Fixed, not min-: the spindle panel swaps between three different sets
@@ -5948,7 +5986,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .override-current {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
-  background: var(--color-surface);
+  background: var(--color-surface-overlay);
   color: var(--color-text-primary);
   font-weight: 600;
   cursor: pointer;
@@ -6014,11 +6052,11 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 .spindle-run__value { position: relative; }
 .spindle-run__value.is-open {
   border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-overlay));
 }
 
 .spindle-run__stop {
-  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.85));
+  background: linear-gradient(135deg, color-mix(in srgb, #ff6b6b max(var(--overlay-alpha), 90%), transparent), color-mix(in srgb, #ff6b6b calc(max(var(--overlay-alpha), 90%) * 0.85), transparent));
   border-color: transparent;
   color: #fff !important;
   font-size: 1.05rem;
@@ -6130,7 +6168,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   justify-content: center;
   width: 122px;
   height: 32px;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
@@ -6158,7 +6196,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   padding: 10px 20px;
   border-radius: var(--radius-small);
   color: var(--color-text-primary);
@@ -6199,7 +6237,7 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 
 .tools-legend__item.active {
   opacity: 1;
-  background: var(--color-accent);
+  background: var(--color-accent-overlay);
   color: #fff;
   transform: none;
   cursor: default;
@@ -6524,17 +6562,17 @@ watch(() => appStore.startFromLineRequest.value, (lineNumber) => {
 }
 
 .clear-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
 .upload-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
 .folder-button {
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-primary);
 }
 
@@ -6591,14 +6629,14 @@ h2 {
   min-height: 50px;
   padding: 0 16px;
   cursor: pointer;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-muted-overlay);
   color: var(--color-text-secondary);
   font-size: 16px;
   font-weight: 500;
 }
 
 .view-button.active {
-  background: var(--gradient-accent);
+  background: var(--gradient-accent-overlay);
   color: #fff;
 }
 
@@ -6648,9 +6686,24 @@ h2 {
   z-index: 1;
 }
 .switch--hold { cursor: pointer; }
-.switch--hold.is-on .slider { background-color: var(--color-accent); }
+.switch--hold.is-on .slider { background-color: var(--color-accent-overlay); }
 .switch--hold.is-on .slider::before { transform: translateX(calc(var(--switch-width) - var(--switch-height))); }
 .switch--hold.is-disabled { opacity: 0.5; cursor: not-allowed; }
+/* Hold and Quick badges stack, so they take one badge's width. */
+.aux-badges {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.aux-badges .hold-sup {
+  margin-left: 0;
+  vertical-align: baseline;
+  text-align: center;
+}
+
 .hold-sup {
   font-size: 8px;
   font-weight: 700;
@@ -6690,7 +6743,7 @@ h2 {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: color-mix(in srgb, #ccc var(--overlay-alpha), transparent);
   transition: 0.3s;
   border-radius: var(--switch-height);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
@@ -6709,7 +6762,7 @@ h2 {
 }
 
 input:checked + .slider {
-  background-color: var(--color-accent);
+  background-color: var(--color-accent-overlay);
 }
 
 input:checked + .slider:before {
@@ -7261,6 +7314,13 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn {
+  --btn-color: var(--color-accent);
+  --btn-fade: 0.8;
+  --btn-color-end: var(--btn-color);
+  --btn-alpha: var(--overlay-alpha);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--btn-color) var(--btn-alpha), transparent),
+    color-mix(in srgb, var(--btn-color-end) calc(var(--btn-alpha) * var(--btn-fade)), transparent));
   border: none;
   border-radius: var(--radius-medium);
   padding: 18px 22px;
@@ -7285,7 +7345,8 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--primary {
-  background: var(--gradient-accent);
+  --btn-color-end: var(--color-gradient);
+  --btn-fade: 1;
   color: white;
   box-shadow: 0 4px 12px -4px rgba(26, 188, 156, 0.5);
 }
@@ -7295,18 +7356,20 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--secondary {
-  background: var(--color-surface-muted);
+  --btn-color: var(--color-surface-muted);
+  --btn-fade: 1;
   color: var(--color-text-primary);
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1);
 }
 
 .control-btn--secondary:hover {
-  background: var(--color-surface);
+  --btn-color: var(--color-surface);
   box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.15);
 }
 
 .control-btn--danger {
-  background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.8));
+  --btn-color: #ff6b6b;
+  --btn-alpha: max(var(--overlay-alpha), 90%);
   color: white;
   box-shadow: 0 4px 12px -4px rgba(255, 107, 107, 0.5);
 }
@@ -7316,7 +7379,7 @@ body.theme-light .dot--rapid {
 }
 
 .control-btn--start-from-line {
-  background: linear-gradient(135deg, #8b5cf6, rgba(139, 92, 246, 0.8));
+  --btn-color: #8b5cf6;
   color: white;
   box-shadow: 0 4px 12px -4px rgba(139, 92, 246, 0.5);
 }
@@ -7352,7 +7415,7 @@ body.theme-light .dot--rapid {
   justify-content: center;
   gap: 0;
   padding: 0;
-  background: var(--gradient-accent, var(--color-accent));
+  background: var(--gradient-accent-overlay);
   color: #fff;
   border: none;
   border-radius: var(--radius-small);
@@ -7665,6 +7728,13 @@ body.theme-light .dot--rapid {
 
 .move-to-btn-secondary:hover {
   background: var(--color-surface-hover, rgba(255,255,255,0.15));
+}
+
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .control-btn { background: linear-gradient(135deg, var(--btn-color), var(--btn-color-end)); }
+  .slider { background-color: #ccc; }
+  .spindle-run__value.is-open { background: var(--color-surface-muted); }
+  .spindle-run__stop { background: linear-gradient(135deg, #ff6b6b, rgba(255, 107, 107, 0.85)); }
 }
 
 </style>

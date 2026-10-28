@@ -56,9 +56,15 @@ public interface IProtocolHandler
 
     /// <summary>
     /// Whether this protocol supports dynamic setting enumeration ($EG, $ES, $ESH).
-    /// If false, GetStaticSettingDefinitions() provides the metadata.
+    /// If false, <see cref="StaticSettingDefinitions"/> provides the metadata.
     /// </summary>
     bool SupportsSettingEnumeration => true;
+
+    /// <summary>
+    /// Whether the controller keeps its settings in a config file the Config
+    /// tab can edit (FluidNC config.yaml over HTTP).
+    /// </summary>
+    bool SupportsConfigFile => false;
 
     /// <summary>
     /// Whether the controller understands override control (M51) and the
@@ -107,4 +113,33 @@ public interface IProtocolHandler
     /// completes the command immediately instead of waiting forever.
     /// </summary>
     bool IsFireAndForget(string command) => false;
+
+    /// <summary>
+    /// A translator every queued line passes through just before it is written,
+    /// for controllers that can't run what the rest of ncSender sends (classic
+    /// Grbl has no expressions, parameters, o-words or M6). Null means lines go
+    /// out as they are, which is what grblHAL and FluidNC get.
+    /// </summary>
+    IGcodeTranslator? CreateTranslator(Func<MachineState> state) => null;
+
+    /// <summary>
+    /// Alarm descriptions for a controller that can't list its own (no $EA).
+    /// Null means they are fetched with <see cref="AlarmFetchCommand"/>.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? StaticAlarmDescriptions => null;
+
+    /// <summary>
+    /// Setting names, units and types for a controller with a fixed settings
+    /// list it can't describe itself (no $ES). Null means there is no Firmware
+    /// tab unless <see cref="SupportsSettingEnumeration"/> is set.
+    /// </summary>
+    IReadOnlyDictionary<int, FirmwareSetting>? StaticSettingDefinitions => null;
+
+    /// <summary>
+    /// When a data line proves the controller is really another protocol (a
+    /// grblHAL build announcing itself with the classic Grbl greeting answers
+    /// $I with [NEWOPT:...]), the <see cref="CacheKey"/> of the protocol to
+    /// switch to. Null keeps this one.
+    /// </summary>
+    string? RedirectProtocol(string line) => null;
 }

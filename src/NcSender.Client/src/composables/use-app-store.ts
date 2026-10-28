@@ -18,7 +18,7 @@
 import { reactive, ref, readonly, computed } from 'vue';
 import { api } from '@/lib/api.js';
 import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/lib/gcode-store.js';
-import { isTerminalIDBEnabled, appendTerminalLineToIDB, updateTerminalLineByIdInIDB, clearTerminalIDB } from '@/lib/terminal-store.js';
+import { dropTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings, mergeSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
 import type { UnitsPreference } from '@/lib/units';
@@ -130,6 +130,8 @@ const status = reactive({
 });
 
 const consoleLines = ref<ConsoleLine[]>([]);
+// Lines live only in memory (see lib/terminal-store.js).
+dropTerminalIDB();
 const commandLinesMap = new Map<string | number, { line: ConsoleLine, index: number }>();
 const CONSOLE_MAX_LINES = 5000;
 const CONSOLE_TRIM_BATCH = 500;
@@ -449,6 +451,12 @@ const addOrUpdateCommandLine = (payload: any) => {
     return null;
   }
 
+  // ncSender's own $NCSENDER_ commands are never shown.
+  if (typeof (payload.displayCommand ?? payload.command) === 'string'
+    && (payload.displayCommand ?? payload.command).startsWith('$NCSENDER_')) {
+    return null;
+  }
+
   let message = payload.message || payload.displayCommand || payload.command || 'Command';
 
   // Format error messages specially
@@ -497,11 +505,6 @@ const addOrUpdateCommandLine = (payload: any) => {
   consoleLines.value.push(newLine);
   commandLinesMap.set(newLine.id, { line: newLine, index: newIndex });
 
-  // Persist to IndexedDB if available (exclude job chatter)
-  if (isTerminalIDBEnabled() && newLine.sourceId !== 'job') {
-    appendTerminalLineToIDB(newLine).catch(() => {});
-  }
-
   trimConsoleBuffer();
 
   return { line: newLine, timestamp };
@@ -521,10 +524,6 @@ const addResponseLine = (data: string) => {
   consoleLines.value.push(responseLine);
   commandLinesMap.set(responseLine.id, { line: responseLine, index: newIndex });
 
-  // Persist to IDB if available
-  if (isTerminalIDBEnabled()) {
-    appendTerminalLineToIDB(responseLine).catch(() => {});
-  }
 
   trimConsoleBuffer();
 };
@@ -854,16 +853,7 @@ export function initializeStore() {
   api.on('cnc-command-result', (result) => {
     if (!result) return;
     if (api.isJogCancelCommand(result.command)) return;
-    const updated = addOrUpdateCommandLine(result);
-    if (isTerminalIDBEnabled() && result?.id && result?.sourceId !== 'job') {
-      updateTerminalLineByIdInIDB(result.id, {
-        message: updated?.line?.message ?? result.displayCommand ?? result.command,
-        status: result.status,
-        level: result.status === 'error' ? 'error' : 'info',
-        sourceId: result.sourceId,
-        meta: result.meta
-      }).catch(() => {});
-    }
+    addOrUpdateCommandLine(result);
 
     // Line completion tracking removed - viewers now use jobLoaded.currentLine
   });
@@ -1194,9 +1184,6 @@ export function useAppStore() {
     clearConsole: () => {
       consoleLines.value = [];
       commandLinesMap.clear();
-      if (isTerminalIDBEnabled()) {
-        clearTerminalIDB().catch(() => {});
-      }
     },
 
     clearGCodePreview: () => {

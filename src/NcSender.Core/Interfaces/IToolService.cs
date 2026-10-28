@@ -11,7 +11,9 @@ public interface IToolService
     /// <summary>Writes offsets onto a stored tool and nothing else; null if nothing is stored.</summary>
     Task<ToolInfo?> UpdateOffsetsAsync(int id, double? tlo = null, double? x = null, double? y = null, double? z = null);
     Task<ToolInfo?> GetByIdAsync(int id);
-    Task<ToolInfo> AddAsync(ToolInfo tool);
+    /// <summary>Adds a tool. With <paramref name="takeSlot"/>, a tool already in
+    /// the slot is unassigned in the same save instead of refusing the add.</summary>
+    Task<ToolInfo> AddAsync(ToolInfo tool, bool takeSlot = false);
     Task<ToolInfo?> UpdateAsync(int id, ToolInfo tool);
     Task<bool> DeleteAsync(int id);
     Task BulkUpdateAsync(List<ToolInfo> tools);

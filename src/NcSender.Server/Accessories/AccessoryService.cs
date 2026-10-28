@@ -173,6 +173,7 @@ public sealed class AccessoryService
                     var lic = await PeerLicenceAsync(def.PeerName, ct).ConfigureAwait(false);
                     info.Licensed = lic.Licensed;
                     info.DeviceId = lic.DeviceId;
+                    ApplyBattery(info, peer);
                 }
             }
 
@@ -181,6 +182,21 @@ public sealed class AccessoryService
 
             return info;
         }
+    }
+
+    private static void ApplyBattery(AccessoryInfo info, DongleDeviceInfo? peer)
+    {
+        if (peer?.BatteryState is not { } state) return;
+        info.BatteryState = state;
+        if (peer.BatteryMv is not { } mv) return;
+        info.BatteryMv = mv;
+        info.BatteryPercent = NcSender.Server.Dongle.BatteryReading.Percent(mv);
+        if (state == "charging" && mv >= NcSender.Server.Dongle.BatteryReading.FullMv)
+        {
+            info.BatteryState = "full";
+            info.BatteryPercent = 100;
+        }
+        info.BatteryLow = state == "battery" && mv < NcSender.Server.Dongle.BatteryReading.LowMv;
     }
 
     /// <summary>

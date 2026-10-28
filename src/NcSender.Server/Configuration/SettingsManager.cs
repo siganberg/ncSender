@@ -212,6 +212,7 @@ public class SettingsManager : ISettingsManager
             "autoFit": false,
             "accentColor": "#1abc9c",
             "gradientColor": "#34d399",
+            "overlayOpacity": 100,
             "autoClearConsole": true,
             "debugLogging": false,
             "unitsPreference": "metric",
@@ -261,6 +262,7 @@ public class SettingsManager : ISettingsManager
             "tlsAfterHome": false,
             "tipsOnStartup": true,
             "setupWizardCompleted": false,
+            "machineProfile": "",
             "useControllerMacros": false,
             "remoteControl": {
                 "enabled": false

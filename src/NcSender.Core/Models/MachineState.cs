@@ -26,6 +26,8 @@ public class MachineState
     public double MaxTravelX { get; set; }
     public double MaxTravelY { get; set; }
     public double MaxTravelZ { get; set; }
+    // Soft limits ($20) as the controller reported them; null until $$ is read.
+    public bool? SoftLimits { get; set; }
 
     // GRBL status report fields
     public string Status { get; set; } = "Unknown";

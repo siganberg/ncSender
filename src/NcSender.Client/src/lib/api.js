@@ -1012,6 +1012,14 @@ class NCClient {
   }
 
   // Firmware settings methods
+  // Machine Setup's known machines. The server reuses a copy from the last
+  // day unless `refresh` asks GitHub now.
+  async getMachineProfiles({ refresh = false } = {}) {
+    const response = await fetch(`${this.baseUrl}/api/machine-profiles${refresh ? '?refresh=true' : ''}`);
+    if (!response.ok) throw new Error(`Failed to get machine profiles (${response.status})`);
+    return response.json();
+  }
+
   async getFirmwareSettings({ refresh = false, force = false } = {}) {
     const params = new URLSearchParams();
     if (refresh) params.set('refresh', 'true');

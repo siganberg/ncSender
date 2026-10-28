@@ -41,6 +41,25 @@ export const generateCuttingPointer = () => {
         group.userData.pendingBitVisible = visible;
     };
 
+    // Same pre-OBJ pattern for opacity — the caller (updatePointerOpacity
+    // in GCodeVisualizer) may fire before the async OBJ load resolves.
+    // The initial call would iterate an empty group and do nothing, then
+    // the meshes would appear later at opacity=1. Storing the desired
+    // opacity in userData lets the load-complete handler apply it.
+    group.userData.pendingOpacity = null;
+    group.userData.setOpacity = (opacity) => {
+        group.userData.pendingOpacity = opacity;
+        group.traverse((child) => {
+            if (child.isMesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach((m) => {
+                    m.transparent = true;
+                    m.opacity = opacity;
+                });
+            }
+        });
+    };
+
     // Get accent color from CSS variable
     const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#1abc9c';
 
@@ -171,6 +190,11 @@ export const generateCuttingPointer = () => {
                         bitMeshes.forEach((m) => { m.visible = false; });
                     }
 
+                    // Apply any opacity queued before the OBJ finished loading.
+                    if (group.userData.pendingOpacity !== null && group.userData.setOpacity) {
+                        group.userData.setOpacity(group.userData.pendingOpacity);
+                    }
+
                     // No shading toggles; rely on scene lighting only
                 },
                 undefined, // Progress callback removed
@@ -221,6 +245,10 @@ export const generateCuttingPointer = () => {
                     group.add(obj);
                     group.userData.onLoaded?.();
 
+                    // Mirror the MTL path: apply any opacity set before the load resolved.
+                    if (group.userData.pendingOpacity !== null && group.userData.setOpacity) {
+                        group.userData.setOpacity(group.userData.pendingOpacity);
+                    }
                     // No shading helpers in OBJ-only path
                 },
                 undefined,
@@ -1231,5 +1259,18 @@ export const createHomeIndicator = () => {
     group.add(sprite);
 
     return group;
+};
+
+export const setHomeIndicatorOpacity = (group, factor) => {
+    group.traverse((child) => {
+        if (!child.material) return;
+        child.material.userData.baseOpacity ??= child.material.opacity;
+        child.material.opacity = child.material.userData.baseOpacity * factor;
+    });
+};
+
+export const getOverlayOpacity = () => {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--overlay-alpha'));
+    return Number.isFinite(value) ? value / 100 : 1;
 };
 

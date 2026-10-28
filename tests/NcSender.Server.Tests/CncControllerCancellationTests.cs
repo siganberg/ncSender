@@ -79,9 +79,14 @@ public class CncControllerCancellationTests : IDisposable
         var secondTask = _controller.SendCommandAsync("$$", null);
         _ = Task.Run(async () =>
         {
-            // Wait for the write to hit the fake transport, then reply "ok".
+            // Wait for the write to hit the fake transport. The controller still
+            // answers the cancelled $I first (a caller giving up doesn't stop the
+            // controller replying); that late "ok" must not complete $$.
             for (var i = 0; i < 20 && !_transport.WriteLog.Contains("$$\n"); i++)
                 await Task.Delay(25);
+            _controller.HandleIncomingData("ok");
+            await Task.Delay(100);
+            Assert.False(secondTask.IsCompleted);
             _controller.HandleIncomingData("ok");
         });
 
@@ -108,8 +113,12 @@ public class CncControllerCancellationTests : IDisposable
         var secondTask = _controller.SendCommandAsync("$#", null);
         _ = Task.Run(async () =>
         {
+            // The late reply to the cancelled $G arrives first, then $#'s own.
             for (var i = 0; i < 40 && !_transport.WriteLog.Contains("$#\n"); i++)
                 await Task.Delay(25);
+            _controller.HandleIncomingData("ok");
+            await Task.Delay(100);
+            Assert.False(secondTask.IsCompleted);
             _controller.HandleIncomingData("ok");
         });
 

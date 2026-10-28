@@ -10,6 +10,15 @@ public class FirmwareData
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Timestamp { get; set; }
 
+    // The board's name from $I ("SuperLongBoard Ext"), when it reports one.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Board { get; set; }
+
+    // The connected controller's firmware ("grblhal", "fluidnc"); set on the
+    // way out of /api/firmware, null when nothing is connected.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Protocol { get; set; }
+
     public Dictionary<string, FirmwareSettingGroup> Groups { get; set; } = new();
     public Dictionary<string, FirmwareSetting> Settings { get; set; } = new();
 }

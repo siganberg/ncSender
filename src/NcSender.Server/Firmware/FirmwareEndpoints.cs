@@ -13,19 +13,15 @@ public static class FirmwareEndpoints
 {
     public static void Map(WebApplication app)
     {
-        app.MapGet("/api/firmware", async (HttpContext context, IFirmwareService svc) =>
+        app.MapGet("/api/firmware", async (HttpContext context, IFirmwareService svc, ICncController controller) =>
         {
             var refresh = context.Request.Query.ContainsKey("refresh");
             var force = context.Request.Query.ContainsKey("force");
 
-            if (refresh || force)
-            {
-                var data = await svc.RefreshAsync(force);
-                return Results.Ok(data ?? new Core.Models.FirmwareData());
-            }
-
-            var cached = await svc.GetCachedAsync();
-            return Results.Ok(cached ?? new Core.Models.FirmwareData());
+            var data = (refresh || force ? await svc.RefreshAsync(force) : await svc.GetCachedAsync())
+                ?? new Core.Models.FirmwareData();
+            data.Protocol = controller.IsConnected ? controller.ActiveProtocol?.CacheKey : null;
+            return Results.Ok(data);
         });
 
         app.MapPost("/api/firmware/flash", async (

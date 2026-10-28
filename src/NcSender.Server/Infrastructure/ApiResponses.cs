@@ -9,6 +9,9 @@ public record ApiSuccess(bool Success);
 public record ApiSuccessMessage(bool Success, string Message);
 public record ApiError(string Error);
 
+// === Probing ===
+public record ProbeStartResponse(bool Success, double? MeasuredX, double? MeasuredY);
+
 // === ServerBuilder ===
 public record HealthResponse(string Status, string Timestamp);
 // Edition marker consumed by plugins that need to gate Pro-only features

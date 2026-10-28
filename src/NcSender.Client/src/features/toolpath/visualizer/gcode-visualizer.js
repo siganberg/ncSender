@@ -792,6 +792,9 @@ class GCodeVisualizer {
             this.lineNumberMap.set(lineNumber, { startVertexIdx, endVertexIdx });
         }
 
+        // Reset group position (vertices are in machine coords from parse-time WCO)
+        this.group.position.set(0, 0, 0);
+
         // Calculate bounds
         const box = new THREE.Box3().setFromObject(this.group);
         this.bounds = {
@@ -1280,9 +1283,13 @@ class GCodeVisualizer {
                     // For now, we'll use a very dark gray to indicate hidden
                     c = new THREE.Color(0x000000);
                 } else {
-                    const x = positions[i * 3];
-                    const y = positions[i * 3 + 1];
-                    const z = positions[i * 3 + 2];
+                    // Vertices are in parse-time machine coords; add delta for current bounds check
+                    const dx = this.wco.x - this.renderWCO.x;
+                    const dy = this.wco.y - this.renderWCO.y;
+                    const dz = this.wco.z - this.renderWCO.z;
+                    const x = positions[i * 3] + dx;
+                    const y = positions[i * 3 + 1] + dy;
+                    const z = positions[i * 3 + 2] + dz;
 
                     if (isCompleted) {
                         c = moveType === 'rapid' ? completedRapid : completedCutting;

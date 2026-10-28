@@ -18,6 +18,46 @@ public class ThreeDProbeStrategyTests
         yield return new object[] { "Outer", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30) };
     }
 
+    public static IEnumerable<object[]> SingleAxisCenterRoutines()
+    {
+        yield return new object[] { "Inner X", "X", ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, axes: "X") };
+        yield return new object[] { "Inner Y", "Y", ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, axes: "Y") };
+        yield return new object[] { "Outer X", "X", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, axes: "X") };
+        yield return new object[] { "Outer Y", "Y", ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, axes: "Y") };
+    }
+
+    [Theory]
+    [InlineData("Inner", false, 3)]
+    [InlineData("Outer", false, 3)]
+    [InlineData("Outer", true, 7)]
+    public void CenterRoutine_DropsAndLiftsZPlungeFromStart_OrBelowTopAfterZProbe(string kind, bool probeZFirst, double move)
+    {
+        // Without a Z probe every drop is exactly Z-Plunge and every lift goes back
+        // to where the user started the probe; after one, Z-Plunge is below the top.
+        var routine = kind == "Inner"
+            ? ThreeDProbeStrategy.GetCenterInnerRoutine(30, 30, zPlunge: 3)
+            : ThreeDProbeStrategy.GetCenterOuterRoutine(30, 30, probeZFirst: probeZFirst, zPlunge: 3);
+        var center = routine.SkipWhile(l => l != $"(Probing Center - {kind})").ToList();
+        var drops = center.Where(l => l.StartsWith("G38.3 Z-")).ToList();
+        var lifts = center.Where(l => l.StartsWith("G0 Z")).ToList();
+        Assert.NotEmpty(drops);
+        Assert.All(drops, l => Assert.StartsWith($"G38.3 Z-{move} ", l));
+        Assert.Equal(drops.Count, lifts.Count);
+        Assert.All(lifts, l => Assert.Equal($"G0 Z{move}", l));
+    }
+
+    [Theory]
+    [MemberData(nameof(SingleAxisCenterRoutines))]
+    public void CenterRoutine_SingleAxis_ProbesAndZeroesOnlyThatAxis(string label, string axis, List<string> routine)
+    {
+        var other = axis == "X" ? "Y" : "X";
+        Assert.Contains(routine, l => l.StartsWith($"#<{axis}1> ="));
+        Assert.Contains(routine, l => l.StartsWith($"#<{axis}2> ="));
+        Assert.DoesNotContain(routine, l => l.Contains($"#<{other}1>") || l.Contains($"#<{other}2>"));
+        Assert.DoesNotContain(routine, l => l.StartsWith("G38") && l.Contains(other));
+        Assert.Equal($"G10 L20 {axis}0", Assert.Single(routine, l => l.StartsWith("G10 L20")));
+    }
+
     [Theory]
     [MemberData(nameof(CenterRoutines))]
     public void CenterRoutine_DoesNotEmitFluidNcIncompatibleSyntax(string label, List<string> routine)
