@@ -265,6 +265,16 @@
                   </div>
 
                   <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
+                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
+                    <div
+                      v-if="currentToolDiameter !== null"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === CURRENT_TOOL }"
+                      @click="selectStandardBlockDiameter(CURRENT_TOOL)"
+                    >
+                      <span class="custom-dropdown__item-spacer"></span>
+                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
+                    </div>
                     <!-- Custom diameters (can be removed) -->
                     <div
                       v-for="diameter in standardBlockBitDiameters"
@@ -411,6 +421,16 @@
                   </div>
 
                   <div v-if="dropdownOpen" class="custom-dropdown__menu">
+                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
+                    <div
+                      v-if="currentToolDiameter !== null"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === CURRENT_TOOL }"
+                      @click="selectDiameter(CURRENT_TOOL)"
+                    >
+                      <span class="custom-dropdown__item-spacer"></span>
+                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
+                    </div>
                     <!-- Auto and Tip options (cannot be removed) -->
                     <div
                       class="custom-dropdown__item"
@@ -832,6 +852,50 @@ const selectedStandardBlockBitDiameter = ref<string>('6.35');
 const standardBlockBitDiameters = ref<number[]>([3.175, 5, 6.35]);
 const newStandardBlockDiameter = ref<number | null>(null);
 const standardBlockDropdownOpen = ref(false);
+
+// "Current Tool": the diameter of the tool in the spindle, from the Tool
+// Library. Offered (and picked by default) only when a tool changer tracks the
+// tool and its library entry (the 3D probe included) has a diameter. Never saved as the choice: the
+// saved diameter is what to fall back to when there is no such tool.
+const CURRENT_TOOL = 'Current';
+const toolChangerSource = ref('');
+const activeTools = ref<any[]>([]);
+const savedBitDiameter = ref<string>('Auto');
+const savedStandardBlockBitDiameter = ref<string>('6.35');
+const currentToolDiameter = computed<number | null>(() => {
+  const n = Number(appStore.status.tool) || 0;
+  if (!toolChangerSource.value.trim() || n <= 0) return null;
+  const tool = activeTools.value.find((tl: any) => tl.toolId === n);
+  return tool && tool.diameter > 0 ? tool.diameter : null;
+});
+const currentToolLabel = computed(() =>
+  currentToolDiameter.value === null ? '' : `Current Tool T${Number(appStore.status.tool) || 0} (${formatDiameter(currentToolDiameter.value)})`);
+const useCurrentToolDiameter = () => {
+  if (currentToolDiameter.value === null) return;
+  selectedBitDiameter.value = CURRENT_TOOL;
+  selectedStandardBlockBitDiameter.value = CURRENT_TOOL;
+};
+watch(currentToolDiameter, (diameter, previous) => {
+  if (diameter !== null) {
+    if (previous === null) useCurrentToolDiameter();
+    return;
+  }
+  if (selectedBitDiameter.value === CURRENT_TOOL) selectedBitDiameter.value = savedBitDiameter.value;
+  if (selectedStandardBlockBitDiameter.value === CURRENT_TOOL) selectedStandardBlockBitDiameter.value = savedStandardBlockBitDiameter.value;
+});
+const resolveBitDiameter = (value: string) =>
+  value === CURRENT_TOOL && currentToolDiameter.value !== null ? String(currentToolDiameter.value) : value;
+let offToolsUpdated: (() => void) | undefined;
+onMounted(async () => {
+  try {
+    const res = await fetch(`${api.baseUrl}/api/tools/active`);
+    if (res.ok) activeTools.value = await res.json();
+  } catch { /* no Current Tool option */ }
+  offToolsUpdated = api.on('tools-updated', (tools: any) => {
+    if (Array.isArray(tools)) activeTools.value = tools;
+  });
+});
+onBeforeUnmount(() => offToolsUpdated?.());
 
 // Validation errors
 const errors = ref({
@@ -1304,6 +1368,8 @@ watch(() => probeZFirst.value, async (value) => {
 });
 
 watch(() => selectedBitDiameter.value, async (value) => {
+  if (value === CURRENT_TOOL) return;
+  savedBitDiameter.value = value;
   if (!isInitialLoad) {
     try {
       await updateSettings({ probe: { selectedBitDiameter: value } });
@@ -1314,6 +1380,8 @@ watch(() => selectedBitDiameter.value, async (value) => {
 });
 
 watch(() => selectedStandardBlockBitDiameter.value, async (value) => {
+  if (value === CURRENT_TOOL) return;
+  savedStandardBlockBitDiameter.value = value;
   if (!isInitialLoad) {
     try {
       await updateSettings({ probe: { 'standard-block': { selectedBitDiameter: value } } });
@@ -1365,6 +1433,7 @@ watch(() => props.show, async (isShown) => {
     try {
       const settings = await api.getSettings();
       if (settings) {
+        toolChangerSource.value = typeof settings.tool?.source === 'string' ? settings.tool.source : '';
         if (settings.probe?.type) {
           probeType.value = settings.probe.type;
         }
@@ -1459,12 +1528,14 @@ watch(() => props.show, async (isShown) => {
         }
         if (settings.probe?.selectedBitDiameter) {
           selectedBitDiameter.value = settings.probe.selectedBitDiameter;
+          savedBitDiameter.value = settings.probe.selectedBitDiameter;
         }
         if (Array.isArray(settings.probe?.bitDiameters)) {
           customBitDiameters.value = settings.probe.bitDiameters;
         }
         if (settings.probe?.['standard-block']?.selectedBitDiameter) {
           selectedStandardBlockBitDiameter.value = settings.probe['standard-block'].selectedBitDiameter;
+          savedStandardBlockBitDiameter.value = settings.probe['standard-block'].selectedBitDiameter;
         }
         if (Array.isArray(settings.probe?.['standard-block']?.bitDiameters)) {
           standardBlockBitDiameters.value = settings.probe['standard-block'].bitDiameters;
@@ -1473,6 +1544,8 @@ watch(() => props.show, async (isShown) => {
     } catch (error) {
       console.error('[ProbeDialog] Failed to reload settings', JSON.stringify({ error: error.message }));
     }
+
+    useCurrentToolDiameter();
 
     // Settings are now loaded, allow visualizer to render
     settingsLoaded.value = true;
@@ -1553,6 +1626,9 @@ const selectDiameter = (value: string) => {
 };
 
 const getDisplayValue = () => {
+  if (selectedBitDiameter.value === CURRENT_TOOL) {
+    return currentToolLabel.value;
+  }
   if (selectedBitDiameter.value === 'Auto' || selectedBitDiameter.value === 'Tip') {
     return selectedBitDiameter.value;
   }
@@ -1612,13 +1688,14 @@ const removeCustomDiameter = async (diameter: number) => {
     if (selectedBitDiameter.value === diameter.toString()) {
       selectedBitDiameter.value = 'Auto';
     }
+    if (savedBitDiameter.value === diameter.toString()) savedBitDiameter.value = 'Auto';
 
     if (!isInitialLoad) {
       try {
         await updateSettings({
           probe: {
             bitDiameters: customBitDiameters.value,
-            selectedBitDiameter: selectedBitDiameter.value
+            selectedBitDiameter: savedBitDiameter.value
           }
         });
       } catch (error) {
@@ -1641,6 +1718,9 @@ const selectStandardBlockDiameter = (value: string) => {
 };
 
 const getStandardBlockDisplayValue = () => {
+  if (selectedStandardBlockBitDiameter.value === CURRENT_TOOL) {
+    return currentToolLabel.value;
+  }
   return formatDiameter(Number(selectedStandardBlockBitDiameter.value));
 };
 
@@ -1676,6 +1756,11 @@ const removeStandardBlockDiameter = async (diameter: number) => {
         ? standardBlockBitDiameters.value[0].toString()
         : '6.35';
     }
+    if (savedStandardBlockBitDiameter.value === diameter.toString()) {
+      savedStandardBlockBitDiameter.value = standardBlockBitDiameters.value.length > 0
+        ? standardBlockBitDiameters.value[0].toString()
+        : '6.35';
+    }
 
     if (!isInitialLoad) {
       try {
@@ -1683,7 +1768,7 @@ const removeStandardBlockDiameter = async (diameter: number) => {
           probe: {
             'standard-block': {
               bitDiameters: standardBlockBitDiameters.value,
-              selectedBitDiameter: selectedStandardBlockBitDiameter.value
+              selectedBitDiameter: savedStandardBlockBitDiameter.value
             }
           }
         });
@@ -1723,7 +1808,7 @@ const handleStartProbe = async () => {
       toolDiameter: ballPointDiameter.value || 6,
       zPlunge: zPlunge.value,
       zOffset: zOffset.value,
-      selectedBitDiameter: selectedBitDiameter.value,
+      selectedBitDiameter: resolveBitDiameter(selectedBitDiameter.value),
       zThickness: zThickness.value,
       xyThickness: xyThickness.value,
       zProbeDistance: zProbeDistance.value,
@@ -1732,7 +1817,7 @@ const handleStartProbe = async () => {
       secondProbeDelay: secondProbeDelay.value,
       firstProbeFeedrate: firstProbeFeedrate.value,
       secondProbeFeedrate: secondProbeFeedrate.value,
-      standardBlockBitDiameter: selectedStandardBlockBitDiameter.value
+      standardBlockBitDiameter: resolveBitDiameter(selectedStandardBlockBitDiameter.value)
     };
 
     console.log('[Probe] Starting probe operation:', options);

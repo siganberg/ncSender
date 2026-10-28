@@ -138,4 +138,14 @@ public class PendantProbeOptionsTests
         Assert.Equal(-(40 + 3.175 + 5), double.Parse(outward["G0 X".Length..], CultureInfo.InvariantCulture), 3);
         Assert.Contains(commands, l => l == "G10 L20 Z20");
     }
+
+    [Fact]
+    public void CurrentToolDiameter_OverridesTheSavedBit()
+    {
+        var block = PendantProbeOptions.Build("standard-block", "XYZ", "BottomLeft", null, Reader(SavedByDialog), 8);
+        Assert.Equal(8, Num(block, "standardBlockBitDiameter"));
+
+        var autoZero = PendantProbeOptions.Build("autozero-touch", "XYZ", "BottomLeft", null, Reader(SavedByDialog), 6.35);
+        Assert.Equal("6.35", autoZero["selectedBitDiameter"].GetString());
+    }
 }

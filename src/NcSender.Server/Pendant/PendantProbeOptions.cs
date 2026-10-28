@@ -8,7 +8,7 @@ internal static class PendantProbeOptions
 {
     public static Dictionary<string, JsonElement> Build(
         string probeType, string axis, string? placement, double? centerDiameter,
-        Func<string, JsonNode?> read)
+        Func<string, JsonNode?> read, double? currentToolDiameter = null)
     {
         var isSide = axis is "X" or "Y";
 
@@ -44,9 +44,13 @@ internal static class PendantProbeOptions
             ["secondProbeDelay"]    = Num(Number("probe.tool-length-setter.secondProbeDelay", 0.5)),
             ["firstProbeFeedrate"]  = Num(Number("probe.tool-length-setter.firstProbeFeedrate", 200)),
             ["secondProbeFeedrate"] = Num(Number("probe.tool-length-setter.secondProbeFeedrate", 75)),
-            ["standardBlockBitDiameter"] = Num(Number("probe.standard-block.selectedBitDiameter", 6.35)),
+            ["standardBlockBitDiameter"] = Num(currentToolDiameter
+                ?? Number("probe.standard-block.selectedBitDiameter", 6.35)),
 
-            ["selectedBitDiameter"] = Str("Auto"),
+            // The pendant has no bit picker. Like the dialog's "Current Tool" default,
+            // the loaded tool's library diameter wins; otherwise AutoZero runs on "Auto".
+            ["selectedBitDiameter"] = Str(currentToolDiameter is { } dia
+                ? dia.ToString(CultureInfo.InvariantCulture) : "Auto"),
         };
     }
 

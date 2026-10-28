@@ -3440,17 +3440,30 @@ public class PendantManager : IPendantManager
                     placement = part;
             }
 
+            var toolDiameter = await CurrentToolDiameterAsync();
             var options = PendantProbeOptions.Build(probeType, axis, placement, centerDiameter,
-                key => _settingsManager.GetSetting(key));
+                key => _settingsManager.GetSetting(key), toolDiameter);
 
-            _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement} diameter={Diameter}",
-                probeType, axis, placement ?? "-", centerDiameter?.ToString(CultureInfo.InvariantCulture) ?? "-");
+            _logger.LogInformation("Pendant probe: type={Type} axis={Axis} placement={Placement} diameter={Diameter} bit={Bit}",
+                probeType, axis, placement ?? "-", centerDiameter?.ToString(CultureInfo.InvariantCulture) ?? "-",
+                toolDiameter?.ToString(CultureInfo.InvariantCulture) ?? "saved");
             await _probeService.StartAsync(options, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Pendant probe request failed: {Payload}", payload);
         }
+    }
+
+    // The probe dialog's "Current Tool" bit: the loaded tool's library diameter,
+    // only with a tool changer, a tool loaded, and a diameter in the library.
+    private async Task<double?> CurrentToolDiameterAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_settingsManager.GetSetting<string>("tool.source", null))) return null;
+        var n = _serverContext.State.MachineState.Tool;
+        if (n <= 0) return null;
+        var tool = (await _toolService.GetAllAsync()).FirstOrDefault(t => t.ToolId == n);
+        return tool is { Diameter: > 0 } ? tool.Diameter : null;
     }
 
     private int ReadAtcSlotCount()
