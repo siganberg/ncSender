@@ -27,7 +27,7 @@ public class CncControllerGrblTests : IDisposable
         _controller = new CncController(
             NullLogger<CncController>.Instance,
             new Mock<ISettingsManager>().Object,
-            [new GrblProtocol { ToolFile = null }, new GrblHalProtocol(), new FluidNcProtocol()],
+            [new GrblProtocol { ToolFile = null }, new GrblHalProtocol(), new FluidNcProtocol { ToolFile = null }],
             new Mock<IDongleDeviceService>().Object);
         SetPrivate(_controller, "_transport", _transport);
         SetPrivate(_controller, "IsConnected", true);

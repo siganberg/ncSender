@@ -18,7 +18,7 @@ public class ProtocolCapabilityTests
     [Fact]
     public void FluidNc_takes_override_control_through_its_translator()
     {
-        IProtocolHandler p = new FluidNcProtocol();
+        IProtocolHandler p = new FluidNcProtocol { ToolFile = null };
         Assert.True(p.SupportsOverrideControl);
         Assert.IsType<FluidNcTranslator>(p.CreateTranslator(() => new MachineState()));
     }
@@ -40,7 +40,7 @@ public class ProtocolCapabilityTests
     [InlineData("G0 X1 ; to T2", false)]
     [InlineData("G1 X5 F500", false)]
     public void FluidNc_reads_the_parser_state_back_after_tool_and_workspace_changes(string line, bool refresh) =>
-        Assert.Equal(refresh, ((IProtocolHandler)new FluidNcProtocol()).NeedsGCodeStateRefresh(line));
+        Assert.Equal(refresh, ((IProtocolHandler)new FluidNcProtocol { ToolFile = null }).NeedsGCodeStateRefresh(line));
 
     // grblHAL is what everything is written for: lines go out as they are.
     public static IEnumerable<object[]> Existing() =>
@@ -72,7 +72,7 @@ public class ProtocolCapabilityTests
     [Fact]
     public void Only_FluidNc_has_a_config_file()
     {
-        Assert.True(((IProtocolHandler)new FluidNcProtocol()).SupportsConfigFile);
+        Assert.True(((IProtocolHandler)new FluidNcProtocol { ToolFile = null }).SupportsConfigFile);
         Assert.False(((IProtocolHandler)new GrblProtocol { ToolFile = null }).SupportsConfigFile);
         Assert.False(((IProtocolHandler)new GrblHalProtocol()).SupportsConfigFile);
     }

@@ -289,6 +289,79 @@ public class FluidNcTranslatorTests
         Assert.Equal("G43.1 Z3", _t.Translate("G0 X1").SyncCommand);
     }
 
+    // grblHAL keeps the current tool through a reset; FluidNC goes to T0.
+    [Fact]
+    public void Reset_PutsTheToolBack_AndReadsItBack()
+    {
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T2 F0 S0]");
+        _t.Reset();
+        Assert.Equal("$G", _t.Translate("G0 X1").SyncCommand);
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal("M61 Q2", _t.Translate("G0 X1").SyncCommand);
+        Assert.Equal("$G", _t.Translate("G0 X1").SyncCommand);
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T2 F0 S0]");
+        Assert.Equal("$#", _t.Translate("G0 X1").SyncCommand);
+        _t.ObserveData("[TLO:0.000,0.000,0.000]");
+        Assert.Equal("G0 X1", Written(_t.Translate("G0 X1")));
+    }
+
+    [Fact]
+    public void Reset_KeepsTheToolFluidNcStillHas()
+    {
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T2 F0 S0]");
+        _t.Reset();
+        _t.Translate("G0 X1");
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T2 F0 S0]");
+        Assert.Equal("$#", _t.Translate("G0 X1").SyncCommand);
+    }
+
+    [Fact]
+    public void Reset_WithNoToolLoaded_PutsNoToolBack()
+    {
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        _t.Reset();
+        _t.Translate("G0 X1");
+        _t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+        Assert.Equal("$#", _t.Translate("G0 X1").SyncCommand);
+    }
+
+    // A restart of ncSender (its connect reset): the tool comes from the file.
+    [Fact]
+    public void Connect_PutsTheKeptToolBack()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"fluidnc-tool-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var before = new FluidNcTranslator(file);
+            before.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T3 F0 S0]");
+
+            var after = new FluidNcTranslator(file);
+            Assert.Equal("$G", after.Translate("$G").SyncCommand);
+            after.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+            Assert.Equal("M61 Q3", after.Translate("$G").SyncCommand);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public void ToolUnloaded_IsKeptUnloaded()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"fluidnc-tool-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var t = new FluidNcTranslator(file);
+            t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T3 F0 S0]");
+            t.Translate("G4 P0");
+            t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T3 F0 S0]");
+            t.Translate("G4 P0");
+            t.ObserveData("[TLO:0.000,0.000,0.000]");
+            t.Translate("M61 Q0");
+            t.ObserveData("[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]");
+            Assert.Equal("0", File.ReadAllText(file).Trim());
+        }
+        finally { File.Delete(file); }
+    }
+
     // In inches when FluidNC is in G20 (it lists the offset in mm).
     [Fact]
     public void Reset_PutsTheOffsetBackInTheCurrentUnits()

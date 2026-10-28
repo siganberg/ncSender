@@ -40,7 +40,7 @@ reads 0), o-word `IF`/`ELSE`/`ENDIF`, `G43.1`/`G49`, `G10 L2/L20`, `G38.x`,
 | `Ln:` after a reset | Hidden until a new line runs (FluidNC keeps the last run's number). |
 | `WCO:` | FluidNC's own, sent every few reports (core keeps the last one). |
 
-## Tool length offset across a reset
+## Tool and tool length offset across a reset
 
 FluidNC's `[TLO:]` is the offset last set with `G43.1` (or cleared with
 `G49`), and a reset doesn't change it. FluidNC itself stops applying it at a
@@ -53,6 +53,10 @@ line, and sends `G43.1 Z<offset>` if `[TLO:]` isn't 0, which is what grblHAL
 keeps through a reset. Until FluidNC's WCO has it again, the reported WCO
 carries it, so the DRO doesn't jump. Not into an alarm (it waits for it to
 clear) and not on coolant/aux lines (they skip the queue).
+
+A reset also sets FluidNC's tool to T0 (grblHAL keeps it). The translator
+keeps the tool in `fluidnc-tool.txt` (user data folder) and sends
+`M61 Q<tool>` after a reset that left T0, then `$G` so ncSender reads it.
 
 ## Handler (`FluidNcProtocol`)
 

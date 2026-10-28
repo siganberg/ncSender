@@ -16,9 +16,10 @@ namespace NcSender.Server.Protocols.FluidNc;
 /// the VFD's reading as a message instead), (MSG, ...) comments echoed as
 /// [MSG:INFO: MSG, ...], alarms listed as "N: text", and the line number of
 /// the run before a reset kept until a new line runs.</item>
-/// <item>A reset stops FluidNC applying the tool length offset (grblHAL
-/// keeps it), though its $# still lists it. It goes back before the next
-/// line, so the measured tool stays measured, as on grblHAL.</item>
+/// <item>A reset stops FluidNC applying the tool length offset and sets the
+/// tool back to T0 (grblHAL keeps both), though its $# still lists the
+/// offset. Both go back before the next line, so the tool in the spindle
+/// stays the measured tool it was, as on grblHAL.</item>
 /// </list>
 /// </summary>
 public sealed partial class FluidNcTranslator : IGcodeTranslator
@@ -31,6 +32,45 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
     private const double Epsilon = 0.0005;
 
     private readonly object _lock = new();
+
+    // The tool in the spindle, kept here through resets and restarts: FluidNC
+    // forgets it at a reset, the spindle doesn't (null: not kept, for tests).
+    private readonly string? _toolFile;
+    private int _tool;
+    private int _toolBeforeReset;
+    private int? _reportedTool;
+    private bool _toolReadBack;
+
+    public FluidNcTranslator(string? toolFile = null)
+    {
+        _toolFile = toolFile;
+        _tool = _toolBeforeReset = LoadTool() ?? 0;
+    }
+
+    private int? LoadTool()
+    {
+        try
+        {
+            return _toolFile is not null && File.Exists(_toolFile)
+                && int.TryParse(File.ReadAllText(_toolFile).Trim(), out var t) && t >= 0 ? t : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    private void SetTool(int tool)
+    {
+        if (tool == _tool) return;
+        _tool = tool;
+        if (_toolFile is null) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_toolFile)!);
+            File.WriteAllText(_toolFile, tool.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 
     private bool _alarm;
 
@@ -125,8 +165,9 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
         return Pass(rewritten);
     }
 
-    // After a reset, before the next line: the units ($G), the offset ($#),
-    // then G43.1 with it. Not into an alarm (FluidNC rejects G-code there): it
+    // After a reset, before the next line: the units and tool ($G), the tool
+    // (M61, then $G again so ncSender reads it), the offset ($#), then G43.1
+    // with it. Not into an alarm (FluidNC rejects G-code there): it
     // goes back on the first line after it clears. Not on a coolant or aux
     // line either: those skip the queue, which is what runs the sync.
     private TranslationResult? RestoreTloFirst(string line)
@@ -138,12 +179,25 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
             _parserAsked = true;
             return TranslationResult.Sync("$G");
         }
+        if (_toolBeforeReset > 0 && _reportedTool == 0)
+        {
+            var tool = _toolBeforeReset;
+            _toolBeforeReset = 0;
+            _toolReadBack = true;
+            return TranslationResult.Sync($"M61 Q{tool}");
+        }
+        if (_toolReadBack)
+        {
+            _toolReadBack = false;
+            return TranslationResult.Sync("$G");
+        }
         if (_tloReportsAtReset == _tloReports)
         {
             _tloReportsAtReset = null;   // asked once; if no [TLO:] came, nothing to put back
             return TranslationResult.Sync("$#");
         }
         _afterReset = false;
+        _toolBeforeReset = 0;
         _tloReportsAtReset = null;
         if (Math.Abs(_tloZ) <= Epsilon) return null;
         _restoring = true;
@@ -219,6 +273,12 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
                 {
                     if (mode == "G20") _metric = false;
                     else if (mode == "G21") _metric = true;
+                    else if (mode.Length > 1 && mode[0] == 'T' && int.TryParse(mode[1..], out var tool))
+                    {
+                        _reportedTool = tool;
+                        // Right after a reset its T0 is what the reset did, not a tool change.
+                        if (!_afterReset || _toolBeforeReset == 0) SetTool(tool);
+                    }
                 }
             }
         }
@@ -256,6 +316,9 @@ public sealed partial class FluidNcTranslator : IGcodeTranslator
                 _wcoZWithTlo = _wcoZ;
             }
             _afterReset = true;
+            _toolBeforeReset = _tool;
+            _reportedTool = null;
+            _toolReadBack = false;
             _tloReportsAtReset = _tloReports;
             _offsetApplied = false;
             _restoring = false;

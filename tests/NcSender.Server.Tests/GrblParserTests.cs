@@ -15,7 +15,7 @@ public class GrblParserTests
     {
         var settings = new Mock<ISettingsManager>();
         settings.Setup(s => s.GetSetting<int>(It.IsAny<string>(), It.IsAny<int>())).Returns(100);
-        IProtocolHandler[] handlers = [new GrblHalProtocol(), new FluidNcProtocol()];
+        IProtocolHandler[] handlers = [new GrblHalProtocol(), new FluidNcProtocol { ToolFile = null }];
         var dongle = new Mock<IDongleDeviceService>();
         return new CncController(NullLogger<CncController>.Instance, settings.Object, handlers, dongle.Object);
     }
@@ -107,7 +107,7 @@ public class GrblParserTests
     [Fact]
     public void FluidNC_NormalizePinState_ProbePassthrough()
     {
-        var protocol = new FluidNcProtocol();
+        var protocol = new FluidNcProtocol { ToolFile = null };
         // FluidNC reports P and T natively — no normalization
         Assert.Equal("XP", protocol.NormalizePinState("XP", -1));
     }
@@ -115,7 +115,7 @@ public class GrblParserTests
     [Fact]
     public void FluidNC_NormalizePinState_TLSPassthrough()
     {
-        var protocol = new FluidNcProtocol();
+        var protocol = new FluidNcProtocol { ToolFile = null };
         Assert.Equal("XT", protocol.NormalizePinState("XT", -1));
     }
 

@@ -23,7 +23,7 @@ public class ControllerNoiseTests
     {
         var settings = new Mock<ISettingsManager>();
         settings.Setup(s => s.GetSetting<int>(It.IsAny<string>(), It.IsAny<int>())).Returns(100);
-        IProtocolHandler[] handlers = [new GrblHalProtocol(), new FluidNcProtocol()];
+        IProtocolHandler[] handlers = [new GrblHalProtocol(), new FluidNcProtocol { ToolFile = null }];
         return new CncController(NullLogger<CncController>.Instance, settings.Object, handlers,
             new Mock<IDongleDeviceService>().Object);
     }

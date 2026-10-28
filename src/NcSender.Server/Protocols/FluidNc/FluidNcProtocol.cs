@@ -26,7 +26,11 @@ public partial class FluidNcProtocol : GrblHalProtocol
     public override bool SupportsSettingEnumeration => false;
     public override bool SupportsConfigFile => true;
 
-    public override IGcodeTranslator CreateTranslator(Func<MachineState> state) => new FluidNcTranslator();
+    // grblHAL keeps the current tool through a reset; FluidNC sets it to T0, so
+    // the translator keeps it in this file (null: not kept, for tests).
+    public string? ToolFile { get; init; } = Path.Combine(Infrastructure.PathUtils.GetUserDataDir(), "fluidnc-tool.txt");
+
+    public override IGcodeTranslator CreateTranslator(Func<MachineState> state) => new FluidNcTranslator(ToolFile);
 
     public override bool MatchesGreeting(string line)
     {

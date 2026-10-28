@@ -12,7 +12,7 @@ namespace NcSender.Server.Tests;
 // grblHAL and FluidNC, with all the boot-time noise rejected.
 public class ProtocolGreetingTests
 {
-    private readonly FluidNcProtocol _fluidnc = new();
+    private readonly FluidNcProtocol _fluidnc = new() { ToolFile = null };
     private readonly GrblHalProtocol _grblhal = new();
 
     // === FluidNC: the banner is NOT a greeting ===
