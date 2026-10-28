@@ -13,11 +13,11 @@ public static class ConfigEndpoints
         {
             try
             {
-                var content = await svc.GetConfigAsync();
+                var (content, filename) = await svc.GetConfigWithFilenameAsync();
                 if (content is null)
-                    return Results.BadRequest(new ApiError("Failed to retrieve config from controller"));
+                    return Results.BadRequest(new ApiError($"Failed to retrieve {filename} from controller"));
 
-                return Results.Ok(new ConfigResponse(content, svc.CanSave));
+                return Results.Ok(new ConfigResponse(content, svc.CanSave, filename));
             }
             catch (Exception ex)
             {

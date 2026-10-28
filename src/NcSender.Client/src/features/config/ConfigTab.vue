@@ -3,6 +3,7 @@
     <div class="config-header">
       <div class="header-left">
         <h3>Controller Config</h3>
+        <span v-if="configFilename" class="filename-badge">{{ configFilename }}</span>
         <span v-if="hasChanges" class="unsaved-badge">Unsaved changes</span>
       </div>
       <div class="header-right">
@@ -79,6 +80,7 @@ registerNcSenderThemes();
 const store = useAppStore();
 
 const configContent = ref<string | null>(null);
+const configFilename = ref<string | null>(null);
 const editedContent = ref('');
 const canSave = ref(false);
 const loading = ref(false);
@@ -125,6 +127,7 @@ async function loadConfig() {
   try {
     const resp = await api.getConfig();
     configContent.value = resp.content;
+    configFilename.value = resp.filename || null;
     editedContent.value = resp.content;
     canSave.value = resp.canSave;
   } catch (e: any) {
@@ -176,6 +179,16 @@ async function saveConfig() {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
+}
+
+.filename-badge {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: monospace;
 }
 
 .unsaved-badge {
