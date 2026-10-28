@@ -89,6 +89,7 @@ public class JobManager : IJobManager
         // Initialize job state
         job.Status = "running";
         job.CurrentLine = startLine > 1 ? startLine : 0;
+        job.SentLine = 0;
         job.ProgressPercent = 0;
         job.RuntimeSec = 0;
         job.RemainingSec = null;

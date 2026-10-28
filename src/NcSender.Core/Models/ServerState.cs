@@ -14,6 +14,10 @@ public class JobInfo
 {
     public string Filename { get; set; } = "";
     public int CurrentLine { get; set; }
+    // Last file line sent this run. A controller can keep reporting the line
+    // number of an earlier run after a reset, so a reported Ln above it is stale.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int SentLine { get; set; }
     public int TotalLines { get; set; }
     public string? Status { get; set; } // running, paused, completed
     public DateTime? JobStartTime { get; set; }

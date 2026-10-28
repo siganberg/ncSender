@@ -141,6 +141,17 @@ public class CncEventBridge
             _ = _broadcaster.Broadcast("server-state-updated", delta.Value);
     }
 
+    // Ln from the status report, ignored when it is above the lines sent this
+    // run: after a stop and a new Start the controller can still report the
+    // last line of the previous run, which read as starting mid-file (#82).
+    internal static void TakeReportedLine(JobInfo job, int ln)
+    {
+        if (ln <= 0 || ln > job.SentLine) return;
+        job.CurrentLine = ln;
+        if (job.TotalLines > 0)
+            job.ProgressPercent = Math.Round((double)ln / job.TotalLines * 100, 2);
+    }
+
     private void OnStatusReport(MachineState status)
     {
         var state = _context.State;
@@ -188,13 +199,8 @@ public class CncEventBridge
         // Update job currentLine from actual executing line (Ln field from grblHAL)
         // This matches V1's getExecutingLine() which reads Ln on every state broadcast
         var job = state.JobLoaded;
-        if (job is not null && job.Status is "running" && status.Ln > 0)
-        {
-            job.CurrentLine = status.Ln;
-
-            if (job.TotalLines > 0)
-                job.ProgressPercent = Math.Round((double)status.Ln / job.TotalLines * 100, 2);
-        }
+        if (job is not null && job.Status is "running")
+            TakeReportedLine(job, status.Ln);
 
         if (status.Axes is not null)
         {

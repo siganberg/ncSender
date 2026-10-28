@@ -244,6 +244,7 @@ internal class GcodeJobProcessor
 
     private void UpdateProgress(JobInfo job, int sentLine, int totalLines)
     {
+        job.SentLine = sentLine;
         // Use GRBL's Ln field (actual executing line) when available,
         // falling back to sent line number (matches V1 getExecutingLine behavior)
         var machineLn = _context.State.MachineState.Ln;
