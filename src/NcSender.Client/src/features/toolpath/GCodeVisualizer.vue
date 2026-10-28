@@ -52,7 +52,12 @@
               v-for="preset in presets"
               :key="preset.id"
               :class="['view-button', { active: view === preset.id }]"
-              @click="handleViewButtonClick(preset.id)"
+              @click="onViewButtonClick(preset.id)"
+              @pointerdown="startViewButtonHold(preset.id, $event)"
+              @pointerup="cancelViewButtonHold"
+              @pointerleave="cancelViewButtonHold"
+              @pointercancel="cancelViewButtonHold"
+              @contextmenu.prevent
             >
               {{ preset.label }}
             </button>
@@ -2009,8 +2014,8 @@ const initThreeJS = () => {
   );
   // Position camera to match the initial view prop (avoids orientation flash)
   if (props.view === 'top') {
-    camera.position.set(0, -100 * Math.sin(0.05), 100 * Math.cos(0.05));
-    camera.up.set(0, 0, 1);
+    camera.position.set(0, 0, 100);
+    camera.up.set(0, 1, 0);
   } else if (props.view === 'front') {
     camera.position.set(0, -100, 0);
     camera.up.set(0, 0, 1);
@@ -2434,6 +2439,7 @@ const onMouseMove = (event: MouseEvent) => {
   }
 
   if (!activeCamera) return;
+  if (deltaX !== 0 || deltaY !== 0) markCameraMoved();
 
   if (isRotating) {
     const rotationSpeed = 0.005;
@@ -2580,6 +2586,7 @@ const zoomAroundPoint = (activeCamera: THREE.OrthographicCamera,
                          viewport: SplitViewport,
                          clientX: number, clientY: number,
                          zoomFactor: number) => {
+  markCameraMoved();
   const ndc = ndcInViewport(clientX, clientY, viewport);
   const before = ndc
     ? new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(activeCamera)
@@ -3514,7 +3521,9 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
         // Update split view cameras when G-code is loaded
         updateSplitViewCameras();
       } else if (autoFitMode.value) {
+        programLoaded(gcodeBounds);
         fitCameraToBounds(gcodeBounds);
+        restoreCamera(props.view);
       }
     }
 
@@ -3807,6 +3816,134 @@ const getGridBounds = () => {
   return bounds;
 };
 
+// Each screen remembers where Top, Side and 3D were last panned, zoomed and
+// turned to. Holding a view button resets that view to its default framing.
+type CameraView = 'top' | 'front' | 'iso';
+type SavedCamera = { position: number[]; target: number[]; height?: number };
+const CAMERA_MEMORY_KEY = 'gcodeVisualizer.cameras';
+const VIEW_BUTTON_HOLD_MS = 500;
+const isCameraView = (view: string): view is CameraView => view === 'top' || view === 'front' || view === 'iso';
+const isVector = (v: unknown): v is number[] => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+type CameraMemory = Partial<Record<CameraView, SavedCamera>> & { program?: string };
+const loadCameraMemory = (): CameraMemory => {
+  try {
+    return JSON.parse(localStorage.getItem(CAMERA_MEMORY_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+};
+let cameraMemory = loadCameraMemory();
+let cameraMovedView: CameraView | null = null;
+let rememberCameraTimer: number | null = null;
+
+const saveCameraMemory = () => {
+  try {
+    localStorage.setItem(CAMERA_MEMORY_KEY, JSON.stringify(cameraMemory));
+  } catch {
+    // Unavailable storage only loses the memory, never the view
+  }
+};
+
+const rememberCamera = () => {
+  if (rememberCameraTimer !== null) {
+    clearTimeout(rememberCameraTimer);
+    rememberCameraTimer = null;
+  }
+  if (!cameraMovedView || !camera) return;
+  cameraMemory[cameraMovedView] = {
+    position: camera.position.toArray(),
+    target: cameraTarget.toArray(),
+    height: camera.top - camera.bottom,
+  };
+  cameraMovedView = null;
+  saveCameraMemory();
+};
+
+const markCameraMoved = () => {
+  if (!isCameraView(props.view)) return;
+  cameraMovedView = props.view;
+  if (rememberCameraTimer !== null) clearTimeout(rememberCameraTimer);
+  rememberCameraTimer = window.setTimeout(rememberCamera, 400);
+};
+
+// A different program keeps only the 3D angle: the old pan and zoom framed
+// another part. The same program loading again (a restart) keeps everything.
+const programLoaded = (bounds: any) => {
+  const program = [bounds.min, bounds.max].map((v: THREE.Vector3) => v.toArray().map((n) => n.toFixed(2)).join(',')).join(';');
+  if (cameraMemory.program === program) return;
+  rememberCamera();
+  const iso = cameraMemory.iso;
+  cameraMemory = { program };
+  if (iso && isVector(iso.position) && isVector(iso.target)) {
+    cameraMemory.iso = { position: iso.position.map((v, i) => v - iso.target[i]), target: [0, 0, 0] };
+  }
+  saveCameraMemory();
+};
+
+// Applied after the view's default fit, which sets the clipping planes
+const restoreCamera = (view: string) => {
+  if (!camera || !isCameraView(view)) return;
+  const saved = cameraMemory[view];
+  if (!saved || !isVector(saved.position) || !isVector(saved.target)) return;
+  const position = new THREE.Vector3().fromArray(saved.position);
+  const target = new THREE.Vector3().fromArray(saved.target);
+  if (saved.height && saved.height > 0) {
+    const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
+    camera.top = saved.height / 2;
+    camera.bottom = -saved.height / 2;
+    camera.right = saved.height * aspect / 2;
+    camera.left = -saved.height * aspect / 2;
+    camera.updateProjectionMatrix();
+    cameraTarget.copy(target);
+    camera.position.copy(position);
+  } else {
+    const direction = position.sub(target);
+    if (direction.lengthSq() === 0) return;
+    camera.position.copy(cameraTarget).addScaledVector(direction.normalize(), camera.position.distanceTo(cameraTarget));
+  }
+  camera.lookAt(cameraTarget);
+  updatePointerScale();
+  updateAxisLabelsScale();
+  requestRender(true);
+};
+
+let viewButtonHoldTimer: number | null = null;
+let viewButtonHeld = false;
+
+const cancelViewButtonHold = () => {
+  if (viewButtonHoldTimer !== null) {
+    clearTimeout(viewButtonHoldTimer);
+    viewButtonHoldTimer = null;
+  }
+};
+
+const startViewButtonHold = (viewType: 'top' | 'front' | 'iso' | 'split', event: PointerEvent) => {
+  cancelViewButtonHold();
+  viewButtonHeld = false;
+  if (!isCameraView(viewType) || !event.isPrimary || event.button !== 0) return;
+  viewButtonHoldTimer = window.setTimeout(() => {
+    viewButtonHoldTimer = null;
+    viewButtonHeld = true;
+    rememberCamera();
+    delete cameraMemory[viewType];
+    saveCameraMemory();
+    handleViewButtonClick(viewType);
+  }, VIEW_BUTTON_HOLD_MS);
+};
+
+const onViewButtonClick = (viewType: 'top' | 'front' | 'iso' | 'split') => {
+  if (viewButtonHeld) {
+    viewButtonHeld = false;
+    return;
+  }
+  handleViewButtonClick(viewType);
+};
+
+onUnmounted(() => {
+  cancelViewButtonHold();
+  rememberCamera();
+});
+
 const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'split') => {
   if (!bounds || !camera) return;
 
@@ -3896,10 +4033,10 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
     case 'top':
       camera.position.set(
         bounds.center.x,
-        bounds.center.y - distance * Math.sin(0.05),
-        bounds.center.z + distance * Math.cos(0.05),
+        bounds.center.y,
+        bounds.center.z + distance,
       );
-      camera.up.set(0, 0, 1);
+      camera.up.set(0, 1, 0);
       break;
     case 'front':
       camera.position.set(bounds.center.x, bounds.center.y - distance, bounds.center.z);
@@ -3921,6 +4058,8 @@ const fitCameraToBounds = (bounds: any, viewType?: 'top' | 'front' | 'iso' | 'sp
 };
 
 const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split') => {
+  rememberCamera();
+
   // Save view preference to settings
   try {
     await updateSettings({ defaultGcodeView: viewType });
@@ -3956,7 +4095,9 @@ const handleViewButtonClick = async (viewType: 'top' | 'front' | 'iso' | 'split'
     } else {
       fitCameraToBounds(getGridBounds(), viewType);
     }
+    restoreCamera(viewType);
   }
+  requestRender(true);
 };
 
 const handleResize = () => {
@@ -4110,10 +4251,10 @@ const setCameraView = (viewType: 'top' | 'front' | 'iso' | 'split') => {
       // Y points up on screen, X points right on screen
       camera.position.set(
         center.x,
-        center.y - distance * Math.sin(0.05),
-        center.z + distance * Math.cos(0.05),
+        center.y,
+        center.z + distance,
       );
-      camera.up.set(0, 0, 1);
+      camera.up.set(0, 1, 0);
       break;
     case 'front':
       // Front view - looking along Y axis with Z up
@@ -4154,6 +4295,7 @@ const updatePointerOpacity = () => {
 
 // Watch for view changes
 watch(() => props.view, (newView) => {
+  rememberCamera();
   if (newView === 'split') {
     // For split view, create both XY and XZ grids
     rebuildGrid(props.workOffset, 'split');
@@ -4195,6 +4337,7 @@ watch(() => props.view, (newView) => {
     } else {
       fitCameraToBounds(getGridBounds(), newView);
     }
+    restoreCamera(newView);
   }
   // Update pointer opacity
   updatePointerOpacity();
@@ -5628,6 +5771,7 @@ onMounted(async () => {
       } else {
         fitCameraToBounds(getGridBounds(), props.view);
       }
+      restoreCamera(props.view);
     }
 
   }, 100);
@@ -6633,6 +6777,10 @@ h2 {
   color: var(--color-text-secondary);
   font-size: 16px;
   font-weight: 500;
+  /* Holding resets the view: no text selection or touch callout */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .view-button.active {
