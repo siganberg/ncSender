@@ -354,7 +354,8 @@
     >
 
     <!-- Save Error Dialog -->
-    <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small">
+    <!-- Above the tool form overlay (z-index 99999) -->
+    <Dialog v-if="showSaveErrorDialog" @close="showSaveErrorDialog = false" :show-header="false" size="small" :z-index="100000">
       <ConfirmPanel
         title="Error Saving Tool"
         :message="saveErrorMessage"
@@ -954,11 +955,12 @@ const getToolNumberInfo = (num: number) => {
   const assignedTool = tools.value.find(t => t.toolNumber === num && t.id !== editingTool.value?.id);
 
   if (assignedTool) {
-    // If editing, show "Swap with", if adding new, show "Already assigned to"
+    // Editing swaps the two tools' slots; a new tool takes the slot and the
+    // other tool is left without one
     const toolInfo = `#${assignedTool.toolId} - ${assignedTool.name}`;
     return editingTool.value
       ? ` (Swap with: ${toolInfo})`
-      : ` (Already assigned to: ${toolInfo})`;
+      : ` (Replaces: ${toolInfo})`;
   }
 
   return '';
@@ -1149,8 +1151,8 @@ const saveTool = async () => {
         }
       }
     } else {
-      // Add new tool
-      const response = await fetch(`${api.baseUrl}/api/tools`, {
+      // Add new tool; it takes its slot from any tool holding it
+      const response = await fetch(`${api.baseUrl}/api/tools?takeSlot=true`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(toolData)

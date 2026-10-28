@@ -154,14 +154,15 @@ public class ToolService : IToolService
         return tool;
     }
 
-    public async Task<ToolInfo> AddAsync(ToolInfo tool)
+    public async Task<ToolInfo> AddAsync(ToolInfo tool, bool takeSlot = false)
     {
         Validate(tool);
 
         var tools = await LoadAsync();
 
         // Check duplicate toolNumber (null means unassigned, allow multiple)
-        if (tool.ToolNumber.HasValue && tools.Any(t => t.ToolNumber == tool.ToolNumber))
+        var holder = tool.ToolNumber.HasValue ? tools.FirstOrDefault(t => t.ToolNumber == tool.ToolNumber) : null;
+        if (holder is not null && !takeSlot)
             throw new InvalidOperationException($"Tool number {tool.ToolNumber} already exists");
 
         // Check magazine size (the probe slot sits past the magazine)
@@ -172,6 +173,10 @@ public class ToolService : IToolService
 
         if (tool.Id <= 0)
             tool.Id = GenerateId(tools);
+
+        // Taking the slot leaves its holder unassigned, in the same save
+        if (holder is not null)
+            holder.ToolNumber = null;
 
         tools.Add(tool);
         await SaveAsync(tools);

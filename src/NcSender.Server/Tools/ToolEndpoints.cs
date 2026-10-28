@@ -36,11 +36,13 @@ public static class ToolEndpoints
             return tool is not null ? Results.Ok(tool) : Results.NotFound();
         });
 
-        app.MapPost("/api/tools", async (ToolInfo tool, IToolService svc) =>
+        // ?takeSlot=true: a tool already in the slot is unassigned instead of
+        // refusing the add (the Tool Library's Add Tool)
+        app.MapPost("/api/tools", async (ToolInfo tool, bool? takeSlot, IToolService svc) =>
         {
             try
             {
-                var created = await svc.AddAsync(tool);
+                var created = await svc.AddAsync(tool, takeSlot ?? false);
                 return Results.Created($"/api/tools/{created.Id}", created);
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
