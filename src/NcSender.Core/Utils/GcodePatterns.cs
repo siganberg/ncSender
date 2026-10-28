@@ -157,6 +157,9 @@ public static partial class GcodePatterns
     public static bool IsTlsCommand(string line) =>
         line.Trim().Equals("$TLS", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsParkCommand(string line) =>
+        line.Trim().Equals("$NCSENDER_PARK", StringComparison.OrdinalIgnoreCase);
+
     public static FirmwareSettingParseResult ParseFirmwareSetting(string line)
     {
         var match = FirmwareSettingRegex().Match(line.Trim());

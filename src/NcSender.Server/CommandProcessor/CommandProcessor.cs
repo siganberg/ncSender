@@ -80,6 +80,12 @@ public class CommandProcessor : ICommandProcessor
             return HandleClearMsg(processorContext);
         }
 
+        // 4b. $NCSENDER_PARK: the jog panel's Park, from a program or macro
+        if (GcodePatterns.IsParkCommand(command))
+        {
+            return HandlePark(command, processorContext);
+        }
+
         // 5. Check if this is a valid M6 command
         var m6Parse = GcodePatterns.ParseM6Command(command);
         var isValidM6 = m6Parse.Matched && m6Parse.ToolNumber is not null;
@@ -544,6 +550,42 @@ public class CommandProcessor : ICommandProcessor
         {
             ShouldContinue = false,
             SkipReason = "$NCSENDER_CLEAR_MSG handled"
+        };
+    }
+
+    // The parking location is read when the line runs, not when the
+    // program was written, so moving Park later moves where programs end.
+    // Like the Park button: up to Safe Z (never down), then across in X Y.
+    private CommandProcessorResult HandlePark(string command, CommandProcessorContext ctx)
+    {
+        var ms = ctx.MachineState;
+        if (ms.HomingCycle is > 0 && !ms.Homed)
+            return CreateBlockedResult(ctx, command, "home the machine first");
+
+        var loc = _settingsManager.GetSetting<string>("parkingLocation", "") ?? "";
+        var park = ParseMachinePosition(loc);
+        if (park is null)
+            return CreateBlockedResult(ctx, command, "no parking location set; double-tap Park to save one");
+
+        var safeZ = _settingsManager.GetSetting<double>("safeZHeight", -5);
+        var z = safeZ;
+        var mpos = ms.MPos.Split(',');
+        if (mpos.Length >= 3 && double.TryParse(mpos[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var currentZ))
+            z = Math.Max(safeZ, currentZ);
+
+        var lift = string.Format(CultureInfo.InvariantCulture, "G53 G21 G90 G0 Z{0:F3}", z);
+        var across = string.Format(CultureInfo.InvariantCulture, "G53 G21 G90 G0 X{0:F3} Y{1:F3}", park.X, park.Y);
+        _logger.LogInformation("$NCSENDER_PARK: to X{X:F3} Y{Y:F3} at Z{Z:F3}", park.X, park.Y, z);
+
+        return new CommandProcessorResult
+        {
+            ShouldContinue = true,
+            Commands =
+            [
+                new() { Command = "(Park)", DisplayCommand = "(Park)", IsOriginal = false, Meta = ctx.Meta },
+                new() { Command = lift, DisplayCommand = lift, IsOriginal = false, Meta = ctx.Meta },
+                new() { Command = across, DisplayCommand = across, IsOriginal = false, Meta = ctx.Meta }
+            ]
         };
     }
 

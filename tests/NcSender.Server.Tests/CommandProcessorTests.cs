@@ -50,6 +50,71 @@ public class CommandProcessorTests
         Filename = "test.gcode"
     };
 
+    // --- $NCSENDER_PARK ---
+
+    private static (NcSender.Server.CommandProcessor.CommandProcessor Processor, CommandProcessorContext Ctx) ParkSetup(string? location, MachineState ms)
+    {
+        var (processor, _, _, _, settings) = CreateProcessor(ms);
+        settings.Setup(s => s.GetSetting<string>("parkingLocation", It.IsAny<string>())).Returns(location!);
+        settings.Setup(s => s.GetSetting<double>("safeZHeight", It.IsAny<double>())).Returns(-5);
+        return (processor, CreateContext(ms));
+    }
+
+    [Fact]
+    public async Task Park_LiftsToSafeZThenMovesAcross()
+    {
+        var (processor, ctx) = ParkSetup("2.007,2.006,-5.004", new MachineState { MPos = "100,200,-30", Homed = true, HomingCycle = 1 });
+
+        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+
+        Assert.True(result.ShouldContinue);
+        var sent = result.Commands.Select(c => c.Command).Where(c => !c.StartsWith('(')).ToList();
+        Assert.Equal(new[] { "G53 G21 G90 G0 Z-5.000", "G53 G21 G90 G0 X2.007 Y2.006" }, sent);
+        Assert.DoesNotContain(result.Commands, c => c.Command.Contains("NCSENDER_PARK"));
+    }
+
+    [Fact]
+    public async Task Park_NeverMovesDown()
+    {
+        var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "100,200,-1.5", Homed = true, HomingCycle = 1 });
+
+        var result = await processor.ProcessAsync("$ncsender_park", ctx);
+
+        Assert.Contains(result.Commands, c => c.Command == "G53 G21 G90 G0 Z-1.500");
+    }
+
+    [Fact]
+    public async Task Park_WithoutALocation_IsBlocked()
+    {
+        var (processor, ctx) = ParkSetup("", new MachineState { MPos = "0,0,0", Homed = true, HomingCycle = 1 });
+
+        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+
+        Assert.False(result.ShouldContinue);
+        Assert.Contains("parking location", result.SkipReason!);
+    }
+
+    [Fact]
+    public async Task Park_UnhomedWithHomingEnabled_IsBlocked()
+    {
+        var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "0,0,0", Homed = false, HomingCycle = 1 });
+
+        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+
+        Assert.False(result.ShouldContinue);
+        Assert.Contains("home", result.SkipReason!);
+    }
+
+    [Fact]
+    public async Task Park_WithHomingDisabled_StillParks()
+    {
+        var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "0,0,-10", Homed = false, HomingCycle = 0 });
+
+        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+
+        Assert.True(result.ShouldContinue);
+    }
+
     // --- Door Safety ---
 
     [Fact]
