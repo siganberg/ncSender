@@ -165,7 +165,7 @@ public static partial class GcodePatterns
         bare = InlineCommentRegex().Replace(bare, "");
         var semi = bare.IndexOf(';');
         if (semi >= 0) bare = bare[..semi];
-        return bare.Trim().Equals("$NCSENDER_PARK", StringComparison.OrdinalIgnoreCase);
+        return bare.Trim().Equals("$PARK", StringComparison.OrdinalIgnoreCase);
     }
 
     [GeneratedRegex(@"\([^)]*\)")]

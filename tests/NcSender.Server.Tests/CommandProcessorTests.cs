@@ -50,7 +50,7 @@ public class CommandProcessorTests
         Filename = "test.gcode"
     };
 
-    // --- $NCSENDER_PARK ---
+    // --- $PARK ---
 
     private static (NcSender.Server.CommandProcessor.CommandProcessor Processor, CommandProcessorContext Ctx) ParkSetup(string? location, MachineState ms)
     {
@@ -65,12 +65,12 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("2.007,2.006,-5.004", new MachineState { MPos = "100,200,-30", Homed = true, HomingCycle = 1 });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.True(result.ShouldContinue);
         var sent = result.Commands.Select(c => c.Command).Where(c => !c.StartsWith('(')).ToList();
         Assert.Equal(new[] { "G53 G21 G0 Z-5.000", "G53 G21 G0 X2.007 Y2.006" }, sent);
-        Assert.DoesNotContain(result.Commands, c => c.Command.Contains("NCSENDER_PARK"));
+        Assert.DoesNotContain(result.Commands, c => c.Command.Contains("$PARK"));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "100,200,-1.5", Homed = true, HomingCycle = 1 });
 
-        var result = await processor.ProcessAsync("$ncsender_park", ctx);
+        var result = await processor.ProcessAsync("$park", ctx);
 
         Assert.Contains(result.Commands, c => c.Command == "G53 G21 G0 Z-1.500");
     }
@@ -88,7 +88,7 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("", new MachineState { MPos = "0,0,0", Homed = true, HomingCycle = 1 });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.False(result.ShouldContinue);
         Assert.Contains("parking location", result.SkipReason!);
@@ -99,7 +99,7 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "0,0,0", Homed = false, HomingCycle = 1 });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.False(result.ShouldContinue);
         Assert.Contains("home", result.SkipReason!);
@@ -110,15 +110,15 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "0,0,-10", Homed = false, HomingCycle = 0 });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.True(result.ShouldContinue);
     }
 
     [Theory]
-    [InlineData("N120 $NCSENDER_PARK")]
-    [InlineData("$NCSENDER_PARK (end of the job)")]
-    [InlineData("  $NCSENDER_PARK ; park")]
+    [InlineData("N120 $PARK")]
+    [InlineData("$PARK (end of the job)")]
+    [InlineData("  $PARK ; park")]
     public async Task Park_AsAJobSendsIt_NumberedOrCommented(string line)
     {
         var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "100,200,-30", Homed = true, HomingCycle = 1 });
@@ -127,7 +127,7 @@ public class CommandProcessorTests
 
         Assert.True(result.ShouldContinue);
         Assert.Contains(result.Commands, c => c.Command == "G53 G21 G0 X2.000 Y2.000");
-        Assert.DoesNotContain(result.Commands, c => c.Command.Contains("NCSENDER_PARK", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Commands, c => c.Command.Contains("$PARK", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("2,2,-5", new MachineState { MPos = "100,200,-30", Homed = true, HomingCycle = 1, Pn = "D" });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.False(result.ShouldContinue);
         Assert.Empty(result.Commands);
@@ -148,7 +148,7 @@ public class CommandProcessorTests
         var ctx = CreateContext(new MachineState { MPos = "0,0,0", Homed = true, HomingCycle = 1 });
         ctx.Meta = new CommandMeta { SourceId = "job" };
 
-        var result = await processor.ProcessAsync("N50 $NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("N50 $PARK", ctx);
 
         Assert.False(result.ShouldContinue);
         Assert.Contains("parking location", result.Error!);
@@ -159,7 +159,7 @@ public class CommandProcessorTests
     {
         var (processor, ctx) = ParkSetup("", new MachineState { MPos = "0,0,0", Homed = true, HomingCycle = 1 });
 
-        var result = await processor.ProcessAsync("$NCSENDER_PARK", ctx);
+        var result = await processor.ProcessAsync("$PARK", ctx);
 
         Assert.Null(result.Error);
     }

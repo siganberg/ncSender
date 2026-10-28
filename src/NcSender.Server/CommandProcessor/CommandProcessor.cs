@@ -80,7 +80,7 @@ public class CommandProcessor : ICommandProcessor
             return HandleClearMsg(processorContext);
         }
 
-        // 4b. $NCSENDER_PARK: the jog panel's Park, from a program or macro
+        // 4b. $PARK: the jog panel's Park, from a program or macro
         if (GcodePatterns.IsParkCommand(command))
         {
             return await HandleParkAsync(command, processorContext);
@@ -581,7 +581,7 @@ public class CommandProcessor : ICommandProcessor
             string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 Z{0:F3}", z),
             string.Format(CultureInfo.InvariantCulture, "G53 G21 G0 X{0:F3} Y{1:F3}", park.X, park.Y)
         };
-        _logger.LogInformation("$NCSENDER_PARK: to X{X:F3} Y{Y:F3} at Z{Z:F3}", park.X, park.Y, z);
+        _logger.LogInformation("$PARK: to X{X:F3} Y{Y:F3} at Z{Z:F3}", park.X, park.Y, z);
 
         var output = new List<ProcessedCommand>
         {
@@ -610,7 +610,7 @@ public class CommandProcessor : ICommandProcessor
                     Error = IsJob(ctx) ? $"Park: {reason}" : null
                 };
             }
-            // Shown as the moves themselves, not as the $NCSENDER_PARK line.
+            // Shown as the moves themselves, not as the $PARK line.
             foreach (var c in childResult.Commands)
             {
                 if (c.IsOriginal) { c.IsOriginal = false; c.DisplayCommand ??= c.Command; }
@@ -623,11 +623,10 @@ public class CommandProcessor : ICommandProcessor
 
     private static bool IsJob(CommandProcessorContext ctx) => ctx.Meta?.SourceId == "job";
 
-    // Shown in the terminal as "Park ... (BLOCKED - reason)": rows starting
-    // with $NCSENDER_ are hidden there.
+    // Shown in the terminal as "$PARK (BLOCKED - reason)".
     private CommandProcessorResult RefusePark(CommandProcessorContext ctx, string reason)
     {
-        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, "Park ($NCSENDER_PARK)", reason, ctx.Meta?.SourceId);
+        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, "$PARK", reason, ctx.Meta?.SourceId);
         return new CommandProcessorResult
         {
             ShouldContinue = false,
