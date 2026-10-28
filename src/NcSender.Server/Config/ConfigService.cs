@@ -91,7 +91,11 @@ public class ConfigService : IConfigService
         var idx = trimmed.IndexOf(settingKey, StringComparison.OrdinalIgnoreCase);
         if (idx >= 0)
         {
+            // The file is always on the local filesystem; a "/localfs/" prefix
+            // would otherwise end up escaped into the /localfs/ URL.
             var value = trimmed[(idx + settingKey.Length)..].Trim().TrimStart('/');
+            if (value.StartsWith("localfs/", StringComparison.OrdinalIgnoreCase))
+                value = value["localfs/".Length..].TrimStart('/');
             return string.IsNullOrEmpty(value) ? null : value;
         }
 
