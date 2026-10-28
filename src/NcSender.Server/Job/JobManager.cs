@@ -113,11 +113,12 @@ public class JobManager : IJobManager
         var isFromLine = startLine > 1 || resumeSequence is not null;
 
         // Run job on background task
+        var runProcessor = _activeProcessor;
         _activeTask = Task.Run(async () =>
         {
             try
             {
-                var processor = _activeProcessor;
+                var processor = runProcessor;
                 await MeasureToolBeforeJobAsync(processor, startLine, resumeSequence);
 
                 if (!isFromLine)
@@ -135,8 +136,13 @@ public class JobManager : IJobManager
                 // cancelling the in-flight SendCommandAsync. Stop() already set status
                 // to "stopped", so don't overwrite with "error".
                 _logger.LogInformation("Job execution cancelled");
-                _activeProcessor = null;
-                _activeTask = null;
+                // Stop()/ForceReset() clear the processor and do the job-end
+                // bookkeeping themselves. Still ours means something else
+                // cancelled the run (a soft reset from an "abort" prompt), and
+                // nobody has: plugins were never told the job ended, so their
+                // per-job state (the dust boot's retract arm) went stale.
+                if (ReferenceEquals(_activeProcessor, runProcessor))
+                    OnJobCancelled();
             }
             catch (Exception ex)
             {
@@ -374,6 +380,28 @@ public class JobManager : IJobManager
     {
         foreach (var pluginId in _jsEngine.GetLoadedPluginIds())
             _jsEngine.ProcessOnAfterJobEnd(pluginId);
+    }
+
+    private void OnJobCancelled()
+    {
+        var job = _context.State.JobLoaded;
+        if (job is not null && job.Status == "running")
+        {
+            job.Status = "stopped";
+            job.JobEndTime = DateTime.UtcNow;
+            if (job.JobPauseAt.HasValue)
+            {
+                job.JobPausedTotalSec += (DateTime.UtcNow - job.JobPauseAt.Value).TotalSeconds;
+                job.JobPauseAt = null;
+            }
+        }
+
+        _activeProcessor = null;
+        _activeTask = null;
+
+        NotifyPluginsJobEnded();
+        _context.UpdateSenderStatus();
+        _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
     }
 
     private void OnJobCompleted()

@@ -32,6 +32,11 @@ public class PendantManager : IPendantManager
     private Timer? _keepAliveTimer;
     private Action<string>? _otaResponseHandler;
     private bool _otaInProgress;
+    // The pendant's own USB port while it takes a firmware image over it. Only
+    // that port goes quiet: the radio keeps its DRO, which the accessories need
+    // (the Wireless I/O locks its drawbar after 3 s without a frame).
+    private PendantSerialHandler? _otaUsbHandler;
+    private Timer? _otaDroTimer;
     // Held so OtaCleanup can detach the subscription installed in FlashFileAsync.
     // Without this, each OTA attempt leaks a handler on the pendant USB port; on
     // the Nth attempt every $OTA:ACK fires N handlers, calling SendNextChunk N
@@ -58,7 +63,13 @@ public class PendantManager : IPendantManager
         Licensed: false
     );
 
+    // Last "client:battery" report; cleared whenever the pendant (re)connects
+    // or reboots, so a stale level never shows before its first report.
+    private (string State, int? Percent, int? Mv)? _battery;
+
     private const int PingIntervalMs = 1000;
+    private const int MetadataRetryMs = 5000;
+    private long _lastMetadataRequestTicks;
     // Every N keep-alive ticks send a full-frame ($!) DRO instead of a delta ($),
     // so any missed delta on the lossy broadcast path self-corrects. 5s cadence
     // is small enough to keep MPos accurate and large enough to be free airtime.
@@ -183,9 +194,9 @@ public class PendantManager : IPendantManager
         // same stream. Requiring the pendant to be online used to strand the
         // accessories on the 1 s keep-alive cadence and show up as ~500 ms
         // lag on state changes when the pendant was offline.
-        if ((_serialHandler?.IsConnected == true || _dongleDevices.HasWiredDroSubscribers) && !_otaInProgress)
+        if (_serialHandler?.IsConnected == true || _dongleDevices.HasWiredDroSubscribers)
         {
-            _ = SendDroAsync(full: false);
+            _ = SendDroAsync(full: false);   // skips whatever a firmware update is using
         }
     }
 
@@ -229,7 +240,10 @@ public class PendantManager : IPendantManager
             ActiveConnectionType = activeType,
             PendantConnectionType = pendantConnectionType,
             OtaReady = otaReady,
-            DongleConnected = _dongleHandler is { IsConnected: true }
+            DongleConnected = _dongleHandler is { IsConnected: true },
+            BatteryState = usbConnected ? _battery?.State : null,
+            BatteryPercent = usbConnected ? _battery?.Percent : null,
+            BatteryMv = usbConnected ? _battery?.Mv : null
         };
     }
 
@@ -657,9 +671,12 @@ public class PendantManager : IPendantManager
         await firmware.CopyToAsync(ms);
         var data = ms.ToArray();
 
-        // Stop keep-alive and suppress DRO during flash
+        // Stop keep-alive and keep DRO off the flashing port; the radio and
+        // cabled accessories still get a frame every second.
         StopKeepAliveTimer();
+        _otaUsbHandler = handler;
         _otaInProgress = true;
+        _otaDroTimer = new Timer(_ => _ = SendDroAsync(full: false), null, PingIntervalMs, PingIntervalMs);
 
         var tcs = new TaskCompletionSource();
         // Buffer progress from synchronous OTA handler, drain from async context
@@ -951,6 +968,9 @@ public class PendantManager : IPendantManager
     {
         _otaResponseHandler = null;
         _otaInProgress = false;
+        _otaUsbHandler = null;
+        _otaDroTimer?.Dispose();
+        _otaDroTimer = null;
         if (_otaSubscribedHandler is not null && _otaHandlerSubscription is not null)
         {
             try { _otaSubscribedHandler.RawMessageReceived -= _otaHandlerSubscription; }
@@ -1737,8 +1757,12 @@ public class PendantManager : IPendantManager
 
                 // Retry request:metadata until pendant responds — first attempt may be
                 // dropped by dongle due to back-to-back ESP-NOW sends
-                if (_pendantConnected && _clientMeta.Version is null)
+                // Every 5 s, not every tick: each request makes the pendant
+                // print its ~15-line boot/PMU dump into the log.
+                if (_pendantConnected && _clientMeta.Version is null
+                    && Environment.TickCount64 - _lastMetadataRequestTicks >= MetadataRetryMs)
                 {
+                    _lastMetadataRequestTicks = Environment.TickCount64;
                     _ = Task.Run(async () =>
                     {
                         await Task.Delay(50); // Avoid back-to-back with DRO
@@ -1979,6 +2003,9 @@ public class PendantManager : IPendantManager
                 case "client:metadata":
                     HandleClientMetadata(root);
                     break;
+                case "client:battery":
+                    HandleClientBattery(root);
+                    break;
                 case "gate:respond":
                     if (root.TryGetProperty("data", out var grData)
                         && grData.TryGetProperty("gateId", out var grIdEl)
@@ -2076,6 +2103,7 @@ public class PendantManager : IPendantManager
             // Initial handshake: send K pong, mark connected
             await _serialHandler!.SendRawAsync("K");
             _pendantConnected = true;
+            _battery = null;
             _logger.LogInformation("Pendant handshake complete");
             await _broadcaster.Broadcast("client:connected", _clientMeta, NcSenderJsonContext.Default.PendantClientMeta);
             await _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
@@ -2108,6 +2136,7 @@ public class PendantManager : IPendantManager
                 await _serialHandler.SendMessageAsync(
                     new PendantTypeMsg("request:metadata"),
                     PendantJsonContext.Default.PendantTypeMsg);
+                _lastMetadataRequestTicks = Environment.TickCount64;
 
                 // Catch-up: mirror any currently-open gate to a fresh pendant
                 // (server may have opened it before pendant connected, or the
@@ -2130,6 +2159,30 @@ public class PendantManager : IPendantManager
     private void ResetClientMeta()
     {
         _clientMeta = _clientMeta with { Version = null, DeviceId = null, Licensed = false };
+        _battery = null;
+    }
+
+    // {"type":"client:battery","data":{"state":"charging","percent":87,"mv":4126}}
+    // percent and mv are left out when no cell is detected.
+    private void HandleClientBattery(JsonElement root)
+    {
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            return;
+        // TEMP: raw payload, for the pendant's USB diagnostics ("usb" object)
+        // while its USB link is under investigation. At most one every 2 s.
+        _logger.LogInformation("Pendant battery: {Data}", data.GetRawText());
+        var state = data.TryGetProperty("state", out var s) && s.ValueKind == JsonValueKind.String
+            ? s.GetString()?.Trim().ToLowerInvariant() : null;
+        if (state is not ("charging" or "battery" or "usb"))
+            return;
+        int? Int(string name) =>
+            data.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out var n) ? n : null;
+        var percent = Int("percent") is { } p ? Math.Clamp(p, 0, 100) : (int?)null;
+        var reading = (state, percent, Int("mv"));
+        if (_battery == reading)
+            return;
+        _battery = reading;
+        _ = _broadcaster.Broadcast("pendant:status-changed", GetStatus(), NcSenderJsonContext.Default.PendantStatus);
     }
 
     private void HandleClientMetadata(JsonElement root)
@@ -2151,6 +2204,8 @@ public class PendantManager : IPendantManager
             _serialHandler.DeviceModel = m.GetString();
         if (data.TryGetProperty("licensed", out var l))
             _serialHandler.Licensed = l.ValueKind == JsonValueKind.True;
+
+        _battery = null;
 
         // Update broadcast metadata to match V1's Object.assign(clientMeta, parsed.data)
         _clientMeta = _clientMeta with
@@ -2859,7 +2914,9 @@ public class PendantManager : IPendantManager
     private async Task SendDroAsync(bool full)
     {
         var radio = _serialHandler is { IsConnected: true };
-        if ((!radio && !_dongleDevices.HasWiredDroSubscribers) || _otaInProgress) return;
+        // A wireless flash has the radio to itself; a USB one only its own port.
+        var flashing = _otaInProgress ? _otaUsbHandler : null;
+        if ((!radio && !_dongleDevices.HasWiredDroSubscribers) || (_otaInProgress && flashing is null)) return;
 
         var state = _serverContext.State;
         var ms = state.MachineState;
@@ -3062,7 +3119,8 @@ public class PendantManager : IPendantManager
         await _dongleDevices.SendDroToWiredAsync(droLine);
         if (!radio) return;
 
-        await _serialHandler!.SendRawAsync(droLine);
+        if (!ReferenceEquals(_serialHandler, flashing))
+            await _serialHandler!.SendRawAsync(droLine);
 
         // The DRO is not just the pendant's: an untagged line broadcasts to EVERY
         // paired peer, and the accessories use it as their shared state feed —
@@ -3077,14 +3135,17 @@ public class PendantManager : IPendantManager
         // state — and is the cheaper half of the trade against giving every
         // accessory its own feed.
         if (_dongleHandler is { IsConnected: true }
-            && !ReferenceEquals(_dongleHandler, _serialHandler))
+            && (!ReferenceEquals(_dongleHandler, _serialHandler) || ReferenceEquals(_serialHandler, flashing))
+            && !ReferenceEquals(_dongleHandler, flashing))
         {
             try { await _dongleHandler.SendRawAsync(droLine); }
             catch (Exception ex) { _logger.LogDebug(ex, "DRO broadcast to dongle failed"); }
         }
 
-        await SyncAlarmGateAsync(
-            string.Equals(effectiveStatus, "alarm", StringComparison.OrdinalIgnoreCase));
+        // The alarm prompt goes to the pendant: not while it is being flashed.
+        if (flashing is null)
+            await SyncAlarmGateAsync(
+                string.Equals(effectiveStatus, "alarm", StringComparison.OrdinalIgnoreCase));
     }
 
     // Given an aux entry's "on" command (e.g. "M8", "M7", "M64 P2"),

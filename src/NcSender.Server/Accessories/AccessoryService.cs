@@ -136,6 +136,7 @@ public sealed class AccessoryService
                 info.CurrentVersion = dev?.Version ?? "";
                 info.Licensed = dev?.Licensed;
                 info.DeviceId = dev?.DeviceId ?? "";
+                if (info.Connected) ApplyPendantBattery(info, pendantStatus);
                 // Two boards, two images: a pibot (ESP32) and an ncsender
                 // (ESP32-S3) pendant need different assets. The catalog prefix
                 // is only the ncsender one; pick by the model the pendant
@@ -197,6 +198,20 @@ public sealed class AccessoryService
             info.BatteryPercent = 100;
         }
         info.BatteryLow = state == "battery" && mv < NcSender.Server.Dongle.BatteryReading.LowMv;
+    }
+
+    // The pendant reports its own percent; the voltage is shown beside it.
+    private static void ApplyPendantBattery(AccessoryInfo info, PendantStatus status)
+    {
+        if (status.BatteryState is not { } state) return;
+        info.BatteryState = state;
+        if (state == "usb" || status.BatteryPercent is not { } percent) return;
+        info.BatteryPercent = percent;
+        info.BatteryMv = status.BatteryMv;
+        if (state == "charging" && percent >= 100) info.BatteryState = "full";
+        info.BatteryLow = state == "battery" && (status.BatteryMv is { } mv
+            ? mv < NcSender.Server.Dongle.BatteryReading.LowMv
+            : percent <= 10);
     }
 
     /// <summary>

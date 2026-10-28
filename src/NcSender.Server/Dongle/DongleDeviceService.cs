@@ -285,6 +285,9 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     internal int OutputAckTimeoutMs { get; set; } = 300;
     internal int OutputAttempts { get; set; } = 3;
+    // A sensor wait that times out asks the device for its status this many times.
+    internal int StatusQueryAttempts { get; set; } = 2;
+    internal int StatusQueryTimeoutMs { get; set; } = 300;
 
     private static string OutputKey(string name, string kind, string index) => $"{name}:{kind.ToLowerInvariant()}:{index}";
 
@@ -478,6 +481,15 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
             using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
             var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs, CancellationToken.None)).ConfigureAwait(false);
+            // A lost report (the edge didn't make it over the radio, the next
+            // periodic status is up to 2 s off) would fail a sensor that did
+            // change: ask the device for its state before giving up.
+            for (var ask = 0; done != tcs.Task && ask < StatusQueryAttempts; ask++)
+            {
+                _logger.LogWarning("No {Field}={Target} from {Name} in {Ms} ms, asking for its status", field, target, name, timeoutMs);
+                await SendAsync(name, "status").ConfigureAwait(false);
+                done = await Task.WhenAny(tcs.Task, Task.Delay(StatusQueryTimeoutMs, CancellationToken.None)).ConfigureAwait(false);
+            }
             if (done != tcs.Task) return DongleWaitResult.TimedOut;
             await tcs.Task.ConfigureAwait(false);   // rethrows cancellation
             return DongleWaitResult.Arrived;

@@ -29,6 +29,22 @@ public class PendantStatus
     /// (e.g. pendant unpaired but dongle still has saved pairing).
     /// </summary>
     public bool DongleConnected { get; set; }
+
+    /// <summary>
+    /// From the pendant's "client:battery" report: "charging", "battery" or
+    /// "usb" (external power, cell full or absent). Null until it reports,
+    /// and for a pendant that never does (the PiBot).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BatteryState { get; set; }
+
+    /// <summary>0–100, only when a cell is detected.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BatteryPercent { get; set; }
+
+    /// <summary>Cell terminal voltage in mV, only when a cell is detected.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BatteryMv { get; set; }
 }
 
 public class PendantDeviceInfo
