@@ -46,6 +46,28 @@ public class PluginCommandProcessor : ICommandProcessor
 
     public async Task<CommandProcessorResult> ProcessAsync(string command, CommandProcessorContext context)
     {
+        // --- Probe-loaded spindle guard (every source, plugins loaded or not) ---
+        //
+        // A probe in the spindle must never turn: M3/M4 spins the stylus,
+        // the probe body and its wireless transmitter (one was wrecked that
+        // way, 2026-10-28). Refused from the terminal, buttons, macros,
+        // pendant and plugins; in a running job it stops the job instead of
+        // skipping the line, since the program expects the spindle on. Uses
+        // the projected tool so "M6 T99" then "M3" in one batch is caught
+        // too. The tool list is only read for M3/M4, never per motion line.
+        if (StartsSpindle(command))
+        {
+            var tool = _toolProjection.EffectiveToolFor(context.MachineState.Tool);
+            if (tool > 0 && await IsProbeToolAsync(tool))
+            {
+                var source = context.Meta?.SourceId;
+                var isJob = source is "job" or "resume";
+                _logger.LogWarning("{Command} rejected — T{Tool} is a probe (source: {Source})", command.Trim(), tool, source ?? "unknown");
+                _ = NcSender.Server.Infrastructure.BlockedNotice.ShowProbeSpindleBlockedAsync(_broadcaster, command.Trim(), tool);
+                return Refuse(command, context, $"T{tool} is a probe, the spindle can't turn", stopsJob: isJob);
+            }
+        }
+
         var pluginIds = _jsEngine.GetLoadedPluginIds();
 
         // --- Door-open tool change guard (runs before the early-out below so
@@ -312,6 +334,22 @@ public class PluginCommandProcessor : ICommandProcessor
             ShouldContinue = finalCommands.Count > 0,
             Commands = finalCommands
         };
+    }
+
+    // M3 / M4 (any leading zeros), not M30 / M35 / M3.1; comments ignored.
+    private static readonly Regex SpindleStartPattern =
+        new(@"(?<![A-Z\d.])M0*[34](?![\d.])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex CommentPattern =
+        new(@"\([^)]*\)|;.*$", RegexOptions.Compiled);
+
+    internal static bool StartsSpindle(string command) =>
+        SpindleStartPattern.IsMatch(CommentPattern.Replace(command, ""));
+
+    private async Task<bool> IsProbeToolAsync(int tool)
+    {
+        var tools = await _toolService.GetAllAsync();
+        var info = tools.FirstOrDefault(t => (t.ToolId ?? t.ToolNumber) == tool);
+        return info is not null && string.Equals(info.Type, "probe", StringComparison.OrdinalIgnoreCase);
     }
 
     private CommandProcessorResult Refuse(string command, CommandProcessorContext context, string reason, bool stopsJob)

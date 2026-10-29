@@ -179,7 +179,7 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         if (payload.StartsWith("$ERR:SPINDLE", StringComparison.OrdinalIgnoreCase))
             _ = NcSender.Server.Infrastructure.BlockedNotice.ShowDrawbarBlockedAsync(_broadcaster, "drawbar release", $"{name} (refused by the device)");
 
-        // Per-message hook for latency-sensitive consumers (e.g. NcProbeTranslator)
+        // Per-message hook for latency-sensitive consumers (e.g. probe status)
         // that need every payload immediately — the WS relay below is throttled.
         try { DeviceMessageReceived?.Invoke(name, payload); }
         catch (Exception ex) { _logger.LogWarning(ex, "DeviceMessageReceived handler threw for '{Name}'", name); }

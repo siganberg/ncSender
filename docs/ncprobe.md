@@ -2,10 +2,16 @@
 
 ## Status: enabled
 
-`NcProbeRouter` and `NcProbeTranslator` both run as hosted services. The
-router binds the wired NcProbe over USB and hands probe hits to the
-translator, which turns them into grblHAL realtime bytes. Wireless
-NcProbes reach the same translator through the dongle instead.
+`NcProbeRouter` runs as a hosted service. It binds a wired NcProbe over USB
+or follows it through the dongle, for status only: battery, connection,
+firmware updates.
+
+The probe signal never goes through ncSender. The path is probe ->
+transmitter -> receiver -> controller probe/TLS input, wired. The old
+`NcProbeTranslator` (probe hits -> grblHAL virtual-input realtime bytes
+0xA5-0xA8) was removed on 2026-10-28, so ncSender can never drive the probe
+pin. Don't bring it back: the extra host and USB hops added latency and
+late hits.
 
 See `src/NcSender.Server/ServerBuilder.cs`.
 
@@ -46,7 +52,5 @@ NcProbes to begin with.
 ## Related files
 
 - `src/NcSender.Server/Dongle/NcProbeRouter.cs` — port binding + arbiter
-- `src/NcSender.Server/Dongle/NcProbeTranslator.cs` — turns NcProbe hits
-  into grblHAL realtime bytes
 - `src/NcSender.Server/Usb/NcSenderUsbCatalog.cs` — USB identity matching
 - `src/NcSender.Server/ServerBuilder.cs` — service registration

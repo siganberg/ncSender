@@ -175,12 +175,12 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.DongleOtaService>();
         builder.Services.AddSingleton<NcSender.Server.Accessories.AccessoryService>();
-        // NCPROBE probe/TLS wiring: NcProbeRouter arbitrates between the wireless
-        // (ESP-NOW dongle) source and a wired USB source; wired wins when
-        // present. NcProbeTranslator subscribes to whichever is authoritative
-        // and emits grblHAL virtual-input realtime bytes (0xA5/A6 probe,
-        // 0xA7/A8 toolsetter) on the controller. Both are background;
-        // no config surface.
+        // NCPROBE: NcProbeRouter arbitrates between the wireless (ESP-NOW dongle)
+        // source and a wired USB source; wired wins when present. It feeds
+        // status only (battery, connection). The probe signal itself never goes
+        // through ncSender: probe -> transmitter -> receiver -> controller input,
+        // wired. The virtual-input translator (0xA5-0xA8 realtime bytes) was
+        // removed 2026-10-28 so ncSender can never drive the probe pin.
         builder.Services.AddSingleton<INcSenderUsbCatalog, NcSender.Server.Usb.NcSenderUsbCatalog>();
         // Arbitrates who owns a USB serial port, so a firmware flash can take the
         // cable off the long-lived readers instead of opening a second handle
@@ -197,7 +197,6 @@ public static class ServerBuilder
         // the gate is gone: its only remaining effect was leaving a cabled
         // NcProbe silently unconnected. See docs/ncprobe.md.
         builder.Services.AddHostedService(sp => sp.GetRequiredService<NcSender.Server.Dongle.NcProbeRouter>());
-        builder.Services.AddHostedService<NcSender.Server.Dongle.NcProbeTranslator>();
         builder.Services.AddSingleton<IUpdateService, UpdateService>();
         builder.Services.AddSingleton<ITipsService>(sp =>
             new Tips.TipsService(sp.GetRequiredService<ILogger<Tips.TipsService>>(), "community"));

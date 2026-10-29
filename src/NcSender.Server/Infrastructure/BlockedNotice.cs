@@ -25,6 +25,16 @@ public static class BlockedNotice
     public static Task ShowDrawbarBlockedAsync(IBroadcaster broadcaster, string command, string output) =>
         ShowAsync(broadcaster, DrawbarId, DrawbarTitle, DrawbarLede, [("Command", command), ("Output", output)]);
 
+    public const string ProbeSpindleId = "probe-spindle-blocked";
+    public const string ProbeSpindleTitle = "Spindle Start Blocked";
+    public const string ProbeSpindleLede =
+        "A probe is loaded, so the spindle was not started. Spinning a probe can break the stylus and destroy "
+        + "the probe and its transmitter. Load a cutting tool first, then start the spindle.";
+
+    public static Task ShowProbeSpindleBlockedAsync(IBroadcaster broadcaster, string command, int tool) =>
+        ShowAsync(broadcaster, ProbeSpindleId, ProbeSpindleTitle, ProbeSpindleLede,
+            [("Command", command), ("Loaded tool", $"T{tool} (probe)")]);
+
     public static string Html(string title, string lede, IReadOnlyList<(string Label, string Value)> details)
     {
         static string E(string s) => System.Net.WebUtility.HtmlEncode(s);

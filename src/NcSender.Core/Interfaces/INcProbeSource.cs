@@ -1,7 +1,7 @@
 namespace NcSender.Core.Interfaces;
 
 /// <summary>
-/// Single abstract source of <c>@ncprobe</c> payloads for the NcProbeTranslator.
+/// Single abstract source of <c>@ncprobe</c> payloads (status: battery, connection).
 ///
 /// The physical ncprobe device is reachable two ways: wirelessly through the
 /// ESP-NOW dongle (via <see cref="IDongleDeviceService"/>) or wired via USB

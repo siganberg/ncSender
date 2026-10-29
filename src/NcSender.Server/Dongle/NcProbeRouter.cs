@@ -6,8 +6,8 @@ namespace NcSender.Server.Dongle;
 
 /// <summary>
 /// Combined USB scanner + wireless subscriber + priority arbiter for the
-/// ncprobe device. Presents a single <see cref="INcProbeSource"/> that the
-/// <see cref="NcProbeTranslator"/> consumes without knowing which transport
+/// ncprobe device. Presents a single <see cref="INcProbeSource"/> that
+/// status consumers read without knowing which transport
 /// the payload arrived on.
 ///
 /// Priority: wired (USB) wins whenever a ncprobe device is present on a USB
