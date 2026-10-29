@@ -185,6 +185,7 @@ const deviceRows = computed(() => {
 // would advertise hardware that isn't on sale.
 const DISPLAY_NAMES: Record<string, string> = {
   nc3dair: '3D Wireless Probe',
+  nczeroair: 'Wireless Probe',
   ncprobe: '3D Wireless Probe',   // builds before the nc3DAir rename
 };
 

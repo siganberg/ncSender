@@ -73,6 +73,8 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             ["ncSender ncProbe"]           = NcSenderUsbKind.NcProbe,
             // nc3DAir: the ncProbe firmware on the vert board, under its own name.
             ["ncSender nc3DAir"]          = NcSenderUsbKind.NcProbe,
+            // ncZeroAir: the same firmware on the touch-plate board.
+            ["ncSender ncZeroAir"]        = NcSenderUsbKind.NcProbe,
             ["ncSender Wireless USB"]     = NcSenderUsbKind.WirelessDongle,
             ["ncSender Pendant"]          = NcSenderUsbKind.Pendant,
             ["ncSender AutoDustBoot"]     = NcSenderUsbKind.AutoDustBoot,

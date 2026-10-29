@@ -107,6 +107,13 @@ public static class AccessoryCatalog
         new AccessoryDefinition("nc3dair", "3D Wireless Probe",
             "siganberg/ncSender.nc3DAir.releases", "firmware_nc3dair_v", "nc3dair",
             Availability: "Not available", LicenseProduct: "nc3DAir"),
+
+        // ncZeroAir: the touch plate (and the AutoZeroAir kit). Same transmitter
+        // firmware as the nc3DAir on its own board, under its own tag, so it
+        // pairs and shows as its own device. Prototype, not a product yet.
+        new AccessoryDefinition("nczeroair", "Wireless Probe",
+            "siganberg/ncSender.ncZeroAir.releases", "firmware_nczeroair_v", "nczeroair",
+            Availability: "Not available", LicenseProduct: "ncZeroAir"),
     };
 
     /// <summary>
