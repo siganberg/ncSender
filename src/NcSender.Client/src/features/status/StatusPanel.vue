@@ -340,8 +340,11 @@ const endLongPress = (axis: AxisKey, event?: Event) => {
       sx.progress = 0; sy.progress = 0;
       sx.triggered = false; sy.triggered = false;
       sx.active = false; sy.active = false;
-    } else if (['x', 'y', 'z'].includes(axisLower) && event) {
-      // Double-tap detection for touch devices (since touchstart.prevent blocks dblclick)
+    } else if (['x', 'y', 'z'].includes(axisLower) && event?.type === 'touchend' && !editingAxis.value) {
+      // Double-tap detection for touch devices (since touchstart.prevent blocks dblclick).
+      // Touches only: while a value is being edited the browser follows each
+      // tap with mouse events, and counting those too turned a tap on the
+      // check mark into a double tap that opened the edit again.
       const now = Date.now();
       const lastTap = lastTapTime[axisLower] || 0;
       if (now - lastTap < DOUBLE_TAP_MS) {
