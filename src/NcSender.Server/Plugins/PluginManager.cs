@@ -824,6 +824,7 @@ public class PluginManager : IPluginManager
             || manifest.Events.Contains("onAfterJobEnd")
             || manifest.Events.Contains("onToolChangeStart")
             || manifest.Events.Contains("onToolChangeEnd")
+            || manifest.Events.Contains("onControllerError")
             || manifest.Events.Contains("background");
         if (!hasJsEvent || string.IsNullOrEmpty(manifest.Commands))
         {

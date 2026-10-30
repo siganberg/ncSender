@@ -165,6 +165,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 let serverStateUnsubscribe: (() => void) | null = null;
 let cncDataUnsubscribe: (() => void) | null = null;
 let cncDataQuietUnsubscribe: (() => void) | null = null;
+let cncErrorUnsubscribe: (() => void) | null = null;
 let closeDialogUnsubscribe: (() => void) | null = null;
 
 const forwardServerState = (state: any) => {
@@ -185,6 +186,12 @@ const forwardCNCData = (data: any) => {
     type: 'cnc-data',
     data: data
   }, '*');
+};
+
+// Controller errors and alarms (GitHub #78), as { type: 'cnc-error', error }
+const forwardCNCError = (error: any) => {
+  if (!show.value) return;
+  window.postMessage({ type: 'cnc-error', error }, '*');
 };
 
 const handleCloseDialog = (data: { dialogId: string }) => {
@@ -209,6 +216,8 @@ onMounted(() => {
   // it arrives as an ordinary cnc-data message on their side.
   cncDataQuietUnsubscribe = api.on('cnc-data-quiet', forwardCNCData);
 
+  cncErrorUnsubscribe = api.on('cnc-error', forwardCNCError);
+
   // Listen for close-dialog events (multi-client sync)
   closeDialogUnsubscribe = api.on('plugin:close-dialog', handleCloseDialog);
 
@@ -229,6 +238,9 @@ onBeforeUnmount(() => {
   }
   if (cncDataUnsubscribe) {
     cncDataUnsubscribe();
+  }
+  if (cncErrorUnsubscribe) {
+    cncErrorUnsubscribe();
   }
   if (closeDialogUnsubscribe) {
     closeDialogUnsubscribe();

@@ -23,6 +23,7 @@ public class CncEventBridge
     private readonly IToolProjection _toolProjection;
     private readonly IToolService _toolService;
     private readonly IGateService _gates;
+    private readonly IControllerErrorFeed? _errorFeed;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
     private bool _alarmFromStartup; // code came from the status substate only, never an ALARM:N line
@@ -51,8 +52,10 @@ public class CncEventBridge
         ISettingsManager settingsManager,
         IToolProjection toolProjection,
         IToolService toolService,
-        IGateService gates)
+        IGateService gates,
+        IControllerErrorFeed? errorFeed = null)
     {
+        _errorFeed = errorFeed;
         _gates = gates;
         _toolProjection = toolProjection;
         _toolService = toolService;
@@ -1027,11 +1030,13 @@ public class CncEventBridge
     private void OnErrorReceived(CncError error)
     {
         // Enrich error messages with controller-fetched descriptions
+        string? pluginMessage = null;
         if (error.Code != "ALARM" && int.TryParse(error.Code, out var errCode))
         {
             var richMessage = _errorService.GetError(errCode);
             if (richMessage is not null)
                 error.Message = richMessage;
+            pluginMessage = error.Message;
             error.Message += " (Jog any axis to clear error state)";
         }
 
@@ -1057,6 +1062,12 @@ public class CncEventBridge
         }
 
         _ = _broadcaster.Broadcast("cnc-error", error, NcSenderJsonContext.Default.CncError);
+        // Plugins get the description alone, without the hint for the UI
+        _errorFeed?.Publish(new CncError
+        {
+            Code = error.Code, AlarmCode = error.AlarmCode, Message = pluginMessage ?? error.Message,
+            AlarmDescription = error.AlarmDescription, Raw = error.Raw, Command = error.Command, SourceId = error.SourceId,
+        });
     }
 
     private static readonly System.Text.RegularExpressions.Regex ZeroKeepStartRegexInstance =

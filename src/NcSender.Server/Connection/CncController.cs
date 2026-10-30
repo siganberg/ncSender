@@ -1222,9 +1222,9 @@ public partial class CncController : ICncController
                 || errorMeta?.Quiet?.TerminalResponse == true;
             if (_activeProtocol is not null && _activeProtocol.TryParseError(trimmedData, out var code, out var message))
             {
-                HandleCommandError(message, code);
+                var failed = HandleCommandError(message, code);
                 if (!suppressError)
-                    ErrorReceived?.Invoke(new CncError { Code = code?.ToString() ?? "", Message = message });
+                    ErrorReceived?.Invoke(new CncError { Code = code?.ToString() ?? "", Message = message, Raw = trimmedData, Command = failed?.DisplayCommand ?? failed?.RawCommand, SourceId = failed?.Meta?.SourceId });
             }
             else
             {
@@ -1233,9 +1233,9 @@ public partial class CncController : ICncController
                 if (int.TryParse(codePart, out var fallbackCode))
                 {
                     var msg = GrblErrors.GetMessage(fallbackCode);
-                    HandleCommandError(msg, fallbackCode);
+                    var failed = HandleCommandError(msg, fallbackCode);
                     if (!suppressError)
-                        ErrorReceived?.Invoke(new CncError { Code = fallbackCode.ToString(), Message = msg });
+                        ErrorReceived?.Invoke(new CncError { Code = fallbackCode.ToString(), Message = msg, Raw = trimmedData, Command = failed?.DisplayCommand ?? failed?.RawCommand, SourceId = failed?.Meta?.SourceId });
                 }
             }
         }
@@ -1247,12 +1247,15 @@ public partial class CncController : ICncController
             if (match.Success)
                 alarmCode = int.Parse(match.Groups[1].Value);
 
-            HandleCommandError(trimmedData, null);
+            var failed = HandleCommandError(trimmedData, null);
             ErrorReceived?.Invoke(new CncError
             {
                 Code = "ALARM",
                 AlarmCode = alarmCode,
-                Message = trimmedData
+                Message = trimmedData,
+                Raw = trimmedData,
+                Command = failed?.DisplayCommand ?? failed?.RawCommand,
+                SourceId = failed?.Meta?.SourceId
             });
         }
         // Ok response
@@ -1446,13 +1449,14 @@ public partial class CncController : ICncController
         }
     }
 
-    private void HandleCommandError(string message, int? code)
+    // Returns the command the error answered, when there was one in flight.
+    private CommandEntry? HandleCommandError(string message, int? code)
     {
         var cmd = TakeReplyOwner(out _, isError: true);
         if (cmd is null)
         {
             _logger.LogWarning("Controller error for a line sent outside the queue: {Message}", message);
-            return;
+            return null;
         }
 
         var result = new CommandResult
@@ -1475,6 +1479,7 @@ public partial class CncController : ICncController
             // The translator already counted this line's modal words.
             _translator?.OnLineFailed();
         }
+        return cmd;
     }
 
     private string? GetActiveSourceId()

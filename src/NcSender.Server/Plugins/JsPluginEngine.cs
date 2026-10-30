@@ -39,7 +39,7 @@ public class JsPluginEngine : IJsPluginEngine
     // a DI cycle. Resolve it lazily on demand from the service provider.
     private readonly IServiceProvider _serviceProvider;
 
-    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext, IFirmwareService firmwareService, ICncController cncController, IServiceProvider serviceProvider, IToolChangeTracker? toolChangeTracker = null)
+    public JsPluginEngine(ILogger<JsPluginEngine> logger, PluginDialogDispatcher dialogs, IGateService gates, IToolService toolService, IDongleDeviceService dongleDevices, NcSender.Server.Tools.IPendingToolTloWriteback pendingTloWriteback, IServerContext serverContext, IFirmwareService firmwareService, ICncController cncController, IServiceProvider serviceProvider, IToolChangeTracker? toolChangeTracker = null, IControllerErrorFeed? errorFeed = null)
     {
         _logger = logger;
         _dialogs = dialogs;
@@ -57,6 +57,15 @@ public class JsPluginEngine : IJsPluginEngine
             toolChangeTracker.Started += e => QueueToolChangeHook("onToolChangeStart", e);
             toolChangeTracker.Ended += e => QueueToolChangeHook("onToolChangeEnd", e);
         }
+        if (errorFeed is not null)
+            errorFeed.Raised += e =>
+            {
+                // The job's line as it was when the error came in, not when the hook runs
+                var job = _serverContext.State.JobLoaded;
+                var running = job?.Status is "running" or "paused";
+                var at = new ErrorAt(DateTime.UtcNow, running, running && job!.CurrentLine > 0 ? job.CurrentLine : null, running ? job!.Filename : null);
+                QueueHook(() => RunControllerErrorHook(e, at));
+            };
     }
 
     // Tool change hooks run off the controller's read loop (a plugin may be
@@ -65,10 +74,12 @@ public class JsPluginEngine : IJsPluginEngine
     private readonly Lock _hookGate = new();
     private Task _hookChain = Task.CompletedTask;
 
-    private void QueueToolChangeHook(string hook, ToolChangeEvent e)
+    private void QueueToolChangeHook(string hook, ToolChangeEvent e) => QueueHook(() => RunToolChangeHook(hook, e));
+
+    private void QueueHook(Action run)
     {
         lock (_hookGate)
-            _hookChain = _hookChain.ContinueWith(_ => RunToolChangeHook(hook, e), TaskScheduler.Default);
+            _hookChain = _hookChain.ContinueWith(_ => run(), TaskScheduler.Default);
     }
 
     internal Task ToolChangeHooksIdle
@@ -115,6 +126,49 @@ public class JsPluginEngine : IJsPluginEngine
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "JS plugin {PluginId} {Hook} failed", pluginId, hook);
+                }
+            }
+        }
+    }
+
+    // onControllerError(event, settings), GitHub #78: once for each error:n
+    // and ALARM:n. Read-only: the sender has already handled it.
+    // event: type ("error" | "alarm"), code, message, raw, command and
+    // sourceId (the command it answered, when known), jobRunning, line and
+    // file (the program line running, when a job is), timestamp.
+    private readonly record struct ErrorAt(DateTime Time, bool JobRunning, int? Line, string? File);
+
+    private void RunControllerErrorHook(CncError e, ErrorAt at)
+    {
+        var alarm = e.Code == "ALARM";
+        int? code = alarm ? e.AlarmCode : int.TryParse(e.Code, out var n) ? n : null;
+        foreach (var pluginId in GetLoadedPluginIds())
+        {
+            lock (_lock)
+            {
+                if (!_plugins.TryGetValue(pluginId, out var state)) continue;
+                try
+                {
+                    var fn = state.JintEngine.GetValue("onControllerError");
+                    if (fn.IsUndefined()) continue;
+                    var engine = state.JintEngine;
+                    JsValue Str(string? v) => v is null ? JsValue.Null : new JsString(v);
+                    var ev = new JsObject(engine);
+                    ev.Set("type", alarm ? "alarm" : "error");
+                    ev.Set("code", code is int c ? c : JsValue.Null);
+                    ev.Set("message", Str(alarm ? e.AlarmDescription ?? e.Message : e.Message));
+                    ev.Set("raw", Str(e.Raw));
+                    ev.Set("command", Str(e.Command));
+                    ev.Set("sourceId", Str(e.SourceId));
+                    ev.Set("jobRunning", at.JobRunning);
+                    ev.Set("line", at.Line is int line ? line : JsValue.Null);
+                    ev.Set("file", Str(at.File));
+                    ev.Set("timestamp", at.Time.ToString("o"));
+                    fn.Call(ev, state.CachedSettings);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "JS plugin {PluginId} onControllerError failed", pluginId);
                 }
             }
         }

@@ -134,4 +134,15 @@ public class CncError
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AlarmDescription { get; set; }
+
+    /// <summary>The controller's line as received, e.g. "error:20" or "ALARM:1".</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Raw { get; set; }
+
+    /// <summary>The command that was waiting for a reply, when there was one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Command { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceId { get; set; }
 }

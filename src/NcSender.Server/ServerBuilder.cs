@@ -110,6 +110,7 @@ public static class ServerBuilder
         // Phase 3 DI registrations
         builder.Services.AddSingleton<IToolProjection, NcSender.Server.CommandProcessor.ToolProjection>();
         builder.Services.AddSingleton<IToolChangeTracker, NcSender.Server.CommandProcessor.ToolChangeTracker>();
+        builder.Services.AddSingleton<IControllerErrorFeed, NcSender.Server.Connection.ControllerErrorFeed>();
         builder.Services.AddSingleton<NcSender.Server.CommandProcessor.CommandProcessor>();
         builder.Services.AddSingleton<IGcodeFileService, GcodeFileService>();
         builder.Services.AddSingleton<IJobManager, JobManager>();
