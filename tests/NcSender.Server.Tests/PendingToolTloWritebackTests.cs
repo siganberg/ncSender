@@ -20,15 +20,29 @@ public class PendingToolTloWritebackTests
     }
 
     [Fact]
-    public void A_tool_in_a_slot_is_found_by_its_slot()
+    public void Slot_numbering_finds_a_tool_by_its_slot()
     {
-        var inSlot4 = new ToolInfo { Id = 10, ToolNumber = 4, ToolId = 68 };
+        // Slot numbering: the tool list numbers each tool by its slot
+        var inSlot4 = new ToolInfo { Id = 10, ToolNumber = 4, ToolId = 4 };
         var (writeback, service) = Create(inSlot4);
 
         writeback.Arm(4);
         writeback.Consume(12.5);
 
         service.Verify(s => s.UpdateOffsetsAsync(10, 12.5, null, null, null), Times.Once);
+    }
+
+    [Fact]
+    public void Tool_id_numbering_never_falls_back_to_the_slot()
+    {
+        // T4 is Tool ID 4. The tool in slot 4 is Tool ID 68: it must not get T4's length.
+        var inSlot4 = new ToolInfo { Id = 10, ToolNumber = 4, ToolId = 68 };
+        var (writeback, service) = Create(inSlot4);
+
+        writeback.Arm(4);
+        writeback.Consume(12.5);
+
+        service.Verify(s => s.UpdateOffsetsAsync(It.IsAny<int>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>(), It.IsAny<double?>()), Times.Never);
     }
 
     [Fact]

@@ -412,7 +412,7 @@ public class PluginManager : IPluginManager
 
         foreach (var plugin in loaded)
         {
-            if (plugin.Manifest?.ToolMenu is null) continue;
+            if (plugin.Manifest?.ToolMenu is null || Retired.ContainsKey(plugin.Id)) continue;
             foreach (var entry in plugin.Manifest.ToolMenu)
             {
                 items.Add(new PluginToolMenuItem
@@ -432,6 +432,8 @@ public class PluginManager : IPluginManager
     // GetConfigUi: read HTML file
     public string? GetConfigUi(string pluginId)
     {
+        // A retired plugin's own page can still rewrite and load a program
+        if (Retired.ContainsKey(pluginId)) return null;
         var manifest = LoadManifest(pluginId);
         if (manifest is null || string.IsNullOrEmpty(manifest.ConfigUi)) return null;
 
@@ -442,6 +444,7 @@ public class PluginManager : IPluginManager
     // HasConfig
     public bool HasConfig(string pluginId)
     {
+        if (Retired.ContainsKey(pluginId)) return false;
         var manifest = LoadManifest(pluginId);
         if (manifest is null || string.IsNullOrEmpty(manifest.ConfigUi)) return false;
 
@@ -814,8 +817,28 @@ public class PluginManager : IPluginManager
         }
     }
 
+    // Plugins that must not run any more, whatever version is installed. They
+    // stay installed (the user disables or uninstalls them) but never load; an
+    // enabled one blocks jobs through GetMotionBlocker with the reason below.
+    internal static readonly IReadOnlyDictionary<string, string> Retired = new Dictionary<string, string>
+    {
+        // Rewrites M6 T<Tool ID> to its slot number. With Tool ID numbering that
+        // slot number is read as another Tool ID; with Slot numbering it looks
+        // tools up in the slot-shaped list. Either way it can load the wrong tool.
+        ["com.ncsender.dynamic-tool-slot-mapper"] =
+            "retired: Tool ID numbering (Settings > Tool Changer) replaces it, and it can load the wrong tool. Disable or uninstall it",
+    };
+
     private void TryLoadCommandPlugin(string pluginId, PluginManifest manifest)
     {
+        if (Retired.TryGetValue(pluginId, out var retired))
+        {
+            _logger.LogWarning("Plugin {PluginId} is retired and will not load: {Reason}", pluginId, retired);
+            _jsEngine.UnloadPlugin(pluginId);
+            _runState[pluginId] = new("failed", retired);
+            return;
+        }
+
         // Load the commands module if any JS-driven event OR the "background"
         // marker is declared. Accessory plugins that only need setInterval
         // (e.g. status-driven LED accessories) use ["background"] alone.

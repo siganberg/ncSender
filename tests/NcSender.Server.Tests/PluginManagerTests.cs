@@ -159,4 +159,38 @@ public class PluginManagerTests : IDisposable
         Assert.Equal("", info.CurrentVersion);
         Assert.Equal("", info.LatestVersion);
     }
+
+    // A retired plugin stays installed but never runs: not loaded, no menu
+    // item or page to rewrite a program from, and jobs say why they're blocked.
+    [Fact]
+    public void Retired_plugin_never_loads_and_blocks_jobs_with_the_reason()
+    {
+        const string id = "com.ncsender.dynamic-tool-slot-mapper";
+        var dir = Path.Combine(Infrastructure.PathUtils.GetPluginsDir(), id);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "manifest.json"), JsonSerializer.Serialize(new PluginManifest
+        {
+            Id = id, Name = "Dynamic Tool Slot Mapper", Version = "2.1.2", Category = "utility",
+            Commands = "commands.js", ConfigUi = "config.html", Events = ["onGcodeProgramLoad"],
+            ToolMenu = [new PluginToolMenuEntry { Id = "open", Label = "Mapper", ClientOnly = true }],
+            Platforms = new() { ["pro-v2"] = "2.0.0", ["v1"] = "0.3.0" },
+        }, JsonOptions));
+        File.WriteAllText(Path.Combine(dir, "commands.js"), "function buildInitialConfig(r) { return r; }");
+        File.WriteAllText(Path.Combine(dir, "config.html"), "<div>mapper</div>");
+
+        _manager.Enable(id);
+
+        _jsEngine.Verify(e => e.LoadPlugin(id, It.IsAny<string>(), It.IsAny<Dictionary<string, JsonElement>>(), It.IsAny<int>()), Times.Never);
+        var info = _manager.ListAll().Single(p => p.Id == id);
+        Assert.Equal("failed", info.RunState);
+        Assert.StartsWith("retired:", info.RunError);
+        Assert.False(_manager.HasConfig(id));
+        Assert.Null(_manager.GetConfigUi(id));
+        Assert.DoesNotContain(_manager.GetToolMenuItems(), m => m.PluginId == id);
+        Assert.Contains("retired: Tool ID numbering", _manager.GetMotionBlocker());
+
+        _manager.Disable(id);
+        Assert.Null(_manager.GetMotionBlocker());
+        Directory.Delete(dir, true);
+    }
 }

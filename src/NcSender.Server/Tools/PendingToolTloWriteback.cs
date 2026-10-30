@@ -58,10 +58,10 @@ public class PendingToolTloWriteback : IPendingToolTloWriteback
                 _logger.LogInformation("Dropped expired TLO writeback arm for T{Tool}", toolNumber);
                 continue;
             }
-            // Tool ID first, then slot — as CncEventBridge resolves a T word
-            // (tool-id concept: a T number names the tool, not the pocket).
-            var tool = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber)
-                       ?? tools.FirstOrDefault(t => t.ToolNumber == toolNumber);
+            // The T number as the tool list numbers it: the Tool ID with Tool ID
+            // numbering, the slot with Slot numbering (GetAllAsync). Never a slot
+            // as a fallback: with Tool ID numbering that is another tool.
+            var tool = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == toolNumber);
             if (tool is not null)
             {
                 // Only the TLO is written: the tool as tool changes see it may carry

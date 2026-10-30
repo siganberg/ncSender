@@ -647,9 +647,8 @@ public class CncEventBridge
         try
         {
             var tools = await _toolService.GetAllAsync();
-            // Tool-id concept: a T number is the Tool ID; a slot is a fallback.
-            var match = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == number)
-                     ?? tools.FirstOrDefault(t => t.ToolNumber == number);
+            // As the tool list numbers it (see PendingToolTloWriteback)
+            var match = tools.FirstOrDefault(t => (t.ToolId ?? t.Id) == number);
             var name = match?.Name?.Trim();
             return string.IsNullOrEmpty(name) ? null : name;
         }

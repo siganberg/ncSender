@@ -492,6 +492,21 @@
         <span v-else>Z0 is set, no tool length reference yet. At the next tool change T{{ appStore.status.tool }} is measured first, so your Z0 carries over.</span>
       </div>
 
+      <!-- Tool ID numbering: tools this program uses that no magazine slot
+           holds. They still run, as manual changes; this says so before Start
+           instead of as a hand-load prompt mid-job. Never blocks Start. -->
+      <div
+        v-if="magazineNotice && !isJobActive && props.jobLoaded && !alarmMessage"
+        class="maint-notice maint-notice--static"
+        role="status"
+        :style="{ bottom: magazineNoticeBottom + 'px' }"
+      >
+        <span class="maint-notice__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 7v6m0 3.5v.5" /></svg>
+        </span>
+        <span class="maint-notice__text">{{ magazineNotice }}</span>
+      </div>
+
       <!-- Override Controls - above control buttons -->
       <div class="override-controls">
         <div class="override-panel">
@@ -1092,6 +1107,27 @@ const canStartOrResume = computed(() => {
   }
 
   return false;
+});
+
+// Tool ID numbering with a magazine: the program's tools that no slot holds
+// (in the Tool Library without a slot, or not in it at all). Slot numbering
+// has nothing to report: every T there is a slot.
+const magazineNotice = computed(() => {
+  if (toolNumbering.value !== 'toolId' || !magazineSlots.value) return null;
+  const inMagazine = new Set(legendEntries.value.filter(e => e.slot !== null && e.id !== null).map(e => e.id));
+  const probe = probeToolNumber.value;
+  const missing = toolsUsed.value.filter(tn => tn > 0 && tn !== probe && !inMagazine.has(tn)).map(tn => `T${tn}`);
+  if (!missing.length) return null;
+  return missing.length === 1
+    ? `${missing[0]} isn't in the magazine. It will be hand-loaded.`
+    : `${missing.length} tools aren't in the magazine: ${missing.join(', ')}. They will be hand-loaded.`;
+});
+
+// Same lane as the TLR notice and the out-of-bounds warning; stacks above them.
+const magazineNoticeBottom = computed(() => {
+  let bottom = showOutOfBoundsWarning.value ? 256 : 186;
+  if (tlrZeroNotice.value && !(zeroKeepStepTool.value > 0) && !props.alarmMessage) bottom += 66;
+  return bottom;
 });
 
 const isJobActive = computed(() => {
@@ -7379,6 +7415,44 @@ body.theme-light .dot--rapid {
 /* Same card as the measuring banner (.zero-keep-step): solid blue, white icon
    tile, slide-in and the periodic nudge. Orange for the one case the Z0 can't
    be carried over. Raised above the out-of-bounds card when both show. */
+.maint-notice {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100% - 48px));
+  background: #ef4444;
+  border: 1px solid #ef4444;
+  color: white;
+  padding: 10px 16px;
+  border-radius: var(--radius-medium);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-elevated, 0 12px 28px rgba(0, 0, 0, 0.35));
+  z-index: 11;
+  animation: oob-enter 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.maint-notice--static { cursor: default; }
+.maint-notice__icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: #ef4444;
+}
+.maint-notice__icon svg { width: 18px; height: 18px; }
+.maint-notice__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .tlr-zero-notice {
   position: absolute;
   bottom: 186px;
