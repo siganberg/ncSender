@@ -157,6 +157,20 @@ public static partial class GcodePatterns
     public static bool IsTlsCommand(string line) =>
         line.Trim().Equals("$TLS", StringComparison.OrdinalIgnoreCase);
 
+    // A job sends its lines as "N<line> ..." and a program may comment it,
+    // so the line number and any comments are ignored.
+    public static bool IsParkCommand(string line)
+    {
+        var bare = NNumberRegex().Replace(line.Trim(), "");
+        bare = InlineCommentRegex().Replace(bare, "");
+        var semi = bare.IndexOf(';');
+        if (semi >= 0) bare = bare[..semi];
+        return bare.Trim().Equals("$PARK", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [GeneratedRegex(@"\([^)]*\)")]
+    private static partial Regex InlineCommentRegex();
+
     public static FirmwareSettingParseResult ParseFirmwareSetting(string line)
     {
         var match = FirmwareSettingRegex().Match(line.Trim());
