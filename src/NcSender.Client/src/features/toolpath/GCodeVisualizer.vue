@@ -494,18 +494,21 @@
 
       <!-- Tool ID numbering: tools this program uses that no magazine slot
            holds. They still run, as manual changes; this says so before Start
-           instead of as a hand-load prompt mid-job. Never blocks Start. -->
-      <div
+           instead of as a hand-load prompt mid-job. Never blocks Start. Tap
+           to load them into the magazine when there is room to. -->
+      <button
         v-if="magazineNotice && !isJobActive && props.jobLoaded && !alarmMessage"
-        class="maint-notice maint-notice--static"
+        class="maint-notice"
+        :class="{ 'maint-notice--static': !magazineMappable }"
         role="status"
         :style="{ bottom: magazineNoticeBottom + 'px' }"
+        @click="magazineMappable && (showMagazineMap = true)"
       >
         <span class="maint-notice__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 7v6m0 3.5v.5" /></svg>
         </span>
         <span class="maint-notice__text">{{ magazineNotice }}</span>
-      </div>
+      </button>
 
       <!-- Override Controls - above control buttons -->
       <div class="override-controls">
@@ -753,6 +756,15 @@
   />
 
   <!-- Start from Line Dialog -->
+  <MagazineMapDialog
+    v-if="showMagazineMap"
+    :filename="props.jobLoaded?.filename || ''"
+    :program-tools="magazineProgramTools"
+    :slot-count="magazineSlots"
+    :tools="libraryTools"
+    @close="showMagazineMap = false"
+    @mapped="showMagazineMap = false"
+  />
   <StartFromLineDialog
     :show="showStartFromLineDialog"
     :filename="props.jobLoaded?.filename || ''"
@@ -870,6 +882,7 @@ import ProgressBar from '../../components/ProgressBar.vue';
 import ProbeDialog from '../probe/ProbeDialog.vue';
 import FileManagerDialog from '../file-manager/FileManagerDialog.vue';
 import StartFromLineDialog from './StartFromLineDialog.vue';
+import MagazineMapDialog from '../tools/MagazineMapDialog.vue';
 import TransformContextMenu from './TransformContextMenu.vue';
 import OffsetDialog from './OffsetDialog.vue';
 import { rotateGCode, mirrorGCode, offsetGCode } from './transform/gcode-transformer';
@@ -908,7 +921,7 @@ const props = withDefaults(defineProps<{
   theme: 'light' | 'dark';
   senderStatus?: string;
   machineState?: { isToolChanging?: boolean };
-  jobLoaded?: { filename: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed'; sourceFile?: string; isTemporary?: boolean } | null;
+  jobLoaded?: { filename: string; loadedAt?: string; currentLine: number; totalLines: number; status: 'running' | 'paused' | 'stopped' | 'completed'; sourceFile?: string; isTemporary?: boolean } | null;
   workCoords?: { x: number; y: number; z: number; a: number };
   machineCoords?: { x: number; y: number; z: number; a: number };
   workOffset?: { x: number; y: number; z: number; a: number };
@@ -1112,11 +1125,45 @@ const canStartOrResume = computed(() => {
 // Tool ID numbering with a magazine: the program's tools that no slot holds
 // (in the Tool Library without a slot, or not in it at all). Slot numbering
 // has nothing to report: every T there is a slot.
-const magazineNotice = computed(() => {
-  if (toolNumbering.value !== 'toolId' || !magazineSlots.value) return null;
-  const inMagazine = new Set(legendEntries.value.filter(e => e.slot !== null && e.id !== null).map(e => e.id));
+// The program's tools a tool changer would load (not T0, not the probe).
+const magazineProgramTools = computed(() => {
   const probe = probeToolNumber.value;
-  const missing = toolsUsed.value.filter(tn => tn > 0 && tn !== probe && !inMagazine.has(tn)).map(tn => `T${tn}`);
+  return toolsUsed.value
+    .filter(tn => tn > 0 && tn !== probe)
+    .map(tn => ({ toolId: tn, line: toolFirstLines.value[tn] ?? 0 }));
+});
+const magazineMissingIds = computed<number[]>(() => {
+  if (toolNumbering.value !== 'toolId' || !magazineSlots.value) return [];
+  const inMagazine = new Set(legendEntries.value.filter(e => e.slot !== null && e.id !== null).map(e => e.id));
+  return magazineProgramTools.value.map(p => p.toolId).filter(tn => !inMagazine.has(tn));
+});
+// The map dialog has something to offer: a missing tool the library knows,
+// and a slot that is empty or holds a tool this program doesn't use.
+const magazineMappable = computed(() => {
+  if (!magazineMissingIds.value.length) return false;
+  const known = new Set(libraryTools.value.map((tl: any) => tl.toolId));
+  if (!magazineMissingIds.value.some(tn => known.has(tn))) return false;
+  const used = new Set(toolsUsed.value);
+  return legendEntries.value.some(e => e.slot !== null && (e.id === null || !used.has(e.id)));
+});
+const showMagazineMap = ref(false);
+// Opens once per program load, on the clients open when it was loaded. A
+// program restored by a page reload a while later gets the notice only.
+let magazinePromptedFor: string | null = null;
+const MAGAZINE_PROMPT_WINDOW_MS = 2 * 60 * 1000;
+const maybePromptMagazine = () => {
+  const job = props.jobLoaded;
+  if (!job?.filename || isJobActive.value) return;
+  const key = `${job.filename}|${job.loadedAt ?? ''}`;
+  if (magazinePromptedFor === key) return;
+  magazinePromptedFor = key;
+  const at = job.loadedAt ? Date.parse(job.loadedAt) : NaN;
+  if (!Number.isFinite(at) || Date.now() - at > MAGAZINE_PROMPT_WINDOW_MS) return;
+  if (magazineMappable.value) showMagazineMap.value = true;
+};
+
+const magazineNotice = computed(() => {
+  const missing = magazineMissingIds.value.map(tn => `T${tn}`);
   if (!missing.length) return null;
   return missing.length === 1
     ? `${missing[0]} isn't in the magazine. It will be hand-loaded.`
@@ -1393,6 +1440,8 @@ let isInitialLoad = true; // Flag to prevent watchers from firing during initial
 
 // Tools detected from program (lines containing M6 with Tn)
 const toolsUsed = ref<number[]>([]);
+// Tool -> line (1-based) of its first M6
+const toolFirstLines = ref<Record<number, number>>({});
 
 // Number of tools to display (from settings)
 const numberOfToolsToShow = ref<number>(0);
@@ -1453,6 +1502,11 @@ const legendEntries = computed<LegendEntry[]>(() => {
 const probeLibraryTool = computed(() =>
   libraryTools.value.find((tl: any) => tl.toolId === probeToolNumber.value) ?? toolInventory.value?.[probeToolNumber.value] ?? null);
 const entryByKey = (key: string) => legendEntries.value.find(e => e.key === key);
+// The magazine map dialog: mapped from another client, or a job started,
+// leaves nothing to ask here. (Here, below everything it watches.)
+watch([magazineMappable, isJobActive], ([mappable, active]) => {
+  if (!mappable || active) showMagazineMap.value = false;
+});
 const toolHasTlo = (tool: any): boolean => {
   const tlo = tool?.offsets?.tlo;
   return typeof tlo === 'number' && Math.abs(tlo) > 0.0001;
@@ -3539,6 +3593,7 @@ const handleGCodeUpdate = async (data: { filename: string; content?: string; tim
 
     // Detect tools used based on M6 lines with tool numbers
     toolsUsed.value = extractToolsFromGCode(content);
+    nextTick(maybePromptMagazine);
 
     // Check if G-code has out of bounds movements
     showOutOfBoundsWarning.value = gcodeVisualizer.hasOutOfBoundsMovement();
@@ -4870,8 +4925,11 @@ function extractToolsFromGCode(content: string): number[] {
   const lines = content.split('\n');
   const seen = new Set<number>();
   const order: number[] = [];
+  const firstLines: Record<number, number> = {};
+  toolFirstLines.value = firstLines;
 
-  for (const raw of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
     const line = raw.replace(/\((?:[^)]*)\)/g, '').replace(/;.*$/, '').trim(); // strip comments
     if (!line) continue;
 
@@ -4883,6 +4941,7 @@ function extractToolsFromGCode(content: string): number[] {
         if (Number.isFinite(t) && !seen.has(t)) {
           seen.add(t);
           order.push(t);
+          firstLines[t] = i + 1;
         }
       }
     }
