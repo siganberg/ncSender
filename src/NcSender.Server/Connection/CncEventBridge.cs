@@ -705,13 +705,14 @@ public class CncEventBridge
                 (IReadOnlyList<string>)(b.Gcode?.ToList() ?? new List<string>()))).ToList()
             : null;
 
-        var buttons = new List<GateButton>
-        {
-            new("abort", "Abort", "danger"),
-            new("continue", dialog.ContinueLabel ?? "Continue", "primary",
+        // An empty continueLabel means the prompt offers Abort only: the plugin
+        // has nothing it can safely carry on with (a sensor check that failed
+        // its retries). Null keeps the default label.
+        var buttons = new List<GateButton> { new("abort", "Abort", "danger") };
+        if (dialog.ContinueLabel != "")
+            buttons.Add(new("continue", dialog.ContinueLabel ?? "Continue", "primary",
                 IsDefault: true,
-                RequiresStepsComplete: extras.Count > 0),
-        };
+                RequiresStepsComplete: extras.Count > 0));
 
         GateStepConfig? stepConfig = steps is null ? null : new GateStepConfig(
             HoldMs: dialog.HoldMs.GetValueOrDefault(1000),
