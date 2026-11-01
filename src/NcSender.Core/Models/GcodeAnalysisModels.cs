@@ -22,6 +22,10 @@ public class GcodeState
     public bool HasPositionX { get; set; }
     public bool HasPositionY { get; set; }
     public bool HasPositionZ { get; set; }
+
+    // False until a line before the start line selects a work offset; without
+    // one the resume sequence leaves the controller on its current offset.
+    public bool HasWcs { get; set; }
     public Dictionary<int, bool> AuxOutputs { get; set; } = new();
 }
 

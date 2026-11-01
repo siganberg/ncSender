@@ -154,6 +154,7 @@ public class GcodeStateAnalyzer : IGcodeAnalyzer
                 break;
             case 54: case 55: case 56: case 57: case 58: case 59:
                 state.Wcs = $"G{code}";
+                state.HasWcs = true;
                 break;
             case 90: case 91:
                 state.PositioningMode = $"G{code}";
