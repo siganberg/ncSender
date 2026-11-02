@@ -95,6 +95,21 @@ public class GcodeStateAnalyzerTests
         Assert.DoesNotContain("G54", sequence);
     }
 
+    [Theory]
+    [InlineData("G59.1")]
+    [InlineData("G59.2")]
+    [InlineData("G59.3")]
+    public void GenerateResumeSequence_FileSetsDottedWcs_RestoresIt(string wcs)
+    {
+        var content = $"{wcs}\nG0 X10 Y20\nG1 Z-1 F300\nG1 X30";
+        var state = _analyzer.AnalyzeToLine(content, 4);
+
+        var sequence = _analyzer.GenerateResumeSequence(state, new StartFromLineRequest { StartLine = 4 });
+
+        Assert.Equal(wcs, state.Wcs);
+        Assert.Contains(wcs, sequence);
+    }
+
     [Fact]
     public void AnalyzeToLine_TracksUnits()
     {
