@@ -1971,6 +1971,7 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
       fitCameraToBounds({ center: new THREE.Vector3(0, 0, 0), size: gridBounds.size });
     } else {
       fitCameraToBounds(getGridBounds());
+      restoreCamera(props.view);
     }
   }
 
@@ -4594,6 +4595,7 @@ watch(() => props.zMaxTravel, () => {
       fitCameraToBounds({ center: new THREE.Vector3(0, 0, 0), size: gridBounds.size });
     } else {
       fitCameraToBounds(getGridBounds());
+      restoreCamera(props.view);
     }
   }
 });
@@ -4628,8 +4630,10 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
       fitCameraToBounds({ center: new THREE.Vector3(0, 0, 0), size: bounds.size });
     } else if (isAutoFit && currentGCodeBounds) {
       fitCameraToBounds(currentGCodeBounds);
+      restoreCamera(props.view);
     } else {
       fitCameraToBounds(getGridBounds());
+      restoreCamera(props.view);
     }
   }
 
@@ -4773,8 +4777,10 @@ watch(() => spindleViewMode.value, async (isSpindleView) => {
       } else {
         fitCameraToBounds(getGridBounds());
       }
+      restoreCamera(props.view);
     } else {
       fitCameraToBounds(getGridBounds());
+      restoreCamera(props.view);
     }
   }
 
