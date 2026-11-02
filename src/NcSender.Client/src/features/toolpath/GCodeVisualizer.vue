@@ -1963,6 +1963,7 @@ const rebuildGrid = (_workOffset = props.workOffset, viewType: 'top' | 'front' |
 
   // Skip camera fitting when only WCO changed (e.g., during job run)
   if (!skipCameraFit && !autoFitMode.value) {
+    rememberCamera();
     if (props.view === 'split') {
       updateSplitViewCameras();
     } else if (spindleViewMode.value) {
@@ -4587,6 +4588,7 @@ watch(() => props.zMaxTravel, () => {
   // they land at the new bed level.
   rebuildGrid(props.workOffset, props.view, true);
   if (!autoFitMode.value) {
+    rememberCamera();
     if (props.view === 'split') {
       updateSplitViewCameras();
     } else if (spindleViewMode.value) {
@@ -4609,6 +4611,7 @@ watch(() => props.machineOrientation, () => {
 
 // Watch for auto-fit mode changes
 watch(() => autoFitMode.value, async (isAutoFit) => {
+  rememberCamera();
   // Don't save during initial load
   if (!isInitialLoad) {
     try {
@@ -4629,6 +4632,7 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
       const bounds = (isAutoFit && currentGCodeBounds) ? currentGCodeBounds : getGridBounds();
       fitCameraToBounds({ center: new THREE.Vector3(0, 0, 0), size: bounds.size });
     } else if (isAutoFit && currentGCodeBounds) {
+      programLoaded(currentGCodeBounds);
       fitCameraToBounds(currentGCodeBounds);
       restoreCamera(props.view);
     } else {
@@ -4642,6 +4646,7 @@ watch(() => autoFitMode.value, async (isAutoFit) => {
 
 // Watch for spindle view mode changes
 watch(() => spindleViewMode.value, async (isSpindleView) => {
+  rememberCamera();
   // Don't save during initial load
   if (!isInitialLoad) {
     try {
