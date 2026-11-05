@@ -6,6 +6,7 @@ using System.Text.Json;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 using NcSender.Server.Infrastructure;
+using NcSender.Server.Job;
 
 namespace NcSender.Server.WebSocket;
 
@@ -366,19 +367,13 @@ public class WebSocketLayer : IBroadcaster
             if (jobStatus is "running" or "paused")
             {
                 var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
-                _logger.LogInformation("Soft reset during active job — feed hold first (delay={Delay}ms)", pauseBeforeStop);
+                _logger.LogInformation("Soft reset during active job — feed hold first, waiting for motion to stop");
 
-                // Send feed hold
-                await _controller.SendCommandAsync("!", new CommandOptions
-                {
-                    DisplayCommand = "! (Feed Hold)",
-                    Meta = new CommandMeta { SourceId = "client", Silent = true }
-                });
-
+                await StopSequence.SendFeedHoldAsync(_controller, "client");
                 _jobManager.Pause();
 
-                // Wait for deceleration
-                await Task.Delay(pauseBeforeStop);
+                var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
+                _logger.LogInformation("Motion stop wait: {Result}", waitResult);
 
                 // Stop the job before sending soft reset
                 _jobManager.Stop();
@@ -528,21 +523,7 @@ public class WebSocketLayer : IBroadcaster
         if (_jobManager is null || _controller is null) return;
 
         var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
-
-        // Send feed hold
-        await _controller.SendCommandAsync("!", new CommandOptions
-        {
-            Meta = new CommandMeta { SourceId = "system", Silent = true }
-        });
-
-        // Wait before soft reset
-        await Task.Delay(pauseBeforeStop);
-
-        // Send soft reset
-        await _controller.SendCommandAsync("\x18", new CommandOptions
-        {
-            Meta = new CommandMeta { SourceId = "system", Silent = true }
-        });
+        await StopSequence.FeedHoldThenResetAsync(_controller, pauseBeforeStop, "system");
 
         _jobManager.Stop();
     }

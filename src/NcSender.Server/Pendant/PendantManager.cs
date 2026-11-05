@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
 using NcSender.Server.Infrastructure;
+using NcSender.Server.Job;
 
 namespace NcSender.Server.Pendant;
 
@@ -2713,20 +2714,7 @@ public class PendantManager : IPendantManager
 
             var pauseBeforeStop = _settingsManager.GetSetting<int>("pauseBeforeStop", 500);
 
-            await _controller.SendCommandAsync("!", new CommandOptions
-            {
-                DisplayCommand = "! (Feed Hold)",
-                Meta = new CommandMeta { SourceId = "usb-pendant", Silent = true }
-            });
-
-            if (pauseBeforeStop > 0)
-                await Task.Delay(pauseBeforeStop);
-
-            await _controller.SendCommandAsync("\x18", new CommandOptions
-            {
-                DisplayCommand = "\\x18 (Soft Reset)",
-                Meta = new CommandMeta { SourceId = "usb-pendant", Silent = true }
-            });
+            await StopSequence.FeedHoldThenResetAsync(_controller, pauseBeforeStop, "usb-pendant");
 
             _jobManager.Stop();
             _logger.LogInformation("Job stopped via USB pendant");
