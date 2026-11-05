@@ -140,6 +140,13 @@ public class GcodeStateAnalyzer : IGcodeAnalyzer
 
     private static void ProcessGCode(double value, GcodeState state)
     {
+        if (value is > 59.05 and < 59.35)
+        {
+            state.Wcs = "G" + Math.Round(value, 1).ToString("0.0", CultureInfo.InvariantCulture);
+            state.HasWcs = true;
+            return;
+        }
+
         var code = (int)value;
         switch (code)
         {
@@ -154,6 +161,7 @@ public class GcodeStateAnalyzer : IGcodeAnalyzer
                 break;
             case 54: case 55: case 56: case 57: case 58: case 59:
                 state.Wcs = $"G{code}";
+                state.HasWcs = true;
                 break;
             case 90: case 91:
                 state.PositioningMode = $"G{code}";

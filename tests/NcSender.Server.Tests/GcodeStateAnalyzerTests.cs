@@ -72,6 +72,45 @@ public class GcodeStateAnalyzerTests
     }
 
     [Fact]
+    public void GenerateResumeSequence_FileSetsNoWcs_LeavesCurrentWcs()
+    {
+        var content = "G21 G90\nG0 X10 Y20\nG1 Z-1 F300\nG1 X30";
+        var state = _analyzer.AnalyzeToLine(content, 4);
+        Assert.False(state.HasWcs);
+
+        var sequence = _analyzer.GenerateResumeSequence(state, new StartFromLineRequest { StartLine = 4 });
+
+        Assert.DoesNotContain(sequence, s => s is "G54" or "G55" or "G56" or "G57" or "G58" or "G59");
+    }
+
+    [Fact]
+    public void GenerateResumeSequence_FileSetsWcs_RestoresIt()
+    {
+        var content = "G55\nG0 X10 Y20\nG1 Z-1 F300\nG1 X30";
+        var state = _analyzer.AnalyzeToLine(content, 4);
+
+        var sequence = _analyzer.GenerateResumeSequence(state, new StartFromLineRequest { StartLine = 4 });
+
+        Assert.Contains("G55", sequence);
+        Assert.DoesNotContain("G54", sequence);
+    }
+
+    [Theory]
+    [InlineData("G59.1")]
+    [InlineData("G59.2")]
+    [InlineData("G59.3")]
+    public void GenerateResumeSequence_FileSetsDottedWcs_RestoresIt(string wcs)
+    {
+        var content = $"{wcs}\nG0 X10 Y20\nG1 Z-1 F300\nG1 X30";
+        var state = _analyzer.AnalyzeToLine(content, 4);
+
+        var sequence = _analyzer.GenerateResumeSequence(state, new StartFromLineRequest { StartLine = 4 });
+
+        Assert.Equal(wcs, state.Wcs);
+        Assert.Contains(wcs, sequence);
+    }
+
+    [Fact]
     public void AnalyzeToLine_TracksUnits()
     {
         var content = "G20\nG0 X1 Y2";
@@ -174,6 +213,7 @@ public class GcodeStateAnalyzerTests
             Units = "G21",
             Plane = "G17",
             Wcs = "G54",
+            HasWcs = true,
             PositioningMode = "G90",
             MotionMode = "G1",
             PositionX = 50,

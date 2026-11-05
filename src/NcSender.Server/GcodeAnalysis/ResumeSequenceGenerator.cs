@@ -25,7 +25,8 @@ public static class ResumeSequenceGenerator
         commands.Add(state.Plane);
 
         // WCS
-        commands.Add(state.Wcs);
+        if (state.HasWcs)
+            commands.Add(state.Wcs);
 
         // Use G90 absolute for all positioning moves (analyzed positions are always absolute)
         // Restore actual positioning mode after positioning is complete
