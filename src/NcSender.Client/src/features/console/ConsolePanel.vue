@@ -1412,8 +1412,19 @@ watch(isProgramRunning, async (running) => {
     // Clear Monaco decorations when program stops
     updateCurrentLineDecoration();
     updateMainViewerDecoration();
+    scrollMainViewerToJobStop();
   }
 });
+
+// The throttled follow above skips the last updates once the job leaves
+// running, and a completed job keeps the controller's last reported line,
+// which trails the end of the file by the planner buffer.
+function scrollMainViewerToJobStop() {
+  const editor = monacoMainViewerRef.value;
+  if (!editor || showGcodeModal.value || activeTab.value !== 'gcode-preview' || !autoScrollGcode.value) return;
+  const line = store.jobLoaded.value?.status === 'completed' ? totalLines.value : completedUpTo.value;
+  if (line > 0) editor.revealLineInCenter(line);
+}
 
 onMounted(() => {
   // Listen for G-code loading events

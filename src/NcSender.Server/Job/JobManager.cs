@@ -405,15 +405,21 @@ public class JobManager : IJobManager
         _ = _broadcaster.Broadcast("server-state-updated", _context.State, NcSenderJsonContext.Default.ServerState);
     }
 
+    // The last reported Ln trails the end of the file by the planner buffer,
+    // and Ln is no longer taken once the job is no longer running.
+    internal static void MarkCompleted(JobInfo job)
+    {
+        job.Status = "completed";
+        job.JobEndTime = DateTime.UtcNow;
+        job.CurrentLine = job.TotalLines;
+        job.ProgressPercent = 100;
+    }
+
     private void OnJobCompleted()
     {
         var job = _context.State.JobLoaded;
         if (job is not null && job.Status == "running")
-        {
-            job.Status = "completed";
-            job.JobEndTime = DateTime.UtcNow;
-            job.ProgressPercent = 100;
-        }
+            MarkCompleted(job);
 
         _activeProcessor = null;
         _activeTask = null;
