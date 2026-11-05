@@ -823,6 +823,7 @@
           <input
             type="number"
             :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
+            ref="moveSpindleXInput"
             class="move-to-input"
             v-model.number="moveSpindleX"
             @keydown.enter="executeMoveSpindle"
@@ -1322,6 +1323,7 @@ const showOffsetDialog = ref(false);
 const showMoveSpindleDialog = ref(false);
 const moveSpindleX = ref(0);
 const moveSpindleY = ref(0);
+const moveSpindleXInput = ref<HTMLInputElement | null>(null);
 const isTransforming = ref(false);
 
 // Can reset if the current file is temporary (has been transformed) and has a source file
@@ -3440,6 +3442,10 @@ const handleMoveSpindleHere = () => {
   moveSpindleX.value = parseFloat(x.toFixed(isImperial ? 4 : 3));
   moveSpindleY.value = parseFloat(y.toFixed(isImperial ? 4 : 3));
   showMoveSpindleDialog.value = true;
+  nextTick(() => {
+    moveSpindleXInput.value?.focus();
+    moveSpindleXInput.value?.select();
+  });
 };
 
 const executeMoveSpindle = async () => {
