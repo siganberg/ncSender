@@ -59,8 +59,8 @@
         </div>
       </div>
 
-      <!-- Move Spindle (Top view only - 3D view X/Y projection is inaccurate) -->
-      <template v-if="props.view === 'top' && isConnected">
+      <!-- Move Spindle: its dialog starts at the clicked X/Y, which can be typed over -->
+      <template v-if="isConnected">
         <div class="menu-divider"></div>
 
         <div class="menu-section">
