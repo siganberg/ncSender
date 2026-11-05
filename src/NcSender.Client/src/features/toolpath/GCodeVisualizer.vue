@@ -823,6 +823,7 @@
           <input
             type="number"
             :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
+            ref="moveSpindleXInput"
             class="move-to-input"
             v-model.number="moveSpindleX"
             @keydown.enter="executeMoveSpindle"
@@ -1322,6 +1323,7 @@ const showOffsetDialog = ref(false);
 const showMoveSpindleDialog = ref(false);
 const moveSpindleX = ref(0);
 const moveSpindleY = ref(0);
+const moveSpindleXInput = ref<HTMLInputElement | null>(null);
 const isTransforming = ref(false);
 
 // Can reset if the current file is temporary (has been transformed) and has a source file
@@ -3366,6 +3368,8 @@ const showContextMenuAt = (clientX: number, clientY: number) => {
   // through the click and intersect the grid plane (Z = wco.z) — a plain
   // unproject() gives a point on the camera's mid-clipping plane, which
   // skews Y when the top view has its small anti-pole-flip tilt applied.
+  // The side view sees the grid edge-on, so there the ray meets the upright
+  // plane through the spindle: X from the click, Y where the spindle is.
   if (canvas.value && camera) {
     const rect = canvas.value.getBoundingClientRect();
     const mouseX = clientX - rect.left;
@@ -3375,7 +3379,9 @@ const showContextMenuAt = (clientX: number, clientY: number) => {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
     const gridZ = props.workOffset?.z ?? 0;
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -gridZ);
+    const plane = props.view === 'front'
+      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -props.machineCoords.y)
+      : new THREE.Plane(new THREE.Vector3(0, 0, 1), -gridZ);
     const target = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(plane, target)) {
       worldCoordX.value = Math.round(target.x * 1000) / 1000;
@@ -3442,6 +3448,10 @@ const handleMoveSpindleHere = () => {
   moveSpindleX.value = parseFloat(x.toFixed(isImperial ? 4 : 3));
   moveSpindleY.value = parseFloat(y.toFixed(isImperial ? 4 : 3));
   showMoveSpindleDialog.value = true;
+  nextTick(() => {
+    moveSpindleXInput.value?.focus();
+    moveSpindleXInput.value?.select();
+  });
 };
 
 const executeMoveSpindle = async () => {
