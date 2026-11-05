@@ -268,9 +268,9 @@
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
-                  <label class="setting-label">Stop Deceleration Delay</label>
+                  <label class="setting-label">Stop Deceleration Fallback</label>
                   <div class="settings-note">
-                    Time to wait after Feed Hold before Soft Reset when stopping a job. Allows machine to decelerate smoothly.
+                    Stopping a job waits for the machine to finish decelerating before Soft Reset. This delay is only used if the controller isn't reporting status (minimum 1s).
                   </div>
                 </div>
                 <select class="setting-select" v-model="pauseBeforeStop" @change="savePauseBeforeStop">

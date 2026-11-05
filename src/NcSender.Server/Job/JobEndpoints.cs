@@ -25,7 +25,7 @@ public static class JobEndpoints
             }
         });
 
-        // Stop job: feed hold → delay → soft reset → stop
+        // Stop job: feed hold → wait for motion to stop → soft reset → stop
         app.MapPost("/api/gcode-job/stop", async (
             IJobManager jobManager,
             ICncController cnc,
@@ -35,21 +35,7 @@ public static class JobEndpoints
                 return Results.BadRequest(new ApiError("No active job"));
 
             var pauseBeforeStop = settings.GetSetting<int>("pauseBeforeStop", 500);
-
-            // Send feed hold
-            await cnc.SendCommandAsync("!", new CommandOptions
-            {
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
-
-            // Wait before soft reset
-            await Task.Delay(pauseBeforeStop);
-
-            // Send soft reset
-            await cnc.SendCommandAsync("\x18", new CommandOptions
-            {
-                Meta = new CommandMeta { SourceId = "system", Silent = true }
-            });
+            await StopSequence.FeedHoldThenResetAsync(cnc, pauseBeforeStop, "system");
 
             jobManager.Stop();
             return Results.Ok(new ApiSuccess(true));
