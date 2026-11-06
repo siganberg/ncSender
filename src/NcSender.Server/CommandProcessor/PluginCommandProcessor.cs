@@ -238,6 +238,22 @@ public class PluginCommandProcessor : ICommandProcessor
         foreach (var cmd in commands)
         {
             var innerResult = await _inner.ProcessAsync(cmd.Command, context);
+            // A refused line (or a macro in the expansion that stopped) refuses
+            // the whole expansion: none of it is sent, so a tool change is never
+            // left half done, and the refusal reaches the caller.
+            if (innerResult.Refused || innerResult.Error is not null)
+            {
+                _logger.LogWarning("Expansion of {Command} refused at {Line}: {Reason}",
+                    command.Trim(), cmd.Command, innerResult.Error ?? innerResult.SkipReason);
+                return new CommandProcessorResult
+                {
+                    ShouldContinue = false,
+                    Refused = true,
+                    SkipReason = innerResult.SkipReason,
+                    Error = innerResult.Error ?? (context.Meta?.SourceId is "job" or "resume"
+                        ? $"{command.Trim()}: {innerResult.SkipReason}" : null),
+                };
+            }
             if (innerResult.ShouldContinue)
             {
                 foreach (var innerCmd in innerResult.Commands)
@@ -362,6 +378,7 @@ public class PluginCommandProcessor : ICommandProcessor
             ShouldContinue = false,
             SkipReason = $"Command blocked: {reason}",
             Error = stopsJob ? reason : null,
+            Refused = true,
         };
     }
 

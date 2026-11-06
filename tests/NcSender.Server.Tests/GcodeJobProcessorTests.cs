@@ -27,7 +27,7 @@ public class GcodeJobProcessorTests : IDisposable
     }
 
     private (GcodeJobProcessor Processor, Mock<ICncController> Controller, Mock<IServerContext> Context)
-        CreateProcessor(string gcodeContent, int totalLines)
+        CreateProcessor(string gcodeContent, int totalLines, Func<string, CommandProcessorResult?>? process = null)
     {
         File.WriteAllText(_cachePath, gcodeContent);
 
@@ -37,7 +37,7 @@ public class GcodeJobProcessorTests : IDisposable
 
         var commandProcessor = new Mock<ICommandProcessor>();
         commandProcessor.Setup(p => p.ProcessAsync(It.IsAny<string>(), It.IsAny<CommandProcessorContext>()))
-            .ReturnsAsync((string cmd, CommandProcessorContext ctx) => new CommandProcessorResult
+            .ReturnsAsync((string cmd, CommandProcessorContext ctx) => process?.Invoke(cmd) ?? new CommandProcessorResult
             {
                 ShouldContinue = true,
                 Commands = [new ProcessedCommand { Command = cmd, IsOriginal = true }]
@@ -430,6 +430,41 @@ public class GcodeJobProcessorTests : IDisposable
             controller.Verify(c => c.SendCommandAsync(
                 It.Is<string>(cmd => cmd.Contains("X3")),
                 It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()),
+                Times.Never());
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
+    // A macro that stopped at a refused line: the lines before it run, like
+    // earlier lines of the file, then the job stops with the reason.
+    [Fact]
+    public async Task StoppedMacro_SendsItsEarlierLines_ThenStopsTheJob()
+    {
+        var gcode = "G0 X1\nM98 P9001\nG0 X3\n";
+        var cachePath = SetupCacheFile(gcode);
+        try
+        {
+            var (processor, controller, context) = CreateProcessor(gcode, 3, cmd => cmd.Contains("M98")
+                ? new CommandProcessorResult
+                {
+                    ShouldContinue = true,
+                    Refused = true,
+                    Error = "Park: home the machine first",
+                    Commands = [new ProcessedCommand { Command = "M6 T2", IsOriginal = false },
+                                new ProcessedCommand { Command = "(Macro m stopped: home the machine first)", IsOriginal = false }],
+                }
+                : null);
+            context.Object.State.MachineState.Status = "Idle";
+
+            await processor.ProcessLinesAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal("Park: home the machine first", processor.FailureReason);
+            controller.Verify(c => c.SendCommandAsync("M6 T2", It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()), Times.Once());
+            controller.Verify(c => c.SendCommandAsync(
+                It.Is<string>(cmd => cmd.Contains("X3")), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()),
                 Times.Never());
         }
         finally
