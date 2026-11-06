@@ -80,6 +80,12 @@ public class CommandProcessor : ICommandProcessor
             return HandleClearMsg(processorContext);
         }
 
+        // $PARK: the jog panel's Park, from a program, macro or event
+        if (GcodePatterns.IsParkCommand(command))
+        {
+            return await HandleParkAsync(processorContext);
+        }
+
         // 5. Check if this is a valid M6 command
         var m6Parse = GcodePatterns.ParseM6Command(command);
         var isValidM6 = m6Parse.Matched && m6Parse.ToolNumber is not null;
@@ -612,6 +618,82 @@ public class CommandProcessor : ICommandProcessor
             DateTime.UtcNow.ToString("o"),
             ctx.Meta?.SourceId ?? "client"
         ), NcSenderJsonContext.Default.WsCncCommandStatus);
+    }
+
+    // $PARK does what holding the Park button does: up to Safe Z, then across
+    // to the saved parking location, in the user's units. The location is read
+    // when the line runs, so saving a new Park spot moves where programs end.
+    // Each move goes back through the pipeline, so the door check and plugins
+    // see it like a typed move. Refused in a job, it stops the job with the
+    // reason instead of finishing somewhere else.
+    private async Task<CommandProcessorResult> HandleParkAsync(CommandProcessorContext ctx)
+    {
+        var ms = ctx.MachineState;
+        if (ms.HomingCycle is > 0 && !ms.Homed)
+            return RefusePark(ctx, "home the machine first");
+
+        var park = ParseMachinePosition(_settingsManager.GetSetting<string>("parkingLocation", "") ?? "");
+        if (park is null)
+            return RefusePark(ctx, "no parking location saved; double-tap Park to save one");
+
+        var safeZ = _settingsManager.GetSetting<double>("safeZHeight", -5);
+        var imperial = _settingsManager.GetSetting<string>("unitsPreference", "metric") == "imperial";
+        var units = imperial ? "G20" : "G21";
+        string F(double mm) => imperial
+            ? (mm / 25.4).ToString("0.0###", CultureInfo.InvariantCulture)
+            : mm.ToString("0.0##", CultureInfo.InvariantCulture);
+
+        var moves = new[]
+        {
+            $"G53 {units} G0 Z{F(safeZ)}",
+            $"G53 {units} G0 X{F(park.X)} Y{F(park.Y)}",
+        };
+        _logger.LogInformation("$PARK: Z{Z} then X{X} Y{Y} (mm, machine)", safeZ, park.X, park.Y);
+
+        var output = new List<ProcessedCommand>();
+        foreach (var move in moves)
+        {
+            var childResult = await Pipeline.ProcessAsync(move, new CommandProcessorContext
+            {
+                CommandId = ctx.CommandId,
+                Meta = ctx.Meta,
+                MachineState = ctx.MachineState,
+                LineNumber = ctx.LineNumber,
+                Filename = ctx.Filename,
+                SafeZHeight = ctx.SafeZHeight,
+            });
+            if (childResult.Error is not null || !childResult.ShouldContinue)
+            {
+                var reason = childResult.Error ?? childResult.SkipReason ?? "a park move was refused";
+                return new CommandProcessorResult
+                {
+                    ShouldContinue = false,
+                    SkipReason = reason,
+                    Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+                };
+            }
+            // Shown as the moves themselves, not as the $PARK line.
+            foreach (var c in childResult.Commands)
+            {
+                if (c.IsOriginal) { c.IsOriginal = false; c.DisplayCommand ??= c.Command; }
+                output.Add(c);
+            }
+        }
+        return new CommandProcessorResult { ShouldContinue = true, Commands = output };
+    }
+
+    private static bool IsJobLine(CommandProcessorContext ctx) => ctx.Meta?.SourceId == "job";
+
+    // Shown in the terminal as "$PARK (BLOCKED - reason)".
+    private CommandProcessorResult RefusePark(CommandProcessorContext ctx, string reason)
+    {
+        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, "$PARK", reason, ctx.Meta?.SourceId);
+        return new CommandProcessorResult
+        {
+            ShouldContinue = false,
+            SkipReason = $"Command blocked: {reason}",
+            Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+        };
     }
 
     private static XyPosition? ParseMachinePosition(string? mpos)
