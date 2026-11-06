@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using NcSender.Core.Constants;
 using NcSender.Core.Interfaces;
 using NcSender.Core.Models;
+using NcSender.Core.Utils;
 
 namespace NcSender.Server.Connection;
 
@@ -71,6 +72,7 @@ public partial class CncController : ICncController
     private readonly object _activeLock = new();
     private readonly ConcurrentDictionary<string, CommandEntry> _pendingCommands = new();
     private string? _lastJogDirection;
+    private volatile string? _queuedUnits;
 
     // Raw mode (for Ymodem etc.) — suspends line-based parsing
     private volatile bool _rawMode;
@@ -121,6 +123,7 @@ public partial class CncController : ICncController
     public MachineState LastStatus => _lastStatus;
     public string? RawStatusData => _rawStatusData;
     public string? GreetingMessage => _greetingMessage;
+    public string? QueuedUnits => _queuedUnits;
 
     public IConnectionTransport? Transport => _transport;
     public IProtocolHandler? ActiveProtocol => _activeProtocol;
@@ -645,6 +648,7 @@ public partial class CncController : ICncController
 
         if (isRealTime)
         {
+            if (cleanCommand == "\x18") _queuedUnits = null;
             return await SendRealTimeCommand(cleanCommand, commandToSend, commandId, displayCommand, meta);
         }
 
@@ -674,6 +678,7 @@ public partial class CncController : ICncController
 
         // Track M64/M65 output pin state changes
         TrackOutputPinCommand(normalizedCommand);
+        if (GcodePatterns.UnitsWord(cleanCommand) is { } units) _queuedUnits = units;
         var display = displayCommand ?? cleanCommand;
 
         // Sentinel parse — case preserved (cleanCommand hasn't been
@@ -1301,9 +1306,15 @@ public partial class CncController : ICncController
 
             // Try greeting detection — selects protocol handler and starts polling
             if (!_hasReceivedGreeting)
+            {
                 TryDetectGreeting(trimmedData);
+                if (_hasReceivedGreeting) _queuedUnits = null;
+            }
             else if (_translator is not null && _activeProtocol?.MatchesGreeting(trimmedData) == true)
+            {
                 _translator.Reset();
+                _queuedUnits = null;
+            }
 
             // Delegate to active protocol handler for controller-specific messages
             if (_activeProtocol is not null && _activeProtocol.TryHandleData(trimmedData, _lastStatus, out var stateChanged))
@@ -1814,6 +1825,8 @@ public partial class CncController : ICncController
             _lastStatus.Workspace = wcsMode;
             hasChanges = true;
         }
+
+        _queuedUnits ??= Array.Find(modes, m => m is "G20" or "G21");
 
         var toolMode = Array.Find(modes, m => m.Length >= 2 && m[0] == 'T' && char.IsDigit(m[1]));
         if (toolMode is not null && int.TryParse(toolMode[1..], out var toolNumber))
