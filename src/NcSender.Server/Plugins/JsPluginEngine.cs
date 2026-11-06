@@ -729,7 +729,7 @@ public class JsPluginEngine : IJsPluginEngine
             }
         }));
 
-        // stopJob() — safety hard-stop: feed hold, brief pause, then
+        // stopJob() — safety hard-stop: feed hold, wait for the axes to stop, then
         // soft reset, and mark the active job stopped. Mirrors the
         // pendant's job:stop and gate-abort dispatch. Plugins call
         // this from safety checks that decide it's dangerous to
@@ -750,17 +750,8 @@ public class JsPluginEngine : IJsPluginEngine
                 {
                     try
                     {
-                        await _cncController.SendCommandAsync("!", new NcSender.Core.Models.CommandOptions
-                        {
-                            DisplayCommand = "! (Feed Hold)",
-                            Meta = new NcSender.Core.Models.CommandMeta { SourceId = $"plugin:{pluginId}", Silent = true }
-                        });
-                        await Task.Delay(200);
-                        await _cncController.SendCommandAsync("\x18", new NcSender.Core.Models.CommandOptions
-                        {
-                            DisplayCommand = "\\x18 (Soft Reset)",
-                            Meta = new NcSender.Core.Models.CommandMeta { SourceId = $"plugin:{pluginId}", Silent = true }
-                        });
+                        // Soft Reset only once the axes are at rest (see StopSequence).
+                        await NcSender.Server.Job.StopSequence.FeedHoldThenResetAsync(_cncController, 200, $"plugin:{pluginId}");
                     }
                     catch (Exception ex)
                     {
