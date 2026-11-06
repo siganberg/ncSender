@@ -39,26 +39,28 @@ public class StopSequenceTests
         var raw = "<Run|MPos:0,0,0>";
         var controller = new Mock<ICncController>();
         controller.SetupGet(c => c.RawStatusData).Returns(() => raw);
-        var sent = new List<(string Cmd, string Status)>();
+        var sent = new System.Collections.Concurrent.ConcurrentQueue<(string Cmd, string Status)>();
         controller.Setup(c => c.SendCommandAsync(It.IsAny<string>(), It.IsAny<CommandOptions?>(), It.IsAny<CancellationToken>()))
-            .Callback<string, CommandOptions?, CancellationToken>((cmd, _, _) => sent.Add((cmd, raw)))
+            .Callback<string, CommandOptions?, CancellationToken>((cmd, _, _) => sent.Enqueue((cmd, raw)))
             .ReturnsAsync(new CommandResult { Status = "success" });
 
         var stop = StopSequence.FeedHoldThenResetAsync(controller.Object, 500, "test");
 
-        foreach (var report in new[] { "<Hold:1|FS:3000,0>", "<Hold:1|FS:1500,0>", "<Hold:1|FS:200,0>" })
+        // Decelerate for well past the no-status fallback, reporting at a
+        // controller-like cadence so the status is known to be readable.
+        var decelerating = System.Diagnostics.Stopwatch.StartNew();
+        while (decelerating.ElapsedMilliseconds < 1500)
         {
-            await Task.Delay(400);
-            raw = new string(report);
+            await Task.Delay(50);
+            raw = new string("<Hold:1|FS:1500,0>");
             Assert.DoesNotContain(sent, s => s.Cmd == "\x18");
         }
 
-        await Task.Delay(100);
         raw = new string("<Hold:0|FS:0,0>");
         await stop.WaitAsync(TimeSpan.FromSeconds(2));
 
         Assert.Equal(["!", "\x18"], sent.Select(s => s.Cmd));
-        Assert.StartsWith("<Hold:0", sent[1].Status);
+        Assert.StartsWith("<Hold:0", sent.Last().Status);
     }
 
     [Fact]
