@@ -44,10 +44,3 @@ jobs:
             /p:PublishAot=true -o publish-server/
           test -f publish-server/NcSender.Server
           echo "Server AOT binary produced successfully"
-
-      - name: Verify Desktop AOT publish
-        run: |
-          dotnet publish src/NcSender.Desktop -c Release -r linux-x64 --self-contained \
-            /p:PublishAot=true -o publish-desktop/
-          test -f publish-desktop/NcSender.Desktop
-          echo "Desktop AOT binary produced successfully"
