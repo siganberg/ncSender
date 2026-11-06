@@ -32,8 +32,20 @@ public class GCodePreAnalyzer
 
     public double Analyze(string content)
     {
+        var total = 0.0;
+        foreach (var sec in AnalyzeLines(content)) total += sec;
+        return total;
+    }
+
+    /// <summary>
+    /// Estimated seconds per line, indexed like <c>content.Split('\n')</c>;
+    /// lines without motion take 0. Plugins use it to predict when the
+    /// machine reaches a point in the program.
+    /// </summary>
+    public double[] AnalyzeLines(string content)
+    {
         if (string.IsNullOrEmpty(content))
-            return 0;
+            return [];
 
         var lines = content.Split('\n');
         var lineCount = lines.Length;
@@ -333,7 +345,6 @@ public class GCodePreAnalyzer
         }
 
         // Pass 4: Forward pass - actual timing with velocity continuity
-        double totalSec = 0;
         double actualExitV = 0;
         for (int i = 0; i < lineCount; i++)
         {
@@ -357,10 +368,9 @@ public class GCodePreAnalyzer
                 actualExitV = vExit;
             }
 
-            totalSec += perLineSec[i];
         }
 
-        return totalSec;
+        return perLineSec;
     }
 
     private static double CalcTrapezoidTime(double dist, double vEntry, double vExit, double vCruise, double accel)

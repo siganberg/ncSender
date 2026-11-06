@@ -259,48 +259,7 @@ public class GcodeFileService : IGcodeFileService
     {
         try
         {
-            var firmware = await _firmwareService.GetCachedAsync();
-            var settings = firmware?.Settings;
-
-            (double x, double y, double z)? vmaxMmPerMin = null;
-            (double x, double y, double z)? accelMmPerSec2 = null;
-            double junctionDeviationMm = 0.01;
-            double rapidMmPerMin = 6000;
-
-            if (settings is not null)
-            {
-                // $110/$111/$112 = max rate X/Y/Z (mm/min)
-                double.TryParse(settings.GetValueOrDefault("110")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vx);
-                double.TryParse(settings.GetValueOrDefault("111")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vy);
-                double.TryParse(settings.GetValueOrDefault("112")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vz);
-                if (vx > 0 || vy > 0 || vz > 0)
-                    vmaxMmPerMin = (vx, vy, vz);
-
-                // $120/$121/$122 = acceleration X/Y/Z (mm/sec²)
-                double.TryParse(settings.GetValueOrDefault("120")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ax);
-                double.TryParse(settings.GetValueOrDefault("121")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ay);
-                double.TryParse(settings.GetValueOrDefault("122")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var az);
-                if (ax > 0 || ay > 0 || az > 0)
-                    accelMmPerSec2 = (ax, ay, az);
-
-                // $11 = junction deviation (mm)
-                if (settings.TryGetValue("11", out var s11) && double.TryParse(s11.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var jd) && jd > 0)
-                    junctionDeviationMm = jd;
-
-                // Rapid = min of valid per-axis max rates, fallback 6000
-                var rates = new[] { vx, vy, vz }.Where(v => v > 0).ToArray();
-                if (rates.Length > 0)
-                    rapidMmPerMin = rates.Min();
-            }
-
-            var analyzer = new GCodePreAnalyzer(
-                rapidMmPerMin: rapidMmPerMin,
-                defaultFeedMmPerMin: 1000,
-                vmaxMmPerMin: vmaxMmPerMin,
-                accelMmPerSec2: accelMmPerSec2,
-                junctionDeviationMm: junctionDeviationMm);
-
-            var totalSec = analyzer.Analyze(content);
+            var totalSec = (await BuildAnalyzerAsync()).Analyze(content);
             return totalSec > 0 ? Math.Round(totalSec) : null;
         }
         catch (Exception ex)
@@ -308,6 +267,68 @@ public class GcodeFileService : IGcodeFileService
             _logger.LogWarning(ex, "Failed to calculate G-code estimate");
             return null;
         }
+    }
+
+    // The loaded program as the job sends it, with each line's estimated
+    // seconds. Cached until the program file changes.
+    private LoadedProgram? _loadedProgram;
+
+    public async Task<LoadedProgram?> GetLoadedProgramAsync()
+    {
+        if (!File.Exists(CurrentCachePath)) return null;
+        var stamp = File.GetLastWriteTimeUtc(CurrentCachePath);
+        var cached = _loadedProgram;
+        if (cached is not null && cached.Stamp == stamp) return cached;
+
+        var content = await File.ReadAllTextAsync(CurrentCachePath);
+        var lineSec = (await BuildAnalyzerAsync()).AnalyzeLines(content);
+        var program = new LoadedProgram(content, lineSec, stamp);
+        _loadedProgram = program;
+        return program;
+    }
+
+    private async Task<GCodePreAnalyzer> BuildAnalyzerAsync()
+    {
+        var firmware = await _firmwareService.GetCachedAsync();
+        var settings = firmware?.Settings;
+
+        (double x, double y, double z)? vmaxMmPerMin = null;
+        (double x, double y, double z)? accelMmPerSec2 = null;
+        double junctionDeviationMm = 0.01;
+        double rapidMmPerMin = 6000;
+
+        if (settings is not null)
+        {
+            // $110/$111/$112 = max rate X/Y/Z (mm/min)
+            double.TryParse(settings.GetValueOrDefault("110")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vx);
+            double.TryParse(settings.GetValueOrDefault("111")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vy);
+            double.TryParse(settings.GetValueOrDefault("112")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var vz);
+            if (vx > 0 || vy > 0 || vz > 0)
+                vmaxMmPerMin = (vx, vy, vz);
+
+            // $120/$121/$122 = acceleration X/Y/Z (mm/sec²)
+            double.TryParse(settings.GetValueOrDefault("120")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ax);
+            double.TryParse(settings.GetValueOrDefault("121")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ay);
+            double.TryParse(settings.GetValueOrDefault("122")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var az);
+            if (ax > 0 || ay > 0 || az > 0)
+                accelMmPerSec2 = (ax, ay, az);
+
+            // $11 = junction deviation (mm)
+            if (settings.TryGetValue("11", out var s11) && double.TryParse(s11.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var jd) && jd > 0)
+                junctionDeviationMm = jd;
+
+            // Rapid = min of valid per-axis max rates, fallback 6000
+            var rates = new[] { vx, vy, vz }.Where(v => v > 0).ToArray();
+            if (rates.Length > 0)
+                rapidMmPerMin = rates.Min();
+        }
+
+        return new GCodePreAnalyzer(
+            rapidMmPerMin: rapidMmPerMin,
+            defaultFeedMmPerMin: 1000,
+            vmaxMmPerMin: vmaxMmPerMin,
+            accelMmPerSec2: accelMmPerSec2,
+            junctionDeviationMm: junctionDeviationMm);
     }
 
     private List<GcodeFileEntry> BuildTree(string dir, string relativePath)

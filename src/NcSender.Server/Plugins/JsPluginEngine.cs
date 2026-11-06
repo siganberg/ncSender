@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Jint;
@@ -533,6 +534,20 @@ public class JsPluginEngine : IJsPluginEngine
         }
     }
 
+    // "x,y,z[,a…]" from a status report as { x, y, z }.
+    private static JsObject Xyz(Engine engine, string? csv)
+    {
+        var obj = new JsObject(engine);
+        var parts = (csv ?? "").Split(',');
+        string[] names = ["x", "y", "z"];
+        for (var i = 0; i < names.Length; i++)
+        {
+            var v = i < parts.Length && double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0;
+            obj.Set(names[i], new JsNumber(v));
+        }
+        return obj;
+    }
+
     private JsObject BuildPluginContext(Engine engine, string pluginId)
     {
         var ctx = new JsObject(engine);
@@ -780,7 +795,45 @@ public class JsPluginEngine : IJsPluginEngine
             obj.Set("connected", JsValue.FromObject(engine, state.MachineState.Connected));
             obj.Set("jobStatus", state.JobLoaded?.Status is string js
                 ? JsValue.FromObject(engine, js) : JsValue.Null);
+            // Where the machine is and what it's running, as of the last
+            // status report (about 10 a second): Idle / Run / Hold…, machine
+            // and work-offset positions, the program line executing now,
+            // and the overrides.
+            var m = state.MachineState;
+            obj.Set("machineStatus", JsValue.FromObject(engine, m.Status ?? ""));
+            obj.Set("mpos", Xyz(engine, m.MPos));
+            obj.Set("wco", Xyz(engine, m.WCO));
+            obj.Set("line", JsValue.FromObject(engine, state.JobLoaded?.CurrentLine ?? 0));
+            obj.Set("feedRate", JsValue.FromObject(engine, m.FeedRate));
+            obj.Set("feedOverride", JsValue.FromObject(engine, m.FeedrateOverride));
+            obj.Set("rapidOverride", JsValue.FromObject(engine, m.RapidOverride));
             return obj;
+        }));
+
+        // getProgram() — the loaded program as the job sends it:
+        // { text, lineSec, stamp }. lineSec[i] is line i + 1's estimated
+        // seconds (from $110–$122 and $11), 0 without motion; stamp changes
+        // when another program loads. null when nothing is loaded. Reads the
+        // file and runs the estimate, so call it once per program, not per tick.
+        ctx.Set("getProgram", new ClrFunction(engine, "getProgram", (_, _) =>
+        {
+            try
+            {
+                var files = _serviceProvider.GetService(typeof(IGcodeFileService)) as IGcodeFileService;
+                var program = files?.GetLoadedProgramAsync().GetAwaiter().GetResult();
+                if (program is null) return JsValue.Null;
+                var obj = new JsObject(engine);
+                obj.Set("text", program.Content);
+                obj.Set("lineSec", engine.Intrinsics.Array.Construct(
+                    program.LineSec.Select(v => (JsValue)new JsNumber(Math.Round(v, 4))).ToArray()));
+                obj.Set("stamp", program.Stamp.Ticks.ToString(CultureInfo.InvariantCulture));
+                return obj;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.getProgram failed for {PluginId}", pluginId);
+                return JsValue.Null;
+            }
         }));
 
         // sendCommand(command, displayCommand?) — send one line to the
