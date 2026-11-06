@@ -59,8 +59,14 @@
         </div>
       </div>
 
-      <!-- Move Spindle: its dialog starts at the clicked X/Y, which can be typed over -->
-      <template v-if="isConnected">
+      <!-- Move Spindle: Top view only, on purpose.
+           3D: the click lands on the grid plane, but what you click is the
+           toolpath above or below it, so the X/Y picked is off.
+           Side: the grid is edge-on, so a click gives no Y, and the view is
+           mostly Z, a short travel where picking a point could send the
+           spindle down into the work. Move To only lifts to Safe Z and moves
+           X/Y; it must never be a way to plunge. -->
+      <template v-if="props.view === 'top' && isConnected">
         <div class="menu-divider"></div>
 
         <div class="menu-section">
