@@ -42,6 +42,15 @@ public class CommandProcessorResult
     public List<ProcessedCommand> Commands { get; set; } = [];
     public string? Error { get; set; }
     public string? SkipReason { get; set; }
+
+    /// <summary>
+    /// The line was refused for safety (door, hold, homing, a plugin), not
+    /// just handled without sending (a same-tool M6, $NCSENDER_CLEAR_MSG). A
+    /// macro stops at a refused line instead of running the rest of its body.
+    /// With ShouldContinue still true (a macro that stopped part-way), Commands
+    /// are the lines before the refused one: send them, then stop.
+    /// </summary>
+    public bool Refused { get; set; }
 }
 
 public class ProcessedCommand
