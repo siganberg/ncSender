@@ -645,13 +645,21 @@ public class WebSocketLayer : IBroadcaster
     // end-to-end wireless-probe path and still an order of magnitude larger
     // than any real transient. When it fires we abort the socket — that
     // triggers the receive loop's disconnect path, browser reconnects fresh.
+    // A big frame (a plugin dialog's HTML, over 1 MB for QuickCut) gets
+    // 1 ms more per KB on top, capped at 10 s: over Wi-Fi it can't land in
+    // 250 ms, and aborting it dropped every remote client each time a
+    // plugin opened (they reconnected and reloaded the program).
     private const int SendTimeoutMs = 250;
+    private const int MaxSendTimeoutMs = 10_000;
+
+    internal static int SendTimeoutFor(int payloadBytes) =>
+        Math.Min(MaxSendTimeoutMs, SendTimeoutMs + payloadBytes / 1024);
 
     private static async Task SendRaw(System.Net.WebSockets.WebSocket ws, byte[] payload)
     {
         if (ws.State != WebSocketState.Open) return;
 
-        using var cts = new CancellationTokenSource(SendTimeoutMs);
+        using var cts = new CancellationTokenSource(SendTimeoutFor(payload.Length));
         try
         {
             await ws.SendAsync(payload, WebSocketMessageType.Text, true, cts.Token);
