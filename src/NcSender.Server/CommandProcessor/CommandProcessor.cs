@@ -22,6 +22,7 @@ public class CommandProcessor : ICommandProcessor
     private readonly ISettingsManager _settingsManager;
     private readonly IMacroService _macroService;
     private readonly IToolProjection _toolProjection;
+    private readonly ICncController? _controller;
     private readonly ILogger<CommandProcessor> _logger;
 
     /// <summary>
@@ -42,9 +43,11 @@ public class CommandProcessor : ICommandProcessor
         IMacroService macroService,
         IToolProjection toolProjection,
         ILogger<CommandProcessor> logger,
-        IToolChangeTracker? toolChangeTracker = null)
+        IToolChangeTracker? toolChangeTracker = null,
+        ICncController? controller = null)
     {
         _toolChangeTracker = toolChangeTracker;
+        _controller = controller;
         _context = context;
         _broadcaster = broadcaster;
         _firmwareService = firmwareService;
@@ -84,6 +87,12 @@ public class CommandProcessor : ICommandProcessor
         if (GcodePatterns.IsParkCommand(command))
         {
             return await HandleParkAsync(processorContext);
+        }
+
+        // $SAFEZ: the first move of $PARK on its own
+        if (GcodePatterns.IsSafeZCommand(command))
+        {
+            return await HandleSafeZAsync(processorContext);
         }
 
         // 5. Check if this is a valid M6 command
@@ -354,10 +363,12 @@ public class CommandProcessor : ICommandProcessor
             }
         };
 
+        var pendingUnits = ctx.PendingUnits;
         foreach (var line in bodyLines)
         {
             var childCtx = new CommandProcessorContext
             {
+                PendingUnits = pendingUnits,
                 CommandId = ctx.CommandId,
                 Meta = childMeta,
                 MachineState = ctx.MachineState,
@@ -377,6 +388,8 @@ public class CommandProcessor : ICommandProcessor
             if (!childResult.ShouldContinue)
                 continue;
             output.AddRange(childResult.Commands);
+            foreach (var c in childResult.Commands)
+                if (GcodePatterns.UnitsWord(c.Command) is { } units) pendingUnits = units;
         }
 
         output.Add(new ProcessedCommand
@@ -628,28 +641,59 @@ public class CommandProcessor : ICommandProcessor
     // reason instead of finishing somewhere else.
     private async Task<CommandProcessorResult> HandleParkAsync(CommandProcessorContext ctx)
     {
-        var ms = ctx.MachineState;
-        if (ms.HomingCycle is > 0 && !ms.Homed)
-            return RefusePark(ctx, "home the machine first");
+        if (NeedsHoming(ctx))
+            return RefuseOwnCommand(ctx, "$PARK", "home the machine first");
 
         var park = ParseMachinePosition(_settingsManager.GetSetting<string>("parkingLocation", "") ?? "");
         if (park is null)
-            return RefusePark(ctx, "no parking location saved; double-tap Park to save one");
+            return RefuseOwnCommand(ctx, "$PARK", "no parking location saved; double-tap Park to save one");
 
         var safeZ = _settingsManager.GetSetting<double>("safeZHeight", -5);
         var imperial = _settingsManager.GetSetting<string>("unitsPreference", "metric") == "imperial";
         var units = imperial ? "G20" : "G21";
-        string F(double mm) => imperial
-            ? (mm / 25.4).ToString("0.0###", CultureInfo.InvariantCulture)
-            : mm.ToString("0.0##", CultureInfo.InvariantCulture);
 
         var moves = new[]
         {
-            $"G53 {units} G0 Z{F(safeZ)}",
-            $"G53 {units} G0 X{F(park.X)} Y{F(park.Y)}",
+            $"G53 {units} G0 Z{FormatIn(safeZ, imperial)}",
+            $"G53 {units} G0 X{FormatIn(park.X, imperial)} Y{FormatIn(park.Y, imperial)}",
         };
         _logger.LogInformation("$PARK: Z{Z} then X{X} Y{Y} (mm, machine)", safeZ, park.X, park.Y);
+        return await RunOwnMovesAsync(ctx, "Park", moves);
+    }
 
+    // $SAFEZ raises to the Safe Z setting in machine coordinates. The value is
+    // written in the units the parser will be in when the line runs, with no
+    // G20/G21 word, so the rest of the program keeps its own units. Only when
+    // nothing has told us the units yet does it say G21 outright.
+    private async Task<CommandProcessorResult> HandleSafeZAsync(CommandProcessorContext ctx)
+    {
+        if (NeedsHoming(ctx))
+            return RefuseOwnCommand(ctx, "$SAFEZ", "home the machine first");
+
+        var safeZ = _settingsManager.GetSetting<double>("safeZHeight", -5);
+        var units = ctx.PendingUnits ?? _controller?.QueuedUnits;
+        var move = units switch
+        {
+            "G20" => $"G53 G0 Z{FormatIn(safeZ, imperial: true)}",
+            "G21" => $"G53 G0 Z{FormatIn(safeZ, imperial: false)}",
+            _ => $"G53 G21 G0 Z{FormatIn(safeZ, imperial: false)}",
+        };
+        _logger.LogInformation("$SAFEZ: Z{Z} (mm, machine), units {Units}", safeZ, units ?? "unknown");
+        return await RunOwnMovesAsync(ctx, "Safe Z", [move]);
+    }
+
+    private static bool NeedsHoming(CommandProcessorContext ctx) =>
+        ctx.MachineState.HomingCycle is > 0 && !ctx.MachineState.Homed;
+
+    private static string FormatIn(double mm, bool imperial) => imperial
+        ? (mm / 25.4).ToString("0.0###", CultureInfo.InvariantCulture)
+        : mm.ToString("0.0##", CultureInfo.InvariantCulture);
+
+    // Each move goes back through the pipeline and is shown as itself, not as
+    // the $ line. A refused move stops a job with the reason.
+    private async Task<CommandProcessorResult> RunOwnMovesAsync(
+        CommandProcessorContext ctx, string label, IEnumerable<string> moves)
+    {
         var output = new List<ProcessedCommand>();
         foreach (var move in moves)
         {
@@ -664,15 +708,14 @@ public class CommandProcessor : ICommandProcessor
             });
             if (childResult.Error is not null || !childResult.ShouldContinue)
             {
-                var reason = childResult.Error ?? childResult.SkipReason ?? "a park move was refused";
+                var reason = childResult.Error ?? childResult.SkipReason ?? $"a {label} move was refused";
                 return new CommandProcessorResult
                 {
                     ShouldContinue = false,
                     SkipReason = reason,
-                    Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+                    Error = IsJobLine(ctx) ? $"{label}: {reason}" : null,
                 };
             }
-            // Shown as the moves themselves, not as the $PARK line.
             foreach (var c in childResult.Commands)
             {
                 if (c.IsOriginal) { c.IsOriginal = false; c.DisplayCommand ??= c.Command; }
@@ -685,14 +728,15 @@ public class CommandProcessor : ICommandProcessor
     private static bool IsJobLine(CommandProcessorContext ctx) => ctx.Meta?.SourceId == "job";
 
     // Shown in the terminal as "$PARK (BLOCKED - reason)".
-    private CommandProcessorResult RefusePark(CommandProcessorContext ctx, string reason)
+    private CommandProcessorResult RefuseOwnCommand(CommandProcessorContext ctx, string command, string reason)
     {
-        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, "$PARK", reason, ctx.Meta?.SourceId);
+        BlockedCommandNotice.Broadcast(_broadcaster, ctx.CommandId, command, reason, ctx.Meta?.SourceId);
+        var label = command == "$PARK" ? "Park" : "Safe Z";
         return new CommandProcessorResult
         {
             ShouldContinue = false,
             SkipReason = $"Command blocked: {reason}",
-            Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+            Error = IsJobLine(ctx) ? $"{label}: {reason}" : null,
         };
     }
 
