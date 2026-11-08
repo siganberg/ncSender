@@ -1,4 +1,5 @@
 using NcSender.Core.Interfaces;
+using NcSender.Core.Models;
 
 namespace NcSender.Server.Infrastructure;
 
@@ -30,10 +31,21 @@ public static class BlockedNotice
     public const string ProbeSpindleLede =
         "A probe is loaded, so the spindle was not started. Spinning a probe can break the stylus and destroy "
         + "the probe and its transmitter. Load a cutting tool first, then start the spindle.";
+    public const string NonSpinningLede =
+        "A {0} is loaded, so the spindle was not started. Spinning it can snap the tip and damage the holder. "
+        + "Load a cutting tool first, or remove M3/M4 from the program.";
 
-    public static Task ShowProbeSpindleBlockedAsync(IBroadcaster broadcaster, string command, int tool) =>
-        ShowAsync(broadcaster, ProbeSpindleId, ProbeSpindleTitle, ProbeSpindleLede,
-            [("Command", command), ("Loaded tool", $"T{tool} (probe)")]);
+    // One popup id for every non-spinning tool, so a client that already
+    // handles the probe popup shows the others the same way.
+    public static Task ShowSpindleBlockedAsync(IBroadcaster broadcaster, string command, int tool, string type)
+    {
+        var label = ToolTypes.Label(type);
+        var lede = string.Equals(type, ToolTypes.Probe, StringComparison.OrdinalIgnoreCase)
+            ? ProbeSpindleLede
+            : string.Format(NonSpinningLede, label);
+        return ShowAsync(broadcaster, ProbeSpindleId, ProbeSpindleTitle, lede,
+            [("Command", command), ("Loaded tool", $"T{tool} ({label})")]);
+    }
 
     public static string Html(string title, string lede, IReadOnlyList<(string Label, string Value)> details)
     {
