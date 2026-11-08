@@ -313,15 +313,38 @@
               </div>
             </div>
 
-            <!-- Advanced: geometry plugins use for starting feeds and speeds -->
+            <!-- Notes -->
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <textarea
+                class="form-textarea"
+                v-model="toolForm.metadata.notes"
+                placeholder="Any additional information about this tool..."
+              ></textarea>
+            </div>
+
+            <!-- SKU -->
+            <div class="form-group">
+              <label class="form-label">SKU / Part Number</label>
+              <input
+                type="text"
+                class="form-input"
+                v-model="toolForm.metadata.sku"
+                placeholder="e.g., MANUFACTURER-12345"
+              >
+            </div>
+
+            <!-- Advanced: geometry plugins use for feeds, speeds and depths -->
             <details v-if="showGeometry" class="form-advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
               <summary class="form-advanced-summary">
-                Advanced
-                <span v-if="geometryCount" class="form-advanced-count">{{ geometryCount }} set</span>
+                <span class="form-advanced-title">
+                  Advanced
+                  <span v-if="geometryCount" class="form-advanced-count">{{ geometryCount }} set</span>
+                </span>
+                <span class="form-advanced-blurb">{{ advancedBlurb }}</span>
               </summary>
-              <p class="form-note">Optional. Plugins such as QuickCut and ncCAM use these for starting feeds and speeds. Leave a field empty if you don't know it.</p>
               <div class="form-row form-row-3">
-                <div class="form-group">
+                <div v-if="showFlutes" class="form-group">
                   <label class="form-label">Flutes</label>
                   <input type="number" class="form-input" v-model.number="toolForm.metadata.flutes" step="any" placeholder="e.g., 2">
                   <div v-if="formErrors.flutes" class="form-error">{{ formErrors.flutes }}</div>
@@ -345,27 +368,6 @@
                 </div>
               </div>
             </details>
-
-            <!-- Notes -->
-            <div class="form-group">
-              <label class="form-label">Notes</label>
-              <textarea
-                class="form-textarea"
-                v-model="toolForm.metadata.notes"
-                placeholder="Any additional information about this tool..."
-              ></textarea>
-            </div>
-
-            <!-- SKU -->
-            <div class="form-group">
-              <label class="form-label">SKU / Part Number</label>
-              <input
-                type="text"
-                class="form-input"
-                v-model="toolForm.metadata.sku"
-                placeholder="e.g., MANUFACTURER-12345"
-              >
-            </div>
           </div>
 
           <!-- Footer -->
@@ -692,8 +694,16 @@ const LENGTH_FIELDS: ReadonlyArray<{ key: LengthKey; label: string; help?: strin
   { key: 'radius', label: 'Corner radius', help: 'Radius of a bull-nose end mill\'s corners. Leave empty for a square end.' },
   { key: 'stickout', label: 'Stickout', help: 'How far the tool sticks out of the collet.' },
 ];
-// Tools that don't cut: no geometry to show.
-const NO_GEOMETRY = new Set(['probe', 'drag-knife', 'pen']);
+// A probe has no geometry plugins use. A pen or drag knife has only its
+// max plunge, kept as flute_length: how far the tip may go below the stock
+// top (a spring-loaded pen's travel), so Z0 stays on the stock.
+const NO_GEOMETRY = new Set(['probe']);
+const MARKING_TYPES = new Set(['drag-knife', 'pen']);
+const MAX_PLUNGE_FIELD = {
+  key: 'flute_length' as LengthKey,
+  label: 'Max plunge',
+  help: 'How far the tip may go below the stock top (Z0). For a pen in a spring holder, the spring\'s travel. Plugins don\'t plunge it deeper.',
+};
 const RADIUS_TYPES = new Set(['flat', 'surfacing']);
 const TAPER_TYPES = new Set(['v-bit', 'chamfer']);
 const isBlank = (v: unknown) => v === null || v === undefined || v === '';
@@ -745,20 +755,29 @@ const toolForm = ref(defaultToolForm());
 // Closed each time the form opens; opened when one of its fields has an error.
 const advancedOpen = ref(false);
 const showGeometry = computed(() => !NO_GEOMETRY.has(toolForm.value.type));
+const isMarking = computed(() => MARKING_TYPES.has(toolForm.value.type));
+const showFlutes = computed(() => !isMarking.value);
 // A field shows when it fits the type, or when it already has a value (an
 // imported tapered ball mill keeps its taper angle visible).
-const visibleLengthFields = computed(() => LENGTH_FIELDS.filter(f =>
-  f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius)));
-const showTaper = computed(() =>
-  TAPER_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.taper_angle));
+const visibleLengthFields = computed(() => isMarking.value
+  ? [MAX_PLUNGE_FIELD]
+  : LENGTH_FIELDS.filter(f =>
+      f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius)));
+const showTaper = computed(() => !isMarking.value
+  && (TAPER_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.taper_angle)));
+const advancedBlurb = computed(() => isMarking.value
+  ? 'Optional. Limits how deep plugins such as QuickCut plunge this tool below the stock top.'
+  : 'Optional. Helps plugins such as QuickCut and ncCAM suggest feeds, speeds and depths. Leave unknowns empty.');
 const includedAngleNote = computed(() => {
   const half = toolForm.value.dimensions.taper_angle;
   return toolForm.value.type === 'v-bit' && typeof half === 'number' && half > 0 && half < 90
     ? `A ${+(half * 2).toFixed(3)}° V-bit` : '';
 });
-const geometryCount = computed(() =>
-  [toolForm.value.metadata.flutes, toolForm.value.dimensions.taper_angle,
-    ...LENGTH_FIELDS.map(f => toolForm.value.dimensions[f.key])].filter(v => !isBlank(v)).length);
+const geometryCount = computed(() => [
+  ...(showFlutes.value ? [toolForm.value.metadata.flutes] : []),
+  ...(showTaper.value ? [toolForm.value.dimensions.taper_angle] : []),
+  ...visibleLengthFields.value.map(f => toolForm.value.dimensions[f.key]),
+].filter(v => !isBlank(v)).length);
 
 // Computed
 const filteredTools = computed(() => {
@@ -2195,30 +2214,41 @@ onMounted(async () => {
 }
 
 .form-advanced {
-  margin-bottom: 16px;
-  border-top: 1px solid var(--color-border);
-  padding-top: 12px;
-}
-
-.form-advanced .form-note {
-  margin-bottom: 12px;
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: var(--radius-medium, 8px);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 }
 
 .form-advanced-summary {
   cursor: pointer;
-  font-weight: 600;
-  color: var(--color-text-secondary);
   user-select: none;
+  list-style-position: outside;
+  margin-left: 14px;
 }
 
 .form-advanced[open] .form-advanced-summary {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.form-advanced-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .form-advanced-count {
   font-weight: 400;
   font-size: 0.85rem;
+  color: var(--color-text-secondary);
   margin-left: 6px;
+}
+
+.form-advanced-blurb {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
 }
 
 .form-textarea {
