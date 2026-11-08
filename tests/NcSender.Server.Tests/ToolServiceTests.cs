@@ -50,6 +50,23 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddTool_TaperedBallNose_KeepsItsGeometry()
+    {
+        var tool = new ToolInfo
+        {
+            Name = "1/32 R TBN", ToolNumber = 4, Type = "tapered-ball", Diameter = 1.5875,
+            Dimensions = new ToolDimensions { Radius = 0.79375, TaperAngle = 5.38, FluteLength = 25.4, ShankDiameter = 6.35 },
+        };
+
+        await CreateService().AddAsync(tool);
+
+        var saved = Assert.Single(await CreateService().GetLibraryAsync());
+        Assert.Equal("tapered-ball", saved.Type);
+        Assert.Equal(5.38, saved.Dimensions!.TaperAngle);
+        Assert.Equal(0.79375, saved.Dimensions.Radius);
+    }
+
+    [Fact]
     public async Task AddTool_ValidTool_Succeeds()
     {
         var svc = CreateService();

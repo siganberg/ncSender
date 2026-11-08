@@ -235,6 +235,7 @@
               <select class="form-select" v-model="toolForm.type" required>
                 <option value="flat">Flat End Mill</option>
                 <option value="ball">Ball End Mill</option>
+                <option value="tapered-ball">Tapered Ball Nose</option>
                 <option value="v-bit">V-Bit</option>
                 <option value="drill">Drill</option>
                 <option value="chamfer">Chamfer</option>
@@ -258,6 +259,7 @@
                   required
                 >
                 <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
+                <div v-else-if="toolForm.type === 'tapered-ball'" class="form-note">At the tip: twice the tip radius</div>
               </div>
               <div class="form-group">
                 <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
@@ -367,6 +369,7 @@
                   </label>
                   <input type="number" class="form-input" v-model.number="toolForm.dimensions[f.key]" step="any">
                   <div v-if="formErrors[f.key]" class="form-error">{{ formErrors[f.key] }}</div>
+                  <div v-else-if="f.note" class="form-note">{{ f.note }}</div>
                 </div>
                 <div v-if="showTaper" class="form-group">
                   <label class="form-label">
@@ -375,7 +378,7 @@
                   </label>
                   <input type="number" class="form-input" v-model.number="toolForm.dimensions.taper_angle" step="any">
                   <div v-if="formErrors.taper_angle" class="form-error">{{ formErrors.taper_angle }}</div>
-                  <div v-else-if="includedAngleNote" class="form-note">{{ includedAngleNote }}</div>
+                  <div v-else-if="taperNote" class="form-note">{{ taperNote }}</div>
                 </div>
               </div>
             </details>
@@ -715,8 +718,8 @@ const MAX_PLUNGE_FIELD = {
   label: 'Max plunge',
   help: 'How far the tip may go below the stock top (Z0). For a pen in a spring holder, the spring\'s travel. Plugins don\'t plunge it deeper.',
 };
-const RADIUS_TYPES = new Set(['flat', 'surfacing']);
-const TAPER_TYPES = new Set(['v-bit', 'chamfer']);
+const RADIUS_TYPES = new Set(['flat', 'surfacing', 'tapered-ball']);
+const TAPER_TYPES = new Set(['v-bit', 'chamfer', 'tapered-ball']);
 const isBlank = (v: unknown) => v === null || v === undefined || v === '';
 
 // Tool form data
@@ -776,19 +779,44 @@ const isMarking = computed(() => MARKING_TYPES.has(toolForm.value.type));
 const showFlutes = computed(() => !isMarking.value);
 // A field shows when it fits the type, or when it already has a value (an
 // imported tapered ball mill keeps its taper angle visible).
+const isTaperedBall = computed(() => toolForm.value.type === 'tapered-ball');
+// A tapered ball nose's tip radius is normally half its Diameter (the tip);
+// say so when the two disagree, since one of them is likely mistyped.
+const tipRadiusNote = computed(() => {
+  const r = toolForm.value.dimensions.radius;
+  const d = toolForm.value.diameter;
+  if (typeof r !== 'number' || !(d > 0)) return '';
+  // Inch values are shown rounded to 4 places, so a tiny tip can look off by
+  // more than 1% when it isn't: allow for that rounding too.
+  const rounding = appStore.unitsPreference.value === 'imperial' ? 0.0002 : 0;
+  return Math.abs(2 * r - d) > Math.max(d * 0.01, rounding)
+    ? `Usually half the Diameter (${+(d / 2).toFixed(4)})` : '';
+});
 const visibleLengthFields = computed(() => isMarking.value
-  ? [MAX_PLUNGE_FIELD]
-  : LENGTH_FIELDS.filter(f =>
-      f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius)));
+  ? [{ ...MAX_PLUNGE_FIELD, note: '' }]
+  : LENGTH_FIELDS
+    .filter(f =>
+      f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius))
+    .map(f => f.key === 'radius' && isTaperedBall.value
+      ? { ...f, label: 'Tip radius', help: 'Radius of the ball at the tip: half the Diameter.', note: tipRadiusNote.value }
+      : { ...f, note: '' }));
 const showTaper = computed(() => !isMarking.value
   && (TAPER_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.taper_angle)));
 const advancedBlurb = computed(() => isMarking.value
   ? 'Optional. Limits how deep plugins such as QuickCut plunge this tool below the stock top.'
   : 'Optional. Helps plugins such as QuickCut and ncCAM suggest feeds, speeds and depths. Leave unknowns empty.');
-const includedAngleNote = computed(() => {
+// Under the taper angle: a V-bit's included angle, or how wide a tapered ball
+// nose gets at the top of its flutes (a quick check against its shank).
+const taperNote = computed(() => {
   const half = toolForm.value.dimensions.taper_angle;
-  return toolForm.value.type === 'v-bit' && typeof half === 'number' && half > 0 && half < 90
-    ? `A ${+(half * 2).toFixed(3)}° V-bit` : '';
+  if (typeof half !== 'number' || !(half > 0 && half < 90)) return '';
+  if (toolForm.value.type === 'v-bit') return `A ${+(half * 2).toFixed(3)}° V-bit`;
+  const length = toolForm.value.dimensions.flute_length;
+  if (isTaperedBall.value && typeof length === 'number' && length > 0 && toolForm.value.diameter > 0) {
+    const top = toolForm.value.diameter + 2 * length * Math.tan(half * Math.PI / 180);
+    return `About ${+top.toFixed(3)} ${getDistanceUnitLabel(appStore.unitsPreference.value)} across at the top of the flutes`;
+  }
+  return '';
 });
 const geometryCount = computed(() => [
   ...(showFlutes.value ? [toolForm.value.metadata.flutes] : []),
@@ -1021,6 +1049,7 @@ const formatType = (type: string) => {
   const typeMap: Record<string, string> = {
     'flat': 'Flat End Mill',
     'ball': 'Ball End Mill',
+    'tapered-ball': 'Tapered Ball Nose',
     'v-bit': 'V-Bit',
     'drill': 'Drill',
     'chamfer': 'Chamfer',
