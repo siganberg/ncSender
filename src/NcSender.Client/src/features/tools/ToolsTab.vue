@@ -177,10 +177,11 @@
 
     <!-- Tool Form Modal -->
     <div v-if="showToolForm" class="modal-overlay" @click.self="closeToolForm">
-      <div class="modal-content">
+      <div class="modal-content" :class="{ 'modal-content--wide': showGeometry }">
         <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
         <form @submit.prevent="saveTool" class="modal-form">
           <div class="modal-body">
+           <div class="form-main">
             <!-- Tool ID and Assigned To T# -->
             <div class="form-row">
               <div class="form-group">
@@ -334,9 +335,19 @@
               >
             </div>
 
-            <!-- Advanced: geometry plugins use for feeds, speeds and depths -->
-            <details v-if="showGeometry" class="form-advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
-              <summary class="form-advanced-summary">
+           </div>
+
+            <!-- Advanced: geometry plugins use for feeds, speeds and depths.
+                 A second column on a wide screen (always open), else a
+                 closed card below the other fields. -->
+            <details
+              v-if="showGeometry"
+              class="form-advanced"
+              :class="{ 'form-advanced--pinned': isWide }"
+              :open="advancedOpen || isWide"
+              @toggle="!isWide && (advancedOpen = ($event.target as HTMLDetailsElement).open)"
+            >
+              <summary class="form-advanced-summary" @click="isWide && $event.preventDefault()">
                 <span class="form-advanced-title">
                   Advanced
                   <span v-if="geometryCount" class="form-advanced-count">{{ geometryCount }} set</span>
@@ -548,7 +559,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -754,6 +765,12 @@ const toolForm = ref(defaultToolForm());
 
 // Closed each time the form opens; opened when one of its fields has an error.
 const advancedOpen = ref(false);
+// Wide enough for Advanced as a second column (matches the CSS breakpoint).
+const wideQuery = window.matchMedia('(min-width: 1000px)');
+const isWide = ref(wideQuery.matches);
+const onWideChange = (e: MediaQueryListEvent) => { isWide.value = e.matches; };
+onMounted(() => wideQuery.addEventListener('change', onWideChange));
+onUnmounted(() => wideQuery.removeEventListener('change', onWideChange));
 const showGeometry = computed(() => !NO_GEOMETRY.has(toolForm.value.type));
 const isMarking = computed(() => MARKING_TYPES.has(toolForm.value.type));
 const showFlutes = computed(() => !isMarking.value);
@@ -2242,6 +2259,49 @@ onMounted(async () => {
   font-size: 0.85rem;
   color: var(--color-text-secondary);
   margin-left: 6px;
+}
+
+.modal-content--wide {
+  max-width: 1040px;
+}
+
+@media (min-width: 1000px) {
+  .modal-content--wide .modal-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .modal-content--wide .form-advanced {
+    margin-top: 0;
+    position: sticky;
+    top: 0;
+  }
+
+  .modal-content--wide .form-advanced .form-row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.form-advanced .form-label {
+  white-space: normal;
+}
+
+.form-advanced .form-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.form-advanced--pinned .form-advanced-summary {
+  cursor: default;
+  list-style: none;
+  margin-left: 0;
+}
+
+.form-advanced--pinned .form-advanced-summary::-webkit-details-marker {
+  display: none;
 }
 
 .form-advanced-blurb {
