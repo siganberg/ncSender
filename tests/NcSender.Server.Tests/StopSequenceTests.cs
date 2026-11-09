@@ -92,4 +92,38 @@ public class StopSequenceTests
         Assert.Equal(StopWaitResult.NoStatus, result);
         Assert.InRange((DateTime.UtcNow - started).TotalMilliseconds, 1150, 3000);
     }
+
+    // A door's parking retract can report a door state that reads as at rest
+    // while Z is still lifting; the reset then alarms. The position has to
+    // stop changing too.
+    [Fact]
+    public async Task A_resting_state_with_the_position_still_changing_is_not_stopped()
+    {
+        var raw = "<Run|MPos:0,0,-100>";
+        var controller = new Mock<ICncController>();
+        controller.SetupGet(c => c.RawStatusData).Returns(() => raw);
+
+        var wait = StopSequence.WaitForMotionStopAsync(controller.Object, 5000);
+        foreach (var z in new[] { -90.0, -75.0, -60.0, -45.0 })
+        {
+            raw = new string($"<Door:1|MPos:0,0,{z}>");
+            await Task.Delay(60);
+            Assert.False(wait.IsCompleted, $"reset while Z was at {z}");
+        }
+
+        raw = new string("<Door:1|MPos:0,0,-42>");
+        await Task.Delay(60);
+        raw = new string("<Door:1|MPos:0,0,-42>");
+        Assert.Equal(StopWaitResult.Stopped, await wait.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Theory]
+    [InlineData("<Door:1|MPos:1.5,-2,3.25|FS:0,0>", new[] { 1.5, -2, 3.25 })]
+    [InlineData("<Idle|WPos:0,0,0,0>", new[] { 0.0, 0, 0, 0 })]
+    [InlineData("<Hold:0|FS:0,0>", null)]
+    [InlineData(null, null)]
+    public void Reads_the_reported_position(string? raw, double[]? expected)
+    {
+        Assert.Equal(expected, StopSequence.ReportedPosition(raw));
+    }
 }
