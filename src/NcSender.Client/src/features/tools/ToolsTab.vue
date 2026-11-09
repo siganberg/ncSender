@@ -236,6 +236,7 @@
                 <option value="flat">Flat End Mill</option>
                 <option value="ball">Ball End Mill</option>
                 <option value="tapered-ball">Tapered Ball Nose</option>
+                <option value="bull-nose">Bull Nose / Bowl</option>
                 <option value="v-bit">V-Bit</option>
                 <option value="drill">Drill</option>
                 <option value="chamfer">Chamfer</option>
@@ -260,6 +261,7 @@
                 >
                 <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
                 <div v-else-if="toolForm.type === 'tapered-ball'" class="form-note">At the tip: twice the tip radius</div>
+                <div v-else-if="toolForm.type === 'bull-nose'" class="form-note">Across the cut, corners included</div>
               </div>
               <div class="form-group">
                 <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
@@ -718,7 +720,7 @@ const MAX_PLUNGE_FIELD = {
   label: 'Max plunge',
   help: 'How far the tip may go below the stock top (Z0). For a pen in a spring holder, the spring\'s travel. Plugins don\'t plunge it deeper.',
 };
-const RADIUS_TYPES = new Set(['flat', 'surfacing', 'tapered-ball']);
+const RADIUS_TYPES = new Set(['flat', 'surfacing', 'tapered-ball', 'bull-nose']);
 const TAPER_TYPES = new Set(['v-bit', 'chamfer', 'tapered-ball']);
 const isBlank = (v: unknown) => v === null || v === undefined || v === '';
 
@@ -780,6 +782,17 @@ const showFlutes = computed(() => !isMarking.value);
 // A field shows when it fits the type, or when it already has a value (an
 // imported tapered ball mill keeps its taper angle visible).
 const isTaperedBall = computed(() => toolForm.value.type === 'tapered-ball');
+const isBullNose = computed(() => toolForm.value.type === 'bull-nose');
+// A bull nose or bowl bit is flat across the bottom between its rounded
+// corners: say how wide, or that a radius of half the Diameter is a ball.
+const cornerRadiusNote = computed(() => {
+  const r = toolForm.value.dimensions.radius;
+  const d = toolForm.value.diameter;
+  if (typeof r !== 'number' || !(r > 0) || !(d > 0)) return '';
+  const flat = d - 2 * r;
+  if (flat <= d * 0.01) return 'Half the Diameter or more: that is a Ball End Mill';
+  return `Flat across the bottom: ${+flat.toFixed(4)}`;
+});
 // A tapered ball nose's tip radius is normally half its Diameter (the tip);
 // say so when the two disagree, since one of them is likely mistyped.
 const tipRadiusNote = computed(() => {
@@ -799,7 +812,9 @@ const visibleLengthFields = computed(() => isMarking.value
       f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius))
     .map(f => f.key === 'radius' && isTaperedBall.value
       ? { ...f, label: 'Tip radius', help: 'Radius of the ball at the tip: half the Diameter.', note: tipRadiusNote.value }
-      : { ...f, note: '' }));
+      : f.key === 'radius' && isBullNose.value
+        ? { ...f, help: 'Radius of the rounded corners. A bowl bit\'s round, from its Diameter in to the flat bottom.', note: cornerRadiusNote.value }
+        : { ...f, note: '' }));
 const showTaper = computed(() => !isMarking.value
   && (TAPER_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.taper_angle)));
 const advancedBlurb = computed(() => isMarking.value
@@ -1050,6 +1065,7 @@ const formatType = (type: string) => {
     'flat': 'Flat End Mill',
     'ball': 'Ball End Mill',
     'tapered-ball': 'Tapered Ball Nose',
+    'bull-nose': 'Bull Nose / Bowl',
     'v-bit': 'V-Bit',
     'drill': 'Drill',
     'chamfer': 'Chamfer',

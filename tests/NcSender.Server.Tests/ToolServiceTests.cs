@@ -67,6 +67,24 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddTool_BullNoseBowlBit_KeepsItsCornerRadius()
+    {
+        // SpeTool W08002 bowl and tray bit: 3/4" across, 1/4" corners, 1/2" shank
+        var tool = new ToolInfo
+        {
+            Name = "3/4 Bowl", ToolNumber = 5, Type = "bull-nose", Diameter = 19.05,
+            Dimensions = new ToolDimensions { Radius = 6.35, FluteLength = 15.875, ShankDiameter = 12.7 },
+        };
+
+        await CreateService().AddAsync(tool);
+
+        var saved = Assert.Single(await CreateService().GetLibraryAsync());
+        Assert.Equal("bull-nose", saved.Type);
+        Assert.Equal(19.05, saved.Diameter);
+        Assert.Equal(6.35, saved.Dimensions!.Radius);
+    }
+
+    [Fact]
     public async Task AddTool_ValidTool_Succeeds()
     {
         var svc = CreateService();

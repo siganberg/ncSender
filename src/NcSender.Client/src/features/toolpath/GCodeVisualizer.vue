@@ -5439,7 +5439,7 @@ const loadToolInventory = async () => {
 
 // Tool library type ids -> display names (expanded tool button in the tools legend).
 const TOOL_TYPE_LABELS: Record<string, string> = {
-  'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'tapered-ball': 'Tapered Ball Nose', 'v-bit': 'V-Bit',
+  'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'tapered-ball': 'Tapered Ball Nose', 'bull-nose': 'Bull Nose / Bowl', 'v-bit': 'V-Bit',
   'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing',
   'thread-mill': 'Thread Mill', 'probe': 'Probe'
 };
@@ -5469,6 +5469,7 @@ const getToolTooltip = (toolNumber: number): string => {
       'flat': 'Flat End Mill',
       'ball': 'Ball End Mill',
       'tapered-ball': 'Tapered Ball Nose',
+      'bull-nose': 'Bull Nose / Bowl',
       'v-bit': 'V-Bit',
       'drill': 'Drill',
       'chamfer': 'Chamfer',

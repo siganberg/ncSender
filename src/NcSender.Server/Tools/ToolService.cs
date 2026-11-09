@@ -8,7 +8,7 @@ namespace NcSender.Server.Tools;
 public class ToolService : IToolService
 {
     private static readonly string[] ValidTypes =
-        ["flat", "ball", "tapered-ball", "v-bit", "drill", "chamfer", "surfacing", "probe", "thread-mill"];
+        ["flat", "ball", "tapered-ball", "bull-nose", "v-bit", "drill", "chamfer", "surfacing", "probe", "thread-mill"];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
