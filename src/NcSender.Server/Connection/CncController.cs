@@ -181,11 +181,8 @@ public partial class CncController : ICncController
             transport.LineReceived += HandleIncomingData;
             transport.ConnectionLost += OnConnectionLost;
 
-            // A network controller greets as soon as the connection opens,
-            // before the open call returns, and doesn't greet again after the
-            // soft reset below. Forget the last connection's greeting now, not
-            // after opening, and make the transport current first so the
-            // greeting's follow-up writes reach it.
+            // A network controller greets as the connection opens, before the
+            // open call returns, and not again after the soft reset below.
             _hasReceivedGreeting = false;
             _greetingMessage = null;
             _activeProtocol = null;
@@ -208,11 +205,16 @@ public partial class CncController : ICncController
                 transport.LineReceived -= HandleIncomingData;
                 transport.ConnectionLost -= OnConnectionLost;
                 if (_transport == transport) _transport = null;
+                StopPolling();
                 // A transport stuck in its open call can block its dispose too.
                 _ = transport.DisposeAsync().AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
                 HandleConnectionError(ex);
                 throw;
             }
+
+            // Disconnected while opening.
+            if (_transport != transport)
+                return;
 
             OnConnectionEstablished(type);
         }

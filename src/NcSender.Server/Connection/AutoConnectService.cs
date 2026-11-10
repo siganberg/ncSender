@@ -81,10 +81,8 @@ public class AutoConnectService : BackgroundService
 
         _lastSettingsHash = currentHash;
 
-        // Open but not ready yet: the controller is still waiting for its
-        // greeting (and gives up on its own). Opening another connection
-        // meanwhile reset it again, and a network controller then refused
-        // further connections.
+        // Open but not ready yet (a manual connect still verifying): another
+        // connection would reset the controller again.
         if (_controller.IsConnected || _controller.IsTransportOpen)
             return;
 
@@ -106,6 +104,7 @@ public class AutoConnectService : BackgroundService
             }
 
             await TryConnectToTarget(settings, ethTarget, ct);
+            await WaitUntilReadyAsync(ethTarget, "retrying", ct);
             return;
         }
 
@@ -147,35 +146,7 @@ public class AutoConnectService : BackgroundService
         }
 
         await TryConnectToTarget(probeSettings, target, ct);
-
-        // Wait for the controller to be fully connected (greeting received +
-        // first status report parsed). Poll rather than fixed delay because
-        // FluidNC over WiFi can take 8-10s to finish booting and emit its
-        // canonical Grbl greeting, while grblHAL is sub-second. Bail early
-        // if the transport drops on its own (e.g. CncController hits its
-        // own greeting timeout).
-        if (_controller.IsTransportOpen && !_controller.IsConnected)
-        {
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-            while (DateTime.UtcNow < deadline)
-            {
-                await Task.Delay(200, ct);
-                if (_controller.IsConnected) break;
-                if (!_controller.IsTransportOpen) break;
-            }
-
-            if (!_controller.IsConnected)
-            {
-                // Two different failures: the device never answered, or it
-                // answered and then the link dropped (e.g. firmware hung after
-                // boot). The old message blamed the greeting for both.
-                if (_controller.IsTransportOpen)
-                    _logger.LogInformation("No CNC greeting on {Port}, trying next port", port);
-                else
-                    _logger.LogInformation("Connection to {Port} dropped before the controller was ready, trying next port", port);
-                _controller.Disconnect();
-            }
-        }
+        await WaitUntilReadyAsync(port, "trying next port", ct);
 
         // On successful connection, persist the device's USB descriptor (if the
         // OS exposes one) so a later renumber — e.g. Linux flipping
@@ -210,6 +181,40 @@ public class AutoConnectService : BackgroundService
     }
 
     private string _lastLoggedFailure = "";
+
+    internal static TimeSpan ReadyTimeout = TimeSpan.FromSeconds(15);
+
+    // Wait for the controller to be fully connected (greeting received +
+    // first status report parsed). Poll rather than fixed delay because
+    // FluidNC over WiFi can take 8-10s to finish booting and emit its
+    // canonical Grbl greeting, while grblHAL is sub-second. Bail early
+    // if the transport drops on its own (e.g. CncController hits its
+    // own greeting timeout).
+    private async Task WaitUntilReadyAsync(string target, string next, CancellationToken ct)
+    {
+        if (!_controller.IsTransportOpen || _controller.IsConnected)
+            return;
+
+        var deadline = DateTime.UtcNow + ReadyTimeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200, ct);
+            if (_controller.IsConnected) break;
+            if (!_controller.IsTransportOpen) break;
+        }
+
+        if (!_controller.IsConnected)
+        {
+            // Two different failures: the device never answered, or it
+            // answered and then the link dropped (e.g. firmware hung after
+            // boot). The old message blamed the greeting for both.
+            if (_controller.IsTransportOpen)
+                _logger.LogInformation("No CNC greeting on {Port}, {Next}", target, next);
+            else
+                _logger.LogInformation("Connection to {Port} dropped before the controller was ready, {Next}", target, next);
+            _controller.Disconnect();
+        }
+    }
 
     private async Task TryConnectToTarget(ConnectionSettings settings, string target, CancellationToken ct)
     {
