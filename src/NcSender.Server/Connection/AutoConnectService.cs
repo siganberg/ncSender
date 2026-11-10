@@ -62,7 +62,7 @@ public class AutoConnectService : BackgroundService
         _logger.LogInformation("Auto-connect service stopped");
     }
 
-    private async Task TryConnectAsync(CancellationToken ct)
+    internal async Task TryConnectAsync(CancellationToken ct)
     {
         // Don't attempt connection if connection type hasn't been configured yet
         var rawType = _settings.GetSetting<string>("connection.type");
@@ -73,7 +73,7 @@ public class AutoConnectService : BackgroundService
         var currentHash = ComputeSettingsHash(settings);
 
         // If settings changed, disconnect to reconnect with new settings
-        if (_controller.IsConnected && currentHash != _lastSettingsHash && _lastSettingsHash != "")
+        if ((_controller.IsConnected || _controller.IsTransportOpen) && currentHash != _lastSettingsHash && _lastSettingsHash != "")
         {
             _logger.LogInformation("Connection settings changed, reconnecting...");
             _controller.Disconnect();
@@ -81,7 +81,11 @@ public class AutoConnectService : BackgroundService
 
         _lastSettingsHash = currentHash;
 
-        if (_controller.IsConnected)
+        // Open but not ready yet: the controller is still waiting for its
+        // greeting (and gives up on its own). Opening another connection
+        // meanwhile reset it again, and a network controller then refused
+        // further connections.
+        if (_controller.IsConnected || _controller.IsTransportOpen)
             return;
 
         var type = settings.Type.ToLowerInvariant();

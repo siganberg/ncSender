@@ -157,7 +157,7 @@ public partial class CncController : ICncController
 
     public async Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default)
     {
-        if (IsConnected || _isConnecting)
+        if (IsConnected || _isConnecting || _transport is not null)
         {
             _logger.LogInformation("Already connected or connecting to CNC controller");
             return;
