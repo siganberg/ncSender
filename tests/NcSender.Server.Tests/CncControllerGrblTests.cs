@@ -290,6 +290,21 @@ public class CncControllerGrblTests : IDisposable
     private static object? GetPrivate(object target, string name) =>
         target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(target);
 
+    [Fact]
+    public void GreetingBeforeTheConnectionIsEstablished_IsKept()
+    {
+        // A network grblHAL greets as the connection opens and not again after
+        // the soft reset, so the greeting must survive verification starting.
+        SetPrivate(_controller, "IsConnected", false);
+        Greet("GrblHAL 1.1f ['$' or '$HELP' for help]");
+
+        typeof(CncController).GetMethod("OnConnectionEstablished", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(_controller, ["ethernet"]);
+
+        Assert.IsType<GrblHalProtocol>(_controller.ActiveProtocol);
+        Assert.StartsWith("GrblHAL", _controller.GreetingMessage);
+    }
+
     private static void SetPrivate(object target, string name, object? value)
     {
         var type = target.GetType();
