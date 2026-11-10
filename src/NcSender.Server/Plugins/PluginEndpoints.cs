@@ -86,6 +86,33 @@ public static class PluginEndpoints
             }
         });
 
+        // A plugin's window talking to its own background code: the body goes
+        // to the plugin's onRequest(payload) and its answer comes back as is.
+        app.MapPost("/api/plugins/{pluginId}/request", async (string pluginId, HttpContext context, IJsPluginEngine engine) =>
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            var payload = await reader.ReadToEndAsync();
+            try
+            {
+                using var _ = JsonDocument.Parse(payload);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new ApiError("Invalid JSON"));
+            }
+            try
+            {
+                var answer = engine.HandleRequest(pluginId, payload);
+                return answer is null
+                    ? Results.NotFound(new ApiError("The plugin isn't running or takes no requests"))
+                    : Results.Content(answer, "application/json");
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+        });
+
         app.MapPost("/api/plugins/{pluginId}/reload", (string pluginId, IPluginManager plugins) =>
         {
             plugins.Reload(pluginId);

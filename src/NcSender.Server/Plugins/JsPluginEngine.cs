@@ -12,7 +12,7 @@ using NcSender.Server.Infrastructure;
 
 namespace NcSender.Server.Plugins;
 
-public class JsPluginEngine : IJsPluginEngine
+public partial class JsPluginEngine : IJsPluginEngine
 {
     private readonly ILogger<JsPluginEngine> _logger;
     private readonly PluginDialogDispatcher _dialogs;
@@ -957,6 +957,8 @@ public class JsPluginEngine : IJsPluginEngine
             _pendingTloWriteback.Arm(toolNumber);
             return JsValue.Undefined;
         }));
+
+        AddHostApi(ctx, engine, pluginId);
 
         return ctx;
     }

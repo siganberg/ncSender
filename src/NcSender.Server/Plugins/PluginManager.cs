@@ -896,6 +896,7 @@ public class PluginManager : IPluginManager
         MarkLoading(pluginId, version);
         try
         {
+            _jsEngine.SetPermissions(pluginId, manifest.Permissions);
             _jsEngine.LoadPlugin(pluginId, commandsPath, settings, manifest.Priority);
             ClearLoadingMarker(pluginId);
             _runState[pluginId] = new("running", null);

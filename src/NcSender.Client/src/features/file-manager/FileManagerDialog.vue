@@ -254,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue';
+import { ref, watch, computed, nextTick, onUnmounted } from 'vue';
 import { api } from '../toolpath/api';
 import { settingsStore, updateSettings } from '../../lib/settings-store.js';
 import { useAppStore } from '../../composables/use-app-store';
@@ -703,6 +703,12 @@ const fetchTree = async () => {
     tree.value = [];
   }
 };
+
+// A sync plugin added or changed files: show them without a reopen.
+const stopFilesChanged = api.on('gcode-files:changed', () => {
+  if (props.show) void fetchTree();
+});
+onUnmounted(() => stopFilesChanged?.());
 
 watch(() => props.show, async (isOpen) => {
   if (isOpen) {
