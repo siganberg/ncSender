@@ -111,9 +111,9 @@
                 <button
                   v-if="slotsOffered"
                   class="btn btn-small btn-secondary"
-                  title="Put this tool in a magazine slot"
+                  title="Assign to a slot"
                   @click.stop="openSlotSelector(tool, $event)"
-                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Assign Slot' }}</button>
+                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Slot' }}</button>
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
                 <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
               </div>
@@ -1781,7 +1781,7 @@ onMounted(async () => {
 }
 
 .col-description {
-  width: 24%;
+  width: 22%;
 }
 
 .col-type {
@@ -1797,7 +1797,7 @@ onMounted(async () => {
 }
 
 .col-actions {
-  width: 29%;
+  width: 33%;
   text-align: center;
 }
 
@@ -1805,11 +1805,11 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
   justify-content: center;
-  flex-wrap: wrap;
 }
 
 .tool-actions .btn-small {
-  padding: 8px 12px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
