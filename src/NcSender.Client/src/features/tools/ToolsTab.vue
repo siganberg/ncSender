@@ -101,6 +101,19 @@
             <td class="col-tlo">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</td>
             <td class="col-actions">
               <div class="tool-actions">
+                <button
+                  v-if="loadOffered"
+                  class="btn btn-small btn-primary"
+                  :disabled="!!loadBlocked(tool)"
+                  :title="loadBlocked(tool) || `Load this tool: M6 T${loadNumber(tool)}`"
+                  @click="askLoadTool(tool)"
+                >{{ isLoaded(tool) ? 'Loaded' : 'Load' }}</button>
+                <button
+                  v-if="slotsOffered"
+                  class="btn btn-small btn-secondary"
+                  title="Put this tool in a magazine slot"
+                  @click.stop="openSlotSelector(tool, $event)"
+                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Assign Slot' }}</button>
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
                 <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
               </div>
@@ -366,6 +379,20 @@
       />
     </Dialog>
 
+    <!-- Load Confirmation Dialog -->
+    <Dialog v-if="loadToolRef" @close="loadToolRef = null" :show-header="false" size="small">
+      <ConfirmPanel
+        :title="`Load T${loadNumber(loadToolRef)}`"
+        :message="`Load ${loadToolRef.name || 'this tool'}? This sends M6 T${loadNumber(loadToolRef)}, and the machine moves to change the tool.`"
+        :show-cancel="true"
+        confirm-text="Load"
+        cancel-text="Cancel"
+        variant="primary"
+        @confirm="confirmLoadTool"
+        @cancel="loadToolRef = null"
+      />
+    </Dialog>
+
     <!-- Delete Confirmation Dialog -->
     <Dialog v-if="showDeleteConfirmDialog" @close="showDeleteConfirmDialog = false" :show-header="false" size="small">
       <ConfirmPanel
@@ -522,6 +549,8 @@ import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+import { ensureHomed } from '@/composables/useUnhomedGuard';
+import { getSettings } from '../../lib/settings-store.js';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -584,6 +613,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  close: [];
   'update:toolCount': [value: number];
   'update:showManualButton': [value: boolean];
   'update:showTlsButton': [value: boolean];
@@ -605,6 +635,53 @@ const hasSlot = (tool: Tool) =>
   tool.toolNumber !== null
   && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
+const slotName = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot ${num}`);
+// The slot picker is offered wherever there are slots to pick.
+const slotsOffered = computed(() => (props.toolCount || 0) > 0 || probeSlot.value !== null);
+
+// Load: M6 T<n>, as the visualizer's tool buttons send it, offered only with
+// a tool changer (a magazine or a plugin), as those buttons are.
+const loadOffered = computed(() => (props.toolCount || 0) > 0 || !!props.toolSourceName);
+// What the T in M6 T<n> names (Settings > Tool Changer > Tool Numbering):
+// the slot with Slot numbering (a tool in no slot can't be loaded), the
+// Tool ID with Tool ID numbering. null when the tool can't be loaded.
+const loadNumber = (tool: Tool): number | null => {
+  if (getSettings()?.tool?.numbering === 'toolId') return tool.toolId;
+  return hasSlot(tool) ? tool.toolNumber : null;
+};
+const isLoaded = (tool: Tool) => {
+  const n = loadNumber(tool);
+  return n !== null && n > 0 && appStore.status.tool === n;
+};
+// Why Load is off for this tool, or '' when it can be loaded.
+const loadBlocked = (tool: Tool): string => {
+  if (!appStore.isConnected.value) return 'Connect to the machine to load a tool';
+  if (!appStore.hasFullControl.value) return 'This screen can\'t control the machine';
+  if (appStore.isJobRunning.value) return 'A job is running';
+  const status = appStore.senderStatus.value;
+  if (status !== 'idle' && status !== 'homing-required') return `The machine is busy (${status})`;
+  if (loadNumber(tool) === null) return 'Assign a slot first: with Slot numbering, M6 loads a slot';
+  if (isLoaded(tool)) return 'This tool is in the spindle';
+  return '';
+};
+const loadToolRef = ref<Tool | null>(null);
+const askLoadTool = (tool: Tool) => {
+  if (!loadBlocked(tool)) loadToolRef.value = tool;
+};
+// Settings closes first, so the tool change and anything it asks show.
+const confirmLoadTool = async () => {
+  const tool = loadToolRef.value;
+  loadToolRef.value = null;
+  const n = tool && !loadBlocked(tool) ? loadNumber(tool) : null;
+  if (n === null) return;
+  emit('close');
+  if (!(await ensureHomed('M6'))) return;
+  try {
+    await api.triggerToolChange(n);
+  } catch (error) {
+    console.error('[ToolsTab] Failed to load tool:', JSON.stringify({ tool: n, error: String(error) }));
+  }
+};
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
@@ -1704,7 +1781,7 @@ onMounted(async () => {
 }
 
 .col-description {
-  width: 32%;
+  width: 24%;
 }
 
 .col-type {
@@ -1720,14 +1797,20 @@ onMounted(async () => {
 }
 
 .col-actions {
-  width: 21%;
+  width: 29%;
   text-align: center;
 }
 
 .tool-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
+  flex-wrap: wrap;
+}
+
+.tool-actions .btn-small {
+  padding: 8px 12px;
+  white-space: nowrap;
 }
 
 .tools-footer {
