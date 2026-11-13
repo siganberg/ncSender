@@ -33,7 +33,7 @@
       </div>
 
       <!-- Table container with empty state -->
-      <div v-if="filteredTools.length === 0" class="empty-state">
+      <div v-if="tools.length === 0" class="empty-state">
         <div class="empty-state-text">No tools found</div>
         <div class="empty-state-hint">Click "Add Tool" to add your first tool</div>
       </div>
@@ -85,8 +85,37 @@
             </th>
             <th class="col-actions">Actions</th>
           </tr>
+          <tr class="filter-row">
+            <th class="col-tool-id">
+              <input v-model="columnFilters.toolId" class="column-filter" :class="{ 'column-filter--bad': badFilters.toolId }" type="text" inputmode="decimal" placeholder="5, 1-10" aria-label="Filter by Tool ID" title="A Tool ID, a range (1-10) or several (3, 7)">
+            </th>
+            <th class="col-description">
+              <input v-model="columnFilters.name" class="column-filter" type="text" placeholder="Contains" aria-label="Filter by description">
+            </th>
+            <th class="col-type">
+              <select v-model="columnFilters.type" class="column-filter" aria-label="Filter by type">
+                <option value="">Any</option>
+                <option v-for="type in typeOptions" :key="type" :value="type">{{ formatType(type) }}</option>
+              </select>
+            </th>
+            <th class="col-diameter">
+              <input v-model="columnFilters.diameter" class="column-filter" :class="{ 'column-filter--bad': badFilters.diameter }" type="text" inputmode="decimal" placeholder="6, <6, 3-8" aria-label="Filter by diameter" :title="`A diameter in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: 6, <6, >=3, a range (3-8), several (3, 6) or a fraction (1/4)`">
+            </th>
+            <th class="col-tlo">
+              <input v-model="columnFilters.tlo" class="column-filter" :class="{ 'column-filter--bad': badFilters.tlo }" type="text" inputmode="decimal" placeholder="<0, set" aria-label="Filter by TLO" :title="`A TLO in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: -40, <0, a range (-50--40), set or not set`">
+            </th>
+            <th class="col-actions">
+              <div v-if="filtersOn" class="filter-status">
+                <span>{{ filteredTools.length }} of {{ tools.length }}</span>
+                <button type="button" class="filter-clear" @click="clearFilters">Clear</button>
+              </div>
+            </th>
+          </tr>
         </thead>
         <tbody>
+          <tr v-if="filteredTools.length === 0" class="no-match-row">
+            <td colspan="6">No tools match the filters</td>
+          </tr>
           <tr v-for="tool in filteredTools" :key="tool.id" :data-tool-id="tool.id">
             <td class="col-tool-id">
               <div class="tool-id-cell tool-id-cell--clickable" @click.stop="openSlotSelector(tool, $event)">
@@ -522,6 +551,7 @@ import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+import { emptyToolFilters, hasToolFilters, badToolFilters, filterTools } from './tool-filters';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -612,6 +642,8 @@ const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperi
 const tools = ref<Tool[]>([]);
 const storagePath = ref('');
 const searchQuery = ref('');
+// Reset whenever the Tool Library opens: a filter left on could hide tools.
+const columnFilters = ref(emptyToolFilters());
 const sortBy = ref<SortField>('toolId');
 const sortOrder = ref<SortOrder>('asc');
 const showToolForm = ref(false);
@@ -702,6 +734,8 @@ const filteredTools = computed(() => {
     });
   }
 
+  result = filterTools(result, columnFilters.value, appStore.unitsPreference.value === 'imperial');
+
   // Sort based on current sort settings
   result = [...result].sort((a, b) => {
     let comparison = 0;
@@ -723,6 +757,15 @@ const filteredTools = computed(() => {
 
   return result;
 });
+
+const filtersOn = computed(() => hasToolFilters(columnFilters.value) || !!searchQuery.value.trim());
+const badFilters = computed(() => badToolFilters(columnFilters.value));
+// The types the library's tools use, for the Type filter's menu.
+const typeOptions = computed(() => [...new Set(tools.value.map(t => t.type))].sort((a, b) => formatType(a).localeCompare(formatType(b))));
+const clearFilters = () => {
+  columnFilters.value = emptyToolFilters();
+  searchQuery.value = '';
+};
 
 // Real-time Tool ID validation
 const toolIdError = computed(() => {
@@ -1579,6 +1622,71 @@ onMounted(async () => {
 
 .tools-table th.col-actions {
   text-align: center;
+}
+
+/* The filter row sits under the labels, inside the sticky header. */
+.tools-table .filter-row th {
+  padding-top: 0;
+  font-weight: normal;
+}
+
+.column-filter {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.column-filter:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.column-filter::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.column-filter--bad {
+  border-color: var(--color-danger, #f87171);
+}
+
+.filter-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.filter-clear {
+  padding: 4px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.filter-clear:hover {
+  border-color: var(--color-accent);
+}
+
+.tools-table tbody tr.no-match-row td {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
 }
 
 .sort-header {
