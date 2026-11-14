@@ -28,6 +28,13 @@ public class CommandProcessorContext
     /// Null when no projection was supplied (falls back to MachineState.Tool).
     /// </summary>
     public int? ProjectedTool { get; set; }
+
+    /// <summary>
+    /// Units ("G20"/"G21") set by an earlier line of the same expansion (a
+    /// macro body), which is not queued yet when this line is processed.
+    /// Null outside an expansion, or when no earlier line set units.
+    /// </summary>
+    public string? PendingUnits { get; set; }
 }
 
 public class XyPosition
