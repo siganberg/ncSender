@@ -102,18 +102,18 @@
             <td class="col-actions">
               <div class="tool-actions">
                 <button
+                  v-if="slotsOffered"
+                  class="btn btn-small btn-secondary tool-slot-btn"
+                  title="Assign to a slot"
+                  @click.stop="openSlotSelector(tool, $event)"
+                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Slot' }}</button>
+                <button
                   v-if="loadOffered"
-                  class="btn btn-small btn-primary"
+                  class="btn btn-small btn-primary tool-load-btn"
                   :disabled="!!loadBlocked(tool)"
                   :title="loadBlocked(tool) || `Load this tool: M6 T${loadNumber(tool)}`"
                   @click="askLoadTool(tool)"
                 >{{ isLoaded(tool) ? 'Loaded' : 'Load' }}</button>
-                <button
-                  v-if="slotsOffered"
-                  class="btn btn-small btn-secondary"
-                  title="Assign to a slot"
-                  @click.stop="openSlotSelector(tool, $event)"
-                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Slot' }}</button>
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
                 <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
               </div>
@@ -1811,6 +1811,14 @@ onMounted(async () => {
   padding: 6px 10px;
   font-size: 0.8rem;
   white-space: nowrap;
+}
+
+.tool-actions .tool-slot-btn {
+  min-width: 5.2em;
+}
+
+.tool-actions .tool-load-btn {
+  min-width: 5em;
 }
 
 .tools-footer {
