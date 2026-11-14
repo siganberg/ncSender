@@ -110,8 +110,9 @@ internal class GcodeJobProcessor
                 };
 
                 var result = await _commandProcessor.ProcessAsync(trimmed, processorContext);
+                var stopsAfterSending = result.Refused && result.ShouldContinue;
 
-                if (result.Error is { } refused)
+                if (result.Error is { } refused && !stopsAfterSending)
                 {
                     // A plugin failed on this line: running on without it is unsafe.
                     FailureReason = refused;
@@ -132,6 +133,13 @@ internal class GcodeJobProcessor
                     };
 
                     await _controller.SendCommandAsync(processedCmd.Command, options);
+                }
+
+                if (stopsAfterSending && !_isStopped)
+                {
+                    FailureReason = result.Error ?? result.SkipReason ?? "a resume line was refused";
+                    _isStopped = true;
+                    break;
                 }
             }
         }
@@ -192,8 +200,11 @@ internal class GcodeJobProcessor
             };
 
             var result = await _commandProcessor.ProcessAsync(numbered, processorContext);
+            // A macro that stopped at a refused line comes back with the lines
+            // before it. They run like earlier lines of the file, then the job stops.
+            var stopsAfterSending = result.Refused && result.ShouldContinue;
 
-            if (result.Error is { } refused)
+            if (result.Error is { } refused && !stopsAfterSending)
             {
                 // A plugin failed on this line: running on without it is unsafe.
                 FailureReason = refused;
@@ -236,7 +247,14 @@ internal class GcodeJobProcessor
                 }
             }
 
+            if (stopsAfterSending && !_isStopped)
+            {
+                FailureReason = result.Error ?? $"Line {fileLineNumber}: {result.SkipReason ?? "a macro line was refused"}";
+                _isStopped = true;
+            }
+
             UpdateProgress(job, fileLineNumber, totalLines);
+            if (_isStopped) break;
         }
 
         _stopwatch.Stop();
