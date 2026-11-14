@@ -890,6 +890,7 @@ import { rotateGCode, mirrorGCode, offsetGCode } from './transform/gcode-transfo
 import { useOverrideControls, OVERRIDE_MIN, OVERRIDE_MAX } from '@/composables/use-override-controls';
 import { formatFeedRate, getFeedRateUnitLabel, formatDistance, getDistanceUnitLabel, mmToInches, inchesToMm } from '@/lib/units';
 import ToggleSwitch from '@/components/ToggleSwitch.vue';
+import { toolTypeLabel } from '@/features/tools/tool-types';
 // Probing is now handled server-side
 
 const store = useToolpathStore();
@@ -5437,14 +5438,6 @@ const loadToolInventory = async () => {
   }
 };
 
-// Tool library type ids -> display names (expanded tool button in the tools legend).
-const TOOL_TYPE_LABELS: Record<string, string> = {
-  'flat': 'Flat End Mill', 'ball': 'Ball End Mill', 'v-bit': 'V-Bit',
-  'drill': 'Drill', 'chamfer': 'Chamfer', 'surfacing': 'Surfacing',
-  'thread-mill': 'Thread Mill', 'probe': 'Probe'
-};
-const toolTypeLabel = (type: string): string => TOOL_TYPE_LABELS[type] ?? type;
-
 const formatDiameter = (mm: number): string => {
   if (appStore.unitsPreference.value === 'imperial') {
     return mmToInches(mm).toFixed(3);
@@ -5464,18 +5457,7 @@ const getToolTooltip = (toolNumber: number): string => {
   const details: string[] = [];
   if (toolInfo.name) details.push(toolInfo.name);
   if (toolInfo.diameter) details.push(`Ø${formatDiameter(toolInfo.diameter)}${getDistanceUnitLabel(appStore.unitsPreference.value)}`);
-  if (toolInfo.type) {
-    const typeMap: Record<string, string> = {
-      'flat': 'Flat End Mill',
-      'ball': 'Ball End Mill',
-      'v-bit': 'V-Bit',
-      'drill': 'Drill',
-      'chamfer': 'Chamfer',
-      'surfacing': 'Surfacing',
-      'probe': 'Probe'
-    };
-    details.push(typeMap[toolInfo.type] || toolInfo.type);
-  }
+  if (toolInfo.type) details.push(toolTypeLabel(toolInfo.type));
 
   return details.length > 0 ? `${baseText}\n${details.join(' • ')}` : baseText;
 };

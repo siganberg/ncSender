@@ -7,9 +7,6 @@ namespace NcSender.Server.Tools;
 
 public class ToolService : IToolService
 {
-    private static readonly string[] ValidTypes =
-        ["flat", "ball", "v-bit", "drill", "chamfer", "surfacing", "probe", "thread-mill"];
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -245,8 +242,8 @@ public class ToolService : IToolService
         if (tool.Diameter <= 0)
             throw new ArgumentException("Tool diameter must be greater than 0");
 
-        if (!ValidTypes.Contains(tool.Type))
-            throw new ArgumentException($"Invalid tool type '{tool.Type}'. Valid types: {string.Join(", ", ValidTypes)}");
+        if (!ToolTypes.All.Contains(tool.Type))
+            throw new ArgumentException($"Invalid tool type '{tool.Type}'. Valid types: {string.Join(", ", ToolTypes.All)}");
     }
 
     private async Task<List<ToolInfo>> LoadAsync()
