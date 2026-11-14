@@ -33,6 +33,12 @@ public interface IPendantManager
     /// before $VERSION existed simply stays quiet.
     /// </summary>
     Task<string?> GetDongleVersionAsync();
+
+    /// <summary>
+    /// Send one line to the cabled dongle and return the first reply line that
+    /// matches, or null when it is not connected or does not answer in time.
+    /// </summary>
+    Task<string?> QueryDongleLineAsync(string command, Func<string, bool> match, int timeoutMs);
     Task ActivateDongleAsync(string installationId);
 
     /// <summary>Push an already-signed licence to the dongle. Fetching it is the caller's job.</summary>

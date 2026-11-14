@@ -108,6 +108,24 @@
             </div>
           </section>
 
+          <!-- Wireless probes: use or ignore it on the receiver's probe output.
+               A probe that loses its link while touched holds the input
+               triggered; turning it off here frees the input for another probe. -->
+          <section class="acc-card" v-if="selected.probeIgnored != null">
+            <div class="acc-card-header">
+              <h3 class="acc-card-title">{{ 'Probe input' }}</h3>
+            </div>
+            <div class="acc-toggle-row">
+              <span class="acc-toggle-label">{{ 'Use this probe' }}</span>
+              <ToggleSwitch :model-value="!selected.probeIgnored" :disabled="probeSaving"
+                            @update:model-value="(v: boolean) => setProbeIgnored(selected!, !v)" />
+            </div>
+            <p class="acc-note">
+              {{ selected.probeIgnored ? 'Ignored. Its contact and lost-signal state no longer trigger the probe input, so another probe can be used.' : 'Its contact triggers the probe input through the Wireless Receiver.' }}
+            </p>
+            <p v-if="probeError" class="msg msg--error">{{ probeError }}</p>
+          </section>
+
           <!-- Firmware -->
           <section class="acc-card">
             <div class="acc-card-header">
@@ -274,6 +292,7 @@
 import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
+import ToggleSwitch from './ToggleSwitch.vue';
 import { getApiBaseUrl } from '../lib/api-base';
 import { api } from '../lib/api.js';
 import { useKioskDetection } from '../composables/useKioskDetection';
@@ -309,6 +328,7 @@ interface Accessory {
   paired?: boolean;
   batteryState?: 'battery' | 'charging' | 'full' | 'usb' | null;
   batteryPercent?: number | null; batteryMv?: number | null; batteryLow?: boolean;
+  probeIgnored?: boolean | null;
 }
 
 const loading = ref(true);
@@ -444,6 +464,33 @@ function batteryText(a: Accessory) {
   const level = `${a.batteryPercent}% · ${volts}`;
   if (a.batteryState === 'charging') return `Charging · ${level}`;
   return a.batteryLow ? `${level} · Low` : level;
+}
+
+// Takes effect on the receiver at once; the row is updated in place so the
+// switch does not wait for the next poll.
+const probeSaving = ref(false);
+const probeError = ref('');
+watch(selectedId, () => { probeError.value = ''; });
+async function setProbeIgnored(a: Accessory, ignored: boolean) {
+  probeSaving.value = true;
+  probeError.value = '';
+  try {
+    const res = await fetch(`${baseUrl}/api/accessories/${a.id}/probe-ignore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ignored }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
+    }
+    const row = accessories.value.find(x => x.id === a.id);
+    if (row) row.probeIgnored = ignored;
+  } catch (e: any) {
+    probeError.value = e?.message ?? String(e);
+  } finally {
+    probeSaving.value = false;
+  }
 }
 
 function nameFor(id: string | null) {
@@ -926,6 +973,8 @@ onUnmounted(() => {
 .acc-status--warn { background: #e0a03022; color: #e0a030; }
 .acc-status--off  { background: var(--color-surface-raised); color: var(--color-text-secondary); }
 
+.acc-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.acc-toggle-label { font-size: 0.9rem; color: var(--color-text-primary); }
 .acc-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
 .acc-note--warn { color: #e0a030; }
 .acc-note-dim { opacity: 0.65; }

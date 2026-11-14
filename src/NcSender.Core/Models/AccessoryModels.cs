@@ -72,4 +72,12 @@ public class AccessoryInfo
 
     /// <summary>Below the low threshold on battery; never set while charging.</summary>
     public bool BatteryLow { get; set; }
+
+    /// <summary>
+    /// Wireless probes only: true when the receiver is set to ignore this probe
+    /// (its contact and lost-signal state no longer reach the controller's probe
+    /// input). Null when it does not apply, or the cabled radio cannot do it
+    /// (the Wireless USB, or receiver firmware from before the setting).
+    /// </summary>
+    public bool? ProbeIgnored { get; set; }
 }

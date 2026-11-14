@@ -123,6 +123,26 @@ public static class AccessoryEndpoints
         // normal case for hardware it has seen before, and it asks the user for
         // nothing. Only a device the store does not recognise comes back with
         // needsInstallationId, and only then does the view prompt.
+        // Use or ignore a wireless probe on the receiver's wired output. For a
+        // probe that lost its link while touched: ignoring it releases the
+        // probe input so another probe can be used.
+        app.MapPost("/api/accessories/{id}/probe-ignore",
+            async (string id, AccessoryProbeIgnoreRequest req, AccessoryService svc) =>
+        {
+            var def = AccessoryCatalog.ById(id);
+            if (def is null || !AccessoryService.CanIgnoreProbe(def.Id))
+                return Results.NotFound(new ApiError($"Unknown wireless probe '{id}'"));
+            try
+            {
+                await svc.SetProbeIgnoredAsync(def, req.Ignored);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+            return Results.Ok();
+        });
+
         app.MapPost("/api/accessories/{id}/activate",
             async (string id, AccessoryActivateRequest? req, AccessoryService svc,
                    IHttpClientFactory httpFactory, CancellationToken ct) =>
