@@ -72,8 +72,18 @@ public class ToolDimensions
     [JsonPropertyName("taper_angle")]
     public double? TaperAngle { get; set; }
 
+    [JsonPropertyName("shank_diameter")]
+    public double? ShankDiameter { get; set; }
+
+    [JsonPropertyName("neck_length")]
+    public double? NeckLength { get; set; }
+
     public double? Radius { get; set; }
     public double? Stickout { get; set; }
+
+    // Other dimension keys a plugin or importer writes are kept as they are.
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public class ToolSpecs
