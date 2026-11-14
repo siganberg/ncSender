@@ -8,7 +8,7 @@ namespace NcSender.Server.Tools;
 public class ToolService : IToolService
 {
     private static readonly string[] ValidTypes =
-        ["flat", "ball", "v-bit", "drill", "chamfer", "surfacing", "probe", "thread-mill"];
+        ["flat", "ball", "tapered-ball", "bull-nose", "v-bit", "drill", "chamfer", "surfacing", "probe", "thread-mill"];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -242,11 +242,42 @@ public class ToolService : IToolService
         if (string.IsNullOrWhiteSpace(tool.Name))
             throw new ArgumentException("Tool name is required");
 
+        ValidateGeometry(tool);
+
         if (tool.Diameter <= 0)
             throw new ArgumentException("Tool diameter must be greater than 0");
 
         if (!ValidTypes.Contains(tool.Type))
             throw new ArgumentException($"Invalid tool type '{tool.Type}'. Valid types: {string.Join(", ", ValidTypes)}");
+    }
+
+    // Plugins use these for starting feeds and speeds, so refuse values that
+    // can't be real rather than let them through to a feed calculation.
+    private static void ValidateGeometry(ToolInfo tool)
+    {
+        var d = tool.Dimensions;
+        if (d is not null)
+        {
+            foreach (var (name, value) in new (string, double?)[]
+            {
+                ("Flute length", d.FluteLength), ("Overall length", d.OverallLength),
+                ("Shank diameter", d.ShankDiameter), ("Neck length", d.NeckLength),
+                ("Corner radius", d.Radius), ("Stickout", d.Stickout),
+            })
+            {
+                if (value is < 0)
+                    throw new ArgumentException($"{name} of '{tool.Name}' can't be negative");
+            }
+
+            if (d.TaperAngle is < 0 or >= 90)
+                throw new ArgumentException($"Taper angle of '{tool.Name}' must be from 0 up to 90 degrees");
+        }
+
+        if (tool.Metadata?.TryGetValue("flutes", out var flutes) == true
+            && flutes.ValueKind != JsonValueKind.Null
+            && !(flutes.ValueKind == JsonValueKind.Number && flutes.TryGetDouble(out var n)
+                 && n >= 1 && n == Math.Floor(n)))
+            throw new ArgumentException($"Flutes of '{tool.Name}' must be a whole number of at least 1");
     }
 
     private async Task<List<ToolInfo>> LoadAsync()

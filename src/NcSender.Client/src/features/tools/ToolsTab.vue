@@ -177,10 +177,11 @@
 
     <!-- Tool Form Modal -->
     <div v-if="showToolForm" class="modal-overlay" @click.self="closeToolForm">
-      <div class="modal-content">
+      <div class="modal-content" :class="{ 'modal-content--wide': showGeometry }">
         <div class="modal-header">{{ editingTool ? 'Edit Tool' : 'Add Tool' }}</div>
         <form @submit.prevent="saveTool" class="modal-form">
           <div class="modal-body">
+           <div class="form-main">
             <!-- Tool ID and Assigned To T# -->
             <div class="form-row">
               <div class="form-group">
@@ -234,6 +235,8 @@
               <select class="form-select" v-model="toolForm.type" required>
                 <option value="flat">Flat End Mill</option>
                 <option value="ball">Ball End Mill</option>
+                <option value="tapered-ball">Tapered Ball Nose</option>
+                <option value="bull-nose">Bull Nose / Bowl</option>
                 <option value="v-bit">V-Bit</option>
                 <option value="drill">Drill</option>
                 <option value="chamfer">Chamfer</option>
@@ -257,6 +260,8 @@
                   required
                 >
                 <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
+                <div v-else-if="toolForm.type === 'tapered-ball'" class="form-note">At the tip: twice the tip radius</div>
+                <div v-else-if="toolForm.type === 'bull-nose'" class="form-note">Across the cut, corners included</div>
               </div>
               <div class="form-group">
                 <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
@@ -333,6 +338,52 @@
                 placeholder="e.g., MANUFACTURER-12345"
               >
             </div>
+
+           </div>
+
+            <!-- Advanced: geometry plugins use for feeds, speeds and depths.
+                 A second column on a wide screen (always open), else a
+                 closed card below the other fields. -->
+            <details
+              v-if="showGeometry"
+              class="form-advanced"
+              :class="{ 'form-advanced--pinned': isWide }"
+              :open="advancedOpen || isWide"
+              @toggle="!isWide && (advancedOpen = ($event.target as HTMLDetailsElement).open)"
+            >
+              <summary class="form-advanced-summary" @click="isWide && $event.preventDefault()">
+                <span class="form-advanced-title">
+                  Advanced
+                  <span v-if="geometryCount" class="form-advanced-count">{{ geometryCount }} set</span>
+                </span>
+                <span class="form-advanced-blurb">{{ advancedBlurb }}</span>
+              </summary>
+              <div class="form-row form-row-3">
+                <div v-if="showFlutes" class="form-group">
+                  <label class="form-label">Flutes</label>
+                  <input type="number" class="form-input" v-model.number="toolForm.metadata.flutes" step="any" placeholder="e.g., 2">
+                  <div v-if="formErrors.flutes" class="form-error">{{ formErrors.flutes }}</div>
+                </div>
+                <div v-for="f in visibleLengthFields" :key="f.key" class="form-group">
+                  <label class="form-label">
+                    {{ f.label }} ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
+                    <InfoTooltip v-if="f.help" :text="f.help" />
+                  </label>
+                  <input type="number" class="form-input" v-model.number="toolForm.dimensions[f.key]" step="any">
+                  <div v-if="formErrors[f.key]" class="form-error">{{ formErrors[f.key] }}</div>
+                  <div v-else-if="f.note" class="form-note">{{ f.note }}</div>
+                </div>
+                <div v-if="showTaper" class="form-group">
+                  <label class="form-label">
+                    Taper angle (° per side)
+                    <InfoTooltip text="Measured from the tool's axis to its side, as Fusion 360 stores it. A 60° V-bit is 30° per side." />
+                  </label>
+                  <input type="number" class="form-input" v-model.number="toolForm.dimensions.taper_angle" step="any">
+                  <div v-if="formErrors.taper_angle" class="form-error">{{ formErrors.taper_angle }}</div>
+                  <div v-else-if="taperNote" class="form-note">{{ taperNote }}</div>
+                </div>
+              </div>
+            </details>
           </div>
 
           <!-- Footer -->
@@ -513,7 +564,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -545,10 +596,13 @@ interface Tool {
     notes: string;
     image: string;
     sku: string;
+    flutes?: number | null;
   };
   dimensions?: {
     flute_length: number | null;
     overall_length: number | null;
+    shank_diameter: number | null;
+    neck_length: number | null;
     taper_angle: number | null;
     radius: number | null;
     stickout: number | null;
@@ -645,6 +699,31 @@ const showSlotSelector = ref(false);
 const slotSelectorTool = ref<Tool | null>(null);
 const slotSelectorPosition = ref({ top: 0, left: 0 });
 
+// Geometry under Advanced. Lengths are stored in mm and shown in the
+// user's units; flutes and taper angle have no unit.
+type LengthKey = 'flute_length' | 'overall_length' | 'shank_diameter' | 'neck_length' | 'radius' | 'stickout';
+const LENGTH_FIELDS: ReadonlyArray<{ key: LengthKey; label: string; help?: string }> = [
+  { key: 'flute_length', label: 'Flute length', help: 'Length of the cutting edge: the deepest it can cut in one pass.' },
+  { key: 'overall_length', label: 'Overall length' },
+  { key: 'shank_diameter', label: 'Shank diameter' },
+  { key: 'neck_length', label: 'Neck length', help: 'Reduced-diameter length behind the flutes, for reaching into deep pockets.' },
+  { key: 'radius', label: 'Corner radius', help: 'Radius of a bull-nose end mill\'s corners. Leave empty for a square end.' },
+  { key: 'stickout', label: 'Stickout', help: 'How far the tool sticks out of the collet.' },
+];
+// A probe has no geometry plugins use. A pen or drag knife has only its
+// max plunge, kept as flute_length: how far the tip may go below the stock
+// top (a spring-loaded pen's travel), so Z0 stays on the stock.
+const NO_GEOMETRY = new Set(['probe']);
+const MARKING_TYPES = new Set(['drag-knife', 'pen']);
+const MAX_PLUNGE_FIELD = {
+  key: 'flute_length' as LengthKey,
+  label: 'Max plunge',
+  help: 'How far the tip may go below the stock top (Z0). For a pen in a spring holder, the spring\'s travel. Plugins don\'t plunge it deeper.',
+};
+const RADIUS_TYPES = new Set(['flat', 'surfacing', 'tapered-ball', 'bull-nose']);
+const TAPER_TYPES = new Set(['v-bit', 'chamfer', 'tapered-ball']);
+const isBlank = (v: unknown) => v === null || v === undefined || v === '';
+
 // Tool form data
 const defaultToolForm = () => ({
   id: 0,
@@ -662,15 +741,18 @@ const defaultToolForm = () => ({
   metadata: {
     notes: '',
     image: '',
-    sku: ''
+    sku: '',
+    flutes: null as number | null
   },
   dimensions: {
-    flute_length: null,
-    overall_length: null,
-    taper_angle: null,
-    radius: null,
-    stickout: null
-  },
+    flute_length: null as number | null,
+    overall_length: null as number | null,
+    shank_diameter: null as number | null,
+    neck_length: null as number | null,
+    taper_angle: null as number | null,
+    radius: null as number | null,
+    stickout: null as number | null
+  } as Record<string, unknown> & Record<LengthKey | 'taper_angle', number | null>,
   specs: {
     material: null,
     coating: null
@@ -685,6 +767,77 @@ const defaultToolForm = () => ({
 });
 
 const toolForm = ref(defaultToolForm());
+
+// Closed each time the form opens; opened when one of its fields has an error.
+const advancedOpen = ref(false);
+// Wide enough for Advanced as a second column (matches the CSS breakpoint).
+const wideQuery = window.matchMedia('(min-width: 1000px)');
+const isWide = ref(wideQuery.matches);
+const onWideChange = (e: MediaQueryListEvent) => { isWide.value = e.matches; };
+onMounted(() => wideQuery.addEventListener('change', onWideChange));
+onUnmounted(() => wideQuery.removeEventListener('change', onWideChange));
+const showGeometry = computed(() => !NO_GEOMETRY.has(toolForm.value.type));
+const isMarking = computed(() => MARKING_TYPES.has(toolForm.value.type));
+const showFlutes = computed(() => !isMarking.value);
+// A field shows when it fits the type, or when it already has a value (an
+// imported tapered ball mill keeps its taper angle visible).
+const isTaperedBall = computed(() => toolForm.value.type === 'tapered-ball');
+const isBullNose = computed(() => toolForm.value.type === 'bull-nose');
+// A bull nose or bowl bit is flat across the bottom between its rounded
+// corners: say how wide, or that a radius of half the Diameter is a ball.
+const cornerRadiusNote = computed(() => {
+  const r = toolForm.value.dimensions.radius;
+  const d = toolForm.value.diameter;
+  if (typeof r !== 'number' || !(r > 0) || !(d > 0)) return '';
+  const flat = d - 2 * r;
+  if (flat <= d * 0.01) return 'Half the Diameter or more: that is a Ball End Mill';
+  return `Flat across the bottom: ${+flat.toFixed(4)}`;
+});
+// A tapered ball nose's tip radius is normally half its Diameter (the tip);
+// say so when the two disagree, since one of them is likely mistyped.
+const tipRadiusNote = computed(() => {
+  const r = toolForm.value.dimensions.radius;
+  const d = toolForm.value.diameter;
+  if (typeof r !== 'number' || !(d > 0)) return '';
+  // Inch values are shown rounded to 4 places, so a tiny tip can look off by
+  // more than 1% when it isn't: allow for that rounding too.
+  const rounding = appStore.unitsPreference.value === 'imperial' ? 0.0002 : 0;
+  return Math.abs(2 * r - d) > Math.max(d * 0.01, rounding)
+    ? `Usually half the Diameter (${+(d / 2).toFixed(4)})` : '';
+});
+const visibleLengthFields = computed(() => isMarking.value
+  ? [{ ...MAX_PLUNGE_FIELD, note: '' }]
+  : LENGTH_FIELDS
+    .filter(f =>
+      f.key !== 'radius' || RADIUS_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.radius))
+    .map(f => f.key === 'radius' && isTaperedBall.value
+      ? { ...f, label: 'Tip radius', help: 'Radius of the ball at the tip: half the Diameter.', note: tipRadiusNote.value }
+      : f.key === 'radius' && isBullNose.value
+        ? { ...f, help: 'Radius of the rounded corners. A bowl bit\'s round, from its Diameter in to the flat bottom.', note: cornerRadiusNote.value }
+        : { ...f, note: '' }));
+const showTaper = computed(() => !isMarking.value
+  && (TAPER_TYPES.has(toolForm.value.type) || !isBlank(toolForm.value.dimensions.taper_angle)));
+const advancedBlurb = computed(() => isMarking.value
+  ? 'Optional. Limits how deep plugins such as QuickCut plunge this tool below the stock top.'
+  : 'Optional. Helps plugins such as QuickCut and ncCAM suggest feeds, speeds and depths. Leave unknowns empty.');
+// Under the taper angle: a V-bit's included angle, or how wide a tapered ball
+// nose gets at the top of its flutes (a quick check against its shank).
+const taperNote = computed(() => {
+  const half = toolForm.value.dimensions.taper_angle;
+  if (typeof half !== 'number' || !(half > 0 && half < 90)) return '';
+  if (toolForm.value.type === 'v-bit') return `A ${+(half * 2).toFixed(3)}° V-bit`;
+  const length = toolForm.value.dimensions.flute_length;
+  if (isTaperedBall.value && typeof length === 'number' && length > 0 && toolForm.value.diameter > 0) {
+    const top = toolForm.value.diameter + 2 * length * Math.tan(half * Math.PI / 180);
+    return `About ${+top.toFixed(3)} ${getDistanceUnitLabel(appStore.unitsPreference.value)} across at the top of the flutes`;
+  }
+  return '';
+});
+const geometryCount = computed(() => [
+  ...(showFlutes.value ? [toolForm.value.metadata.flutes] : []),
+  ...(showTaper.value ? [toolForm.value.dimensions.taper_angle] : []),
+  ...visibleLengthFields.value.map(f => toolForm.value.dimensions[f.key]),
+].filter(v => !isBlank(v)).length);
 
 // Computed
 const filteredTools = computed(() => {
@@ -911,6 +1064,8 @@ const formatType = (type: string) => {
   const typeMap: Record<string, string> = {
     'flat': 'Flat End Mill',
     'ball': 'Ball End Mill',
+    'tapered-ball': 'Tapered Ball Nose',
+    'bull-nose': 'Bull Nose / Bowl',
     'v-bit': 'V-Bit',
     'drill': 'Drill',
     'chamfer': 'Chamfer',
@@ -977,6 +1132,7 @@ const addNewTool = () => {
   toolForm.value.toolId = maxToolId + 1;
 
   formErrors.value = {};
+  advancedOpen.value = false;
   showToolForm.value = true;
 };
 
@@ -989,6 +1145,8 @@ const editTool = (tool: Tool) => {
   // directly, so a missing object blanked the whole Tool Library tab.
   toolCopy.metadata = { notes: '', image: '', sku: '', ...(toolCopy.metadata || {}) };
   toolCopy.offsets = { tlo: 0, x: 0, y: 0, z: 0, ...(toolCopy.offsets || {}) };
+  toolCopy.dimensions = { ...defaultToolForm().dimensions, ...(toolCopy.dimensions || {}) };
+  if (toolCopy.metadata.flutes === undefined) toolCopy.metadata.flutes = null;
 
   // Convert values to display units if in imperial mode
   const units = appStore.unitsPreference.value;
@@ -998,10 +1156,15 @@ const editTool = (tool: Tool) => {
     toolCopy.offsets.x = parseFloat(((toolCopy.offsets.x || 0) / 25.4).toFixed(4));
     toolCopy.offsets.y = parseFloat(((toolCopy.offsets.y || 0) / 25.4).toFixed(4));
     toolCopy.offsets.z = parseFloat(((toolCopy.offsets.z || 0) / 25.4).toFixed(4));
+    for (const { key } of LENGTH_FIELDS) {
+      const mm = toolCopy.dimensions[key];
+      if (typeof mm === 'number') toolCopy.dimensions[key] = parseFloat((mm / 25.4).toFixed(4));
+    }
   }
 
   toolForm.value = toolCopy;
   formErrors.value = {};
+  advancedOpen.value = false;
   showToolForm.value = true;
 };
 
@@ -1040,6 +1203,29 @@ const validateToolForm = () => {
     isValid = false;
   }
 
+  if (showGeometry.value) {
+    const flutes = toolForm.value.metadata.flutes;
+    if (!isBlank(flutes) && !(Number.isInteger(flutes) && (flutes as number) >= 1)) {
+      formErrors.value.flutes = 'A whole number, 1 or more';
+      isValid = false;
+    }
+    for (const { key } of LENGTH_FIELDS) {
+      const v = toolForm.value.dimensions[key];
+      if (!isBlank(v) && !(typeof v === 'number' && v >= 0)) {
+        formErrors.value[key] = 'Can\'t be negative';
+        isValid = false;
+      }
+    }
+    const taper = toolForm.value.dimensions.taper_angle;
+    if (!isBlank(taper) && !(typeof taper === 'number' && taper >= 0 && taper < 90)) {
+      formErrors.value.taper_angle = 'From 0 up to 90°';
+      isValid = false;
+    }
+    if (['flutes', 'taper_angle', ...LENGTH_FIELDS.map(f => f.key)].some(k => formErrors.value[k])) {
+      advancedOpen.value = true;
+    }
+  }
+
   return isValid;
 };
 
@@ -1049,7 +1235,19 @@ const saveTool = async () => {
   }
 
   try {
-    const toolData = { ...toolForm.value };
+    const toolData = {
+      ...toolForm.value,
+      offsets: { ...toolForm.value.offsets },
+      metadata: { ...toolForm.value.metadata },
+      dimensions: { ...toolForm.value.dimensions },
+    };
+
+    // An emptied number input gives '', which the server can't read as a
+    // number: store "not known" as null so plugins use their own defaults.
+    for (const key of [...LENGTH_FIELDS.map(f => f.key), 'taper_angle'] as const) {
+      if (isBlank(toolData.dimensions[key])) toolData.dimensions[key] = null;
+    }
+    if (isBlank(toolData.metadata.flutes)) delete toolData.metadata.flutes;
 
     // Convert values back to mm if in imperial mode
     const units = appStore.unitsPreference.value;
@@ -1065,6 +1263,10 @@ const saveTool = async () => {
       toolData.offsets.x = toMm(toolData.offsets.x || 0, orig ? (orig.offsets?.x || 0) : undefined);
       toolData.offsets.y = toMm(toolData.offsets.y || 0, orig ? (orig.offsets?.y || 0) : undefined);
       toolData.offsets.z = toMm(toolData.offsets.z || 0, orig ? (orig.offsets?.z || 0) : undefined);
+      for (const { key } of LENGTH_FIELDS) {
+        const shown = toolData.dimensions[key];
+        if (typeof shown === 'number') toolData.dimensions[key] = toMm(shown, orig?.dimensions?.[key] ?? undefined);
+      }
     }
 
     console.log('Saving tool data:', JSON.stringify(toolData));
@@ -2065,6 +2267,93 @@ onMounted(async () => {
   outline: none;
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.form-note {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}
+
+.form-advanced {
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: var(--radius-medium, 8px);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.form-advanced-summary {
+  cursor: pointer;
+  user-select: none;
+  list-style-position: outside;
+  margin-left: 14px;
+}
+
+.form-advanced[open] .form-advanced-summary {
+  margin-bottom: 12px;
+}
+
+.form-advanced-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.form-advanced-count {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-left: 6px;
+}
+
+.modal-content--wide {
+  max-width: 1040px;
+}
+
+@media (min-width: 1000px) {
+  .modal-content--wide .modal-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .modal-content--wide .form-advanced {
+    margin-top: 0;
+    position: sticky;
+    top: 0;
+  }
+
+  .modal-content--wide .form-advanced .form-row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.form-advanced .form-label {
+  white-space: normal;
+}
+
+.form-advanced .form-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.form-advanced--pinned .form-advanced-summary {
+  cursor: default;
+  list-style: none;
+  margin-left: 0;
+}
+
+.form-advanced--pinned .form-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.form-advanced-blurb {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
 }
 
 .form-textarea {
