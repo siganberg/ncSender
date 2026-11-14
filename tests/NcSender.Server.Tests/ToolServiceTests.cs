@@ -50,6 +50,23 @@ public class ToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddTool_TaperedBallNose_KeepsItsGeometry()
+    {
+        var tool = new ToolInfo
+        {
+            Name = "1/32 R TBN", ToolNumber = 4, Type = "tapered-ball", Diameter = 1.5875,
+            Dimensions = new ToolDimensions { Radius = 0.79375, TaperAngle = 5.38, FluteLength = 25.4, ShankDiameter = 6.35 },
+        };
+
+        await CreateService().AddAsync(tool);
+
+        var saved = Assert.Single(await CreateService().GetLibraryAsync());
+        Assert.Equal("tapered-ball", saved.Type);
+        Assert.Equal(5.38, saved.Dimensions!.TaperAngle);
+        Assert.Equal(0.79375, saved.Dimensions.Radius);
+    }
+
+    [Fact]
     public async Task AddTool_ValidTool_Succeeds()
     {
         var svc = CreateService();
@@ -465,5 +482,119 @@ public class ToolServiceTests : IDisposable
             new System.Text.Json.Nodes.JsonObject { ["tool"] = new System.Text.Json.Nodes.JsonObject { ["tls"] = true } });
 
         _broadcaster.Verify(b => b.Broadcast("tools-updated", It.IsAny<JsonElement>()), Times.Never);
+    }
+
+    private static ToolInfo Endmill() => new()
+    {
+        Name = "1/4 Upcut", ToolNumber = 1, Type = "flat", Diameter = 6.35,
+        Metadata = new() { ["flutes"] = JsonSerializer.SerializeToElement(2) },
+        Dimensions = new ToolDimensions
+        {
+            FluteLength = 22.2, OverallLength = 63.5, ShankDiameter = 6.35, NeckLength = 25,
+            Radius = 0.5, Stickout = 30,
+            Extra = new() { ["helix_angle"] = JsonSerializer.SerializeToElement(30) },
+        },
+    };
+
+    [Fact]
+    public async Task Geometry_SurvivesSaveAndReload()
+    {
+        await CreateService().AddAsync(Endmill());
+
+        var tool = Assert.Single(await CreateService().GetLibraryAsync());
+
+        Assert.Equal(2, tool.Metadata!["flutes"].GetInt32());
+        Assert.Equal(22.2, tool.Dimensions!.FluteLength);
+        Assert.Equal(63.5, tool.Dimensions.OverallLength);
+        Assert.Equal(6.35, tool.Dimensions.ShankDiameter);
+        Assert.Equal(25, tool.Dimensions.NeckLength);
+        Assert.Equal(0.5, tool.Dimensions.Radius);
+        Assert.Equal(30, tool.Dimensions.Stickout);
+        Assert.Equal(30, tool.Dimensions.Extra!["helix_angle"].GetInt32());
+    }
+
+    [Fact]
+    public async Task Geometry_WrittenWithSnakeCaseNames()
+    {
+        await CreateService().AddAsync(Endmill());
+
+        var json = await File.ReadAllTextAsync(Path.Combine(_tempDir, "tools.json"));
+
+        Assert.Contains("\"shank_diameter\"", json);
+        Assert.Contains("\"neck_length\"", json);
+        Assert.Contains("\"helix_angle\"", json);
+    }
+
+    [Fact]
+    public async Task Geometry_SurvivesUpdateAndBulkUpdate()
+    {
+        var svc = CreateService();
+        var added = await svc.AddAsync(Endmill());
+
+        added.Dimensions!.NeckLength = 12;
+        await svc.UpdateAsync(added.Id, added);
+        await svc.BulkUpdateAsync(await svc.GetLibraryAsync());
+
+        var tool = Assert.Single(await CreateService().GetLibraryAsync());
+        Assert.Equal(12, tool.Dimensions!.NeckLength);
+        Assert.Equal(6.35, tool.Dimensions.ShankDiameter);
+        Assert.Equal(2, tool.Metadata!["flutes"].GetInt32());
+    }
+
+    public static TheoryData<Action<ToolInfo>> BadGeometry => new()
+    {
+        t => t.Dimensions!.FluteLength = -1,
+        t => t.Dimensions!.ShankDiameter = -0.1,
+        t => t.Dimensions!.TaperAngle = 90,
+        t => t.Dimensions!.TaperAngle = -5,
+        t => t.Metadata!["flutes"] = JsonSerializer.SerializeToElement(0),
+        t => t.Metadata!["flutes"] = JsonSerializer.SerializeToElement(2.5),
+        t => t.Metadata!["flutes"] = JsonSerializer.SerializeToElement("two"),
+    };
+
+    [Theory]
+    [MemberData(nameof(BadGeometry))]
+    public async Task Geometry_ImpossibleValues_AreRefused(Action<ToolInfo> spoil)
+    {
+        var tool = Endmill();
+        spoil(tool);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => CreateService().AddAsync(tool));
+    }
+
+    [Fact]
+    public async Task Geometry_BoundaryValues_AreAccepted()
+    {
+        var tool = Endmill();
+        tool.Dimensions!.TaperAngle = 0;
+        tool.Dimensions.Radius = 0;
+        tool.Metadata!["flutes"] = JsonDocument.Parse("2.0").RootElement.Clone();
+
+        var saved = await CreateService().AddAsync(tool);
+
+        Assert.Equal(0, saved.Dimensions!.TaperAngle);
+    }
+
+    [Fact]
+    public async Task Geometry_BulkUpdate_RefusesImpossibleValues()
+    {
+        var svc = CreateService();
+        await svc.AddAsync(Endmill());
+        var library = await svc.GetLibraryAsync();
+        library[0].Dimensions!.FluteLength = -3;
+
+        await Assert.ThrowsAsync<ArgumentException>(() => svc.BulkUpdateAsync(library));
+    }
+
+    [Fact]
+    public async Task Geometry_EmptyValues_AreAccepted()
+    {
+        var tool = Endmill();
+        tool.Dimensions = new ToolDimensions();
+        tool.Metadata!["flutes"] = JsonSerializer.SerializeToElement<object?>(null);
+
+        var saved = await CreateService().AddAsync(tool);
+
+        Assert.Null(saved.Dimensions!.FluteLength);
     }
 }
