@@ -41,6 +41,35 @@
           </div>
         </div>
 
+        <div class="stick-row">
+          <div class="toggle-container">
+            <label class="toggle-label">Analog Stick Jogging</label>
+            <ToggleSwitch
+              :model-value="stickJog.enabled"
+              @update:modelValue="(value: boolean) => saveStickJog({ enabled: value })"
+            />
+          </div>
+          <template v-if="stickJog.enabled">
+            <label class="stick-field">
+              Curve
+              <input type="range" min="0" max="1" step="0.05" :value="stickDraft.expo" @input="onStickSlider('expo', $event)" @change="saveStickSlider('expo')" />
+              <span class="stick-value">{{ stickDraft.expo.toFixed(2) }}</span>
+            </label>
+            <label class="stick-field">
+              Dead Zone
+              <input type="range" min="0" max="0.5" step="0.01" :value="stickDraft.deadZone" @input="onStickSlider('deadZone', $event)" @change="saveStickSlider('deadZone')" />
+              <span class="stick-value">{{ Math.round(stickDraft.deadZone * 100) }}%</span>
+            </label>
+            <StickJogReadout :settings="stickDraft" />
+          </template>
+        </div>
+        <p v-if="stickJog.enabled" class="stick-hint">
+          A stick bound to Jog X and Y jogs in a straight line at its angle, in 15° steps. How far you push sets the
+          speed: a slight push creeps, a full push runs at the jog panel's feed (Z at half). Turn the stick 15° or more,
+          or push clearly more or less, and it stops and starts a new straight jog. Let go to stop. A higher curve gives
+          finer control near the center. The stick doesn't jog while this tab is open.
+        </p>
+
         <div class="bindings-table-container">
           <table class="bindings-table">
             <thead>
@@ -218,6 +247,8 @@ import { comboFromEvent } from './keyboard-utils';
 import { gamepadBindingStore } from './gamepad-binding-store';
 import { detectGamepadInput, formatGamepadBinding } from './gamepad-utils';
 import { settingsStore, updateSettings } from '@/lib/settings-store.js';
+import { readStickJogSettings, type StickJogSettings } from './stick-jog';
+import StickJogReadout from './StickJogReadout.vue';
 
 const shortcutsEnabled = computed(() => keyBindingStore.areShortcutsEnabled.value);
 const featureEnabled = computed(() => keyBindingStore.isFeatureEnabled.value);
@@ -284,6 +315,29 @@ syncGamepadBindingMap();
 const captureActionId = ref<string | null>(null);
 const captureGamepadActionId = ref<string | null>(null);
 const captureError = ref<string | null>(null);
+
+const stickJog = computed(() => readStickJogSettings((settingsStore.data as any)?.gamepadAnalog));
+// The sliders' values while dragging, saved when let go.
+const stickDraft = reactive<StickJogSettings>({ ...stickJog.value });
+watch(stickJog, (value) => Object.assign(stickDraft, value));
+
+const saveStickJog = async (changes: Partial<StickJogSettings>) => {
+  try {
+    await updateSettings({ gamepadAnalog: changes });
+  } catch (error: any) {
+    console.error('Failed to save analog stick settings:', JSON.stringify(error?.message ?? error));
+    captureError.value = error?.message || 'Failed to save analog stick settings';
+    Object.assign(stickDraft, stickJog.value);
+  }
+};
+
+const onStickSlider = (key: 'expo' | 'deadZone', event: Event) => {
+  stickDraft[key] = Number((event.target as HTMLInputElement).value);
+};
+
+const saveStickSlider = (key: 'expo' | 'deadZone') => {
+  saveStickJog({ [key]: stickDraft[key] });
+};
 const isResetting = ref(false);
 const showResetConfirm = ref(false);
 
@@ -503,6 +557,39 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+.stick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+  align-items: center;
+  padding: var(--gap-sm);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.stick-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  font-size: 0.9rem;
+}
+
+.stick-value {
+  min-width: 3em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.stick-hint {
+  margin: 0;
+  padding: var(--gap-xs) var(--gap-sm) var(--gap-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .search-input {

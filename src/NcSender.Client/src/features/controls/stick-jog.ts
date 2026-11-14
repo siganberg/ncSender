@@ -1,0 +1,267 @@
+/*
+ * This file is part of ncSender.
+ *
+ * ncSender is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ncSender is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// Analog stick jogging: a push starts one held jog in a straight line, at
+// the stick's angle (in 15° steps) and at a speed set by how far it's
+// pushed. Turning the stick well away or pushing clearly more or less
+// stops that jog and starts a new straight one; letting go stops it.
+
+import { getSettings } from '@/lib/settings-store.js';
+import { useAppStore } from '@/composables/use-app-store';
+import { parseGamepadBinding } from './gamepad-utils';
+import { startContinuousVectorJogSession, type ContinuousJogSession } from './actions';
+
+export interface StickJogSettings {
+  enabled: boolean;
+  expo: number;
+  deadZone: number;
+}
+
+export const DEFAULT_STICK_JOG_SETTINGS: StickJogSettings = {
+  enabled: false,
+  expo: 0.6,
+  deadZone: 0.12
+};
+
+export const ANGLE_STEP_DEG = 15;
+// A new jog when the stick turns this far from the jog's angle...
+export const REAIM_ANGLE_DEG = 15;
+// ...or its push changes by this much (0-1, past the dead zone).
+export const REAIM_PUSH = 0.25;
+// A change has to hold this long first, so a stick on its way somewhere
+// doesn't start a jog at the angle it's passing through.
+export const SETTLE_MS = 80;
+// A push just past the dead zone creeps at this share of the top speed.
+export const MIN_SPEED_FRACTION = 0.02;
+const STOP_WAIT_MS = 1500;
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+export function readStickJogSettings(raw: any): StickJogSettings {
+  const number = (value: any, fallback: number, min: number, max: number) =>
+    typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
+  return {
+    enabled: raw?.enabled === true,
+    expo: number(raw?.expo, DEFAULT_STICK_JOG_SETTINGS.expo, 0, 1),
+    deadZone: number(raw?.deadZone, DEFAULT_STICK_JOG_SETTINGS.deadZone, 0, 0.5)
+  };
+}
+
+export function getStickJogSettings(): StickJogSettings {
+  return readStickJogSettings(getSettings()?.gamepadAnalog);
+}
+
+// Push (0-1, past the dead zone) to a share of the top speed:
+// k·x³ + (1−k)·x, so small pushes are fine and a full push is full speed.
+export function speedCurve(push: number, expo: number): number {
+  const x = clamp(push, 0, 1);
+  if (x === 0) return 0;
+  const k = clamp(expo, 0, 1);
+  return MIN_SPEED_FRACTION + (1 - MIN_SPEED_FRACTION) * (k * x * x * x + (1 - k) * x);
+}
+
+function deadZone(magnitude: number, zone: number): number {
+  if (!Number.isFinite(magnitude) || magnitude <= zone) return 0;
+  return Math.min(1, (magnitude - zone) / (1 - zone));
+}
+
+export const snapAngle = (deg: number) => {
+  const snapped = Math.round(deg / ANGLE_STEP_DEG) * ANGLE_STEP_DEG;
+  return ((snapped % 360) + 360) % 360;
+};
+
+const angleBetween = (a: number, b: number) => {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+};
+
+// What the stick asks for: an XY jog at an angle (0° = X+, 90° = Y+), or a
+// Z jog up or down, with how far it's pushed. XY wins when both are pushed.
+export type StickTarget =
+  | { kind: 'xy'; angle: number; push: number }
+  | { kind: 'z'; sign: 1 | -1; push: number };
+
+export function stickTarget(stick: { x: number; y: number; z: number }, zone: number): StickTarget | null {
+  const xyPush = deadZone(Math.hypot(stick.x, stick.y), zone);
+  if (xyPush > 0) return { kind: 'xy', angle: (Math.atan2(stick.y, stick.x) * 180) / Math.PI, push: xyPush };
+  const zPush = deadZone(Math.abs(stick.z), zone);
+  if (zPush > 0) return { kind: 'z', sign: stick.z > 0 ? 1 : -1, push: zPush };
+  return null;
+}
+
+// Whether a jog running for `current` should give way to one for `next`.
+export function needsReaim(current: StickTarget, next: StickTarget): boolean {
+  if (current.kind !== next.kind) return true;
+  if (current.kind === 'z' && next.kind === 'z' && current.sign !== next.sign) return true;
+  if (current.kind === 'xy' && next.kind === 'xy' && angleBetween(current.angle, next.angle) >= REAIM_ANGLE_DEG) return true;
+  return Math.abs(current.push - next.push) >= REAIM_PUSH;
+}
+
+// The direction and feed (jog panel units per minute) of a jog for a target.
+// The top speed is the jog panel's feed for X and Y, half of it for Z, as a
+// held jog button moves.
+export function jogVector(target: StickTarget, settings: StickJogSettings, xyTop: number):
+  { x: number; y: number; z: number; feed: number } {
+  const feed = speedCurve(target.push, settings.expo) * (target.kind === 'xy' ? xyTop : xyTop / 2);
+  if (target.kind === 'z') return { x: 0, y: 0, z: target.sign, feed };
+  const rad = (snapAngle(target.angle) * Math.PI) / 180;
+  const tidy = (v: number) => (Math.abs(v) < 1e-9 ? 0 : v);
+  return { x: tidy(Math.cos(rad)), y: tidy(Math.sin(rad)), z: 0, feed };
+}
+
+export function jogPanelFeed(): number {
+  const feed = useAppStore().jogConfig.feedRate;
+  return Number.isFinite(feed) && feed > 0 ? feed : 3000;
+}
+
+const STICK_AXES: Record<'X' | 'Y' | 'Z', { plus: string; minus: string }> = {
+  X: { plus: 'JogXPlus', minus: 'JogXMinus' },
+  Y: { plus: 'JogYPlus', minus: 'JogYMinus' },
+  Z: { plus: 'JogZPlus', minus: 'JogZMinus' }
+};
+
+type AxisBinding = { index: number; sign: number };
+
+function axisBinding(bindingStr: string | null | undefined): AxisBinding | null {
+  const binding = parseGamepadBinding(bindingStr ?? '');
+  return binding?.type === 'axis' ? { index: binding.index, sign: binding.direction === 'positive' ? 1 : -1 } : null;
+}
+
+// Jog actions a stick drives while stick jogging is on; their usual
+// handling stands aside.
+export function stickJogActions(bindings: Record<string, string | null>): Set<string> {
+  const actions = new Set<string>();
+  for (const { plus, minus } of Object.values(STICK_AXES)) {
+    for (const actionId of [plus, minus]) {
+      if (axisBinding(bindings[actionId])) actions.add(actionId);
+    }
+  }
+  return actions;
+}
+
+// Each jog axis from −1 to 1. An axis bound both ways (Axis 0+ and Axis 0−)
+// reads across its whole travel; a direction bound on its own (a trigger)
+// reads only its own half, so a trigger resting at −1 stays still.
+export function readStick(gamepad: Gamepad, bindings: Record<string, string | null>): { x: number; y: number; z: number } {
+  const value = (bound: AxisBinding) => {
+    const raw = gamepad.axes[bound.index];
+    return Number.isFinite(raw) ? raw * bound.sign : 0;
+  };
+  const read = (axis: 'X' | 'Y' | 'Z') => {
+    const plus = axisBinding(bindings[STICK_AXES[axis].plus]);
+    const minus = axisBinding(bindings[STICK_AXES[axis].minus]);
+    if (plus && minus && plus.index === minus.index && plus.sign !== minus.sign) return value(plus);
+    return (plus ? Math.max(0, value(plus)) : 0) - (minus ? Math.max(0, value(minus)) : 0);
+  };
+  return { x: read('X'), y: read('Y'), z: read('Z') };
+}
+
+// Runs the held jogs for a stick. Whenever a jog ends other than by letting
+// go (jogging not allowed, focus lost, a failed start), the stick has to
+// come back to center before it jogs again, and so it does at startup.
+export class StickJogger {
+  private session: ContinuousJogSession | null = null;
+  private running: StickTarget | null = null;
+  private busy = false;
+  private pending: { since: number } | null = null;
+  private waitForCenter = true;
+  // Bumped by every stop, so a start still in flight knows to undo itself.
+  private generation = 0;
+
+  // allowed: what the jog buttons need (connected, no job or probe, homed
+  // when the machine requires it).
+  update(target: StickTarget | null, now: number, allowed: boolean, settings: StickJogSettings): void {
+    if (!target) {
+      this.waitForCenter = false;
+      this.pending = null;
+      if (this.session || this.busy) this.stop('centered', false);
+      return;
+    }
+    if (!allowed) {
+      this.stop('not-allowed');
+      return;
+    }
+    if (this.waitForCenter || this.busy) return;
+    if (this.running && !needsReaim(this.running, target)) {
+      this.pending = null;
+      return;
+    }
+    if (!this.pending) {
+      this.pending = { since: now };
+      return;
+    }
+    if (now - this.pending.since < SETTLE_MS) return;
+    this.pending = null;
+    void this.start(target, settings);
+  }
+
+  private async start(target: StickTarget, settings: StickJogSettings): Promise<void> {
+    this.busy = true;
+    const generation = this.generation;
+    try {
+      const previous = this.session;
+      if (previous) {
+        this.session = null;
+        this.running = null;
+        await previous.stop('reaim');
+        await waitForJogToEnd();
+        if (generation !== this.generation) return;
+      }
+      const { x, y, z, feed } = jogVector(target, settings, jogPanelFeed());
+      const session = await startContinuousVectorJogSession({ x, y, z }, feed);
+      if (session && generation !== this.generation) {
+        session.stop('stopped-while-starting');
+        return;
+      }
+      if (!session) {
+        this.waitForCenter = true;
+        return;
+      }
+      this.session = session;
+      this.running = target;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  stop(reason: string, waitForCenter = true): void {
+    if (waitForCenter) this.waitForCenter = true;
+    this.generation++;
+    this.pending = null;
+    this.running = null;
+    const session = this.session;
+    this.session = null;
+    session?.stop(reason);
+  }
+}
+
+// After a jog cancel the machine slows to a stop; a jog sent before it
+// gets there can be dropped with the cancelled one.
+function waitForJogToEnd(): Promise<void> {
+  const store = useAppStore();
+  const jogging = () => String(store.status.machineState || '').toLowerCase() === 'jog';
+  if (!jogging()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const timer = window.setInterval(() => {
+      if (!jogging() || performance.now() - started > STOP_WAIT_MS) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 10);
+  });
+}

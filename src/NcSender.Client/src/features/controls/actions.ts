@@ -212,6 +212,43 @@ export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | 
   return createContinuousSession(jogId, 'continuous diagonal jog session');
 }
 
+// A held jog in a straight line along `direction` (any angle), at `feedRate`
+// in the jog panel's units per minute. It asks for as far as fits in each
+// axis's travel, so it runs until stopped as the other held jogs do.
+export async function startContinuousVectorJogSession(
+  direction: { x: number; y: number; z: number },
+  feedRate: number
+): Promise<ContinuousJogSession | null> {
+  const { unitCode } = getJogSettings();
+  const isImperial = unitCode === 'G20';
+  const axes = (['X', 'Y', 'Z'] as const).filter((axis) => direction[axis.toLowerCase() as 'x' | 'y' | 'z'] !== 0);
+  if (axes.length === 0) return null;
+  const component = (axis: 'X' | 'Y' | 'Z') => direction[axis.toLowerCase() as 'x' | 'y' | 'z'];
+  const length = Math.min(...axes.map((axis) => getAxisTravel(axis, isImperial) / Math.abs(component(axis))));
+  const decimals = isImperial ? 4 : 3;
+  const words = axes.map((axis) => `${axis}${Number((component(axis) * length).toFixed(decimals))}`).join(' ');
+  const feed = isImperial ? Math.max(0.1, Number(feedRate.toFixed(1))) : Math.max(1, Math.round(feedRate));
+  const command = `$J=${unitCode} G91 ${words} F${feed}`;
+  const primary = axes.reduce((a, b) => (Math.abs(component(b)) > Math.abs(component(a)) ? b : a));
+  const jogId = createJogId();
+
+  try {
+    await jogStart({
+      jogId,
+      command,
+      displayCommand: command,
+      axis: primary,
+      direction: component(primary) > 0 ? 1 : -1,
+      feedRate: feed
+    });
+  } catch (error) {
+    console.error('Failed to start continuous vector jog session:', JSON.stringify((error as Error)?.message ?? error));
+    return null;
+  }
+
+  return createContinuousSession(jogId, 'continuous vector jog session');
+}
+
 let coreActionsRegistered = false;
 
 export function registerCoreKeyboardActions(): void {
