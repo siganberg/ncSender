@@ -136,13 +136,14 @@ export const gamepadBindingStore = {
     return cloneBindings(state.bindings);
   },
 
-  async assignBinding(actionId: string, binding: GamepadBinding): Promise<void> {
+  // `sharesWith`: other actions allowed to keep the same input.
+  async assignBinding(actionId: string, binding: GamepadBinding, sharesWith?: (otherActionId: string) => boolean): Promise<void> {
     const bindingStr = formatGamepadBinding(binding);
 
     const next = cloneBindings(state.bindings);
 
     for (const [otherActionId, assignedBinding] of Object.entries(next)) {
-      if (assignedBinding === bindingStr && otherActionId !== actionId) {
+      if (assignedBinding === bindingStr && otherActionId !== actionId && !sharesWith?.(otherActionId)) {
         next[otherActionId] = null;
       }
     }

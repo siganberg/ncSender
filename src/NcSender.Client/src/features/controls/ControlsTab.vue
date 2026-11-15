@@ -280,6 +280,7 @@ import { gamepadBindingStore } from './gamepad-binding-store';
 import { detectGamepadInput, formatGamepadBinding } from './gamepad-utils';
 import { settingsStore, updateSettings } from '@/lib/settings-store.js';
 import { STICK_ACTIONS, readStickJogSettings, type StickJogSettings } from './stick-jog';
+import { JOG_ACTIONS } from './actions';
 import StickJogReadout from './StickJogReadout.vue';
 
 const shortcutsEnabled = computed(() => keyBindingStore.areShortcutsEnabled.value);
@@ -405,6 +406,13 @@ const handleToggleShortcuts = async (value: boolean) => {
   }
 };
 
+// A capture whose switch turns off (or whose section hides) would
+// otherwise keep listening out of sight.
+watch([shortcutsEnabled, gamepadEnabled, () => stickJog.value.enabled], ([keyboard, gamepad, stick]) => {
+  if (captureActionId.value && !keyboard) cancelCapture();
+  if (captureGamepadActionId.value && (!gamepad || (!stick && isStickAction(captureGamepadActionId.value)))) cancelCapture();
+});
+
 const handleToggleGamepad = async (value: boolean) => {
   try {
     await keyBindingStore.setGamepadEnabled(value);
@@ -441,6 +449,7 @@ const startCapture = (actionId: string) => {
   if (!shortcutsEnabled.value) {
     return;
   }
+  captureGamepadActionId.value = null;
   captureActionId.value = actionId;
   captureError.value = null;
   keyBindingStore.setCaptureMode(true);
@@ -474,6 +483,7 @@ const startGamepadCapture = (actionId: string) => {
   if (!gamepadEnabled.value) {
     return;
   }
+  captureActionId.value = null;
   captureGamepadActionId.value = actionId;
   captureError.value = null;
   keyBindingStore.setCaptureMode(true);
@@ -519,13 +529,23 @@ const pollGamepads = () => {
   }
 };
 
+// A Variable-Speed Stick axis takes only a stick, and may share it with a
+// Jog action, which stands aside only while the Variable-Speed Stick is on.
+const isStickAction = (id: string) => stickActionIds.includes(id);
+const isJogAction = (id: string) => id in JOG_ACTIONS;
+
 const handleGamepadCapture = async (input: any) => {
-  if (!captureGamepadActionId.value || !gamepadEnabled.value) {
+  const actionId = captureGamepadActionId.value;
+  if (!actionId || !gamepadEnabled.value) {
+    return;
+  }
+  if (isStickAction(actionId) && input?.type !== 'axis') {
     return;
   }
 
   try {
-    await gamepadBindingStore.assignBinding(captureGamepadActionId.value, input);
+    const sharesWith = isStickAction(actionId) ? isJogAction : isJogAction(actionId) ? isStickAction : undefined;
+    await gamepadBindingStore.assignBinding(actionId, input, sharesWith);
     captureError.value = null;
     cancelCapture();
   } catch (error: any) {
