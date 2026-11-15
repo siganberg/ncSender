@@ -759,6 +759,7 @@ class GamepadManager {
     window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
     window.removeEventListener('blur', this.handleDisconnect);
     this.handleDisconnect();
+    this.stickJogger.dispose();
   }
 }
 

@@ -25,6 +25,7 @@ import { useAppStore } from '@/composables/use-app-store';
 import { parseGamepadBinding } from './gamepad-utils';
 import { fastestStepFeed } from '../jog/jog-step-state';
 import { startContinuousVectorJogSession, type ContinuousJogSession } from './actions';
+import { api } from '../jog/api';
 
 export interface StickJogSettings {
   enabled: boolean;
@@ -45,7 +46,7 @@ export const REAIM_ANGLE_DEG = 15;
 export const REAIM_PUSH = 0.25;
 export const SETTLE_MS = 80;
 export const MIN_SPEED_FRACTION = 0.02;
-const STOP_WAIT_MS = 1500;
+const STOP_WAIT_MS = 5000;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -173,8 +174,11 @@ export function readStick(gamepad: Gamepad, bindings: Record<string, string | nu
     return Number.isFinite(raw) ? raw * bound.sign : 0;
   };
   const read = (axis: 'X' | 'Y' | 'Z') => {
+    // Both ways only on a standard pad's sticks (axes 0-3, centered at
+    // rest); another axis (a trigger or slider resting at -1) reads only
+    // its bound half, so its rest isn't a full push.
     const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
-    if (own) return value(own);
+    if (own) return gamepad.mapping === 'standard' && own.index <= 3 ? value(own) : Math.max(0, value(own));
     const plus = axisBinding(bindings[STICK_AXES[axis].plus]);
     const minus = axisBinding(bindings[STICK_AXES[axis].minus]);
     if (plus && minus && plus.index === minus.index && plus.sign !== minus.sign) return value(plus);
@@ -193,6 +197,11 @@ export class StickJogger {
   private waitForCenter = true;
   // Bumped by every stop, so a start still in flight knows to undo itself.
   private generation = 0;
+  // The server ending this jog itself (its heartbeat watchdog) needs the
+  // stick back at center before the next.
+  private offStopped = api.on('jog:stopped', (data: any) => {
+    if (this.session && data?.jogId === this.session.jogId && data.reason) this.stop('server-stopped');
+  });
 
   update(target: StickTarget | null, now: number, allowed: boolean, settings: StickJogSettings): void {
     if (!target) {
@@ -228,8 +237,12 @@ export class StickJogger {
         this.session = null;
         this.running = null;
         await previous.stop('reaim');
-        await waitForJogToEnd();
+        const stopped = await waitForJogToEnd();
         if (generation !== this.generation) return;
+        if (!stopped) {
+          this.waitForCenter = true;
+          return;
+        }
       }
       const { x, y, z, feed } = jogVector(target, settings, stickTopFeed());
       const session = await startContinuousVectorJogSession({ x, y, z }, feed);
@@ -257,20 +270,27 @@ export class StickJogger {
     this.session = null;
     session?.stop(reason);
   }
+
+  dispose(): void {
+    this.stop('dispose');
+    this.offStopped();
+  }
 }
 
 // After a jog cancel the machine slows to a stop; a jog sent before it
-// gets there can be dropped with the cancelled one.
-function waitForJogToEnd(): Promise<void> {
+// gets there can be dropped with the cancelled one. False when it's still
+// jogging after STOP_WAIT_MS.
+function waitForJogToEnd(): Promise<boolean> {
   const store = useAppStore();
   const jogging = () => String(store.status.machineState || '').toLowerCase() === 'jog';
-  if (!jogging()) return Promise.resolve();
+  if (!jogging()) return Promise.resolve(true);
   return new Promise((resolve) => {
     const started = performance.now();
     const timer = window.setInterval(() => {
-      if (!jogging() || performance.now() - started > STOP_WAIT_MS) {
+      const done = !jogging();
+      if (done || performance.now() - started > STOP_WAIT_MS) {
         clearInterval(timer);
-        resolve();
+        resolve(done);
       }
     }, 10);
   });
