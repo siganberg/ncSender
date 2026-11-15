@@ -700,7 +700,9 @@ const confirmLoadTool = async () => {
   await loadActiveTools();
   if (!stillLoads()) return;
   emit('close');
-  if (!(await ensureHomed('M6')) || !stillLoads()) return;
+  if (!(await ensureHomed('M6'))) return;
+  await loadActiveTools();
+  if (!stillLoads()) return;
   try {
     await api.triggerToolChange(n);
   } catch (error) {
