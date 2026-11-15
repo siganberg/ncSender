@@ -80,4 +80,6 @@ public class AccessoryInfo
     /// (the Wireless USB, or receiver firmware from before the setting).
     /// </summary>
     public bool? ProbeIgnored { get; set; }
+    /// <summary>Wireless Receiver wired inputs 1 and 2: inverted or not. Null when the receiver is not cabled or its firmware predates INV=.</summary>
+    public List<bool>? InputInverted { get; set; }
 }

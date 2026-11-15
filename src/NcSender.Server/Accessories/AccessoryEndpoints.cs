@@ -143,6 +143,32 @@ public static class AccessoryEndpoints
             return Results.Ok();
         });
 
+        app.MapGet("/api/accessories/{id}/inputs", async (string id, AccessoryService svc) =>
+        {
+            if (!string.Equals(id, AccessoryCatalog.WirelessReceiverId, StringComparison.OrdinalIgnoreCase))
+                return Results.NotFound(new ApiError($"'{id}' has no wired inputs"));
+            var state = await svc.ReadInputsAsync();
+            return state is null
+                ? Results.Json(new ApiError("The Wireless Receiver is not connected"), NcSenderJsonContext.Default.ApiError, statusCode: 503)
+                : Results.Ok(state);
+        });
+
+        app.MapPost("/api/accessories/{id}/input-invert",
+            async (string id, AccessoryInputInvertRequest req, AccessoryService svc) =>
+        {
+            if (!string.Equals(id, AccessoryCatalog.WirelessReceiverId, StringComparison.OrdinalIgnoreCase))
+                return Results.NotFound(new ApiError($"'{id}' has no wired inputs"));
+            try
+            {
+                await svc.SetInputInvertedAsync(req.Input, req.Inverted);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new ApiError(ex.Message));
+            }
+            return Results.Ok();
+        });
+
         app.MapPost("/api/accessories/{id}/activate",
             async (string id, AccessoryActivateRequest? req, AccessoryService svc,
                    IHttpClientFactory httpFactory, CancellationToken ct) =>

@@ -123,7 +123,37 @@
             <p class="acc-note">
               {{ selected.probeIgnored ? 'Ignored. Its contact and lost-signal state no longer trigger the probe input, so another probe can be used.' : 'Its contact triggers the probe input through the Wireless Receiver.' }}
             </p>
+            <p class="acc-note">{{ 'Reads backwards? Invert it on the controller: Firmware settings $6, on the pin the receiver is wired to (Probe or Toolsetter).' }}</p>
             <p v-if="probeError" class="msg msg--error">{{ probeError }}</p>
+          </section>
+
+          <!-- Wireless Receiver: its two wired inputs, ORed onto its output. -->
+          <section class="acc-card" v-if="selected.inputInverted != null">
+            <div class="acc-card-header">
+              <h3 class="acc-card-title">{{ 'Wired inputs' }}</h3>
+            </div>
+            <table class="acc-inputs">
+              <thead>
+                <tr><th>{{ 'Input' }}</th><th>{{ 'State' }}</th><th>{{ 'Invert' }}</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="n in [1, 2]" :key="n">
+                  <td><span class="acc-input-name">{{ n === 1 ? 'Input 1' : 'Input 2' }}</span> <span class="acc-input-sub">{{ n === 1 ? 'J2' : 'J3' }}</span></td>
+                  <td>
+                    <span class="acc-input-state">
+                      <span :class="['acc-led', { 'acc-led--active': inputTriggered?.[n - 1] }]"></span>
+                      {{ inputTriggered?.[n - 1] ? 'Triggered' : 'Idle' }}
+                    </span>
+                  </td>
+                  <td>
+                    <ToggleSwitch :model-value="selected.inputInverted[n - 1]" :disabled="invertSaving"
+                                  @update:model-value="(v: boolean) => setInputInverted(selected!, n, v)" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="acc-note">{{ 'Combined (OR) with the probes on the controller pin the receiver is wired to (Probe or Toolsetter). Invert an input whose sensor reads triggered while idle.' }}</p>
+            <p v-if="invertError" class="msg msg--error">{{ invertError }}</p>
           </section>
 
           <!-- Firmware -->
@@ -329,6 +359,7 @@ interface Accessory {
   batteryState?: 'battery' | 'charging' | 'full' | 'usb' | null;
   batteryPercent?: number | null; batteryMv?: number | null; batteryLow?: boolean;
   probeIgnored?: boolean | null;
+  inputInverted?: boolean[] | null;
 }
 
 const loading = ref(true);
@@ -492,6 +523,58 @@ async function setProbeIgnored(a: Accessory, ignored: boolean) {
     probeSaving.value = false;
   }
 }
+
+// Receiver wired inputs: same in-place update as the probe switch.
+const invertSaving = ref(false);
+const invertError = ref('');
+watch(selectedId, () => { invertError.value = ''; });
+async function setInputInverted(a: Accessory, input: number, inverted: boolean) {
+  invertSaving.value = true;
+  invertError.value = '';
+  try {
+    const res = await fetch(`${baseUrl}/api/accessories/${a.id}/input-invert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input, inverted }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
+    }
+    const row = accessories.value.find(x => x.id === a.id);
+    if (row?.inputInverted) row.inputInverted[input - 1] = inverted;
+  } catch (e: any) {
+    invertError.value = e?.message ?? String(e);
+  } finally {
+    invertSaving.value = false;
+  }
+}
+
+// Receiver wired inputs: live state while the receiver page is open, so a
+// sensor can be tested from here. Polled because the receiver only reports it
+// when asked.
+const inputTriggered = ref<boolean[] | null>(null);
+let inputsTimer: ReturnType<typeof setInterval> | null = null;
+async function pollInputs() {
+  const row = selected.value;
+  if (!row || row.inputInverted == null) return;
+  try {
+    const res = await fetch(`${baseUrl}/api/accessories/${row.id}/inputs`);
+    if (!res.ok) { inputTriggered.value = null; return; }
+    const st = await res.json();
+    inputTriggered.value = st.triggered;
+    if (!invertSaving.value) row.inputInverted = st.inverted;
+  } catch { /* next tick retries */ }
+}
+function stopInputsPoll() {
+  if (inputsTimer) { clearInterval(inputsTimer); inputsTimer = null; }
+}
+watch(() => selected.value?.inputInverted != null ? selected.value.id : null, (id) => {
+  stopInputsPoll();
+  inputTriggered.value = null;
+  if (id) { pollInputs(); inputsTimer = setInterval(pollInputs, 500); }
+}, { immediate: true });
+onUnmounted(stopInputsPoll);
 
 function nameFor(id: string | null) {
   return accessories.value.find(a => a.id === id)?.name ?? id ?? '';
@@ -975,6 +1058,23 @@ onUnmounted(() => {
 
 .acc-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .acc-toggle-label { font-size: 0.9rem; color: var(--color-text-primary); }
+.acc-toggle-inline { display: inline-flex; align-items: center; gap: 10px; }
+.acc-toggle-sub { font-size: 0.85rem; color: var(--color-text-secondary); }
+.acc-inputs { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* Fixed columns: "Idle" -> "Triggered" must not reflow the row. */
+.acc-inputs th:nth-child(2), .acc-inputs td:nth-child(2) { width: 9.5rem; }
+.acc-inputs th:last-child, .acc-inputs td:last-child { width: 5rem; }
+.acc-inputs th { text-align: left; padding: 0 0 8px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; color: var(--color-text-secondary); text-transform: uppercase; }
+.acc-inputs td { padding: 12px 0; border-top: 1px solid var(--color-border); vertical-align: middle; }
+.acc-inputs th:last-child, .acc-inputs td:last-child { text-align: right; white-space: nowrap; }
+.acc-inputs td:last-child > * { display: inline-flex; }
+.acc-input-name { font-size: 0.95rem; font-weight: 500; color: var(--color-text-primary); }
+.acc-input-sub { font-size: 0.8rem; color: var(--color-text-secondary); margin-left: 4px; }
+.acc-input-state { display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--color-text-primary); }
+/* Same LED as the toolbar Pins panel: green idle, pulsing red triggered. */
+.acc-led { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: #28a745; box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4); }
+.acc-led--active { background: #dc3545; box-shadow: 0 0 10px rgba(220, 53, 69, 0.9), 0 0 20px rgba(220, 53, 69, 0.5); animation: acc-led-pulse 1.5s ease-in-out infinite; }
+@keyframes acc-led-pulse { 0%, 100% { box-shadow: 0 0 10px rgba(220, 53, 69, 0.9), 0 0 20px rgba(220, 53, 69, 0.5); } 50% { box-shadow: 0 0 4px rgba(220, 53, 69, 0.6), 0 0 8px rgba(220, 53, 69, 0.3); } }
 .acc-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--color-text-secondary); }
 .acc-note--warn { color: #e0a030; }
 .acc-note-dim { opacity: 0.65; }
