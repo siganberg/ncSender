@@ -746,7 +746,7 @@ class GamepadManager {
     window.addEventListener('blur', this.handleDisconnect);
 
     watchEffect(() => {
-      this.enabled = keyBindingStore.isActive.value;
+      this.enabled = keyBindingStore.isGamepadActive.value;
       if (!this.enabled) {
         this.handleDisconnect();
       }

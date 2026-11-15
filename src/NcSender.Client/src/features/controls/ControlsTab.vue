@@ -24,7 +24,7 @@
     <div v-else class="keyboard-content">
       <p v-if="captureError" class="error">{{ captureError }}</p>
 
-      <div class="bindings-content" :class="{ disabled: !shortcutsEnabled }">
+      <div class="bindings-content">
         <div class="bindings-header">
           <input
             type="text"
@@ -32,47 +32,75 @@
             placeholder="Search Actions..."
             class="search-input"
           />
-          <div class="toggle-container">
-            <label class="toggle-label">Enable Keyboard</label>
-            <ToggleSwitch
-              :model-value="shortcutsEnabled"
-              @update:modelValue="handleToggleShortcuts"
-            />
+          <div class="header-toggles">
+            <div class="toggle-container">
+              <label class="toggle-label">Enable Keyboard</label>
+              <ToggleSwitch
+                :model-value="shortcutsEnabled"
+                @update:modelValue="handleToggleShortcuts"
+              />
+            </div>
+            <div class="toggle-container">
+              <label class="toggle-label">Enable Gamepad</label>
+              <ToggleSwitch
+                :model-value="gamepadEnabled"
+                @update:modelValue="handleToggleGamepad"
+              />
+            </div>
+            <div class="toggle-container" :class="{ disabled: !gamepadEnabled }">
+              <label class="toggle-label">Analog Stick Jogging</label>
+              <ToggleSwitch
+                :model-value="stickJog.enabled"
+                :disabled="!gamepadEnabled"
+                @update:modelValue="(value: boolean) => saveStickJog({ enabled: value })"
+              />
+            </div>
           </div>
         </div>
 
-        <div class="stick-row">
-          <div class="toggle-container">
-            <label class="toggle-label">Analog Stick Jogging</label>
-            <ToggleSwitch
-              :model-value="stickJog.enabled"
-              @update:modelValue="(value: boolean) => saveStickJog({ enabled: value })"
-            />
+        <div v-if="stickJog.enabled && gamepadEnabled" class="stick-section">
+          <div class="stick-axes">
+            <div v-for="axis in stickAxes" :key="axis.id" class="stick-axis">
+              <span class="stick-axis-label">{{ axis.label }}</span>
+              <div v-if="captureGamepadActionId === axis.id" class="binding-combined binding-combined--capturing">
+                <span class="binding-combined__value binding-combined__value--capturing">Push the stick...</span>
+                <button class="binding-combined__delete" @click.stop="cancelCapture" title="Cancel">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              </div>
+              <div v-else-if="gamepadBindingMap[axis.id]" class="binding-combined">
+                <span class="binding-combined__value" @click="startGamepadCapture(axis.id)" title="Click to change">
+                  {{ gamepadBindingMap[axis.id] }}
+                </span>
+                <button class="binding-combined__delete" @click.stop="clearGamepadBinding(axis.id)" title="Remove">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              </div>
+              <span v-else class="binding-empty binding-empty-clickable" @click="startGamepadCapture(axis.id)" title="Click, then push the stick toward +">
+                Not set
+              </span>
+            </div>
           </div>
-          <template v-if="stickJog.enabled">
-            <label class="stick-field">
-              Curve
-              <input type="range" min="0" max="1" step="0.05" :value="stickDraft.expo" @input="onStickSlider('expo', $event)" @change="saveStickSlider('expo')" />
-              <span class="stick-value">{{ stickDraft.expo.toFixed(2) }}</span>
-            </label>
-            <label class="stick-field">
-              Dead Zone
-              <input type="range" min="0" max="0.5" step="0.01" :value="stickDraft.deadZone" @input="onStickSlider('deadZone', $event)" @change="saveStickSlider('deadZone')" />
-              <span class="stick-value">{{ Math.round(stickDraft.deadZone * 100) }}%</span>
-            </label>
-            <StickJogReadout :settings="stickDraft" />
-          </template>
+          <label class="stick-field">
+            Dead Zone
+            <input type="range" min="0" max="0.5" step="0.01" :value="stickDraft.deadZone" @input="onStickSlider('deadZone', $event)" @change="saveStickSlider('deadZone')" />
+            <span class="stick-value">{{ Math.round(stickDraft.deadZone * 100) }}%</span>
+          </label>
+          <label class="stick-field">
+            Curve
+            <input type="range" min="0" max="1" step="0.05" :value="stickDraft.expo" @input="onStickSlider('expo', $event)" @change="saveStickSlider('expo')" />
+            <span class="stick-value">{{ stickDraft.expo.toFixed(2) }}</span>
+          </label>
+          <StickJogReadout :settings="stickDraft" />
+          <p class="stick-hint">
+            Push toward + to set each axis. Speed follows the push, up to the fastest step's feed. Unset axes use
+            the Jog bindings below, which stay free for D-pad steps.
+          </p>
         </div>
-        <p v-if="stickJog.enabled" class="stick-hint">
-          The stick jogs in a straight line at its angle, in 15° steps. Bind it to Analog Stick X, Y and Z
-          (push toward +) to keep Jog X+, X− and so on free for single steps on the D-pad; otherwise it uses
-          the Jog bindings. Analog Stick bindings read both ways on a standard gamepad's sticks; if one
-          direction doesn't respond, bind the stick to Jog X+ and X− (and Y, Z) instead. How far you push
-          sets the speed: a slight push creeps, a full push runs at the fastest step's feed, whichever step
-          is picked (Z at half). Turn the stick 15° or more, or push clearly more or less, and it stops and
-          starts a new straight jog. Let go to stop. A higher curve gives finer control near the center. The
-          stick doesn't jog while this tab is open.
-        </p>
 
         <div class="bindings-table-container">
           <table class="bindings-table">
@@ -175,15 +203,15 @@
                       <div v-if="gamepadBindingMap[action.id]" class="binding-combined">
                         <span
                           class="binding-combined__value"
-                          :class="{ disabled: !shortcutsEnabled }"
-                          @click="shortcutsEnabled && startGamepadCapture(action.id)"
+                          :class="{ disabled: !gamepadEnabled }"
+                          @click="gamepadEnabled && startGamepadCapture(action.id)"
                           title="Click to change"
                         >
                           {{ gamepadBindingMap[action.id] }}
                         </span>
                         <button
                           class="binding-combined__delete"
-                          :disabled="!shortcutsEnabled"
+                          :disabled="!gamepadEnabled"
                           @click.stop="clearGamepadBinding(action.id)"
                           title="Remove gamepad binding"
                         >
@@ -195,8 +223,8 @@
                       <span
                         v-else
                         class="binding-empty binding-empty-clickable"
-                        :class="{ disabled: !shortcutsEnabled }"
-                        @click="shortcutsEnabled && startGamepadCapture(action.id)"
+                        :class="{ disabled: !gamepadEnabled }"
+                        @click="gamepadEnabled && startGamepadCapture(action.id)"
                         title="Click to set"
                       >
                         Not set
@@ -217,7 +245,7 @@
             </svg>
             and press any key combination. Existing assignments will be replaced automatically.
           </span>
-          <span v-else class="footer-description">Enable keyboard control to edit bindings.</span>
+          <span v-else class="footer-description">Enable Keyboard to edit key bindings.</span>
           <button class="btn btn-reset" :disabled="isResetting" @click="resetToDefaults">
             Reset to defaults
           </button>
@@ -251,10 +279,17 @@ import { comboFromEvent } from './keyboard-utils';
 import { gamepadBindingStore } from './gamepad-binding-store';
 import { detectGamepadInput, formatGamepadBinding } from './gamepad-utils';
 import { settingsStore, updateSettings } from '@/lib/settings-store.js';
-import { readStickJogSettings, type StickJogSettings } from './stick-jog';
+import { STICK_ACTIONS, readStickJogSettings, type StickJogSettings } from './stick-jog';
 import StickJogReadout from './StickJogReadout.vue';
 
 const shortcutsEnabled = computed(() => keyBindingStore.areShortcutsEnabled.value);
+const gamepadEnabled = computed(() => keyBindingStore.isGamepadEnabled.value);
+const stickAxes = [
+  { id: STICK_ACTIONS.X, label: 'X+' },
+  { id: STICK_ACTIONS.Y, label: 'Y+' },
+  { id: STICK_ACTIONS.Z, label: 'Z+' }
+];
+const stickActionIds: string[] = Object.values(STICK_ACTIONS);
 const featureEnabled = computed(() => keyBindingStore.isFeatureEnabled.value);
 
 const searchQuery = ref('');
@@ -263,7 +298,7 @@ const registryState = commandRegistry.getState();
 const actionList = computed(() => {
   const diagonalActions = ['JogXPlusYPlus', 'JogXPlusYMinus', 'JogXMinusYPlus', 'JogXMinusYMinus'];
   return Object.values(registryState.actions)
-    .filter(action => !diagonalActions.includes(action.id))
+    .filter(action => !diagonalActions.includes(action.id) && !stickActionIds.includes(action.id))
     .slice()
     .sort((a, b) => {
       const groupDiff = (a.group || '').localeCompare(b.group || '');
@@ -370,6 +405,15 @@ const handleToggleShortcuts = async (value: boolean) => {
   }
 };
 
+const handleToggleGamepad = async (value: boolean) => {
+  try {
+    await keyBindingStore.setGamepadEnabled(value);
+  } catch (error: any) {
+    console.error('Failed to update gamepad toggle:', JSON.stringify(error?.message ?? error));
+    captureError.value = error?.message || 'Failed to update gamepad toggle';
+  }
+};
+
 const handleKeyCapture = async (event: KeyboardEvent) => {
   if (!captureActionId.value || !shortcutsEnabled.value) {
     return;
@@ -427,7 +471,7 @@ const clearGamepadBinding = async (actionId: string) => {
 };
 
 const startGamepadCapture = (actionId: string) => {
-  if (!shortcutsEnabled.value) {
+  if (!gamepadEnabled.value) {
     return;
   }
   captureGamepadActionId.value = actionId;
@@ -457,7 +501,7 @@ const confirmReset = async () => {
 let gamepadPollInterval: number | null = null;
 
 const pollGamepads = () => {
-  if (!captureGamepadActionId.value || !shortcutsEnabled.value) {
+  if (!captureGamepadActionId.value || !gamepadEnabled.value) {
     return;
   }
 
@@ -476,7 +520,7 @@ const pollGamepads = () => {
 };
 
 const handleGamepadCapture = async (input: any) => {
-  if (!captureGamepadActionId.value || !shortcutsEnabled.value) {
+  if (!captureGamepadActionId.value || !gamepadEnabled.value) {
     return;
   }
 
@@ -549,10 +593,6 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.bindings-content.disabled {
-  opacity: 0.5;
-}
-
 .bindings-header {
   display: flex;
   gap: var(--gap-sm);
@@ -563,15 +603,44 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.stick-row {
+.header-toggles {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-md);
+  align-items: center;
+  margin-left: auto;
+}
+
+.toggle-container.disabled {
+  opacity: 0.5;
+}
+
+.stick-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm) var(--gap-lg);
   align-items: center;
   padding: var(--gap-sm);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+.stick-axes {
+  display: flex;
+  gap: var(--gap-md);
+  align-items: center;
+}
+
+.stick-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.stick-axis-label {
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .stick-field {
@@ -588,16 +657,15 @@ onBeforeUnmount(() => {
 }
 
 .stick-hint {
+  flex-basis: 100%;
   margin: 0;
-  padding: var(--gap-xs) var(--gap-sm) var(--gap-sm);
   font-size: 0.85rem;
   color: var(--color-text-secondary);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .search-input {
-  flex: 1;
+  flex: 0 1 280px;
+  min-width: 160px;
   padding: var(--gap-sm) var(--gap-md);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);

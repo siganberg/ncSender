@@ -281,7 +281,7 @@ export function registerCoreKeyboardActions(): void {
   const store = useAppStore();
 
   const canJog = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     // Mirror the jog-button gate (JogPanel.motionControlsDisabled / store.homingStartupRequired):
@@ -334,7 +334,7 @@ export function registerCoreKeyboardActions(): void {
   const jobGroup = 'Job';
 
   const canStartOrResume = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected, serverState, senderStatus, status: machineStatus } = store;
@@ -358,7 +358,7 @@ export function registerCoreKeyboardActions(): void {
   };
 
   const canPause = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected, serverState, senderStatus } = store;
@@ -369,7 +369,7 @@ export function registerCoreKeyboardActions(): void {
   };
 
   const canStop = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isJobRunning } = store;
@@ -438,7 +438,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-cycle'));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -449,7 +449,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 0 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -460,7 +460,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 1 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -471,14 +471,14 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 2 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   // Machine Control Actions
   const machineGroup = 'Machine';
 
   const canHome = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected } = store;
@@ -512,7 +512,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new Event('probe-start-shortcut'));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   coreActionsRegistered = true;
