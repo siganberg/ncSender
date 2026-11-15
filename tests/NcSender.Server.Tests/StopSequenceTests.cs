@@ -33,6 +33,23 @@ public class StopSequenceTests
         Assert.Equal(expected, StopSequence.IsMotionStopped(raw));
     }
 
+    // Stop pressed mid-jog (no job) reset at once: ALARM:3 and a rehome.
+    [Theory]
+    [InlineData("<Jog|MPos:0,0,0|FS:3780,0>", true)]
+    [InlineData("<Run|MPos:0,0,0>", true)]
+    [InlineData("<Hold:1|MPos:0,0,0>", true)]
+    [InlineData("<Door:2|MPos:0,0,0>", true)]
+    [InlineData("<Home|MPos:0,0,0>", false)]
+    [InlineData("<Idle|MPos:0,0,0>", false)]
+    [InlineData("<Hold:0|MPos:0,0,0>", false)]
+    [InlineData("<Alarm|MPos:0,0,0>", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void A_reset_while_moving_waits_for_a_hold_first(string? raw, bool expected)
+    {
+        Assert.Equal(expected, StopSequence.NeedsHoldBeforeReset(raw));
+    }
+
     [Fact]
     public async Task Soft_reset_waits_until_the_hold_completes()
     {

@@ -55,6 +55,19 @@ public static class StopSequence
     }
 
     /// <summary>
+    /// True when a Soft Reset now would land mid-move outside a job (a jog, a
+    /// console or plugin move, a hold still decelerating): it should wait for
+    /// a Feed Hold to stop the axes first. Not while homing, which only a
+    /// reset can abort.
+    /// </summary>
+    public static bool NeedsHoldBeforeReset(string? rawStatus)
+    {
+        if (IsMotionStopped(rawStatus) != false) return false;
+        var report = rawStatus!.Trim().TrimStart('<');
+        return !report.StartsWith("home", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Sends Feed Hold, waits for the machine to come to rest, then sends Soft
     /// Reset. <paramref name="fallbackDelayMs"/> is used when the controller's
     /// status can't be read.

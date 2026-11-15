@@ -380,6 +380,17 @@ public class WebSocketLayer : IBroadcaster
                 _logger.LogInformation("Job stopped, sending soft reset");
             }
         }
+        // Moving outside a job (a jog, a console or plugin move): the same
+        // hold first, which also cancels a jog, so the reset doesn't land
+        // mid-move and alarm ("reset while in motion").
+        else if (command == "\x18" && StopSequence.NeedsHoldBeforeReset(_controller.RawStatusData))
+        {
+            var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
+            _logger.LogInformation("Soft reset while moving — feed hold first, waiting for motion to stop");
+            await StopSequence.SendFeedHoldAsync(_controller, "client");
+            var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
+            _logger.LogInformation("Motion stop wait: {Result}", waitResult);
+        }
 
         var commandId = data.TryGetProperty("commandId", out var idProp) ? idProp.GetString() : null;
         var displayCommand = data.TryGetProperty("displayCommand", out var dispProp) ? dispProp.GetString() : null;
