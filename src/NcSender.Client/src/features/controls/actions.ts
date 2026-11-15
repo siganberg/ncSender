@@ -218,9 +218,24 @@ export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | 
   return createContinuousSession(jogId, 'continuous diagonal jog session');
 }
 
+// How far an axis can jog one way, in the jog units. Homed, that's to the
+// soft limit (machine positions run from -travel to 0), so a straight jog
+// ends where its line meets the first limit instead of being shortened per
+// axis and bent; otherwise the whole travel.
+function axisReach(axis: 'X' | 'Y' | 'Z', sign: number, isImperial: boolean): number {
+  const store = useAppStore();
+  const travel = getAxisTravel(axis, isImperial);
+  const travelMm = isImperial ? travel * 25.4 : travel;
+  const pos = store.status.machineCoords[axis.toLowerCase() as 'x' | 'y' | 'z'];
+  if (!store.isHomed.value || !Number.isFinite(pos) || pos > 0.001 || pos < -travelMm - 0.001) return travel;
+  const margin = 0.05;
+  const mm = Math.max(0, sign > 0 ? -margin - pos : pos + travelMm - margin);
+  return isImperial ? mm / 25.4 : mm;
+}
+
 // A held jog in a straight line along `direction` (any angle), at `feedRate`
-// in the jog panel's units per minute. It asks for as far as fits in each
-// axis's travel, so it runs until stopped as the other held jogs do.
+// in the jog panel's units per minute, as far as it can go, so it runs
+// until stopped as the other held jogs do. null when it can't move.
 export async function startContinuousVectorJogSession(
   direction: { x: number; y: number; z: number },
   feedRate: number
@@ -230,8 +245,9 @@ export async function startContinuousVectorJogSession(
   const axes = (['X', 'Y', 'Z'] as const).filter((axis) => direction[axis.toLowerCase() as 'x' | 'y' | 'z'] !== 0);
   if (axes.length === 0) return null;
   const component = (axis: 'X' | 'Y' | 'Z') => direction[axis.toLowerCase() as 'x' | 'y' | 'z'];
-  const length = Math.min(...axes.map((axis) => getAxisTravel(axis, isImperial) / Math.abs(component(axis))));
+  const length = Math.min(...axes.map((axis) => axisReach(axis, component(axis), isImperial) / Math.abs(component(axis))));
   const decimals = isImperial ? 4 : 3;
+  if (length < (isImperial ? 0.0005 : 0.01)) return null;
   const words = axes.map((axis) => `${axis}${Number((component(axis) * length).toFixed(decimals))}`).join(' ');
   const feed = isImperial ? Math.max(0.1, Number(feedRate.toFixed(1))) : Math.max(1, Math.round(feedRate));
   const command = `$J=${unitCode} G91 ${words} F${feed}`;

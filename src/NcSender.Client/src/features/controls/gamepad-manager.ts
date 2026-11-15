@@ -192,7 +192,10 @@ class GamepadManager {
         }
       }
 
-      const isDiagonal = stickActions.size === 0 && this.handleDiagonalJogs(gamepad, bindings);
+      const isDiagonal = this.handleDiagonalJogs(
+        gamepad,
+        stickActions.size === 0 ? bindings : Object.fromEntries(Object.entries(bindings).filter(([id]) => !stickActions.has(id)))
+      );
       const gamepadKey = `gamepad-${gamepad.index}`;
       const wasDiagonal = this.previousDiagonalState.get(gamepadKey) || false;
 

@@ -39,14 +39,11 @@ export const DEFAULT_STICK_JOG_SETTINGS: StickJogSettings = {
 };
 
 export const ANGLE_STEP_DEG = 15;
-// A new jog when the stick turns this far from the jog's angle...
+// A new jog when the stick turns this far or its push changes this much,
+// once the change has held for SETTLE_MS.
 export const REAIM_ANGLE_DEG = 15;
-// ...or its push changes by this much (0-1, past the dead zone).
 export const REAIM_PUSH = 0.25;
-// A change has to hold this long first, so a stick on its way somewhere
-// doesn't start a jog at the angle it's passing through.
 export const SETTLE_MS = 80;
-// A push just past the dead zone creeps at this share of the top speed.
 export const MIN_SPEED_FRACTION = 0.02;
 const STOP_WAIT_MS = 1500;
 
@@ -66,8 +63,6 @@ export function getStickJogSettings(): StickJogSettings {
   return readStickJogSettings(getSettings()?.gamepadAnalog);
 }
 
-// Push (0-1, past the dead zone) to a share of the top speed:
-// k·x³ + (1−k)·x, so small pushes are fine and a full push is full speed.
 export function speedCurve(push: number, expo: number): number {
   const x = clamp(push, 0, 1);
   if (x === 0) return 0;
@@ -104,7 +99,6 @@ export function stickTarget(stick: { x: number; y: number; z: number }, zone: nu
   return null;
 }
 
-// Whether a jog running for `current` should give way to one for `next`.
 export function needsReaim(current: StickTarget, next: StickTarget): boolean {
   if (current.kind !== next.kind) return true;
   if (current.kind === 'z' && next.kind === 'z' && current.sign !== next.sign) return true;
@@ -112,9 +106,6 @@ export function needsReaim(current: StickTarget, next: StickTarget): boolean {
   return Math.abs(current.push - next.push) >= REAIM_PUSH;
 }
 
-// The direction and feed (jog panel units per minute) of a jog for a target.
-// The top speed is xyTop for X and Y, half of it for Z, as a held jog
-// button moves.
 export function jogVector(target: StickTarget, settings: StickJogSettings, xyTop: number):
   { x: number; y: number; z: number; feed: number } {
   const feed = speedCurve(target.push, settings.expo) * (target.kind === 'xy' ? xyTop : xyTop / 2);
@@ -124,8 +115,6 @@ export function jogVector(target: StickTarget, settings: StickJogSettings, xyTop
   return { x: tidy(Math.cos(rad)), y: tidy(Math.sin(rad)), z: 0, feed };
 }
 
-// The stick covers every step group's speed: its top speed is the fastest
-// group's feed, whichever group is picked.
 export function stickTopFeed(): number {
   return fastestStepFeed(useAppStore().unitsPreference.value === 'imperial');
 }
@@ -152,7 +141,6 @@ function axisBinding(bindingStr: string | null | undefined): AxisBinding | null 
   return binding?.type === 'axis' ? { index: binding.index, sign: binding.direction === 'positive' ? 1 : -1 } : null;
 }
 
-// The gamepad axes the stick reads, per jog axis.
 function stickAxes(bindings: Record<string, string | null>): Record<'X' | 'Y' | 'Z', AxisBinding[]> {
   const read = (axis: 'X' | 'Y' | 'Z') => {
     const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
@@ -195,20 +183,17 @@ export function readStick(gamepad: Gamepad, bindings: Record<string, string | nu
   return { x: read('X'), y: read('Y'), z: read('Z') };
 }
 
-// Runs the held jogs for a stick. Whenever a jog ends other than by letting
-// go (jogging not allowed, focus lost, a failed start), the stick has to
-// come back to center before it jogs again, and so it does at startup.
+// After any stop but letting go, and at startup, the stick has to come back
+// to center before it jogs again.
 export class StickJogger {
   private session: ContinuousJogSession | null = null;
   private running: StickTarget | null = null;
   private busy = false;
-  private pending: { since: number } | null = null;
+  private pending: { since: number; target: StickTarget } | null = null;
   private waitForCenter = true;
   // Bumped by every stop, so a start still in flight knows to undo itself.
   private generation = 0;
 
-  // allowed: what the jog buttons need (connected, no job or probe, homed
-  // when the machine requires it).
   update(target: StickTarget | null, now: number, allowed: boolean, settings: StickJogSettings): void {
     if (!target) {
       this.waitForCenter = false;
@@ -225,8 +210,8 @@ export class StickJogger {
       this.pending = null;
       return;
     }
-    if (!this.pending) {
-      this.pending = { since: now };
+    if (!this.pending || needsReaim(this.pending.target, target)) {
+      this.pending = { since: now, target };
       return;
     }
     if (now - this.pending.since < SETTLE_MS) return;
