@@ -361,24 +361,21 @@ public class WebSocketLayer : IBroadcaster
 
         // Intercept soft reset during active job — V1 behavior:
         // Send feed hold first, pause job, wait for deceleration, stop job, then let soft reset proceed
-        if (command == "\x18" && _jobManager is not null && _jobManager.HasActiveJob)
+        if (command == "\x18" && _jobManager is not null && _jobManager.HasActiveJob
+            && _context.State.JobLoaded?.Status is "running" or "paused")
         {
-            var jobStatus = _context.State.JobLoaded?.Status;
-            if (jobStatus is "running" or "paused")
-            {
-                var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
-                _logger.LogInformation("Soft reset during active job — feed hold first, waiting for motion to stop");
+            var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
+            _logger.LogInformation("Soft reset during active job — feed hold first, waiting for motion to stop");
 
-                await StopSequence.SendFeedHoldAsync(_controller, "client");
-                _jobManager.Pause();
+            await StopSequence.SendFeedHoldAsync(_controller, "client");
+            _jobManager.Pause();
 
-                var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
-                _logger.LogInformation("Motion stop wait: {Result}", waitResult);
+            var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
+            _logger.LogInformation("Motion stop wait: {Result}", waitResult);
 
-                // Stop the job before sending soft reset
-                _jobManager.Stop();
-                _logger.LogInformation("Job stopped, sending soft reset");
-            }
+            // Stop the job before sending soft reset
+            _jobManager.Stop();
+            _logger.LogInformation("Job stopped, sending soft reset");
         }
         // Moving outside a job (a jog, a console or plugin move): the same
         // hold first, which also cancels a jog, so the reset doesn't land
