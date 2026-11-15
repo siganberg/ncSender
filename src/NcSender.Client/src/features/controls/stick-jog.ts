@@ -153,7 +153,7 @@ function stickAxes(bindings: Record<string, string | null>): Record<'X' | 'Y' | 
   return { X: read('X'), Y: read('Y'), Z: read('Z') };
 }
 
-// Actions the stick drives while stick jogging is on: the Analog Stick
+// Actions the stick drives while stick jogging is on: the Variable-Speed Stick
 // actions, and any Jog action on an axis the stick reads. Their usual
 // handling stands aside; a Jog action on a button (the D-pad) keeps it.
 export function stickJogActions(bindings: Record<string, string | null>): Set<string> {
@@ -167,7 +167,7 @@ export function stickJogActions(bindings: Record<string, string | null>): Set<st
 }
 
 // Each jog axis from −1 to 1. An axis bound both ways (Axis 0+ and Axis 0−),
-// or an Analog Stick action on a standard pad's stick (axes 0-3), reads
+// or a Variable-Speed Stick action on a standard pad's stick (axes 0-3), reads
 // across its whole travel; otherwise only its bound half, so a trigger
 // resting at −1 stays still.
 export function readStick(gamepad: Gamepad, bindings: Record<string, string | null>): { x: number; y: number; z: number } {

@@ -91,9 +91,9 @@ const jogActionDescriptions: Record<string, string> = {
 };
 
 const STICK_ACTION_LABELS: Record<string, string> = {
-  StickJogX: 'Analog Stick X',
-  StickJogY: 'Analog Stick Y',
-  StickJogZ: 'Analog Stick Z'
+  StickJogX: 'Variable-Speed Stick X',
+  StickJogY: 'Variable-Speed Stick Y',
+  StickJogZ: 'Variable-Speed Stick Z'
 };
 
 const jogActionGroup = 'Jogging';
@@ -324,7 +324,7 @@ export function registerCoreKeyboardActions(): void {
       id,
       label,
       group: jogActionGroup,
-      description: 'Gamepad only, for Analog Stick Jogging: bind it by pushing the stick toward the + direction',
+      description: 'Gamepad only, for the Variable-Speed Stick: bind it by pushing the stick toward the + direction',
       handler: () => {},
       isEnabled: canJog
     });

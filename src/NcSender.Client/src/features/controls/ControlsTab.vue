@@ -48,7 +48,7 @@
               />
             </div>
             <div class="toggle-container" :class="{ disabled: !gamepadEnabled }">
-              <label class="toggle-label">Analog Stick Jogging</label>
+              <label class="toggle-label">Variable-Speed Stick</label>
               <ToggleSwitch
                 :model-value="stickJog.enabled"
                 :disabled="!gamepadEnabled"
@@ -364,8 +364,8 @@ const saveStickJog = async (changes: Partial<StickJogSettings>) => {
   try {
     await updateSettings({ gamepadAnalog: changes });
   } catch (error: any) {
-    console.error('Failed to save analog stick settings:', JSON.stringify(error?.message ?? error));
-    captureError.value = error?.message || 'Failed to save analog stick settings';
+    console.error('Failed to save Variable-Speed Stick settings:', JSON.stringify(error?.message ?? error));
+    captureError.value = error?.message || 'Failed to save Variable-Speed Stick settings';
     Object.assign(stickDraft, stickJog.value);
   }
 };
