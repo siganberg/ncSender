@@ -68,9 +68,12 @@ function sanitizeKeyboardSettings(raw: any): KeyboardSettings {
     return { ...defaults };
   }
 
+  const shortcutsEnabled = raw.shortcutsEnabled !== false;
+  // Before the gamepad had its own switch, the keyboard switch turned both
+  // off; without a saved gamepad choice it still follows the keyboard.
   return {
-    shortcutsEnabled: raw.shortcutsEnabled !== false,
-    gamepadEnabled: raw.gamepadEnabled !== false
+    shortcutsEnabled,
+    gamepadEnabled: typeof raw.gamepadEnabled === 'boolean' ? raw.gamepadEnabled : shortcutsEnabled
   };
 }
 
