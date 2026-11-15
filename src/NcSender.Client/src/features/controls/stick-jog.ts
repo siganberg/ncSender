@@ -177,9 +177,14 @@ export function readStick(gamepad: Gamepad, bindings: Record<string, string | nu
   };
   const read = (axis: 'X' | 'Y' | 'Z') => {
     const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
-    if (own) return gamepad.mapping === 'standard' && own.index <= 3 ? value(own) : Math.max(0, value(own));
     const plus = axisBinding(bindings[STICK_AXES[axis].plus]);
     const minus = axisBinding(bindings[STICK_AXES[axis].minus]);
+    // On another pad, its − too when the step jog's − is that axis's other
+    // way (which the stick then takes over), so pushing − isn't dead.
+    if (own) {
+      const bothWays = minus && minus.index === own.index && minus.sign !== own.sign;
+      return (gamepad.mapping === 'standard' && own.index <= 3) || bothWays ? value(own) : Math.max(0, value(own));
+    }
     if (plus && minus && plus.index === minus.index && plus.sign !== minus.sign) return value(plus);
     return (plus ? Math.max(0, value(plus)) : 0) - (minus ? Math.max(0, value(minus)) : 0);
   };
@@ -194,6 +199,9 @@ export class StickJogger {
   private busy = false;
   private pending: { since: number; target: StickTarget } | null = null;
   private waitForCenter = true;
+  // The machine has reported this jog running: once it stops on its own
+  // (a feed hold, an alarm, the end of its travel), so does the stick.
+  private sawJog = false;
   // Bumped by every stop, so a start still in flight knows to undo itself.
   private generation = 0;
   // The server ending this jog itself (its heartbeat watchdog) needs the
@@ -202,7 +210,7 @@ export class StickJogger {
     if (this.session && data?.jogId === this.session.jogId && data.reason) this.stop('server-stopped');
   });
 
-  update(target: StickTarget | null, now: number, allowed: boolean, settings: StickJogSettings): void {
+  update(target: StickTarget | null, now: number, allowed: boolean, settings: StickJogSettings, machine: string): void {
     if (!target) {
       this.waitForCenter = false;
       this.pending = null;
@@ -212,6 +220,13 @@ export class StickJogger {
     if (!allowed) {
       this.stop('not-allowed');
       return;
+    }
+    if (this.session && !this.busy) {
+      if (machine === 'jog') this.sawJog = true;
+      else if (this.sawJog) {
+        this.stop('machine-stopped');
+        return;
+      }
     }
     if (this.waitForCenter || this.busy) return;
     if (this.running && !needsReaim(this.running, target)) {
@@ -255,6 +270,7 @@ export class StickJogger {
       }
       this.session = session;
       this.running = target;
+      this.sawJog = false;
     } finally {
       this.busy = false;
     }
@@ -265,6 +281,7 @@ export class StickJogger {
     this.generation++;
     this.pending = null;
     this.running = null;
+    this.sawJog = false;
     const session = this.session;
     this.session = null;
     session?.stop(reason);

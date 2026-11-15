@@ -120,8 +120,8 @@ async function persistBindings(next: Record<string, string | null>, changedOnly 
   }
 }
 
-// The keyboard settings as saved, so a value that is only derived (the
-// gamepad switch following the keyboard) is never saved as a choice.
+// The keyboard settings as saved. A gamepad switch never saved follows the
+// keyboard's until either switch is used, which saves both.
 let savedKeyboard: Record<string, any> = {};
 
 function applySavedKeyboard(raw: any): void {
@@ -131,9 +131,13 @@ function applySavedKeyboard(raw: any): void {
 
 async function persistKeyboardSettings(change: Partial<KeyboardSettings>): Promise<void> {
   const previous = savedKeyboard;
-  applySavedKeyboard({ ...savedKeyboard, ...change });
+  // Both switches, as shown, so turning the keyboard off leaves the gamepad
+  // as it was; and the whole object, since other screens put a broadcast
+  // change in place of theirs rather than merging it.
+  const next = { ...savedKeyboard, ...state.settings, ...change };
+  applySavedKeyboard(next);
   try {
-    await updateSettings({ keyboard: change });
+    await updateSettings({ keyboard: next });
   } catch (error) {
     applySavedKeyboard(previous);
     throw error;

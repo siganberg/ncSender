@@ -367,7 +367,8 @@ watch(stickJog, (value) => Object.assign(stickDraft, value));
 
 const saveStickJog = async (changes: Partial<StickJogSettings>) => {
   try {
-    await updateSettings({ gamepadAnalog: changes });
+    // The whole object: other screens put a broadcast change in place of theirs.
+    await updateSettings({ gamepadAnalog: { ...stickJog.value, ...changes } });
   } catch (error: any) {
     console.error('Failed to save Variable-Speed Stick settings:', JSON.stringify(error?.message ?? error));
     captureError.value = error?.message || 'Failed to save Variable-Speed Stick settings';
@@ -490,7 +491,28 @@ const startGamepadCapture = (actionId: string) => {
   captureActionId.value = null;
   captureGamepadActionId.value = actionId;
   captureError.value = null;
+  stickRest = restingAxes();
   keyBindingStore.setCaptureMode(true);
+};
+
+// Each pad's axes as a stick capture starts: an axis counts only once it
+// moves well away from there, so a trigger resting at −1 (or a held button)
+// is neither taken nor in the way.
+let stickRest: Record<number, number[]> = {};
+const restingAxes = () => {
+  const rest: Record<number, number[]> = {};
+  for (const gamepad of navigator.getGamepads()) if (gamepad) rest[gamepad.index] = [...gamepad.axes];
+  return rest;
+};
+const detectStickAxis = (gamepad: Gamepad) => {
+  const rest = stickRest[gamepad.index] ?? [];
+  for (let i = 0; i < gamepad.axes.length; i++) {
+    const value = gamepad.axes[i];
+    if (Math.abs(value) > 0.95 && Math.abs(value - (rest[i] ?? 0)) > 0.95) {
+      return { type: 'axis', index: i, direction: value > 0 ? 'positive' : 'negative' };
+    }
+  }
+  return null;
 };
 
 
@@ -525,7 +547,7 @@ const pollGamepads = () => {
       continue;
     }
 
-    const input = detectGamepadInput(gamepad);
+    const input = isStickAction(captureGamepadActionId.value) ? detectStickAxis(gamepad) : detectGamepadInput(gamepad);
     if (input) {
       handleGamepadCapture(input);
       break;

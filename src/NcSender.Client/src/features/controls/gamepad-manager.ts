@@ -125,8 +125,13 @@ class GamepadManager {
       target = stickTarget(readStick(gamepad, bindings), settings.deadZone);
       if (target) break;
     }
-    const jogAllowed = commandRegistry.getAction('JogXPlus')?.isEnabled?.() ?? false;
-    this.stickJogger.update(target, performance.now(), jogAllowed, settings);
+    // Only from Idle or its own jog: not in Hold, Alarm, Door or homing,
+    // nor with a job paused.
+    const appStore = useAppStore();
+    const machine = String(appStore.status.machineState || '').toLowerCase().split(':')[0];
+    const jogAllowed = (commandRegistry.getAction('JogXPlus')?.isEnabled?.() ?? false) &&
+      (machine === 'idle' || machine === 'jog') && appStore.serverState.jobLoaded?.status !== 'paused';
+    this.stickJogger.update(target, performance.now(), jogAllowed, settings, machine);
   };
 
   private pollGamepads = () => {
@@ -679,6 +684,11 @@ class GamepadManager {
     this.startPolling();
   };
 
+  // A hidden tab (another tab, the screen locked) stops jogging, as blur does.
+  private handleHidden = () => {
+    if (document.visibilityState === 'hidden') this.handleDisconnect();
+  };
+
   private handleDisconnect = () => {
     this.stickJogger.stop('gamepad-disconnect');
 
@@ -744,6 +754,7 @@ class GamepadManager {
     window.addEventListener('gamepadconnected', this.handleConnect);
     window.addEventListener('gamepaddisconnected', this.handleDisconnect);
     window.addEventListener('blur', this.handleDisconnect);
+    document.addEventListener('visibilitychange', this.handleHidden);
 
     watchEffect(() => {
       this.enabled = keyBindingStore.isGamepadActive.value;
@@ -758,6 +769,7 @@ class GamepadManager {
     window.removeEventListener('gamepadconnected', this.handleConnect);
     window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
     window.removeEventListener('blur', this.handleDisconnect);
+    document.removeEventListener('visibilitychange', this.handleHidden);
     this.handleDisconnect();
     this.stickJogger.dispose();
   }
