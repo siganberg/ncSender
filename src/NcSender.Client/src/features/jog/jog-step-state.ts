@@ -150,4 +150,8 @@ export function rememberJogChoices(jogConfig: JogChoice, units: () => Units): vo
     }
   );
   window.addEventListener('pagehide', save);
+  // A phone may close a backgrounded tab without a pagehide.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') save();
+  });
 }
