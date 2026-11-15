@@ -90,6 +90,12 @@ const jogActionDescriptions: Record<string, string> = {
   JogXMinusYMinus: 'Step jog diagonally to the bottom left corner'
 };
 
+const STICK_ACTION_LABELS: Record<string, string> = {
+  StickJogX: 'Analog Stick X',
+  StickJogY: 'Analog Stick Y',
+  StickJogZ: 'Analog Stick Z'
+};
+
 const jogActionGroup = 'Jogging';
 
 const createJogId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -293,6 +299,17 @@ export function registerCoreKeyboardActions(): void {
       group: jogActionGroup,
       description: jogActionDescriptions[id],
       handler: () => performDiagonalJogStep(meta.xDir, meta.yDir),
+      isEnabled: canJog
+    });
+  });
+
+  Object.entries(STICK_ACTION_LABELS).forEach(([id, label]) => {
+    commandRegistry.register({
+      id,
+      label,
+      group: jogActionGroup,
+      description: 'Gamepad only, for Analog Stick Jogging: bind it by pushing the stick toward the + direction',
+      handler: () => {},
       isEnabled: canJog
     });
   });

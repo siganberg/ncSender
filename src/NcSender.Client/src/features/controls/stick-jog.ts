@@ -34,7 +34,7 @@ export interface StickJogSettings {
 
 export const DEFAULT_STICK_JOG_SETTINGS: StickJogSettings = {
   enabled: false,
-  expo: 0.6,
+  expo: 1,
   deadZone: 0.12
 };
 
@@ -130,6 +130,15 @@ export function stickTopFeed(): number {
   return fastestStepFeed(useAppStore().unitsPreference.value === 'imperial');
 }
 
+// Actions that bind a stick axis to a jog axis (pushed toward + when
+// binding). When they're bound, the Jog X/Y/Z actions stay free for the
+// D-pad's steps; when they aren't, the stick reads the Jog bindings.
+export const STICK_ACTIONS: Record<'X' | 'Y' | 'Z', string> = {
+  X: 'StickJogX',
+  Y: 'StickJogY',
+  Z: 'StickJogZ'
+};
+
 const STICK_AXES: Record<'X' | 'Y' | 'Z', { plus: string; minus: string }> = {
   X: { plus: 'JogXPlus', minus: 'JogXMinus' },
   Y: { plus: 'JogYPlus', minus: 'JogYMinus' },
@@ -143,14 +152,26 @@ function axisBinding(bindingStr: string | null | undefined): AxisBinding | null 
   return binding?.type === 'axis' ? { index: binding.index, sign: binding.direction === 'positive' ? 1 : -1 } : null;
 }
 
-// Jog actions a stick drives while stick jogging is on; their usual
-// handling stands aside.
+// The gamepad axes the stick reads, per jog axis.
+function stickAxes(bindings: Record<string, string | null>): Record<'X' | 'Y' | 'Z', AxisBinding[]> {
+  const read = (axis: 'X' | 'Y' | 'Z') => {
+    const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
+    if (own) return [own];
+    const { plus, minus } = STICK_AXES[axis];
+    return [axisBinding(bindings[plus]), axisBinding(bindings[minus])].filter((b): b is AxisBinding => b !== null);
+  };
+  return { X: read('X'), Y: read('Y'), Z: read('Z') };
+}
+
+// Actions the stick drives while stick jogging is on: the Analog Stick
+// actions, and any Jog action on an axis the stick reads. Their usual
+// handling stands aside; a Jog action on a button (the D-pad) keeps it.
 export function stickJogActions(bindings: Record<string, string | null>): Set<string> {
+  const read = new Set(Object.values(stickAxes(bindings)).flat().map((b) => b.index));
   const actions = new Set<string>();
-  for (const { plus, minus } of Object.values(STICK_AXES)) {
-    for (const actionId of [plus, minus]) {
-      if (axisBinding(bindings[actionId])) actions.add(actionId);
-    }
+  for (const actionId of [...Object.values(STICK_ACTIONS), ...Object.values(STICK_AXES).flatMap((a) => [a.plus, a.minus])]) {
+    const bound = axisBinding(bindings[actionId]);
+    if (bound && read.has(bound.index)) actions.add(actionId);
   }
   return actions;
 }
@@ -164,6 +185,8 @@ export function readStick(gamepad: Gamepad, bindings: Record<string, string | nu
     return Number.isFinite(raw) ? raw * bound.sign : 0;
   };
   const read = (axis: 'X' | 'Y' | 'Z') => {
+    const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
+    if (own) return value(own);
     const plus = axisBinding(bindings[STICK_AXES[axis].plus]);
     const minus = axisBinding(bindings[STICK_AXES[axis].minus]);
     if (plus && minus && plus.index === minus.index && plus.sign !== minus.sign) return value(plus);
