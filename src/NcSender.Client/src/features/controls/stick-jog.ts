@@ -166,36 +166,10 @@ export function stickJogActions(bindings: Record<string, string | null>): Set<st
   return actions;
 }
 
-// Whether an axis springs back to center (a stick) rather than resting at
-// an end (a trigger or slider): it has moved away and then sat at center for
-// CENTERED_MS. A trigger only passes center on its way between its ends, and
-// some browsers report an untouched axis as 0, so neither counts.
-const CENTERED_MS = 1000;
-const axisRest = new Map<string, { moved: boolean; centerSince: number | null; stick: boolean }>();
-
-function restsCentered(gamepad: Gamepad, index: number, raw: number): boolean {
-  if (gamepad.mapping === 'standard' && index <= 3) return true;
-  const key = `${gamepad.id}:${gamepad.index}:${index}`;
-  const rest = axisRest.get(key) ?? { moved: false, centerSince: null, stick: false };
-  axisRest.set(key, rest);
-  if (rest.stick) return true;
-  const now = performance.now();
-  if (Math.abs(raw) > 0.5) {
-    rest.moved = true;
-    rest.centerSince = null;
-  } else if (Math.abs(raw) < 0.1 && rest.moved) {
-    rest.centerSince ??= now;
-    if (now - rest.centerSince >= CENTERED_MS) rest.stick = true;
-  } else {
-    rest.centerSince = null;
-  }
-  return rest.stick;
-}
-
 // Each jog axis from −1 to 1. An axis bound both ways (Axis 0+ and Axis 0−),
-// or to an Analog Stick action and known to rest at center, reads across
-// its whole travel; otherwise only its bound half, so a trigger resting at
-// −1 stays still.
+// or an Analog Stick action on a standard pad's stick (axes 0-3), reads
+// across its whole travel; otherwise only its bound half, so a trigger
+// resting at −1 stays still.
 export function readStick(gamepad: Gamepad, bindings: Record<string, string | null>): { x: number; y: number; z: number } {
   const value = (bound: AxisBinding) => {
     const raw = gamepad.axes[bound.index];
@@ -203,7 +177,7 @@ export function readStick(gamepad: Gamepad, bindings: Record<string, string | nu
   };
   const read = (axis: 'X' | 'Y' | 'Z') => {
     const own = axisBinding(bindings[STICK_ACTIONS[axis]]);
-    if (own) return restsCentered(gamepad, own.index, value(own)) ? value(own) : Math.max(0, value(own));
+    if (own) return gamepad.mapping === 'standard' && own.index <= 3 ? value(own) : Math.max(0, value(own));
     const plus = axisBinding(bindings[STICK_AXES[axis].plus]);
     const minus = axisBinding(bindings[STICK_AXES[axis].minus]);
     if (plus && minus && plus.index === minus.index && plus.sign !== minus.sign) return value(plus);
