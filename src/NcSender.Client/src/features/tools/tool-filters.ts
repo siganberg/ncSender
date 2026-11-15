@@ -36,10 +36,10 @@ export const emptyToolFilters = (): ToolFilters => ({ toolId: '', name: '', type
 export const hasToolFilters = (f: ToolFilters) =>
   Object.values(f).some((v) => v.trim() !== '');
 
-const UNIT = String.raw`(?:mm|inches|inch|in|")`;
+const UNIT = String.raw`(?:mm|cm|inches|inch|in|")`;
 const NUM = String.raw`-?(?:\d+(?:\.\d*)?|\.\d+)(?:\s*\/\s*\d+)?${UNIT}?`;
 
-// `units` is what the table shows; a number typed with a unit (.25", 6mm)
+// `units` is what the table shows; a number typed with a unit (.25", 6mm, 1cm)
 // is converted to it. Without `units`, a unit can't be read.
 function readNumber(text: string, units?: 'mm' | 'in'): number | null {
   const m = new RegExp(`^(.*?)(${UNIT})?$`, 'i').exec(text.replace(/\s+/g, ''));
@@ -51,9 +51,8 @@ function readNumber(text: string, units?: 'mm' | 'in'): number | null {
     ? (+frac[3] ? (frac[1] ? -1 : 1) * (+frac[2] / +frac[3]) : null)
     : /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(t) ? parseFloat(t) : null;
   if (value === null || !unit) return value;
-  const inches = unit !== 'mm';
-  if (inches === (units === 'in')) return value;
-  return inches ? value * 25.4 : value / 25.4;
+  const mm = unit === 'mm' ? value : unit === 'cm' ? value * 10 : value * 25.4;
+  return units === 'in' ? mm / 25.4 : mm;
 }
 
 // A test for a number, from what was typed: 6, <6, >=3, 3-8, 3..8,

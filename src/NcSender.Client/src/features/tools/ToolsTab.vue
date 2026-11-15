@@ -99,7 +99,7 @@
               </select>
             </th>
             <th class="col-diameter">
-              <input v-model="columnFilters.diameter" class="column-filter" :class="{ 'column-filter--bad': badFilters.diameter }" :aria-invalid="!!badFilters.diameter" type="text" placeholder="6, <6, 3-8" aria-label="Filter by diameter" :title="`A diameter in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: 6, <6, >=3, a range (3-8), several (3, 6), a fraction (1/4) or with a unit (.25in, 6mm)`">
+              <input v-model="columnFilters.diameter" class="column-filter" :class="{ 'column-filter--bad': badFilters.diameter }" :aria-invalid="!!badFilters.diameter" type="text" placeholder="6, <6, 3-8" aria-label="Filter by diameter" :title="`A diameter in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: 6, <6, >=3, a range (3-8), several (3, 6), a fraction (1/4) or with a unit (.25in, 6mm, 1cm)`">
             </th>
             <th class="col-tlo">
               <input v-model="columnFilters.tlo" class="column-filter" :class="{ 'column-filter--bad': badFilters.tlo }" :aria-invalid="!!badFilters.tlo" type="text" placeholder="<0, set" aria-label="Filter by TLO" :title="`A TLO in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: -40, <0, a range (-50--40), with a unit (-1.5in), set or not set`">
