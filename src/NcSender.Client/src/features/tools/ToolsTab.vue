@@ -540,7 +540,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -550,7 +550,6 @@ import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
 import { ensureHomed } from '@/composables/useUnhomedGuard';
-import { getSettings } from '../../lib/settings-store.js';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -639,21 +638,26 @@ const slotName = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot ${n
 // The slot picker is offered wherever there are slots to pick.
 const slotsOffered = computed(() => (props.toolCount || 0) > 0 || probeSlot.value !== null);
 
-// Load: M6 T<n>, as the visualizer's tool buttons send it, offered only with
-// a tool changer (a magazine or a plugin), as those buttons are.
-const loadOffered = computed(() => (props.toolCount || 0) > 0 || !!props.toolSourceName);
-// What the T in M6 T<n> names (Settings > Tool Changer > Tool Numbering):
-// the slot with Slot numbering (a tool in no slot can't be loaded), the
-// Tool ID with Tool ID numbering. null when the tool can't be loaded.
-const loadNumber = (tool: Tool): number | null => {
-  if (getSettings()?.tool?.numbering === 'toolId') return tool.toolId;
-  return hasSlot(tool) ? tool.toolNumber : null;
+// The server's list of what M6 T<n> loads (/api/tools/active), so T follows
+// its Tool Numbering: the slot or the Tool ID.
+const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
+const loadActiveTools = async () => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools/active`);
+    if (response.ok) activeTools.value = await response.json();
+  } catch (error) {
+    console.error('Error loading active tools:', JSON.stringify(String(error)));
+  }
 };
+let offToolsUpdated: (() => void) | null = null;
+const loadOffered = computed(() =>
+  ((props.toolCount || 0) > 0 || !!props.toolSourceName) && activeTools.value.some(a => a.id > 0));
+const loadNumber = (tool: Tool): number | null =>
+  activeTools.value.find(a => a.id === tool.id)?.toolId ?? null;
 const isLoaded = (tool: Tool) => {
   const n = loadNumber(tool);
   return n !== null && n > 0 && appStore.status.tool === n;
 };
-// Why Load is off for this tool, or '' when it can be loaded.
 const loadBlocked = (tool: Tool): string => {
   if (!appStore.isConnected.value) return 'Connect to the machine to load a tool';
   if (!appStore.hasFullControl.value) return 'This screen can\'t control the machine';
@@ -668,14 +672,15 @@ const loadToolRef = ref<Tool | null>(null);
 const askLoadTool = (tool: Tool) => {
   if (!loadBlocked(tool)) loadToolRef.value = tool;
 };
-// Settings closes first, so the tool change and anything it asks show.
 const confirmLoadTool = async () => {
   const tool = loadToolRef.value;
   loadToolRef.value = null;
-  const n = tool && !loadBlocked(tool) ? loadNumber(tool) : null;
+  if (!tool) return;
+  await loadActiveTools();
+  const n = loadBlocked(tool) ? null : loadNumber(tool);
   if (n === null) return;
   emit('close');
-  if (!(await ensureHomed('M6'))) return;
+  if (!(await ensureHomed('M6')) || loadBlocked(tool)) return;
   try {
     await api.triggerToolChange(n);
   } catch (error) {
@@ -963,6 +968,7 @@ const loadTools = async () => {
     const response = await fetch(`${api.baseUrl}/api/tools`);
     if (response.ok) {
       tools.value = await response.json();
+      await loadActiveTools();
     } else {
       console.error('Failed to load tools');
     }
@@ -1446,6 +1452,9 @@ const confirmImportWithConflicts = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  offToolsUpdated = api.on('tools-updated', (list: any) => {
+    if (Array.isArray(list)) activeTools.value = list;
+  });
   await loadTools();
   await loadToolsInfo();
 
@@ -1468,6 +1477,10 @@ onMounted(async () => {
   } catch (error) {
     console.error('Error loading settings:', error);
   }
+});
+
+onUnmounted(() => {
+  offToolsUpdated?.();
 });
 </script>
 
