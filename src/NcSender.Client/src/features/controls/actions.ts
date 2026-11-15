@@ -219,7 +219,7 @@ export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | 
 }
 
 // How far an axis can jog one way, in the jog units. Homed, that's to the
-// soft limit (machine positions run from -travel to 0), so a straight jog
+// soft limit (by the machine's home corner), so a straight jog
 // ends where its line meets the first limit instead of being shortened per
 // axis and bent; otherwise the whole travel.
 function axisReach(axis: 'X' | 'Y' | 'Z', sign: number, isImperial: boolean): number {
@@ -227,9 +227,13 @@ function axisReach(axis: 'X' | 'Y' | 'Z', sign: number, isImperial: boolean): nu
   const travel = getAxisTravel(axis, isImperial);
   const travelMm = isImperial ? travel * 25.4 : travel;
   const pos = store.status.machineCoords[axis.toLowerCase() as 'x' | 'y' | 'z'];
-  if (!store.isHomed.value || !Number.isFinite(pos) || pos > 0.001 || pos < -travelMm - 0.001) return travel;
+  // Machine positions as the visualizer has them: an axis homing to its
+  // max runs from -travel to 0, one homing to its min from 0 to +travel.
+  const home = store.machineOrientation[`${axis.toLowerCase()}Home` as 'xHome' | 'yHome' | 'zHome'];
+  const min = home === 'min' ? 0 : -travelMm, max = home === 'min' ? travelMm : 0;
+  if (!store.isHomed.value || !Number.isFinite(pos) || pos > max + 0.001 || pos < min - 0.001) return travel;
   const margin = 0.05;
-  const mm = Math.max(0, sign > 0 ? -margin - pos : pos + travelMm - margin);
+  const mm = Math.max(0, sign > 0 ? max - margin - pos : pos - min - margin);
   return isImperial ? mm / 25.4 : mm;
 }
 
