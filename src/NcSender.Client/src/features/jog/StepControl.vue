@@ -78,7 +78,14 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { createStepGroups, jogPanelStepGroups } from './jog-step-state';
+import {
+  createStepGroups,
+  jogPanelStepGroups,
+  expandedOptionsMap,
+  expandedOptionsMapImperial,
+  feedRateOptionsByCategory,
+  feedRateOptionsByCategoryImperial
+} from './jog-step-state';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize } from '@/lib/units';
 
@@ -114,20 +121,6 @@ let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressStartTime = 0;
 let currentButtonEl: HTMLElement | null = null;
 
-// Expanded options for each step category (in mm)
-const expandedOptionsMap: Record<number, number[]> = {
-  0: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],  // Small steps
-  1: [1, 2, 3, 4, 5, 6, 7, 8, 9],                                   // Medium steps
-  2: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300]  // Large steps
-};
-
-// Expanded options for imperial mode (in inches)
-const expandedOptionsMapImperial: Record<number, number[]> = {
-  0: [0.001, 0.005, 0.01, 0.015625, 0.02, 0.03125, 0.03, 0.04, 0.05, 0.06, 0.0625, 0.07, 0.08, 0.09],
-  1: [0.1, 0.125, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.625, 0.7, 0.75, 0.8, 0.9],
-  2: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-};
-
 // Fraction display map for imperial values
 const fractionDisplayMap: Record<number, string> = {
   0.015625: '1/64',
@@ -139,7 +132,6 @@ const fractionDisplayMap: Record<number, string> = {
   0.625: '5/8',
   0.75: '3/4'
 };
-
 
 // Get category index for a step value (value is already in display units)
 const getCategoryForStep = (step: number): number => {
@@ -293,20 +285,6 @@ const selectStep = (displayValue: number) => {
   nextTick(() => emit('update:feedRate', state[category].feedRate));
   closeDropdown();
 };
-
-// Feed rate options per category for metric (mm/min)
-const feedRateOptionsByCategory = [
-  [300, 400, 500, 700, 1000],
-  [1000, 2000, 3000, 4000, 5000],
-  [6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
-];
-
-// Feed rate options per category for imperial (in/min)
-const feedRateOptionsByCategoryImperial = [
-  [10, 15, 20, 30, 40],
-  [40, 60, 80, 100, 150, 200],
-  [200, 250, 300, 400, 500, 600]
-];
 
 // Get current category based on current step
 const currentCategory = computed(() => getCategoryForStep(props.currentStep));

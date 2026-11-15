@@ -966,7 +966,6 @@ export function initializeStore() {
 export async function seedInitialState(initData?: any) {
   debugLog('Seeding initial state from server...');
 
-
   // Set initial WebSocket state
   if (api.ws) {
     websocketConnected.value = api.ws.readyState === 1; // WebSocket.OPEN = 1
