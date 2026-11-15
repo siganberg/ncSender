@@ -387,7 +387,9 @@ public class WebSocketLayer : IBroadcaster
         {
             var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
             _logger.LogInformation("Soft reset while moving — feed hold first, waiting for motion to stop");
+            var jogging = StopSequence.IsJogging(_controller.RawStatusData);
             await StopSequence.SendFeedHoldAsync(_controller, "client");
+            if (jogging) await StopSequence.SendJogCancelAsync(_controller, "client");
             var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
             _logger.LogInformation("Motion stop wait: {Result}", waitResult);
         }

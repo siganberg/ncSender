@@ -67,6 +67,22 @@ public static class StopSequence
         return !report.StartsWith("home", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>True when the raw status report says the machine is jogging.</summary>
+    public static bool IsJogging(string? rawStatus) =>
+        !string.IsNullOrWhiteSpace(rawStatus) && rawStatus.Trim().TrimStart('<').StartsWith("jog", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Sends Jog Cancel (0x85). grblHAL treats a feed hold while jogging as a
+    /// jog cancel, but some builds ignore it then; 0x85 is what ends a jog,
+    /// and does nothing when not jogging.
+    /// </summary>
+    public static Task SendJogCancelAsync(ICncController cnc, string sourceId, CancellationToken ct = default) =>
+        cnc.SendCommandAsync("\x85", new CommandOptions
+        {
+            DisplayCommand = "0x85 (Jog Cancel)",
+            Meta = new CommandMeta { SourceId = sourceId, Silent = true }
+        }, ct);
+
     /// <summary>
     /// Sends Feed Hold, waits for the machine to come to rest, then sends Soft
     /// Reset. <paramref name="fallbackDelayMs"/> is used when the controller's
