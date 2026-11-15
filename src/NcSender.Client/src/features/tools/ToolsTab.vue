@@ -759,7 +759,7 @@ const filteredTools = computed(() => {
 
 const filtersOn = computed(() => hasToolFilters(columnFilters.value) || !!searchQuery.value.trim());
 const badFilters = computed(() => badToolFilters(columnFilters.value));
-const typeOptions = computed(() => [...new Set(tools.value.map(t => t.type))].sort((a, b) => formatType(a).localeCompare(formatType(b))));
+const typeOptions = computed(() => [...new Set([...tools.value.map(t => t.type), columnFilters.value.type].filter(Boolean))].sort((a, b) => formatType(a).localeCompare(formatType(b))));
 const clearFilters = () => {
   columnFilters.value = emptyToolFilters();
   searchQuery.value = '';
@@ -1655,7 +1655,8 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
-.column-filter--bad {
+.column-filter--bad,
+.column-filter--bad:focus {
   border-color: var(--color-danger, #f87171);
 }
 

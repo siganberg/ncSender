@@ -15,7 +15,7 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { LENGTH_UNIT_PATTERN, mmToInches, parseLength, type UnitsPreference } from '@/lib/units';
+import { LENGTH_UNIT_PATTERN, formatCoordinate, parseLength, type UnitsPreference } from '@/lib/units';
 
 export interface ToolFilters {
   toolId: string;
@@ -47,66 +47,74 @@ function readNumber(text: string, units?: UnitsPreference): number | null {
   return parseLength(text, units);
 }
 
+const EPS = 1e-9;
+
 // A test for a number, from what was typed: 6, <6, >=3, 3-8, 3..8,
-// -50--40, or several of those split by commas (any may match). `tol` is
-// how close counts as equal. null when it can't be read.
-export function parseNumberFilter(text: string, tol: number, units?: UnitsPreference): ((v: number) => boolean) | null {
+// -50--40, or several of those split by ", " (any may match). With
+// `decimals`, typed numbers are rounded as the table shows them. null when
+// it can't be read; "6,35" is (a decimal comma, or 6 and 35?).
+export function parseNumberFilter(text: string, units?: UnitsPreference, decimals?: number): ((v: number) => boolean) | null {
+  if (/\d,\d/.test(text)) return null;
   const parts = text
     .replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, (_, whole, num, den) => String(+whole + +num / +den))
     .split(',').map((s) => s.trim()).filter(Boolean);
   if (!parts.length) return null;
+  const read = (t: string) => {
+    const n = readNumber(t, units);
+    return n === null || decimals === undefined ? n : parseFloat(n.toFixed(decimals));
+  };
   const tests: ((v: number) => boolean)[] = [];
   for (const raw of parts) {
     const p = raw.replace(/\s+/g, '');
     const cmp = /^(<=|>=|<|>|=)(.+)$/.exec(p);
     if (cmp) {
-      const n = readNumber(cmp[2], units);
+      const n = read(cmp[2]);
       if (n === null) return null;
       const op = cmp[1];
-      tests.push(op === '<' ? (v) => v < n - tol : op === '<=' ? (v) => v <= n + tol
-        : op === '>' ? (v) => v > n + tol : op === '>=' ? (v) => v >= n - tol : (v) => Math.abs(v - n) <= tol);
+      tests.push(op === '<' ? (v) => v < n - EPS : op === '<=' ? (v) => v <= n + EPS
+        : op === '>' ? (v) => v > n + EPS : op === '>=' ? (v) => v >= n - EPS : (v) => Math.abs(v - n) <= EPS);
       continue;
     }
     const range = new RegExp(`^(${NUM})(?:-|\\.\\.|to)(${NUM})$`, 'i').exec(p);
     if (range) {
-      const a = readNumber(range[1], units), b = readNumber(range[2], units);
+      const a = read(range[1]), b = read(range[2]);
       if (a === null || b === null) return null;
       const lo = Math.min(a, b), hi = Math.max(a, b);
-      tests.push((v) => v >= lo - tol && v <= hi + tol);
+      tests.push((v) => v >= lo - EPS && v <= hi + EPS);
       continue;
     }
-    const n = readNumber(p, units);
+    const n = read(p);
     if (n === null) return null;
-    tests.push((v) => Math.abs(v - n) <= tol);
+    tests.push((v) => Math.abs(v - n) <= EPS);
   }
   return (v) => tests.some((t) => t(v));
 }
 
 // A TLO filter also takes "set" and "not set" / "unset" / "none" (shown as 0).
-function parseTloFilter(text: string, tol: number, units?: UnitsPreference): ((v: number) => boolean) | null {
+function parseTloFilter(text: string, units?: UnitsPreference, decimals?: number): ((v: number) => boolean) | null {
   const t = text.trim().toLowerCase();
-  if (t === 'set') return (v) => Math.abs(v) > tol;
-  if (/^(not\s*set|unset|none)$/.test(t)) return (v) => Math.abs(v) <= tol;
-  return parseNumberFilter(text, tol, units);
+  if (t === 'set') return (v) => Math.abs(v) > EPS;
+  if (/^(not\s*set|unset|none)$/.test(t)) return (v) => Math.abs(v) <= EPS;
+  return parseNumberFilter(text, units, decimals);
 }
 
 export function badToolFilters(f: ToolFilters): Partial<Record<keyof ToolFilters, boolean>> {
   const bad: Partial<Record<keyof ToolFilters, boolean>> = {};
-  if (f.toolId.trim() && !parseNumberFilter(f.toolId, 0)) bad.toolId = true;
-  if (f.diameter.trim() && !parseNumberFilter(f.diameter, 0, 'metric')) bad.diameter = true;
-  if (f.tlo.trim() && !parseTloFilter(f.tlo, 0, 'metric')) bad.tlo = true;
+  if (f.toolId.trim() && !parseNumberFilter(f.toolId)) bad.toolId = true;
+  if (f.diameter.trim() && !parseNumberFilter(f.diameter, 'metric')) bad.diameter = true;
+  if (f.tlo.trim() && !parseTloFilter(f.tlo, 'metric')) bad.tlo = true;
   return bad;
 }
 
-// Diameter and TLO are in the display units unless typed with a unit,
-// compared to the table's decimals.
+// Diameter and TLO are compared as the table shows them, in its units and
+// decimals; typed values are in those units unless typed with a unit.
 export function filterTools<T extends FilterableTool>(tools: T[], f: ToolFilters, imperial: boolean): T[] {
-  const tol = imperial ? 0.00005 : 0.0005;
-  const show = (mm: number) => (imperial ? mmToInches(mm) : mm);
   const units: UnitsPreference = imperial ? 'imperial' : 'metric';
-  const id = f.toolId.trim() ? parseNumberFilter(f.toolId, 0) : null;
-  const dia = f.diameter.trim() ? parseNumberFilter(f.diameter, tol, units) : null;
-  const tlo = f.tlo.trim() ? parseTloFilter(f.tlo, tol, units) : null;
+  const decimals = imperial ? 4 : 3;
+  const show = (mm: number) => parseFloat(formatCoordinate(mm, units));
+  const id = f.toolId.trim() ? parseNumberFilter(f.toolId) : null;
+  const dia = f.diameter.trim() ? parseNumberFilter(f.diameter, units, decimals) : null;
+  const tlo = f.tlo.trim() ? parseTloFilter(f.tlo, units, decimals) : null;
   const name = f.name.trim().toLowerCase();
   return tools.filter((t) =>
     (!id || id(t.toolId))

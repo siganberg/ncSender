@@ -188,19 +188,22 @@ const MM_PER_LENGTH_UNIT: Record<string, number> = {
 };
 
 /**
- * Parse a typed length: a number or fraction (6.35, .25, 1/4), with or
- * without a unit (6.35mm, 1cm, .25", 1/4in). Returns it in the length of
- * `units` (mm for metric, inches for imperial); a number without a unit is
- * already in those. Null when it can't be read.
+ * Parse a typed length: a number, fraction or mixed number (6.35, .25, 1/4,
+ * 1 1/2), with or without a unit (6.35mm, 1cm, .25", 1 1/2 in). Returns it
+ * in the length of `units` (mm for metric, inches for imperial); a number
+ * without a unit is already in those. Null when it can't be read.
  */
 export function parseLength(input: string, units: UnitsPreference = 'metric'): number | null {
-  const match = new RegExp(`^(.*?)(${LENGTH_UNIT_PATTERN})?$`, 'i').exec(input.replace(/\s+/g, ''));
+  const match = new RegExp(`^(.*?)\\s*(${LENGTH_UNIT_PATTERN})?$`, 'i').exec(input.trim());
   const number = match?.[1] ?? '';
   const unit = match?.[2]?.toLowerCase();
-  const fraction = /^(-?)(\d+)\/(\d+)$/.exec(number);
-  const value = fraction
-    ? (+fraction[3] ? (fraction[1] ? -1 : 1) * (+fraction[2] / +fraction[3]) : null)
-    : /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(number) ? parseFloat(number) : null;
+  const fraction = /^(-?)(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/.exec(number);
+  let value: number | null = null;
+  if (fraction) {
+    if (+fraction[4]) value = (fraction[1] ? -1 : 1) * (+(fraction[2] ?? 0) + +fraction[3] / +fraction[4]);
+  } else if (/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(number)) {
+    value = parseFloat(number);
+  }
   if (value === null || !unit) return value;
   const mm = value * MM_PER_LENGTH_UNIT[unit];
   return units === 'imperial' ? mmToInches(mm) : mm;
