@@ -23,7 +23,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useAppStore } from '@/composables/use-app-store';
 import { gamepadBindingStore } from './gamepad-binding-store';
-import { jogPanelFeed, jogVector, readStick, snapAngle, stickTarget, type StickJogSettings } from './stick-jog';
+import { stickTopFeed, jogVector, readStick, snapAngle, stickTarget, type StickJogSettings } from './stick-jog';
 
 const READOUT_INTERVAL_MS = 100;
 
@@ -51,7 +51,7 @@ const update = () => {
     return;
   }
   const imperial = appStore.unitsPreference.value === 'imperial';
-  const { feed } = jogVector(target, props.settings, jogPanelFeed());
+  const { feed } = jogVector(target, props.settings, stickTopFeed());
   const speed = `${imperial ? feed.toFixed(1) : Math.round(feed)} ${imperial ? 'in/min' : 'mm/min'}`;
   const where = target.kind === 'xy' ? `${snapAngle(target.angle)}°` : `Z ${target.sign > 0 ? 'up' : 'down'}`;
   text.value = `${where} at ${speed}`;

@@ -65,7 +65,8 @@
         </div>
         <p v-if="stickJog.enabled" class="stick-hint">
           A stick bound to Jog X and Y jogs in a straight line at its angle, in 15° steps. How far you push sets the
-          speed: a slight push creeps, a full push runs at the jog panel's feed (Z at half). Turn the stick 15° or more,
+          speed: a slight push creeps, a full push runs at the fastest step's feed, whichever step is picked (Z at
+          half). Turn the stick 15° or more,
           or push clearly more or less, and it stops and starts a new straight jog. Let go to stop. A higher curve gives
           finer control near the center. The stick doesn't jog while this tab is open.
         </p>

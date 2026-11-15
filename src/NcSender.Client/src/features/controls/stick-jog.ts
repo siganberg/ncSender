@@ -23,6 +23,7 @@
 import { getSettings } from '@/lib/settings-store.js';
 import { useAppStore } from '@/composables/use-app-store';
 import { parseGamepadBinding } from './gamepad-utils';
+import { fastestStepFeed } from '../jog/jog-step-state';
 import { startContinuousVectorJogSession, type ContinuousJogSession } from './actions';
 
 export interface StickJogSettings {
@@ -112,8 +113,8 @@ export function needsReaim(current: StickTarget, next: StickTarget): boolean {
 }
 
 // The direction and feed (jog panel units per minute) of a jog for a target.
-// The top speed is the jog panel's feed for X and Y, half of it for Z, as a
-// held jog button moves.
+// The top speed is xyTop for X and Y, half of it for Z, as a held jog
+// button moves.
 export function jogVector(target: StickTarget, settings: StickJogSettings, xyTop: number):
   { x: number; y: number; z: number; feed: number } {
   const feed = speedCurve(target.push, settings.expo) * (target.kind === 'xy' ? xyTop : xyTop / 2);
@@ -123,9 +124,10 @@ export function jogVector(target: StickTarget, settings: StickJogSettings, xyTop
   return { x: tidy(Math.cos(rad)), y: tidy(Math.sin(rad)), z: 0, feed };
 }
 
-export function jogPanelFeed(): number {
-  const feed = useAppStore().jogConfig.feedRate;
-  return Number.isFinite(feed) && feed > 0 ? feed : 3000;
+// The stick covers every step group's speed: its top speed is the fastest
+// group's feed, whichever group is picked.
+export function stickTopFeed(): number {
+  return fastestStepFeed(useAppStore().unitsPreference.value === 'imperial');
 }
 
 const STICK_AXES: Record<'X' | 'Y' | 'Z', { plus: string; minus: string }> = {
@@ -221,7 +223,7 @@ export class StickJogger {
         await waitForJogToEnd();
         if (generation !== this.generation) return;
       }
-      const { x, y, z, feed } = jogVector(target, settings, jogPanelFeed());
+      const { x, y, z, feed } = jogVector(target, settings, stickTopFeed());
       const session = await startContinuousVectorJogSession({ x, y, z }, feed);
       if (session && generation !== this.generation) {
         session.stop('stopped-while-starting');

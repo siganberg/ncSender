@@ -97,6 +97,12 @@ function applyGroups(target: StepGroups, saved: any, imperial: boolean) {
   }
 }
 
+// The fastest step group's feed, in the units shown.
+export function fastestStepFeed(imperial: boolean): number {
+  const state = imperial ? categoryStateImperial : categoryStateMetric;
+  return Math.max(...Object.values(state).map((group) => group.feedRate));
+}
+
 // The step and feed a step group was left at.
 export function savedStepGroup(imperial: boolean, index: number): { step: number; feedRate: number } {
   return (imperial ? categoryStateImperial : categoryStateMetric)[index];
