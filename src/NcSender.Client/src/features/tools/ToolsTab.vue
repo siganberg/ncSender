@@ -653,12 +653,15 @@ const slotsOffered = computed(() => (props.toolCount || 0) > 0 || probeSlot.valu
 
 // What M6 T<n> loads, from the server (Tool Numbering: slot or Tool ID).
 const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
-const loadActiveTools = async () => {
+const loadActiveTools = async (): Promise<boolean> => {
   try {
     const response = await fetch(`${api.baseUrl}/api/tools/active`);
-    if (response.ok) activeTools.value = await response.json();
+    if (!response.ok) return false;
+    activeTools.value = await response.json();
+    return true;
   } catch (error) {
     console.error('Error loading active tools:', JSON.stringify(String(error)));
+    return false;
   }
 };
 let offToolsUpdated: (() => void) | null = null;
@@ -697,12 +700,10 @@ const confirmLoadTool = async () => {
   loadToolRef.value = null;
   if (!tool || n === null) return;
   const stillLoads = () => !loadBlocked(tool) && loadNumber(tool) === n;
-  await loadActiveTools();
-  if (!stillLoads()) return;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
   emit('close');
   if (!(await ensureHomed('M6'))) return;
-  await loadActiveTools();
-  if (!stillLoads()) return;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
   try {
     await api.triggerToolChange(n);
   } catch (error) {
