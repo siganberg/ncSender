@@ -102,12 +102,6 @@
             <td class="col-actions">
               <div class="tool-actions">
                 <button
-                  v-if="slotsOffered"
-                  class="btn btn-small btn-secondary tool-slot-btn"
-                  title="Assign to a slot"
-                  @click.stop="openSlotSelector(tool, $event)"
-                >{{ hasSlot(tool) ? slotName(tool.toolNumber!) : 'Slot' }}</button>
-                <button
                   v-if="loadOffered"
                   class="btn btn-small btn-primary tool-load-btn"
                   :disabled="!!loadBlocked(tool)"
@@ -634,8 +628,6 @@ const hasSlot = (tool: Tool) =>
   tool.toolNumber !== null
   && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
-const slotName = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot ${num}`);
-const slotsOffered = computed(() => (props.toolCount || 0) > 0 || probeSlot.value !== null);
 
 // What M6 T<n> loads, from the server (Tool Numbering: slot or Tool ID).
 const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
@@ -1803,7 +1795,7 @@ onUnmounted(() => {
 }
 
 .col-description {
-  width: 22%;
+  width: 32%;
 }
 
 .col-type {
@@ -1819,24 +1811,14 @@ onUnmounted(() => {
 }
 
 .col-actions {
-  width: 33%;
+  width: 21%;
   text-align: center;
 }
 
 .tool-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-}
-
-.tool-actions .btn-small {
-  padding: 6px 10px;
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-.tool-actions .tool-slot-btn {
-  min-width: 5.2em;
 }
 
 .tool-actions .tool-load-btn {
