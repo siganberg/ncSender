@@ -15,7 +15,7 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { LENGTH_UNIT_PATTERN, formatCoordinate, mmToInches, parseLength, type UnitsPreference } from '@/lib/units';
+import { LENGTH_UNIT_PATTERN, formatCoordinate, parseLength, type UnitsPreference } from '@/lib/units';
 
 export interface ToolFilters {
   toolId: string;
@@ -51,15 +51,11 @@ const EPS = 1e-9;
 
 // A test for a number, from what was typed: 6, <6, >=3, 3-8, 3..8,
 // -50--40, or several of those split by ", " (any may match). With
-// `decimals` (what the table shows), the value as shown equals a typed
-// number within half its last digit, so 3/32 finds a bit shown as 0.0937;
-// < and > compare the exact value. null when it can't be read; "6,35" is
-// (a decimal comma, or 6 and 35?).
-export function parseNumberFilter(
-  text: string,
-  units?: UnitsPreference,
-  decimals?: number
-): ((shown: number, exact?: number) => boolean) | null {
+// `decimals` (what the table shows), the shown value equals a typed number
+// within half its last digit, so 3/32 finds a bit shown as 0.0937, and
+// <, = and > never overlap. null when it can't be read; "6,35" is (a
+// decimal comma, or 6 and 35?).
+export function parseNumberFilter(text: string, units?: UnitsPreference, decimals?: number): ((v: number) => boolean) | null {
   if (/\d,\d/.test(text)) return null;
   const parts = text
     .replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, (_, whole, num, den) => String(+whole + +num / +den))
@@ -67,7 +63,7 @@ export function parseNumberFilter(
   if (!parts.length) return null;
   const read = (t: string) => readNumber(t, units);
   const half = (decimals === undefined ? 0 : 0.5 * 10 ** -decimals) + EPS;
-  const tests: ((v: number, x: number) => boolean)[] = [];
+  const tests: ((v: number) => boolean)[] = [];
   for (const raw of parts) {
     const p = raw.replace(/\s+/g, '');
     const cmp = /^(<=|>=|<|>|=)(.+)$/.exec(p);
@@ -75,9 +71,8 @@ export function parseNumberFilter(
       const n = read(cmp[2]);
       if (n === null) return null;
       const op = cmp[1];
-      tests.push(op === '<' ? (v, x) => x < n - EPS : op === '<=' ? (v, x) => x <= n + EPS || Math.abs(v - n) <= half
-        : op === '>' ? (v, x) => x > n + EPS : op === '>=' ? (v, x) => x >= n - EPS || Math.abs(v - n) <= half
-        : (v) => Math.abs(v - n) <= half);
+      tests.push(op === '<' ? (v) => v < n - half : op === '<=' ? (v) => v <= n + half
+        : op === '>' ? (v) => v > n + half : op === '>=' ? (v) => v >= n - half : (v) => Math.abs(v - n) <= half);
       continue;
     }
     const range = new RegExp(`^(${NUM})(?:-|\\.\\.|to)(${NUM})$`, 'i').exec(p);
@@ -92,15 +87,11 @@ export function parseNumberFilter(
     if (n === null) return null;
     tests.push((v) => Math.abs(v - n) <= half);
   }
-  return (shown, exact = shown) => tests.some((t) => t(shown, exact));
+  return (v) => tests.some((t) => t(v));
 }
 
 // A TLO filter also takes "set" and "not set" / "unset" / "none" (shown as 0).
-function parseTloFilter(
-  text: string,
-  units?: UnitsPreference,
-  decimals?: number
-): ((shown: number, exact?: number) => boolean) | null {
+function parseTloFilter(text: string, units?: UnitsPreference, decimals?: number): ((v: number) => boolean) | null {
   const t = text.trim().toLowerCase();
   if (t === 'set') return (v) => Math.abs(v) > EPS;
   if (/^(not\s*set|unset|none)$/.test(t)) return (v) => Math.abs(v) <= EPS;
@@ -121,7 +112,6 @@ export function filterTools<T extends FilterableTool>(tools: T[], f: ToolFilters
   const units: UnitsPreference = imperial ? 'imperial' : 'metric';
   const decimals = imperial ? 4 : 3;
   const show = (mm: number) => parseFloat(formatCoordinate(mm, units));
-  const exact = (mm: number) => (imperial ? mmToInches(mm) : mm);
   const id = f.toolId.trim() ? parseNumberFilter(f.toolId) : null;
   const dia = f.diameter.trim() ? parseNumberFilter(f.diameter, units, decimals) : null;
   const tlo = f.tlo.trim() ? parseTloFilter(f.tlo, units, decimals) : null;
@@ -130,6 +120,6 @@ export function filterTools<T extends FilterableTool>(tools: T[], f: ToolFilters
     (!id || id(t.toolId))
     && (!name || t.name.toLowerCase().includes(name))
     && (!f.type || t.type === f.type)
-    && (!dia || dia(show(t.diameter), exact(t.diameter)))
-    && (!tlo || tlo(show(t.offsets.tlo), exact(t.offsets.tlo))));
+    && (!dia || dia(show(t.diameter)))
+    && (!tlo || tlo(show(t.offsets.tlo))));
 }
