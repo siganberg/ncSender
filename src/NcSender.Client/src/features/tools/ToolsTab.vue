@@ -394,8 +394,8 @@
     <!-- Load Confirmation Dialog -->
     <Dialog v-if="loadToolRef" @close="loadToolRef = null" :show-header="false" size="small">
       <ConfirmPanel
-        :title="`Load T${loadNumber(loadToolRef)}`"
-        :message="`Load ${loadToolRef.name || 'this tool'}? This sends M6 T${loadNumber(loadToolRef)}, and the machine moves to change the tool.`"
+        :title="`Load T${loadToolNumber}`"
+        :message="`Load ${loadToolRef.name || 'this tool'}? This sends M6 T${loadToolNumber}, and the machine moves to change the tool.`"
         :show-cancel="true"
         confirm-text="Load"
         cancel-text="Cancel"
@@ -649,11 +649,9 @@ const hasSlot = (tool: Tool) =>
   && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
 const slotName = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot ${num}`);
-// The slot picker is offered wherever there are slots to pick.
 const slotsOffered = computed(() => (props.toolCount || 0) > 0 || probeSlot.value !== null);
 
-// The server's list of what M6 T<n> loads (/api/tools/active), so T follows
-// its Tool Numbering: the slot or the Tool ID.
+// What M6 T<n> loads, from the server (Tool Numbering: slot or Tool ID).
 const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
 const loadActiveTools = async () => {
   try {
@@ -675,26 +673,34 @@ const isLoaded = (tool: Tool) => {
 const loadBlocked = (tool: Tool): string => {
   if (!appStore.isConnected.value) return 'Connect to the machine to load a tool';
   if (!appStore.hasFullControl.value) return 'This screen can\'t control the machine';
-  if (appStore.isJobRunning.value) return 'A job is running';
+  if (appStore.isJobRunning.value || appStore.serverState.jobLoaded?.status === 'paused') return 'A job is running or paused';
   const status = appStore.senderStatus.value;
   if (status !== 'idle' && status !== 'homing-required') return `The machine is busy (${status})`;
-  if (loadNumber(tool) === null) return 'Assign a slot first: with Slot numbering, M6 loads a slot';
+  const n = loadNumber(tool);
+  if (n === null) return 'No T number loads this tool: with Slot numbering, assign it a slot';
+  if (activeTools.value.filter(a => a.toolId === n).length > 1) return `More than one tool has Tool ID ${n}: give each its own`;
   if (isLoaded(tool)) return 'This tool is in the spindle';
   return '';
 };
 const loadToolRef = ref<Tool | null>(null);
+const loadToolNumber = ref<number | null>(null);
 const askLoadTool = (tool: Tool) => {
-  if (!loadBlocked(tool)) loadToolRef.value = tool;
+  if (loadBlocked(tool)) return;
+  loadToolNumber.value = loadNumber(tool);
+  loadToolRef.value = tool;
 };
+// Sends only the T number that was confirmed, and only while it still
+// loads this tool.
 const confirmLoadTool = async () => {
   const tool = loadToolRef.value;
+  const n = loadToolNumber.value;
   loadToolRef.value = null;
-  if (!tool) return;
+  if (!tool || n === null) return;
+  const stillLoads = () => !loadBlocked(tool) && loadNumber(tool) === n;
   await loadActiveTools();
-  const n = loadBlocked(tool) ? null : loadNumber(tool);
-  if (n === null) return;
+  if (!stillLoads()) return;
   emit('close');
-  if (!(await ensureHomed('M6')) || loadBlocked(tool)) return;
+  if (!(await ensureHomed('M6')) || !stillLoads()) return;
   try {
     await api.triggerToolChange(n);
   } catch (error) {
