@@ -87,7 +87,7 @@
           </tr>
           <tr class="filter-row">
             <th class="col-tool-id">
-              <input v-model="columnFilters.toolId" class="column-filter" :class="{ 'column-filter--bad': badFilters.toolId }" type="text" inputmode="decimal" placeholder="5, 1-10" aria-label="Filter by Tool ID" title="A Tool ID, a range (1-10) or several (3, 7)">
+              <input v-model="columnFilters.toolId" class="column-filter" :class="{ 'column-filter--bad': badFilters.toolId }" :aria-invalid="!!badFilters.toolId" type="text" placeholder="5, 1-10" aria-label="Filter by Tool ID" title="A Tool ID, a range (1-10) or several (3, 7)">
             </th>
             <th class="col-description">
               <input v-model="columnFilters.name" class="column-filter" type="text" placeholder="Contains" aria-label="Filter by description">
@@ -99,10 +99,10 @@
               </select>
             </th>
             <th class="col-diameter">
-              <input v-model="columnFilters.diameter" class="column-filter" :class="{ 'column-filter--bad': badFilters.diameter }" type="text" inputmode="decimal" placeholder="6, <6, 3-8" aria-label="Filter by diameter" :title="`A diameter in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: 6, <6, >=3, a range (3-8), several (3, 6) or a fraction (1/4)`">
+              <input v-model="columnFilters.diameter" class="column-filter" :class="{ 'column-filter--bad': badFilters.diameter }" :aria-invalid="!!badFilters.diameter" type="text" placeholder="6, <6, 3-8" aria-label="Filter by diameter" :title="`A diameter in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: 6, <6, >=3, a range (3-8), several (3, 6) or a fraction (1/4)`">
             </th>
             <th class="col-tlo">
-              <input v-model="columnFilters.tlo" class="column-filter" :class="{ 'column-filter--bad': badFilters.tlo }" type="text" inputmode="decimal" placeholder="<0, set" aria-label="Filter by TLO" :title="`A TLO in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: -40, <0, a range (-50--40), set or not set`">
+              <input v-model="columnFilters.tlo" class="column-filter" :class="{ 'column-filter--bad': badFilters.tlo }" :aria-invalid="!!badFilters.tlo" type="text" placeholder="<0, set" aria-label="Filter by TLO" :title="`A TLO in ${getDistanceUnitLabel(appStore.unitsPreference.value)}: -40, <0, a range (-50--40), set or not set`">
             </th>
             <th class="col-actions">
               <div v-if="filtersOn" class="filter-status">
@@ -642,7 +642,6 @@ const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperi
 const tools = ref<Tool[]>([]);
 const storagePath = ref('');
 const searchQuery = ref('');
-// Reset whenever the Tool Library opens: a filter left on could hide tools.
 const columnFilters = ref(emptyToolFilters());
 const sortBy = ref<SortField>('toolId');
 const sortOrder = ref<SortOrder>('asc');
@@ -760,7 +759,6 @@ const filteredTools = computed(() => {
 
 const filtersOn = computed(() => hasToolFilters(columnFilters.value) || !!searchQuery.value.trim());
 const badFilters = computed(() => badToolFilters(columnFilters.value));
-// The types the library's tools use, for the Type filter's menu.
 const typeOptions = computed(() => [...new Set(tools.value.map(t => t.type))].sort((a, b) => formatType(a).localeCompare(formatType(b))));
 const clearFilters = () => {
   columnFilters.value = emptyToolFilters();
@@ -1624,7 +1622,10 @@ onMounted(async () => {
   text-align: center;
 }
 
-/* The filter row sits under the labels, inside the sticky header. */
+.tools-table thead tr:first-child th {
+  border-bottom: none;
+}
+
 .tools-table .filter-row th {
   padding-top: 0;
   font-weight: normal;
@@ -1666,7 +1667,7 @@ onMounted(async () => {
   font-size: 0.8rem;
   font-weight: normal;
   color: var(--color-text-secondary);
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .filter-clear {

@@ -15,9 +15,6 @@
  * along with ncSender. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// The Tool Library's column filters: one text field (or menu) under each
-// column header. A tool shows when it matches every filter that is set.
-
 export interface ToolFilters {
   toolId: string;
   name: string;
@@ -41,7 +38,6 @@ export const hasToolFilters = (f: ToolFilters) =>
 
 const NUM = String.raw`-?(?:\d+(?:\.\d*)?|\.\d+)(?:\s*\/\s*\d+)?`;
 
-// 6, 6.35, .25, 1/4 (a fraction), -45
 function readNumber(text: string): number | null {
   const t = text.replace(/\s+/g, '');
   const frac = /^(-?)(\d+)\/(\d+)$/.exec(t);
@@ -53,7 +49,9 @@ function readNumber(text: string): number | null {
 // -50--40, or several of those split by commas (any may match). `tol` is
 // how close counts as equal. null when it can't be read.
 export function parseNumberFilter(text: string, tol: number): ((v: number) => boolean) | null {
-  const parts = text.split(',').map((s) => s.trim()).filter(Boolean);
+  const parts = text
+    .replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, (_, whole, num, den) => String(+whole + +num / +den))
+    .split(',').map((s) => s.trim()).filter(Boolean);
   if (!parts.length) return null;
   const tests: ((v: number) => boolean)[] = [];
   for (const raw of parts) {
@@ -82,16 +80,14 @@ export function parseNumberFilter(text: string, tol: number): ((v: number) => bo
   return (v) => tests.some((t) => t(v));
 }
 
-// A TLO filter also takes "set" (not 0) and "not set" / "unset" / "none" (0).
+// A TLO filter also takes "set" and "not set" / "unset" / "none" (shown as 0).
 function parseTloFilter(text: string, tol: number): ((v: number) => boolean) | null {
   const t = text.trim().toLowerCase();
-  if (t === 'set') return (v) => v !== 0;
-  if (/^(not\s*set|unset|none)$/.test(t)) return (v) => v === 0;
+  if (t === 'set') return (v) => Math.abs(v) > tol;
+  if (/^(not\s*set|unset|none)$/.test(t)) return (v) => Math.abs(v) <= tol;
   return parseNumberFilter(text, tol);
 }
 
-// Which filters can't be read, so their fields can say so (they are then
-// left out of the filtering rather than hiding every tool).
 export function badToolFilters(f: ToolFilters): Partial<Record<keyof ToolFilters, boolean>> {
   const bad: Partial<Record<keyof ToolFilters, boolean>> = {};
   if (f.toolId.trim() && !parseNumberFilter(f.toolId, 0)) bad.toolId = true;
@@ -100,9 +96,7 @@ export function badToolFilters(f: ToolFilters): Partial<Record<keyof ToolFilters
   return bad;
 }
 
-// The tools that match every filter. Diameter and TLO are typed in the
-// display units (inches when imperial) and compared to within the last
-// decimal the table shows.
+// Diameter and TLO are typed in the display units, to the table's decimals.
 export function filterTools<T extends FilterableTool>(tools: T[], f: ToolFilters, imperial: boolean): T[] {
   const tol = imperial ? 0.00005 : 0.0005;
   const show = (mm: number) => (imperial ? mm / 25.4 : mm);
