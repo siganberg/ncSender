@@ -172,3 +172,36 @@ export function parseFeedRateInput(input: string, units: UnitsPreference = 'metr
 
   return value;
 }
+
+/**
+ * Length units a typed value may carry: mm, cm, in / inch / inches or "
+ */
+export const LENGTH_UNIT_PATTERN = String.raw`(?:mm|cm|inches|inch|in|")`;
+
+const MM_PER_LENGTH_UNIT: Record<string, number> = {
+  mm: 1,
+  cm: 10,
+  in: MM_PER_INCH,
+  inch: MM_PER_INCH,
+  inches: MM_PER_INCH,
+  '"': MM_PER_INCH
+};
+
+/**
+ * Parse a typed length: a number or fraction (6.35, .25, 1/4), with or
+ * without a unit (6.35mm, 1cm, .25", 1/4in). Returns it in the length of
+ * `units` (mm for metric, inches for imperial); a number without a unit is
+ * already in those. Null when it can't be read.
+ */
+export function parseLength(input: string, units: UnitsPreference = 'metric'): number | null {
+  const match = new RegExp(`^(.*?)(${LENGTH_UNIT_PATTERN})?$`, 'i').exec(input.replace(/\s+/g, ''));
+  const number = match?.[1] ?? '';
+  const unit = match?.[2]?.toLowerCase();
+  const fraction = /^(-?)(\d+)\/(\d+)$/.exec(number);
+  const value = fraction
+    ? (+fraction[3] ? (fraction[1] ? -1 : 1) * (+fraction[2] / +fraction[3]) : null)
+    : /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(number) ? parseFloat(number) : null;
+  if (value === null || !unit) return value;
+  const mm = value * MM_PER_LENGTH_UNIT[unit];
+  return units === 'imperial' ? mmToInches(mm) : mm;
+}
