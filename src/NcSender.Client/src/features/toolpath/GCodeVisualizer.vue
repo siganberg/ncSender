@@ -4544,6 +4544,16 @@ watch(() => props.workOffset, (newOffset) => {
   // Fast path: move group position instantly, debounced OOB recolor
   if (gcodeVisualizer && gcodeVisualizer.currentGCode) {
     gcodeVisualizer.updateWCO(newOffset);
+    // The program moved with the new zero: its bounds are where it is now,
+    // and Auto-Fit centers on it again (Spindle View follows the spindle).
+    const box = gcodeVisualizer.group ? new THREE.Box3().setFromObject(gcodeVisualizer.group) : null;
+    if (box && !box.isEmpty()) {
+      currentGCodeBounds = { min: box.min, max: box.max, center: box.getCenter(new THREE.Vector3()), size: box.getSize(new THREE.Vector3()) };
+      if (autoFitMode.value && !spindleViewMode.value) {
+        if (props.view === 'split') updateSplitViewCameras();
+        else fitCameraToBounds(currentGCodeBounds);
+      }
+    }
     requestRender();
   }
 }, { deep: true });
