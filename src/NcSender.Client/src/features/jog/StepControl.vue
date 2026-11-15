@@ -78,7 +78,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { categoryStateMetric, categoryStateImperial } from './jog-step-state';
+import { createStepGroups, jogPanelStepGroups } from './jog-step-state';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize } from '@/lib/units';
 
@@ -90,6 +90,7 @@ const props = withDefaults(defineProps<{
   currentFeedRate?: number;
   feedRateOptions?: Record<number, number[]>;
   feedRateDefaults?: Record<number, number>;
+  jogPanel?: boolean;
 }>(), {
   currentStep: 1,
   stepOptions: () => [0.1, 1, 10],
@@ -100,6 +101,10 @@ const emit = defineEmits<{
   (e: 'update:step', value: number): void;
   (e: 'update:feedRate', value: number): void;
 }>();
+
+const stepGroups = props.jogPanel ? jogPanelStepGroups : createStepGroups();
+const categoryStateMetric = stepGroups.metric;
+const categoryStateImperial = stepGroups.imperial;
 
 // Long press state
 const LONG_PRESS_MS = 500;

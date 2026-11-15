@@ -21,7 +21,7 @@ import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/
 import { dropTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings, mergeSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
-import { applySavedJog, rememberJogChoices, savedStepGroup } from '@/features/jog/jog-step-state';
+import { restoreJogChoices, rememberJogChoices, savedStepGroup } from '@/features/jog/jog-step-state';
 import type { UnitsPreference } from '@/lib/units';
 
 /**
@@ -966,8 +966,6 @@ export function initializeStore() {
 export async function seedInitialState(initData?: any) {
   debugLog('Seeding initial state from server...');
 
-  applySavedJog(initData?.settings?.jogChoices, jogConfig);
-  rememberJogChoices(jogConfig);
 
   // Set initial WebSocket state
   if (api.ws) {
@@ -1132,11 +1130,8 @@ export async function seedInitialState(initData?: any) {
     }
   }
 
-  const initialUnits = getSettings()?.unitsPreference;
-  if (initialUnits === 'imperial') {
-    jogConfig.stepSize = 0.1;
-    jogConfig.feedRate = 100;
-  }
+  restoreJogChoices(jogConfig, unitsPreference.value);
+  rememberJogChoices(jogConfig, () => unitsPreference.value);
 
   debugLog('Initial state seeded successfully');
 }

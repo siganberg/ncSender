@@ -16,43 +16,43 @@
  */
 
 import { reactive, watch } from 'vue';
-import { updateSettings } from '@/lib/settings-store.js';
 
 type StepGroups = Record<number, { step: number; feedRate: number }>;
+type Units = 'metric' | 'imperial';
+type JogChoice = { stepSize: number; feedRate: number };
 
-// Each step group's step and feed, shared by every step control so they
-// agree, and saved in settings (jogChoices) with the step and feed picked.
-// They're read when a screen loads, never live: one screen's pick doesn't
-// change the step under another screen's jog.
+// The jog panel's step groups (each group's step and feed), shared by the
+// step controls that drive the jog panel (jog panel, mobile view). With the
+// step and feed picked, they're kept in this screen's browser storage, so
+// each screen comes back as it was left, without changing the step under
+// another screen's jog or touching server settings. Other step controls
+// (probe dialog, plugins) keep their own groups.
+const STORAGE_KEY = 'ncsender-jog-choices';
 
-// Metric: step in mm, feed rate in mm/min
-export const categoryStateMetric = reactive<StepGroups>({
-  0: { step: 0.1, feedRate: 500 },
-  1: { step: 1, feedRate: 3000 },
-  2: { step: 10, feedRate: 6000 }
-});
+export function createStepGroups(): { metric: StepGroups; imperial: StepGroups } {
+  return {
+    // Metric: step in mm, feed rate in mm/min
+    metric: reactive<StepGroups>({
+      0: { step: 0.1, feedRate: 500 },
+      1: { step: 1, feedRate: 3000 },
+      2: { step: 10, feedRate: 6000 }
+    }),
+    // Imperial: step in inches, feed rate in in/min
+    imperial: reactive<StepGroups>({
+      0: { step: 0.01, feedRate: 20 },
+      1: { step: 0.1, feedRate: 100 },
+      2: { step: 1, feedRate: 200 }
+    })
+  };
+}
 
-// Imperial: step in inches, feed rate in in/min
-export const categoryStateImperial = reactive<StepGroups>({
-  0: { step: 0.01, feedRate: 20 },
-  1: { step: 0.1, feedRate: 100 },
-  2: { step: 1, feedRate: 200 }
-});
+export const jogPanelStepGroups = createStepGroups();
+export const categoryStateMetric = jogPanelStepGroups.metric;
+export const categoryStateImperial = jogPanelStepGroups.imperial;
 
 const SAVE_DELAY_MS = 500;
 
-type JogChoice = { stepSize: number; feedRate: number };
-
 const positive = (value: any) => typeof value === 'number' && Number.isFinite(value) && value > 0;
-
-const snapshot = (jogConfig: JogChoice) => JSON.stringify({
-  stepSize: jogConfig.stepSize,
-  feedRate: jogConfig.feedRate,
-  groups: { metric: categoryStateMetric, imperial: categoryStateImperial }
-});
-
-let lastSaved = '';
-let saveTimer: number | null = null;
 
 function applyGroups(target: StepGroups, saved: any) {
   for (const index of [0, 1, 2]) {
@@ -63,31 +63,47 @@ function applyGroups(target: StepGroups, saved: any) {
   }
 }
 
-export function applySavedJog(jog: any, jogConfig: JogChoice): void {
-  if (!jog || typeof jog !== 'object') return;
-  applyGroups(categoryStateMetric, jog.groups?.metric);
-  applyGroups(categoryStateImperial, jog.groups?.imperial);
-  if (positive(jog.stepSize)) jogConfig.stepSize = jog.stepSize;
-  if (positive(jog.feedRate)) jogConfig.feedRate = jog.feedRate;
-  lastSaved = snapshot(jogConfig);
-}
-
-export function rememberJogChoices(jogConfig: JogChoice): void {
-  lastSaved = snapshot(jogConfig);
-  watch(() => snapshot(jogConfig), (json) => {
-    if (saveTimer !== null) clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => {
-      saveTimer = null;
-      if (json === lastSaved) return;
-      lastSaved = json;
-      updateSettings({ jogChoices: JSON.parse(json) }).catch((error: any) => {
-        console.error('Failed to save jog choices:', JSON.stringify(error?.message ?? String(error)));
-      });
-    }, SAVE_DELAY_MS);
-  });
-}
-
-// The step and feed a step group was left at, for switching units.
+// The step and feed a step group was left at.
 export function savedStepGroup(imperial: boolean, index: number): { step: number; feedRate: number } {
   return (imperial ? categoryStateImperial : categoryStateMetric)[index];
+}
+
+// Restores this screen's step groups, and the step and feed it picked when
+// they were picked in the same units; otherwise the middle group as left.
+export function restoreJogChoices(jogConfig: JogChoice, units: Units): void {
+  let saved: any = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  } catch {
+    saved = null;
+  }
+  applyGroups(categoryStateMetric, saved?.groups?.metric);
+  applyGroups(categoryStateImperial, saved?.groups?.imperial);
+  const middle = savedStepGroup(units === 'imperial', 1);
+  const same = saved?.units === units && positive(saved?.stepSize) && positive(saved?.feedRate);
+  jogConfig.stepSize = same ? saved.stepSize : middle.step;
+  jogConfig.feedRate = same ? saved.feedRate : middle.feedRate;
+}
+
+export function rememberJogChoices(jogConfig: JogChoice, units: () => Units): void {
+  let timer: number | null = null;
+  watch(
+    () => JSON.stringify({
+      units: units(),
+      stepSize: jogConfig.stepSize,
+      feedRate: jogConfig.feedRate,
+      groups: { metric: categoryStateMetric, imperial: categoryStateImperial }
+    }),
+    (json) => {
+      if (timer !== null) clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        try {
+          localStorage.setItem(STORAGE_KEY, json);
+        } catch (error: any) {
+          console.error('Failed to save jog choices:', JSON.stringify(error?.message ?? String(error)));
+        }
+      }, SAVE_DELAY_MS);
+    }
+  );
 }
