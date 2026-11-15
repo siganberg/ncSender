@@ -21,6 +21,7 @@ import { saveGCodeToIDB, clearGCodeIDB, isIDBEnabled, getGCodeFromIDB } from '@/
 import { dropTerminalIDB } from '@/lib/terminal-store.js';
 import { getSettings, mergeSettings } from '@/lib/settings-store.js';
 import { debugLog, debugWarn } from '@/lib/debug-logger';
+import { applySavedJog, rememberJogChoices, savedStepGroup } from '@/features/jog/jog-step-state';
 import type { UnitsPreference } from '@/lib/units';
 
 /**
@@ -880,9 +881,9 @@ export function initializeStore() {
   api.on('settings-changed', (changedSettings) => {
     mergeSettings(changedSettings);
     if (changedSettings?.unitsPreference) {
-      const isImperial = changedSettings.unitsPreference === 'imperial';
-      jogConfig.stepSize = isImperial ? 0.1 : 1;
-      jogConfig.feedRate = isImperial ? 100 : 3000;
+      const group = savedStepGroup(changedSettings.unitsPreference === 'imperial', 1);
+      jogConfig.stepSize = group.step;
+      jogConfig.feedRate = group.feedRate;
     }
     if (changedSettings?.homeLocation) {
       debugLog(`[Store] Home location changed to: ${changedSettings.homeLocation}`);
@@ -964,6 +965,9 @@ export function initializeStore() {
 // Seed initial state from server (for late-joining clients)
 export async function seedInitialState(initData?: any) {
   debugLog('Seeding initial state from server...');
+
+  applySavedJog(initData?.settings?.jogChoices, jogConfig);
+  rememberJogChoices(jogConfig);
 
   // Set initial WebSocket state
   if (api.ws) {

@@ -77,7 +77,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { categoryStateMetric, categoryStateImperial } from './jog-step-state';
 import { useAppStore } from '@/composables/use-app-store';
 import { formatStepSize } from '@/lib/units';
 
@@ -134,19 +135,6 @@ const fractionDisplayMap: Record<number, string> = {
   0.75: '3/4'
 };
 
-// Per-category persistent state for metric (step in mm, feed rate in mm/min)
-const categoryStateMetric = reactive<Record<number, { step: number; feedRate: number }>>({
-  0: { step: 0.1, feedRate: 500 },
-  1: { step: 1, feedRate: 3000 },
-  2: { step: 10, feedRate: 6000 }
-});
-
-// Per-category persistent state for imperial (step in inches, feed rate in in/min)
-const categoryStateImperial = reactive<Record<number, { step: number; feedRate: number }>>({
-  0: { step: 0.01, feedRate: 20 },
-  1: { step: 0.1, feedRate: 100 },
-  2: { step: 1, feedRate: 200 }
-});
 
 // Get category index for a step value (value is already in display units)
 const getCategoryForStep = (step: number): number => {
