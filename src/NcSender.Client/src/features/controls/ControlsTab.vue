@@ -59,43 +59,47 @@
         </div>
 
         <div v-if="stickJog.enabled && gamepadEnabled" class="stick-section">
-          <div class="stick-axes">
-            <div v-for="axis in stickAxes" :key="axis.id" class="stick-axis">
-              <span class="stick-axis-label">{{ axis.label }}</span>
-              <div v-if="captureGamepadActionId === axis.id" class="binding-combined binding-combined--capturing">
-                <span class="binding-combined__value binding-combined__value--capturing">Push the stick...</span>
-                <button class="binding-combined__delete" @click.stop="cancelCapture" title="Cancel">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                  </svg>
-                </button>
-              </div>
-              <div v-else-if="gamepadBindingMap[axis.id]" class="binding-combined">
-                <span class="binding-combined__value" @click="startGamepadCapture(axis.id)" title="Click to change">
-                  {{ gamepadBindingMap[axis.id] }}
+          <div class="stick-line stick-line--axes">
+            <div class="stick-axes">
+              <div v-for="axis in stickAxes" :key="axis.id" class="stick-axis">
+                <span class="stick-axis-label">{{ axis.label }}</span>
+                <div v-if="captureGamepadActionId === axis.id" class="binding-combined binding-combined--capturing">
+                  <span class="binding-combined__value binding-combined__value--capturing">Push the stick...</span>
+                  <button class="binding-combined__delete" @click.stop="cancelCapture" title="Cancel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                    </svg>
+                  </button>
+                </div>
+                <div v-else-if="gamepadBindingMap[axis.id]" class="binding-combined">
+                  <span class="binding-combined__value" @click="startGamepadCapture(axis.id)" title="Click to change">
+                    {{ gamepadBindingMap[axis.id] }}
+                  </span>
+                  <button class="binding-combined__delete" @click.stop="clearGamepadBinding(axis.id)" title="Remove">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                    </svg>
+                  </button>
+                </div>
+                <span v-else class="binding-empty binding-empty-clickable" @click="startGamepadCapture(axis.id)" title="Click, then push the stick toward +">
+                  Not set
                 </span>
-                <button class="binding-combined__delete" @click.stop="clearGamepadBinding(axis.id)" title="Remove">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                  </svg>
-                </button>
               </div>
-              <span v-else class="binding-empty binding-empty-clickable" @click="startGamepadCapture(axis.id)" title="Click, then push the stick toward +">
-                Not set
-              </span>
             </div>
+            <StickJogReadout :settings="stickDraft" />
           </div>
-          <label class="stick-field">
-            Dead Zone
-            <input type="range" min="0" max="0.5" step="0.01" :value="stickDraft.deadZone" @input="onStickSlider('deadZone', $event)" @change="saveStickSlider('deadZone')" />
-            <span class="stick-value">{{ Math.round(stickDraft.deadZone * 100) }}%</span>
-          </label>
-          <label class="stick-field">
-            Curve
-            <input type="range" min="0" max="1" step="0.05" :value="stickDraft.expo" @input="onStickSlider('expo', $event)" @change="saveStickSlider('expo')" />
-            <span class="stick-value">{{ stickDraft.expo.toFixed(2) }}</span>
-          </label>
-          <StickJogReadout :settings="stickDraft" />
+          <div class="stick-line">
+            <label class="stick-field">
+              Dead Zone
+              <input type="range" min="0" max="0.5" step="0.01" :value="stickDraft.deadZone" @input="onStickSlider('deadZone', $event)" @change="saveStickSlider('deadZone')" />
+              <span class="stick-value">{{ Math.round(stickDraft.deadZone * 100) }}%</span>
+            </label>
+            <label class="stick-field">
+              Curve
+              <input type="range" min="0" max="1" step="0.05" :value="stickDraft.expo" @input="onStickSlider('expo', $event)" @change="saveStickSlider('expo')" />
+              <span class="stick-value">{{ stickDraft.expo.toFixed(2) }}</span>
+            </label>
+          </div>
           <p class="stick-hint">
             Push toward + to set each axis. Speed follows the push, up to the fastest step's feed. Unset axes use
             the Jog bindings below, which stay free for D-pad steps.
@@ -637,19 +641,38 @@ onBeforeUnmount(() => {
 
 .stick-section {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-sm) var(--gap-lg);
-  align-items: center;
+  flex-direction: column;
+  gap: var(--gap-xs);
   padding: var(--gap-sm);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
+.stick-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm) var(--gap-lg);
+  align-items: center;
+}
+
+.stick-line--axes {
+  flex-wrap: nowrap;
+  gap: var(--gap-md);
+}
+
+.stick-line--axes > :last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .stick-axes {
   display: flex;
-  gap: var(--gap-md);
+  gap: var(--gap-sm);
   align-items: center;
+  flex-shrink: 0;
 }
 
 .stick-axis {
@@ -677,7 +700,6 @@ onBeforeUnmount(() => {
 }
 
 .stick-hint {
-  flex-basis: 100%;
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-text-secondary);
