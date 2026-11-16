@@ -101,6 +101,13 @@
             <td class="col-tlo">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</td>
             <td class="col-actions">
               <div class="tool-actions">
+                <button
+                  v-if="loadOffered"
+                  class="btn btn-small btn-primary tool-load-btn"
+                  :disabled="!!loadBlocked(tool)"
+                  :title="loadBlocked(tool) || `Load this tool: M6 T${loadNumber(tool)}`"
+                  @click="askLoadTool(tool)"
+                >{{ isLoaded(tool) ? 'Loaded' : 'Load' }}</button>
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
                 <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
               </div>
@@ -366,6 +373,20 @@
       />
     </Dialog>
 
+    <!-- Load Confirmation Dialog -->
+    <Dialog v-if="loadToolRef" @close="loadToolRef = null" :show-header="false" size="small">
+      <ConfirmPanel
+        :title="`Load T${loadToolNumber}`"
+        :message="`Load ${loadToolRef.name || 'this tool'}? This sends M6 T${loadToolNumber}, and the machine moves to change the tool.`"
+        :show-cancel="true"
+        confirm-text="Load"
+        cancel-text="Cancel"
+        variant="primary"
+        @confirm="confirmLoadTool"
+        @cancel="loadToolRef = null"
+      />
+    </Dialog>
+
     <!-- Delete Confirmation Dialog -->
     <Dialog v-if="showDeleteConfirmDialog" @close="showDeleteConfirmDialog = false" :show-header="false" size="small">
       <ConfirmPanel
@@ -513,7 +534,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -522,6 +543,7 @@ import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+import { ensureHomed } from '@/composables/useUnhomedGuard';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -584,6 +606,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  close: [];
   'update:toolCount': [value: number];
   'update:showManualButton': [value: boolean];
   'update:showTlsButton': [value: boolean];
@@ -605,6 +628,66 @@ const hasSlot = (tool: Tool) =>
   tool.toolNumber !== null
   && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
+
+// What M6 T<n> loads, from the server (Tool Numbering: slot or Tool ID).
+const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
+const loadActiveTools = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools/active`);
+    if (!response.ok) return false;
+    activeTools.value = await response.json();
+    return true;
+  } catch (error) {
+    console.error('Error loading active tools:', JSON.stringify(String(error)));
+    return false;
+  }
+};
+let offToolsUpdated: (() => void) | null = null;
+const loadOffered = computed(() =>
+  ((props.toolCount || 0) > 0 || !!props.toolSourceName) && activeTools.value.some(a => a.id > 0));
+const loadNumber = (tool: Tool): number | null =>
+  activeTools.value.find(a => a.id === tool.id)?.toolId ?? null;
+const isLoaded = (tool: Tool) => {
+  const n = loadNumber(tool);
+  return n !== null && n > 0 && appStore.status.tool === n;
+};
+const loadBlocked = (tool: Tool): string => {
+  if (!appStore.isConnected.value) return 'Connect to the machine to load a tool';
+  if (!appStore.hasFullControl.value) return 'This screen can\'t control the machine';
+  if (appStore.isJobRunning.value || appStore.serverState.jobLoaded?.status === 'paused') return 'A job is running or paused';
+  const status = appStore.senderStatus.value;
+  if (status !== 'idle' && status !== 'homing-required') return `The machine is busy (${status})`;
+  const n = loadNumber(tool);
+  if (n === null) return 'No T number loads this tool: with Slot numbering, assign it a slot';
+  if (activeTools.value.filter(a => a.toolId === n).length > 1) return `More than one tool has Tool ID ${n}: give each its own`;
+  if (isLoaded(tool)) return 'This tool is in the spindle';
+  return '';
+};
+const loadToolRef = ref<Tool | null>(null);
+const loadToolNumber = ref<number | null>(null);
+const askLoadTool = (tool: Tool) => {
+  if (loadBlocked(tool)) return;
+  loadToolNumber.value = loadNumber(tool);
+  loadToolRef.value = tool;
+};
+// Sends only the T number that was confirmed, and only while it still
+// loads this tool.
+const confirmLoadTool = async () => {
+  const tool = loadToolRef.value;
+  const n = loadToolNumber.value;
+  loadToolRef.value = null;
+  if (!tool || n === null) return;
+  const stillLoads = () => !loadBlocked(tool) && loadNumber(tool) === n;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
+  emit('close');
+  if (!(await ensureHomed('M6'))) return;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
+  try {
+    await api.triggerToolChange(n);
+  } catch (error) {
+    console.error('[ToolsTab] Failed to load tool:', JSON.stringify({ tool: n, error: String(error) }));
+  }
+};
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
@@ -886,6 +969,7 @@ const loadTools = async () => {
     const response = await fetch(`${api.baseUrl}/api/tools`);
     if (response.ok) {
       tools.value = await response.json();
+      await loadActiveTools();
     } else {
       console.error('Failed to load tools');
     }
@@ -1369,6 +1453,9 @@ const confirmImportWithConflicts = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  offToolsUpdated = api.on('tools-updated', (list: any) => {
+    if (Array.isArray(list)) activeTools.value = list;
+  });
   await loadTools();
   await loadToolsInfo();
 
@@ -1391,6 +1478,10 @@ onMounted(async () => {
   } catch (error) {
     console.error('Error loading settings:', error);
   }
+});
+
+onUnmounted(() => {
+  offToolsUpdated?.();
 });
 </script>
 
@@ -1728,6 +1819,10 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   justify-content: center;
+}
+
+.tool-actions .tool-load-btn {
+  min-width: 5em;
 }
 
 .tools-footer {
