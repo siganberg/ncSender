@@ -10,6 +10,7 @@
     "dev:electron": "concurrently -k \"npm:dev\" \"npm:electron:dev\"",
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "build": "vite build",
+    "test": "node --test tests/",
     "build:electron": "npm run build && electron-builder",
     "preview": "vite preview"
   },

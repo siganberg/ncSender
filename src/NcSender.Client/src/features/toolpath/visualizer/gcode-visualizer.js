@@ -73,6 +73,8 @@ class GCodeVisualizer {
         // since the tool-changer plugin retracts the spindle before/during the swap).
         this.safeZHeightMm = -5;
 
+        this.machineZVertices = new Uint8Array(0);
+
         return this;
     }
 
@@ -324,6 +326,8 @@ class GCodeVisualizer {
         let currentTool = null; // Track active tool number
         let currentSpindleSpeed = 0; // Track S-value
         let isIncremental = false; // Track G90/G91 mode
+        let zAtMachineHeight = false; // currentPos.z came from M6 safe Z or G28, not a program Z word
+        const machineZVertices = [];
 
         // Reset tracking
         this._outOfBoundsAxes.clear();
@@ -427,12 +431,14 @@ class GCodeVisualizer {
 
                     vertices.push(machineStart.x, machineStart.y, machineStart.z);
                     vertices.push(machineStart.x, machineStart.y, zMachineHome);
+                    machineZVertices.push(zAtMachineHeight ? 1 : 0, 1);
                     colors.push(color.r, color.g, color.b);
                     colors.push(color.r, color.g, color.b);
                     opacities.push(1.0, 1.0); // G28 is always full opacity (rapid move)
                 }
 
                 currentPos.z = zMachineHome - this.wco.z;
+                zAtMachineHeight = true;
                 return;
             }
 
@@ -466,6 +472,7 @@ class GCodeVisualizer {
             // is rendered at the post-retract height instead of the pre-cut depth.
             if (/\bM0?6\b/.test(cleanLine)) {
                 currentPos.z = this.safeZHeightMm - this.wco.z;
+                zAtMachineHeight = true;
             }
 
             if (gMatch) {
@@ -637,6 +644,7 @@ class GCodeVisualizer {
                         // Push as pair for LineSegments (in machine coordinates)
                         vertices.push(mx1, my1, mz1);
                         vertices.push(mx2, my2, mz2);
+                        machineZVertices.push(zAtMachineHeight && !zMatch ? 1 : 0, zAtMachineHeight && !zMatch ? 1 : 0);
                         colors.push(color.r, color.g, color.b);
                         colors.push(color.r, color.g, color.b);
                         opacities.push(vertexOpacity, vertexOpacity);
@@ -654,6 +662,7 @@ class GCodeVisualizer {
 
                     vertices.push(machineStart.x, machineStart.y, machineStart.z);
                     vertices.push(machineEnd.x, machineEnd.y, machineEnd.z);
+                    machineZVertices.push(zAtMachineHeight ? 1 : 0, zAtMachineHeight && !zMatch ? 1 : 0);
 
                     colors.push(color.r, color.g, color.b);
                     colors.push(color.r, color.g, color.b);
@@ -664,9 +673,11 @@ class GCodeVisualizer {
 
                 currentPos = newPos;
             }
+
+            if (zMatch) zAtMachineHeight = false;
         });
 
-        return { vertices, colors, opacities, cumulativeDistances, frames, hasOutOfBounds };
+        return { vertices, colors, opacities, cumulativeDistances, frames, hasOutOfBounds, machineZVertices };
     }
 
     render(gcodeString) {
@@ -682,7 +693,8 @@ class GCodeVisualizer {
         this.lineMoveType.clear();
         this.lineToolNumber.clear();
 
-        const { vertices, colors, opacities, cumulativeDistances, frames, hasOutOfBounds } = this.parseGCode(gcodeString);
+        const { vertices, colors, opacities, cumulativeDistances, frames, hasOutOfBounds, machineZVertices } = this.parseGCode(gcodeString);
+        this.machineZVertices = Uint8Array.from(machineZVertices);
 
         // Store out of bounds status
         this.hasOutOfBounds = hasOutOfBounds;
@@ -1187,7 +1199,7 @@ class GCodeVisualizer {
                     // Vertices are in parse-time machine coords; add delta for current machine coords
                     const x = positions[i * 3] + dx;
                     const y = positions[i * 3 + 1] + dy;
-                    const z = positions[i * 3 + 2] + dz;
+                    const z = positions[i * 3 + 2] + (this.machineZVertices[i] ? 0 : dz);
 
                     let c;
                     if (isToolHidden) {
@@ -1289,7 +1301,7 @@ class GCodeVisualizer {
                     const dz = this.wco.z - this.renderWCO.z;
                     const x = positions[i * 3] + dx;
                     const y = positions[i * 3 + 1] + dy;
-                    const z = positions[i * 3 + 2] + dz;
+                    const z = positions[i * 3 + 2] + (this.machineZVertices[i] ? 0 : dz);
 
                     if (isCompleted) {
                         c = moveType === 'rapid' ? completedRapid : completedCutting;
