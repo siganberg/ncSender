@@ -140,6 +140,27 @@ public class PluginMustRunTests : IDisposable
 
     private static readonly MachineState Idle = new() { Status = "Idle", Tool = 1, MPos = "0,0,0", WCO = "0,0,0" };
 
+    // A refused line inside a plugin's expansion refuses all of it, so a
+    // sequence is never sent with a step missing.
+    [Theory]
+    [InlineData("job", true)]
+    [InlineData("client", false)]
+    public async Task A_refused_line_in_an_expansion_refuses_the_whole_expansion(string source, bool stopsJob)
+    {
+        var unhomed = new MachineState { Status = "Idle", Tool = 1, MPos = "0,0,0", WCO = "0,0,0", Homed = false, HomingCycle = 1 };
+        var processor = Processor(unhomed, () =>
+        [
+            new ProcessedCommand { Command = "G0 X1" },
+            new ProcessedCommand { Command = "$PARK", IsOriginal = false },
+            new ProcessedCommand { Command = "G0 X2", IsOriginal = false },
+        ]);
+        var result = await processor.ProcessAsync("G0 X1", Ctx(unhomed, source));
+        Assert.False(result.ShouldContinue);
+        Assert.True(result.Refused);
+        Assert.Empty(result.Commands);
+        Assert.Equal(stopsJob, result.Error is not null);
+    }
+
     [Fact]
     public async Task A_plugin_that_throws_refuses_the_command_and_stops_a_job()
     {

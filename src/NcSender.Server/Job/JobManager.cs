@@ -374,6 +374,11 @@ public class JobManager : IJobManager
                     });
                 if (sent?.Status == "error")
                     break;
+                if (result.Refused)
+                {
+                    _logger.LogWarning("Event G-code stopped at: {Line} ({Reason})", line, result.SkipReason);
+                    break;
+                }
             }
             catch (Exception ex)
             {

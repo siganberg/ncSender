@@ -290,13 +290,7 @@ public class CommandProcessor : ICommandProcessor
         {
             var expanded = await ExpandM98Async(command, processorContext);
             if (expanded is not null)
-            {
-                return new CommandProcessorResult
-                {
-                    ShouldContinue = true,
-                    Commands = expanded
-                };
-            }
+                return expanded;
         }
 
         return new CommandProcessorResult
@@ -306,7 +300,7 @@ public class CommandProcessor : ICommandProcessor
         };
     }
 
-    private async Task<List<ProcessedCommand>?> ExpandM98Async(string command, CommandProcessorContext ctx)
+    private async Task<CommandProcessorResult?> ExpandM98Async(string command, CommandProcessorContext ctx)
     {
         var parsed = GcodePatterns.ParseM98Command(command);
         if (!parsed.Matched || parsed.MacroId is not int macroId)
@@ -347,7 +341,7 @@ public class CommandProcessor : ICommandProcessor
         {
             new()
             {
-                Command = $"(Executing macro: {displayName})",
+                Command = $"(Executing macro: {CommentSafe(displayName)})",
                 DisplayCommand = $"(Executing macro: {displayName})",
                 IsOriginal = false,
                 Meta = childMeta
@@ -374,6 +368,11 @@ public class CommandProcessor : ICommandProcessor
             // line sees the tool this one will have loaded.
             var childResult = await Pipeline.ProcessAsync(line, childCtx);
 
+            // A refused line stops the macro there, like a refused line stops
+            // a job: the lines before it still run, the rest don't, so a move
+            // never runs after the retract or check meant to come first.
+            if (childResult.Refused || childResult.Error is not null)
+                return StoppedMacro(ctx, childMeta, displayName, line, output, childResult);
             if (!childResult.ShouldContinue)
                 continue;
             output.AddRange(childResult.Commands);
@@ -381,13 +380,33 @@ public class CommandProcessor : ICommandProcessor
 
         output.Add(new ProcessedCommand
         {
-            Command = $"(End macro: {displayName})",
+            Command = $"(End macro: {CommentSafe(displayName)})",
             DisplayCommand = $"(End macro: {displayName})",
             IsOriginal = false,
             Meta = childMeta
         });
 
-        return output;
+        return new CommandProcessorResult { ShouldContinue = true, Commands = output };
+    }
+
+    // In a job the macro's Error stops the job, as a refused line of its own
+    // would. Elsewhere the lines before the refused one are still sent.
+    private CommandProcessorResult StoppedMacro(CommandProcessorContext ctx, CommandMeta childMeta,
+        string displayName, string line, List<ProcessedCommand> output, CommandProcessorResult refused)
+    {
+        output.AddRange(refused.Commands);
+        var reason = refused.Error ?? refused.SkipReason ?? "a line was refused";
+        _logger.LogWarning("Macro {Name} stopped at \"{Line}\": {Reason}", displayName, line, reason);
+        var notice = $"(Macro {CommentSafe(displayName)} stopped: {CommentSafe(reason)})";
+        output.Add(new ProcessedCommand { Command = notice, DisplayCommand = notice, IsOriginal = false, Meta = childMeta });
+        return new CommandProcessorResult
+        {
+            ShouldContinue = true,
+            Refused = true,
+            Commands = output,
+            SkipReason = reason,
+            Error = refused.Error ?? (IsJobLine(ctx) ? $"Macro {displayName}: {reason}" : null),
+        };
     }
 
     private static CommandMeta CloneMetaWithStack(CommandMeta? source, List<int> stack)
@@ -563,7 +582,8 @@ public class CommandProcessor : ICommandProcessor
         return new CommandProcessorResult
         {
             ShouldContinue = false,
-            SkipReason = $"Command blocked: {reason}"
+            SkipReason = $"Command blocked: {reason}",
+            Refused = true,
         };
     }
 
@@ -577,7 +597,8 @@ public class CommandProcessor : ICommandProcessor
         return new CommandProcessorResult
         {
             ShouldContinue = false,
-            SkipReason = "Command cancelled: not allowed during HOLD"
+            SkipReason = "Command cancelled: not allowed during HOLD",
+            Refused = true,
         };
     }
 
@@ -670,6 +691,7 @@ public class CommandProcessor : ICommandProcessor
                     ShouldContinue = false,
                     SkipReason = reason,
                     Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+                    Refused = true,
                 };
             }
             // Shown as the moves themselves, not as the $PARK line.
@@ -682,7 +704,11 @@ public class CommandProcessor : ICommandProcessor
         return new CommandProcessorResult { ShouldContinue = true, Commands = output };
     }
 
-    private static bool IsJobLine(CommandProcessorContext ctx) => ctx.Meta?.SourceId == "job";
+    private static bool IsJobLine(CommandProcessorContext ctx) => ctx.Meta?.SourceId is "job" or "resume";
+
+    // Text inside a (comment) line: no parentheses or line breaks to end it early.
+    private static string CommentSafe(string text) =>
+        text.Replace('(', '[').Replace(')', ']').Replace('\r', ' ').Replace('\n', ' ');
 
     // Shown in the terminal as "$PARK (BLOCKED - reason)".
     private CommandProcessorResult RefusePark(CommandProcessorContext ctx, string reason)
@@ -693,6 +719,7 @@ public class CommandProcessor : ICommandProcessor
             ShouldContinue = false,
             SkipReason = $"Command blocked: {reason}",
             Error = IsJobLine(ctx) ? $"Park: {reason}" : null,
+            Refused = true,
         };
     }
 
