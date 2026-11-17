@@ -644,7 +644,7 @@ class GCodeVisualizer {
                         // Push as pair for LineSegments (in machine coordinates)
                         vertices.push(mx1, my1, mz1);
                         vertices.push(mx2, my2, mz2);
-                        machineZVertices.push(zAtMachineHeight && !zMatch ? 1 : 0, zAtMachineHeight && !zMatch ? 1 : 0);
+                        machineZVertices.push(zAtMachineHeight && (idx === 0 || !zMatch) ? 1 : 0, zAtMachineHeight && !zMatch ? 1 : 0);
                         colors.push(color.r, color.g, color.b);
                         colors.push(color.r, color.g, color.b);
                         opacities.push(vertexOpacity, vertexOpacity);
