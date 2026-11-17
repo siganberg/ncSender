@@ -10,6 +10,12 @@ public interface ICncController
     MachineState LastStatus { get; }
     string? RawStatusData { get; }
     string? GreetingMessage { get; }
+    /// <summary>
+    /// Units ("G20"/"G21") the parser will be in once every line queued so far
+    /// has run, from the last G20/G21 queued, or the parser state ($G) after a
+    /// reset. Null until either is known.
+    /// </summary>
+    string? QueuedUnits { get; }
 
     Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default);
     void Disconnect();

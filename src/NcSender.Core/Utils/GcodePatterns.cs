@@ -157,19 +157,43 @@ public static partial class GcodePatterns
     public static bool IsTlsCommand(string line) =>
         line.Trim().Equals("$TLS", StringComparison.OrdinalIgnoreCase);
 
-    // $PARK: ncSender's own command, never sent to the controller. A job
-    // sends its lines as "N<line> ..." and a program may comment it.
-    public static bool IsParkCommand(string line)
+    // $PARK and $SAFEZ: ncSender's own commands, never sent to the controller.
+    // A job sends its lines as "N<line> ..." and a program may comment them.
+    public static bool IsParkCommand(string line) => IsOwnCommand(line, "$PARK");
+
+    public static bool IsSafeZCommand(string line) => IsOwnCommand(line, "$SAFEZ");
+
+    private static bool IsOwnCommand(string line, string name)
     {
         var bare = NNumberRegex().Replace(line.Trim(), "");
-        bare = InlineCommentRegex().Replace(bare, "");
-        var semi = bare.IndexOf(';');
-        if (semi >= 0) bare = bare[..semi];
-        return bare.Trim().Equals("$PARK", StringComparison.OrdinalIgnoreCase);
+        return StripComments(bare).Trim().Equals(name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The units the line leaves the parser in: "G20", "G21", or null when it
+    // sets neither. $ lines never change them, even ones holding G20 like a
+    // jog ($J=G20 ...) or a startup block ($N0=G20).
+    public static string? UnitsWord(string line)
+    {
+        var code = line.TrimStart();
+        if (code.StartsWith('$')) return null;
+        string? units = null;
+        foreach (Match m in UnitsWordRegex().Matches(StripComments(code)))
+            units = m.Groups[1].Value == "0" ? "G20" : "G21";
+        return units;
+    }
+
+    private static string StripComments(string line)
+    {
+        var code = InlineCommentRegex().Replace(line, "");
+        var semi = code.IndexOf(';');
+        return semi >= 0 ? code[..semi] : code;
     }
 
     [GeneratedRegex(@"\([^)]*\)")]
     private static partial Regex InlineCommentRegex();
+
+    [GeneratedRegex(@"(?<![A-Z])G0*2([01])(?![\d.])", RegexOptions.IgnoreCase)]
+    private static partial Regex UnitsWordRegex();
 
     public static FirmwareSettingParseResult ParseFirmwareSetting(string line)
     {
