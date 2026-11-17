@@ -157,7 +157,7 @@ public partial class CncController : ICncController
 
     public async Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default)
     {
-        if (IsConnected || _isConnecting)
+        if (IsConnected || _isConnecting || _transport is not null)
         {
             _logger.LogInformation("Already connected or connecting to CNC controller");
             return;
@@ -181,6 +181,14 @@ public partial class CncController : ICncController
             transport.LineReceived += HandleIncomingData;
             transport.ConnectionLost += OnConnectionLost;
 
+            // A network controller greets as the connection opens, before the
+            // open call returns, and not again after the soft reset below.
+            _hasReceivedGreeting = false;
+            _greetingMessage = null;
+            _activeProtocol = null;
+            _translator = null;
+            _transport = transport;
+
             try
             {
                 // Opening a serial port is synchronous and can block for good
@@ -196,13 +204,18 @@ public partial class CncController : ICncController
             {
                 transport.LineReceived -= HandleIncomingData;
                 transport.ConnectionLost -= OnConnectionLost;
+                if (_transport == transport) _transport = null;
+                StopPolling();
                 // A transport stuck in its open call can block its dispose too.
                 _ = transport.DisposeAsync().AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
                 HandleConnectionError(ex);
                 throw;
             }
 
-            _transport = transport;
+            // Disconnected while opening.
+            if (_transport != transport)
+                return;
+
             OnConnectionEstablished(type);
         }
         finally
@@ -254,10 +267,6 @@ public partial class CncController : ICncController
         _lastDisconnectLog = 0;
         _isVerifying = true;
         _hasReceivedFirstStatus = false;
-        _hasReceivedGreeting = false;
-        _greetingMessage = null;
-        _activeProtocol = null;
-        _translator = null;
 
         EmitConnectionStatus("verifying", false);
 
