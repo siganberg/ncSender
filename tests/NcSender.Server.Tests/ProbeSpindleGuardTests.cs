@@ -6,8 +6,8 @@ using Moq;
 
 namespace NcSender.Server.Tests;
 
-// A probe in the spindle must never turn. M3/M4 is refused while the loaded
-// tool is a probe, from every source; in a job it stops the job.
+// A probe, drag knife or pen in the spindle must never turn. M3/M4 is refused
+// while one is loaded, from every source; in a job it stops the job.
 public class ProbeSpindleGuardTests
 {
     private static (NcSender.Server.CommandProcessor.PluginCommandProcessor Processor, List<int> PluginCalls)
@@ -47,6 +47,8 @@ public class ProbeSpindleGuardTests
         tools.Setup(t => t.GetAllAsync()).ReturnsAsync(new List<ToolInfo>
         {
             new() { Id = 1, ToolId = 1, ToolNumber = 1, Type = "flat" },
+            new() { Id = 5, ToolId = 5, ToolNumber = 5, Type = "drag-knife" },
+            new() { Id = 6, ToolId = 6, ToolNumber = 6, Type = "Pen" },
             new() { Id = 99, ToolId = 99, ToolNumber = 99, Type = "probe" },
         });
 
@@ -112,6 +114,63 @@ public class ProbeSpindleGuardTests
     [InlineData("G0 X10 (M3)", 99)]   // only in a comment
     [InlineData("G0 X10 ; M4", 99)]
     public async Task Other_commands_pass(string command, int tool)
+    {
+        var ms = new MachineState { Status = "Idle", Tool = tool, MPos = "0,0,0", WCO = "0,0,0" };
+        var (processor, _) = CreateProcessor(ms);
+
+        var result = await processor.ProcessAsync(command, Ctx(ms));
+
+        Assert.True(result.ShouldContinue);
+    }
+
+    [Theory]
+    [InlineData(5, "M3 S10000")]   // drag knife
+    [InlineData(5, "M4")]
+    [InlineData(6, "M03 S1000")]   // pen (set up as "Pen": the guard ignores case)
+    [InlineData(6, "S12000 M3")]
+    public async Task Spindle_start_is_refused_with_a_drag_knife_or_pen_loaded(int tool, string command)
+    {
+        var ms = new MachineState { Status = "Idle", Tool = tool, MPos = "0,0,0", WCO = "0,0,0" };
+        var (processor, calls) = CreateProcessor(ms);
+
+        var result = await processor.ProcessAsync(command, Ctx(ms));
+
+        Assert.False(result.ShouldContinue);
+        Assert.Null(result.Error);
+        Assert.Empty(calls);
+    }
+
+    [Theory]
+    [InlineData(5, "drag knife")]
+    [InlineData(6, "pen")]
+    public async Task Spindle_start_with_a_drag_knife_or_pen_loaded_stops_the_job(int tool, string label)
+    {
+        var ms = new MachineState { Status = "Run", Tool = tool, MPos = "0,0,0", WCO = "0,0,0" };
+        var (processor, _) = CreateProcessor(ms);
+
+        var result = await processor.ProcessAsync("M3 S10000", Ctx(ms, "job"));
+
+        Assert.False(result.ShouldContinue);
+        Assert.Equal($"T{tool} is a {label}, the spindle can't turn", result.Error);
+    }
+
+    [Fact]
+    public async Task Spindle_start_after_a_queued_change_to_a_pen_is_refused()
+    {
+        var ms = new MachineState { Status = "Idle", Tool = 1, MPos = "0,0,0", WCO = "0,0,0" };
+        var (processor, _) = CreateProcessor(ms, pluginsLoaded: false);
+
+        await processor.ProcessAsync("M6 T6", Ctx(ms));
+        var result = await processor.ProcessAsync("M3 S10000", Ctx(ms));
+
+        Assert.False(result.ShouldContinue);
+    }
+
+    [Theory]
+    [InlineData("M5", 5)]
+    [InlineData("M30", 6)]
+    [InlineData("G1 X10 F500 (M3)", 5)]
+    public async Task Other_commands_pass_with_a_drag_knife_or_pen_loaded(string command, int tool)
     {
         var ms = new MachineState { Status = "Idle", Tool = tool, MPos = "0,0,0", WCO = "0,0,0" };
         var (processor, _) = CreateProcessor(ms);

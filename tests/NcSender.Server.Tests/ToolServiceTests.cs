@@ -49,6 +49,27 @@ public class ToolServiceTests : IDisposable
             filePath);
     }
 
+    [Theory]
+    [InlineData("drag-knife")]
+    [InlineData("pen")]
+    public async Task AddTool_NonSpinningTypes_AreAccepted(string type)
+    {
+        var svc = CreateService();
+
+        var result = await svc.AddAsync(new ToolInfo { Name = "Marker", ToolNumber = 2, Type = type, Diameter = 0.5 });
+
+        Assert.Equal(type, result.Type);
+    }
+
+    [Fact]
+    public async Task AddTool_UnknownType_IsRefused()
+    {
+        var svc = CreateService();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            svc.AddAsync(new ToolInfo { Name = "Laser", ToolNumber = 2, Type = "laser", Diameter = 0.1 }));
+    }
+
     [Fact]
     public async Task AddTool_ValidTool_Succeeds()
     {

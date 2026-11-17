@@ -232,15 +232,9 @@
             <div class="form-group">
               <label class="form-label required">Tool Type</label>
               <select class="form-select" v-model="toolForm.type" required>
-                <option value="flat">Flat End Mill</option>
-                <option value="ball">Ball End Mill</option>
-                <option value="v-bit">V-Bit</option>
-                <option value="drill">Drill</option>
-                <option value="chamfer">Chamfer</option>
-                <option value="surfacing">Surfacing</option>
-                <option value="thread-mill">Thread Mill</option>
-                <option value="probe">Probe</option>
+                <option v-for="t in TOOL_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
+              <div v-if="neverSpins(toolForm.type)" class="form-note">The spindle never starts with this tool loaded: M3/M4 is refused, and a job that starts the spindle stops.</div>
             </div>
 
             <!-- Diameter and TLO -->
@@ -257,6 +251,7 @@
                   required
                 >
                 <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
+                <div v-else-if="diameterNote" class="form-note">{{ diameterNote }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
@@ -522,6 +517,7 @@ import InfoTooltip from '../../components/InfoTooltip.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
+import { TOOL_TYPES, toolTypeLabel, neverSpins } from './tool-types';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -907,19 +903,13 @@ const loadToolsInfo = async () => {
 };
 
 
-const formatType = (type: string) => {
-  const typeMap: Record<string, string> = {
-    'flat': 'Flat End Mill',
-    'ball': 'Ball End Mill',
-    'v-bit': 'V-Bit',
-    'drill': 'Drill',
-    'chamfer': 'Chamfer',
-    'surfacing': 'Surfacing',
-    'probe': 'Probe',
-    'thread-mill': 'Thread Mill'
-  };
-  return typeMap[type] || type;
-};
+const formatType = toolTypeLabel;
+
+const diameterNote = computed(() => {
+  if (toolForm.value.type === 'pen') return 'Line width';
+  if (toolForm.value.type === 'drag-knife') return 'Twice the blade offset';
+  return '';
+});
 
 const toggleSort = async (field: SortField) => {
   if (sortBy.value === field) {
@@ -2074,6 +2064,12 @@ onMounted(async () => {
 
 .form-error {
   color: var(--color-error);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.form-note {
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
   margin-top: 4px;
 }
