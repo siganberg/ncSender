@@ -75,3 +75,33 @@ body.theme-light .spinner {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* No spinner arrows on number fields: too small to hit on a touchscreen. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Every menu looks like QuickCut's: the field's own colors, a soft chevron
+   on the right instead of the browser's arrow, and a themed open list. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2393a2b4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 10px 6px !important;
+  padding-right: 32px !important;
+  cursor: pointer;
+}
+select:disabled { cursor: not-allowed; }
+select option,
+select optgroup {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}

@@ -198,7 +198,7 @@
                 <div v-if="toolIdError" class="form-error-inline">{{ toolIdError }}</div>
               </div>
               <div v-if="maxToolCount > 0 || probeSlot" class="form-group">
-                <label class="form-label">Assigned To Slot</label>
+                <label class="form-label">Assign to Magazine</label>
                 <select class="form-select" v-model="toolForm.toolNumber">
                   <option :value="null">None (Not in magazine)</option>
                   <option
