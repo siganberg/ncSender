@@ -1302,8 +1302,11 @@ public partial class CncController : ICncController
             // Try greeting detection — selects protocol handler and starts polling
             if (!_hasReceivedGreeting)
                 TryDetectGreeting(trimmedData);
-            else if (_translator is not null && _activeProtocol?.MatchesGreeting(trimmedData) == true)
-                _translator.Reset();
+            else if (_activeProtocol?.MatchesGreeting(trimmedData) == true)
+            {
+                _translator?.Reset();
+                SettleUnansweredLines("controller reset");
+            }
 
             // Delegate to active protocol handler for controller-specific messages
             if (_activeProtocol is not null && _activeProtocol.TryHandleData(trimmedData, _lastStatus, out var stateChanged))
@@ -2037,6 +2040,29 @@ public partial class CncController : ICncController
         }
     }
 
+    // A greeting mid-session means the controller reset (leaving check mode,
+    // a reset button, a soft reset): it dropped every line it had not answered,
+    // including any written while it restarted. Their replies will never come,
+    // so settle them now or the send-and-wait queue stalls on the first one.
+    // Lines not written yet stay queued and go out to the restarted controller.
+    private void SettleUnansweredLines(string reason)
+    {
+        List<CommandEntry> lost;
+        lock (_replyLock)
+        {
+            lost = _replySlots.OfType<CommandEntry>().Where(e => !e.Settled).Distinct().ToList();
+            _replySlots.Clear();
+            foreach (var entry in lost) entry.Settled = true;
+        }
+        foreach (var entry in lost)
+        {
+            _logger.LogWarning("No reply for {Command}: {Reason}", entry.RawCommand, reason);
+            if (!entry.Internal) _pendingCommands.TryRemove(entry.Id, out _);
+            entry.Tcs.TrySetCanceled();
+            if (!entry.Internal) EmitCommandAck(entry, "flushed", reason);
+        }
+    }
+
     private void DropReplySlots(CommandEntry entry)
     {
         lock (_replyLock)
@@ -2298,6 +2324,17 @@ public partial class CncController : ICncController
         if (done != sub.Tcs.Task)
         {
             DropReplySlots(sub);
+            return null;
+        }
+        // The controller reset before answering (SettleUnansweredLines): the
+        // command it belongs to is flushed with it, like a soft reset does.
+        if (sub.Tcs.Task.IsCanceled)
+        {
+            if (parent.Tcs.TrySetCanceled())
+            {
+                _pendingCommands.TryRemove(parent.Id, out _);
+                EmitCommandAck(parent, "flushed", "controller reset");
+            }
             return null;
         }
         return await sub.Tcs.Task;
