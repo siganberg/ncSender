@@ -45,377 +45,257 @@
       </div>
     </div>
 
-    <div v-else class="plugins-content">
-      <div class="plugins-header">
-        <div class="header-info">
-          <h3>Installed Plugins</h3>
-          <span class="plugin-count">{{ plugins.length }} plugin{{ plugins.length !== 1 ? 's' : '' }}</span>
+    <div v-else class="plugins-content pm">
+      <div class="pm-head">
+        <div class="pm-tabs">
+          <button
+            v-for="tb in tabs"
+            :key="tb.id"
+            class="pm-tab"
+            :class="{ active: activeTab === tb.id }"
+            @click="setTab(tb.id)"
+          >
+            {{ tb.label }}
+            <span class="pm-tab-count" :class="{ 'pm-tab-count--alert': tb.id === 'updates' && tb.count > 0 && activeTab !== 'updates' }">{{ tb.count }}</span>
+          </button>
         </div>
-        <button class="btn btn-primary" @click="openInstallDialog">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-          </svg>
-          Install Plugin
-        </button>
+        <div class="pm-head-actions">
+          <button
+            v-if="activeTab === 'updates' && updatableEntries.length > 0"
+            class="btn btn-primary"
+            :disabled="!!updatingAll"
+            @click="updateAll"
+          >
+            {{ updatingAll ? `Updating ${updatingAll.done} of ${updatingAll.total}…` : 'Update all' }}
+          </button>
+          <button class="btn btn-secondary pm-zip" @click="openInstallDialog">Install from a ZIP file</button>
+        </div>
       </div>
 
-      <div class="plugins-scrollable">
-        <div v-if="plugins.length === 0 && !loading" class="empty-state">
-          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-2-3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5"/>
-          </svg>
-          <p>No plugins installed</p>
-          <p class="empty-hint">Install a plugin to extend ncSender functionality</p>
+      <div class="pm-filters">
+        <input
+          v-model="search"
+          type="text"
+          class="url-input pm-search"
+          placeholder="Search plugins..."
+        />
+        <div class="pm-chips">
+          <button
+            v-for="chip in categoryChips"
+            :key="chip.id"
+            class="pm-chip"
+            :class="{ active: activeCategory === chip.id }"
+            @click="activeCategory = chip.id"
+          >
+            {{ chip.label }} · {{ chip.count }}
+          </button>
         </div>
+      </div>
 
-        <div v-else class="plugins-container">
-        <!-- Sortable Plugins Section -->
-        <div v-if="sortablePlugins.length > 0" class="plugins-section">
-          <h4 class="section-header">Event-based Plugins{{ allowPriorityReordering ? ' (Sortable)' : '' }}</h4>
-          <div class="plugins-table sortable">
+      <div class="pm-split">
+        <div class="pm-list">
+          <div v-if="activeTab === 'browse' && loadingRegistry" class="loading-registry">
+            <div class="loading-spinner"></div>
+            <p>Loading plugin registry...</p>
+          </div>
+          <div v-else-if="activeTab === 'browse' && registryError" class="error">
+            {{ registryError }}
+          </div>
+          <div v-else-if="visibleEntries.length === 0 && !loading" class="empty-state">
+            <p>{{ emptyMessage }}</p>
+            <p v-if="activeTab === 'installed' && plugins.length === 0" class="empty-hint">Install a plugin to extend ncSender functionality</p>
+          </div>
+
+          <template v-else>
             <div
-              v-for="(plugin, index) in sortablePlugins"
-              :key="plugin.id"
-              class="plugin-row"
-              :draggable="allowPriorityReordering"
-              v-on="allowPriorityReordering ? {
-                dragstart: (e) => handleDragStart(plugin.id, e),
+              v-for="(entry, index) in visibleEntries"
+              :key="entry.id"
+              class="pm-row"
+              :class="{ selected: selectedEntry?.id === entry.id, 'pm-row--off': entry.installed && !entry.installed.enabled }"
+              :draggable="canReorder && entry.sortable"
+              @click="selectedId = entry.id"
+              v-on="canReorder && entry.sortable ? {
+                dragstart: (e) => handleDragStart(entry.id, e),
                 dragenter: handleDragEnter,
                 dragover: handleDragOver,
                 drop: (e) => handleDrop(index, e),
                 dragend: handleDragEnd
               } : {}"
             >
-              <div v-if="allowPriorityReordering" class="drag-handle">
+              <div v-if="canReorder && entry.sortable" class="drag-handle" title="Drag to change the run order">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0M7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0m3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
                 </svg>
               </div>
-              <div v-else class="drag-handle-placeholder"></div>
 
-              <div class="plugin-icon-cell">
-                <img
-                  v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
-                  :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
-                  :alt="`${plugin.name} icon`"
-                  class="plugin-icon-small"
-                  @error="brokenIcons[plugin.id] = true"
+              <img
+                v-if="entryIcon(entry)"
+                :src="entryIcon(entry) || undefined"
+                alt=""
+                class="pm-icon"
+                @error="onEntryIconError(entry)"
+              />
+              <div v-else class="pm-icon pm-icon--letters">{{ entryInitials(entry) }}</div>
+
+              <div class="pm-info">
+                <div class="pm-name">
+                  <span class="pm-name-text">{{ entry.name }}</span>
+                  <span class="pm-tag" :class="{ 'pm-tag--official': entry.official }">{{ entry.official ? 'Official' : 'Community' }}</span>
+                  <span v-if="entry.beta" class="pm-tag">Beta</span>
+                  <span v-if="entryNotRunning(entry)" class="status-badge status-not-running">Not running</span>
+                </div>
+                <div class="pm-meta">
+                  <span v-if="entry.author">{{ entry.official ? 'ncSender' : entry.author }}</span>
+                  <span>v{{ entry.installed ? entry.installed.version : entry.latest }}</span>
+                  <button
+                    v-if="entry.installed && entry.hasUpdate && activeTab !== 'updates'"
+                    class="pm-update-pill"
+                    @click.stop="showUpdateInfo(entry.installed)"
+                  >
+                    {{ updateToLabel(entry.latest) }}
+                  </button>
+                  <span v-if="entry.installed && activeTab === 'browse'">Installed</span>
+                </div>
+                <div v-if="entry.description" class="pm-desc">{{ entry.description }}</div>
+              </div>
+
+              <div class="pm-actions" @click.stop>
+                <!-- Updates tab: the update is the one action. Elsewhere it is a
+                     pill by the version, and the switch has this side to itself. -->
+                <button
+                  v-if="entry.installed && activeTab === 'updates'"
+                  class="btn btn-primary pm-btn"
+                  @click="showUpdateInfo(entry.installed)"
+                >
+                  {{ updateToLabel(entry.latest) }}
+                </button>
+                <ToggleSwitch
+                  v-else-if="entry.installed"
+                  :model-value="entry.installed.enabled"
+                  :disabled="toggling === entry.id"
+                  @update:model-value="togglePlugin(entry.installed)"
                 />
-                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32">
-                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
-                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
-                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
-                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
-                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
-                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
-                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                </svg>
-              </div>
-
-              <div class="plugin-info-cell">
-                <div class="plugin-name-row">
-                  <div class="plugin-name-text">{{ plugin.name }}</div>
-                  <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
-                  <span v-else class="status-badge status-disabled">Disabled</span>
-                  <span v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="status-badge status-not-running">Not running</span>
-                </div>
-                <div class="plugin-meta-row">
-                  <span class="plugin-category-text">{{ plugin.category }}</span>
-                  <span
-                    class="plugin-version-text"
-                    :class="{ 'has-update': plugin.updateInfo?.hasUpdate, 'clickable': plugin.repository }"
-                    @click="plugin.repository && showUpdateInfo(plugin)"
-                  >
-                    v{{ plugin.version }}
-                  </span>
-                  <span
-                    v-if="plugin.updateInfo?.hasUpdate"
-                    class="update-badge"
-                    :title="`v${plugin.updateInfo.latestVersion} available — click to update`"
-                    @click="showUpdateInfo(plugin)"
-                  >
-                    Update available
-                  </span>
-                  <span v-if="plugin.installedAt" class="plugin-installed-text">
-                    Installed {{ formatDate(plugin.installedAt) }}
-                  </span>
-                </div>
-                <div v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="plugin-run-problem">
-                  <span>{{ plugin.runState === 'quarantined' ? 'Not running: ncSender stopped twice while loading it. Jobs and tool changes are blocked until it runs or is disabled.' : `Not running: it failed to load (${plugin.runError}). Jobs and tool changes are blocked until it runs or is disabled.` }}</span>
-                  <button class="plugin-retry-btn" :disabled="retrying === plugin.id" @click.stop="retryPlugin(plugin.id)">Retry</button>
-                </div>
-              </div>
-
-              <div class="plugin-actions-cell">
-                <button
-                  v-if="plugin.hasConfig"
-                  class="btn-icon"
-                  @click="openConfigPanel(plugin)"
-                  title="Configure"
-                  :disabled="!plugin.enabled || !plugin.loaded"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
-                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
-                  </svg>
+                <button v-else-if="entry.blocked" class="btn btn-secondary pm-btn" disabled>
+                  {{ needsLabel(entry.minApp) }}
                 </button>
-
                 <button
-                  class="btn-icon"
-                  @click="togglePlugin(plugin)"
-                  :title="plugin.enabled ? 'Disable' : 'Enable'"
-                  :disabled="toggling === plugin.id"
+                  v-else
+                  class="btn btn-primary pm-btn"
+                  :disabled="installing"
+                  @click="installFromRegistry(entry.registry)"
                 >
-                  <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/>
-                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-                  </svg>
-                  <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                  </svg>
-                </button>
-
-                <button
-                  class="btn-icon btn-icon-danger"
-                  @click="confirmUninstall(plugin)"
-                  title="Uninstall"
-                  :disabled="uninstalling === plugin.id"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                  </svg>
+                  Install
                 </button>
               </div>
             </div>
-          </div>
+          </template>
         </div>
 
+        <aside class="pm-detail">
+          <p v-if="!selectedEntry" class="pm-detail-empty">Pick a plugin to see its details.</p>
+          <template v-else>
+            <div class="pm-detail-head">
+              <img
+                v-if="entryIcon(selectedEntry)"
+                :src="entryIcon(selectedEntry) || undefined"
+                alt=""
+                class="pm-icon pm-icon--large"
+                @error="onEntryIconError(selectedEntry)"
+              />
+              <div v-else class="pm-icon pm-icon--large pm-icon--letters">{{ entryInitials(selectedEntry) }}</div>
+              <div class="pm-info">
+                <h3>{{ selectedEntry.name }}</h3>
+                <div class="pm-meta"><span v-if="selectedEntry.author">{{ selectedEntry.official ? 'ncSender' : selectedEntry.author }}</span></div>
+              </div>
+            </div>
+            <div class="pm-name">
+              <span class="pm-tag" :class="{ 'pm-tag--official': selectedEntry.official }">{{ selectedEntry.official ? 'Official' : 'Community' }}</span>
+              <span v-if="selectedEntry.beta" class="pm-tag">Beta</span>
+            </div>
+            <p v-if="selectedEntry.description" class="pm-detail-desc">{{ selectedEntry.description }}</p>
 
-        <!-- Other Plugins Section -->
-        <div v-if="otherPlugins.length > 0" class="plugins-section">
-          <h4 class="section-header">Other Plugins</h4>
-          <div class="plugins-table">
-            <div
-              v-for="plugin in otherPlugins"
-              :key="plugin.id"
-              class="plugin-row"
+            <div v-if="entryNotRunning(selectedEntry) && selectedEntry.installed" class="plugin-run-problem">
+              <span>{{ selectedEntry.installed.runState === 'quarantined' ? 'Not running: ncSender stopped twice while loading it. Jobs and tool changes are blocked until it runs or is disabled.' : `Not running: it failed to load (${selectedEntry.installed.runError}). Jobs and tool changes are blocked until it runs or is disabled.` }}</span>
+              <button class="plugin-retry-btn" :disabled="retrying === selectedEntry.id" @click="retryPlugin(selectedEntry.id)">Retry</button>
+            </div>
+
+            <template v-if="selectedEntry.installed">
+              <button
+                v-if="selectedEntry.hasUpdate"
+                class="btn btn-primary pm-wide"
+                @click="showUpdateInfo(selectedEntry.installed)"
+              >
+                {{ updateToLabel(selectedEntry.latest) }}
+              </button>
+              <div class="pm-detail-buttons">
+                <button
+                  v-if="selectedEntry.installed.hasConfig"
+                  class="btn btn-primary"
+                  :disabled="!selectedEntry.installed.enabled || !selectedEntry.installed.loaded"
+                  @click="openConfigPanel(selectedEntry.installed)"
+                >
+                  Settings
+                </button>
+                <button
+                  v-if="selectedEntry.installed.repository && !selectedEntry.hasUpdate"
+                  class="btn btn-secondary"
+                  @click="showUpdateInfo(selectedEntry.installed)"
+                >
+                  Release Notes
+                </button>
+                <button
+                  class="btn btn-secondary"
+                  :disabled="uninstalling === selectedEntry.id"
+                  @click="confirmUninstall(selectedEntry.installed)"
+                >
+                  Remove
+                </button>
+              </div>
+            </template>
+            <button v-else-if="selectedEntry.blocked" class="btn btn-secondary pm-wide" disabled>
+              {{ needsLabel(selectedEntry.minApp) }}
+            </button>
+            <button
+              v-else
+              class="btn btn-primary pm-wide"
+              :disabled="installing"
+              @click="installFromRegistry(selectedEntry.registry)"
             >
-              <div class="drag-handle-placeholder"></div>
+              Install
+            </button>
 
-              <div class="plugin-icon-cell">
-                <img
-                  v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
-                  :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
-                  :alt="`${plugin.name} icon`"
-                  class="plugin-icon-small"
-                  @error="brokenIcons[plugin.id] = true"
+            <div class="pm-facts">
+              <div v-if="selectedEntry.installed" class="pm-fact">
+                <span>Enabled</span>
+                <ToggleSwitch
+                  :model-value="selectedEntry.installed.enabled"
+                  :disabled="toggling === selectedEntry.id"
+                  @update:model-value="togglePlugin(selectedEntry.installed)"
                 />
-                <svg v-else class="plugin-icon-placeholder" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32">
-                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
-                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
-                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
-                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
-                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
-                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
-                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                </svg>
               </div>
-
-              <div class="plugin-info-cell">
-                <div class="plugin-name-row">
-                  <div class="plugin-name-text">{{ plugin.name }}</div>
-                  <span v-if="plugin.enabled" class="status-badge status-enabled">Enabled</span>
-                  <span v-else class="status-badge status-disabled">Disabled</span>
-                  <span v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="status-badge status-not-running">Not running</span>
-                </div>
-                <div class="plugin-meta-row">
-                  <span class="plugin-category-text">{{ plugin.category }}</span>
-                  <span
-                    class="plugin-version-text"
-                    :class="{ 'has-update': plugin.updateInfo?.hasUpdate, 'clickable': plugin.repository }"
-                    @click="plugin.repository && showUpdateInfo(plugin)"
-                  >
-                    v{{ plugin.version }}
-                  </span>
-                  <span
-                    v-if="plugin.updateInfo?.hasUpdate"
-                    class="update-badge"
-                    :title="`v${plugin.updateInfo.latestVersion} available — click to update`"
-                    @click="showUpdateInfo(plugin)"
-                  >
-                    Update available
-                  </span>
-                  <span v-if="plugin.installedAt" class="plugin-installed-text">
-                    Installed {{ formatDate(plugin.installedAt) }}
-                  </span>
-                </div>
-                <div v-if="plugin.enabled && plugin.runState && plugin.runState !== 'running'" class="plugin-run-problem">
-                  <span>{{ plugin.runState === 'quarantined' ? 'Not running: ncSender stopped twice while loading it. Jobs and tool changes are blocked until it runs or is disabled.' : `Not running: it failed to load (${plugin.runError}). Jobs and tool changes are blocked until it runs or is disabled.` }}</span>
-                  <button class="plugin-retry-btn" :disabled="retrying === plugin.id" @click.stop="retryPlugin(plugin.id)">Retry</button>
-                </div>
+              <div v-if="selectedEntry.installed" class="pm-fact">
+                <span>Installed</span>
+                <b>v{{ selectedEntry.installed.version }}<template v-if="selectedEntry.installed.installedAt"> · {{ formatDate(selectedEntry.installed.installedAt) }}</template></b>
               </div>
-
-              <div class="plugin-actions-cell">
-                <button
-                  v-if="plugin.hasConfig"
-                  class="btn-icon"
-                  @click="openConfigPanel(plugin)"
-                  title="Configure"
-                  :disabled="!plugin.enabled || !plugin.loaded"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
-                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
-                  </svg>
-                </button>
-
-                <button
-                  class="btn-icon"
-                  @click="togglePlugin(plugin)"
-                  :title="plugin.enabled ? 'Disable' : 'Enable'"
-                  :disabled="toggling === plugin.id"
-                >
-                  <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/>
-                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-                  </svg>
-                  <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                  </svg>
-                </button>
-
-                <button
-                  class="btn-icon btn-icon-danger"
-                  @click="confirmUninstall(plugin)"
-                  title="Uninstall"
-                  :disabled="uninstalling === plugin.id"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                  </svg>
-                </button>
+              <div v-if="selectedEntry.latest" class="pm-fact">
+                <span>Newest</span>
+                <b>v{{ selectedEntry.latest }}</b>
+              </div>
+              <div class="pm-fact">
+                <span>Category</span>
+                <b>{{ categoryLabel(selectedEntry.category) }}</b>
+              </div>
+              <div v-if="selectedEntry.minApp" class="pm-fact">
+                <span>Needs ncSender</span>
+                <b>{{ selectedEntry.minApp }}</b>
+              </div>
+              <div v-if="selectedEntry.repository" class="pm-fact">
+                <span>Project page</span>
+                <a :href="selectedEntry.repository" target="_blank" rel="noopener">{{ selectedEntry.repository.replace(/^https?:\/\//, '') }}</a>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Keep old card view for reference - will remove after testing -->
-        <div v-if="false" class="plugin-card-old">
-          <div class="plugin-thumbnail">
-            <img
-              v-if="plugin.hasIcon && !brokenIcons[plugin.id]"
-              :src="`${api.baseUrl}/api/plugins/${plugin.id}/icon`"
-              :alt="`${plugin.name} icon`"
-              class="plugin-icon"
-              @error="brokenIcons[plugin.id] = true"
-            />
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 128 140">
-              <path d="M62.54 4.84L10.38 31.73c-1.14.67-1.47 1.67-1.46 3.12l.1 1.81L64.09 64.9l54.94-27.79s.06-.28.06-1.26c0 0-.05-1.29-.34-1.89c-.32-.68-1-1.29-1.44-1.66c-1.17-.97-2.34-1.83-4.33-2.95C84.45 13.22 65.69 4.91 65.69 4.91c-1.21-.45-2.21-.61-3.15-.07z" fill="#dea66c"/>
-              <path d="M9.74 96.16c3.04 2.01 8.59 4.65 14.2 7.69c13.04 7.06 29.52 15.64 37.72 19.01c1.11.46 1.77.68 2.54.72c.57.03 1.51-.35 1.51-.35s-1.53-55.19-1.62-58.34c-.09-3.08-1.38-4.1-2.52-4.84c-1.78-1.14-5.64-2.92-5.64-2.92s-13.52-6.72-27.02-13.8c-6.42-3.37-11.84-6.82-17.67-9.66c-1.07-.51-2.33.13-2.33 1.33v59.8c0 .57.35 1.05.83 1.36z" fill="#b38251"/>
-              <path d="M117.58 96.51L65.82 123.2c-.83.43-1.82-.17-1.82-1.11l.09-57.18c0-.55-.17-1.76-.34-2.24c-.47-1.4.55-1.96 1.01-2.19l51.34-26.44c1.36-.7 2.99.29 2.99 1.82v58.19c0 1.03-.58 1.98-1.51 2.46z" fill="#966239"/>
-              <path d="M94.46 47.59S66.09 62.1 65.63 63.33c-.46 1.22 22.26-9.7 24.92-11.07c3.01-1.55 26.65-14.19 26.65-15.58c.01-1.14-22.74 10.91-22.74 10.91z" opacity=".5" fill="#212121"/>
-            </svg>
-          </div>
-
-          <div class="plugin-info">
-            <div class="plugin-title-row">
-              <h4 class="plugin-name">{{ plugin.name }}</h4>
-              <span class="plugin-version">v{{ plugin.version }}</span>
-              <span v-if="plugin.loaded" class="plugin-status plugin-status--loaded">Loaded</span>
-              <span v-else class="plugin-status plugin-status--unloaded">Not Loaded</span>
-            </div>
-            <p v-if="plugin.author" class="plugin-author">by {{ plugin.author }}</p>
-            <div class="plugin-meta">
-              <span v-if="plugin.loadedAt" class="meta-item">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
-                  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
-                </svg>
-                Loaded {{ formatTime(plugin.loadedAt) }}
-              </span>
-              <span v-if="plugin.installedAt" class="meta-item">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M12.643 15C13.979 15 15 13.845 15 12.5V5H1v7.5C1 13.845 2.021 15 3.357 15zM5.5 7h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1M.8 1a.8.8 0 0 0-.8.8V3a.8.8 0 0 0 .8.8h14.4A.8.8 0 0 0 16 3V1.8a.8.8 0 0 0-.8-.8z"/>
-                </svg>
-                Installed {{ formatTime(plugin.installedAt) }}
-              </span>
-            </div>
-          </div>
-
-          <div class="plugin-actions">
-              <button
-                class="btn-icon"
-                @click="openConfigPanel(plugin)"
-                title="Configure"
-                :disabled="!plugin.enabled || !plugin.loaded || !plugin.hasConfig"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
-                  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
-                </svg>
-              </button>
-              <button
-                class="btn-icon"
-                @click="reloadPlugin(plugin.id)"
-                title="Reload"
-                :disabled="!plugin.enabled || !plugin.loaded || reloading === plugin.id"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
-                  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
-                </svg>
-              </button>
-              <button
-                class="btn-icon"
-                @click="togglePlugin(plugin)"
-                :title="plugin.enabled ? 'Disable' : 'Enable'"
-                :disabled="toggling === plugin.id"
-              >
-                <!-- Connected plug (enabled) -->
-                <svg v-if="plugin.enabled" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <!-- Socket -->
-                  <rect x="6" y="2" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                  <!-- Plug pins in socket -->
-                  <line x1="9" y1="6" x2="9" y2="2" stroke="currentColor" stroke-width="2"/>
-                  <line x1="15" y1="6" x2="15" y2="2" stroke="currentColor" stroke-width="2"/>
-                  <!-- Plug body -->
-                  <rect x="7" y="10" width="10" height="6" rx="1" fill="currentColor"/>
-                  <!-- Cable -->
-                  <path d="M10 16 L10 22" stroke="currentColor" stroke-width="2" fill="none"/>
-                  <path d="M14 16 L14 22" stroke="currentColor" stroke-width="2" fill="none"/>
-                </svg>
-                <!-- Disconnected plug (disabled) -->
-                <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <!-- Socket -->
-                  <rect x="6" y="2" width="12" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                  <!-- Plug body (separated) -->
-                  <rect x="7" y="12" width="10" height="6" rx="1" fill="currentColor"/>
-                  <!-- Plug pins (not connected) -->
-                  <line x1="10" y1="12" x2="10" y2="10" stroke="currentColor" stroke-width="2"/>
-                  <line x1="14" y1="12" x2="14" y2="10" stroke="currentColor" stroke-width="2"/>
-                  <!-- Cable -->
-                  <path d="M10 18 L10 22" stroke="currentColor" stroke-width="2" fill="none"/>
-                  <path d="M14 18 L14 22" stroke="currentColor" stroke-width="2" fill="none"/>
-                </svg>
-              </button>
-              <button
-                class="btn-icon btn-icon-danger"
-                @click="confirmUninstall(plugin)"
-                title="Uninstall"
-                :disabled="uninstalling === plugin.id"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                </svg>
-              </button>
-            </div>
-        </div>
-        </div>
+          </template>
+        </aside>
       </div>
     </div>
   </div>
@@ -445,18 +325,17 @@
     />
   </Dialog>
 
-  <!-- Install Plugin Dialog -->
+  <!-- Install Plugin Dialog: the ZIP form, and the progress/result of any install -->
   <Dialog
     v-if="showInstallDialog"
     @close="closeInstallDialog"
     :show-header="false"
-    :size="installing || installSuccess || installCategoryConflict ? 'small' : undefined"
-    :width="!(installing || installSuccess || installCategoryConflict) ? '850px' : undefined"
-    :max-width="!(installing || installSuccess || installCategoryConflict) ? '90vw' : undefined"
-    :height="!(installing || installSuccess || installCategoryConflict) ? '60vh' : undefined"
+    :size="installCompact ? 'small' : undefined"
+    :width="!installCompact ? '700px' : undefined"
+    :max-width="!installCompact ? '90vw' : undefined"
   >
-    <div class="install-dialog" :class="{ 'install-dialog--compact': installing || installSuccess || installCategoryConflict }">
-      <h3>Install Plugin</h3>
+    <div class="install-dialog" :class="{ 'install-dialog--compact': installCompact }">
+      <h3>{{ installMethod === 'zip' ? 'Install from a ZIP file' : 'Install Plugin' }}</h3>
 
       <div v-if="installError && !installCategoryConflict" class="error">
         {{ installError }}
@@ -468,118 +347,18 @@
       </div>
 
       <div v-else-if="installSuccess || installCategoryConflict" class="success-state">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
-        </svg>
         <p class="success-message">
           {{ installCategoryConflict ? 'Plugin installed successfully but not activated. Another plugin in the same category is already active.' : 'Plugin installed successfully!' }}
         </p>
         <button class="btn btn-primary" @click="closeInstallDialog">Done</button>
       </div>
 
+      <div v-else-if="installMethod === 'registry'" class="success-state">
+        <button class="btn btn-primary" @click="closeInstallDialog">Close</button>
+      </div>
+
       <div v-else class="upload-form">
-        <!-- Tab Selector -->
-        <div class="install-tabs">
-          <button
-            :class="['tab-button', { active: installMethod === 'registry' }]"
-            @click="installMethod = 'registry'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
-            </svg>
-            Registry
-          </button>
-          <button
-            :class="['tab-button', { active: installMethod === 'zip' }]"
-            @click="installMethod = 'zip'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
-              <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2"/>
-              <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1z"/>
-            </svg>
-            ZIP
-          </button>
-        </div>
-
-        <!-- Registry -->
-        <div v-if="installMethod === 'registry'" class="install-method-content">
-          <div class="registry-search">
-            <input
-              v-model="registrySearch"
-              type="text"
-              placeholder="Search plugins..."
-              class="url-input"
-            />
-          </div>
-
-          <div v-if="loadingRegistry" class="loading-registry">
-            <div class="loading-spinner"></div>
-            <p>Loading plugin registry...</p>
-          </div>
-
-          <div v-else-if="registryError" class="error">
-            {{ registryError }}
-          </div>
-
-          <div v-else-if="filteredRegistryPlugins.length === 0" class="no-plugins">
-            <p>No plugins found</p>
-          </div>
-
-          <div v-else class="registry-list">
-            <div
-              v-for="plugin in filteredRegistryPlugins"
-              :key="plugin.id"
-              class="registry-plugin"
-            >
-              <div class="registry-plugin-icon">
-                <img
-                  v-if="plugin.iconUrl && !brokenRegistryIcons[plugin.id]"
-                  :src="plugin.iconUrl"
-                  :alt="plugin.name"
-                  @error="handleRegistryIconError(plugin.id)"
-                />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 32 32">
-                  <path fill="#662113" d="M3.5555555555555554 9.777777777777777v11c0 1.815111111111111 0.9715555555555555 2.2079999999999997 0.9715555555555555 2.2079999999999997l10.287999999999998 8.088C16.434666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554L3.5555555555555554 9.777777777777777z"></path>
-                  <path fill="#c1694f" d="M28.444444444444443 9.777777777777777v11c0 1.815111111111111 -0.9448888888888888 2.2079999999999997 -0.9448888888888888 2.2079999999999997s-8.681777777777777 6.8151111111111105 -10.300444444444443 8.088C15.578666666666665 32.346666666666664 16 29.666666666666664 16 29.666666666666664V19.555555555555554l12.444444444444443 -9.777777777777777z"></path>
-                  <path fill="#d99e82" d="M17.145777777777777 0.4444444444444444c-0.6693333333333333 -0.5422222222222222 -1.767111111111111 -0.5422222222222222 -2.437333333333333 0L4.057777777777778 8.914666666666665c-0.6702222222222222 0.5422222222222222 -0.6702222222222222 1.4284444444444444 0 1.9697777777777778l10.68711111111111 8.574222222222222c0.6702222222222222 0.5413333333333333 1.768 0.5413333333333333 2.438222222222222 0l10.75911111111111 -8.648888888888889c0.6702222222222222 -0.5413333333333333 0.6702222222222222 -1.4275555555555555 0 -1.9697777777777778L17.145777777777777 0.4444444444444444z"></path>
-                  <path fill="#d99e82" d="M16 31.777777777777775c-0.4906666666666667 0 -0.8888888888888888 -0.4284444444444444 -0.8888888888888888 -0.9582222222222222V19.328888888888887c0 -0.5297777777777777 0.3982222222222222 -0.9582222222222222 0.8888888888888888 -0.9582222222222222 0.4915555555555556 0 0.8888888888888888 0.4284444444444444 0.8888888888888888 0.9582222222222222v11.490666666666666c0 0.5297777777777777 -0.3973333333333333 0.9582222222222222 -0.8888888888888888 0.9582222222222222z"></path>
-                  <path fill="#99aab5" d="M24.888888888888886 16.74311111111111c0 0.9813333333333334 0.09244444444444444 1.463111111111111 -0.8888888888888888 2.1706666666666665l-2.1946666666666665 1.6693333333333331c-0.9813333333333334 0.7084444444444444 -1.3608888888888888 0.10044444444444445 -1.3608888888888888 -0.8817777777777778v-2.6319999999999997c0 -0.17155555555555554 -0.02311111111111111 -0.35555555555555557 -0.24711111111111111 -0.5404444444444444C17.905777777777775 14.639999999999999 9.008 7.572444444444444 7.386666666666667 6.267555555555555l4.111111111111111 -3.269333333333333c1.1253333333333333 0.8231111111111111 9.558222222222222 7.335111111111111 13.08622222222222 10.11288888888889 0.1751111111111111 0.13866666666666666 0.3048888888888889 0.29155555555555557 0.3048888888888889 0.45866666666666667v3.173333333333333z"></path>
-                  <path fill="#ccd6dd" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.5297777777777777 1.216 -2.5813333333333333 2.0533333333333332c1.622222222222222 1.3048888888888888 10.51911111111111 8.372444444444444 12.810666666666666 10.261333333333333 0.13422222222222221 0.1111111111111111 0.1928888888888889 0.2222222222222222 0.22044444444444444 0.3297777777777778L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                  <path fill="#ccd6dd" d="M24.888888888888886 16.74311111111111v-3.173333333333333c0 -0.1671111111111111 -0.12977777777777777 -0.31911111111111107 -0.30577777777777776 -0.45866666666666667 -3.527111111111111 -2.7777777777777777 -11.959999999999999 -9.289777777777777 -13.085333333333333 -10.11288888888889l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.22755555555555554 0.18133333333333332 0.24711111111111111 0.3688888888888889 0.24711111111111111 0.5404444444444444v4.298666666666667l0.8888888888888888 -0.6764444444444444c0.9813333333333334 -0.7084444444444444 0.8888888888888888 -1.1893333333333334 0.8888888888888888 -2.1706666666666665z"></path>
-                  <path fill="#e1e8ed" d="M24.58311111111111 13.11111111111111C21.055999999999997 10.333333333333332 12.623111111111111 3.8213333333333335 11.497777777777777 2.998222222222222l-1.8426666666666665 1.4657777777777776c3.0159999999999996 2.372444444444444 11.094222222222221 8.605333333333332 13.208888888888888 10.28711111111111 0.032888888888888884 0.025777777777777778 0.05333333333333333 0.05244444444444444 0.07733333333333332 0.0782222222222222L24.802666666666664 13.333333333333332c-0.05333333333333333 -0.07733333333333332 -0.12977777777777777 -0.152 -0.21955555555555553 -0.2222222222222222z"></path>
-                </svg>
-              </div>
-              <div class="registry-plugin-info">
-                <h4>{{ plugin.name }}</h4>
-                <p class="registry-plugin-description">{{ plugin.description }}</p>
-                <div class="registry-plugin-meta">
-                  <span class="registry-plugin-author">{{ plugin.author }}</span>
-                </div>
-              </div>
-              <div class="registry-plugin-actions">
-                <button
-                  v-if="isPluginInstalled(plugin.id)"
-                  class="btn btn-secondary"
-                  disabled
-                >
-                  Installed
-                </button>
-                <button
-                  v-else
-                  class="btn btn-primary"
-                  @click="installFromRegistry(plugin)"
-                  :disabled="installing"
-                >
-                  Install
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ZIP -->
-        <div v-else class="install-method-content">
+        <div class="install-method-content">
           <div class="zip-content-centered">
             <p class="zip-instruction">Install from ZIP file or URL:</p>
 
@@ -608,10 +387,6 @@
                   class="file-input"
                 />
                 <button class="btn btn-secondary" @click="triggerFileSelect">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
-                    <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
-                  </svg>
                   Choose File
                 </button>
                 <span class="file-name">{{ selectedFileName || 'No file selected' }}</span>
@@ -627,7 +402,7 @@
         <div class="install-actions">
           <button class="btn btn-primary install-close-btn" @click="closeInstallDialog">Close</button>
           <button
-            v-if="installMethod === 'zip' && zipUrl"
+            v-if="zipUrl"
             class="btn btn-primary"
             @click="installFromUrl"
             :disabled="installing"
@@ -635,7 +410,7 @@
             Install from URL
           </button>
           <button
-            v-else-if="installMethod === 'zip' && selectedFile"
+            v-else-if="selectedFile"
             class="btn btn-primary"
             @click="uploadPlugin"
             :disabled="installing"
@@ -725,6 +500,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import Dialog from '@/components/Dialog.vue';
 import ConfirmPanel from '@/components/ConfirmPanel.vue';
+import ToggleSwitch from '@/components/ToggleSwitch.vue';
 import FileBrowserDialog from '@/components/FileBrowserDialog.vue';
 import { useKioskDetection } from '@/composables/useKioskDetection';
 import { api } from '@/lib/api';
@@ -1336,8 +1112,8 @@ const installFromUrl = async () => {
 
 
 const openInstallDialog = () => {
+  installMethod.value = 'zip';
   showInstallDialog.value = true;
-  loadRegistryPlugins();
 };
 
 const closeInstallDialog = () => {
@@ -1422,6 +1198,9 @@ const isPluginInstalled = (pluginId: string) => {
 };
 
 const installFromRegistry = async (plugin: any) => {
+  installMethod.value = 'registry';
+  showInstallDialog.value = true;
+  selectedId.value = plugin.id;
   installing.value = true;
   installError.value = null;
 
@@ -1480,8 +1259,200 @@ const handleRegistryIconError = (pluginId: string) => {
   brokenRegistryIcons.value[pluginId] = true;
 };
 
+// ---------- one list for installed and available plugins ----------
+
+type PluginTab = 'installed' | 'browse' | 'updates';
+
+interface PluginEntry {
+  id: string;
+  name: string;
+  beta: boolean;
+  author: string;
+  description: string;
+  category: string;
+  repository: string;
+  installed: PluginListItem | null;
+  registry: any | null;
+  official: boolean;
+  /** Oldest ncSender the registry says it runs on. */
+  minApp: string | null;
+  blocked: boolean;
+  latest: string | null;
+  hasUpdate: boolean;
+  /** Takes part in the drag-to-sort run order. */
+  sortable: boolean;
+}
+
+const activeTab = ref<PluginTab>('installed');
+const activeCategory = ref('all');
+const search = ref('');
+const selectedId = ref<string | null>(null);
+
+// The registry lists the oldest app version per platform key.
+const REGISTRY_PLATFORM = 'v2';
+const BETA_SUFFIX = /\s*\(beta\)\s*$/i;
+
+const versionParts = (v: string) => v.split(/[.+-]/).slice(0, 3).map(n => parseInt(n, 10) || 0);
+const isNewerVersion = (a: string, b: string) => {
+  const x = versionParts(a), y = versionParts(b);
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+};
+// The registry can lag behind a release, so take the highest version anyone reports.
+const newestOf = (...versions: Array<string | null | undefined>) =>
+  versions.filter((v): v is string => !!v).reduce<string | null>((best, v) => (!best || isNewerVersion(v, best) ? v : best), null);
+// Unknown or dev version (0.0.x): never block an install on it.
+const appVersion = computed(() => {
+  const v: string = api.serverVersion || '';
+  return /^\d+\.\d+\.\d+/.test(v) && !v.startsWith('0.0.') ? v : null;
+});
+
+const toEntry = (installed: PluginListItem | null, registry: any | null): PluginEntry => {
+  const rawName = installed?.name || registry?.name || '';
+  const repository = installed?.repository || registry?.repository || '';
+  const minApp = registry?.platforms?.[REGISTRY_PLATFORM] || null;
+  return {
+    id: installed?.id || registry?.id,
+    name: rawName.replace(BETA_SUFFIX, ''),
+    beta: BETA_SUFFIX.test(rawName) || BETA_SUFFIX.test(registry?.name || ''),
+    author: installed?.author || registry?.author || '',
+    description: registry?.description || installed?.description || '',
+    category: (installed?.category || registry?.category || '').toLowerCase(),
+    repository,
+    installed,
+    registry,
+    official: /github\.com\/siganberg\//i.test(repository),
+    minApp,
+    blocked: !installed && !!minApp && !!appVersion.value && isNewerVersion(minApp, appVersion.value),
+    latest: newestOf(installed?.updateInfo?.latestVersion, registry?.version, installed?.version),
+    hasUpdate: !!installed?.updateInfo?.hasUpdate,
+    sortable: !!installed && installed.priority !== undefined && installed.priority !== null
+  };
+};
+
+const installedEntries = computed(() => {
+  const byId = new Map(registryPlugins.value.map(r => [r.id, r]));
+  return [...sortablePlugins.value, ...otherPlugins.value].map(p => toEntry(p, byId.get(p.id) || null));
+});
+
+const browseEntries = computed(() => {
+  const byId = new Map(plugins.value.map(p => [p.id, p]));
+  return registryPlugins.value.map(r => toEntry(byId.get(r.id) || null, r));
+});
+
+const tabEntries = computed(() => {
+  if (activeTab.value === 'browse') return browseEntries.value;
+  if (activeTab.value === 'updates') return installedEntries.value.filter(e => e.hasUpdate);
+  return installedEntries.value;
+});
+
+const tabs = computed(() => [
+  { id: 'installed' as PluginTab, label: 'Installed', count: installedEntries.value.length },
+  { id: 'browse' as PluginTab, label: 'Browse', count: browseEntries.value.length },
+  { id: 'updates' as PluginTab, label: 'Updates', count: updatableEntries.value.length }
+]);
+
+const categoryLabel = (category: string) => {
+  if (category === 'gcode-generator') return 'G-code generators';
+  if (category === 'utility') return 'Utilities';
+  if (category === 'tool-changer') return 'Tool changers';
+  return category;
+};
+
+const categoryChips = computed(() => {
+  const counts = new Map<string, number>();
+  tabEntries.value.forEach(e => counts.set(e.category, (counts.get(e.category) || 0) + 1));
+  return [
+    { id: 'all', label: 'All', count: tabEntries.value.length },
+    ...[...counts.entries()]
+      .sort((a, b) => categoryLabel(a[0]).localeCompare(categoryLabel(b[0])))
+      .map(([id, count]) => ({ id, label: categoryLabel(id), count }))
+  ];
+});
+
+const visibleEntries = computed(() => {
+  const term = search.value.trim().toLowerCase();
+  return tabEntries.value.filter(e =>
+    (activeCategory.value === 'all' || e.category === activeCategory.value) &&
+    (!term || `${e.name} ${e.description} ${e.author}`.toLowerCase().includes(term))
+  );
+});
+
+// The selected plugin, or the first one shown.
+const selectedEntry = computed(() =>
+  visibleEntries.value.find(e => e.id === selectedId.value) || visibleEntries.value[0] || null
+);
+
+// Dragging changes the run order, so it only makes sense on the whole installed list.
+const canReorder = computed(() =>
+  allowPriorityReordering.value && activeTab.value === 'installed' && activeCategory.value === 'all' && !search.value.trim()
+);
+
+const emptyMessage = computed(() => {
+  if (activeTab.value === 'updates') return 'Everything is up to date.';
+  if (activeTab.value === 'installed' && plugins.value.length === 0) return 'No plugins installed';
+  return 'No plugins found';
+});
+
+const setTab = (tab: PluginTab) => {
+  activeTab.value = tab;
+  activeCategory.value = 'all';
+  if (tab === 'browse') loadRegistryPlugins();
+};
+
+const entryIcon = (entry: PluginEntry): string | null => {
+  if (entry.installed?.hasIcon && !brokenIcons.value[entry.id]) return `${api.baseUrl}/api/plugins/${entry.id}/icon`;
+  if (entry.registry?.iconUrl && !brokenRegistryIcons.value[entry.id]) return entry.registry.iconUrl;
+  return null;
+};
+const onEntryIconError = (entry: PluginEntry) => {
+  if (entry.installed?.hasIcon && !brokenIcons.value[entry.id]) brokenIcons.value[entry.id] = true;
+  else brokenRegistryIcons.value[entry.id] = true;
+};
+const entryInitials = (entry: PluginEntry) => entry.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2);
+const entryNotRunning = (entry: PluginEntry) =>
+  !!entry.installed && entry.installed.enabled && !!entry.installed.runState && entry.installed.runState !== 'running';
+
+const updatableEntries = computed(() => installedEntries.value.filter(e => e.hasUpdate));
+
+// Update every plugin that has one, one after the other.
+const updatingAll = ref<{ done: number; total: number } | null>(null);
+const updateAll = async () => {
+  if (updatingAll.value) return;
+  const targets = updatableEntries.value.map(e => ({ id: e.id, name: e.name }));
+  const failed: string[] = [];
+  updatingAll.value = { done: 0, total: targets.length };
+  loadError.value = null;
+  try {
+    for (const target of targets) {
+      updatingAll.value = { done: updatingAll.value.done + 1, total: targets.length };
+      try {
+        await updatePlugin(target.id);
+      } catch (error) {
+        console.error(`Error updating ${target.id}:`, error);
+        failed.push(target.name);
+      }
+    }
+  } finally {
+    updatingAll.value = null;
+    await loadPlugins();
+  }
+  if (failed.length > 0) loadError.value = `Could not update: ${failed.join(', ')}`;
+};
+
+const updateToLabel = (version: string | null) => `Update to ${version || ''}`;
+const needsLabel = (version: string | null) => `Needs ncSender ${version || ''}`;
+
+// The install dialog is small while it shows progress or a result.
+const installCompact = computed(() =>
+  installing.value || installSuccess.value || installCategoryConflict.value || installMethod.value === 'registry'
+);
+
 onMounted(() => {
   loadPlugins();
+  loadRegistryPlugins();
 
   unsubscribePluginsChanged = api.on('plugins:tools-changed', () => {
     loadPlugins();
@@ -2766,5 +2737,163 @@ onBeforeUnmount(() => {
   background: var(--color-surface-muted);
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+/* ---------- plugin manager: tabs, filters, list and details ---------- */
+.pm { background: var(--color-surface); }
+.pm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-sm);
+  padding: var(--gap-md) var(--gap-md) 0;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.pm-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pm-tab.active { background: var(--color-accent); color: #fff; }
+.pm-tab-count { font-size: 0.8rem; opacity: 0.8; }
+.pm-tab-count--alert { opacity: 1; padding: 0 7px; border-radius: 9px; background: #3b82f6; color: #fff; }
+.pm-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  padding: var(--gap-sm) var(--gap-md);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.pm-search { width: 100%; }
+.pm-chips { display: flex; gap: 6px; overflow-x: auto; }
+.pm-chip {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pm-chip.active { color: var(--color-text-primary); box-shadow: inset 0 0 0 1.5px var(--color-accent); }
+.pm-split { flex: 1; min-height: 0; display: flex; }
+.pm-list {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--gap-sm) var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  min-width: 0;
+}
+.pm-row.selected { border-color: var(--color-accent); }
+.pm-row--off .pm-icon, .pm-row--off .pm-info { opacity: 0.55; }
+.pm-icon { width: 42px; height: 42px; border-radius: 10px; object-fit: contain; flex-shrink: 0; }
+.pm-icon--large { width: 52px; height: 52px; }
+.pm-icon--letters {
+  display: grid;
+  place-items: center;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 800;
+}
+.pm-info { flex: 1; min-width: 0; }
+.pm-info h3 { margin: 0; font-size: 1.15rem; }
+.pm-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pm-name-text { font-weight: 700; }
+.pm-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #3b82f6;
+}
+.pm-tag--official { background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); }
+.pm-meta { display: flex; gap: 6px; flex-wrap: wrap; color: var(--color-text-secondary); font-size: 0.82rem; }
+.pm-meta span + span::before { content: "· "; }
+.pm-update-pill {
+  padding: 1px 9px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pm-desc {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.pm-btn { padding: 8px 13px; white-space: nowrap; min-width: 136px; justify-content: center; text-align: center; }
+.pm-head-actions { display: flex; gap: var(--gap-sm); flex-wrap: wrap; }
+/* The off switch has the row's own colour: give it an edge. */
+.pm :deep(.toggle-switch__slider) { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-text-secondary) 55%, transparent); }
+.pm-detail {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  padding: var(--gap-md);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pm-detail-empty, .pm-detail-desc { margin: 0; color: var(--color-text-secondary); }
+.pm-detail-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pm-detail-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.pm-wide { width: 100%; justify-content: center; }
+.pm-fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.pm-fact > span { color: var(--color-text-secondary); flex-shrink: 0; }
+.pm-fact b, .pm-fact a { text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.pm-fact a { color: var(--color-accent); font-weight: 600; }
+
+@media (orientation: portrait) {
+  .pm-split { flex-direction: column; }
+  .pm-detail { width: auto; border-left: none; border-top: 1px solid var(--color-border); max-height: 42%; flex-shrink: 0; }
+  .pm-row { flex-wrap: wrap; }
+  .pm-actions { width: 100%; justify-content: flex-end; }
 }
 </style>

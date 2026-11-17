@@ -103,6 +103,24 @@ public class CncControllerGrblTests : IDisposable
     }
 
     [Fact]
+    public async Task Grbl_ResetMidSequence_FlushesTheWholeCommand()
+    {
+        Greet("Grbl 1.1h ['$' for help]");
+        var acks = new List<CommandResult>();
+        _controller.CommandAcknowledged += r => { lock (acks) acks.Add(r); };
+        var seq = _controller.SendCommandAsync("#<d> = 2\nG91 G0 Z[#<d> * 2]\nG90", Plugin());
+        await WaitForWrite("G91 G0 Z4\n");
+
+        Greet("Grbl 1.1h ['$' for help]");
+
+        Assert.Same(seq, await Task.WhenAny(seq, Task.Delay(TimeSpan.FromSeconds(3))));
+        Assert.True(seq.IsCanceled);
+        bool Flushed() { lock (acks) return acks.Any(a => a.Status == "flushed" && a.Command.Contains("G90")); }
+        for (var i = 0; i < 40 && !Flushed(); i++) await Task.Delay(25);
+        Assert.True(Flushed());
+    }
+
+    [Fact]
     public async Task Grbl_ProbeResultFeedsTheNextLine()
     {
         Greet("Grbl 1.1h ['$' for help]");
@@ -289,6 +307,21 @@ public class CncControllerGrblTests : IDisposable
 
     private static object? GetPrivate(object target, string name) =>
         target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(target);
+
+    [Fact]
+    public void GreetingBeforeTheConnectionIsEstablished_IsKept()
+    {
+        // A network grblHAL greets as the connection opens and not again after
+        // the soft reset, so the greeting must survive verification starting.
+        SetPrivate(_controller, "IsConnected", false);
+        Greet("GrblHAL 1.1f ['$' or '$HELP' for help]");
+
+        typeof(CncController).GetMethod("OnConnectionEstablished", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(_controller, ["ethernet"]);
+
+        Assert.IsType<GrblHalProtocol>(_controller.ActiveProtocol);
+        Assert.StartsWith("GrblHAL", _controller.GreetingMessage);
+    }
 
     private static void SetPrivate(object target, string name, object? value)
     {

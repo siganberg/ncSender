@@ -361,24 +361,34 @@ public class WebSocketLayer : IBroadcaster
 
         // Intercept soft reset during active job — V1 behavior:
         // Send feed hold first, pause job, wait for deceleration, stop job, then let soft reset proceed
-        if (command == "\x18" && _jobManager is not null && _jobManager.HasActiveJob)
+        if (command == "\x18" && _jobManager is not null && _jobManager.HasActiveJob
+            && _context.State.JobLoaded?.Status is "running" or "paused")
         {
-            var jobStatus = _context.State.JobLoaded?.Status;
-            if (jobStatus is "running" or "paused")
-            {
-                var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
-                _logger.LogInformation("Soft reset during active job — feed hold first, waiting for motion to stop");
+            var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
+            _logger.LogInformation("Soft reset during active job — feed hold first, waiting for motion to stop");
 
-                await StopSequence.SendFeedHoldAsync(_controller, "client");
-                _jobManager.Pause();
+            await StopSequence.SendFeedHoldAsync(_controller, "client");
+            _jobManager.Pause();
 
-                var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
-                _logger.LogInformation("Motion stop wait: {Result}", waitResult);
+            var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
+            _logger.LogInformation("Motion stop wait: {Result}", waitResult);
 
-                // Stop the job before sending soft reset
-                _jobManager.Stop();
-                _logger.LogInformation("Job stopped, sending soft reset");
-            }
+            // Stop the job before sending soft reset
+            _jobManager.Stop();
+            _logger.LogInformation("Job stopped, sending soft reset");
+        }
+        // Moving outside a job (a jog, a console or plugin move): the same
+        // hold first, which also cancels a jog, so the reset doesn't land
+        // mid-move and alarm ("reset while in motion").
+        else if (command == "\x18" && StopSequence.NeedsHoldBeforeReset(_controller.RawStatusData))
+        {
+            var pauseBeforeStop = _settings.GetSetting<int>("pauseBeforeStop", 500);
+            _logger.LogInformation("Soft reset while moving — feed hold first, waiting for motion to stop");
+            var jogging = StopSequence.IsJogging(_controller.RawStatusData);
+            await StopSequence.SendFeedHoldAsync(_controller, "client");
+            if (jogging) await StopSequence.SendJogCancelAsync(_controller, "client");
+            var waitResult = await StopSequence.WaitForMotionStopAsync(_controller, pauseBeforeStop);
+            _logger.LogInformation("Motion stop wait: {Result}", waitResult);
         }
 
         var commandId = data.TryGetProperty("commandId", out var idProp) ? idProp.GetString() : null;
@@ -645,13 +655,21 @@ public class WebSocketLayer : IBroadcaster
     // end-to-end wireless-probe path and still an order of magnitude larger
     // than any real transient. When it fires we abort the socket — that
     // triggers the receive loop's disconnect path, browser reconnects fresh.
+    // A big frame (a plugin dialog's HTML, over 1 MB for QuickCut) gets
+    // 1 ms more per KB on top, capped at 10 s: over Wi-Fi it can't land in
+    // 250 ms, and aborting it dropped every remote client each time a
+    // plugin opened (they reconnected and reloaded the program).
     private const int SendTimeoutMs = 250;
+    private const int MaxSendTimeoutMs = 10_000;
+
+    internal static int SendTimeoutFor(int payloadBytes) =>
+        Math.Min(MaxSendTimeoutMs, SendTimeoutMs + payloadBytes / 1024);
 
     private static async Task SendRaw(System.Net.WebSockets.WebSocket ws, byte[] payload)
     {
         if (ws.State != WebSocketState.Open) return;
 
-        using var cts = new CancellationTokenSource(SendTimeoutMs);
+        using var cts = new CancellationTokenSource(SendTimeoutFor(payload.Length));
         try
         {
             await ws.SendAsync(payload, WebSocketMessageType.Text, true, cts.Token);

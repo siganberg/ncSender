@@ -474,7 +474,7 @@ public static class ServerBuilder
 
         // Plugins call this to detect the core edition and gate Pro-only
         // features. Community always returns "community".
-        app.MapGet("/api/app-info", () => Results.Ok(new AppInfoResponse("community")));
+        app.MapGet("/api/app-info", () => Results.Ok(new AppInfoResponse("community", NcSender.Server.Plugins.JsPluginEngine.IsKiosk)));
 
         app.MapGet("/api/server-state", (IServerContext ctx) =>
         {

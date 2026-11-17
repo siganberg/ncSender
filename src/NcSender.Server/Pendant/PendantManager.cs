@@ -397,6 +397,13 @@ public class PendantManager : IPendantManager
         }
     }
 
+    public async Task<string?> QueryDongleLineAsync(string command, Func<string, bool> match, int timeoutMs)
+    {
+        if (_dongleHandler is not { IsConnected: true }) return null;
+        try { return await QueryDongleAsync(command, match, timeoutMs); }
+        catch (Exception ex) when (ex is TimeoutException or InvalidOperationException) { return null; }
+    }
+
     public async Task ImportDongleLicenseAsync(string compactLicenseJson)
     {
         // The dongle protocol is line-delimited, so the licence has to arrive as

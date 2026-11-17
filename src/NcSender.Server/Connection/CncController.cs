@@ -160,7 +160,7 @@ public partial class CncController : ICncController
 
     public async Task ConnectAsync(ConnectionSettings settings, CancellationToken ct = default)
     {
-        if (IsConnected || _isConnecting)
+        if (IsConnected || _isConnecting || _transport is not null)
         {
             _logger.LogInformation("Already connected or connecting to CNC controller");
             return;
@@ -184,6 +184,14 @@ public partial class CncController : ICncController
             transport.LineReceived += HandleIncomingData;
             transport.ConnectionLost += OnConnectionLost;
 
+            // A network controller greets as the connection opens, before the
+            // open call returns, and not again after the soft reset below.
+            _hasReceivedGreeting = false;
+            _greetingMessage = null;
+            _activeProtocol = null;
+            _translator = null;
+            _transport = transport;
+
             try
             {
                 // Opening a serial port is synchronous and can block for good
@@ -199,13 +207,18 @@ public partial class CncController : ICncController
             {
                 transport.LineReceived -= HandleIncomingData;
                 transport.ConnectionLost -= OnConnectionLost;
+                if (_transport == transport) _transport = null;
+                StopPolling();
                 // A transport stuck in its open call can block its dispose too.
                 _ = transport.DisposeAsync().AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
                 HandleConnectionError(ex);
                 throw;
             }
 
-            _transport = transport;
+            // Disconnected while opening.
+            if (_transport != transport)
+                return;
+
             OnConnectionEstablished(type);
         }
         finally
@@ -257,10 +270,6 @@ public partial class CncController : ICncController
         _lastDisconnectLog = 0;
         _isVerifying = true;
         _hasReceivedFirstStatus = false;
-        _hasReceivedGreeting = false;
-        _greetingMessage = null;
-        _activeProtocol = null;
-        _translator = null;
 
         EmitConnectionStatus("verifying", false);
 
@@ -1310,10 +1319,11 @@ public partial class CncController : ICncController
                 TryDetectGreeting(trimmedData);
                 if (_hasReceivedGreeting) _queuedUnits = null;
             }
-            else if (_translator is not null && _activeProtocol?.MatchesGreeting(trimmedData) == true)
+            else if (_activeProtocol?.MatchesGreeting(trimmedData) == true)
             {
-                _translator.Reset();
+                _translator?.Reset();
                 _queuedUnits = null;
+                SettleUnansweredLines("controller reset");
             }
 
             // Delegate to active protocol handler for controller-specific messages
@@ -2050,6 +2060,29 @@ public partial class CncController : ICncController
         }
     }
 
+    // A greeting mid-session means the controller reset (leaving check mode,
+    // a reset button, a soft reset): it dropped every line it had not answered,
+    // including any written while it restarted. Their replies will never come,
+    // so settle them now or the send-and-wait queue stalls on the first one.
+    // Lines not written yet stay queued and go out to the restarted controller.
+    private void SettleUnansweredLines(string reason)
+    {
+        List<CommandEntry> lost;
+        lock (_replyLock)
+        {
+            lost = _replySlots.OfType<CommandEntry>().Where(e => !e.Settled).Distinct().ToList();
+            _replySlots.Clear();
+            foreach (var entry in lost) entry.Settled = true;
+        }
+        foreach (var entry in lost)
+        {
+            _logger.LogWarning("No reply for {Command}: {Reason}", entry.RawCommand, reason);
+            if (!entry.Internal) _pendingCommands.TryRemove(entry.Id, out _);
+            entry.Tcs.TrySetCanceled();
+            if (!entry.Internal) EmitCommandAck(entry, "flushed", reason);
+        }
+    }
+
     private void DropReplySlots(CommandEntry entry)
     {
         lock (_replyLock)
@@ -2311,6 +2344,17 @@ public partial class CncController : ICncController
         if (done != sub.Tcs.Task)
         {
             DropReplySlots(sub);
+            return null;
+        }
+        // The controller reset before answering (SettleUnansweredLines): the
+        // command it belongs to is flushed with it, like a soft reset does.
+        if (sub.Tcs.Task.IsCanceled)
+        {
+            if (parent.Tcs.TrySetCanceled())
+            {
+                _pendingCommands.TryRemove(parent.Id, out _);
+                EmitCommandAck(parent, "flushed", "controller reset");
+            }
             return null;
         }
         return await sub.Tcs.Task;

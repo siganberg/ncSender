@@ -101,6 +101,11 @@ public class DongleOtaEvent
 /// </summary>
 public record AccessoryActivateRequest(string? InstallationId);
 
+/// <summary>Use (false) or ignore (true) a wireless probe on the receiver's wired output.</summary>
+public record AccessoryProbeIgnoreRequest(bool Ignored);
+public record AccessoryInputInvertRequest(int Input, bool Inverted);
+public record AccessoryInputsState(List<bool> Inverted, List<bool> Triggered);
+
 /// <summary>
 /// <paramref name="NeedsInstallationId"/> means the store has never seen this
 /// device, so the view should ask for an Installation ID and try again.

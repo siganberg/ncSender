@@ -33,6 +33,35 @@ public class StopSequenceTests
         Assert.Equal(expected, StopSequence.IsMotionStopped(raw));
     }
 
+    // Stop pressed mid-jog (no job) reset at once: ALARM:3 and a rehome.
+    [Theory]
+    [InlineData("<Jog|MPos:0,0,0|FS:3780,0>", true)]
+    [InlineData("<Run|MPos:0,0,0>", true)]
+    [InlineData("<Hold:1|MPos:0,0,0>", true)]
+    [InlineData("<Door:2|MPos:0,0,0>", true)]
+    [InlineData("<Home|MPos:0,0,0>", false)]
+    [InlineData("<Idle|MPos:0,0,0>", false)]
+    [InlineData("<Hold:0|MPos:0,0,0>", false)]
+    [InlineData("<Alarm|MPos:0,0,0>", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void A_reset_while_moving_waits_for_a_hold_first(string? raw, bool expected)
+    {
+        Assert.Equal(expected, StopSequence.NeedsHoldBeforeReset(raw));
+    }
+
+    // Some grblHAL builds ignore a feed hold mid-jog: Stop also sends the jog cancel then.
+    [Theory]
+    [InlineData("<Jog|MPos:0,0,0|FS:4620,0>", true)]
+    [InlineData("<jog>", true)]
+    [InlineData("<Run|MPos:0,0,0>", false)]
+    [InlineData("<Idle|MPos:0,0,0>", false)]
+    [InlineData(null, false)]
+    public void Knows_when_it_is_jogging(string? raw, bool expected)
+    {
+        Assert.Equal(expected, StopSequence.IsJogging(raw));
+    }
+
     [Fact]
     public async Task Soft_reset_waits_until_the_hold_completes()
     {
@@ -91,5 +120,39 @@ public class StopSequenceTests
 
         Assert.Equal(StopWaitResult.NoStatus, result);
         Assert.InRange((DateTime.UtcNow - started).TotalMilliseconds, 1150, 3000);
+    }
+
+    // A door's parking retract can report a door state that reads as at rest
+    // while Z is still lifting; the reset then alarms. The position has to
+    // stop changing too.
+    [Fact]
+    public async Task A_resting_state_with_the_position_still_changing_is_not_stopped()
+    {
+        var raw = "<Run|MPos:0,0,-100>";
+        var controller = new Mock<ICncController>();
+        controller.SetupGet(c => c.RawStatusData).Returns(() => raw);
+
+        var wait = StopSequence.WaitForMotionStopAsync(controller.Object, 5000);
+        foreach (var z in new[] { -90.0, -75.0, -60.0, -45.0 })
+        {
+            raw = new string($"<Door:1|MPos:0,0,{z}>");
+            await Task.Delay(60);
+            Assert.False(wait.IsCompleted, $"reset while Z was at {z}");
+        }
+
+        raw = new string("<Door:1|MPos:0,0,-42>");
+        await Task.Delay(60);
+        raw = new string("<Door:1|MPos:0,0,-42>");
+        Assert.Equal(StopWaitResult.Stopped, await wait.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Theory]
+    [InlineData("<Door:1|MPos:1.5,-2,3.25|FS:0,0>", new[] { 1.5, -2, 3.25 })]
+    [InlineData("<Idle|WPos:0,0,0,0>", new[] { 0.0, 0, 0, 0 })]
+    [InlineData("<Hold:0|FS:0,0>", null)]
+    [InlineData(null, null)]
+    public void Reads_the_reported_position(string? raw, double[]? expected)
+    {
+        Assert.Equal(expected, StopSequence.ReportedPosition(raw));
     }
 }

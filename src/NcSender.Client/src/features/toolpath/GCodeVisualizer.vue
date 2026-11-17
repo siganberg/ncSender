@@ -4519,6 +4519,32 @@ let lastWCO = { x: 0, y: 0, z: 0 };
 // Watch for work offset (WCO) changes to update the grid (crosshair position)
 // WCO changes when G92, tool length offset, or active workspace changes
 // NOTE: We do NOT re-render G-code here - parts stay at fixed machine positions
+// The cameras, their targets and the views' saved cameras moved by `d`,
+// so the program stays framed as it was.
+let lastWCOSeen = false;
+const followProgram = (d: THREE.Vector3) => {
+  if (d.lengthSq() < 1e-12) return;
+  if (camera) {
+    camera.position.add(d);
+    cameraTarget.add(d);
+    camera.lookAt(cameraTarget);
+  }
+  ([[splitTopCamera, splitTopCameraTarget], [splitFrontCamera, splitFrontCameraTarget], [splitIsoCamera, splitIsoCameraTarget]] as const)
+    .forEach(([cam, target]) => {
+      if (!cam) return;
+      cam.position.add(d);
+      target.add(d);
+      cam.lookAt(target);
+    });
+  for (const view of Object.keys(cameraMemory)) {
+    const saved = (cameraMemory as any)[view];
+    if (!saved || !isVector(saved.position) || !isVector(saved.target)) continue;
+    saved.position = saved.position.map((v: number, i: number) => v + d.getComponent(i));
+    saved.target = saved.target.map((v: number, i: number) => v + d.getComponent(i));
+  }
+  saveCameraMemory();
+};
+
 watch(() => props.workOffset, (newOffset) => {
   if (isToolChanging.value) {
     showOutOfBoundsWarning.value = false;
@@ -4534,8 +4560,14 @@ watch(() => props.workOffset, (newOffset) => {
   if (!wcoChanged) return;
 
   // Update last known WCO
+  const moved = newOffset
+    ? new THREE.Vector3((newOffset.x || 0) - lastWCO.x, (newOffset.y || 0) - lastWCO.y, (newOffset.z || 0) - lastWCO.z)
+    : null;
+  // The first offset after loading is where things were, not a move.
+  const follow = moved && lastWCOSeen;
   if (newOffset) {
     lastWCO = { x: newOffset.x || 0, y: newOffset.y || 0, z: newOffset.z || 0 };
+    lastWCOSeen = true;
   }
 
   // Rebuild grid to move crosshair
@@ -4544,6 +4576,14 @@ watch(() => props.workOffset, (newOffset) => {
   // Fast path: move group position instantly, debounced OOB recolor
   if (gcodeVisualizer && gcodeVisualizer.currentGCode) {
     gcodeVisualizer.updateWCO(newOffset);
+    // The program moved with the new zero: its bounds are where it is now.
+    const box = gcodeVisualizer.group ? new THREE.Box3().setFromObject(gcodeVisualizer.group) : null;
+    if (box && !box.isEmpty()) {
+      currentGCodeBounds = { min: box.min, max: box.max, center: box.getCenter(new THREE.Vector3()), size: box.getSize(new THREE.Vector3()) };
+    }
+    // With Auto-Fit the view goes with it, zoom and angle kept (not while a
+    // job runs, nor in Spindle View, which follows the spindle).
+    if (follow && autoFitMode.value && !spindleViewMode.value && !isJobActive.value) followProgram(moved);
     requestRender();
   }
 }, { deep: true });

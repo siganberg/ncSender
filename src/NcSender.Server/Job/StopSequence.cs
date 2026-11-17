@@ -55,6 +55,35 @@ public static class StopSequence
     }
 
     /// <summary>
+    /// True when a Soft Reset now would land mid-move outside a job (a jog, a
+    /// console or plugin move, a hold still decelerating): it should wait for
+    /// a Feed Hold to stop the axes first. Not while homing, which only a
+    /// reset can abort.
+    /// </summary>
+    public static bool NeedsHoldBeforeReset(string? rawStatus)
+    {
+        if (IsMotionStopped(rawStatus) != false) return false;
+        var report = rawStatus!.Trim().TrimStart('<');
+        return !report.StartsWith("home", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True when the raw status report says the machine is jogging.</summary>
+    public static bool IsJogging(string? rawStatus) =>
+        !string.IsNullOrWhiteSpace(rawStatus) && rawStatus.Trim().TrimStart('<').StartsWith("jog", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Sends Jog Cancel (0x85). grblHAL treats a feed hold while jogging as a
+    /// jog cancel, but some builds ignore it then; 0x85 is what ends a jog,
+    /// and does nothing when not jogging.
+    /// </summary>
+    public static Task SendJogCancelAsync(ICncController cnc, string sourceId, CancellationToken ct = default) =>
+        cnc.SendCommandAsync("\x85", new CommandOptions
+        {
+            DisplayCommand = "0x85 (Jog Cancel)",
+            Meta = new CommandMeta { SourceId = sourceId, Silent = true }
+        }, ct);
+
+    /// <summary>
     /// Sends Feed Hold, waits for the machine to come to rest, then sends Soft
     /// Reset. <paramref name="fallbackDelayMs"/> is used when the controller's
     /// status can't be read.
@@ -84,8 +113,36 @@ public static class StopSequence
         }, ct);
 
     /// <summary>
+    /// The position in a raw status report (MPos, else WPos), or null when
+    /// it has none.
+    /// </summary>
+    public static double[]? ReportedPosition(string? rawStatus)
+    {
+        if (string.IsNullOrWhiteSpace(rawStatus)) return null;
+        foreach (var field in rawStatus.Trim().Trim('<', '>').Split('|'))
+        {
+            if (!field.StartsWith("MPos:", StringComparison.OrdinalIgnoreCase) &&
+                !field.StartsWith("WPos:", StringComparison.OrdinalIgnoreCase)) continue;
+            var parts = field[5..].Split(',');
+            var pos = new double[parts.Length];
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (!double.TryParse(parts[i], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out pos[i])) return null;
+            }
+            return pos;
+        }
+        return null;
+    }
+
+    private static bool SamePosition(double[] a, double[] b) =>
+        a.Length == b.Length && a.Zip(b).All(p => Math.Abs(p.First - p.Second) < 0.001);
+
+    /// <summary>
     /// Call right after the feed hold was sent. Returns once two fresh status
-    /// reports have arrived and the latest says the axes are at rest, after
+    /// reports have arrived and the latest says the axes are at rest, with the
+    /// same position as the report before it (a door's parking retract can
+    /// still be lifting Z under a state that reads as at rest), after
     /// <see cref="MaxWait"/>, or after <paramref name="fallbackDelayMs"/>
     /// when no readable status reports arrive.
     /// </summary>
@@ -99,6 +156,8 @@ public static class StopSequence
         var lastSeen = cnc.RawStatusData;
         var fresh = 0;
         var sawReadableState = false;
+        double[]? lastPosition = null;
+        var settled = false;
 
         while (true)
         {
@@ -109,13 +168,17 @@ public static class StopSequence
             {
                 lastSeen = raw;
                 fresh++;
+                // Without a position in the reports, the state alone decides.
+                var position = ReportedPosition(raw);
+                settled = position is null || (lastPosition is not null && SamePosition(lastPosition, position));
+                lastPosition = position;
             }
 
             if (fresh >= FreshReportsRequired)
             {
                 var stopped = IsMotionStopped(raw);
                 if (stopped is not null) sawReadableState = true;
-                if (stopped == true) return StopWaitResult.Stopped;
+                if (stopped == true && settled) return StopWaitResult.Stopped;
             }
 
             if (!sawReadableState && elapsed >= fallback)

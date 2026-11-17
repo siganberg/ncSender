@@ -61,6 +61,7 @@ export interface PluginListItem {
   name: string;
   version: string;
   author?: string;
+  description?: string;
   enabled: boolean;
   loaded: boolean;
   loadedAt?: string;

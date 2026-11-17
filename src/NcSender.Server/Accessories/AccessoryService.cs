@@ -86,13 +86,16 @@ public sealed class AccessoryService
         var peers = _dongle.GetDevices().ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
         var dongleLicence = await SafeDongleLicenceAsync().ConfigureAwait(false);
         var pendantStatus = _pendant.GetStatus();
+        var wire = dongleLicence?.Connected == true ? await ReadWireAsync().ConfigureAwait(false) : null;
+        var ignored = ParseProbeIgnore(wire);
+        var inverted = ParseInputInvert(wire);
 
         // Built in parallel. Sequentially, every device that does not answer
         // costs its own timeout and they add up — five accessories could stall
         // the view for the sum of all of them. Concurrently the worst case is
         // one timeout total, and the release lookups overlap too.
         var tasks = AccessoryCatalog.All.Select(def => BuildAsync(
-            def, peers, dongleLicence, pendantStatus, checkUpdates, ct));
+            def, peers, dongleLicence, pendantStatus, ignored, inverted, checkUpdates, ct));
         var built = await Task.WhenAll(tasks).ConfigureAwait(false);
         // Catalogue order, not completion order.
         return built.ToList();
@@ -103,6 +106,8 @@ public sealed class AccessoryService
         Dictionary<string, DongleDeviceInfo> peers,
         DongleLicenseStatus? dongleLicence,
         PendantStatus pendantStatus,
+        HashSet<string>? ignoredProbes,
+        List<bool>? inputInverted,
         bool checkUpdates,
         CancellationToken ct)
     {
@@ -110,6 +115,10 @@ public sealed class AccessoryService
             var info = new AccessoryInfo { Id = def.Id, Name = def.Name, Availability = def.Availability,
                                             PluginName = def.PluginName,
                                             AssetPrefix = def.AssetPrefix };
+            if (ignoredProbes is not null && ProbeIgnoreTokens.TryGetValue(def.Id, out var token))
+                info.ProbeIgnored = ignoredProbes.Contains(token);
+            if (inputInverted is not null && def.Id == AccessoryCatalog.WirelessReceiverId)
+                info.InputInverted = inputInverted;
             string? pendantAssetPrefix = null;
 
             if (AccessoryCatalog.IsDongle(def.Id))
@@ -183,6 +192,113 @@ public sealed class AccessoryService
 
             return info;
         }
+    }
+
+    // Wireless probes the receiver can be told to ignore, by the word its $WIRE
+    // IGNORE= setting uses for them.
+    private static readonly Dictionary<string, string> ProbeIgnoreTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["nc3dair"] = "3D",
+        ["nczeroair"] = "ZERO",
+    };
+
+    public static bool CanIgnoreProbe(string id) => ProbeIgnoreTokens.ContainsKey(id);
+
+    // "$WIRE:EN=1 … IGNORE=3D,ZERO …" -> {"3D","ZERO"}. Null when the cabled
+    // radio does not answer $WIRE (the Wireless USB) or predates IGNORE=.
+    private static HashSet<string>? ParseProbeIgnore(string? reply)
+    {
+        if (reply is null) return null;
+        foreach (var field in reply.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!field.StartsWith("IGNORE=", StringComparison.Ordinal)) continue;
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var w in field["IGNORE=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries))
+                if (!w.Equals("NONE", StringComparison.OrdinalIgnoreCase)) set.Add(w);
+            return set;
+        }
+        return null;
+    }
+
+    private Task<string?> ReadWireAsync() =>
+        _pendant.QueryDongleLineAsync("$WIRE",
+            l => l.StartsWith("$WIRE:", StringComparison.Ordinal), VersionQueryTimeoutMs);
+
+    private async Task<HashSet<string>?> ReadProbeIgnoreAsync() =>
+        ParseProbeIgnore(await ReadWireAsync().ConfigureAwait(false));
+
+    // "… IN=00 INV=1,2" -> [true, true]. Null when the reply has no INV=
+    // (the Wireless USB, the Super Mini receiver, or older receiver firmware).
+    private static List<bool>? ParseInputInvert(string? reply)
+    {
+        if (reply is null) return null;
+        foreach (var field in reply.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!field.StartsWith("INV=", StringComparison.Ordinal)) continue;
+            var words = field["INV=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+            return [words.Contains("1"), words.Contains("2")];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The receiver's wired inputs right now: inverted setting and whether each
+    /// reads triggered (after inversion). Null when the receiver is not cabled
+    /// or its firmware predates INV=.
+    /// </summary>
+    public async Task<AccessoryInputsState?> ReadInputsAsync()
+    {
+        var reply = await ReadWireAsync().ConfigureAwait(false);
+        var inv = ParseInputInvert(reply);
+        if (inv is null) return null;
+        var trig = new List<bool> { false, false };
+        foreach (var field in reply!.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            if (field.StartsWith("IN=", StringComparison.Ordinal) && field.Length >= 5)
+                trig = [field[3] == '1', field[4] == '1'];
+        return new AccessoryInputsState(inv, trig);
+    }
+
+    /// <summary>
+    /// Invert one of the Wireless Receiver's two wired inputs (1 or 2). Takes
+    /// effect at once and is kept on the receiver. Throws when it cannot be done.
+    /// </summary>
+    public async Task SetInputInvertedAsync(int input, bool inverted)
+    {
+        if (input is not (1 or 2)) throw new InvalidOperationException("Input must be 1 or 2");
+        var cur = ParseInputInvert(await ReadWireAsync().ConfigureAwait(false))
+            ?? throw new InvalidOperationException("The Wireless Receiver is not connected, or its firmware is too old to invert an input. Update it from Accessories.");
+        cur[input - 1] = inverted;
+        var words = new List<string>();
+        if (cur[0]) words.Add("1");
+        if (cur[1]) words.Add("2");
+        var value = words.Count == 0 ? "NONE" : string.Join(",", words);
+        var reply = await _pendant.QueryDongleLineAsync($"$WIRE INV={value}",
+            l => l.StartsWith("$WIRE:", StringComparison.Ordinal), 2000).ConfigureAwait(false);
+        var now = ParseInputInvert(reply);
+        if (now is null || now[input - 1] != inverted)
+            throw new InvalidOperationException($"The Wireless Receiver did not accept the change: {reply ?? "no answer"}");
+        _logger.LogInformation("Wireless Receiver input {Input} {State}", input, inverted ? "inverted" : "normal");
+    }
+
+    /// <summary>
+    /// Tell the receiver to use or ignore one wireless probe. Takes effect at
+    /// once and is kept on the receiver. Throws when it cannot be done.
+    /// </summary>
+    public async Task SetProbeIgnoredAsync(AccessoryDefinition def, bool ignored)
+    {
+        if (!ProbeIgnoreTokens.TryGetValue(def.Id, out var token))
+            throw new InvalidOperationException($"{def.Name} is not a wireless probe");
+        var set = await ReadProbeIgnoreAsync().ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The Wireless Receiver is not connected, or its firmware is too old to ignore a probe. Update it from Accessories.");
+        if (ignored) set.Add(token); else set.Remove(token);
+        var words = ProbeIgnoreTokens.Values.Where(set.Contains).ToList();
+        var value = words.Count == 0 ? "NONE" : string.Join(",", words);
+        var reply = await _pendant.QueryDongleLineAsync($"$WIRE IGNORE={value}",
+            l => l.StartsWith("$WIRE:", StringComparison.Ordinal), 2000).ConfigureAwait(false);
+        var now = ParseProbeIgnore(reply);
+        if (now is null || now.Contains(token) != ignored)
+            throw new InvalidOperationException($"The Wireless Receiver did not accept the change: {reply ?? "no answer"}");
+        _logger.LogInformation("{Name} {State} on the Wireless Receiver output", def.Name, ignored ? "ignored" : "in use");
     }
 
     private static void ApplyBattery(AccessoryInfo info, DongleDeviceInfo? peer)
