@@ -198,7 +198,10 @@ public partial class JsPluginEngine : IJsPluginEngine
 
                 var engine = new Engine(options =>
                 {
-                    options.LimitMemory(50_000_000); // 50 MB
+                    // Jint counts every allocation a call makes (garbage included, host
+                    // work inside the call too), not memory held: 50 MB failed jobs
+                    // when a plugin read a ~10k-line program in one call.
+                    options.LimitMemory(100_000_000); // 100 MB
                     // No TimeoutInterval: showDialog blocks the engine thread waiting
                     // for the user, and Jint counts that wall-clock wait against the
                     // budget. The dialog dispatcher has its own 10-min timeout, and
