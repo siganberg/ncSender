@@ -19,6 +19,7 @@ export type KeyCombo = string;
 
 export interface KeyboardSettings {
   shortcutsEnabled: boolean;
+  gamepadEnabled: boolean;
 }
 
 export interface KeyboardState {

@@ -60,15 +60,20 @@ function sanitizeBindings(raw: any): Record<string, string | null> {
 
 function sanitizeKeyboardSettings(raw: any): KeyboardSettings {
   const defaults: KeyboardSettings = {
-    shortcutsEnabled: true
+    shortcutsEnabled: true,
+    gamepadEnabled: true
   };
 
   if (!raw || typeof raw !== 'object') {
     return { ...defaults };
   }
 
+  const shortcutsEnabled = raw.shortcutsEnabled !== false;
+  // Before the gamepad had its own switch, the keyboard switch turned both
+  // off; without a saved gamepad choice it still follows the keyboard.
   return {
-    shortcutsEnabled: raw.shortcutsEnabled !== false
+    shortcutsEnabled,
+    gamepadEnabled: typeof raw.gamepadEnabled === 'boolean' ? raw.gamepadEnabled : shortcutsEnabled
   };
 }
 
@@ -84,6 +89,10 @@ const state = reactive<KeyboardState>({
 const isFeatureEnabled = computed(() => state.featureEnabled);
 const areShortcutsEnabled = computed(() => state.settings.shortcutsEnabled);
 const isActive = computed(() => state.loaded && state.featureEnabled && state.settings.shortcutsEnabled);
+const isGamepadEnabled = computed(() => state.settings.gamepadEnabled);
+const isGamepadActive = computed(() => state.loaded && state.featureEnabled && state.settings.gamepadEnabled);
+// Keyboard or gamepad: what the shared actions need to run.
+const isInputActive = computed(() => isActive.value || isGamepadActive.value);
 const bindingsMap = computed(() => readonly(state.bindings));
 
 async function persistBindings(next: Record<string, string | null>, changedOnly = false): Promise<void> {
@@ -111,13 +120,26 @@ async function persistBindings(next: Record<string, string | null>, changedOnly 
   }
 }
 
-async function persistKeyboardSettings(next: KeyboardSettings): Promise<void> {
-  const previous = { ...state.settings };
-  state.settings = next;
+// The keyboard settings as saved. A gamepad switch never saved follows the
+// keyboard's until either switch is used, which saves both.
+let savedKeyboard: Record<string, any> = {};
+
+function applySavedKeyboard(raw: any): void {
+  savedKeyboard = raw && typeof raw === 'object' ? { ...raw } : {};
+  state.settings = sanitizeKeyboardSettings(savedKeyboard);
+}
+
+async function persistKeyboardSettings(change: Partial<KeyboardSettings>): Promise<void> {
+  const previous = savedKeyboard;
+  // Both switches, as shown, so turning the keyboard off leaves the gamepad
+  // as it was; and the whole object, since other screens put a broadcast
+  // change in place of theirs rather than merging it.
+  const next = { ...savedKeyboard, ...state.settings, ...change };
+  applySavedKeyboard(next);
   try {
-    await updateSettings({ keyboard: { ...next } });
+    await updateSettings({ keyboard: next });
   } catch (error) {
-    state.settings = previous;
+    applySavedKeyboard(previous);
     throw error;
   }
 }
@@ -138,6 +160,9 @@ export const keyBindingStore = {
   isFeatureEnabled,
   areShortcutsEnabled,
   isActive,
+  isGamepadEnabled,
+  isGamepadActive,
+  isInputActive,
   bindings: bindingsMap,
 
   bootstrap(): void {
@@ -146,7 +171,7 @@ export const keyBindingStore = {
     }
     const settings = getSettings();
     state.featureEnabled = settings?.features?.keyboardShortcuts !== false;
-    state.settings = sanitizeKeyboardSettings(settings?.keyboard);
+    applySavedKeyboard(settings?.keyboard);
     state.bindings = sanitizeBindings(settings?.keyboardBindings);
     state.loaded = true;
   },
@@ -154,7 +179,7 @@ export const keyBindingStore = {
   reload(): void {
     const settings = getSettings();
     state.featureEnabled = settings?.features?.keyboardShortcuts !== false;
-    state.settings = sanitizeKeyboardSettings(settings?.keyboard);
+    applySavedKeyboard(settings?.keyboard);
     state.bindings = sanitizeBindings(settings?.keyboardBindings);
   },
 
@@ -242,7 +267,14 @@ export const keyBindingStore = {
     if (state.settings.shortcutsEnabled === value) {
       return;
     }
-    await persistKeyboardSettings({ ...state.settings, shortcutsEnabled: value });
+    await persistKeyboardSettings({ shortcutsEnabled: value });
+  },
+
+  async setGamepadEnabled(value: boolean): Promise<void> {
+    if (state.settings.gamepadEnabled === value) {
+      return;
+    }
+    await persistKeyboardSettings({ gamepadEnabled: value });
   },
 
   async setFeatureEnabled(value: boolean): Promise<void> {
@@ -296,11 +328,7 @@ function applySettingsDelta(delta: any) {
   }
 
   if (delta.keyboard) {
-    const merged = {
-      ...state.settings,
-      ...(typeof delta.keyboard === 'object' ? delta.keyboard : {})
-    };
-    state.settings = sanitizeKeyboardSettings(merged);
+    applySavedKeyboard({ ...savedKeyboard, ...(typeof delta.keyboard === 'object' ? delta.keyboard : {}) });
   }
 
   if (delta.features && typeof delta.features === 'object' && Object.prototype.hasOwnProperty.call(delta.features, 'keyboardShortcuts')) {
