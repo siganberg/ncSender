@@ -25,6 +25,7 @@
             <!-- Step Controls -->
             <div class="step-controls-mobile">
               <StepControl
+                jog-panel
                 :current-step="jogConfig.stepSize"
                 :step-options="jogConfig.stepOptions"
                 :current-feed-rate="feedRate"

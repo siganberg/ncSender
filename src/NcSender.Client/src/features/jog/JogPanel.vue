@@ -19,6 +19,7 @@
   <section class="card" :class="{ 'controls-disabled': panelDisabled }">
     <header class="card__header">
       <StepControl
+        jog-panel
         :current-step="jogConfig.stepSize"
         :step-options="jogConfig.stepOptions"
         :current-feed-rate="feedRate"
