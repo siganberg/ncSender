@@ -2026,11 +2026,13 @@ public class PendantManager : IPendantManager
                         // that, and let every real gate fall through unchanged.
                         if (grId == AlarmGateId)
                         {
-                            if (val == "unlock") _ = HandleCncCommandCoreAsync("$X");
+                            if (val == "unlock") _ = UnlockFromPendantAsync();
                         }
                         else
                         {
-                            _gates.Resolve(grId, val);
+                            // An answer to a prompt that is already gone means the
+                            // pendant missed its close: send it again, or it stays up.
+                            if (!_gates.Resolve(grId, val)) _ = SendGateCloseAsync(grId);
                         }
                     }
                     break;
@@ -2588,6 +2590,16 @@ public class PendantManager : IPendantManager
         await HandleCncCommandCoreAsync(command);
     }
 
+    // Same as the app's Unlock button: soft reset, then $X. $X alone left the
+    // state of whatever the alarm interrupted (a tool change stayed "in
+    // progress" after a failed probe).
+    private async Task UnlockFromPendantAsync()
+    {
+        await HandleCncCommandCoreAsync("\x18");
+        await Task.Delay(500);
+        await HandleCncCommandCoreAsync("$X");
+    }
+
     private async Task HandleCncCommandCoreAsync(string command)
     {
         try
@@ -2767,6 +2779,14 @@ public class PendantManager : IPendantManager
             return;
         }
         if (type is not ("gate:show" or "gate:close")) return;
+        if (type == "gate:close"
+            && data.ValueKind == JsonValueKind.Object
+            && data.TryGetProperty("gateId", out var closedId)
+            && closedId.GetString() is { Length: > 0 } id)
+        {
+            _closedGateId = id;
+            _closeRepeatsLeft = CloseRepeats;
+        }
         if (_serialHandler is not { IsConnected: true }) return;
 
         _ = ForwardToPendantAsync(type, data);
@@ -2790,6 +2810,41 @@ public class PendantManager : IPendantManager
     // never collide with a real GateService id.
     private const string AlarmGateId = "pendant:alarm";
     private bool _alarmGateShown;
+
+    // A close is sent once, and a lost radio packet left the prompt on the
+    // pendant for good. Say it again on the next few DRO pushes; the id makes
+    // a late repeat harmless to a newer prompt.
+    private const int CloseRepeats = 3;
+    private static readonly TimeSpan CloseRepeatGap = TimeSpan.FromMilliseconds(700);
+    private string? _closedGateId;
+    private int _closeRepeatsLeft;
+    private DateTime _lastCloseRepeatUtc;
+
+    private async Task RepeatGateCloseAsync()
+    {
+        var id = _closedGateId;
+        if (id is null || _closeRepeatsLeft <= 0) return;
+        var now = DateTime.UtcNow;
+        if (now - _lastCloseRepeatUtc < CloseRepeatGap) return;
+        _lastCloseRepeatUtc = now;
+        _closeRepeatsLeft--;
+        await SendGateCloseAsync(id);
+    }
+
+    private async Task SendGateCloseAsync(string gateId)
+    {
+        if (_serialHandler is not { IsConnected: true }) return;
+        try
+        {
+            await _serialHandler.SendMessageAsync(
+                new PendantTypeDataMsg("gate:close", BuildGateClose(gateId)),
+                PendantJsonContext.Default.PendantTypeDataMsg);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send gate:close to pendant");
+        }
+    }
 
     /**
      * Mirror the machine's alarm state into a prompt on the pendant.
@@ -2855,7 +2910,7 @@ public class PendantManager : IPendantManager
             w.WriteStartObject();
             w.WriteString("value", "unlock");
             w.WriteString("label", "Unlock");
-            w.WriteString("style", "primary");
+            w.WriteString("style", "danger");   // red, like the app's "Press to unlock"
             w.WriteEndObject();
             w.WriteEndArray();
             w.WriteEndObject();
@@ -2864,13 +2919,15 @@ public class PendantManager : IPendantManager
         return doc.RootElement.Clone();
     }
 
-    private static JsonElement BuildAlarmClose()
+    private static JsonElement BuildAlarmClose() => BuildGateClose(AlarmGateId);
+
+    private static JsonElement BuildGateClose(string gateId)
     {
         using var stream = new MemoryStream();
         using (var w = new Utf8JsonWriter(stream))
         {
             w.WriteStartObject();
-            w.WriteString("gateId", AlarmGateId);
+            w.WriteString("gateId", gateId);
             w.WriteEndObject();
         }
         using var doc = JsonDocument.Parse(stream.ToArray());
@@ -3139,8 +3196,11 @@ public class PendantManager : IPendantManager
 
         // The alarm prompt goes to the pendant: not while it is being flashed.
         if (flashing is null)
+        {
             await SyncAlarmGateAsync(
                 string.Equals(effectiveStatus, "alarm", StringComparison.OrdinalIgnoreCase));
+            await RepeatGateCloseAsync();
+        }
     }
 
     // Given an aux entry's "on" command (e.g. "M8", "M7", "M64 P2"),
