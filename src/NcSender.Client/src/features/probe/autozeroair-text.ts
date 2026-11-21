@@ -56,6 +56,7 @@ const TEXT: Record<string, string> = {
   "lead.zTop": "Z from the top of the probe, by its corner mark.",
   "start.zTop.title": "Put the bit above the corner mark on the probe.",
   "start.zTop.text": "On the flat top, away from the hole and the logo.",
+  "magnet": "Attach the magnet to the bit before you start.",
 };
 
 export const useAutoZeroAirText = () =>

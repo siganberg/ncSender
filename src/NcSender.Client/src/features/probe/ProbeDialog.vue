@@ -46,8 +46,8 @@
       <section class="probe-main">
         <header class="probe-main__header">
           <h2 class="probe-main__title">{{ activeTab.label }}</h2>
-          <p v-if="probeType !== 'nczeroair'" class="probe-main__instructions">Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.</p>
-          <div v-if="probeType !== 'nczeroair'" class="probe-header-cards">
+          <p v-if="!picturePanel" class="probe-main__instructions">Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.</p>
+          <div v-if="!picturePanel" class="probe-header-cards">
             <div class="probe-header-card">
               <div class="probe-coords">
                 <div class="probe-coords__title">Work Coordinates</div>
@@ -79,8 +79,13 @@
         </header>
 
         <div class="probe-main__body">
-          <AutoZeroAirPanel
-            v-if="probeType === 'nczeroair'"
+          <component
+            :is="picturePanelComponent"
+            v-if="picturePanel"
+            :center-axes="centerAxes"
+            :probe-z-first="probeZFirst"
+            :measure-only="pictureMeasureOnly"
+            :both="touchesBothWalls"
             v-model:axis="probingAxis"
             v-model:mode="ncZeroAirMode"
             v-model:corner="selectedCorner"
@@ -88,72 +93,491 @@
             :is-probing="isProbing"
             :probe-active="props.probeActive"
           >
-            <template #bit>
-                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': standardBlockDropdownOpen }">
-                  <div
-                    class="custom-dropdown__trigger"
-                    @click="toggleStandardBlockDropdown"
-                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
-                  >
-                    <span class="custom-dropdown__value">{{ getStandardBlockDisplayValue() }}</span>
-                    <span class="custom-dropdown__arrow">▼</span>
+            <template #fields>
+              <template v-if="probeType === '3d-probe'">
+                <div class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Diameter</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="ballPointDiameterInput"
+                          :step="touchStepCoarse"
+                          :min="lim(0.1)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.ballPointDiameter"
+                          @update:model-value="ballPointDiameterInput = $event; validateBallPointDiameter()"
+                          @change="handleBallPointDiameterBlur()"
+                        />
+                        <span v-if="errors.ballPointDiameter" class="probe-error-tooltip">{{ errors.ballPointDiameter }}</span>
+                      </div>
                   </div>
 
-                  <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
-                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
-                    <div
-                      v-if="currentToolDiameter !== null"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === CURRENT_TOOL }"
-                      @click="selectStandardBlockDiameter(CURRENT_TOOL)"
-                    >
-                      <span class="custom-dropdown__item-spacer"></span>
-                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
-                    </div>
-                    <!-- Custom diameters (can be removed) -->
-                    <div
-                      v-for="diameter in standardBlockBitDiameters"
-                      :key="diameter"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === diameter.toString() }"
-                      @click="selectStandardBlockDiameter(diameter.toString())"
-                    >
-                      <button
-                        class="custom-dropdown__remove"
-                        @click.stop="removeStandardBlockDiameter(diameter)"
-                        title="Remove"
-                      >
-                        ×
-                      </button>
-                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
-                    </div>
+                  <div v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-group">
+                    <label class="probe-label">Z-Plunge</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="zPlungeInput"
+                          :step="touchStepCoarse"
+                          :min="lim(1)"
+                          :max="lim(15)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.zPlunge"
+                          @update:model-value="zPlungeInput = $event; validateZPlunge()"
+                          @change="handleZPlungeBlur()"
+                        />
+                        <span v-if="errors.zPlunge" class="probe-error-tooltip">{{ errors.zPlunge }}</span>
+                      </div>
+                  </div>
+                </div>
 
-                    <!-- Divider before custom input -->
-                    <div class="custom-dropdown__divider"></div>
+                <p v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-help">{{ zPlungeBelowTop ? 'How far below the top the probe goes to touch the sides.' : 'How far the probe drops from where you start it to touch the sides. It goes back up to that height to move between sides.' }}</p>
 
-                    <!-- Custom diameter input -->
-                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
-                      <input
-                        v-model.number="newStandardBlockDiameter"
-                        type="number"
-                        :step="fineLengthStep"
-                        :min="lim(0.1)"
-                        :max="lim(50)"
-                        class="custom-dropdown__input"
-                        :placeholder="`Custom diameter (${lengthUnit})`"
-                        @click.stop
-                        @keyup.enter="addStandardBlockDiameter"
-                      />
+                <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Center Axes</label>
+                    <div class="probe-segmented" role="radiogroup">
                       <button
-                        @click.stop="addStandardBlockDiameter"
-                        class="custom-dropdown__add-btn"
-                        :disabled="!newStandardBlockDiameter || newStandardBlockDiameter <= 0"
-                      >
-                        +Add
-                      </button>
+                        v-for="axes in ['X', 'XY', 'Y']"
+                        :key="axes"
+                        type="button"
+                        role="radio"
+                        class="probe-segmented__option"
+                        :class="{ 'is-active': centerAxes === axes }"
+                        :aria-checked="centerAxes === axes"
+                        :disabled="isProbing"
+                        @click="centerAxes = axes"
+                      >{{ axes }}</button>
                     </div>
                   </div>
                 </div>
+
+                <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
+                  <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerX }">
+                    <label class="probe-label">X Dimension</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="xDimensionInput"
+                          :step="touchStepCoarse"
+                          :min="lim(3)"
+                          :max="lim(1000)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing || !centerX"
+                          :invalid="!!errors.xDimension"
+                          @update:model-value="xDimensionInput = $event; validateXDimension()"
+                          @change="handleXDimensionBlur()"
+                        />
+                        <span v-if="errors.xDimension" class="probe-error-tooltip">{{ errors.xDimension }}</span>
+                      </div>
+                  </div>
+
+                  <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerY }">
+                    <label class="probe-label">Y Dimension</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="yDimensionInput"
+                          :step="touchStepCoarse"
+                          :min="lim(3)"
+                          :max="lim(1000)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing || !centerY"
+                          :invalid="!!errors.yDimension"
+                          @update:model-value="yDimensionInput = $event; validateYDimension()"
+                          @change="handleYDimensionBlur()"
+                        />
+                        <span v-if="errors.yDimension" class="probe-error-tooltip">{{ errors.yDimension }}</span>
+                      </div>
+                  </div>
+                </div>
+
+                <div class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Z-Offset</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="zOffsetInput"
+                          :step="touchStep"
+                          :min="lim(-2)"
+                          :max="lim(2)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.zOffset"
+                          @update:model-value="zOffsetInput = $event; validateZOffset()"
+                          @change="handleZOffsetBlur()"
+                        />
+                        <span v-if="errors.zOffset" class="probe-error-tooltip">{{ errors.zOffset }}</span>
+                      </div>
+                  </div>
+
+                  <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group">
+                    <label class="probe-label">Probe Z First</label>
+                    <label class="switch">
+                      <input type="checkbox" v-model="probeZFirst" :disabled="isProbing" @change="handleProbeZFirstToggle">
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <!-- What the last Center probe measured, under the fields it was probed with -->
+                <div v-if="measuredSize && measuredSize.axis === probingAxis" class="probe-hint probe-hint--result">
+                  <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
+                  <span><strong>Measured size:</strong> <template v-if="measuredSize.x != null">X {{ formatCoord(measuredSize.x) }}</template><template v-if="measuredSize.x != null && measuredSize.y != null"> × </template><template v-if="measuredSize.y != null">Y {{ formatCoord(measuredSize.y) }}</template> {{ lengthUnit }}</span>
+                </div>
+              </template>
+              <template v-else-if="probeType === 'standard-block'">
+                  <div class="probe-control-row">
+                    <div v-if="['XYZ', 'Z'].includes(probingAxis)" class="probe-control-group">
+                      <label class="probe-label">Z Thickness</label>
+                      <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="zThicknessInput"
+                          :step="touchStep"
+                          :min="lim(1)"
+                          :max="lim(80)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.zThickness"
+                          @update:model-value="zThicknessInput = $event; validateZThickness()"
+                          @change="handleZThicknessBlur()"
+                        />
+                        <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
+                      </div>
+                    </div>
+
+                    <div v-if="probingAxis !== 'Z'" class="probe-control-group">
+                      <label class="probe-label">XY Thickness</label>
+                      <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="xyThicknessInput"
+                          :step="touchStep"
+                          :min="lim(1)"
+                          :max="lim(100)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.xyThickness"
+                          @update:model-value="xyThicknessInput = $event; validateXYThickness()"
+                          @change="handleXYThicknessBlur()"
+                        />
+                        <span v-if="errors.xyThickness" class="probe-error-tooltip">{{ errors.xyThickness }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="probingAxis === 'XYZ'" class="probe-control-row">
+                    <div class="probe-control-group">
+                      <label class="probe-label">Edge Distance</label>
+                      <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="edgeDistanceInput"
+                          :step="touchStepCoarse"
+                          :min="lim(1)"
+                          :max="lim(100)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.edgeDistance"
+                          @update:model-value="edgeDistanceInput = $event; validateEdgeDistance()"
+                          @change="handleEdgeDistanceBlur()"
+                        />
+                        <span v-if="errors.edgeDistance" class="probe-error-tooltip">{{ errors.edgeDistance }}</span>
+                      </div>
+                    </div>
+
+                    <div class="probe-control-group">
+                      <label class="probe-label">Z Probe Distance</label>
+                      <div class="probe-input-wrapper probe-stepper-field">
+                        <ProbeStepper
+                          :model-value="zProbeDistanceInput"
+                          :step="touchStepCoarse"
+                          :min="lim(1)"
+                          :max="lim(30)"
+                          :unit="lengthUnit"
+                          :disabled="isProbing"
+                          :invalid="!!errors.zProbeDistance"
+                          @update:model-value="zProbeDistanceInput = $event; validateZProbeDistance()"
+                          @change="handleZProbeDistanceBlur()"
+                        />
+                        <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
+                      </div>
+                    </div>
+                  </div>
+              </template>
+              <template v-else-if="probeType === 'autozero-touch'">
+                <div v-if="probingAxis !== 'Z'" class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Rapid Movement</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                      <ProbeStepper
+                        :model-value="rapidMovementInput"
+                        :step="Number(feedStep)"
+                        :min="feedLim(1000)"
+                        :max="feedLim(5000)"
+                        :unit="feedUnit"
+                        :disabled="isProbing"
+                        :invalid="!!errors.rapidMovement"
+                        @update:model-value="rapidMovementInput = $event; validateRapidMovement()"
+                        @change="handleRapidMovementBlur()"
+                      />
+                      <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template v-else-if="probeType === 'tool-length-setter'">
+                <div class="probe-control-group">
+                  <label class="probe-label">Tool Length Setter Height</label>
+                  <div class="probe-input-wrapper probe-stepper-field">
+                    <ProbeStepper
+                      :model-value="zThicknessInput"
+                      :step="touchStep"
+                      :min="lim(1)"
+                      :max="lim(80)"
+                      :unit="lengthUnit"
+                      :disabled="isProbing"
+                      :invalid="!!errors.zThickness"
+                      @update:model-value="zThicknessInput = $event; validateZThickness()"
+                      @change="handleZThicknessBlur()"
+                    />
+                    <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
+                  </div>
+                </div>
+
+                <div class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Retract Distance</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                      <ProbeStepper
+                        :model-value="retractDistanceInput"
+                        :step="touchStepCoarse"
+                        :min="lim(0.1)"
+                        :max="lim(20)"
+                        :unit="lengthUnit"
+                        :disabled="isProbing"
+                        :invalid="!!errors.retractDistance"
+                        @update:model-value="retractDistanceInput = $event; validateRetractDistance()"
+                        @change="validateRetractDistance(); saveToolLengthSetterSetting('retractDistance', retractDistance, errors.retractDistance)"
+                      />
+                      <span v-if="errors.retractDistance" class="probe-error-tooltip">{{ errors.retractDistance }}</span>
+                    </div>
+                  </div>
+
+                  <div class="probe-control-group">
+                    <label class="probe-label">Second Probe Delay</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                      <ProbeStepper
+                        :model-value="secondProbeDelay"
+                        :step="0.1"
+                        :min="0"
+                        :max="5"
+                        unit="s"
+                        :disabled="isProbing"
+                        :invalid="!!errors.secondProbeDelay"
+                        @update:model-value="secondProbeDelay = $event; validateSecondProbeDelay()"
+                        @change="validateSecondProbeDelay(); saveToolLengthSetterSetting('secondProbeDelay', secondProbeDelay, errors.secondProbeDelay)"
+                      />
+                      <span v-if="errors.secondProbeDelay" class="probe-error-tooltip">{{ errors.secondProbeDelay }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">First Probe Feedrate</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                      <ProbeStepper
+                        :model-value="firstProbeFeedrateInput"
+                        :step="Number(feedStep)"
+                        :min="feedLim(1)"
+                        :max="feedLim(5000)"
+                        :unit="feedUnit"
+                        :disabled="isProbing"
+                        :invalid="!!errors.firstProbeFeedrate"
+                        @update:model-value="firstProbeFeedrateInput = $event; validateFirstProbeFeedrate()"
+                        @change="validateFirstProbeFeedrate(); saveToolLengthSetterSetting('firstProbeFeedrate', firstProbeFeedrate, errors.firstProbeFeedrate)"
+                      />
+                      <span v-if="errors.firstProbeFeedrate" class="probe-error-tooltip">{{ errors.firstProbeFeedrate }}</span>
+                    </div>
+                  </div>
+
+                </div>
+
+                <div class="probe-control-row">
+                  <div class="probe-control-group">
+                    <label class="probe-label">Second Probe Feedrate</label>
+                    <div class="probe-input-wrapper probe-stepper-field">
+                      <ProbeStepper
+                        :model-value="secondProbeFeedrateInput"
+                        :step="isImperial ? 0.5 : 5"
+                        :min="feedLim(1)"
+                        :max="feedLim(1000)"
+                        :unit="feedUnit"
+                        :disabled="isProbing"
+                        :invalid="!!errors.secondProbeFeedrate"
+                        @update:model-value="secondProbeFeedrateInput = $event; validateSecondProbeFeedrate()"
+                        @change="validateSecondProbeFeedrate(); saveToolLengthSetterSetting('secondProbeFeedrate', secondProbeFeedrate, errors.secondProbeFeedrate)"
+                      />
+                      <span v-if="errors.secondProbeFeedrate" class="probe-error-tooltip">{{ errors.secondProbeFeedrate }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </template>
+            <template #bit>
+              <template v-if="probeType === 'autozero-touch'">
+                  <div class="custom-dropdown" :class="{ 'custom-dropdown--open': dropdownOpen }">
+                    <div
+                      class="custom-dropdown__trigger"
+                      @click="toggleDropdown"
+                      :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
+                    >
+                      <span class="custom-dropdown__value">{{ getDisplayValue() }}</span>
+                      <span class="custom-dropdown__arrow">▼</span>
+                    </div>
+
+                    <div v-if="dropdownOpen" class="custom-dropdown__menu">
+                      <!-- The tool in the spindle, when the Tool Library knows its diameter -->
+                      <div
+                        v-if="currentToolDiameter !== null"
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === CURRENT_TOOL }"
+                        @click="selectDiameter(CURRENT_TOOL)"
+                      >
+                        <span class="custom-dropdown__item-spacer"></span>
+                        <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
+                      </div>
+                      <!-- Auto and Tip options (cannot be removed) -->
+                      <div
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Auto' }"
+                        @click="selectDiameter('Auto')"
+                      >
+                        <span class="custom-dropdown__item-spacer"></span>
+                        <span class="custom-dropdown__item-text">Auto</span>
+                      </div>
+
+                      <div
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Tip' }"
+                        @click="selectDiameter('Tip')"
+                      >
+                        <span class="custom-dropdown__item-spacer"></span>
+                        <span class="custom-dropdown__item-text">Tip</span>
+                      </div>
+
+                      <!-- Divider -->
+                      <div v-if="customBitDiameters.length > 0" class="custom-dropdown__divider"></div>
+
+                      <!-- Custom diameters (can be removed) -->
+                      <div
+                        v-for="diameter in customBitDiameters"
+                        :key="diameter"
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === diameter.toString() }"
+                        @click="selectDiameter(diameter.toString())"
+                      >
+                        <button
+                          class="custom-dropdown__remove"
+                          @click.stop="removeCustomDiameter(diameter)"
+                          title="Remove"
+                        >
+                          ×
+                        </button>
+                        <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
+                      </div>
+
+                      <!-- Divider before custom input -->
+                      <div class="custom-dropdown__divider"></div>
+
+                      <!-- Custom diameter input -->
+                      <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
+                        <input
+                          v-model.number="newCustomDiameter"
+                          type="number"
+                          :step="fineLengthStep"
+                          :min="lim(0.1)"
+                          :max="lim(50)"
+                          class="custom-dropdown__input"
+                          :placeholder="`Custom diameter (${lengthUnit})`"
+                          @click.stop
+                          @keyup.enter="addCustomDiameter"
+                        />
+                        <button
+                          @click.stop="addCustomDiameter"
+                          class="custom-dropdown__add-btn"
+                          :disabled="!newCustomDiameter || newCustomDiameter <= 0"
+                        >
+                          +Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+              </template>
+              <template v-else>
+                  <div class="custom-dropdown" :class="{ 'custom-dropdown--open': standardBlockDropdownOpen }">
+                    <div
+                      class="custom-dropdown__trigger"
+                      @click="toggleStandardBlockDropdown"
+                      :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
+                    >
+                      <span class="custom-dropdown__value">{{ getStandardBlockDisplayValue() }}</span>
+                      <span class="custom-dropdown__arrow">▼</span>
+                    </div>
+
+                    <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
+                      <!-- The tool in the spindle, when the Tool Library knows its diameter -->
+                      <div
+                        v-if="currentToolDiameter !== null"
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === CURRENT_TOOL }"
+                        @click="selectStandardBlockDiameter(CURRENT_TOOL)"
+                      >
+                        <span class="custom-dropdown__item-spacer"></span>
+                        <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
+                      </div>
+                      <!-- Custom diameters (can be removed) -->
+                      <div
+                        v-for="diameter in standardBlockBitDiameters"
+                        :key="diameter"
+                        class="custom-dropdown__item"
+                        :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === diameter.toString() }"
+                        @click="selectStandardBlockDiameter(diameter.toString())"
+                      >
+                        <button
+                          class="custom-dropdown__remove"
+                          @click.stop="removeStandardBlockDiameter(diameter)"
+                          title="Remove"
+                        >
+                          ×
+                        </button>
+                        <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
+                      </div>
+
+                      <!-- Divider before custom input -->
+                      <div class="custom-dropdown__divider"></div>
+
+                      <!-- Custom diameter input -->
+                      <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
+                        <input
+                          v-model.number="newStandardBlockDiameter"
+                          type="number"
+                          :step="fineLengthStep"
+                          :min="lim(0.1)"
+                          :max="lim(50)"
+                          class="custom-dropdown__input"
+                          :placeholder="`Custom diameter (${lengthUnit})`"
+                          @click.stop
+                          @keyup.enter="addStandardBlockDiameter"
+                        />
+                        <button
+                          @click.stop="addStandardBlockDiameter"
+                          class="custom-dropdown__add-btn"
+                          :disabled="!newStandardBlockDiameter || newStandardBlockDiameter <= 0"
+                        >
+                          +Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+              </template>
             </template>
             <template #position>
                 <div class="probe-coords">
@@ -191,579 +615,7 @@
                   </label>
                 </div>
             </template>
-          </AutoZeroAirPanel>
-          <template v-else>
-          <div class="probe-card">
-            <div class="probe-control-row">
-              <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
-                <label class="probe-label">Probing Axis</label>
-                <select v-model="probingAxis" class="probe-select" :disabled="isProbing">
-                  <option value="Z">Z</option>
-                  <option value="XYZ">XYZ</option>
-                  <option value="XY">XY</option>
-                  <option value="X">X</option>
-                  <option value="Y">Y</option>
-                  <option v-if="probeType === '3d-probe'" value="Center - Inner">Center - Inner</option>
-                  <option v-if="probeType === '3d-probe'" value="Center - Outer">Center - Outer</option>
-                </select>
-              </div>
-
-              <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
-                <label class="probe-label">Rapid Movement</label>
-                <div class="probe-input-with-unit probe-input-wrapper">
-                  <input
-                    v-model.number="rapidMovementInput"
-                    type="number"
-                    :step="feedStep"
-                    :min="feedLim(1000)"
-                    :max="feedLim(5000)"
-                    class="probe-input"
-                    :class="{ 'probe-input--error': errors.rapidMovement }"
-                    :disabled="isProbing"
-                    @input="validateRapidMovement"
-                    @blur="handleRapidMovementBlur"
-                  />
-                  <span class="probe-unit">{{ feedUnit }}</span>
-                  <span v-if="errors.rapidMovement" class="probe-error-tooltip">{{ errors.rapidMovement }}</span>
-                </div>
-              </div>
-            </div>
-
-            <template v-if="probeType === '3d-probe'">
-              <div class="probe-control-row">
-                <div class="probe-control-group">
-                  <label class="probe-label">Diameter</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="ballPointDiameterInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(0.1)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.ballPointDiameter }"
-                      :disabled="isProbing"
-                      @input="validateBallPointDiameter"
-                      @blur="handleBallPointDiameterBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.ballPointDiameter" class="probe-error-tooltip">{{ errors.ballPointDiameter }}</span>
-                  </div>
-                </div>
-
-                <div v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-group">
-                  <label class="probe-label">Z-Plunge</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="zPlungeInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(1)"
-                      :max="lim(15)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.zPlunge }"
-                      :disabled="isProbing"
-                      @input="validateZPlunge"
-                      @blur="handleZPlungeBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.zPlunge" class="probe-error-tooltip">{{ errors.zPlunge }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <p v-if="['XYZ', 'Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-help">{{ zPlungeBelowTop ? 'How far below the top the probe goes to touch the sides.' : 'How far the probe drops from where you start it to touch the sides. It goes back up to that height to move between sides.' }}</p>
-
-              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
-                <div class="probe-control-group">
-                  <label class="probe-label">Center Axes</label>
-                  <div class="probe-segmented" role="radiogroup">
-                    <button
-                      v-for="axes in ['X', 'XY', 'Y']"
-                      :key="axes"
-                      type="button"
-                      role="radio"
-                      class="probe-segmented__option"
-                      :class="{ 'is-active': centerAxes === axes }"
-                      :aria-checked="centerAxes === axes"
-                      :disabled="isProbing"
-                      @click="centerAxes = axes"
-                    >{{ axes }}</button>
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row">
-                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerX }">
-                  <label class="probe-label">X Dimension</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="xDimensionInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(3)"
-                      :max="lim(1000)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.xDimension }"
-                      :disabled="isProbing || !centerX"
-                      @input="validateXDimension"
-                      @blur="handleXDimensionBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.xDimension" class="probe-error-tooltip">{{ errors.xDimension }}</span>
-                  </div>
-                </div>
-
-                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': !centerY }">
-                  <label class="probe-label">Y Dimension</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="yDimensionInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(3)"
-                      :max="lim(1000)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.yDimension }"
-                      :disabled="isProbing || !centerY"
-                      @input="validateYDimension"
-                      @blur="handleYDimensionBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.yDimension" class="probe-error-tooltip">{{ errors.yDimension }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="probe-control-row">
-                <div class="probe-control-group">
-                  <label class="probe-label">Z-Offset</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="zOffsetInput"
-                      type="number"
-                      :step="fineLengthStep"
-                      :min="lim(-2)"
-                      :max="lim(2)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.zOffset }"
-                      :disabled="isProbing"
-                      @input="validateZOffset"
-                      @blur="handleZOffsetBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.zOffset" class="probe-error-tooltip">{{ errors.zOffset }}</span>
-                  </div>
-                </div>
-
-                <div v-if="probingAxis === 'Center - Outer'" class="probe-control-group">
-                  <label class="probe-label">Probe Z First</label>
-                  <label class="switch">
-                    <input type="checkbox" v-model="probeZFirst" :disabled="isProbing" @change="handleProbeZFirstToggle">
-                    <span class="slider"></span>
-                  </label>
-                </div>
-              </div>
-            </template>
-
-            <template v-if="probeType === 'standard-block'">
-              <div class="probe-control-group">
-                <label class="probe-label">Bit Diameter</label>
-                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': standardBlockDropdownOpen }">
-                  <div
-                    class="custom-dropdown__trigger"
-                    @click="toggleStandardBlockDropdown"
-                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
-                  >
-                    <span class="custom-dropdown__value">{{ getStandardBlockDisplayValue() }}</span>
-                    <span class="custom-dropdown__arrow">▼</span>
-                  </div>
-
-                  <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
-                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
-                    <div
-                      v-if="currentToolDiameter !== null"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === CURRENT_TOOL }"
-                      @click="selectStandardBlockDiameter(CURRENT_TOOL)"
-                    >
-                      <span class="custom-dropdown__item-spacer"></span>
-                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
-                    </div>
-                    <!-- Custom diameters (can be removed) -->
-                    <div
-                      v-for="diameter in standardBlockBitDiameters"
-                      :key="diameter"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === diameter.toString() }"
-                      @click="selectStandardBlockDiameter(diameter.toString())"
-                    >
-                      <button
-                        class="custom-dropdown__remove"
-                        @click.stop="removeStandardBlockDiameter(diameter)"
-                        title="Remove"
-                      >
-                        ×
-                      </button>
-                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
-                    </div>
-
-                    <!-- Divider before custom input -->
-                    <div class="custom-dropdown__divider"></div>
-
-                    <!-- Custom diameter input -->
-                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
-                      <input
-                        v-model.number="newStandardBlockDiameter"
-                        type="number"
-                        :step="fineLengthStep"
-                        :min="lim(0.1)"
-                        :max="lim(50)"
-                        class="custom-dropdown__input"
-                        :placeholder="`Custom diameter (${lengthUnit})`"
-                        @click.stop
-                        @keyup.enter="addStandardBlockDiameter"
-                      />
-                      <button
-                        @click.stop="addStandardBlockDiameter"
-                        class="custom-dropdown__add-btn"
-                        :disabled="!newStandardBlockDiameter || newStandardBlockDiameter <= 0"
-                      >
-                        +Add
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="probe-control-row">
-                <div class="probe-control-group">
-                  <label class="probe-label">Z Thickness</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="zThicknessInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(1)"
-                      :max="lim(80)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.zThickness }"
-                      :disabled="isProbing"
-                      @input="validateZThickness"
-                      @blur="handleZThicknessBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
-                  </div>
-                </div>
-
-                <div class="probe-control-group">
-                  <label class="probe-label">XY Thickness</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="xyThicknessInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(1)"
-                      :max="lim(100)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.xyThickness }"
-                      :disabled="isProbing"
-                      @input="validateXYThickness"
-                      @blur="handleXYThicknessBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.xyThickness" class="probe-error-tooltip">{{ errors.xyThickness }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="probe-control-row">
-                <div class="probe-control-group" :class="{ 'probe-control-group--inactive': probingAxis !== 'XYZ' }">
-                  <label class="probe-label">Edge Distance</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="edgeDistanceInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(1)"
-                      :max="lim(100)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.edgeDistance }"
-                      :disabled="isProbing || probingAxis !== 'XYZ'"
-                      @input="validateEdgeDistance"
-                      @blur="handleEdgeDistanceBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.edgeDistance" class="probe-error-tooltip">{{ errors.edgeDistance }}</span>
-                  </div>
-                </div>
-
-                <div class="probe-control-group">
-                  <label class="probe-label">Z Probe Distance</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="zProbeDistanceInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(1)"
-                      :max="lim(30)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.zProbeDistance }"
-                      :disabled="isProbing"
-                      @input="validateZProbeDistance"
-                      @blur="handleZProbeDistanceBlur"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.zProbeDistance" class="probe-error-tooltip">{{ errors.zProbeDistance }}</span>
-                  </div>
-                </div>
-              </div>
-              <p class="probe-help">{{ probingAxis === 'XYZ' ? 'How far in from the block edges you start. XYZ moves out this far before probing the sides, so raise it if your block has a hole near the corner.' : 'Used when Probing Axis is XYZ.' }}</p>
-            </template>
-
-            <template v-if="probeType === 'autozero-touch'">
-              <div class="probe-control-group">
-                <label class="probe-label">Bit Diameter</label>
-                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': dropdownOpen }">
-                  <div
-                    class="custom-dropdown__trigger"
-                    @click="toggleDropdown"
-                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
-                  >
-                    <span class="custom-dropdown__value">{{ getDisplayValue() }}</span>
-                    <span class="custom-dropdown__arrow">▼</span>
-                  </div>
-
-                  <div v-if="dropdownOpen" class="custom-dropdown__menu">
-                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
-                    <div
-                      v-if="currentToolDiameter !== null"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === CURRENT_TOOL }"
-                      @click="selectDiameter(CURRENT_TOOL)"
-                    >
-                      <span class="custom-dropdown__item-spacer"></span>
-                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
-                    </div>
-                    <!-- Auto and Tip options (cannot be removed) -->
-                    <div
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Auto' }"
-                      @click="selectDiameter('Auto')"
-                    >
-                      <span class="custom-dropdown__item-spacer"></span>
-                      <span class="custom-dropdown__item-text">Auto</span>
-                    </div>
-
-                    <div
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === 'Tip' }"
-                      @click="selectDiameter('Tip')"
-                    >
-                      <span class="custom-dropdown__item-spacer"></span>
-                      <span class="custom-dropdown__item-text">Tip</span>
-                    </div>
-
-                    <!-- Divider -->
-                    <div v-if="customBitDiameters.length > 0" class="custom-dropdown__divider"></div>
-
-                    <!-- Custom diameters (can be removed) -->
-                    <div
-                      v-for="diameter in customBitDiameters"
-                      :key="diameter"
-                      class="custom-dropdown__item"
-                      :class="{ 'custom-dropdown__item--selected': selectedBitDiameter === diameter.toString() }"
-                      @click="selectDiameter(diameter.toString())"
-                    >
-                      <button
-                        class="custom-dropdown__remove"
-                        @click.stop="removeCustomDiameter(diameter)"
-                        title="Remove"
-                      >
-                        ×
-                      </button>
-                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
-                    </div>
-
-                    <!-- Divider before custom input -->
-                    <div class="custom-dropdown__divider"></div>
-
-                    <!-- Custom diameter input -->
-                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
-                      <input
-                        v-model.number="newCustomDiameter"
-                        type="number"
-                        :step="fineLengthStep"
-                        :min="lim(0.1)"
-                        :max="lim(50)"
-                        class="custom-dropdown__input"
-                        :placeholder="`Custom diameter (${lengthUnit})`"
-                        @click.stop
-                        @keyup.enter="addCustomDiameter"
-                      />
-                      <button
-                        @click.stop="addCustomDiameter"
-                        class="custom-dropdown__add-btn"
-                        :disabled="!newCustomDiameter || newCustomDiameter <= 0"
-                      >
-                        +Add
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <template v-if="probeType === 'tool-length-setter'">
-              <div class="probe-control-group">
-                <label class="probe-label">Tool Length Setter Height</label>
-                <div class="probe-input-with-unit probe-input-wrapper">
-                  <input
-                    v-model.number="zThicknessInput"
-                    type="number"
-                    :step="lengthStep"
-                    :min="lim(1)"
-                    :max="lim(80)"
-                    class="probe-input"
-                    :class="{ 'probe-input--error': errors.zThickness }"
-                    :disabled="isProbing"
-                    @input="validateZThickness"
-                    @blur="handleZThicknessBlur"
-                  />
-                  <span class="probe-unit">{{ lengthUnit }}</span>
-                  <span v-if="errors.zThickness" class="probe-error-tooltip">{{ errors.zThickness }}</span>
-                </div>
-              </div>
-
-              <div class="probe-control-row">
-                <div class="probe-control-group">
-                  <label class="probe-label">Retract Distance</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="retractDistanceInput"
-                      type="number"
-                      :step="lengthStep"
-                      :min="lim(0.1)"
-                      :max="lim(20)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.retractDistance }"
-                      :disabled="isProbing"
-                      @input="validateRetractDistance"
-                      @blur="validateRetractDistance(); saveToolLengthSetterSetting('retractDistance', retractDistance, errors.retractDistance)"
-                    />
-                    <span class="probe-unit">{{ lengthUnit }}</span>
-                    <span v-if="errors.retractDistance" class="probe-error-tooltip">{{ errors.retractDistance }}</span>
-                  </div>
-                </div>
-
-                <div class="probe-control-group">
-                  <label class="probe-label">Second Probe Delay</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="secondProbeDelay"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="5"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.secondProbeDelay }"
-                      :disabled="isProbing"
-                      @input="validateSecondProbeDelay"
-                      @blur="validateSecondProbeDelay(); saveToolLengthSetterSetting('secondProbeDelay', secondProbeDelay, errors.secondProbeDelay)"
-                    />
-                    <span class="probe-unit">s</span>
-                    <span v-if="errors.secondProbeDelay" class="probe-error-tooltip">{{ errors.secondProbeDelay }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="probe-control-row">
-                <div class="probe-control-group">
-                  <label class="probe-label">First Probe Feedrate</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="firstProbeFeedrateInput"
-                      type="number"
-                      :step="feedStep"
-                      :min="feedLim(1)"
-                      :max="feedLim(5000)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.firstProbeFeedrate }"
-                      :disabled="isProbing"
-                      @input="validateFirstProbeFeedrate"
-                      @blur="validateFirstProbeFeedrate(); saveToolLengthSetterSetting('firstProbeFeedrate', firstProbeFeedrate, errors.firstProbeFeedrate)"
-                    />
-                    <span class="probe-unit">{{ feedUnit }}</span>
-                    <span v-if="errors.firstProbeFeedrate" class="probe-error-tooltip">{{ errors.firstProbeFeedrate }}</span>
-                  </div>
-                </div>
-
-                <div class="probe-control-group">
-                  <label class="probe-label">Second Probe Feedrate</label>
-                  <div class="probe-input-with-unit probe-input-wrapper">
-                    <input
-                      v-model.number="secondProbeFeedrateInput"
-                      type="number"
-                      :step="isImperial ? '0.5' : '5'"
-                      :min="feedLim(1)"
-                      :max="feedLim(1000)"
-                      class="probe-input"
-                      :class="{ 'probe-input--error': errors.secondProbeFeedrate }"
-                      :disabled="isProbing"
-                      @input="validateSecondProbeFeedrate"
-                      @blur="validateSecondProbeFeedrate(); saveToolLengthSetterSetting('secondProbeFeedrate', secondProbeFeedrate, errors.secondProbeFeedrate)"
-                    />
-                    <span class="probe-unit">{{ feedUnit }}</span>
-                    <span v-if="errors.secondProbeFeedrate" class="probe-error-tooltip">{{ errors.secondProbeFeedrate }}</span>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- What the last Center probe measured, under the fields it was probed with -->
-            <div v-if="measuredSize && measuredSize.axis === probingAxis" class="probe-hint probe-hint--result">
-              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
-              <span><strong>Measured size:</strong> <template v-if="measuredSize.x != null">X {{ formatCoord(measuredSize.x) }}</template><template v-if="measuredSize.x != null && measuredSize.y != null"> × </template><template v-if="measuredSize.y != null">Y {{ formatCoord(measuredSize.y) }}</template> {{ lengthUnit }}</span>
-            </div>
-          </div>
-          <div class="probe-card probe-card--preview">
-            <div class="probe-connection-test">
-              <label class="probe-label">Connection Test</label>
-              <label class="switch">
-                <input type="checkbox" v-model="requireConnectionTest" @change="handleConnectionTestToggle">
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <ProbeVisualizer
-              v-if="settingsLoaded"
-              :probe-type="probeType"
-              :probing-axis="probingAxis"
-              :selected-corner="selectedCorner"
-              :selected-side="selectedSide"
-              :probe-active="props.probeActive"
-              @corner-selected="selectedCorner = $event"
-              @side-selected="selectedSide = $event"
-            />
-
-            <div v-if="['XYZ', 'XY'].includes(probingAxis)" class="probe-hint">
-              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span>Click on a corner to select where to start probing</span>
-            </div>
-            <div v-else-if="probingAxis === 'X'" class="probe-hint">
-              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span>Click on the left or right side to select where to probe</span>
-            </div>
-            <div v-else-if="probingAxis === 'Y'" class="probe-hint">
-              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span>Click on the front or back side to select where to probe</span>
-            </div>
-            <div v-else-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-hint">
-              <svg class="probe-hint__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span><strong>Important:</strong> Position the probe above the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}, high enough to clear it. Measure dimension as close as possible to prevent probe damage.</span>
-            </div>
-          </div>
-          </template>
+          </component>
         </div>
 
         <footer class="probe-main__footer">
@@ -778,8 +630,12 @@
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import type { Ref } from 'vue';
 import Dialog from '../../components/Dialog.vue';
-import ProbeVisualizer from './ProbeVisualizer.vue';
 import AutoZeroAirPanel from './AutoZeroAirPanel.vue';
+import Probe3dPanel from './Probe3dPanel.vue';
+import StandardBlockPanel from './StandardBlockPanel.vue';
+import AutoZeroTouchPanel from './AutoZeroTouchPanel.vue';
+import ToolSetterPanel from './ToolSetterPanel.vue';
+import ProbeStepper from './ProbeStepper.vue';
 import StepControl from '../jog/StepControl.vue';
 import JogControls from '../jog/JogControls.vue';
 import { api } from '../../lib/api.js';
@@ -809,8 +665,23 @@ const emit = defineEmits<{
 const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch' | 'nczeroair' | 'tool-length-setter'>('autozero-touch');
 // ncZeroAir Probe: in its centre hole (any bit, nothing to enter) or on its outside faces like a standard block.
 const ncZeroAirMode = ref<'hole' | 'edge'>('hole');
+// These tabs show the moving picture, with the position and the jog pad inside their panel.
+const picturePanel = computed(() => ['nczeroair', '3d-probe', 'standard-block', 'autozero-touch', 'tool-length-setter'].includes(probeType.value));
+const picturePanelComponent = computed(() => (probeType.value === 'nczeroair' ? AutoZeroAirPanel
+  : probeType.value === 'standard-block' ? StandardBlockPanel
+  : probeType.value === 'autozero-touch' ? AutoZeroTouchPanel
+  : probeType.value === 'tool-length-setter' ? ToolSetterPanel
+  : Probe3dPanel));
+// AutoZero Touch: Auto and Tip touch both walls of the pocket; a given diameter touches one.
+const touchesBothWalls = computed(() => ['Auto', 'Tip'].includes(selectedBitDiameter.value));
+const pictureMeasureOnly = false;
 
 const probeTabs = [
+  {
+    id: 'nczeroair',
+    label: 'AutoZeroAir',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="5"/></svg>'
+  },
   {
     id: '3d-probe',
     label: '3D Probe',
@@ -825,11 +696,6 @@ const probeTabs = [
     id: 'autozero-touch',
     label: 'AutoZero Touch',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M12 3v7"/><path d="M9 7l3 3 3-3"/></svg>'
-  },
-  {
-    id: 'nczeroair',
-    label: 'AutoZeroAir',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="5"/></svg>'
   },
   {
     id: 'tool-length-setter',
@@ -924,6 +790,9 @@ function feedProxy(source: Ref<number>) {
 
 /** Input attributes in the displayed unit. Imperial needs a finer step. */
 const lengthStep = computed(() => (isImperial.value ? '0.001' : '0.1'));
+// The − / + fields step 1 mm (Z-Offset: 0.1 mm), or in inches the round amount closest to that.
+const touchStep = computed(() => (isImperial.value ? 0.005 : 0.1));
+const touchStepCoarse = computed(() => (isImperial.value ? 0.05 : 1));
 const fineLengthStep = computed(() => (isImperial.value ? '0.0005' : '0.01'));
 const feedStep = computed(() => (isImperial.value ? '5' : '100'));
 const lim = (mm: number) => (isImperial.value ? showLength(mm) : mm);
@@ -1358,7 +1227,7 @@ const applyAutoZeroSideDefault = (axis: string) => {
     return;
   }
 
-  const shouldDefaultLeftFront = ['autozero-touch', '3d-probe', 'nczeroair'].includes(probeType.value);
+  const shouldDefaultLeftFront = ['autozero-touch', '3d-probe', 'nczeroair', 'standard-block'].includes(probeType.value);
   if (!shouldDefaultLeftFront) {
     selectedSide.value = null;
     return;
@@ -2271,6 +2140,23 @@ const handleStartProbe = async () => {
   .aza__pos .probe-coords { flex-direction: column; align-items: stretch; gap: 4px; }
   .aza__pos .probe-coords__value { font-size: 1rem; padding: 5px 10px; }
 }
+/* The 3D probe's fields in its panel: closer rows, no stray margins. */
+.aza__fields .probe-stepper-field { position: relative; display: block; }
+.aza__fields .probe-control-row { gap: 8px; }
+.aza__fields .probe-label { margin-bottom: 3px; }
+.aza__fields .probe-control-row { margin: 0; }
+.aza__fields .probe-help { margin: 0; font-size: 0.76rem; }
+/* The Z-Plunge explanation is left out here: the picture shows it, and the column has to fit. */
+.aza__fields > .probe-help { display: none; }
+/* Center Axes: its name on a row of its own, centred, and the choice across the column under it. */
+.aza__fields .probe-control-row--half { width: 100%; }
+.aza__fields .probe-control-row--half > .probe-control-group { flex: 1 1 100%; }
+/* The column's own spacing sets the rows apart. */
+.aza__fields .probe-control-group { margin-bottom: 0; }
+.aza__fields .probe-control-row--half .probe-label { display: block; text-align: center; }
+.aza__fields .probe-control-row--half .probe-segmented__option { padding: 9px 0; }
+.aza__fields .probe-measure-only { margin: 0; padding-top: 6px; }
+.aza__fields .probe-hint { margin: 0; }
 .aza__jog .probe-jog { width: auto; }
 .aza__jog .probe-jog { gap: 6px; }
 .aza__jog .probe-jog :deep(.step-control) { flex-wrap: wrap; justify-content: center; row-gap: 6px; }

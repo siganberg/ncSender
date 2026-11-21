@@ -196,7 +196,8 @@ function buildScene() {
   camera.up.set(0, 0, 1);
 
   // The material: a board, its top at z = 0.
-  board = new THREE.Mesh(geom(new THREE.BoxGeometry(230, 170, 18)), matcap(0xd9b47e));
+  // Lit brightly: under the usual lighting its top came out a dull brown, flat on a light theme.
+  board = new THREE.Mesh(geom(new THREE.BoxGeometry(230, 170, 18)), matcap(0xecc48a, true));
   outline(board, 0x5a4424, 0.6);
   scene.add(board);
 
@@ -211,7 +212,7 @@ function buildScene() {
         owned.push(ledMaterial);
         material = ledMaterial;
       } else {
-        material = matcap(g.role === 'body' ? 0xb4bcc8 : 0x2b323c);
+        material = matcap(g.role === 'body' ? 0xc9d0da : 0x2b323c);
       }
       const mesh = new THREE.Mesh(g.geometry, material);
       if (g.role === 'body') outline(mesh, 0x0d1219, 0.45);
@@ -426,45 +427,4 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
-.azf {
-  position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 20%,
-    color-mix(in srgb, var(--color-text-secondary) 22%, var(--color-surface-muted)) 0%,
-    var(--color-surface-muted) 60%,
-    color-mix(in srgb, #000 12%, var(--color-surface-muted)) 100%);
-}
-.azf__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
-.azf__num {
-  position: absolute; transform: translate(-50%, -50%);
-  width: 22px; height: 22px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font: 700 11px system-ui, sans-serif; color: #fff;
-  background: color-mix(in srgb, var(--color-accent) 85%, #000);
-  opacity: 0.35; pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.azf__num.is-hit { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
-.azf__top {
-  position: absolute; right: 10px; bottom: 10px; width: 28%; min-width: 96px; max-width: 200px;
-  padding: 7px 7px 5px; border-radius: 10px;
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 28%, transparent);
-  pointer-events: none;
-}
-.azf__top svg { display: block; width: 100%; height: auto; }
-.azf__top span {
-  display: block; margin-top: 3px; text-align: center;
-  font: 600 10px system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--color-text-secondary);
-}
-.azf__wood { fill: #c9a06a; opacity: 0.55; }
-.azf__block { fill: #3a4a60; fill-opacity: 0.85; stroke: #93a2b4; stroke-width: 1; }
-.azf__hole { fill: #121923; stroke: #93a2b4; stroke-width: 1; }
-.azf__dim { fill: none; stroke: var(--color-accent); stroke-width: 0.8; stroke-dasharray: 2 2; }
-.azf__cross { fill: none; stroke: var(--color-accent); stroke-width: 1.2; }
-.azf__zero { fill: none; stroke: var(--color-accent); stroke-width: 1.4; }
-.azf__dot { fill: #3ccf63; }
-.azf__bit { fill: #f2f4f7; stroke: #0d1219; stroke-width: 0.8; }
-@media (prefers-reduced-motion: reduce) { .azf__num { transition: none; } }
-</style>
+<style src="./probe-figure.css"></style>
