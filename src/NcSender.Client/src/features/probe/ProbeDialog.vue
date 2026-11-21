@@ -16,7 +16,7 @@
 -->
 
 <template>
-  <Dialog v-if="show" @close="handleClose" :show-header="false" width="1000px" height="85vh" max-width="95vw" :close-on-backdrop-click="false">
+  <Dialog v-if="show" @close="handleClose" :show-header="false" width="1240px" height="90vh" max-width="96vw" :close-on-backdrop-click="false">
     <div class="probe-dialog">
       <aside class="probe-sidebar">
         <div class="probe-sidebar__header">
@@ -46,8 +46,8 @@
       <section class="probe-main">
         <header class="probe-main__header">
           <h2 class="probe-main__title">{{ activeTab.label }}</h2>
-          <p class="probe-main__instructions">Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.</p>
-          <div class="probe-header-cards">
+          <p v-if="probeType !== 'nczeroair'" class="probe-main__instructions">Position the probe needle as shown in the image. Push the probe needle gently to test that it triggers properly (green light should activate). Ensure the probe is positioned correctly for the selected probing axis.</p>
+          <div v-if="probeType !== 'nczeroair'" class="probe-header-cards">
             <div class="probe-header-card">
               <div class="probe-coords">
                 <div class="probe-coords__title">Work Coordinates</div>
@@ -79,6 +79,120 @@
         </header>
 
         <div class="probe-main__body">
+          <AutoZeroAirPanel
+            v-if="probeType === 'nczeroair'"
+            v-model:axis="probingAxis"
+            v-model:mode="ncZeroAirMode"
+            v-model:corner="selectedCorner"
+            v-model:side="selectedSide"
+            :is-probing="isProbing"
+            :probe-active="props.probeActive"
+          >
+            <template #bit>
+                <div class="custom-dropdown" :class="{ 'custom-dropdown--open': standardBlockDropdownOpen }">
+                  <div
+                    class="custom-dropdown__trigger"
+                    @click="toggleStandardBlockDropdown"
+                    :class="{ 'custom-dropdown__trigger--disabled': isProbing }"
+                  >
+                    <span class="custom-dropdown__value">{{ getStandardBlockDisplayValue() }}</span>
+                    <span class="custom-dropdown__arrow">▼</span>
+                  </div>
+
+                  <div v-if="standardBlockDropdownOpen" class="custom-dropdown__menu">
+                    <!-- The tool in the spindle, when the Tool Library knows its diameter -->
+                    <div
+                      v-if="currentToolDiameter !== null"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === CURRENT_TOOL }"
+                      @click="selectStandardBlockDiameter(CURRENT_TOOL)"
+                    >
+                      <span class="custom-dropdown__item-spacer"></span>
+                      <span class="custom-dropdown__item-text">{{ currentToolLabel }}</span>
+                    </div>
+                    <!-- Custom diameters (can be removed) -->
+                    <div
+                      v-for="diameter in standardBlockBitDiameters"
+                      :key="diameter"
+                      class="custom-dropdown__item"
+                      :class="{ 'custom-dropdown__item--selected': selectedStandardBlockBitDiameter === diameter.toString() }"
+                      @click="selectStandardBlockDiameter(diameter.toString())"
+                    >
+                      <button
+                        class="custom-dropdown__remove"
+                        @click.stop="removeStandardBlockDiameter(diameter)"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                      <span class="custom-dropdown__item-text">{{ formatDiameter(diameter) }}</span>
+                    </div>
+
+                    <!-- Divider before custom input -->
+                    <div class="custom-dropdown__divider"></div>
+
+                    <!-- Custom diameter input -->
+                    <div class="custom-dropdown__item custom-dropdown__item--input" @click.stop>
+                      <input
+                        v-model.number="newStandardBlockDiameter"
+                        type="number"
+                        :step="fineLengthStep"
+                        :min="lim(0.1)"
+                        :max="lim(50)"
+                        class="custom-dropdown__input"
+                        :placeholder="`Custom diameter (${lengthUnit})`"
+                        @click.stop
+                        @keyup.enter="addStandardBlockDiameter"
+                      />
+                      <button
+                        @click.stop="addStandardBlockDiameter"
+                        class="custom-dropdown__add-btn"
+                        :disabled="!newStandardBlockDiameter || newStandardBlockDiameter <= 0"
+                      >
+                        +Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+            </template>
+            <template #position>
+                <div class="probe-coords">
+                  <div class="probe-coords__title">Work Coordinates</div>
+                  <div v-for="axis in coordAxes" :key="axis" class="probe-coords__cell">
+                    <span class="probe-coords__axis">{{ axis.toUpperCase() }}</span>
+                    <span class="probe-coords__value">{{ formatCoord(appStore.status.workCoords[axis]) }}</span>
+                  </div>
+                </div>
+            </template>
+            <template #jog>
+                <div class="probe-jog">
+                  <StepControl
+                    :current-step="jogStep"
+                    :step-options="stepOptions"
+                    :current-feed-rate="jogFeedRate"
+                    @update:step="jogStep = $event"
+                    @update:feedRate="jogFeedRate = $event"
+                  />
+                  <JogControls
+                    :current-step="jogStep"
+                    :feed-rate="jogFeedRate"
+                    :disabled="isProbing"
+                    custom-class="jog-controls-probe"
+                    @center-click="handleCenterClick"
+                  />
+                </div>
+            </template>
+            <template #extras>
+                <div class="probe-connection-test">
+                  <label class="probe-label">Connection Test</label>
+                  <label class="switch">
+                    <input type="checkbox" v-model="requireConnectionTest" @change="handleConnectionTestToggle">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+            </template>
+          </AutoZeroAirPanel>
+          <template v-else>
           <div class="probe-card">
             <div class="probe-control-row">
               <div v-if="probeType !== 'tool-length-setter'" class="probe-control-group">
@@ -649,6 +763,7 @@
               <span><strong>Important:</strong> Position the probe above the estimated center of the {{ probingAxis === 'Center - Inner' ? 'hole' : 'material' }}, high enough to clear it. Measure dimension as close as possible to prevent probe damage.</span>
             </div>
           </div>
+          </template>
         </div>
 
         <footer class="probe-main__footer">
@@ -664,6 +779,7 @@ import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import type { Ref } from 'vue';
 import Dialog from '../../components/Dialog.vue';
 import ProbeVisualizer from './ProbeVisualizer.vue';
+import AutoZeroAirPanel from './AutoZeroAirPanel.vue';
 import StepControl from '../jog/StepControl.vue';
 import JogControls from '../jog/JogControls.vue';
 import { api } from '../../lib/api.js';
@@ -690,7 +806,9 @@ const emit = defineEmits<{
 }>();
 
 // Probe state
-const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch' | 'tool-length-setter'>('autozero-touch');
+const probeType = ref<'3d-probe' | 'standard-block' | 'autozero-touch' | 'nczeroair' | 'tool-length-setter'>('autozero-touch');
+// ncZeroAir Probe: in its centre hole (any bit, nothing to enter) or on its outside faces like a standard block.
+const ncZeroAirMode = ref<'hole' | 'edge'>('hole');
 
 const probeTabs = [
   {
@@ -707,6 +825,11 @@ const probeTabs = [
     id: 'autozero-touch',
     label: 'AutoZero Touch',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M12 3v7"/><path d="M9 7l3 3 3-3"/></svg>'
+  },
+  {
+    id: 'nczeroair',
+    label: 'AutoZeroAir',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="5"/></svg>'
   },
   {
     id: 'tool-length-setter',
@@ -896,6 +1019,14 @@ onMounted(async () => {
   });
 });
 onBeforeUnmount(() => offToolsUpdated?.());
+watch(ncZeroAirMode, async (value) => {
+  if (isInitialLoad) return;
+  try {
+    await updateSettings({ probe: { nczeroair: { mode: value } } });
+  } catch (error) {
+    console.error('[ProbeDialog] Failed to save ncZeroAir mode', JSON.stringify({ error: error.message }));
+  }
+});
 
 // Validation errors
 const errors = ref({
@@ -1227,7 +1358,7 @@ const applyAutoZeroSideDefault = (axis: string) => {
     return;
   }
 
-  const shouldDefaultLeftFront = ['autozero-touch', '3d-probe'].includes(probeType.value);
+  const shouldDefaultLeftFront = ['autozero-touch', '3d-probe', 'nczeroair'].includes(probeType.value);
   if (!shouldDefaultLeftFront) {
     selectedSide.value = null;
     return;
@@ -1254,7 +1385,7 @@ const applyCornerDefault = (axis: string) => {
 // Watchers for probe settings
 watch(() => probeType.value, async (value) => {
   // Check if current probing axis is available for the new probe type
-  if (value === 'standard-block' && ['Center - Inner', 'Center - Outer'].includes(probingAxis.value)) {
+  if (['standard-block', 'nczeroair'].includes(value) && ['Center - Inner', 'Center - Outer'].includes(probingAxis.value)) {
     probingAxis.value = 'XYZ';
   }
   // Tool Length Setter only supports Z — no other axis makes sense for a
@@ -1526,6 +1657,7 @@ watch(() => props.show, async (isShown) => {
           rapidMovement.value = settings.probe['autozero-touch'].rapidMovement;
           originalValues.value.rapidMovement = settings.probe['autozero-touch'].rapidMovement;
         }
+        ncZeroAirMode.value = settings.probe?.nczeroair?.mode === 'edge' ? 'edge' : 'hole';
         if (settings.probe?.selectedBitDiameter) {
           selectedBitDiameter.value = settings.probe.selectedBitDiameter;
           savedBitDiameter.value = settings.probe.selectedBitDiameter;
@@ -1817,6 +1949,7 @@ const handleStartProbe = async () => {
       secondProbeDelay: secondProbeDelay.value,
       firstProbeFeedrate: firstProbeFeedrate.value,
       secondProbeFeedrate: secondProbeFeedrate.value,
+      ncZeroAirMode: ncZeroAirMode.value,
       standardBlockBitDiameter: resolveBitDiameter(selectedStandardBlockBitDiameter.value)
     };
 
@@ -2117,6 +2250,37 @@ const handleStartProbe = async () => {
   line-height: 1;
   color: var(--color-accent);
 }
+
+/* In the AutoZeroAir panel: the position as one row above the picture, the
+   jog pad in the choices column with its step row wrapped to fit. */
+.aza__pos .probe-coords { flex-direction: row; align-items: center; gap: 8px; }
+/* No title here: X, Y and Z say what the row is, and it only took room. */
+.aza__pos .probe-coords__title { display: none; }
+.aza__pos .probe-coords__cell { flex: 1 1 0; min-width: 0; grid-template-columns: 34px 1fr; }
+.aza__pos .probe-coords__axis { padding: 6px 0; }
+.aza__pos .probe-coords__value { padding: 6px 10px; font-size: 1.05rem; }
+/* A narrow picture column (portrait): no title, tighter cells, so the whole
+   number shows; narrower still, one axis per row. */
+@container (max-width: 520px) {
+  .aza__pos .probe-coords { gap: 6px; }
+  .aza__pos .probe-coords__cell { grid-template-columns: 24px 1fr; }
+  .aza__pos .probe-coords__axis { font-size: 0.74rem; }
+  .aza__pos .probe-coords__value { padding: 6px 6px; font-size: 0.85rem; }
+}
+@container (max-width: 330px) {
+  .aza__pos .probe-coords { flex-direction: column; align-items: stretch; gap: 4px; }
+  .aza__pos .probe-coords__value { font-size: 1rem; padding: 5px 10px; }
+}
+.aza__jog .probe-jog { width: auto; }
+.aza__jog .probe-jog { gap: 6px; }
+.aza__jog .probe-jog :deep(.step-control) { flex-wrap: wrap; justify-content: center; row-gap: 6px; }
+/* A smaller pad than the header's: the column has to fit without scrolling. */
+.aza__jog .probe-jog :deep(.jog-controls-probe .jog-xy) { width: 150px; height: 150px !important; }
+.aza__jog .probe-jog :deep(.jog-controls-probe .jog-za-wrapper) { height: 150px; }
+.aza__extras .probe-connection-test { margin: 0; gap: 10px; width: auto; }
+.aza__extras .probe-connection-test .probe-label { font-size: 0.78rem; font-weight: 600; }
+/* Off, the switch's track is the colour of the picture behind it: give it its own. */
+.aza__extras .switch input:not(:checked) + .slider { background-color: color-mix(in srgb, var(--color-text-secondary) 40%, var(--color-surface)); }
 
 .probe-jog {
   display: flex;

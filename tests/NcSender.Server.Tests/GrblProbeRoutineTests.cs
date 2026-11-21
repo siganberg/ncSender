@@ -30,14 +30,27 @@ public class GrblProbeRoutineTests
         yield return ["3d-probe", "Center - Inner", null!];
         yield return ["3d-probe", "Center - Outer", null!];
         yield return ["tool-length-setter", "Z", null!];
+        foreach (var type in new[] { "nczeroair", "nczeroair-edge" })
+        {
+            yield return [type, "Z", null!];
+            yield return [type, "X", "Left"];
+            yield return [type, "Y", "Back"];
+            foreach (var c in corners)
+            {
+                yield return [type, "XY", c];
+                yield return [type, "XYZ", c];
+            }
+        }
     }
 
     [Theory]
     [MemberData(nameof(Routines))]
     public void Routine_TranslatesToPlainGcode(string type, string axis, string? where)
     {
+        var mode = type == "nczeroair-edge" ? "edge" : "hole";
+        if (type == "nczeroair-edge") type = "nczeroair";
         var json = $$"""
-            {"probeType":"{{type}}","probingAxis":"{{axis}}","selectedCorner":"{{where}}","selectedSide":"{{where}}",
+            {"probeType":"{{type}}","ncZeroAirMode":"{{mode}}","probingAxis":"{{axis}}","selectedCorner":"{{where}}","selectedSide":"{{where}}",
              "xDimension":30,"yDimension":30,"selectedBitDiameter":"Auto"}
             """;
         var options = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;

@@ -46,6 +46,7 @@ public static class ProbeCommandGenerator
             "3d-probe" => Generate3DProbe(probingAxis, options, errors),
             "standard-block" => GenerateStandardBlock(probingAxis, options, errors),
             "autozero-touch" => GenerateAutoZeroTouch(probingAxis, options, errors),
+            "nczeroair" => GenerateNcZeroAir(probingAxis, options, errors),
             "tool-length-setter" => GenerateToolLengthSetter(probingAxis, options, errors),
             _ => null
         };
@@ -202,6 +203,46 @@ public static class ProbeCommandGenerator
                     GetDouble(opts, "rapidMovement", 2000))),
 
             _ => AddError(errors, "Invalid probing axis for AutoZero touch")
+        };
+    }
+
+    // ncZeroAir Probe. "hole" (the default) touches the wall of the hole on four
+    // sides and needs no tool diameter; "edge" uses the block's top and outer
+    // sides like a standard block, with the tool's diameter. Z alone is the
+    // floor of the hole, or ("edge") the top face by the corner mark.
+    private static List<string>? GenerateNcZeroAir(
+        string axis, Dictionary<string, JsonElement> opts, List<string> errors)
+    {
+        var onEdges = GetString(opts, "ncZeroAirMode")?.Trim().ToLowerInvariant() == "edge";
+        if (axis == "Z")
+            return onEdges ? NcZeroAirStrategy.GetTopZProbeRoutine() : NcZeroAirStrategy.GetHoleZProbeRoutine();
+
+        if (onEdges)
+        {
+            var bit = GetDouble(opts, "standardBlockBitDiameter", 6.35);
+            if (bit <= 0)
+            {
+                errors.Add("Invalid bit diameter");
+                return null;
+            }
+
+            return axis switch
+            {
+                "X" => RequireXSide(opts, errors, side => NcZeroAirStrategy.GetEdgeXProbeRoutine(side, bit)),
+                "Y" => RequireYSide(opts, errors, side => NcZeroAirStrategy.GetEdgeYProbeRoutine(side, bit)),
+                "XY" => RequireCorner(opts, errors, corner => NcZeroAirStrategy.GetEdgeXYProbeRoutine(corner, bit)),
+                "XYZ" => RequireCorner(opts, errors, corner => NcZeroAirStrategy.GetEdgeXYZProbeRoutine(corner, bit)),
+                _ => AddError(errors, "Invalid probing axis for AutoZeroAir")
+            };
+        }
+
+        return axis switch
+        {
+            "X" => RequireXSide(opts, errors, NcZeroAirStrategy.GetHoleXProbeRoutine),
+            "Y" => RequireYSide(opts, errors, NcZeroAirStrategy.GetHoleYProbeRoutine),
+            "XY" => RequireCorner(opts, errors, NcZeroAirStrategy.GetHoleXYProbeRoutine),
+            "XYZ" => RequireCorner(opts, errors, NcZeroAirStrategy.GetHoleXYZProbeRoutine),
+            _ => AddError(errors, "Invalid probing axis for AutoZeroAir")
         };
     }
 

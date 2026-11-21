@@ -49,6 +49,10 @@ internal static class PendantProbeOptions
 
             // The pendant has no bit picker. Like the dialog's "Current Tool" default,
             // the loaded tool's library diameter wins; otherwise AutoZero runs on "Auto".
+            // ncZeroAir Probe: in the hole, or on the outside like a standard block.
+            ["ncZeroAirMode"] = Str(read("probe.nczeroair.mode") is JsonValue mode
+                && mode.TryGetValue<string>(out var modeName) && modeName == "edge" ? "edge" : "hole"),
+
             ["selectedBitDiameter"] = Str(currentToolDiameter is { } dia
                 ? dia.ToString(CultureInfo.InvariantCulture) : "Auto"),
         };
