@@ -2279,6 +2279,10 @@ const handleStartProbe = async () => {
 .aza__jog .probe-jog :deep(.jog-controls-probe .jog-za-wrapper) { height: 150px; }
 .aza__extras .probe-connection-test { margin: 0; gap: 10px; width: auto; }
 .aza__extras .probe-connection-test .probe-label { font-size: 0.78rem; font-weight: 600; }
+/* A shorter switch than the dialog's usual one: it sits on the picture. */
+.aza__extras .switch { width: 38px; height: 22px; }
+.aza__extras .switch .slider:before { width: 16px; height: 16px; }
+.aza__extras .switch input:checked + .slider:before { transform: translateX(16px); }
 /* Off, the switch's track is the colour of the picture behind it: give it its own. */
 .aza__extras .switch input:not(:checked) + .slider { background-color: color-mix(in srgb, var(--color-text-secondary) 40%, var(--color-surface)); }
 
