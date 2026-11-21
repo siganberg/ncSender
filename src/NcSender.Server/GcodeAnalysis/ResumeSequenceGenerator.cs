@@ -11,8 +11,13 @@ public static class ResumeSequenceGenerator
 
         commands.Add("(Resume sequence for starting from line)");
 
-        // Safety retract Z to machine zero
-        commands.Add($"G53 G0 Z{Fmt(options.SafeZHeight)}");
+        // Safety retract to the Safe Z setting with $SAFEZ, which writes it in
+        // the units the controller is in when the line runs. A bare
+        // "G53 G0 Z-5.000" here went to -5 inches (-127 mm) and drove the
+        // spindle into the table when the controller was still in G20 from
+        // an inch $PARK at the end of the last job. $SAFEZ also refuses when
+        // the machine needs homing, which stops the resume.
+        commands.Add("$SAFEZ");
 
         // Tool change
         if (state.Tool > 0)
