@@ -168,8 +168,8 @@ public class CncEventBridge
         state.MachineState.Status = status.Status;
         state.MachineState.Homed = status.Homed;
         state.MachineState.Workspace = status.Workspace;
-        if (_workOffsetAfterReset.Changed(status.Workspace, DateTime.UtcNow) is { } was)
-            _ = OfferWorkOffsetBackAsync(was, status.Workspace!);
+        if (_workOffsetAfterReset.Changed(status.Workspace, DateTime.UtcNow) is { } dropped)
+            _ = OfferWorkOffsetBackAsync(dropped.Was, status.Workspace!, dropped.Why);
         // Out of G54 some other way (the offset set by hand): the question's moot.
         else if (status.Workspace is not null && status.Workspace != "G54") WithdrawWorkOffsetAsk();
         state.MachineState.Tool = status.Tool;
@@ -292,12 +292,12 @@ public class CncEventBridge
         cts?.Cancel();
     }
 
-    // A reset put the controller back in G54 from the offset in use: ask, on
+    // A reset or a program end put the controller back in G54 from the offset in use: ask, on
     // every screen, whether to stay or switch back. The question is withdrawn
     // on a disconnect, a new reset's question, or the offset leaving G54. Switching back only
     // sends the offset (no motion), once the controller can take it, and not
     // into a job, tool change or probe; when it can't, the console says so.
-    private async Task OfferWorkOffsetBackAsync(string was, string now)
+    private async Task OfferWorkOffsetBackAsync(string was, string now, string why)
     {
         var cts = new CancellationTokenSource();
         Interlocked.Exchange(ref _workOffsetAsk, cts)?.Cancel();
@@ -307,7 +307,7 @@ public class CncEventBridge
             _logger.LogInformation("Controller reset: work offset {Was} -> {Now}; asking whether to switch back", was, now);
             var chosen = await _gates.AskAsync(new GateOptions(
                 Title: $"Work offset changed to {now}",
-                Message: $"The controller was reset, which put it back in {now}. You were using {was}.",
+                Message: $"{why} {now}. You were using {was}.",
                 Variant: "warning",
                 Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
                 Source: "system",
@@ -680,6 +680,9 @@ public class CncEventBridge
 
         // A $G reply: the work offset shown from now on is the controller's.
         if (data.StartsWith("[GC:", StringComparison.Ordinal)) _workOffsetAfterReset.Confirmed();
+        // M2/M30: the program's end puts the work offset back to G54 too.
+        else if (data.Contains("Pgm End", StringComparison.OrdinalIgnoreCase))
+            _workOffsetAfterReset.Dropped(_context.State.MachineState.Workspace, DateTime.UtcNow, "The program's end (M30) put the controller back in");
 
         // (Ahead of the returns below: a restart can come while a "system"
         // or quiet command is in flight, and its $G refresh must still go.)
@@ -698,7 +701,7 @@ public class CncEventBridge
             // (workspace, units, plane, etc.) and the status report doesn't echo
             // them, so the client's workspace dropdown would otherwise stay stale.
             // The offset in use until now, to offer back if the reset dropped it to G54.
-            _workOffsetAfterReset.Reset(_context.State.MachineState.Workspace, DateTime.UtcNow);
+            _workOffsetAfterReset.Dropped(_context.State.MachineState.Workspace, DateTime.UtcNow, "The controller was reset, which put it back in");
             _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
             return;
         }
@@ -1201,7 +1204,7 @@ public class CncEventBridge
 
         // The reset puts the parser back to G54: remember the offset in use,
         // and read the modes again (a networked grblHAL may not greet after it).
-        _workOffsetAfterReset.Reset(state.MachineState.Workspace, DateTime.UtcNow);
+        _workOffsetAfterReset.Dropped(state.MachineState.Workspace, DateTime.UtcNow, "The controller was reset, which put it back in");
         _ = RefreshModesAfterResetAsync();
 
         // Update job state if a job is running/paused
