@@ -13,7 +13,7 @@ public class WorkOffsetAfterResetTests
     {
         var w = new WorkOffsetAfterReset();
         w.Connected();
-        w.StatusSeen();
+        w.Confirmed();
         return w;
     }
 
@@ -21,7 +21,7 @@ public class WorkOffsetAfterResetTests
     public void AResetFromG55ToG54IsOfferedBackOnce()
     {
         var w = Running();
-        w.ControllerRestarted("G55", T0);
+        w.Reset("G55", T0);
         // Until $G comes back the old offset is still shown: nothing yet.
         Assert.Null(w.Changed("G55", T0.AddMilliseconds(50)));
         Assert.Equal("G55", w.Changed("G54", T0.AddMilliseconds(120)));
@@ -34,7 +34,7 @@ public class WorkOffsetAfterResetTests
     public void AnyOffsetAfterG54IsOfferedBack(string was)
     {
         var w = Running();
-        w.ControllerRestarted(was, T0);
+        w.Reset(was, T0);
         Assert.Equal(was, w.Changed("G54", T0.AddSeconds(1)));
     }
 
@@ -42,7 +42,7 @@ public class WorkOffsetAfterResetTests
     public void AlreadyInG54NothingToOffer()
     {
         var w = Running();
-        w.ControllerRestarted("G54", T0);
+        w.Reset("G54", T0);
         Assert.Null(w.Changed("G54", T0.AddSeconds(1)));
     }
 
@@ -51,7 +51,7 @@ public class WorkOffsetAfterResetTests
     {
         var w = new WorkOffsetAfterReset();
         w.Connected();
-        w.ControllerRestarted("G55", T0);   // the greeting on connecting
+        w.Reset("G55", T0);   // the reset on connecting, before any $G reply
         Assert.Null(w.Changed("G54", T0.AddSeconds(1)));
     }
 
@@ -59,7 +59,7 @@ public class WorkOffsetAfterResetTests
     public void AReconnectForgetsTheOldOne()
     {
         var w = Running();
-        w.ControllerRestarted("G55", T0);
+        w.Reset("G55", T0);
         w.Connected();
         Assert.Null(w.Changed("G54", T0.AddSeconds(1)));
     }
@@ -68,7 +68,7 @@ public class WorkOffsetAfterResetTests
     public void AStartupBlockPickingAnotherOffsetIsTheOperatorsChoice()
     {
         var w = Running();
-        w.ControllerRestarted("G55", T0);
+        w.Reset("G55", T0);
         Assert.Null(w.Changed("G57", T0.AddSeconds(1)));
     }
 
@@ -76,7 +76,7 @@ public class WorkOffsetAfterResetTests
     public void AChangeLongAfterTheResetIsNotTheResets()
     {
         var w = Running();
-        w.ControllerRestarted("G55", T0);
+        w.Reset("G55", T0);
         Assert.Null(w.Changed("G54", T0 + WorkOffsetAfterReset.Window + TimeSpan.FromSeconds(1)));
     }
 
@@ -84,9 +84,26 @@ public class WorkOffsetAfterResetTests
     public void NotAWorkOffsetNoOffer()
     {
         var w = Running();
-        w.ControllerRestarted(null, T0);
+        w.Reset(null, T0);
         Assert.Null(w.Changed("G54", T0.AddSeconds(1)));
-        w.ControllerRestarted("G59.1", T0);
+        w.Reset("G59.1", T0);
         Assert.Null(w.Changed("G54", T0.AddSeconds(1)));
+    }
+
+    [Fact]
+    public void AStopThenTheGreetingCountsOnceWithTheOffsetBeforeBoth()
+    {
+        var w = Running();
+        w.Reset("G55", T0);                       // ncSender's 0x18
+        w.Reset("G54", T0.AddMilliseconds(300));  // the greeting, after a report already said G54
+        Assert.Equal("G55", w.Changed("G54", T0.AddMilliseconds(400)));
+    }
+
+    [Fact]
+    public void ANetworkedControllerWithNoGreetingStillCounts()
+    {
+        var w = Running();
+        w.Reset("G55", T0);   // Stop, and no greeting follows
+        Assert.Equal("G55", w.Changed("G54", T0.AddSeconds(1.5)));   // the $G a moment later
     }
 }

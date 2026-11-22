@@ -24,6 +24,8 @@ public class CncEventBridge
     private readonly IToolService _toolService;
     private readonly IGateService _gates;
     private readonly WorkOffsetAfterReset _workOffsetAfterReset = new();
+    // The open "work offset changed" question, withdrawn when it no longer applies.
+    private CancellationTokenSource? _workOffsetAsk;
     private readonly IControllerErrorFeed? _errorFeed;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
@@ -166,9 +168,10 @@ public class CncEventBridge
         state.MachineState.Status = status.Status;
         state.MachineState.Homed = status.Homed;
         state.MachineState.Workspace = status.Workspace;
-        _workOffsetAfterReset.StatusSeen();
         if (_workOffsetAfterReset.Changed(status.Workspace, DateTime.UtcNow) is { } was)
             _ = OfferWorkOffsetBackAsync(was, status.Workspace!);
+        // Out of G54 some other way (the offset set by hand): the question's moot.
+        else if (status.Workspace is not null && status.Workspace != "G54") WithdrawWorkOffsetAsk();
         state.MachineState.Tool = status.Tool;
         // Clears the projection once the controller catches up with the last
         // queued change; intermediate tools in a batch leave it in place.
@@ -267,12 +270,38 @@ public class CncEventBridge
         BroadcastStateDelta();
     }
 
+    // After a Stop's soft reset: $G again, in case no greeting follows (a
+    // networked grblHAL may not print one), so the offset it dropped to shows.
+    private async Task RefreshModesAfterResetAsync()
+    {
+        try
+        {
+            await Task.Delay(1500);
+            if (_context.State.MachineState.Connected)
+                await _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Reading the modes after a reset failed");
+        }
+    }
+
+    private void WithdrawWorkOffsetAsk()
+    {
+        var cts = Interlocked.Exchange(ref _workOffsetAsk, null);
+        cts?.Cancel();
+    }
+
     // A reset put the controller back in G54 from the offset in use: ask, on
-    // every screen, whether to stay or switch back. Switching back only sends
-    // the offset (no motion), and only while it's still connected, idle and
-    // in the offset the reset left.
+    // every screen, whether to stay or switch back. The question is withdrawn
+    // on a disconnect, a new reset's question, or the offset leaving G54. Switching back only
+    // sends the offset (no motion), once the controller can take it, and not
+    // into a job, tool change or probe; when it can't, the console says so.
     private async Task OfferWorkOffsetBackAsync(string was, string now)
     {
+        var cts = new CancellationTokenSource();
+        Interlocked.Exchange(ref _workOffsetAsk, cts)?.Cancel();
+        var ct = cts.Token;
         try
         {
             _logger.LogInformation("Controller reset: work offset {Was} -> {Now}; asking whether to switch back", was, now);
@@ -282,23 +311,38 @@ public class CncEventBridge
                 Variant: "warning",
                 Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
                 Source: "system",
-                Key: "work-offset-after-reset"));
-            if (chosen != "switch") return;
-            var ms = _context.State.MachineState;
-            // In an alarm (a reset mid-motion) G-code is refused: wait for the
-            // unlock or homing, up to a minute.
-            for (var waited = 0; ms.Connected && ms.Status is "Alarm" or "Home" && waited < 60_000; waited += 250)
-                await Task.Delay(250);
-            if (!ms.Connected || ms.Workspace != now || ms.Status != "Idle")
+                Key: $"work-offset-after-reset:{was}"), ct);
+            if (chosen != "switch" || ct.IsCancellationRequested) return;
+            var state = _context.State;
+            var ms = state.MachineState;
+            // In an alarm (a reset mid-motion), homing, a door or a hold, G-code
+            // isn't taken yet: wait for it to clear (withdrawn as above meanwhile).
+            while (!ct.IsCancellationRequested && ms.Connected && ms.Workspace == now && ms.Status is "Alarm" or "Home" or "Door" or "Hold")
+                await Task.Delay(250, ct);
+            if (ct.IsCancellationRequested || !ms.Connected || ms.Workspace != now) return;
+            var busy = state.JobLoaded?.Status is "running" or "paused" ? "a job is running"
+                : ms.IsToolChanging ? "a tool change is running"
+                : ms.IsProbing ? "probing is running"
+                : ms.Status != "Idle" ? $"the controller is {ms.Status}"
+                : null;
+            if (busy is not null)
             {
-                _logger.LogInformation("Not switching back to {Was}: the controller is now {Status} in {Workspace}", was, ms.Status, ms.Workspace);
+                NcSender.Server.CommandProcessor.BlockedCommandNotice.Broadcast(_broadcaster, Guid.NewGuid().ToString(), was, $"not switched back: {busy}. Select {was} when it's done", "client");
                 return;
             }
             await _controller.SendCommandAsync(was, new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
         }
+        catch (OperationCanceledException)
+        {
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Offering the work offset back failed");
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _workOffsetAsk, null, cts);
+            cts.Dispose();
         }
     }
 
@@ -310,6 +354,7 @@ public class CncEventBridge
         // Anything queued is gone across a connect/disconnect boundary.
         _toolProjection.Reset();
         _workOffsetAfterReset.Connected();
+        WithdrawWorkOffsetAsk();
 
         if (isConnected)
         {
@@ -633,6 +678,31 @@ public class CncEventBridge
             }
         }
 
+        // A $G reply: the work offset shown from now on is the controller's.
+        if (data.StartsWith("[GC:", StringComparison.Ordinal)) _workOffsetAfterReset.Confirmed();
+
+        // (Ahead of the returns below: a restart can come while a "system"
+        // or quiet command is in flight, and its $G refresh must still go.)
+        // When greeting arrives, store it and broadcast to all connected clients
+        // (WebSocket clients may have connected before the greeting was captured)
+        if (_controller.ActiveProtocol is not null && _controller.ActiveProtocol.MatchesGreeting(data))
+        {
+            _context.State.GreetingMessage = data;
+            _context.State.DisplayFirmware = _controller.ActiveProtocol.SupportsSettingEnumeration
+                || _controller.ActiveProtocol.StaticSettingDefinitions is not null;
+            _context.State.DisplayConfig = _controller.ActiveProtocol.SupportsConfigFile;
+            _ = _broadcaster.Broadcast("initial-greeting",
+                System.Text.Json.JsonSerializer.SerializeToElement(data, NcSenderJsonContext.Default.String));
+
+            // Refresh G-code parser state — soft-reset (0x18) clears modal state
+            // (workspace, units, plane, etc.) and the status report doesn't echo
+            // them, so the client's workspace dropdown would otherwise stay stale.
+            // The offset in use until now, to offer back if the reset dropped it to G54.
+            _workOffsetAfterReset.Reset(_context.State.MachineState.Workspace, DateTime.UtcNow);
+            _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
+            return;
+        }
+
         if (sourceId == "system")
             return;
 
@@ -649,25 +719,7 @@ public class CncEventBridge
             return;
         }
 
-        // When greeting arrives, store it and broadcast to all connected clients
-        // (WebSocket clients may have connected before the greeting was captured)
-        if (_controller.ActiveProtocol is not null && _controller.ActiveProtocol.MatchesGreeting(data))
-        {
-            _context.State.GreetingMessage = data;
-            _context.State.DisplayFirmware = _controller.ActiveProtocol.SupportsSettingEnumeration
-                || _controller.ActiveProtocol.StaticSettingDefinitions is not null;
-            _context.State.DisplayConfig = _controller.ActiveProtocol.SupportsConfigFile;
-            _ = _broadcaster.Broadcast("initial-greeting",
-                System.Text.Json.JsonSerializer.SerializeToElement(data, NcSenderJsonContext.Default.String));
 
-            // Refresh G-code parser state — soft-reset (0x18) clears modal state
-            // (workspace, units, plane, etc.) and the status report doesn't echo
-            // them, so the client's workspace dropdown would otherwise stay stale.
-            // The offset in use until now, to offer back if the reset dropped it to G54.
-            _workOffsetAfterReset.ControllerRestarted(_context.State.MachineState.Workspace, DateTime.UtcNow);
-            _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
-            return;
-        }
 
         _ = _broadcaster.Broadcast("cnc-data", data, NcSenderJsonContext.Default.String);
     }
@@ -1146,6 +1198,11 @@ public class CncEventBridge
         // never run. Fall back to observed state instead of staying stuck on
         // a tool that was never loaded.
         _toolProjection.Reset();
+
+        // The reset puts the parser back to G54: remember the offset in use,
+        // and read the modes again (a networked grblHAL may not greet after it).
+        _workOffsetAfterReset.Reset(state.MachineState.Workspace, DateTime.UtcNow);
+        _ = RefreshModesAfterResetAsync();
 
         // Update job state if a job is running/paused
         var job = state.JobLoaded;
