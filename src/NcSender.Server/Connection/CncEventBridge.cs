@@ -286,6 +286,16 @@ public class CncEventBridge
         }
     }
 
+    // "Always switch back": remembered for this machine, and every screen's
+    // Settings shown the new choice.
+    internal const string WorkOffsetSetting = "workOffsetAfterReset";
+    private async Task RememberSwitchBackAsync()
+    {
+        await _settingsManager.SaveSettings(new System.Text.Json.Nodes.JsonObject { [WorkOffsetSetting] = "switch" });
+        using var doc = System.Text.Json.JsonDocument.Parse($"{{\"{WorkOffsetSetting}\":\"switch\"}}");
+        await _broadcaster.Broadcast("settings-changed", doc.RootElement.Clone());
+    }
+
     private void WithdrawWorkOffsetAsk()
     {
         var cts = Interlocked.Exchange(ref _workOffsetAsk, null);
@@ -293,7 +303,9 @@ public class CncEventBridge
     }
 
     // A reset or a program end put the controller back in G54 from the offset in use: ask, on
-    // every screen, whether to stay or switch back. The question is withdrawn
+    // every screen, whether to stay or switch back (or, as remembered with
+    // "Always switch back" or in Settings, do that: switching is still shown
+    // in the console; "stay" is the old, silent behaviour). The question is withdrawn
     // on a disconnect, a new reset's question, or the offset leaving G54. Switching back only
     // sends the offset (no motion), once the controller can take it, and not
     // into a job, tool change or probe; when it can't, the console says so.
@@ -304,15 +316,24 @@ public class CncEventBridge
         var ct = cts.Token;
         try
         {
-            _logger.LogInformation("Controller reset: work offset {Was} -> {Now}; asking whether to switch back", was, now);
-            var chosen = await _gates.AskAsync(new GateOptions(
-                Title: $"Work offset changed to {now}",
-                Message: $"{why} {now}. You were using {was}.",
-                Variant: "warning",
-                Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
-                Source: "system",
-                Key: $"work-offset-after-reset:{was}"), ct);
-            if (chosen != "switch" || ct.IsCancellationRequested) return;
+            var mode = _settingsManager.GetSetting<string>(WorkOffsetSetting, "ask");
+            _logger.LogInformation("Work offset {Was} -> {Now} ({Why}); setting {Mode}", was, now, why, mode);
+            if (mode == "stay") return;
+            var told = false;
+            if (mode != "switch")
+            {
+                var chosen = await _gates.AskAsync(new GateOptions(
+                    Title: $"Work offset changed to {now}",
+                    Message: $"{why} {now}. You were using {was}.",
+                    Variant: "warning",
+                    Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("always", "Always switch back"),
+                        new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
+                    Source: "system",
+                    Key: $"work-offset-after-reset:{was}"), ct);
+                if (ct.IsCancellationRequested || chosen is not ("switch" or "always")) return;
+                if (chosen == "always") await RememberSwitchBackAsync();
+                told = true;
+            }
             var state = _context.State;
             var ms = state.MachineState;
             // In an alarm (a reset mid-motion), homing, a door or a hold, G-code
@@ -330,6 +351,9 @@ public class CncEventBridge
                 NcSender.Server.CommandProcessor.BlockedCommandNotice.Broadcast(_broadcaster, Guid.NewGuid().ToString(), was, $"not switched back: {busy}. Select {was} when it's done", "client");
                 return;
             }
+            // Switched without asking: say so, so the offset never changes unseen.
+            if (!told)
+                _ = _broadcaster.Broadcast("cnc-data", $"(Work offset switched back to {was}: {why[0].ToString().ToLowerInvariant()}{why[1..]} {now}. Change this in Settings > Work Offset After Reset.)", NcSenderJsonContext.Default.String);
             await _controller.SendCommandAsync(was, new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
         }
         catch (OperationCanceledException)

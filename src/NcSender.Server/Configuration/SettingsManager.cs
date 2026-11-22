@@ -216,6 +216,7 @@ public class SettingsManager : ISettingsManager
             "autoClearConsole": true,
             "debugLogging": false,
             "unitsPreference": "metric",
+            "workOffsetAfterReset": "ask",
             "homeLocation": "back-left",
             "keyboardBindings": {
                 "ArrowUp": "JogYPlus",
