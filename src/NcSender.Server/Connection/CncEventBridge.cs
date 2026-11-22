@@ -336,16 +336,23 @@ public class CncEventBridge
             }
             var state = _context.State;
             var ms = state.MachineState;
-            // In an alarm (a reset mid-motion), homing, a door or a hold, G-code
-            // isn't taken yet: wait for it to clear (withdrawn as above meanwhile).
-            while (!ct.IsCancellationRequested && ms.Connected && ms.Workspace == now && ms.Status is "Alarm" or "Home" or "Door" or "Hold")
-                await Task.Delay(250, ct);
-            if (ct.IsCancellationRequested || !ms.Connected || ms.Workspace != now) return;
-            var busy = state.JobLoaded?.Status is "running" or "paused" ? "a job is running"
+            // Not yet: an alarm (a reset mid-motion), homing, a door or a hold
+            // (G-code isn't taken), or the job, tool change or probe still
+            // running. A program's end arrives just before its job is marked
+            // done, and "Always switch back" doesn't wait for a click: so wait
+            // for it to settle; an alarm as long as it takes (it's withdrawn as
+            // above meanwhile), the rest up to 30 s.
+            string? Busy() => state.JobLoaded?.Status is "running" or "paused" ? "a job is running"
                 : ms.IsToolChanging ? "a tool change is running"
                 : ms.IsProbing ? "probing is running"
                 : ms.Status != "Idle" ? $"the controller is {ms.Status}"
                 : null;
+            var started = DateTime.UtcNow;
+            while (!ct.IsCancellationRequested && ms.Connected && ms.Workspace == now && Busy() is not null
+                && (ms.Status is "Alarm" or "Home" or "Door" or "Hold" || DateTime.UtcNow - started < TimeSpan.FromSeconds(30)))
+                await Task.Delay(250, ct);
+            if (ct.IsCancellationRequested || !ms.Connected || ms.Workspace != now) return;
+            var busy = Busy();
             if (busy is not null)
             {
                 NcSender.Server.CommandProcessor.BlockedCommandNotice.Broadcast(_broadcaster, Guid.NewGuid().ToString(), was, $"not switched back: {busy}. Select {was} when it's done", "client");
