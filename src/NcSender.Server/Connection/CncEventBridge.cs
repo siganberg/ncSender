@@ -23,6 +23,7 @@ public class CncEventBridge
     private readonly IToolProjection _toolProjection;
     private readonly IToolService _toolService;
     private readonly IGateService _gates;
+    private readonly WorkOffsetAfterReset _workOffsetAfterReset = new();
     private readonly IControllerErrorFeed? _errorFeed;
     private readonly StateDeltaTracker _deltaTracker = new();
     private int? _lastAlarmCode; // V1 parity: persist alarm code across status reports
@@ -165,6 +166,9 @@ public class CncEventBridge
         state.MachineState.Status = status.Status;
         state.MachineState.Homed = status.Homed;
         state.MachineState.Workspace = status.Workspace;
+        _workOffsetAfterReset.StatusSeen();
+        if (_workOffsetAfterReset.Changed(status.Workspace, DateTime.UtcNow) is { } was)
+            _ = OfferWorkOffsetBackAsync(was, status.Workspace!);
         state.MachineState.Tool = status.Tool;
         // Clears the projection once the controller catches up with the last
         // queued change; intermediate tools in a batch leave it in place.
@@ -263,6 +267,41 @@ public class CncEventBridge
         BroadcastStateDelta();
     }
 
+    // A reset put the controller back in G54 from the offset in use: ask, on
+    // every screen, whether to stay or switch back. Switching back only sends
+    // the offset (no motion), and only while it's still connected, idle and
+    // in the offset the reset left.
+    private async Task OfferWorkOffsetBackAsync(string was, string now)
+    {
+        try
+        {
+            _logger.LogInformation("Controller reset: work offset {Was} -> {Now}; asking whether to switch back", was, now);
+            var chosen = await _gates.AskAsync(new GateOptions(
+                Title: $"Work offset changed to {now}",
+                Message: $"The controller was reset, which put it back in {now}. You were using {was}.",
+                Variant: "warning",
+                Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
+                Source: "system",
+                Key: "work-offset-after-reset"));
+            if (chosen != "switch") return;
+            var ms = _context.State.MachineState;
+            // In an alarm (a reset mid-motion) G-code is refused: wait for the
+            // unlock or homing, up to a minute.
+            for (var waited = 0; ms.Connected && ms.Status is "Alarm" or "Home" && waited < 60_000; waited += 250)
+                await Task.Delay(250);
+            if (!ms.Connected || ms.Workspace != now || ms.Status != "Idle")
+            {
+                _logger.LogInformation("Not switching back to {Was}: the controller is now {Status} in {Workspace}", was, ms.Status, ms.Workspace);
+                return;
+            }
+            await _controller.SendCommandAsync(was, new CommandOptions { Meta = new CommandMeta { SourceId = "client" } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Offering the work offset back failed");
+        }
+    }
+
     private void OnConnectionStatusChanged(string status, bool isConnected)
     {
         var state = _context.State;
@@ -270,6 +309,7 @@ public class CncEventBridge
 
         // Anything queued is gone across a connect/disconnect boundary.
         _toolProjection.Reset();
+        _workOffsetAfterReset.Connected();
 
         if (isConnected)
         {
@@ -623,6 +663,8 @@ public class CncEventBridge
             // Refresh G-code parser state — soft-reset (0x18) clears modal state
             // (workspace, units, plane, etc.) and the status report doesn't echo
             // them, so the client's workspace dropdown would otherwise stay stale.
+            // The offset in use until now, to offer back if the reset dropped it to G54.
+            _workOffsetAfterReset.ControllerRestarted(_context.State.MachineState.Workspace, DateTime.UtcNow);
             _ = _controller.SendCommandAsync("$G", new CommandOptions { Meta = new CommandMeta { SourceId = "system" } });
             return;
         }
