@@ -21,21 +21,38 @@
       <div class="tools-inner-content">
         <!-- Header with search and actions -->
         <div class="tools-header">
-        <input
-          type="text"
-          class="tool-search"
-          v-model="searchQuery"
-          placeholder="Search tools by ID, name, or type..."
-        >
+        <!-- One box for every column: see tool-search.ts for what it reads. -->
+        <div class="tool-search-wrap">
+          <input
+            type="text"
+            class="tool-search"
+            v-model="searchQuery"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder='Search tools: ball, 6mm, 1/4", <4mm, t12'
+          >
+          <span v-if="searchQuery" class="tool-search__count">{{ filteredTools.length }} of {{ tools.length }}</span>
+          <button v-if="searchQuery" type="button" class="tool-search__clear" aria-label="Clear search" @click="searchQuery = ''">×</button>
+        </div>
         <button class="import-export-button" @click="importTools">Import</button>
         <button class="import-export-button" @click="exportTools">{{ isKiosk ? 'Save' : 'Export' }}</button>
         <button class="btn btn-primary" @click="addNewTool">Add Tool</button>
+        <!-- How the search was read, a chip per term. -->
+        <div v-if="searchTerms.length" class="tool-search-chips">
+          <span
+            v-for="(term, i) in searchTerms"
+            :key="i"
+            class="tool-search-chip"
+            :class="{ 'tool-search-chip--unread': term.kind === 'unread' }"
+          ><b>{{ chipLabel(term) }}</b>{{ chipValue(term) }}</span>
+        </div>
       </div>
+
 
       <!-- Table container with empty state -->
       <div v-if="filteredTools.length === 0" class="empty-state">
-        <div class="empty-state-text">No tools found</div>
-        <div class="empty-state-hint">Click "Add Tool" to add your first tool</div>
+        <div class="empty-state-text">{{ searchTerms.length ? 'No tools match' : 'No tools found' }}</div>
+        <div class="empty-state-hint">{{ searchTerms.length ? 'The chips above show how the search was read.' : 'Click "Add Tool" to add your first tool' }}</div>
       </div>
 
       <!-- Tools table -->
@@ -90,15 +107,15 @@
           <tr v-for="tool in filteredTools" :key="tool.id" :data-tool-id="tool.id">
             <td class="col-tool-id">
               <div class="tool-id-cell tool-id-cell--clickable" @click.stop="openSlotSelector(tool, $event)">
-                <span class="tool-id-text">{{ tool.toolId }}</span>
+                <span class="tool-id-text" :class="{ 'search-hit': isHit(tool, 'id') }">{{ tool.toolId }}</span>
                 <span v-if="hasSlot(tool)" class="tool-number-badge">{{ slotLabel(tool.toolNumber!) }}</span>
                 <span v-else-if="(props.toolCount || 0) > 0" class="tool-slot-placeholder">No Slot</span>
               </div>
             </td>
-            <td class="col-description">{{ tool.name }}</td>
-            <td class="col-type">{{ formatType(tool.type) }}</td>
-            <td class="col-diameter">{{ formatCoordinate(tool.diameter, appStore.unitsPreference.value) }}</td>
-            <td class="col-tlo">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</td>
+            <td class="col-description"><template v-for="(part, i) in markText(tool.name)" :key="i"><mark v-if="part.hit" class="search-hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></td>
+            <td class="col-type"><template v-for="(part, i) in markText(formatType(tool.type))" :key="i"><mark v-if="part.hit" class="search-hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></td>
+            <td class="col-diameter"><span :class="{ 'search-hit': isHit(tool, 'diameter') }">{{ formatCoordinate(tool.diameter, appStore.unitsPreference.value) }}</span></td>
+            <td class="col-tlo"><span :class="{ 'search-hit': isHit(tool, 'tlo') }">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</span></td>
             <td class="col-actions">
               <div class="tool-actions">
                 <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
@@ -518,6 +535,7 @@ import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
 import { TOOL_TYPES, toolTypeLabel, neverSpins } from './tool-types';
+import { highlightParts, matchTool, parseToolSearch, type SearchCell, type SearchTerm } from './tool-search';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -682,20 +700,26 @@ const defaultToolForm = () => ({
 
 const toolForm = ref(defaultToolForm());
 
+// The search box: what was typed, read into terms; the cells each tool
+// matched, to highlight them; and what a chip says about a term.
+const searchTerms = computed(() => parseToolSearch(searchQuery.value, appStore.unitsPreference.value, (type) => formatType(type)));
+const searchCells = computed(() => new Map(tools.value.map(tool => [tool.id, matchTool(tool, searchTerms.value)])));
+const isHit = (tool: Tool, cell: SearchCell) => searchTerms.value.length > 0 && !!searchCells.value.get(tool.id)?.has(cell);
+const markText = (text: string) => highlightParts(text, searchTerms.value);
+const CHIP_LABELS: Record<SearchTerm['kind'], string> = {
+  text: 'Text', id: 'Tool ID', diameter: 'Diameter', idOrDiameter: 'Tool ID or diameter',
+  tloSet: 'TLO', tloNotSet: 'TLO', unread: 'Read as text',
+};
+const chipLabel = (term: SearchTerm) => CHIP_LABELS[term.kind];
+const chipValue = (term: SearchTerm) => (term.kind === 'tloSet' ? 'set' : term.kind === 'tloNotSet' ? 'not set' : term.value);
+
 // Computed
 const filteredTools = computed(() => {
   let result = tools.value;
 
-  // Filter by search
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase().trim();
-    result = result.filter(tool => {
-      const toolIdStr = tool.toolId?.toString() || '';
-
-      return toolIdStr.includes(query) ||
-        tool.name.toLowerCase().includes(query) ||
-        tool.type.toLowerCase().includes(query);
-    });
+  // Filter by search: every term must match
+  if (searchTerms.value.length) {
+    result = result.filter(tool => matchTool(tool, searchTerms.value) !== null);
   }
 
   // Sort based on current sort settings
@@ -1444,6 +1468,8 @@ onMounted(async () => {
 
 .tools-header {
   display: flex;
+  /* The chips for a search take a second line, under the box. */
+  flex-wrap: wrap;
   gap: var(--gap-sm);
   align-items: center;
   padding: var(--gap-sm);
@@ -1452,9 +1478,93 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.tool-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.tool-search__count {
+  position: absolute;
+  right: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.tool-search__clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  padding: 0 !important;
+  min-width: 0 !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-small) !important;
+  background: var(--color-surface) !important;
+  color: var(--color-text-primary) !important;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tool-search-chips {
+  flex: 0 0 100%;
+  padding: 0 2px 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px !important;
+  min-width: 0 !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 999px !important;
+  background: var(--color-surface-muted) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: none !important;
+  font-size: 0.8rem !important;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.tool-search-chip b {
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.tool-search-chip--unread {
+  border-color: #e9b949 !important;
+}
+
+.tool-search-chip--unread b {
+  color: #e9b949;
+}
+
+/* What made a tool qualify: the searched words, and the ID, diameter or TLO a number matched. */
+.search-hit {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  box-shadow: inset 0 -1px 0 var(--color-accent);
+  color: inherit;
+}
+
 .tool-search {
   flex: 1;
-  padding: var(--gap-sm) var(--gap-md);
+  min-width: 0;
+  padding: var(--gap-sm) 96px var(--gap-sm) var(--gap-md);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
