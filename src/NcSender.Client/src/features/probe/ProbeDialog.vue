@@ -137,19 +137,11 @@
                 <div v-if="['Center - Inner', 'Center - Outer'].includes(probingAxis)" class="probe-control-row probe-control-row--half">
                   <div class="probe-control-group">
                     <label class="probe-label">Center Axes</label>
-                    <div class="probe-segmented" role="radiogroup">
-                      <button
-                        v-for="axes in ['X', 'XY', 'Y']"
-                        :key="axes"
-                        type="button"
-                        role="radio"
-                        class="probe-segmented__option"
-                        :class="{ 'is-active': centerAxes === axes }"
-                        :aria-checked="centerAxes === axes"
-                        :disabled="isProbing"
-                        @click="centerAxes = axes"
-                      >{{ axes }}</button>
-                    </div>
+                    <SegmentedSlider
+                      v-model="centerAxes"
+                      :options="['X', 'XY', 'Y'].map((a) => ({ value: a, label: a }))"
+                      :disabled="isProbing"
+                    />
                   </div>
                 </div>
 
@@ -630,6 +622,7 @@
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import type { Ref } from 'vue';
 import Dialog from '../../components/Dialog.vue';
+import SegmentedSlider from '../../components/SegmentedSlider.vue';
 import AutoZeroAirPanel from './AutoZeroAirPanel.vue';
 import Probe3dPanel from './Probe3dPanel.vue';
 import StandardBlockPanel from './StandardBlockPanel.vue';
@@ -2154,7 +2147,6 @@ const handleStartProbe = async () => {
 /* The column's own spacing sets the rows apart. */
 .aza__fields .probe-control-group { margin-bottom: 0; }
 .aza__fields .probe-control-row--half .probe-label { display: block; text-align: center; }
-.aza__fields .probe-control-row--half .probe-segmented__option { padding: 9px 0; }
 .aza__fields .probe-measure-only { margin: 0; padding-top: 6px; }
 .aza__fields .probe-hint { margin: 0; }
 .aza__jog .probe-jog { width: auto; }
@@ -2342,41 +2334,6 @@ const handleStartProbe = async () => {
 
 .probe-control-row--half .probe-label {
   text-align: center;
-}
-
-/* X | XY | Y: which axes a Center probe centres on */
-.probe-segmented {
-  display: flex;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  overflow: hidden;
-  background: var(--color-surface-muted);
-}
-
-.probe-segmented__option {
-  flex: 1 1 0;
-  padding: 6px 0;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-
-.probe-segmented__option + .probe-segmented__option {
-  border-left: 1px solid var(--color-border);
-}
-
-.probe-segmented__option.is-active {
-  color: #fff;
-  background: var(--color-accent);
-}
-
-.probe-segmented__option:disabled {
-  cursor: default;
-  opacity: 0.6;
 }
 
 .probe-control-row + .probe-help {

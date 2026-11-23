@@ -4,8 +4,8 @@ const TEXT: Record<string, string> = {
   "measured": "{what} measured",
   "finds": "finds {what}",
   "findCenter": "Find the center of",
-  "inner": "A hole",
-  "outer": "A part",
+  "inner": "Hole",
+  "outer": "Part",
   "whereCorner": "Corner to probe",
   "whereSide": "Side to probe",
   "tapCorner": "Tap a corner of the board to choose it.",
@@ -30,8 +30,8 @@ const TEXT: Record<string, string> = {
   "end.z": "Stops just above the surface.",
   "end.side": "Backs off a little when done.",
   "end.corner": "Stops over X0 Y0, above the material.",
-  "end.inner": "Stops over the center, lifted out of the hole.",
-  "end.outer": "Stops over the center of the part.",
+  "end.inner": "Stops over the center, lifted out of the hole. Works on square and round holes.",
+  "end.outer": "Stops over the center of the part. Works on square and round parts.",
 };
 
 export const useProbe3dText = () =>

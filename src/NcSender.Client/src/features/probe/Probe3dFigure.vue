@@ -1,7 +1,8 @@
 <!--
   The 3D probe's picture: the real probe (baked from its STEP,
   models/probe3d.ncfx) in the spindle, going through the chosen routine on a
-  loop over the material, a hole or a part, with a numbered mark and a flash
+  loop over the material, a hole or a part (square one time round, round the
+  next, as it finds the centre of both), with a numbered mark and a flash
   at each touch, and a small top view beside it. `still` parks it at its
   start (while a real probe runs).
 
@@ -20,7 +21,8 @@
     <div class="azf__top">
       <svg :viewBox="topView.box" aria-hidden="true">
         <rect v-if="topView.board" :x="topView.board.x" :y="topView.board.y" :width="topView.board.w" :height="topView.board.h" class="azf__wood" />
-        <rect v-if="topView.shape" :x="-topView.shape.hx" :y="-topView.shape.hy" :width="topView.shape.hx * 2" :height="topView.shape.hy * 2" rx="1.5" :class="topView.shape.hole ? 'azf__hole' : 'azf__part'" />
+        <circle v-if="topView.shape?.round" :r="topView.shape.r" :class="topView.shape.hole ? 'azf__hole' : 'azf__part'" />
+        <rect v-else-if="topView.shape" :x="-topView.shape.hx" :y="-topView.shape.hy" :width="topView.shape.hx * 2" :height="topView.shape.hy * 2" rx="1.5" :class="topView.shape.hole ? 'azf__hole' : 'azf__part'" />
         <path v-if="topView.shape" d="M-6 0h12M0 -6v12" class="azf__cross" :opacity="finished ? 1 : 0.2" />
         <circle v-if="topView.zero" cx="0" cy="0" r="3" class="azf__zero" :opacity="finished ? 1 : 0.35" />
         <circle v-for="(d, i) in topView.dots" :key="i" :cx="d.x" :cy="d.y" :r="topView.dot" class="azf__dot" :opacity="i < touched ? 1 : 0" />
@@ -71,7 +73,9 @@ const PART_HEIGHT = 20;
 
 const reduced = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-const current = () => buildProbe3dRoutine(props.axis, props.centerAxes, props.probeZFirst);
+// A Center probe is shown on a square hole or part, then on a round one, in turn.
+const round = ref(false);
+const current = () => buildProbe3dRoutine(props.axis, props.centerAxes, props.probeZFirst, round.value);
 
 // The routine is written for a front-left corner (or the left / front side):
 // these turn it to the one chosen.
@@ -102,7 +106,7 @@ const topView = computed(() => {
   return {
     box: `${mid.x - size / 2} ${mid.y - size / 2} ${size} ${size}`,
     board, dots,
-    shape: centre ? { hx: P3D.halfX, hy: P3D.halfY, hole: r.scene === 'hole' } : null,
+    shape: centre ? { hx: P3D.halfX, hy: P3D.halfY, r: P3D.radius, round: round.value, hole: r.scene === 'hole' } : null,
     zero: props.axis === 'XYZ' || props.axis === 'XY',
     // Drawn larger than the 2 mm ball, to be seen at this size.
     tip: centre ? 3 : 2, dot: centre ? 3 : 2,
@@ -122,6 +126,8 @@ let camera: THREE.PerspectiveCamera;
 let board: THREE.Mesh;
 let holed: THREE.Mesh;
 let part: THREE.Mesh;
+let holedRound: THREE.Mesh;
+let partRound: THREE.Mesh;
 let bed: THREE.Mesh;
 let probe: THREE.Group;
 let zero: THREE.Group;
@@ -223,6 +229,20 @@ function buildScene() {
   part = new THREE.Mesh(geom(new THREE.BoxGeometry(P3D.halfX * 2, P3D.halfY * 2, PART_HEIGHT)), wood);
   part.position.z = -PART_HEIGHT / 2;
   outline(part, 0x5a4424, 0.6);
+  // The round ones, shown in turn with the square ones.
+  const roundSheet = new THREE.Shape();
+  roundSheet.moveTo(-BOARD.w / 2, -BOARD.d / 2); roundSheet.lineTo(BOARD.w / 2, -BOARD.d / 2);
+  roundSheet.lineTo(BOARD.w / 2, BOARD.d / 2); roundSheet.lineTo(-BOARD.w / 2, BOARD.d / 2); roundSheet.closePath();
+  const bore = new THREE.Path();
+  bore.absarc(0, 0, P3D.radius, 0, Math.PI * 2, true);
+  roundSheet.holes.push(bore);
+  holedRound = new THREE.Mesh(geom(new THREE.ExtrudeGeometry(roundSheet, { depth: BOARD.t, bevelEnabled: false, curveSegments: 64 })), wood);
+  holedRound.position.z = -BOARD.t;
+  outline(holedRound, 0x5a4424, 0.6);
+  partRound = new THREE.Mesh(upright(P3D.radius, P3D.radius, PART_HEIGHT, 72), wood);
+  partRound.position.z = -PART_HEIGHT / 2;
+  outline(partRound, 0x5a4424, 0.6);
+  scene.add(holedRound, partRound);
   // What the hole opens onto.
   bed = new THREE.Mesh(geom(new THREE.BoxGeometry(BOARD.w, BOARD.d, 6)), matcap(0x8d7a5c));
   outline(bed, 0x3b2f1c, 0.5);
@@ -314,8 +334,10 @@ function buildPath() {
   // The material for this probe, and where it lies.
   const kind = routine.scene;
   board.visible = kind === 'corner' || kind === 'sideX' || kind === 'sideY';
-  holed.visible = kind === 'hole';
-  part.visible = kind === 'part';
+  holed.visible = kind === 'hole' && !round.value;
+  part.visible = kind === 'part' && !round.value;
+  holedRound.visible = kind === 'hole' && round.value;
+  partRound.visible = kind === 'part' && round.value;
   // A part stands alone, close up: nothing under it to draw the eye.
   bed.visible = kind === 'hole';
   bed.position.z = -BOARD.t - 3;
@@ -376,6 +398,12 @@ function frame(now: number) {
   raf = requestAnimationFrame(frame);
   if (!renderer || document.hidden) return;
   const moving = !props.still && !reduced;
+  // At the end of a Center probe's loop, the other shape takes its turn.
+  if (moving && (routine.scene === 'hole' || routine.scene === 'part') && (now - startMs) / 1000 >= total) {
+    round.value = !round.value;
+    buildPath();
+    startMs = now;
+  }
   // Parked at the start while a real probe runs; shown finished where motion is unwanted.
   const t = props.still ? 0 : reduced ? times[times.length - 1] : ((now - startMs) / 1000) % total;
   const p = pose(t);
@@ -432,11 +460,11 @@ onMounted(() => {
   raf = requestAnimationFrame(frame);
 });
 
-watch(() => [props.axis, props.corner, props.side, props.centerAxes, props.probeZFirst], () => { if (renderer) buildPath(); });
-watch(() => props.still, () => { startMs = performance.now(); lastProgress = ''; });
+watch(() => [props.axis, props.corner, props.side, props.centerAxes, props.probeZFirst], () => { round.value = false; if (renderer) buildPath(); });
+watch(() => props.still, () => { round.value = false; if (renderer) buildPath(); startMs = performance.now(); lastProgress = ''; });
 
 /** Play from the beginning. */
-defineExpose({ restart: () => { startMs = performance.now(); } });
+defineExpose({ restart: () => { round.value = false; if (renderer) buildPath(); startMs = performance.now(); } });
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf);

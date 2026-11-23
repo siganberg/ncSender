@@ -1144,6 +1144,16 @@ const goToCorner = async (corner: CornerType) => {
 </script>
 
 <style scoped>
+/* The main screen has the room: wider steps, and Feed stands apart from them.
+   Only here: the dialogs, wizards and plugins keep the component's own size. */
+.card__header :deep(.step-seg) {
+  grid-template-columns: repeat(var(--step-count, 3), minmax(76px, 1fr));
+}
+
+.card__header :deep(.feed-rate-label) {
+  margin-left: 14px;
+}
+
 .controls-disabled {
   opacity: 0.6;
 }

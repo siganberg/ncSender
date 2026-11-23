@@ -18,13 +18,18 @@
 <template>
   <div class="step-control">
     <span class="step-label">Step</span>
+    <!-- One track with the accent block sliding to the chosen step, as the toolbar's units switch. -->
+    <div class="step-seg" role="group" :style="{ '--step-count': stepOptions.length, '--step-at': activeIndex }">
+    <span v-if="activeIndex >= 0" class="step-seg__thumb" aria-hidden="true"></span>
     <div
       v-for="(value, index) in stepOptions"
       :key="value"
       class="step-btn-wrapper"
     >
       <button
-        :class="['chip', { active: isStepInCategory(currentStep, index) }]"
+        type="button"
+        class="step-seg__btn"
+        :aria-pressed="index === activeIndex"
         @click="handleStepClick(value)"
         @mousedown="startLongPress(index, $event)"
         @mouseup="endLongPress"
@@ -38,6 +43,7 @@
       <div
         v-if="openDropdown === index"
         :class="['step-dropdown', `step-dropdown--${dropdownPosition}`]"
+        :style="{ maxHeight: `${dropdownMaxHeight}px` }"
         @click.stop
         @touchstart.stop
       >
@@ -51,6 +57,7 @@
           {{ formatOptionStepDisplay(opt) }}
         </button>
       </div>
+    </div>
     </div>
     <span class="feed-rate-label">Feed</span>
     <select
@@ -104,6 +111,7 @@ const emit = defineEmits<{
 const LONG_PRESS_MS = 500;
 const openDropdown = ref<number | null>(null);
 const dropdownPosition = ref<'top' | 'bottom'>('bottom');
+const dropdownMaxHeight = ref(250);
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressStartTime = 0;
 let currentButtonEl: HTMLElement | null = null;
@@ -197,7 +205,7 @@ const getExpandedOptions = (categoryIndex: number): number[] => {
 // Long press handlers
 const startLongPress = (index: number, event: Event) => {
   pressStartTime = Date.now();
-  currentButtonEl = (event.target as HTMLElement).closest('.chip');
+  currentButtonEl = (event.target as HTMLElement).closest('.step-seg__btn');
 
   pressTimer = setTimeout(() => {
     // Calculate position based on available space
@@ -205,10 +213,14 @@ const startLongPress = (index: number, event: Event) => {
       const rect = currentButtonEl.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      const dropdownHeight = 260; // approximate max height
+      // The whole list, so every step shows without scrolling: about 31 px a row.
+      const dropdownHeight = getExpandedOptions(index).length * 31 + 12;
 
-      // Prefer bottom, but use top if not enough space below
-      dropdownPosition.value = spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove ? 'bottom' : 'top';
+      // Below when it all fits there; otherwise on the side with more room,
+      // and no taller than that room (it scrolls only then).
+      const below = spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove;
+      dropdownPosition.value = below ? 'bottom' : 'top';
+      dropdownMaxHeight.value = Math.max(120, Math.floor((below ? spaceBelow : spaceAbove) - 12));
     }
 
     // If current step is not in this category, switch to the base step for this group
@@ -317,6 +329,9 @@ const feedRateOptionsByCategoryImperial = [
 
 // Get current category based on current step
 const currentCategory = computed(() => getCategoryForStep(props.currentStep));
+
+// Where the sliding block sits: the group the current step belongs to, or nowhere.
+const activeIndex = computed(() => props.stepOptions.findIndex((_, index) => isStepInCategory(props.currentStep, index)));
 
 // Get feed rate options for current category
 const getCurrentFeedRateOptions = (): number[] => {
@@ -459,36 +474,85 @@ onUnmounted(() => {
   gap: var(--gap-xs);
 }
 
-.step-btn-wrapper {
+.step-seg {
   position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(var(--step-count, 3), minmax(52px, 1fr));
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong, rgba(127, 127, 127, 0.35));
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
-.chip {
-  border: none;
-  border-radius: 999px !important;
-  padding: 6px 12px !important;
-  background: var(--color-surface-muted) !important;
+/* The accent block that slides to the active step. */
+.step-seg__thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--step-count, 3));
+  border-radius: calc(var(--radius-small) - 2px);
+  background: var(--gradient-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(100% * var(--step-at, 0)));
+  transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+/* No z-index here or on the track: the list of steps that opens from a button
+   has to stand above the page's click-away backdrop, and a stacking context
+   would keep it under. The thumb is first in the track, so the buttons still
+   draw over it. */
+.step-btn-wrapper {
+  position: relative;
+  display: flex;
+}
+
+.step-seg__btn {
+  flex: 1 1 auto;
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 0 10px !important;
+  border: none !important;
+  border-radius: calc(var(--radius-small) - 2px) !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--color-text-secondary) !important;
+  font: inherit;
+  font-size: 0.85rem !important;
+  font-weight: 600;
   cursor: pointer;
-  min-width: 50px !important;
-  width: 60px !important;
-  transition: all 0.2s ease;
   text-align: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: color 0.25s ease;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.chip.active {
-  background: var(--gradient-accent) !important;
+.step-seg__btn:hover:not([aria-pressed="true"]) {
+  color: var(--color-text-primary) !important;
+}
+
+.step-seg__btn[aria-pressed="true"] {
   color: #fff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-seg__thumb,
+  .step-seg__btn {
+    transition: none;
+  }
 }
 
 .step-label,
 .feed-rate-label {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--color-text-primary);
 }
 
@@ -508,6 +572,11 @@ onUnmounted(() => {
   min-width: 60px;
   max-height: 250px;
   overflow-y: auto;
+}
+
+/* Rows keep their height: the list grows to show them all. */
+.step-dropdown > .dropdown-option {
+  flex: 0 0 auto;
 }
 
 .step-dropdown--bottom {
@@ -548,7 +617,10 @@ onUnmounted(() => {
 
 .feed-rate-select {
   width: 80px;
-  padding: 4px 8px;
+  /* As tall as the step selector beside it. */
+  height: 34px;
+  padding: 0 8px;
+  font-weight: 600;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface);
@@ -566,5 +638,16 @@ onUnmounted(() => {
 
 .feed-rate-select:hover {
   border-color: var(--color-accent);
+}
+</style>
+
+<!-- Not scoped: it styles the custom element plugins embed this in. -->
+<style>
+/* A plugin may scale or otherwise transform <nc-step-control>, which puts it
+   in a layer of its own, under whatever comes after it (the jog pad). While
+   its list of steps is open, it comes to the front. */
+nc-step-control:has(.step-dropdown) {
+  position: relative;
+  z-index: 1000;
 }
 </style>

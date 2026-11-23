@@ -16,11 +16,18 @@ export interface P3dStep { key: string; sets: string }
 export interface P3dRoutine { scene: P3dScene; points: P3dPoint[]; steps: P3dStep[]; start: string; end: string }
 
 /** The picture's sizes: the ball's radius, how far below the top the sides are
- *  touched, and half the hole or part a Center probe is shown on. */
-export const P3D = { ball: 1, depth: 5, park: 4, halfX: 30, halfY: 22 } as const;
+ *  touched, half the hole or part a Center probe is shown on, and the radius
+ *  of the round one it is shown on in turn. */
+export const P3D = { ball: 1, depth: 5, park: 4, halfX: 30, halfY: 22, radius: 26 } as const;
 
-export function buildProbe3dRoutine(axis: P3dAxis, centerAxes = 'XY', probeZFirst = false): P3dRoutine {
-  const r = P3D.ball, low = -P3D.depth, hx = P3D.halfX, hy = P3D.halfY;
+/** `round` shows a Center probe on a round hole or part instead of a square one. */
+export function buildProbe3dRoutine(axis: P3dAxis, centerAxes = 'XY', probeZFirst = false, round = false): P3dRoutine {
+  const r = P3D.ball, low = -P3D.depth;
+  // Half the width met along X at this Y, and along Y at this X: on a round
+  // one, off the middle, that is a shorter chord.
+  const chord = (off: number) => Math.sqrt(P3D.radius * P3D.radius - off * off);
+  const halfX = (y: number) => (round ? chord(y) : P3D.halfX);
+  const halfY = (x: number) => (round ? chord(x) : P3D.halfY);
   const points: P3dPoint[] = [];
   const steps: P3dStep[] = [];
   let step = 0;
@@ -74,11 +81,13 @@ export function buildProbe3dRoutine(axis: P3dAxis, centerAxes = 'XY', probeZFirs
     begin(doX ? 'wallsX' : 'wallsY', doX ? 'X' : 'Y');
     go(x, y, high); go(x, y, low);
     if (doX) {
+      const hx = halfX(y);
       touch(-(hx - r), y, low, [1, 0, 0]); touch(hx - r, y, low, [-1, 0, 0]);
       x = 0; go(x, y, low);
       if (doY) begin('wallsY', 'Y');
     }
     if (doY) {
+      const hy = halfY(x);
       touch(x, -(hy - r), low, [0, 1, 0]); touch(x, hy - r, low, [0, -1, 0]);
       y = 0; go(x, y, low);
     }
@@ -100,6 +109,7 @@ export function buildProbe3dRoutine(axis: P3dAxis, centerAxes = 'XY', probeZFirs
   if (doX) {
     begin('sidesX', 'X');
     if (!points.length) go(x, y, high);
+    const hx = halfX(y);
     go(-(hx + out), y, high); go(-(hx + out), y, low); touch(-(hx + r), y, low, [-1, 0, 0]);
     go(-(hx + r + 2), y, low); go(-(hx + r + 2), y, high);
     go(hx + out, y, high); go(hx + out, y, low); touch(hx + r, y, low, [1, 0, 0]);
@@ -109,6 +119,7 @@ export function buildProbe3dRoutine(axis: P3dAxis, centerAxes = 'XY', probeZFirs
   if (doY) {
     begin('sidesY', 'Y');
     if (!points.length) go(x, y, high);
+    const hy = halfY(x);
     go(x, -(hy + out), high); go(x, -(hy + out), low); touch(x, -(hy + r), low, [0, -1, 0]);
     go(x, -(hy + r + 2), low); go(x, -(hy + r + 2), high);
     go(x, hy + out, high); go(x, hy + out, low); touch(x, hy + r, low, [0, 1, 0]);
