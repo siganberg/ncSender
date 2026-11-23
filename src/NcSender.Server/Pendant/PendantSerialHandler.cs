@@ -118,8 +118,12 @@ public class PendantSerialHandler : IAsyncDisposable
 
         if (_readTask is not null)
         {
-            try { await _readTask; }
+            // Bounded: on Linux a read on a port whose device was pulled can
+            // stay blocked after the close, and whoever is closing us must not
+            // wait on it for ever.
+            try { await _readTask.WaitAsync(TimeSpan.FromSeconds(3)); }
             catch (OperationCanceledException) { }
+            catch (TimeoutException) { _logger.LogWarning("Serial read loop did not stop within 3s of closing the port; abandoning it"); }
             catch { /* best effort */ }
         }
 

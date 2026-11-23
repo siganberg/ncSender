@@ -34,6 +34,9 @@ public class PendantPortScanner : IDisposable
 
     private const int ScanIntervalMs = 1500;
 
+    /// <summary>How long closing a lost device may take before the scan moves on without it.</summary>
+    internal static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(4);
+
     public event Action<TrackedDevice>? DeviceFound;
     public event Action<TrackedDevice>? DeviceLost;
     // A USB device with the Espressif default identity (VID 0x303A /
@@ -136,6 +139,36 @@ public class PendantPortScanner : IDisposable
         _leases?.Release(port);
     }
 
+    /// <summary>
+    /// Close the handler of a device that is gone, without letting it hold the
+    /// scan up. Closing a serial port whose device was pulled can block for
+    /// ever on Linux. The scan holds its lock while it waits, so one port that
+    /// would not close stopped every later scan: a pendant unplugged from USB
+    /// left the Wireless USB undetectable after its next replug, until
+    /// ncSender was restarted.
+    /// </summary>
+    private async Task CloseLostAsync(PendantSerialHandler handler, string port)
+    {
+        if (!await RunBoundedAsync(() => handler.DisposeAsync().AsTask(), CloseTimeout))
+            _logger.LogWarning("Closing {Port} did not finish in {Seconds}s; carrying on without it",
+                port, CloseTimeout.TotalSeconds);
+    }
+
+    /// <summary>
+    /// Run <paramref name="work"/> off the caller's thread and wait for it no
+    /// longer than <paramref name="limit"/>. False when it did not finish in
+    /// time; it is then left to finish, or not, on its own. Its failures are
+    /// swallowed: closing is best effort.
+    /// </summary>
+    internal static async Task<bool> RunBoundedAsync(Func<Task> work, TimeSpan limit)
+    {
+        var task = Task.Run(async () =>
+        {
+            try { await work(); } catch { /* best effort */ }
+        });
+        return await Task.WhenAny(task, Task.Delay(limit)) == task;
+    }
+
     private async Task ScanAsync()
     {
         if (_disposed) return;
@@ -177,7 +210,7 @@ public class PendantPortScanner : IDisposable
             foreach (var kv in lost)
             {
                 _logger.LogInformation("{Type} disappeared from {Port}", kv.Value.Type, kv.Key);
-                try { await kv.Value.Handler.DisposeAsync(); } catch { /* best effort */ }
+                await CloseLostAsync(kv.Value.Handler, kv.Key);
                 DeviceLost?.Invoke(kv.Value);
             }
 
@@ -194,7 +227,7 @@ public class PendantPortScanner : IDisposable
             foreach (var kv in disconnected)
             {
                 _logger.LogInformation("{Type} handler disconnected on {Port}", kv.Value.Type, kv.Key);
-                try { await kv.Value.Handler.DisposeAsync(); } catch { /* best effort */ }
+                await CloseLostAsync(kv.Value.Handler, kv.Key);
                 DeviceLost?.Invoke(kv.Value);
             }
 
@@ -250,7 +283,7 @@ public class PendantPortScanner : IDisposable
                 if (duplicate)
                 {
                     _logger.LogWarning("Already tracking {Type}, ignoring {NewPort}", deviceType, port);
-                    try { await handler.DisposeAsync(); } catch { /* best effort */ }
+                    await CloseLostAsync(handler, port);
                     continue;
                 }
                 _logger.LogInformation("{Type} identified on {Port} via USB catalog (no probe)", deviceType, port);

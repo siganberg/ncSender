@@ -299,7 +299,7 @@ public static class ServerBuilder
                 }
                 else if (body is not null)
                     logger.LogInformation("API {Method} {Path} {Body} responded {StatusCode} in {Elapsed}ms",
-                        method, context.Request.Path, body, context.Response.StatusCode, sw.ElapsedMilliseconds);
+                        method, context.Request.Path, RequestLogRedactor.Redact(body), context.Response.StatusCode, sw.ElapsedMilliseconds);
                 else
                     logger.LogInformation("API {Method} {Path} responded {StatusCode} in {Elapsed}ms",
                         method, context.Request.Path, context.Response.StatusCode, sw.ElapsedMilliseconds);
