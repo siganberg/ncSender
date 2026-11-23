@@ -283,6 +283,19 @@
               </div>
               <div class="setting-item setting-item--with-note">
                 <div class="setting-item-content">
+                  <label class="setting-label">Work Offset After Reset</label>
+                  <div class="settings-note">
+                    A Stop or a program's end (M30) puts the controller back in G54. When you were in G55 to G59: ask whether to switch back, always switch back (shown in the console), or stay in G54 without asking.
+                  </div>
+                </div>
+                <select class="setting-select" v-model="workOffsetAfterReset" @change="saveWorkOffsetAfterReset">
+                  <option value="ask">Ask</option>
+                  <option value="switch">Always switch back</option>
+                  <option value="stay">Always stay in G54</option>
+                </select>
+              </div>
+              <div class="setting-item setting-item--with-note">
+                <div class="setting-item-content">
                   <label class="setting-label">Status Polling Interval</label>
                   <div class="settings-note">
                     How often the app queries the CNC controller for status updates. Faster polling gives smoother position updates but uses more bandwidth.
@@ -1650,6 +1663,7 @@ const consoleSettings = reactive({
 
 // Stop deceleration delay (pause before soft reset)
 const pauseBeforeStop = ref(initialSettings?.pauseBeforeStop ?? 500);
+const workOffsetAfterReset = ref(initialSettings?.workOffsetAfterReset ?? 'ask');
 
 const pollingInterval = ref(initialSettings?.pollingInterval ?? 100);
 
@@ -2066,6 +2080,10 @@ onMounted(() => {
       if (typeof detail.jog.feedRate === 'number') {
         jogConfig.feedRate = detail.jog.feedRate;
       }
+    }
+    // "Always switch back" picked in the work offset popup, on any screen.
+    if (typeof detail?.workOffsetAfterReset === 'string') {
+      workOffsetAfterReset.value = detail.workOffsetAfterReset;
     }
     // Update debug logging state when settings change
     if (typeof detail?.debugLogging === 'boolean') {
@@ -2896,6 +2914,11 @@ const savePauseBeforeStop = async () => {
   await updateSettings({
     pauseBeforeStop: Number(pauseBeforeStop.value)
   });
+};
+
+const saveWorkOffsetAfterReset = async () => {
+  const { updateSettings } = await import('./lib/settings-store.js');
+  await updateSettings({ workOffsetAfterReset: workOffsetAfterReset.value });
 };
 
 const savePollingInterval = async () => {
