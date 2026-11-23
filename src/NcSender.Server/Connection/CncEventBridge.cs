@@ -303,6 +303,18 @@ public class CncEventBridge
         await _broadcaster.Broadcast("settings-changed", doc.RootElement.Clone());
     }
 
+    // Where a work offset's zero is, in machine coordinates ("x,y,z,..." from $#).
+    private string? OffsetOf(string workspace)
+    {
+        var ms = _context.State.MachineState;
+        return workspace switch
+        {
+            "G54" => ms.G54, "G55" => ms.G55, "G56" => ms.G56,
+            "G57" => ms.G57, "G58" => ms.G58, "G59" => ms.G59,
+            _ => null,
+        };
+    }
+
     // (Not disposed: no timer in it, and a late Cancel on a disposed one would throw.)
     private void WithdrawWorkOffsetAsk() => Interlocked.Exchange(ref _workOffsetAsk, null)?.Cancel();
 
@@ -334,7 +346,18 @@ public class CncEventBridge
                     Buttons: [new GateButton("stay", $"Stay in {now}"), new GateButton("always", "Always switch back"),
                         new GateButton("switch", $"Switch back to {was}", "primary", IsDefault: true)],
                     Source: "system",
-                    Key: $"work-offset-after-reset:{was}"), ct);
+                    Key: $"work-offset-after-reset:{was}",
+                    // For the app's own picture of this question: the two
+                    // offsets side by side, each with where its zero is.
+                    Data: new Dictionary<string, string>
+                    {
+                        ["kind"] = "work-offset",
+                        ["was"] = was,
+                        ["now"] = now,
+                        ["why"] = why == ProgramEndSays ? "end" : "reset",
+                        ["wasAt"] = OffsetOf(was) ?? "",
+                        ["nowAt"] = OffsetOf(now) ?? "",
+                    }), ct);
                 if (ct.IsCancellationRequested || chosen is not ("switch" or "always")) return;
                 if (chosen == "always") await RememberSwitchBackAsync();
                 told = true;

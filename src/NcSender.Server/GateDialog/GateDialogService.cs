@@ -89,7 +89,8 @@ public class GateDialogService : IGateService
             StepProgress: 0,
             StepConfig: options.StepConfig,
             MessageHtml: options.MessageHtml,
-            Icon: options.Icon);
+            Icon: options.Icon,
+            Data: options.Data);
 
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var reg = ct.Register(() => OnCallerCancelled(gateId));
@@ -209,7 +210,8 @@ public class GateDialogService : IGateService
                 ? null
                 : new WsGateStepConfig(g.StepConfig.HoldMs, g.StepConfig.CountdownSec, g.StepConfig.ChainSteps),
             MessageHtml: g.MessageHtml,
-            Icon: g.Icon);
+            Icon: g.Icon,
+            Data: g.Data);
 
     // ── Persistence ─────────────────────────────────────────────────────────
 

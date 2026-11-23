@@ -60,6 +60,8 @@ export interface Gate {
   source?: string;
   /** Content icon: 'hand' | 'home' | 'warning' | 'info' | 'success'. Defaults by variant. */
   icon?: string;
+  /** Facts for a gate the app draws its own way; data.kind says which. */
+  data?: Record<string, string>;
 }
 
 const gates = ref<Gate[]>([]);

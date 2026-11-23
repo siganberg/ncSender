@@ -8,7 +8,8 @@
       :close-on-backdrop-click="false"
       :z-index="10050 + index"
     >
-      <GatePanel :gate="gate" @respond="onRespond" @fire-step="onFireStep" />
+      <WorkOffsetGate v-if="gate.data?.kind === 'work-offset'" :gate="gate" @respond="onRespond" />
+      <GatePanel v-else :gate="gate" @respond="onRespond" @fire-step="onFireStep" />
     </Dialog>
   </template>
 </template>
@@ -16,6 +17,7 @@
 <script setup lang="ts">
 import Dialog from './Dialog.vue';
 import GatePanel from './GatePanel.vue';
+import WorkOffsetGate from './WorkOffsetGate.vue';
 import { useGateDialog } from '../composables/useGateDialog';
 
 const { gates, respond, fireStep } = useGateDialog();

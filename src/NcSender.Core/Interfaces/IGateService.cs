@@ -44,6 +44,10 @@ public interface IGateService
 /// join the same TCS instead of stacking prompts. A joiner's cancellation
 /// doesn't affect the shared gate.</para>
 ///
+/// <para><b>Data</b>: optional facts for a screen that draws this question its
+/// own way (Data["kind"] says which). Title, Message and Buttons still say it
+/// all, for screens that don't: the pendant, an older client.</para>
+///
 /// <para><b>Steps</b>: optional walk-through of side-effect commands rendered
 /// as ONE morphing button in the browser (tap = start countdown, hold =
 /// immediate). Each step fires its commands through the controller without
@@ -62,7 +66,8 @@ public record GateOptions(
     IReadOnlyList<GateStep>? Steps = null,
     GateStepConfig? StepConfig = null,
     bool MessageHtml = false,
-    string? Icon = null);
+    string? Icon = null,
+    IReadOnlyDictionary<string, string>? Data = null);
 
 /// <summary>
 /// One button on a gate. <see cref="Value"/> is returned from
@@ -102,4 +107,5 @@ public record ActiveGate(
     int StepProgress = 0,
     GateStepConfig? StepConfig = null,
     bool MessageHtml = false,
-    string? Icon = null);
+    string? Icon = null,
+    IReadOnlyDictionary<string, string>? Data = null);
