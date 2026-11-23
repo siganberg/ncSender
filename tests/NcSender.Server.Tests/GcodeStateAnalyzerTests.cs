@@ -238,7 +238,7 @@ public class GcodeStateAnalyzerTests
         var sequence = _analyzer.GenerateResumeSequence(state, options);
 
         Assert.Contains("(Resume sequence for starting from line)", sequence);
-        Assert.Contains("G53 G0 Z-5.000", sequence);
+        Assert.Contains("$SAFEZ", sequence);
         Assert.Contains("M6 T3", sequence);
         Assert.Contains("G21", sequence);
         Assert.Contains("G17", sequence);
@@ -344,9 +344,28 @@ public class GcodeStateAnalyzerTests
         var sequence = _analyzer.GenerateResumeSequence(new GcodeState(),
             new StartFromLineRequest { StartLine = 1, ApproachHeight = 10, PlungeFeedRate = 500 });
 
-        Assert.Contains("G53 G0 Z-5.000", sequence);
+        Assert.Contains("$SAFEZ", sequence);
         Assert.True(sequence.All(s => !s.StartsWith("G0 X") && !s.StartsWith("G0 Y")
             && !s.StartsWith("G0 Z") && !s.StartsWith("G1 Z")));
+    }
+
+    // The retract is $SAFEZ, which writes Safe Z in the controller's units
+    // when it runs. A bare "G53 G0 Z-5.000" was read as -5 inches by a
+    // controller left in G20, and the program's G20 still comes back before
+    // the first program move.
+    [Fact]
+    public void GenerateResumeSequence_InchProgram_RetractsWithSafeZThenRestoresInches()
+    {
+        var state = new GcodeState { Units = "G20", Tool = 12, PositionX = 1.5, HasPositionX = true };
+        var sequence = _analyzer.GenerateResumeSequence(state,
+            new StartFromLineRequest { StartLine = 10090, SafeZHeight = -5, ApproachHeight = 0.2, PlungeFeedRate = 20 });
+
+        var retract = sequence.IndexOf("$SAFEZ");
+        var inches = sequence.IndexOf("G20");
+        var firstMove = sequence.FindIndex(s => s.StartsWith("G0 X"));
+        Assert.Equal(1, retract);
+        Assert.DoesNotContain(sequence, s => s.StartsWith("G53 G0 Z"));
+        Assert.True(inches > retract && inches < firstMove);
     }
 
     [Fact]
