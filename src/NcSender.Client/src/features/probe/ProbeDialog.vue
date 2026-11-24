@@ -97,7 +97,7 @@
               <template v-if="probeType === '3d-probe'">
                 <div class="probe-control-row">
                   <div class="probe-control-group">
-                    <label class="probe-label">Diameter</label>
+                    <label class="probe-label">Tip Diameter</label>
                     <div class="probe-input-wrapper probe-stepper-field">
                         <ProbeStepper
                           :model-value="ballPointDiameterInput"

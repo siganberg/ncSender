@@ -68,8 +68,9 @@ const decimals = computed(() => {
   const s = String(props.step);
   return s.includes('.') ? s.length - s.indexOf('.') - 1 : 0;
 });
-// At most one digit more than the step has: a converted value does not trail a dozen decimals.
-const shown = computed(() => (current.value == null ? '' : String(Number(current.value.toFixed(decimals.value + 1)))));
+// Four decimals at least, so a typed 6.35 or 0.0787 shows as typed whatever the
+// step is; a converted value still does not trail a dozen decimals.
+const shown = computed(() => (current.value == null ? '' : String(Number(current.value.toFixed(Math.max(4, decimals.value + 1))))));
 const atMin = computed(() => current.value != null && current.value <= props.min + 1e-9);
 const atMax = computed(() => current.value != null && current.value >= props.max - 1e-9);
 
