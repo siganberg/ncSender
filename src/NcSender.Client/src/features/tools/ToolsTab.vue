@@ -258,27 +258,24 @@
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label required">Diameter ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
-                <input
-                  type="number"
+                <UnitInput
+                  v-model="toolForm.diameter"
+                  :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
                   class="form-input"
-                  v-model.number="toolForm.diameter"
-                  min="0.0001"
-                  step="any"
                   :placeholder="diameterPlaceholder"
                   required
-                >
+                />
                 <div v-if="formErrors.diameter" class="form-error">{{ formErrors.diameter }}</div>
                 <div v-else-if="diameterNote" class="form-note">{{ diameterNote }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">TLO ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})</label>
-                <input
-                  type="number"
+                <UnitInput
+                  v-model="toolForm.offsets.tlo"
+                  :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
                   class="form-input"
-                  v-model.number="toolForm.offsets.tlo"
-                  step="any"
                   :placeholder="tloPlaceholder"
-                >
+                />
               </div>
             </div>
 
@@ -289,39 +286,36 @@
                   TLS X Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
                   <InfoTooltip text="Shifts where the tool-length probe is performed on the X axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle)." />
                 </label>
-                <input
-                  type="number"
+                <UnitInput
+                  v-model="toolForm.offsets.x"
+                  :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
                   class="form-input"
-                  v-model.number="toolForm.offsets.x"
-                  step="any"
                   :placeholder="tloPlaceholder"
-                >
+                />
               </div>
               <div class="form-group">
                 <label class="form-label">
                   TLS Y Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
                   <InfoTooltip text="Shifts where the tool-length probe is performed on the Y axis for this specific tool. Use when the tool sits off spindle center (e.g. a laser or camera module mounted alongside the spindle)." />
                 </label>
-                <input
-                  type="number"
+                <UnitInput
+                  v-model="toolForm.offsets.y"
+                  :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
                   class="form-input"
-                  v-model.number="toolForm.offsets.y"
-                  step="any"
                   :placeholder="tloPlaceholder"
-                >
+                />
               </div>
               <div class="form-group">
                 <label class="form-label">
                   TLS Z Offset ({{ getDistanceUnitLabel(appStore.unitsPreference.value) }})
                   <InfoTooltip text="Per-tool adjustment to the probe start height, added on top of the plugin's Seek Start Z. Positive raises the start (further from the toolsetter — safer for long tools). Negative lowers it (closer to the toolsetter — for short tools that wouldn't reach from the default start height)." />
                 </label>
-                <input
-                  type="number"
+                <UnitInput
+                  v-model="toolForm.offsets.z"
+                  :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
                   class="form-input"
-                  v-model.number="toolForm.offsets.z"
-                  step="any"
                   :placeholder="tloPlaceholder"
-                >
+                />
               </div>
             </div>
 
@@ -531,6 +525,7 @@ import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
 import FileBrowserDialog from '../../components/FileBrowserDialog.vue';
 import InfoTooltip from '../../components/InfoTooltip.vue';
+import UnitInput from '@/components/UnitInput.vue';
 import { useKioskDetection } from '../../composables/useKioskDetection';
 import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';

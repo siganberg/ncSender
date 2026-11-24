@@ -152,7 +152,7 @@
                   <span class="wiz__field-hint">Controller has ${{ travelIds[ax] }} = {{ fwText(travelIds[ax]) }} mm</span>
                 </span>
                 <span class="wiz__axis-input">
-                  <input type="number" step="any" min="0" class="wiz__input" :value="displayLen(travel[ax])" @change="travel[ax] = parseLen(($event.target as HTMLInputElement).value)" />
+                  <UnitInput :unit="unitLabel" class="wiz__input" :model-value="displayLen(travel[ax])" @change="travel[ax] = parseLen(($event.target as HTMLInputElement).value)" />
                   <span class="wiz__axis-unit">{{ unitLabel }}</span>
                 </span>
               </label>
@@ -211,7 +211,7 @@
                     </td>
                     <td>
                       <span class="wiz__axis-input wiz__motor-input" :class="{ 'has-unit': !isLinear(ax) }">
-                        <input type="number" step="any" min="0" class="wiz__input" :value="showPerMm(ax, maxRate[ax])" @change="setPerMm(maxRate, ax, ($event.target as HTMLInputElement).value)" />
+                        <UnitInput :unit="isLinear(ax) ? unitLabel + '/min' : undefined" class="wiz__input" :model-value="showPerMm(ax, maxRate[ax])" @change="setPerMm(maxRate, ax, ($event.target as HTMLInputElement).value)" />
                         <span v-if="!isLinear(ax)" class="wiz__axis-unit">°/min</span>
                       </span>
                     </td>
@@ -297,7 +297,7 @@
                 <span class="wiz__row-note">How far each axis backs off its switch after homing. 2 to 5 mm is typical.</span>
               </span>
               <span class="wiz__axis-input wiz__axis-input--sm">
-                <input type="number" step="any" min="0" class="wiz__input" :value="displayLen(pullOff)" @change="pullOff = parseLen(($event.target as HTMLInputElement).value)" />
+                <UnitInput :unit="unitLabel" class="wiz__input" :model-value="displayLen(pullOff)" @change="pullOff = parseLen(($event.target as HTMLInputElement).value)" />
                 <span class="wiz__axis-unit">{{ unitLabel }}</span>
               </span>
             </label>
@@ -395,6 +395,7 @@
 </template>
 
 <script setup lang="ts">
+import UnitInput from '@/components/UnitInput.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import Dialog from './Dialog.vue';
 import ToggleSwitch from './ToggleSwitch.vue';

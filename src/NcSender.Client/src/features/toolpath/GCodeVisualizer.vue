@@ -820,23 +820,19 @@
       <div class="move-to-content">
         <div class="move-to-input-group">
           <label class="move-to-label">X</label>
-          <input
-            type="number"
-            :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
+          <UnitInput :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
             ref="moveSpindleXInput"
             class="move-to-input"
-            v-model.number="moveSpindleX"
+            v-model="moveSpindleX"
             @keydown.enter="executeMoveSpindle"
           />
           <span class="move-to-unit">{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
         </div>
         <div class="move-to-input-group">
           <label class="move-to-label">Y</label>
-          <input
-            type="number"
-            :step="appStore.unitsPreference.value === 'imperial' ? 0.0001 : 0.001"
+          <UnitInput :unit="getDistanceUnitLabel(appStore.unitsPreference.value)"
             class="move-to-input"
-            v-model.number="moveSpindleY"
+            v-model="moveSpindleY"
             @keydown.enter="executeMoveSpindle"
           />
           <span class="move-to-unit">{{ getDistanceUnitLabel(appStore.unitsPreference.value) }}</span>
@@ -861,6 +857,7 @@
 </template>
 
 <script setup lang="ts">
+import UnitInput from '@/components/UnitInput.vue';
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue';
 import { getAlarmHelp } from '@/lib/alarm-help';
 import * as THREE from 'three';

@@ -253,7 +253,7 @@
                   </div>
                 </div>
                 <div class="setting-input-with-unit">
-                  <input type="number" class="setting-input" v-model.number="safeZHeight" :min="safeZMin" :max="0" :step="safeZStep" @change="saveSafeZHeight" />
+                  <UnitInput :unit="unitsPreference === 'imperial' ? 'in' : 'mm'" class="setting-input" v-model="safeZHeight" @change="saveSafeZHeight" />
                   <span class="setting-unit">{{ unitsPreference === 'imperial' ? 'in' : 'mm' }}</span>
                 </div>
               </div>
@@ -1117,6 +1117,7 @@
 </template>
 
 <script setup lang="ts">
+import UnitInput from '@/components/UnitInput.vue';
 import { computed, reactive, ref, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue';
 import AppShell from './shell/AppShell.vue';
 import TopToolbar from './shell/TopToolbar.vue';

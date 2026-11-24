@@ -32,6 +32,7 @@
  * cells of a tool it matched (to highlight them). Sizes are compared as the
  * table shows them, so 3/32 finds a bit shown as 0.0937.
  */
+import { parseUnitValue } from '@/lib/unit-input';
 import { formatCoordinate, getDistanceUnitLabel, type UnitsPreference } from '@/lib/units';
 
 export type SearchCell = 'id' | 'diameter' | 'tlo';
@@ -55,28 +56,15 @@ export interface SearchTerm {
   match(tool: SearchableTool): SearchCell[] | null;
 }
 
-const MM_PER_INCH = 25.4;
 const UNIT = String.raw`(?:mm|cm|inches|inch|in|")`;
 const NUMBER = String.raw`(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+\.?\d*|\.\d+)`;
 
-// A typed length in the table's units. A unit converts it; a fraction with
-// no unit is inches; a plain number is already in the table's units.
+// A typed length in the table's units (see lib/unit-input); plain when it is a
+// bare number, which may as well be a tool ID.
 function readLength(text: string, units: UnitsPreference): { value: number; plain: boolean } | null {
-  const m = new RegExp(`^(${NUMBER})\\s*(${UNIT})?$`, 'i').exec(text.trim());
-  if (!m) return null;
-  const fraction = /^(?:(\d+)\s+)?(\d+)\/(\d+)$/.exec(m[1]);
-  let value: number;
-  if (fraction) {
-    if (!+fraction[3]) return null;
-    value = +(fraction[1] ?? 0) + +fraction[2] / +fraction[3];
-  } else {
-    value = parseFloat(m[1]);
-  }
-  if (!Number.isFinite(value)) return null;
-  const unit = m[2]?.toLowerCase();
-  if (!unit && !fraction) return { value, plain: true };
-  const mm = value * (unit === 'mm' ? 1 : unit === 'cm' ? 10 : MM_PER_INCH);
-  return { value: units === 'imperial' ? mm / MM_PER_INCH : mm, plain: false };
+  const value = parseUnitValue(text, { imperial: units === 'imperial', kind: 'length' });
+  if (value == null || value < 0) return null;
+  return { value, plain: /^(?:\d+\.?\d*|\.\d+)$/.test(text.trim()) };
 }
 
 // "no tlo", a mixed number or a number with its unit after a space stay one term.

@@ -1,7 +1,8 @@
 <!--
   A number for the probe dialog, sized for a touch screen: − [value unit] +.
   A press steps to the next whole step; holding repeats, faster the longer it
-  is held. The value can still be typed. `change` fires when a press ends or
+  is held. The value can still be typed, with a unit if it is in another one
+  (1/4", 6mm, 100ipm: see lib/unit-input). `change` fires when a press ends or
   the field is left: the moment to save.
 -->
 <template>
@@ -20,13 +21,16 @@
     <label class="pst__field">
       <input
         class="pst__input"
-        type="number"
+        type="text"
         inputmode="decimal"
-        step="any"
-        :value="shown"
+        autocomplete="off"
+        ref="input"
         :style="{ width: `${Math.max(2, shown.length) + 0.6}ch` }"
         :disabled="disabled"
+        @beforeinput="refuseOtherChars($event, field)"
         @input="onInput"
+        @change="commit"
+        @keydown="onKeydown"
         @blur="emit('change')"
       />
       <span v-if="unit" class="pst__unit">{{ unit }}</span>
@@ -46,7 +50,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { dropOtherChars, parseUnitValue, plainNumber, refuseOtherChars, showValue, unitField } from '@/lib/unit-input';
 
 const props = withDefaults(defineProps<{
   modelValue: number | null | '';
@@ -71,6 +76,9 @@ const decimals = computed(() => {
 // Four decimals at least, so a typed 6.35 or 0.0787 shows as typed whatever the
 // step is; a converted value still does not trail a dozen decimals.
 const shown = computed(() => (current.value == null ? '' : String(Number(current.value.toFixed(Math.max(4, decimals.value + 1))))));
+const input = ref<HTMLInputElement | null>(null);
+onMounted(() => showValue(input.value, shown.value));
+watch(shown, (v) => showValue(input.value, v), { flush: 'post' });
 const atMin = computed(() => current.value != null && current.value <= props.min + 1e-9);
 const atMax = computed(() => current.value != null && current.value >= props.max - 1e-9);
 
@@ -98,11 +106,25 @@ const hold = (dir: number) => {
 };
 onBeforeUnmount(() => { if (timer) clearTimeout(timer); });
 
+// A plain number is followed as it is typed; anything else (1/4", 6mm) is read
+// when the field is left or Enter is pressed, and shown as the number it became.
+const field = computed(() => unitField(props.unit));
 const onInput = (e: Event) => {
-  const raw = (e.target as HTMLInputElement).value.trim();
-  if (raw === '') return;
-  const v = Number(raw);
-  if (Number.isFinite(v)) emit('update:modelValue', v);
+  const el = e.target as HTMLInputElement;
+  dropOtherChars(el, field.value);
+  const v = plainNumber(el.value);
+  if (v != null) emit('update:modelValue', v);
+};
+const commit = (e: Event) => {
+  const el = e.target as HTMLInputElement;
+  const v = parseUnitValue(el.value, field.value);
+  if (v != null) emit('update:modelValue', v);
+  nextTick(() => { el.value = shown.value; });
+};
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  bump(e.key === 'ArrowUp' ? 1 : -1);
 };
 </script>
 
