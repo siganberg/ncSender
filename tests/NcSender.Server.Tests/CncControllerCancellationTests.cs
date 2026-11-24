@@ -128,6 +128,35 @@ public class CncControllerCancellationTests : IDisposable
         Assert.Equal("success", result.Status);
     }
 
+    [Fact]
+    public async Task JogQueuedBehindAnUnansweredJog_IsDroppedWhenCancelled()
+    {
+        // The first jog is cancelled before the controller reads it: the
+        // cancel flushes the line, so no "ok" ever comes. A second press and
+        // release lands inside that one-second wait: its jog queues behind the
+        // first and its cancel goes out at once. Written after the wait, that
+        // jog would run with nobody holding the button.
+        var first = _controller.SendCommandAsync("$J=G53 G90 G21 Y-125.377 F3000");
+        for (var i = 0; i < 40 && !_transport.WriteLog.Contains("$J=G53 G90 G21 Y-125.377 F3000\n"); i++)
+            await Task.Delay(25);
+        await _controller.SendCommandAsync("\x85");
+
+        var second = _controller.SendCommandAsync("$J=G53 G90 G21 Y-125.377 F3000");
+        await _controller.SendCommandAsync("\x85");
+
+        await Assert.ThrowsAsync<TimeoutException>(async () => await first);
+        var result = await second.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal("success", result.Status);
+        lock (_transport.WriteLog) Assert.Single(_transport.WriteLog, w => w.StartsWith("$J="));
+
+        // A jog pressed after the cancel still goes out.
+        var third = _controller.SendCommandAsync("$J=G21 G91 Y1 F3000");
+        for (var i = 0; i < 40 && !_transport.WriteLog.Contains("$J=G21 G91 Y1 F3000\n"); i++)
+            await Task.Delay(25);
+        _controller.HandleIncomingData("ok");
+        Assert.Equal("success", (await third.WaitAsync(TimeSpan.FromSeconds(3))).Status);
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private static void SetPrivate(object target, string name, object? value)

@@ -72,6 +72,12 @@ public partial class CncController : ICncController
     private readonly object _activeLock = new();
     private readonly ConcurrentDictionary<string, CommandEntry> _pendingCommands = new();
     private string? _lastJogDirection;
+    // Jog cancels (0x85) sent so far. A jog still waiting in the queue when
+    // one goes out was cancelled before it was written, so it is dropped:
+    // written afterwards it would run with nothing left to stop it.
+    private int _jogCancels;
+    // Keeps a jog's check-and-write and a cancel's count-and-write apart.
+    private readonly SemaphoreSlim _jogWriteGate = new(1, 1);
     private volatile string? _queuedUnits;
 
     // Raw mode (for Ymodem etc.) — suspends line-based parsing
@@ -489,7 +495,25 @@ public partial class CncController : ICncController
                         }
                     }
 
-                    await WriteTrackedAsync(toWrite, entry, ct);
+                    if (entry.RawCommand.StartsWith("$J=", StringComparison.Ordinal))
+                    {
+                        await _jogWriteGate.WaitAsync(ct);
+                        try
+                        {
+                            if (entry.JogCancelsSeen != _jogCancels)
+                            {
+                                _logger.LogInformation("Jog dropped, it was cancelled while queued: {Command}", entry.RawCommand);
+                                CompleteUnsent(entry);
+                                continue;
+                            }
+                            await WriteTrackedAsync(toWrite, entry, ct);
+                        }
+                        finally { _jogWriteGate.Release(); }
+                    }
+                    else
+                    {
+                        await WriteTrackedAsync(toWrite, entry, ct);
+                    }
 
                     LogCommandSent(entry.RawCommand, isRealTime: false, entry.Meta);
 
@@ -716,6 +740,7 @@ public partial class CncController : ICncController
             RawCommand = normalizedCommand,
             CommandToWrite = commandToSend,
             PrependJogCancel = prependJogCancel,
+            JogCancelsSeen = Volatile.Read(ref _jogCancels),
             Meta = meta,
             DisplayCommand = display,
             Tcs = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -799,7 +824,17 @@ public partial class CncController : ICncController
         {
             // Realtime commands with bytes > 0x7F (like 0x85 jog cancel) must be sent
             // as raw bytes — WriteAsync(string) would UTF-8 encode them incorrectly
-            if (commandToSend.Length == 1 && commandToSend[0] > 0x7E)
+            if (command == "\x85")
+            {
+                await _jogWriteGate.WaitAsync();
+                try
+                {
+                    _jogCancels++;
+                    await _transport!.WriteRawAsync([0x85]);
+                }
+                finally { _jogWriteGate.Release(); }
+            }
+            else if (commandToSend.Length == 1 && commandToSend[0] > 0x7E)
                 await _transport!.WriteRawAsync([(byte)commandToSend[0]]);
             else
                 await _transport!.WriteAsync(commandToSend);
@@ -2139,6 +2174,8 @@ public partial class CncController : ICncController
         public string RawCommand { get; init; } = "";
         public string CommandToWrite { get; init; } = "";
         public bool PrependJogCancel { get; init; }
+        // _jogCancels when this entry was queued.
+        public int JogCancelsSeen { get; init; }
         public CommandMeta? Meta { get; init; }
         public string? DisplayCommand { get; init; }
         public TaskCompletionSource<CommandResult> Tcs { get; init; } = null!;
