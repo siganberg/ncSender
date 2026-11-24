@@ -6,8 +6,8 @@ const fs = require('fs');
 const os = require('os');
 
 // Disable Chromium sandbox on Linux so child processes (server) can use sudo
-// for updates. Without this, app.relaunch() loses --no-sandbox from the
-// wrapper script and PR_SET_NO_NEW_PRIVS blocks sudo in the server process.
+// for updates. The relaunch after an update doesn't use app.relaunch() on
+// Linux either; see relaunchAfterUpdate().
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -99,10 +99,26 @@ function startServer() {
 
     // Exit code 42 = update installed, relaunch the app
     if (code === 42) {
-      app.relaunch();
-      app.exit(0);
+      relaunchAfterUpdate();
     }
   });
+}
+
+// On Linux, app.relaunch() starts the new app through Chromium's process
+// launcher, which sets PR_SET_NO_NEW_PRIVS on it. The flag is inherited by
+// the server, so the next update's `sudo dpkg -i` fails with "The no new
+// privileges flag is set". Node's spawn doesn't set it. The old server has
+// already exited, so the new one can take the port.
+function relaunchAfterUpdate() {
+  if (process.platform === 'linux') {
+    spawn(process.execPath, process.argv.slice(1), {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+  } else {
+    app.relaunch();
+  }
+  app.exit(0);
 }
 
 function waitForServer(timeoutMs = 30000) {
