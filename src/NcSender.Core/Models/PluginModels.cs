@@ -62,6 +62,15 @@ public class PluginMessageConfig
     public string Title { get; set; } = "";
     public string Message { get; set; } = "";
     public string ContinueLabel { get; set; } = "Continue";
+    // With a heading the app draws the prompt as a step list: the title
+    // becomes the line above the heading, each button a row with its own
+    // Task (and Done once it has run), and Continue the last row
+    // (ContinueTask, with ContinueNote under it when it is its turn).
+    // {toolNumber} in these reads as "T5". Without a heading the prompt
+    // keeps its sentence (Message), which the pendant always shows.
+    public string? Heading { get; set; }
+    public string? ContinueTask { get; set; }
+    public string? ContinueNote { get; set; }
     // Optional in-sequence action buttons rendered between Abort and
     // Continue. Buttons render sequentially — clicking one enables the
     // next. Null / empty preserves the legacy Abort + Continue layout,
@@ -75,6 +84,9 @@ public class PluginDialogButton
     // G-code lines to send when the button is clicked. Typically `["~"]`
     // to advance past an M0 pause; can be any string ncSender accepts.
     public List<string> Gcode { get; set; } = new();
+    // The step's line in a step list: what to do, and what it did.
+    public string? Task { get; set; }
+    public string? Done { get; set; }
 }
 
 public class PluginDialogInfo
@@ -84,6 +96,9 @@ public class PluginDialogInfo
     public string Message { get; set; } = "";
     public string ContinueLabel { get; set; } = "Continue";
     public string AbortEventGcode { get; set; } = "";
+    public string? Heading { get; set; }
+    public string? ContinueTask { get; set; }
+    public string? ContinueNote { get; set; }
     public List<PluginDialogButton>? Buttons { get; set; }
     // Long-press → arm hold duration (milliseconds).
     public int? HoldMs { get; set; }

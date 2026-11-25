@@ -10,6 +10,7 @@
     >
       <WorkOffsetGate v-if="gate.data?.kind === 'work-offset'" :gate="gate" @respond="onRespond" />
       <UnhomedGate v-else-if="gate.data?.kind === 'unhomed'" :gate="gate" @respond="onRespond" />
+      <StepGate v-else-if="gate.data?.kind === 'steps'" :gate="gate" @respond="onRespond" @fire-step="onFireStep" />
       <GatePanel v-else :gate="gate" @respond="onRespond" @fire-step="onFireStep" />
     </Dialog>
   </template>
@@ -18,6 +19,7 @@
 <script setup lang="ts">
 import Dialog from './Dialog.vue';
 import GatePanel from './GatePanel.vue';
+import StepGate from './StepGate.vue';
 import UnhomedGate from './UnhomedGate.vue';
 import WorkOffsetGate from './WorkOffsetGate.vue';
 import { useGateDialog } from '../composables/useGateDialog';

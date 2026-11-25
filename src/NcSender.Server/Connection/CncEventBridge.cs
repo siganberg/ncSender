@@ -825,6 +825,34 @@ public class CncEventBridge
         }
     }
 
+    /// <summary>
+    /// What the app draws a plugin prompt as a step list from, or null when
+    /// the plugin gave no heading: the prompt then keeps its sentence.
+    /// </summary>
+    internal static Dictionary<string, string>? StepListData(PluginDialogInfo dialog, int? tool, string? toolName)
+    {
+        if (string.IsNullOrWhiteSpace(dialog.Heading)) return null;
+
+        var toolSaid = tool is int n ? $"T{n}" : "the tool";
+        var data = new Dictionary<string, string> { ["kind"] = "steps" };
+        void Put(string key, string? text)
+        {
+            if (!string.IsNullOrWhiteSpace(text)) data[key] = text.Replace("{toolNumber}", toolSaid);
+        }
+
+        Put("heading", dialog.Heading);
+        if (tool is int id) data["toolId"] = $"T{id}";
+        Put("toolName", toolName);
+        Put("continueTask", dialog.ContinueTask);
+        Put("continueNote", dialog.ContinueNote);
+        for (var i = 0; i < (dialog.Buttons?.Count ?? 0); i++)
+        {
+            Put($"step{i}.task", dialog.Buttons![i].Task);
+            Put($"step{i}.done", dialog.Buttons[i].Done);
+        }
+        return data;
+    }
+
     private async Task HandlePluginMessageAsync(string normalizedName, string messageCode)
     {
         var dialog = _pluginManager.GetPluginMessageDialog(normalizedName, messageCode);
@@ -835,9 +863,12 @@ public class CncEventBridge
         }
 
         // Substitute {toolNumber} placeholder — same styling the old HTML modal used.
+        int? promptTool = null;
+        string? promptToolName = null;
         var lastUnderscore = messageCode.LastIndexOf('_');
         if (lastUnderscore > 0 && int.TryParse(messageCode[(lastUnderscore + 1)..], out var toolNum))
         {
+            promptTool = toolNum;
             var isFailure = messageCode.Contains("FAILED_", StringComparison.OrdinalIgnoreCase);
             var styled = isFailure
                 ? $"<strong style=\"color: var(--color-accent); font-size: 1.35em;\">T{toolNum}</strong>"
@@ -846,6 +877,7 @@ public class CncEventBridge
             // it is a magazine slot, not the tool number they know from their CAM
             // job. Name the tool when the library knows it.
             var description = await DescribeToolAsync(toolNum);
+            promptToolName = description;
             if (description is not null)
                 styled += $" <strong style=\"color: var(--color-accent);\">({System.Net.WebUtility.HtmlEncode(description)})</strong>";
             dialog.Message = dialog.Message.Replace("{toolNumber}", styled);
@@ -904,7 +936,8 @@ public class CncEventBridge
             Key: $"plugin:{normalizedName}:{messageCode}",
             Steps: (IReadOnlyList<GateStep>?)steps,
             StepConfig: stepConfig,
-            MessageHtml: true));
+            MessageHtml: true,
+            Data: StepListData(dialog, promptTool, promptToolName)));
 
         if (chosen == "abort")
             await DispatchGateAbortAsync(dialog);
