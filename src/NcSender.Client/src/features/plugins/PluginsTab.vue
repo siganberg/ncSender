@@ -303,9 +303,11 @@
   <!-- Uninstall Confirmation Dialog -->
   <Dialog v-if="showUninstallConfirm && selectedPlugin" @close="showUninstallConfirm = false" :show-header="false" size="small">
     <ConfirmPanel
-      :title="`Uninstall ${selectedPlugin.name}?`"
+      title="Uninstall this plugin?"
+      :subject-name="selectedPlugin.name"
+      :subject-detail="selectedPlugin.version ? `v${selectedPlugin.version}` : undefined"
       message="This will remove the plugin and all its data. This action cannot be undone."
-      cancel-text="Cancel"
+      cancel-text="Keep it"
       confirm-text="Uninstall"
       variant="danger"
       @confirm="uninstallPlugin"

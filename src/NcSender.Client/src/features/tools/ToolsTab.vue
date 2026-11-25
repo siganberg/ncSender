@@ -375,11 +375,14 @@
     <!-- Delete Confirmation Dialog -->
     <Dialog v-if="showDeleteConfirmDialog" @close="showDeleteConfirmDialog = false" :show-header="false" size="small">
       <ConfirmPanel
-        title="Delete Tool"
-        :message="`Are you sure you want to delete ${deleteToolRef?.name}?`"
+        title="Delete this tool?"
+        :subject-id="`T${deleteToolRef?.toolId}`"
+        :subject-name="deleteToolRef?.name || `T${deleteToolRef?.toolId}`"
+        :subject-detail="deleteToolDetail"
+        message="This can't be undone."
         :show-cancel="true"
-        confirm-text="Delete"
-        cancel-text="Cancel"
+        :confirm-text="`Delete T${deleteToolRef?.toolId}`"
+        cancel-text="Keep it"
         variant="danger"
         @confirm="confirmDeleteTool"
         @cancel="showDeleteConfirmDialog = false"
@@ -634,6 +637,13 @@ const showSaveErrorDialog = ref(false);
 const saveErrorMessage = ref('');
 const showDeleteConfirmDialog = ref(false);
 const deleteToolRef = ref<Tool | null>(null);
+// The tool's row, for the delete prompt: "Ø 6.350 mm · TLO -52.104".
+const deleteToolDetail = computed(() => {
+  const tool = deleteToolRef.value;
+  if (!tool) return '';
+  const units = appStore.unitsPreference.value;
+  return `Ø ${formatCoordinate(tool.diameter, units)} ${getDistanceUnitLabel(units)} · TLO ${formatCoordinate(tool.offsets.tlo, units)}`;
+});
 const showDeleteErrorDialog = ref(false);
 const deleteErrorMessage = ref('');
 const showExportWarningDialog = ref(false);

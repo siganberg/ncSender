@@ -73,9 +73,9 @@ const nowAt = computed(() => place(props.gate.data?.nowAt));
 .wog {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
-  padding: var(--gap-lg);
-  min-width: min(440px, 90vw);
+  gap: 20px;
+  padding: 30px;
+  min-width: min(560px, 92vw);
 }
 
 .wog__head { display: flex; flex-direction: column; gap: 4px; }
@@ -83,12 +83,12 @@ const nowAt = computed(() => place(props.gate.data?.nowAt));
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 0.82rem;
+  font-size: 0.98rem;
   font-weight: 600;
   color: #e9b949;
 }
-.wog__why svg { width: 15px; height: 15px; flex: none; }
-.wog__title { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.25; color: var(--color-text-primary); }
+.wog__why svg { width: 18px; height: 18px; flex: none; }
+.wog__title { margin: 0; font-size: 1.5rem; font-weight: 600; line-height: 1.25; color: var(--color-text-primary); }
 
 .wog__pick {
   display: grid;
@@ -103,7 +103,7 @@ const nowAt = computed(() => place(props.gate.data?.nowAt));
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
-  padding: 14px !important;
+  padding: 18px !important;
   text-align: left;
   font: inherit;
   cursor: pointer;
@@ -118,22 +118,22 @@ const nowAt = computed(() => place(props.gate.data?.nowAt));
 .wog__tile:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 .wog__role {
-  font-size: 0.7rem;
+  font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
-.wog__name { font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-size: 1.9rem; font-weight: 700; line-height: 1.1; }
+.wog__name { font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-size: 2.28rem; font-weight: 700; line-height: 1.1; }
 .wog__zero {
   font-family: var(--font-mono, ui-monospace, Menlo, monospace);
-  font-size: 0.74rem;
+  font-size: 0.89rem;
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.wog__do { margin-top: 6px; font-size: 0.9rem; font-weight: 600; }
+.wog__do { margin-top: 6px; font-size: 1.08rem; font-weight: 600; }
 
 .wog__tile--main {
   border-color: var(--color-accent) !important;
@@ -155,8 +155,8 @@ const nowAt = computed(() => place(props.gate.data?.nowAt));
   border-top: 1px solid var(--color-border);
 }
 .wog__always-text { min-width: 0; }
-.wog__always-text b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--color-text-primary); }
-.wog__always-text span { font-size: 0.8rem; color: var(--color-text-secondary); }
+.wog__always-text b { display: block; font-size: 1.1rem; font-weight: 600; color: var(--color-text-primary); }
+.wog__always-text span { font-size: 0.96rem; color: var(--color-text-secondary); }
 
 @media (max-width: 480px) {
   .wog__pick { grid-template-columns: minmax(0, 1fr); }

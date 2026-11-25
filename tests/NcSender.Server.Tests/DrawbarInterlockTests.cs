@@ -113,7 +113,7 @@ public class DrawbarInterlockTests
         _spindle = true;
         await _svc.SendAsync("xio", "out 0 1");
         var popup = Assert.Single(DrawbarPopups());
-        Assert.Contains("Drawbar Release Blocked", popup);
+        Assert.Contains("did not release the drawbar", popup);
         Assert.Contains("out 0 1", popup);
     }
 

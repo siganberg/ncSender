@@ -9,6 +9,7 @@
 
 import { useAppStore } from './use-app-store';
 import { getApiBaseUrl } from '../lib/api-base';
+import { api } from '../lib/api.js';
 
 // Client-side fast-path blacklist — authoritative copy lives on the server.
 const UNHOMED_BLACKLIST: RegExp[] = [
@@ -24,7 +25,9 @@ function needsHoming(command: string): boolean {
  * Ask the user to confirm running an action while the machine is unhomed.
  * Returns true immediately if the machine is homed or no command requires
  * homing. Otherwise defers to the server's GateDialog (broadcast to every
- * client + the pendant); returns true iff the user chose "Continue".
+ * client + the pendant); returns true iff the user chose to run
+ * without homing. "Home now" homes the machine and returns false: what was
+ * asked for is dropped, the user sends it again.
  *
  * Concurrent callers share one gate on the server (Key: safety.unhomed) so
  * two fast M6 clicks — even across tabs — show one prompt.
@@ -42,12 +45,22 @@ export async function ensureHomed(commands?: string | string[]): Promise<boolean
     const res = await fetch(`${getApiBaseUrl()}/api/gate/ensure-homed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commands: list ?? null }),
+      body: JSON.stringify({ commands: list ?? null, canHome: store.homingEnabled.value }),
     });
     if (!res.ok) return false;
     const body = await res.json();
+    if (body?.home) void homeNow();
     return !!body?.proceed;
   } catch {
     return false;
+  }
+}
+
+// "Home now" from the prompt: the Home button's own path.
+async function homeNow(): Promise<void> {
+  try {
+    await api.sendCommandViaWebSocket({ command: '$H' });
+  } catch (error) {
+    console.error('Failed to execute home command:', error);
   }
 }

@@ -136,13 +136,13 @@ watch(stepIndex, () => { /* no-op */ });
 .gate-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
-  padding: var(--gap-lg);
-  min-width: min(420px, 90vw);
+  gap: 20px;
+  padding: 30px;
+  min-width: min(560px, 92vw);
 }
 
-/* Centred title as the header, two-column content (icon badge left,
-   text right), buttons centred in the footer. The badge colour follows
+/* The title is the header, left aligned; two-column content (icon badge
+   left, text right); buttons at the bottom right. The badge colour follows
    the variant so a danger gate reads as a warning before the words are
    read. */
 .gate-panel__content {
@@ -163,16 +163,16 @@ watch(stepIndex, () => { /* no-op */ });
 
 .gate-panel__icon {
   flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--color-accent) 16%, transparent);
   color: var(--color-accent);
 }
-.gate-panel__icon svg { width: 34px; height: 34px; }
+.gate-panel__icon svg { width: 28px; height: 28px; }
 
 .gate-panel--danger .gate-panel__icon {
   background: rgba(255, 107, 107, 0.16);
@@ -189,15 +189,16 @@ watch(stepIndex, () => { /* no-op */ });
 
 .gate-panel__title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
   line-height: 1.25;
-  text-align: center;
+  text-wrap: balance;
   color: var(--color-text-primary);
 }
 
 .gate-panel__message {
   margin: 0;
+  font-size: 1.05rem;
   color: var(--color-text-secondary);
   line-height: 1.5;
   white-space: pre-wrap;
@@ -206,7 +207,7 @@ watch(stepIndex, () => { /* no-op */ });
 .gate-panel__hint {
   margin: 0;
   color: var(--color-text-muted, var(--color-text-secondary));
-  font-size: 0.85rem;
+  font-size: 0.98rem;
   line-height: 1.4;
   opacity: 0.85;
 }
@@ -215,15 +216,16 @@ watch(stepIndex, () => { /* no-op */ });
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-sm);
-  justify-content: center;
-  margin-top: var(--gap-sm);
+  justify-content: flex-end;
+  padding-top: var(--gap-md);
+  border-top: 1px solid var(--color-border);
 }
-.gate-panel__actions .gate-panel__btn { min-width: 112px; }
+.gate-panel__actions .gate-panel__btn { min-width: 140px; }
 
 .gate-panel__btn {
-  padding: 12px 24px;
+  padding: 14px 28px;
   border-radius: var(--radius-small);
-  font-size: 0.95rem;
+  font-size: 1.14rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;

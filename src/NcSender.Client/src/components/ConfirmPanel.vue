@@ -16,16 +16,31 @@
 -->
 
 <!--
-  Confirm prompt laid out like GatePanel so every blocking dialog reads
-  the same: centred title, icon badge beside the text, centred buttons.
-  The badge colour and default glyph follow the variant; pass `icon` to
-  override the glyph (e.g. icon="success" for a completed import).
+  Confirm prompt. The title is the question, left aligned; the buttons sit
+  at the bottom right and say what they do. Three optional parts:
+    why      one small line above the title, with the variant's glyph
+    subject  the thing the prompt is about, as a card (subject-id is its
+             short tag: "T12")
+    icon     the badge beside the message, when there is neither
 -->
 <template>
   <div class="confirm-dialog" :class="`confirm-dialog--${variant}`">
-    <h3 class="confirm-dialog__title">{{ title }}</h3>
+    <div class="confirm-dialog__head">
+      <span v-if="why" class="confirm-dialog__why">
+        <PanelIcon :name="iconName" />
+        {{ why }}
+      </span>
+      <h3 class="confirm-dialog__title">{{ title }}</h3>
+    </div>
+    <div v-if="subjectName" class="confirm-dialog__subject">
+      <span v-if="subjectId" class="confirm-dialog__subject-id">{{ subjectId }}</span>
+      <div class="confirm-dialog__subject-text">
+        <b>{{ subjectName }}</b>
+        <span v-if="subjectDetail">{{ subjectDetail }}</span>
+      </div>
+    </div>
     <div class="confirm-dialog__content">
-      <div v-if="showIcon" class="confirm-dialog__icon" aria-hidden="true">
+      <div v-if="showIcon && !why && !subjectName" class="confirm-dialog__icon" aria-hidden="true">
         <PanelIcon :name="iconName" />
       </div>
       <div class="confirm-dialog__body">
@@ -59,6 +74,10 @@ import PanelIcon, { type PanelIconName } from './PanelIcon.vue';
 const props = withDefaults(defineProps<{
   title: string;
   message?: string;
+  why?: string;
+  subjectId?: string;
+  subjectName?: string;
+  subjectDetail?: string;
   showConfirm?: boolean;
   showCancel?: boolean;
   confirmText?: string;
@@ -97,9 +116,9 @@ const confirmClass = computed(() => (
 .confirm-dialog {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
-  padding: var(--gap-lg);
-  min-width: min(420px, 90vw);
+  gap: 20px;
+  padding: 30px;
+  min-width: min(560px, 92vw);
   /* Fill the Dialog's content area so the internal scroll region can
      bound itself. When the surrounding Dialog is auto-height and content
      is short, flex-basis:auto keeps the panel tight — this only kicks in
@@ -108,22 +127,68 @@ const confirmClass = computed(() => (
   min-height: 0;
 }
 
+.confirm-dialog__head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+
+.confirm-dialog__why {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.confirm-dialog__why svg { width: 18px; height: 18px; flex: none; }
+.confirm-dialog--danger .confirm-dialog__why { color: #ff6b6b; }
+.confirm-dialog--warning .confirm-dialog__why { color: #e9b949; }
+
 .confirm-dialog__title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
   line-height: 1.25;
-  text-align: center;
   color: var(--color-text-primary);
-  flex-shrink: 0;
+  text-wrap: balance;
 }
 
-/* Two-column content: icon badge left, text right. Mirrors GatePanel. */
+/* The thing the prompt is about. */
+.confirm-dialog__subject {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  flex-shrink: 0;
+}
+.confirm-dialog--danger .confirm-dialog__subject { border-color: color-mix(in srgb, #ff6b6b 50%, var(--color-border)); }
+.confirm-dialog__subject-id {
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 1.26rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+}
+.confirm-dialog--danger .confirm-dialog__subject-id { color: #ff6b6b; background: rgba(255, 107, 107, 0.13); }
+.confirm-dialog__subject-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.confirm-dialog__subject-text b { font-size: 1.15rem; font-weight: 600; color: var(--color-text-primary); overflow-wrap: anywhere; }
+.confirm-dialog__subject-text span {
+  font-size: 0.96rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Badge left, text right. */
 .confirm-dialog__content {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   text-align: left;
   flex: 1 1 auto;
   min-height: 0;
@@ -131,16 +196,16 @@ const confirmClass = computed(() => (
 
 .confirm-dialog__icon {
   flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--color-accent) 16%, transparent);
   color: var(--color-accent);
 }
-.confirm-dialog__icon svg { width: 34px; height: 34px; }
+.confirm-dialog__icon svg { width: 25px; height: 25px; }
 
 .confirm-dialog--danger .confirm-dialog__icon {
   background: rgba(255, 107, 107, 0.16);
@@ -166,6 +231,7 @@ const confirmClass = computed(() => (
 
 .confirm-dialog__message {
   margin: 0;
+  font-size: 1.05rem;
   color: var(--color-text-secondary);
   line-height: 1.5;
   white-space: pre-line;
@@ -175,20 +241,21 @@ const confirmClass = computed(() => (
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-sm);
-  justify-content: center;
-  margin-top: var(--gap-sm);
+  justify-content: flex-end;
+  padding-top: var(--gap-md);
+  border-top: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
 .confirm-dialog__btn {
-  padding: 12px 24px;
+  padding: 14px 28px;
   border-radius: var(--radius-small);
-  font-size: 0.95rem;
+  font-size: 1.14rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
-  min-width: 112px;
+  min-width: 140px;
 }
 
 .confirm-dialog__btn--cancel {

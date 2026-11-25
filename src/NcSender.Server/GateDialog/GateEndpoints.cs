@@ -65,6 +65,12 @@ public static class GateEndpoints
             if (req?.Commands is { Length: > 0 } cmds && !cmds.Any(NeedsHoming))
                 return Results.Ok(new EnsureHomedResponse(true));
 
+            // The app draws this one its own way (data.kind): "Home now" beside
+            // "Run without homing". Buttons stay as the pendant knows them.
+            var data = new Dictionary<string, string> { ["kind"] = "unhomed" };
+            if (req?.CanHome == true) data["canHome"] = "1";
+            if (req?.Commands is { Length: > 0 } asked) data["requested"] = string.Join("  ", asked);
+
             var chosen = await gates.AskAsync(new GateOptions(
                 Title: "Machine is not homed",
                 Message: "The machine has not been homed. Running commands without homing can crash the tool. Continue anyway?",
@@ -76,12 +82,25 @@ public static class GateEndpoints
                 },
                 Source: "core:unhomed-guard",
                 Key: "safety.unhomed",
-                Icon: "hand"
+                Icon: "hand",
+                Data: data
             ), CancellationToken.None);
 
-            return Results.Ok(new EnsureHomedResponse(chosen == "continue"));
+            // "Home now": the caller homes instead of running what it asked
+            // for. Callers that joined the same prompt all get the answer, so
+            // only the first is told to home.
+            var home = false;
+            if (chosen == "home")
+            {
+                var now = Environment.TickCount64;
+                var last = Interlocked.Read(ref _homeGrantedAt);
+                home = now - last > 3000 && Interlocked.CompareExchange(ref _homeGrantedAt, now, last) == last;
+            }
+            return Results.Ok(new EnsureHomedResponse(chosen == "continue", home));
         });
     }
+
+    private static long _homeGrantedAt = -100_000;
 
     private static readonly Regex[] UnhomedBlacklist =
     {
@@ -94,5 +113,5 @@ public static class GateEndpoints
 }
 
 public record GateTestResponse(string Value);
-public record EnsureHomedRequest(string[]? Commands);
-public record EnsureHomedResponse(bool Proceed);
+public record EnsureHomedRequest(string[]? Commands, bool? CanHome = null);
+public record EnsureHomedResponse(bool Proceed, bool Home = false);

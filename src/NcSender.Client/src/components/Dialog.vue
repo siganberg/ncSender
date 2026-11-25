@@ -129,7 +129,7 @@ onUnmounted(() => {
 
 /* Dialog size variants */
 .dialog--small {
-  max-width: 500px;
+  max-width: 620px;
   width: auto;
 }
 
