@@ -1915,12 +1915,32 @@ function scheduleTerminalScroll() {
 function scrollTerminalToBottom(scroller: any) {
   if (!scroller) return;
   scroller.scrollToItem(terminalLines.value.length - 1);
-  // scrollToItem aligns the item's top edge into view. For long wrapped lines
-  // the bottom is clipped. Wait for the virtual scroller to render and measure
-  // the item, then nudge the container to the very bottom.
   const el = scroller.$el as HTMLElement | undefined;
   if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
 }
+
+// The virtual scroller lays new lines out at min-item-size and grows the list
+// as it measures them, frames after the scroll above. Follow every change of
+// the list height while Auto-Scroll is on, so the last line of a burst (or a
+// wrapped line) is never left below the fold.
+function followTerminalHeight(scroller: any, following: () => boolean) {
+  const el = scroller?.$el as HTMLElement | undefined;
+  const list = el?.querySelector('.vue-recycle-scroller__item-wrapper');
+  if (!el || !list) return () => {};
+  const observer = new ResizeObserver(() => {
+    if (following()) el.scrollTop = el.scrollHeight;
+  });
+  observer.observe(list);
+  return () => observer.disconnect();
+}
+
+watch(scrollerRef, (scroller, _old, onCleanup) => {
+  onCleanup(followTerminalHeight(scroller, () => activeTab.value === 'terminal' && autoScroll.value));
+}, { flush: 'post' });
+
+watch(modalTerminalScrollerRef, (scroller, _old, onCleanup) => {
+  onCleanup(followTerminalHeight(scroller, () => showTerminalModal.value && autoScrollTerminalModal.value));
+}, { flush: 'post' });
 
 const terminalRowHeight = ref(24);
 function measureTerminalRowHeight() {
