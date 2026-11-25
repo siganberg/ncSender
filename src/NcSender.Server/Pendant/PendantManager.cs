@@ -1308,13 +1308,45 @@ public class PendantManager : IPendantManager
         return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// True for the port the CNC controller is on: the one it is connected
+    /// through, or the one saved for it. The scanner never opens such a port
+    /// to look for a PiBot pendant.
+    /// </summary>
+    private bool IsCncPort(string port)
+    {
+        // macOS lists every port twice (/dev/cu.* and /dev/tty.*).
+        static string Same(string p) =>
+            p.StartsWith("/dev/tty.", StringComparison.Ordinal) ? "/dev/cu." + p["/dev/tty.".Length..] : p;
+        var asked = Same(port);
+
+        if (_controller.Transport is Connection.SerialTransport serial
+            && string.Equals(Same(serial.PortPath), asked, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var saved = _settingsManager.GetSetting<string>("connection.usbPort", "");
+        if (string.IsNullOrEmpty(saved)) return false;
+        var type = _settingsManager.GetSetting<string>("connection.type", "usb");
+        return string.Equals(type ?? "usb", "usb", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Same(saved), asked, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True while a job runs or the machine is doing anything but standing still.</summary>
+    private bool MachineBusy()
+    {
+        if (_jobManager.HasActiveJob) return true;
+        var status = _serverContext.State.MachineState.Status?.ToLowerInvariant() ?? "";
+        return status.StartsWith("run") || status.StartsWith("hold") || status.StartsWith("jog")
+            || status.StartsWith("home") || status.StartsWith("door") || status.StartsWith("tool");
+    }
+
     public void StartAutoConnect()
     {
         var autoConnect = _settingsManager.GetSetting<bool>("pendant.autoConnect", true);
         if (!autoConnect) return;
         if (_scanner is not null) return; // Already running
 
-        _scanner = new PendantPortScanner(_logger, _usbCatalog, _portLeases);
+        _scanner = new PendantPortScanner(_logger, _usbCatalog, _portLeases, IsCncPort, MachineBusy);
         _scanner.DeviceFound += OnScannerDeviceFound;
         _scanner.DeviceLost += OnScannerDeviceLost;
         _scanner.LegacyCandidateDetected += OnLegacyCandidateDetected;

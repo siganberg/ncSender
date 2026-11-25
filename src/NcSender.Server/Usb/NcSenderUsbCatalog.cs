@@ -46,6 +46,11 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     // firmware that lacks our USB descriptors.
     private const ushort EspressifDefaultPid = 0x1001;
 
+    // The WCH CH340 USB-serial chip the PiBot pendant talks through. It is
+    // on countless other boards too, so it identifies nothing by itself.
+    private const ushort Ch340Vid = 0x1A86;
+    private const ushort Ch340Pid = 0x7523;
+
     // The single source of truth for VID/PID → kind mapping. Adding a
     // new accessory: put its PID here, add a matching NcSenderUsbKind
     // enum value, done. Wiring lives at the consumer.
@@ -89,6 +94,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private static NcSenderUsbKind ResolveKind(ushort vid, ushort pid, string? productString)
     {
         if (KnownPids.TryGetValue((vid, pid), out var byPid)) return byPid;
+        if (vid == Ch340Vid && pid == Ch340Pid) return NcSenderUsbKind.SerialBridge;
         if (vid == NcSenderVid && !string.IsNullOrEmpty(productString)
             && KnownProductStrings.TryGetValue(productString, out var byProduct)) return byProduct;
         return NcSenderUsbKind.Unknown;
@@ -109,6 +115,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
     private readonly ILogger<NcSenderUsbCatalog> _logger;
     private readonly object _cacheLock = new();
     private IReadOnlyList<NcSenderUsbDevice>? _cached;
+    private IReadOnlyList<NcSenderUsbDevice> _cachedBridges = Array.Empty<NcSenderUsbDevice>();
     private long _cachedAtMs;
     private string? _lastSummary;
 
@@ -125,9 +132,15 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             if (_cached is not null && now - _cachedAtMs < CacheTtlMs) return _cached;
 
             IReadOnlyList<NcSenderUsbDevice> devices;
+            _cachedBridges = Array.Empty<NcSenderUsbDevice>();
             try
             {
-                devices = Enumerate();
+                // One pass over the bus finds both; the plain serial chips are
+                // kept apart so nothing that reads the catalog mistakes one
+                // for an ncSender device.
+                var all = Enumerate();
+                _cachedBridges = all.Where(d => d.Kind == NcSenderUsbKind.SerialBridge).ToList();
+                devices = all.Where(d => d.Kind != NcSenderUsbKind.SerialBridge).ToList();
                 var summary = devices.Count == 0
                     ? "(none)"
                     : string.Join(", ", devices.Select(d => $"{d.Kind}({d.PortName})"));
@@ -147,6 +160,12 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             _cachedAtMs = now;
             return devices;
         }
+    }
+
+    public IReadOnlyList<NcSenderUsbDevice> GetSerialBridges()
+    {
+        GetDevices();
+        lock (_cacheLock) return _cachedBridges;
     }
 
     private IReadOnlyList<NcSenderUsbDevice> Enumerate()

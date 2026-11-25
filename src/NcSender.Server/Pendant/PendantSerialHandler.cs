@@ -51,7 +51,13 @@ public class PendantSerialHandler : IAsyncDisposable
         _logger = logger;
     }
 
-    public async Task ConnectAsync(string port)
+    /// <param name="bridge">
+    /// True for a port behind a plain USB-serial chip (the PiBot pendant). On
+    /// that board RTS holds the ESP32 in reset and DTR pulls its boot pin low,
+    /// so both stay released: with DTR on, the reset that opening the port
+    /// causes lands in the download mode, a black screen until it is replugged.
+    /// </param>
+    public async Task ConnectAsync(string port, bool bridge = false)
     {
         if (_port?.IsOpen == true)
             await DisconnectAsync();
@@ -71,7 +77,7 @@ public class PendantSerialHandler : IAsyncDisposable
         // sending anything that could bother a CNC controller.
         _port = new SerialPort(port, 460800)
         {
-            DtrEnable = true,
+            DtrEnable = !bridge,
             RtsEnable = false,
             ReadTimeout = SerialPort.InfiniteTimeout,
             WriteTimeout = 5000
@@ -93,6 +99,24 @@ public class PendantSerialHandler : IAsyncDisposable
         }
 
         _logger.LogInformation("Serial port opened: {Port}", port);
+    }
+
+    /// <summary>
+    /// Restart the ESP32 behind a USB-serial chip: RTS on holds it in reset,
+    /// RTS off lets it boot. Nothing is sent. Where opening the port did not
+    /// restart it already (Windows), this is what makes it announce itself.
+    /// </summary>
+    public async Task PulseResetAsync()
+    {
+        var port = _port;
+        if (port is not { IsOpen: true }) return;
+        try
+        {
+            port.RtsEnable = true;
+            await Task.Delay(100);
+            port.RtsEnable = false;
+        }
+        catch (Exception ex) { _logger.LogDebug("Reset pulse failed: {Error}", ex.Message); }
     }
 
     public async Task DisconnectAsync()

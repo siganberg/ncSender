@@ -22,4 +22,12 @@ public interface INcSenderUsbCatalog
     /// simply find nothing.
     /// </summary>
     IReadOnlyList<NcSenderUsbDevice> GetDevices();
+
+    /// <summary>
+    /// Ports behind a plain USB-serial chip (CH340) that a PiBot pendant may
+    /// be on. The chip says nothing about what is behind it, so these are
+    /// kept out of <see cref="GetDevices"/>: only the pendant scanner looks
+    /// at them, to listen once for the pendant's own announcement.
+    /// </summary>
+    IReadOnlyList<NcSenderUsbDevice> GetSerialBridges() => Array.Empty<NcSenderUsbDevice>();
 }
