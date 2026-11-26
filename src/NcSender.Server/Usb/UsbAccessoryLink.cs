@@ -24,6 +24,8 @@ public sealed class UsbAccessoryLink : IHostedService, IDisposable
         public required string Port { get; init; }
         public required SerialPort Serial { get; init; }
         public List<byte> Rx { get; } = new(256);
+        // When the device last reported its state on this link (TickCount64), 0 = never.
+        public long LastStateTicks;
         public object Gate { get; } = new();
         public List<Waiter> Waiters { get; } = new();
     }
@@ -134,7 +136,31 @@ public sealed class UsbAccessoryLink : IHostedService, IDisposable
             if (device is null || _leases.IsSuspended(device.PortName)) continue;
             Open(peer, device.PortName);
         }
+
+        // Ask a device that has gone quiet for its state. The Wireless I/O
+        // reports on its own only while it is paired to a Wireless USB; on a
+        // cable alone it says nothing unless asked, so its outputs' state
+        // never showed and it never got the machine-state feed.
+        var now = Environment.TickCount64;
+        foreach (var link in _links.Values)
+        {
+            if (!NeedsStatePoll(link.Peer, Volatile.Read(ref link.LastStateTicks), now)) continue;
+            try { link.Serial.Write("status\n"); }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "{Peer} USB status poll failed", link.Peer);
+                _ = Task.Run(() => Close(link, "write failed"));
+            }
+        }
     }
+
+    // Peers that answer "status" with their state line.
+    private static readonly HashSet<string> StatePolled = new(StringComparer.OrdinalIgnoreCase) { "xio" };
+    internal const int StateQuietMs = 3000;
+
+    /// <summary>True when this peer should be asked for its state: nothing from it for a while.</summary>
+    internal static bool NeedsStatePoll(string peer, long lastStateTicks, long now) =>
+        StatePolled.Contains(peer) && (lastStateTicks == 0 || now - lastStateTicks >= StateQuietMs);
 
     private void Open(string peer, string port)
     {
@@ -208,9 +234,33 @@ public sealed class UsbAccessoryLink : IHostedService, IDisposable
         }
     }
 
+    /// <summary>
+    /// What a device reports on its own, without the tag some put in front.
+    /// The Wireless I/O writes the same line to USB as to the radio, tagged
+    /// ("@xio status …", "@xio in 2 1 …"); the AutoDustBoot writes it bare.
+    /// Null for anything else (answers to a command, boot chatter).
+    ///
+    /// The tag used to make the line unrecognisable here, so a cabled
+    /// Wireless I/O never showed its state, and never got the machine-state
+    /// feed either: that goes only to a device whose status shows a drawbar
+    /// output. Without the feed the board holds its drawbar outputs off
+    /// ("no DRO since boot"), so a cabled board refused every release.
+    /// </summary>
+    internal static string? ReportedState(string peer, string line)
+    {
+        var tag = "@" + peer + " ";
+        var payload = line.StartsWith(tag, StringComparison.OrdinalIgnoreCase) ? line[tag.Length..] : line;
+        return payload.StartsWith("status ", StringComparison.Ordinal) || payload.StartsWith("in ", StringComparison.Ordinal)
+            ? payload : null;
+    }
+
     private void Dispatch(Link link, string line)
     {
-        if (line.StartsWith("status ", StringComparison.Ordinal)) _devices?.OnWiredLine(link.Peer, line);
+        if (ReportedState(link.Peer, line) is { } state)
+        {
+            Volatile.Write(ref link.LastStateTicks, Environment.TickCount64);
+            _devices?.OnWiredLine(link.Peer, state);
+        }
 
         lock (link.Gate)
         {

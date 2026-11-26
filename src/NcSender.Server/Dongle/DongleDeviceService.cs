@@ -398,8 +398,19 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
 
     public void SetWiredSender(string name, Func<string, Task>? send)
     {
-        if (send is null) _wiredSenders.TryRemove(name, out _);
-        else _wiredSenders[name] = send;
+        if (send is null) { _wiredSenders.TryRemove(name, out _); return; }
+        _wiredSenders[name] = send;
+
+        // A cabled device is a known device from the moment its link opens,
+        // paired to a Wireless USB or not. The lists that offer its outputs
+        // (Edit Output, a tool changer's drawbar output) ask only whether it
+        // is known, and a board that was never paired was never listed.
+        var added = false;
+        _devices.GetOrAdd(name, _ => { added = true; return new DeviceState(); });
+        if (added)
+            _ = _broadcaster.Broadcast("dongle:device-changed",
+                new DongleDeviceChanged { Name = name, Connected = false },
+                NcSenderJsonContext.Default.DongleDeviceChanged);
     }
 
     public void OnWiredLine(string name, string payload) => OnDongleLine($"@{name} {payload}");
@@ -558,7 +569,8 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         {
             if (!_enumerating) return;
             _enumerating = false;
-            stale = _devices.Keys.Where(k => !_seen.Contains(k)).ToArray();
+            // A cabled device stays: it is here whatever this dongle has paired.
+            stale = _devices.Keys.Where(k => !_seen.Contains(k) && !_wiredSenders.ContainsKey(k)).ToArray();
         }
 
         foreach (var name in stale)
