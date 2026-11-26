@@ -212,6 +212,63 @@ export async function startContinuousDiagonalJogSession(xDir: 1 | -1, yDir: 1 | 
   return createContinuousSession(jogId, 'continuous diagonal jog session');
 }
 
+// How far an axis can jog one way, in the jog units. Homed, that's to the
+// soft limit (by the machine's home corner), so a straight jog
+// ends where its line meets the first limit instead of being shortened per
+// axis and bent; otherwise the whole travel.
+function axisReach(axis: 'X' | 'Y' | 'Z', sign: number, isImperial: boolean): number {
+  const store = useAppStore();
+  const travel = getAxisTravel(axis, isImperial);
+  const travelMm = isImperial ? travel * 25.4 : travel;
+  const pos = store.status.machineCoords[axis.toLowerCase() as 'x' | 'y' | 'z'];
+  // Machine positions as the visualizer has them: an axis homing to its
+  // max runs from -travel to 0, one homing to its min from 0 to +travel.
+  const home = store.machineOrientation[`${axis.toLowerCase()}Home` as 'xHome' | 'yHome' | 'zHome'];
+  const min = home === 'min' ? 0 : -travelMm, max = home === 'min' ? travelMm : 0;
+  if (!store.isHomed.value || !Number.isFinite(pos) || pos > max + 0.001 || pos < min - 0.001) return travel;
+  const margin = 0.05;
+  const mm = Math.max(0, sign > 0 ? max - margin - pos : pos - min - margin);
+  return isImperial ? mm / 25.4 : mm;
+}
+
+// A held jog in a straight line along `direction` (any angle), at `feedRate`
+// in the jog panel's units per minute, as far as it can go, so it runs
+// until stopped as the other held jogs do. null when it can't move.
+export async function startContinuousVectorJogSession(
+  direction: { x: number; y: number; z: number },
+  feedRate: number
+): Promise<ContinuousJogSession | null> {
+  const { unitCode } = getJogSettings();
+  const isImperial = unitCode === 'G20';
+  const axes = (['X', 'Y', 'Z'] as const).filter((axis) => direction[axis.toLowerCase() as 'x' | 'y' | 'z'] !== 0);
+  if (axes.length === 0) return null;
+  const component = (axis: 'X' | 'Y' | 'Z') => direction[axis.toLowerCase() as 'x' | 'y' | 'z'];
+  const length = Math.min(...axes.map((axis) => axisReach(axis, component(axis), isImperial) / Math.abs(component(axis))));
+  const decimals = isImperial ? 4 : 3;
+  if (length < (isImperial ? 0.0005 : 0.01)) return null;
+  const words = axes.map((axis) => `${axis}${Number((component(axis) * length).toFixed(decimals))}`).join(' ');
+  const feed = isImperial ? Math.max(0.1, Number(feedRate.toFixed(1))) : Math.max(1, Math.round(feedRate));
+  const command = `$J=${unitCode} G91 ${words} F${feed}`;
+  const primary = axes.reduce((a, b) => (Math.abs(component(b)) > Math.abs(component(a)) ? b : a));
+  const jogId = createJogId();
+
+  try {
+    await jogStart({
+      jogId,
+      command,
+      displayCommand: command,
+      axis: primary,
+      direction: component(primary) > 0 ? 1 : -1,
+      feedRate: feed
+    });
+  } catch (error) {
+    console.error('Failed to start continuous vector jog session:', JSON.stringify((error as Error)?.message ?? error));
+    return null;
+  }
+
+  return createContinuousSession(jogId, 'continuous vector jog session');
+}
+
 let coreActionsRegistered = false;
 
 export function registerCoreKeyboardActions(): void {
@@ -222,7 +279,7 @@ export function registerCoreKeyboardActions(): void {
   const store = useAppStore();
 
   const canJog = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     // Mirror the jog-button gate (JogPanel.motionControlsDisabled / store.homingStartupRequired):
@@ -260,11 +317,23 @@ export function registerCoreKeyboardActions(): void {
     });
   });
 
+  // Gamepad only: which stick axis jogs each machine axis at variable speed.
+  (['X', 'Y', 'Z'] as const).forEach((axis) => {
+    commandRegistry.register({
+      id: `StickJog${axis}`,
+      label: `Variable-speed stick ${axis}`,
+      group: jogActionGroup,
+      description: 'Gamepad only: bind it by pushing the stick toward the + direction',
+      handler: () => {},
+      isEnabled: canJog
+    });
+  });
+
   // Job Control Actions
   const jobGroup = 'Job';
 
   const canStartOrResume = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected, serverState, senderStatus, status: machineStatus } = store;
@@ -288,7 +357,7 @@ export function registerCoreKeyboardActions(): void {
   };
 
   const canPause = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected, serverState, senderStatus } = store;
@@ -299,7 +368,7 @@ export function registerCoreKeyboardActions(): void {
   };
 
   const canStop = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isJobRunning } = store;
@@ -368,7 +437,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-cycle'));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -379,7 +448,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 0 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -390,7 +459,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 1 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   commandRegistry.register({
@@ -401,14 +470,14 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new CustomEvent('jog-step-set', { detail: { category: 2 } }));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   // Machine Control Actions
   const machineGroup = 'Machine';
 
   const canHome = () => {
-    if (!keyBindingStore.isActive.value) {
+    if (!keyBindingStore.isInputActive.value) {
       return false;
     }
     const { isConnected } = store;
@@ -442,7 +511,7 @@ export function registerCoreKeyboardActions(): void {
     handler: () => {
       window.dispatchEvent(new Event('probe-start-shortcut'));
     },
-    isEnabled: () => keyBindingStore.isActive.value
+    isEnabled: () => keyBindingStore.isInputActive.value
   });
 
   coreActionsRegistered = true;

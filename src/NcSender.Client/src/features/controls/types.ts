@@ -19,6 +19,8 @@ export type KeyCombo = string;
 
 export interface KeyboardSettings {
   shortcutsEnabled: boolean;
+  // The gamepad's own switch. Never saved: it follows the keyboard's.
+  gamepadEnabled: boolean;
 }
 
 export interface KeyboardState {

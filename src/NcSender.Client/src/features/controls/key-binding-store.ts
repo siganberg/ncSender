@@ -60,15 +60,19 @@ function sanitizeBindings(raw: any): Record<string, string | null> {
 
 function sanitizeKeyboardSettings(raw: any): KeyboardSettings {
   const defaults: KeyboardSettings = {
-    shortcutsEnabled: true
+    shortcutsEnabled: true,
+    gamepadEnabled: true
   };
 
   if (!raw || typeof raw !== 'object') {
     return { ...defaults };
   }
 
+  const shortcutsEnabled = raw.shortcutsEnabled !== false;
   return {
-    shortcutsEnabled: raw.shortcutsEnabled !== false
+    shortcutsEnabled,
+    // One switch used to cover both: a gamepad switch never saved follows it.
+    gamepadEnabled: typeof raw.gamepadEnabled === 'boolean' ? raw.gamepadEnabled : shortcutsEnabled
   };
 }
 
@@ -84,6 +88,10 @@ const state = reactive<KeyboardState>({
 const isFeatureEnabled = computed(() => state.featureEnabled);
 const areShortcutsEnabled = computed(() => state.settings.shortcutsEnabled);
 const isActive = computed(() => state.loaded && state.featureEnabled && state.settings.shortcutsEnabled);
+const isGamepadEnabled = computed(() => state.settings.gamepadEnabled);
+const isGamepadActive = computed(() => state.loaded && state.featureEnabled && state.settings.gamepadEnabled);
+// Either device may run an action: each device checks its own switch.
+const isInputActive = computed(() => isActive.value || isGamepadActive.value);
 const bindingsMap = computed(() => readonly(state.bindings));
 
 async function persistBindings(next: Record<string, string | null>, changedOnly = false): Promise<void> {
@@ -138,6 +146,9 @@ export const keyBindingStore = {
   isFeatureEnabled,
   areShortcutsEnabled,
   isActive,
+  isGamepadEnabled,
+  isGamepadActive,
+  isInputActive,
   bindings: bindingsMap,
 
   bootstrap(): void {
@@ -243,6 +254,13 @@ export const keyBindingStore = {
       return;
     }
     await persistKeyboardSettings({ ...state.settings, shortcutsEnabled: value });
+  },
+
+  async setGamepadEnabled(value: boolean): Promise<void> {
+    if (state.settings.gamepadEnabled === value) {
+      return;
+    }
+    await persistKeyboardSettings({ ...state.settings, gamepadEnabled: value });
   },
 
   async setFeatureEnabled(value: boolean): Promise<void> {

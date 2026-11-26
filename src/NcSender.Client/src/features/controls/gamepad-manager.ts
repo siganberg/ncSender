@@ -30,6 +30,9 @@ import {
   type ContinuousJogSession
 } from './actions';
 import { useAppStore } from '@/composables/use-app-store';
+import { StickJogger, getStickJogSettings, readStick, stickJogActions, stickTarget } from './stick-jog';
+
+const STICK_POLL_MS = 16;
 
 const JOG_LONG_PRESS_DELAY_MS = 300;
 const ACTION_LONG_PRESS_DELAY_MS = 1000;
@@ -70,10 +73,13 @@ class GamepadManager {
   private previousDiagonalState = new Map<string, boolean>();
   private previousStepSize: number | null = null;
   private previousFeedRate: number | null = null;
+  private stickJogger = new StickJogger();
+  private stickTimer: number | null = null;
 
   private pollLoop = () => {
     if (!this.gamepadConnected) {
       this.rafId = null;
+      this.stopStickPolling();
       return;
     }
     this.pollGamepads();
@@ -81,16 +87,53 @@ class GamepadManager {
   };
 
   private startPolling(): void {
+    // The stick has its own timer: animation frames come only a few times
+    // a second while a slow kiosk is busy drawing.
+    if (this.stickTimer === null) this.stickTimer = window.setInterval(this.pollStick, STICK_POLL_MS);
     if (this.rafId !== null) return;
     this.rafId = requestAnimationFrame(this.pollLoop);
   }
 
   private stopPolling(): void {
+    this.stopStickPolling();
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
   }
+
+  private stopStickPolling(): void {
+    if (this.stickTimer !== null) {
+      clearInterval(this.stickTimer);
+      this.stickTimer = null;
+    }
+  }
+
+  private pollStick = () => {
+    if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
+      this.stickJogger.stop('gamepad-inactive');
+      return;
+    }
+    const bindings = gamepadBindingStore.getAllBindings();
+    const settings = getStickJogSettings();
+    if (!settings.enabled || stickJogActions(bindings).size === 0) {
+      this.stickJogger.stop('stick-jog-off');
+      return;
+    }
+    let target = null;
+    for (const gamepad of navigator.getGamepads()) {
+      if (!gamepad) continue;
+      target = stickTarget(readStick(gamepad, bindings), settings.deadZone);
+      if (target) break;
+    }
+    // Only from Idle or its own jog: not in Hold, Alarm, Door or homing,
+    // nor with a job paused.
+    const appStore = useAppStore();
+    const machine = String(appStore.status.machineState || '').toLowerCase().split(':')[0];
+    const jogAllowed = (commandRegistry.getAction('JogXPlus')?.isEnabled?.() ?? false) &&
+      (machine === 'idle' || machine === 'jog') && appStore.serverState.jobLoaded?.status !== 'paused';
+    this.stickJogger.update(target, performance.now(), jogAllowed, settings, machine);
+  };
 
   private pollGamepads = () => {
     if (!this.enabled || keyBindingStore.isCaptureMode() || keyBindingStore.isControlsTabActive()) {
@@ -116,13 +159,15 @@ class GamepadManager {
 
     const gamepads = navigator.getGamepads();
     const currentButtonStates = new Map<string, boolean>();
+    const bindings = gamepadBindingStore.getAllBindings();
+    // While variable speed is on, the stick's actions are driven by the stick jogger.
+    const stickActions = getStickJogSettings().enabled ? stickJogActions(bindings) : new Set<string>();
 
     for (const gamepad of gamepads) {
       if (!gamepad) {
         continue;
       }
 
-      const bindings = gamepadBindingStore.getAllBindings();
       const activeJogActions = new Map<string, { axis: 'X' | 'Y' | 'Z', direction: 1 | -1, bindingKey: string, axisIndex?: number }>();
 
       for (const [actionId, bindingStr] of Object.entries(bindings)) {
@@ -136,7 +181,7 @@ class GamepadManager {
         }
 
         const bindingKey = `${gamepad.index}-${bindingStr}`;
-        const isActive = isGamepadInputActive(gamepad, binding);
+        const isActive = !stickActions.has(actionId) && isGamepadInputActive(gamepad, binding);
         const wasActive = this.previousButtonStates.get(bindingKey) || false;
 
         currentButtonStates.set(bindingKey, isActive);
@@ -154,7 +199,10 @@ class GamepadManager {
         }
       }
 
-      const isDiagonal = this.handleDiagonalJogs(gamepad, bindings);
+      const isDiagonal = this.handleDiagonalJogs(
+        gamepad,
+        stickActions.size === 0 ? bindings : Object.fromEntries(Object.entries(bindings).filter(([id]) => !stickActions.has(id)))
+      );
       const gamepadKey = `gamepad-${gamepad.index}`;
       const wasDiagonal = this.previousDiagonalState.get(gamepadKey) || false;
 
@@ -638,7 +686,14 @@ class GamepadManager {
     this.startPolling();
   };
 
+  // A hidden tab (another tab, the screen locked) stops jogging, as blur does.
+  private handleHidden = () => {
+    if (document.visibilityState === 'hidden') this.handleDisconnect();
+  };
+
   private handleDisconnect = () => {
+    this.stickJogger.stop('gamepad-disconnect');
+
     for (const [bindingKey, longPressState] of Array.from(this.longPressStates.entries())) {
       if (!longPressState.completed) {
         longPressState.cancelled = true;
@@ -701,9 +756,10 @@ class GamepadManager {
     window.addEventListener('gamepadconnected', this.handleConnect);
     window.addEventListener('gamepaddisconnected', this.handleDisconnect);
     window.addEventListener('blur', this.handleDisconnect);
+    document.addEventListener('visibilitychange', this.handleHidden);
 
     watchEffect(() => {
-      this.enabled = keyBindingStore.isActive.value;
+      this.enabled = keyBindingStore.isGamepadActive.value;
       if (!this.enabled) {
         this.handleDisconnect();
       }
@@ -715,7 +771,9 @@ class GamepadManager {
     window.removeEventListener('gamepadconnected', this.handleConnect);
     window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
     window.removeEventListener('blur', this.handleDisconnect);
+    document.removeEventListener('visibilitychange', this.handleHidden);
     this.handleDisconnect();
+    this.stickJogger.dispose();
   }
 }
 
