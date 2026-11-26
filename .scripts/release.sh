@@ -2,6 +2,20 @@
 
 set -e
 
+# Release notes can be handed in instead of generated: set
+# NC_RELEASE_NOTES_FILE to a markdown file (starting with "## What's Changed")
+# and it is used exactly as written, images included. Without it, the `claude`
+# CLI writes the notes from the commit messages as before.
+# Screenshots in release notes are always captured at 1080p (1920x1080).
+if [ -n "${NC_RELEASE_NOTES_FILE:-}" ]; then
+    if [ ! -s "$NC_RELEASE_NOTES_FILE" ]; then
+        echo "NC_RELEASE_NOTES_FILE is set but '$NC_RELEASE_NOTES_FILE' is missing or empty"
+        exit 1
+    fi
+    echo "Using release notes from $NC_RELEASE_NOTES_FILE"
+    claude() { cat "$NC_RELEASE_NOTES_FILE"; }
+fi
+
 # Get the latest STABLE v2+ tag (exclude any pre-release: -beta, -internal, etc.)
 LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[2-9]\.[0-9]+\.[0-9]+$' | head -1)
 # If no stable v2+ tag, fall back to the latest v2+ tag of any kind
