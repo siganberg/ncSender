@@ -132,6 +132,61 @@ public partial class JsPluginEngine : IJsPluginEngine
         }
     }
 
+    // onSettingsApplied(settings, info): called whenever a plugin's settings
+    // come into effect: when it is loaded (startup, enable, install, update,
+    // Save) and when the controller connects (the machine's travel is known
+    // from then on). info.reason is "load" or "connected".
+    //
+    // This is where a plugin publishes what follows from its settings: its
+    // keepout zones, roles on an accessory. That used to live in each
+    // plugin's settings page and ran only when Save was pressed, so a plugin
+    // update that changed it did nothing until the user opened the page and
+    // saved again. Everything a plugin does here must be safe to repeat.
+    public void NotifySettingsApplied(string reason, string? pluginId = null)
+        => QueueHook(() => RunSettingsAppliedHook(reason, pluginId));
+
+    private void RunSettingsAppliedHook(string reason, string? only)
+    {
+        foreach (var pluginId in only is null ? GetLoadedPluginIds() : [only])
+        {
+            lock (_lock)
+            {
+                if (!_plugins.TryGetValue(pluginId, out var state)) continue;
+                try
+                {
+                    var fn = state.JintEngine.GetValue("onSettingsApplied");
+                    if (fn.IsUndefined()) continue;
+                    var info = new JsObject(state.JintEngine);
+                    info.Set("reason", reason);
+                    fn.Call(state.CachedSettings, info);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "JS plugin {PluginId} onSettingsApplied failed", pluginId);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The machine's travel in machine coordinates: its size from $130/$131,
+    /// its direction from the home corner in the settings (the derivation the
+    /// app's own views use). Null while either is unknown.
+    /// </summary>
+    internal static (double MinX, double MaxX, double MinY, double MaxY)? MachineLimits(FirmwareData? firmware, string? homeLocation)
+    {
+        static double Travel(FirmwareData? fw, string id) =>
+            fw?.Settings is not null && fw.Settings.TryGetValue(id, out var s)
+            && double.TryParse(s.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        var sx = Travel(firmware, "130");
+        var sy = Travel(firmware, "131");
+        if (!(sx > 0) || !(sy > 0)) return null;
+        var home = string.IsNullOrEmpty(homeLocation) ? "back-left" : homeLocation;
+        var xHomeMax = home is "back-right" or "front-right";
+        var yHomeMax = home is "back-left" or "back-right";
+        return (xHomeMax ? -sx : 0, xHomeMax ? 0 : sx, yHomeMax ? -sy : 0, yHomeMax ? 0 : sy);
+    }
+
     // onControllerError(event, settings), GitHub #78: once for each error:n
     // and ALARM:n. Read-only: the sender has already handled it.
     // event: type ("error" | "alarm"), code, message, raw, command and
@@ -235,6 +290,9 @@ public partial class JsPluginEngine : IJsPluginEngine
                 _plugins[pluginId].CachedSettings = cachedSettings;
 
                 _logger.LogInformation("JS plugin {PluginId} loaded from {Path}", pluginId, commandsFilePath);
+
+                // Startup, enable, install, update and Save all end here.
+                NotifySettingsApplied("load", pluginId);
             }
             catch (Exception ex)
             {
@@ -743,6 +801,28 @@ public partial class JsPluginEngine : IJsPluginEngine
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "pluginContext.getFirmwareSetting failed for {PluginId} key {Key}", pluginId, key);
+                return JsValue.Null;
+            }
+        }));
+
+        // getMachineLimits() — { minX, maxX, minY, maxY } in machine
+        // coordinates, or null while the controller's travel isn't known.
+        ctx.Set("getMachineLimits", new ClrFunction(engine, "getMachineLimits", (_, _) =>
+        {
+            try
+            {
+                var settings = _serviceProvider.GetService(typeof(ISettingsManager)) as ISettingsManager;
+                var limits = MachineLimits(_firmwareService.GetCachedAsync().GetAwaiter().GetResult(),
+                    settings?.GetSetting<string>("homeLocation", "back-left"));
+                if (limits is not { } l) return JsValue.Null;
+                var obj = new JsObject(engine);
+                obj.Set("minX", l.MinX); obj.Set("maxX", l.MaxX);
+                obj.Set("minY", l.MinY); obj.Set("maxY", l.MaxY);
+                return obj;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "pluginContext.getMachineLimits failed for {PluginId}", pluginId);
                 return JsValue.Null;
             }
         }));

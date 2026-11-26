@@ -498,6 +498,10 @@ public class CncEventBridge
                         _context.UpdateSenderStatus();
                         BroadcastStateDelta();
                     }
+
+                    // The machine's travel is known now: plugins that publish
+                    // something clipped to it do so again.
+                    _pluginManager.NotifySettingsApplied("connected");
                 }
                 catch (Exception ex)
                 {

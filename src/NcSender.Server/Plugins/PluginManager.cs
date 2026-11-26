@@ -76,6 +76,8 @@ public class PluginManager : IPluginManager
         return ListAll().Where(p => p.Enabled).OrderBy(p => p.Priority).ToList();
     }
 
+    public void NotifySettingsApplied(string reason) => _jsEngine.NotifySettingsApplied(reason);
+
     // Enable: update registry, enforce exclusive categories (tool-changer allows only one)
     public void Enable(string pluginId)
     {

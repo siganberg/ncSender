@@ -7,6 +7,8 @@ public interface IPluginManager
 {
     List<PluginInfo> ListAll();
     List<PluginInfo> ListLoaded();
+    /// <summary>Lets every running plugin publish again what follows from its settings (see IJsPluginEngine).</summary>
+    void NotifySettingsApplied(string reason);
     void Enable(string pluginId);
     void Disable(string pluginId);
     void Reorder(List<string> pluginIds);

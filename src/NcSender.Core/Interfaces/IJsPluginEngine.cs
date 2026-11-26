@@ -18,6 +18,12 @@ public interface IJsPluginEngine
         CommandProcessorContext context,
         List<ToolInfo> tools);
     List<string> GetLoadedPluginIds();
+    /// <summary>
+    /// Runs onSettingsApplied(settings, info) in every loaded plugin (or one):
+    /// the hook where a plugin publishes what follows from its settings, so
+    /// nobody has to open its settings page and press Save after an update.
+    /// </summary>
+    void NotifySettingsApplied(string reason, string? pluginId = null);
     void ProcessOnAfterJobEnd(string pluginId);
     string ProcessOnGcodeProgramLoad(string pluginId, string content, IReadOnlyDictionary<string, object?> context);
 }
