@@ -576,6 +576,7 @@
             @update:show-manual-button="handleShowManualButtonUpdate"
             @update:show-tls-button="handleShowTLSButtonUpdate"
             @update:show-probe-button="handleShowProbeButtonUpdate"
+            @close="closeSettings"
           />
         </div>
 
