@@ -41,6 +41,13 @@
           <div class="toggle-handle"></div>
         </div>
       </div>
+      <button
+        v-if="activeTab === 'tools' && toolMenuItems.length > 0"
+        type="button"
+        class="plugins-edit-btn"
+        :class="{ 'plugins-edit-btn--on': arrangingPlugins }"
+        @click="arrangingPlugins = !arrangingPlugins"
+      >{{ arrangingPlugins ? 'Done' : 'Edit' }}</button>
     </header>
 
     <!-- Terminal Tab -->
@@ -129,25 +136,14 @@
           </p>
         </div>
       </div>
-      <div v-else class="tools-list">
-        <button
-          v-for="item in toolMenuItems"
-          :key="`${item.pluginId}-${item.label}`"
-          class="tool-button"
-          @click="executeToolMenuItem(item)"
-          :disabled="executingTool === `${item.pluginId}-${item.label}`"
-        >
-          <!-- Custom icon if provided, otherwise default gear icon -->
-          <span v-if="item.icon && item.icon.startsWith('<')" class="tool-icon" v-html="item.icon"></span>
-          <img v-else-if="item.icon" :src="`${api.baseUrl}/api/plugins/${item.pluginId}/icon?file=${encodeURIComponent(item.icon)}`" class="tool-icon-img" />
-          <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
-            <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
-          </svg>
-          <span class="tool-label">{{ item.label }}</span>
-          <span v-if="executingTool === `${item.pluginId}-${item.label}`" class="tool-spinner"></span>
-        </button>
-      </div>
+      <PluginLauncher
+        v-else
+        :items="toolMenuItems"
+        :editing="arrangingPlugins"
+        :busy-key="executingTool"
+        :labels="launcherLabels"
+        @run="executeToolMenuItem"
+      />
     </div>
 
     <!-- Events Tab -->
@@ -563,6 +559,7 @@
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, reactive, shallowRef } from 'vue';
 import { api } from './api';
 import { fetchToolMenuItems, executeToolMenuItem as runToolMenuItem } from '../plugins/api';
+import PluginLauncher from '../plugins/PluginLauncher.vue';
 import { getCommandHistoryFromInit } from '@/lib/init';
 import { getLinesRangeFromIDB, isIDBEnabled } from '../../lib/gcode-store.js';
 import { useConsoleStore } from './store';
@@ -1253,6 +1250,15 @@ const terminalLines = computed(() => props.lines || []);
 // Plugin Tools state
 const toolMenuItems = ref<Array<{ pluginId: string; label: string; clientOnly?: boolean }>>([]);
 const loadingTools = ref(false);
+// Arranging the Plugins tab: drag to reorder, hide what isn't used.
+const arrangingPlugins = ref(false);
+const launcherLabels = {
+  hint: 'Drag a tile to move it. Tap the eye to hide it.',
+  sortAZ: 'A to Z',
+  hide: 'Hide',
+  hidden: 'Hidden: still installed, tap to show again',
+  allHidden: 'All plugins are hidden. Tap Edit to show them again.'
+};
 
 // G-Code loading state
 const gcodeLoading = ref(false);
@@ -2012,6 +2018,7 @@ const executeToolMenuItem = async (item: { pluginId: string; label: string }) =>
 
 // Watch for Tools tab activation to load menu items
 watch(activeTab, (newTab) => {
+  if (newTab !== 'tools') arrangingPlugins.value = false;
   if (newTab === 'tools' && toolMenuItems.value.length === 0) {
     loadToolMenuItems();
   }
@@ -3126,88 +3133,23 @@ h2 {
   filter: brightness(1.1);
 }
 
-.tools-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--gap-sm);
-  padding: var(--gap-sm);
-}
-
-.tool-button {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-sm);
-  padding: var(--gap-md);
-  background: var(--color-surface);
+.plugins-edit-btn {
+  min-height: 34px;
+  margin-bottom: 4px;
+  padding: 0 14px;
+  border-radius: var(--radius-small, 8px);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-medium);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.9rem;
-  color: var(--color-text-primary);
-  position: relative;
-}
-
-.tool-button:hover:not(:disabled) {
   background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.plugins-edit-btn--on {
   border-color: var(--color-accent);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-elevated);
-}
-
-.tool-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.tool-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.tool-button svg {
-  flex-shrink: 0;
-  color: var(--color-accent);
-  width: 32px;
-  height: 32px;
-}
-
-.tool-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-}
-
-.tool-icon :deep(svg) {
-  width: 32px;
-  height: 32px;
-  fill: currentColor;
-  color: var(--color-accent);
-}
-
-.tool-icon-img {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-.tool-label {
-  flex: 1;
-  text-align: left;
-  font-weight: 500;
-}
-
-.tool-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--color-surface-muted);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  flex-shrink: 0;
+  background: var(--color-accent);
+  color: #fff;
 }
 
 @keyframes spin {
