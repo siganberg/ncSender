@@ -174,6 +174,7 @@ public static class ServerBuilder
         builder.Services.AddSingleton<IControllerFileService, ControllerFileService>();
         builder.Services.AddSingleton<IPendantManager, PendantManager>();
         builder.Services.AddSingleton<IDongleDeviceService, DongleDeviceService>();
+        builder.Services.AddSingleton<NcSender.Server.Dongle.InputInvertStore>();
         builder.Services.AddSingleton<NcSender.Server.Dongle.DongleOtaService>();
         builder.Services.AddSingleton<NcSender.Server.Accessories.AccessoryService>();
         // NCPROBE: NcProbeRouter arbitrates between the wireless (ESP-NOW dongle)
@@ -436,6 +437,12 @@ public static class ServerBuilder
         // For the drawbar interlock: no release to a drawbar output while the spindle turns.
         var serverContextForDongle = app.Services.GetRequiredService<IServerContext>();
         dongleDevices.SpindleActive = () => serverContextForDongle.State.MachineState.SpindleActive;
+        // Per-input Invert for accessories that report raw input states (Wireless I/O).
+        if (dongleDevices is NcSender.Server.Dongle.DongleDeviceService dongleDeviceService)
+        {
+            var inputInvert = app.Services.GetRequiredService<NcSender.Server.Dongle.InputInvertStore>();
+            dongleDeviceService.InputInvertMask = inputInvert.Mask;
+        }
 
         // Restore last loaded program from previous session
         RestoreLastLoadedFile(app.Services);

@@ -29,6 +29,8 @@ public class PendantPortScanner : IDisposable
     // session. Reset when the port disappears from the catalog so a
     // fresh replug re-notifies.
     private readonly HashSet<string> _flaggedLegacyPorts = new(StringComparer.OrdinalIgnoreCase);
+    // Ports left closed because their device type is already tracked. Scan loop only.
+    private readonly HashSet<string> _spareLogged = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _scanLock = new(1, 1);
     private bool _disposed;
 
@@ -381,6 +383,7 @@ public class PendantPortScanner : IDisposable
             lock (_tracked)
                 knownPorts = new HashSet<string>(_tracked.Keys);
 
+            _spareLogged.RemoveWhere(p => !recognized.ContainsKey(p));
             foreach (var (port, device) in recognized)
             {
                 if (knownPorts.Contains(port)) continue;
@@ -395,6 +398,19 @@ public class PendantPortScanner : IDisposable
                 var deviceType = device.Kind == NcSenderUsbKind.Pendant
                     ? DeviceType.Pendant
                     : DeviceType.Dongle;
+
+                // A second device of a type already in use (two dongles plugged
+                // in) is left closed: opening it every scan only to reject it
+                // filled the log and kept toggling its port. Said once per port.
+                bool spare;
+                lock (_tracked) spare = _tracked.Values.Any(d => d.Type == deviceType);
+                if (spare)
+                {
+                    if (_spareLogged.Add(port))
+                        _logger.LogWarning("Already tracking {Type}, ignoring {NewPort}", deviceType, port);
+                    continue;
+                }
+                _spareLogged.Remove(port);
 
                 var handler = new PendantSerialHandler(_logger);
                 try

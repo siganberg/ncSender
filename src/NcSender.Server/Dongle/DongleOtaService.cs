@@ -316,6 +316,7 @@ public sealed class DongleOtaService : IDisposable
         // Wireless I/O: speaks $OTA:BEGIN/CHUNK/END on its cable; found
         // by its "ncSender xIO" product string (it enumerates as 0x1001).
         "xio"          => NcSenderUsbKind.Xio,
+        "ncrapidchange" => NcSenderUsbKind.NcRapidChange,
         // The pendant speaks this dialect on its cable as of pendant firmware
         // 1.0.31. Older builds answer only the legacy "$OTA:<size>:<md5>"
         // handshake and will not ack BEGIN — that is not a failure, it is the

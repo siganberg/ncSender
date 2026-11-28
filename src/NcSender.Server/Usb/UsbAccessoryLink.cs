@@ -16,6 +16,8 @@ public sealed class UsbAccessoryLink : IHostedService, IDisposable
             ["autodustboot"] = NcSenderUsbKind.AutoDustBoot,
             // Wireless I/O: same command table on its USB port, no "@xio" prefix.
             ["xio"] = NcSenderUsbKind.Xio,
+            // ncRapidChangeAir: answers untagged on its cable, like the rest.
+            ["ncrapidchange"] = NcSenderUsbKind.NcRapidChange,
         };
 
     private sealed class Link

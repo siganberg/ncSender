@@ -51,16 +51,19 @@ public sealed class AccessoryService
 
     private readonly INcSenderUsbCatalog _usbCatalog;
     private readonly NcSender.Server.Usb.UsbAccessoryLink _usbLink;
+    private readonly NcSender.Server.Dongle.InputInvertStore _inputInvert;
 
     public AccessoryService(IDongleDeviceService dongle, IPendantManager pendant,
                             INcSenderUsbCatalog usbCatalog,
                             NcSender.Server.Usb.UsbAccessoryLink usbLink,
+                            NcSender.Server.Dongle.InputInvertStore inputInvert,
                             ILogger<AccessoryService> logger)
     {
         _dongle = dongle;
         _pendant = pendant;
         _usbCatalog = usbCatalog;
         _usbLink = usbLink;
+        _inputInvert = inputInvert;
         _logger = logger;
 
         // Nothing is cached about a device, so nothing here has to be invalidated.
@@ -119,6 +122,8 @@ public sealed class AccessoryService
                 info.ProbeIgnored = ignoredProbes.Contains(token);
             if (inputInverted is not null && def.Id == AccessoryCatalog.WirelessReceiverId)
                 info.InputInverted = inputInverted;
+            else if (HostInvertedInputs(def.Id))
+                info.InputInverted = HostInputInvert(def.Id, peers.GetValueOrDefault(def.Id)?.LastMessage);
             string? pendantAssetPrefix = null;
 
             if (AccessoryCatalog.IsDongle(def.Id))
@@ -181,13 +186,18 @@ public sealed class AccessoryService
                     // view cannot tell apart from "licensed" — so an unlicensed
                     // accessory showed a dash and never offered activation.
                     var lic = await PeerLicenceAsync(def.PeerName, ct).ConfigureAwait(false);
-                    info.Licensed = lic.Licensed;
+                    // A device with no store product cannot be activated, so
+                    // "unlicensed" from it is not something to act on.
+                    info.Licensed = def.LicenseProduct is null ? null : lic.Licensed;
                     info.DeviceId = lic.DeviceId;
                     ApplyBattery(info, peer);
+                    // On a cable alone no heartbeat arrives to carry the level.
+                    if (info.BatteryState is null && wired && def.Id == NcRapidChange.Id)
+                        await ApplyCabledBatteryAsync(info, def.PeerName).ConfigureAwait(false);
                 }
             }
 
-            if (checkUpdates && info.Connected && info.UpdateCheckError is null)
+            if (checkUpdates && info.Connected && info.UpdateCheckError is null && def.ReleaseRepo.Length > 0)
                 await ApplyReleaseAsync(def, info, pendantAssetPrefix ?? def.AssetPrefix, ct).ConfigureAwait(false);
 
             return info;
@@ -239,6 +249,50 @@ public sealed class AccessoryService
             return [words.Contains("1"), words.Contains("2")];
         }
         return null;
+    }
+
+    /// <summary>
+    /// Accessories whose inputs are inverted here in ncSender, because their
+    /// firmware reports raw states and has no polarity setting.
+    /// </summary>
+    public static bool HostInvertedInputs(string id) =>
+        string.Equals(id, "xio", StringComparison.OrdinalIgnoreCase);
+
+    // One entry per input the device reports; null until it has reported.
+    private List<bool>? HostInputInvert(string id, string? status)
+    {
+        var states = NcSender.Server.Dongle.InputInvert.ReadStates(status);
+        if (states is null) return null;
+        var mask = _inputInvert.Mask(id);
+        return states.Select((_, i) => (mask & (1 << i)) != 0).ToList();
+    }
+
+    /// <summary>
+    /// Inputs of an accessory inverted in ncSender: the setting and whether
+    /// each reads triggered (after inversion). Null when it has not reported.
+    /// </summary>
+    public AccessoryInputsState? ReadHostInputs(string id)
+    {
+        var status = _dongle.GetDevice(id)?.LastMessage;
+        var states = NcSender.Server.Dongle.InputInvert.ReadStates(status);
+        var inv = HostInputInvert(id, status);
+        return states is null || inv is null ? null : new AccessoryInputsState(inv, states);
+    }
+
+    /// <summary>
+    /// Invert one input (1-based) of an accessory whose polarity is kept in
+    /// ncSender. Saved in the settings; the device is asked for its status so
+    /// the new reading shows at once.
+    /// </summary>
+    public async Task SetHostInputInvertedAsync(string id, int input, bool inverted)
+    {
+        var count = NcSender.Server.Dongle.InputInvert.ReadStates(_dongle.GetDevice(id)?.LastMessage)?.Count ?? 0;
+        if (count == 0) throw new InvalidOperationException("The device is not connected");
+        if (input < 1 || input > count) throw new InvalidOperationException($"Input must be 1 to {count}");
+        await _inputInvert.SetAsync(id, input - 1, inverted).ConfigureAwait(false);
+        _logger.LogInformation("{Id} input {Input} {State}", id, input, inverted ? "inverted" : "normal");
+        try { await _dongle.SendAsync(id, "status").ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Status request to {Id} failed", id); }
     }
 
     /// <summary>
@@ -316,6 +370,35 @@ public sealed class AccessoryService
         info.BatteryLow = state == "battery" && mv < NcSender.Server.Dongle.BatteryReading.LowMv;
     }
 
+    // "$BATT:<mV>:<usb 0|1>", asked over the cable. 0 mV = no cell fitted.
+    private async Task ApplyCabledBatteryAsync(AccessoryInfo info, string peerName)
+    {
+        string? reply;
+        try
+        {
+            reply = await QueryPeerAsync(peerName, "$BATT",
+                l => l.StartsWith("$BATT:", StringComparison.Ordinal), VersionQueryTimeoutMs).ConfigureAwait(false);
+        }
+        catch { return; }
+        var parts = reply?.Split(':');
+        if (parts is null || parts.Length < 3 || !int.TryParse(parts[1], out var mv)) return;
+        var usb = parts[2].Trim() == "1";
+        if (mv is <= 2000 or >= 5000)
+        {
+            if (usb) info.BatteryState = "usb";
+            return;
+        }
+        info.BatteryState = usb ? "charging" : "battery";
+        info.BatteryMv = mv;
+        info.BatteryPercent = NcSender.Server.Dongle.BatteryReading.Percent(mv);
+        if (usb && mv >= NcSender.Server.Dongle.BatteryReading.FullMv)
+        {
+            info.BatteryState = "full";
+            info.BatteryPercent = 100;
+        }
+        info.BatteryLow = !usb && mv < NcSender.Server.Dongle.BatteryReading.LowMv;
+    }
+
     // The pendant reports its own percent; the voltage is shown beside it.
     private static void ApplyPendantBattery(AccessoryInfo info, PendantStatus status)
     {
@@ -363,6 +446,7 @@ public sealed class AccessoryService
             "autodustboot" => NcSenderUsbKind.AutoDustBoot,
             "pendant"      => NcSenderUsbKind.Pendant,
             "xio"          => NcSenderUsbKind.Xio,
+            "ncrapidchange" => NcSenderUsbKind.NcRapidChange,
             // RGB is a C3: no wired path today, so it is never on a cable as
             // far as this is concerned.
             _              => NcSenderUsbKind.Unknown,
@@ -377,7 +461,7 @@ public sealed class AccessoryService
         return false;
     }
 
-    private Task<string?> QueryPeerAsync(string peerName, string payload, Func<string, bool> match, int timeoutMs) =>
+    internal Task<string?> QueryPeerAsync(string peerName, string payload, Func<string, bool> match, int timeoutMs) =>
         _usbLink.IsConnected(peerName)
             ? _usbLink.QueryAsync(peerName, payload, match, timeoutMs)
             : _dongle.QueryAsync(peerName, payload, match, timeoutMs);

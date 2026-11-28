@@ -106,6 +106,18 @@ public record AccessoryProbeIgnoreRequest(bool Ignored);
 public record AccessoryInputInvertRequest(int Input, bool Inverted);
 public record AccessoryInputsState(List<bool> Inverted, List<bool> Triggered);
 
+/// <summary>RapidChangeATC Air: what it reads right now. Triggered values are after the device's own invert.</summary>
+public record RapidChangeState(bool Tls, bool Ir, bool CoverOpen, bool HasCover, bool Awake);
+/// <summary>RapidChangeATC Air settings, all kept on the device. Servo positions are pulse widths in microseconds.</summary>
+public record RapidChangeSettings(bool HasCover, int FrontOpenUs, int FrontCloseUs, int BackOpenUs, int BackCloseUs,
+                                  int MoveMs, bool InvertTls, bool InvertIr, int FilterMs);
+/// <summary>Only the fields present are changed. A servo needs both of its positions.</summary>
+public record RapidChangeSettingsRequest(bool? HasCover, int? FrontOpenUs, int? FrontCloseUs, int? BackOpenUs, int? BackCloseUs,
+                                         int? MoveMs, bool? InvertTls, bool? InvertIr, int? FilterMs);
+/// <summary>Move one cover servo ("F" front, "B" back) to a pulse width now, for calibration.</summary>
+public record RapidChangeServoGoRequest(string Servo, int Us);
+public record RapidChangeCoverRequest(bool Open);
+
 /// <summary>
 /// <paramref name="NeedsInstallationId"/> means the store has never seen this
 /// device, so the view should ask for an Installation ID and try again.

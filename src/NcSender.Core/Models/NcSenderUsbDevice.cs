@@ -28,5 +28,6 @@ public enum NcSenderUsbKind
     // A plain USB-serial chip (CH340). Not an ncSender identity: a PiBot pendant
     // sits behind one, and so do many CNC controllers. Never in GetDevices().
     SerialBridge = 7,
+    NcRapidChange = 8,   // 0x303A / 0x8216  ncRapidChangeAir (wireless RapidChange ATC magazine)
     Xio = 6,             // 0x303A / 0x8215  Wireless I/O; enumerates as 0x1001, found by iProduct
 }

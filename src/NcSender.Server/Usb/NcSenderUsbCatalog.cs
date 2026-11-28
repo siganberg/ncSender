@@ -63,6 +63,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             [(NcSenderVid, 0x8213)] = NcSenderUsbKind.AutoDustBoot,
             [(NcSenderVid, 0x8214)] = NcSenderUsbKind.RgbController,
             [(NcSenderVid, 0x8215)] = NcSenderUsbKind.Xio,
+            [(NcSenderVid, 0x8216)] = NcSenderUsbKind.NcRapidChange,
         };
 
     // Fallback identification by USB iProduct string. The Arduino ESP32
@@ -85,6 +86,7 @@ public sealed class NcSenderUsbCatalog : INcSenderUsbCatalog
             ["ncSender AutoDustBoot"]     = NcSenderUsbKind.AutoDustBoot,
             ["ncSender RGB Controller"]   = NcSenderUsbKind.RgbController,
             ["ncSender xIO"]              = NcSenderUsbKind.Xio,
+            ["ncSender ncRapidChangeAir"] = NcSenderUsbKind.NcRapidChange,
         };
 
     // Resolve the ncSender kind for a device by VID/PID first (the

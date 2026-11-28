@@ -114,6 +114,14 @@ public static class AccessoryCatalog
         new AccessoryDefinition("nczeroair", "Wireless Probe",
             "siganberg/ncSender.ncZeroAir.releases", "firmware_nczeroair_v", "nczeroair",
             Availability: "Not available", LicenseProduct: "ncZeroAir"),
+
+        // ncRapidChangeAir: the wireless board in a RapidChange ATC magazine
+        // (tool setter, IR beam, dust cover servos). Prototype. No release repo
+        // and no store product yet, so no update check and no activation: add
+        // ReleaseRepo and LicenseProduct "ncRapidChangeAir" when they exist.
+        new AccessoryDefinition(NcRapidChange.Id, "RapidChangeATC Air",
+            "", "firmware_ncrapidchangeair_v", NcRapidChange.Id,
+            Availability: "Not available"),
     };
 
     /// <summary>

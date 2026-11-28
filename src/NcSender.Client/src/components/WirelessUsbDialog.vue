@@ -186,6 +186,7 @@ const deviceRows = computed(() => {
 const DISPLAY_NAMES: Record<string, string> = {
   nc3dair: '3D Wireless Probe',
   nczeroair: 'Wireless Probe',
+  ncrapidchange: 'RapidChangeATC Air',
   ncprobe: '3D Wireless Probe',   // builds before the nc3DAir rename
 };
 

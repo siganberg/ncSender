@@ -56,6 +56,7 @@ public sealed record DongleWait(string Name, string Field, long Target, long Tol
         ["xio"] = "Wireless I/O",
         ["nc3dair"] = "3D Wireless Probe",
         ["nczeroair"] = "Wireless Probe",
+        ["ncrapidchange"] = "RapidChangeATC Air",
     };
 
     public string DisplayName => DisplayNames.TryGetValue(Name, out var n) ? n : Name;

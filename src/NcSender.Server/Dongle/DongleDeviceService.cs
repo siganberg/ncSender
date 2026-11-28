@@ -49,6 +49,12 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
     private readonly HashSet<string> _seen = new(StringComparer.OrdinalIgnoreCase);
     private bool _enumerating;
 
+    /// <summary>
+    /// Inputs to invert for a device, one bit per input (see <see cref="InputInvertStore"/>).
+    /// Applied to what the device reports before anything reads it.
+    /// </summary>
+    public Func<string, int>? InputInvertMask { get; set; }
+
     public event Action<string, string>? DeviceMessageReceived;
     public event Action<string, bool>? DeviceConnectivityChanged;
 
@@ -155,6 +161,9 @@ public sealed class DongleDeviceService : IDongleDeviceService, IDisposable
         // merging a fragment into the next line -> "@auto@autodustboot …"). Only accept sane
         // device names; drop the garbled line and wait for the next clean heartbeat.
         if (!IsValidDeviceName(name)) return;
+
+        if (InputInvertMask?.Invoke(name) is int invert and not 0)
+            payload = InputInvert.Apply(payload, invert);
 
         var st = _devices.GetOrAdd(name, _ => new DeviceState());
         bool justConnected;

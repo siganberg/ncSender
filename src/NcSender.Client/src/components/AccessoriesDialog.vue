@@ -1,5 +1,5 @@
 <template>
-  <Dialog :show-header="false" width="900px" height="78vh" max-width="95vw" @close="$emit('close')">
+  <Dialog :show-header="false" width="1180px" height="86vh" max-width="95vw" @close="$emit('close')">
     <div class="acc-container">
       <!-- Sidebar: one entry per accessory, so the list is always visible and
            the panel only ever shows the one you picked. Mirrors QuickCut. -->
@@ -13,11 +13,13 @@
         </nav>
         <nav class="acc-nav" v-else>
           <button v-for="a in rows" :key="a.id" type="button" class="acc-nav-btn"
-                  :class="{ active: selectedId === a.id }" @click="selectedId = a.id">
+                  :class="{ active: selectedId === a.id }" :disabled="busy" @click="selectedId = a.id">
             <span class="dot" :class="dotClass(a)"></span>
             <span class="acc-nav-label">{{ a.name }}</span>
             <!-- A badge here rather than in the panel: the point of the list is
                  to show, at a glance, which device wants something. -->
+            <span v-if="a.connected && a.batteryPercent != null && a.batteryState !== 'usb'"
+                  class="acc-nav-meta">{{ a.batteryPercent }}%</span>
             <span v-if="flashing[a.id]" class="acc-pill acc-pill--busy">…</span>
             <span v-else-if="a.connected && a.licensed === false" class="acc-pill acc-pill--warn">!</span>
             <span v-else-if="a.updateAvailable" class="acc-pill acc-pill--accent">↑</span>
@@ -46,67 +48,100 @@
 
       <!-- Detail panel -->
       <div class="acc-main">
-        <div class="acc-panel-header" v-if="loading">
-          <h2 class="acc-panel-title">Accessories</h2>
-          <p class="acc-panel-sub">Checking what is connected…</p>
-        </div>
-        <div class="acc-panel-header" v-else>
-          <h2 class="acc-panel-title">
-            {{ selected?.name || 'Accessories' }}
-            <sup v-if="selected?.availability" class="acc-avail-inline">{{ selected.availability }}</sup>
-          </h2>
-          <p class="acc-panel-sub">{{ subtitle }}</p>
+        <!-- A firmware update takes over the panel: nothing else may run
+             while one does, so nothing else is shown. -->
+        <div v-if="flashRow" class="acc-update" :class="'acc-update--' + flashRow.state">
+          <div class="acc-update-head">
+            <h2 class="acc-panel-title">{{ ui.updatingTitle(flashRow.name) }}</h2>
+            <p class="acc-panel-sub">{{ ui.updatingSub }}</p>
+          </div>
+          <div class="acc-update-body">
+            <div class="acc-uring">
+              <svg viewBox="0 0 240 240" role="img" :aria-label="flashRow.message">
+                <circle class="acc-uring-halo" cx="120" cy="120" r="108" />
+                <circle class="acc-uring-track" cx="120" cy="120" r="92" />
+                <circle class="acc-uring-arc" cx="120" cy="120" r="92"
+                        :style="{ strokeDashoffset: String(578.05 * (1 - shownPercent / 100)) }" />
+              </svg>
+              <div class="acc-uring-text">
+                <svg v-if="flashRow.state === 'done'" class="acc-uring-tick" width="110" height="110" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+                <span v-else class="acc-uring-pct">{{ shownPercent }}%</span>
+                <span class="acc-uring-sub">{{ flashRow.state === 'done' ? ui.updateDone : flashEta }}</span>
+              </div>
+            </div>
+            <div class="acc-update-side">
+              <div v-for="s in flashSteps" :key="s.n" class="acc-step" :class="'acc-step--' + s.state">
+                <span class="acc-step-mark" aria-hidden="true">{{ s.state === 'done' ? '✓' : s.n }}</span>
+                <div class="acc-step-text">
+                  <span class="acc-step-title">{{ s.title }}</span>
+                  <span class="acc-step-note">{{ s.note }}</span>
+                </div>
+              </div>
+              <p class="acc-update-msg" :class="{ 'acc-update-msg--error': flashRow.state === 'error' }">{{ flashRow.message }}</p>
+              <p class="acc-update-warn">
+                {{ ui.keepPowered(flashRow.name) }}
+                <span class="acc-note-dim">{{ ui.flashSafety }}</span>
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div class="acc-panel" v-if="loading">
+        <template v-else>
+        <div class="acc-panel-header" v-if="loading">
+          <h2 class="acc-panel-title">{{ ui.title }}</h2>
+          <p class="acc-panel-sub">{{ ui.checking }}</p>
+        </div>
+        <div class="acc-hero" v-else-if="selected">
+          <div v-if="selected.connected && selected.batteryPercent != null && selected.batteryState !== 'usb'"
+               class="acc-bring" :class="{ 'acc-bring--low': selected.batteryLow }">
+            <svg viewBox="0 0 68 68" role="img" :aria-label="batteryText(selected)">
+              <circle class="acc-bring-track" cx="34" cy="34" r="29" />
+              <circle class="acc-bring-arc" cx="34" cy="34" r="29"
+                      :style="{ strokeDashoffset: String(182.2 * (1 - (selected.batteryPercent ?? 0) / 100)) }" />
+            </svg>
+            <span class="acc-bring-text">{{ selected.batteryPercent }}%</span>
+          </div>
+          <div class="acc-hero-text">
+            <h2 class="acc-panel-title">
+              {{ selected.name }}
+              <sup v-if="selected.availability" class="acc-avail-inline">{{ selected.availability }}</sup>
+            </h2>
+            <div class="acc-chips">
+              <span class="acc-chip" :class="statusClass">{{ statusText }}</span>
+              <span v-if="selected.connected" class="acc-chip">{{ transportLabel(selected) }}</span>
+              <span v-if="selected.connected && selected.batteryState" class="acc-chip"
+                    :class="{ 'acc-chip--low': selected.batteryLow }">{{ batteryText(selected) }}</span>
+              <span v-if="selected.currentVersion" class="acc-chip">{{ ui.firmwareChip(selected.currentVersion) }}</span>
+            </div>
+          </div>
+          <button v-if="selected.connected"
+                  class="btn btn--primary acc-hero-btn"
+                  :class="{ 'btn--idle': !selected.updateAvailable, 'btn--blocked': busy }"
+                  :aria-disabled="!selected.updateAvailable"
+                  :title="selected.updateAvailable ? ui.installVersion(selected.latestVersion) : ui.upToDateHoldHint"
+                  @click="update(selected)"
+                  @pointerdown="holdStart(selected)"
+                  @pointerup="holdCancel" @pointerleave="holdCancel"
+                  @contextmenu.prevent>
+            <div class="long-press-indicator long-press-horizontal"
+                 :style="{ width: `${holdProgress}%` }"></div>
+            <span class="acc-btn-label">
+              {{ selected.updateAvailable ? ui.updateTo(selected.latestVersion) : ui.update }}
+            </span>
+          </button>
+          <input ref="fileInput" type="file" accept=".bin" class="acc-file" @change="onFilePicked" />
+        </div>
+
+        <div class="acc-panel acc-panel--loading" v-if="loading">
           <section class="acc-card"><div class="acc-skel-bar acc-skel-bar--wide"></div></section>
           <section class="acc-card"><div class="acc-skel-bar acc-skel-bar--wide"></div></section>
         </div>
 
         <div class="acc-panel" v-else-if="selected">
-          <!-- Connection -->
-          <section class="acc-card">
-            <div class="acc-card-header">
-              <h3 class="acc-card-title">Connection</h3>
-              <span class="acc-status" :class="statusClass">{{ statusText }}</span>
-            </div>
-            <div class="acc-grid">
-              <div class="acc-field">
-                <label>Reached over</label>
-                <div class="acc-value">{{ selected.connected ? transportLabel(selected) : '—' }}</div>
-              </div>
-              <div class="acc-field">
-                <label>Activation</label>
-                <div class="acc-value">
-                  {{ selected.licensed === true ? 'Activated'
-                     : selected.licensed === false ? 'Not activated' : '—' }}
-                </div>
-              </div>
-              <div class="acc-field" v-if="selected.connected && selected.batteryState">
-                <label>Battery</label>
-                <div class="acc-value" :class="{ 'acc-value--low': selected.batteryLow }">{{ batteryText(selected) }}</div>
-              </div>
-              <div class="acc-field acc-field--wide" v-if="selected.deviceId">
-                <label>Device ID</label>
-                <button type="button" class="acc-copy" :title="selected.deviceId"
-                        @click="copyDeviceId(selected.deviceId)">
-                  <span class="acc-value acc-value--mono">{{ shortId(selected.deviceId) }}</span>
-                  <span class="acc-copy-icon" aria-hidden="true">
-                    <svg v-if="copied" width="13" height="13" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                    <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                    </svg>
-                  </span>
-                  <span class="acc-copy-label">{{ copied ? 'Copied' : 'Copy' }}</span>
-                </button>
-              </div>
-            </div>
-          </section>
+          <!-- The scroller holds one block that flows into two columns. -->
+          <div class="acc-cols" :class="{ 'acc-cols--split': selected.id === 'ncrapidchange' && selected.connected }">
 
           <!-- Wireless probes: use or ignore it on the receiver's probe output.
                A probe that loses its link while touched holds the input
@@ -127,18 +162,23 @@
             <p v-if="probeError" class="msg msg--error">{{ probeError }}</p>
           </section>
 
-          <!-- Wireless Receiver: its two wired inputs, ORed onto its output. -->
+          <!-- Wireless Receiver: its two wired inputs, ORed onto its output.
+               Wireless I/O: its inputs, inverted here in ncSender (the board
+               reports raw states and has no polarity setting). -->
           <section class="acc-card" v-if="selected.inputInverted != null">
             <div class="acc-card-header">
-              <h3 class="acc-card-title">{{ 'Wired inputs' }}</h3>
+              <h3 class="acc-card-title">{{ hostInputs ? 'Inputs' : 'Wired inputs' }}</h3>
             </div>
             <table class="acc-inputs">
               <thead>
                 <tr><th>{{ 'Input' }}</th><th>{{ 'State' }}</th><th>{{ 'Invert' }}</th></tr>
               </thead>
               <tbody>
-                <tr v-for="n in [1, 2]" :key="n">
-                  <td><span class="acc-input-name">{{ n === 1 ? 'Input 1' : 'Input 2' }}</span> <span class="acc-input-sub">{{ n === 1 ? 'J2' : 'J3' }}</span></td>
+                <tr v-for="n in selected.inputInverted.length" :key="n">
+                  <td>
+                    <span class="acc-input-name">Input {{ n }}</span>
+                    <span class="acc-input-sub">{{ hostInputs ? 'IN' + n : (n === 1 ? 'J2' : 'J3') }}</span>
+                  </td>
                   <td>
                     <span class="acc-input-state">
                       <span :class="['acc-led', { 'acc-led--active': inputTriggered?.[n - 1] }]"></span>
@@ -152,32 +192,18 @@
                 </tr>
               </tbody>
             </table>
-            <p class="acc-note">{{ 'Combined (OR) with the probes on the controller pin the receiver is wired to (Probe or Toolsetter). Invert an input whose sensor reads triggered while idle.' }}</p>
+            <p v-if="hostInputs" class="acc-note">{{ "Invert an input whose sensor reads triggered while idle. This changes how ncSender reads the input everywhere, including the tool changer's sensor checks." }}</p>
+            <p v-else class="acc-note">{{ 'Combined (OR) with the probes on the controller pin the receiver is wired to (Probe or Toolsetter). Invert an input whose sensor reads triggered while idle.' }}</p>
             <p v-if="invertError" class="msg msg--error">{{ invertError }}</p>
           </section>
+
+          <RapidChangePanel v-if="selected.id === 'ncrapidchange'" :connected="selected.connected"
+                            :labels="rapidChangeLabels" />
 
           <!-- Firmware -->
           <section class="acc-card">
             <div class="acc-card-header">
               <h3 class="acc-card-title">Firmware</h3>
-              <button v-if="selected.connected && !flashing[selected.id]"
-                      class="btn btn--primary"
-                      :class="{ 'btn--idle': !selected.updateAvailable, 'btn--blocked': busy }"
-                      :aria-disabled="!selected.updateAvailable"
-                      :title="selected.updateAvailable
-                                ? `Install v${selected.latestVersion}`
-                                : 'Up to date — press and hold to flash a local .bin'"
-                      @click="update(selected)"
-                      @pointerdown="holdStart(selected)"
-                      @pointerup="holdCancel" @pointerleave="holdCancel"
-                      @contextmenu.prevent>
-                <div class="long-press-indicator long-press-horizontal"
-                     :style="{ width: `${holdProgress}%` }"></div>
-                <span class="acc-btn-label">
-                  {{ selected.updateAvailable ? `Update to v${selected.latestVersion}` : 'Update' }}
-                </span>
-              </button>
-              <input ref="fileInput" type="file" accept=".bin" class="acc-file" @change="onFilePicked" />
             </div>
             <div class="acc-grid">
               <div class="acc-field">
@@ -189,21 +215,7 @@
                 <div class="acc-value">{{ selected.latestVersion ? 'v' + selected.latestVersion : '—' }}</div>
               </div>
             </div>
-            <div v-if="flashing[selected.id]" class="acc-flash">
-              <div class="acc-flash-msg">{{ flashing[selected.id].message }}</div>
-              <p class="acc-flash-warn">
-                Keep {{ selected.name }} powered and connected until this finishes.
-                <span class="acc-note-dim">
-                  It writes to a spare slot and only switches over once verified, so an
-                  interrupted update leaves the current firmware working — but you will
-                  have to start again.
-                </span>
-              </p>
-              <div class="acc-progress">
-                <div class="acc-progress__bar" :style="{ width: (flashing[selected.id].percent || 0) + '%' }"></div>
-              </div>
-            </div>
-            <p v-else-if="selected.updateCheckError" class="acc-note acc-note--warn">
+            <p v-if="selected.updateCheckError" class="acc-note acc-note--warn">
               {{ selected.updateCheckError }}
             </p>
             <p v-else-if="!selected.connected" class="acc-note">
@@ -259,22 +271,37 @@
             </p>
           </section>
 
-          <!-- Pairing — never offered for the Wireless USB: it is the radio,
-               so it cannot be paired to itself. -->
-          <section class="acc-card" v-if="!isDongle(selected.id)">
+          <!-- Device: pairing, activation and its ID. Pairing is never offered
+               for the Wireless USB: it is the radio, so it cannot be paired
+               to itself. -->
+          <section class="acc-card">
             <div class="acc-card-header">
-              <h3 class="acc-card-title">Pairing</h3>
-              <button v-if="selected.paired" class="btn btn--danger-ghost"
+              <h3 class="acc-card-title">{{ ui.device }}</h3>
+              <button v-if="!isDongle(selected.id) && selected.paired" class="btn btn--danger-ghost"
                       :disabled="pairing || busy || unpairing === selected.id"
                       @click="unpairTarget = selected.id">
-                {{ unpairing === selected.id ? 'Unpairing…' : 'Unpair' }}
+                {{ unpairing === selected.id ? ui.unpairing : ui.unpair }}
               </button>
             </div>
-            <p class="acc-note">
-              {{ selected.paired
-                 ? 'Paired to this Wireless USB.'
-                 : 'Not paired. Use “Pair Device” and put it into pairing mode.' }}
+            <p class="acc-note acc-note--flush" v-if="!isDongle(selected.id)">
+              {{ selected.paired ? ui.pairedNote : ui.notPairedNote }}
             </p>
+            <div class="acc-grid acc-grid--device">
+              <div class="acc-field">
+                <label>{{ ui.activation }}</label>
+                <div class="acc-value">
+                  {{ selected.licensed === true ? ui.activated : selected.licensed === false ? ui.notActivated : '—' }}
+                </div>
+              </div>
+              <div class="acc-field" v-if="selected.deviceId">
+                <label>{{ ui.deviceId }}</label>
+                <button type="button" class="acc-copy" :title="selected.deviceId"
+                        @click="copyDeviceId(selected.deviceId)">
+                  <span class="acc-value acc-value--mono">{{ shortId(selected.deviceId) }}</span>
+                  <span class="acc-copy-label">{{ copied ? ui.copied : ui.copy }}</span>
+                </button>
+              </div>
+            </div>
           </section>
 
           <!-- Get one. Shown for every accessory we actually sell, whether or
@@ -293,7 +320,9 @@
                  : 'Opens the ncSender store in your browser.' }}
             </p>
           </section>
+          </div>
         </div>
+        </template>
       </div>
     </div>
 
@@ -319,10 +348,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, reactive, watch, onMounted, onUnmounted, unref } from 'vue';
 import Dialog from './Dialog.vue';
 import ConfirmPanel from './ConfirmPanel.vue';
 import ToggleSwitch from './ToggleSwitch.vue';
+import RapidChangePanel from './RapidChangePanel.vue';
 import { getApiBaseUrl } from '../lib/api-base';
 import { api } from '../lib/api.js';
 import { useKioskDetection } from '../composables/useKioskDetection';
@@ -365,7 +395,7 @@ interface Accessory {
 const loading = ref(true);
 const accessories = ref<Accessory[]>([]);
 const pairedNames = ref<string[]>([]);
-const flashing = reactive<Record<string, { percent: number; message: string }>>({});
+const flashing = reactive<Record<string, { percent: number; message: string; state?: 'done' | 'error' }>>({});
 
 const pairing = ref(false);
 // Matches PAIR_WINDOW_MS in the dongle firmware. If one changes, so must the
@@ -523,6 +553,114 @@ async function setProbeIgnored(a: Accessory, ignored: boolean) {
     probeSaving.value = false;
   }
 }
+
+// RapidChangeATC Air settings: the panel is shared with Pro, so its text is passed in.
+const rapidChangeLabels: Record<string, string> = {
+  settings: "Settings",
+  connectFirst: "Connect the RapidChangeATC Air, by cable or paired to the Wireless Receiver, to see its settings.",
+  reading: "Reading settings…",
+  sensors: "Sensors",
+  sensor: "Sensor",
+  toolSetter: "Tool setter",
+  irBeam: "IR beam",
+  filter: "Glitch filter",
+  sensorsNote: "Invert a sensor that reads triggered while nothing touches it. The filter is how long a change must hold before it counts. Saved on the device.",
+  cover: "Dust cover",
+  coverIsOpen: "Open",
+  coverIsClosed: "Closed",
+  open: "Open",
+  close: "Close",
+  hasCover: "Has a dust cover",
+  frontServo: "Front servo",
+  backServo: "Back servo",
+  openPosition: "Open position",
+  closedPosition: "Closed position",
+  savePositions: "Save positions",
+  go: "Go",
+  travelTime: "Travel time",
+  coverNote: "Stepping a position moves that servo there at once, so you can find each end by eye. Go moves it to the value shown. Save positions keeps both ends on the device; Open and Close use the saved ones.",
+  noCoverNote: "Turn this on if the magazine has the servo dust cover.",
+  state: 'State', invert: 'Invert', triggered: 'Triggered', idle: 'Idle',
+  decrease: 'Decrease', increase: 'Increase',
+};
+
+// Text for the dashboard markup this dialog shares with Pro.
+const ui = {
+  title: 'Accessories', checking: 'Checking connected accessories…',
+  update: 'Update', upToDateHoldHint: 'Up to date — press and hold to flash a local .bin',
+  installVersion: (version: string) => `Install v${version}`,
+  updateTo: (version: string) => `Update to v${version}`,
+  firmwareChip: (version: string) => `Firmware ${version}`,
+  device: 'Device', unpair: 'Unpair', unpairing: 'Unpairing…',
+  pairedNote: 'Paired to this Wireless USB.', notPairedNote: 'Not paired. Use “Pair Device” and put it into pairing mode.',
+  activation: 'Activation', activated: 'Activated', notActivated: 'Not activated',
+  deviceId: 'Device ID', copy: 'Copy', copied: 'Copied',
+  updatingTitle: (name: string) => `Updating ${name}`,
+  updatingSub: 'Everything else waits until this finishes.', updateDone: 'Updated',
+  stepPrepare: 'Prepare', stepPrepareNote: 'Download and check the firmware',
+  stepSend: 'Send to the device',
+  stepSendNote: (percent: number) => `${percent}% sent`,
+  stepRestart: 'Restart', stepRestartNote: 'Comes back on the new firmware',
+  timeLeft: (seconds: number) => `about ${seconds} s left`,
+  keepPowered: (name: string) => `Keep ${name} powered and connected until this finishes.`,
+  flashSafety: 'It writes to a spare slot and only switches over once verified, so an interrupted update leaves the current firmware working — but you will have to start again.',
+};
+
+// One update at a time, and while it runs it is the whole panel.
+const flashRow = computed(() => {
+  const id = Object.keys(flashing)[0];
+  if (!id) return null;
+  const f = flashing[id];
+  return { id, name: nameFor(id), percent: f.percent || 0, message: f.message, state: f.state ?? 'working' };
+});
+
+// The number counts up to the reported percent instead of jumping.
+const shownPercent = ref(0);
+let percentTimer: ReturnType<typeof setInterval> | null = null;
+let flashStart: { at: number; percent: number } | null = null;
+const flashEta = ref('');
+watch(() => flashRow.value?.percent ?? null, (target) => {
+  if (target == null) {
+    shownPercent.value = 0; flashStart = null; flashEta.value = '';
+    if (percentTimer) { clearInterval(percentTimer); percentTimer = null; }
+    return;
+  }
+  if (target < shownPercent.value) shownPercent.value = target;
+  if (!percentTimer) {
+    percentTimer = setInterval(() => {
+      const goal = flashRow.value?.percent ?? 0;
+      if (shownPercent.value < goal) shownPercent.value += 1;
+    }, 18);
+  }
+  // Time left, from how fast it has gone so far.
+  const now = performance.now();
+  if (target > 0 && !flashStart) flashStart = { at: now, percent: target };
+  const gained = flashStart ? target - flashStart.percent : 0;
+  if (flashStart && gained >= 5 && target < 100 && flashRow.value?.state === 'working') {
+    const seconds = Math.max(1, Math.round(((now - flashStart.at) / gained) * (100 - target) / 1000));
+    flashEta.value = unref(ui).timeLeft(seconds);
+  } else if (target >= 100 || gained < 5) {
+    flashEta.value = '';
+  }
+});
+onUnmounted(() => { if (percentTimer) clearInterval(percentTimer); });
+
+const flashSteps = computed(() => {
+  const f = flashRow.value;
+  const u = unref(ui);
+  const p = f?.percent ?? 0;
+  const done = f?.state === 'done';
+  const at = done ? 3 : p >= 100 ? 2 : p > 0 ? 1 : 0;
+  const state = (i: number) => (i < at ? 'done' : i === at ? (f?.state === 'error' ? 'error' : 'now') : 'todo');
+  return [
+    { n: 1, title: u.stepPrepare, note: u.stepPrepareNote, state: state(0) },
+    { n: 2, title: u.stepSend, note: u.stepSendNote(Math.min(100, p)), state: state(1) },
+    { n: 3, title: u.stepRestart, note: u.stepRestartNote, state: state(2) },
+  ];
+});
+
+// The Wireless I/O's inputs are inverted in ncSender, not on the device.
+const hostInputs = computed(() => selected.value?.id === 'xio');
 
 // Receiver wired inputs: same in-place update as the probe switch.
 const invertSaving = ref(false);
@@ -851,14 +989,14 @@ onMounted(() => {
   });
   track('plugin-ota:done', (d: any) => {
     const id = idOf(d); if (!id) return;
-    flashing[id] = { percent: 100, message: 'Updated — restarting' };
+    flashing[id] = { percent: 100, message: 'Updated — restarting', state: 'done' };
     // The device reboots and re-reports its version, so re-check rather than
     // assume the new one took.
     setTimeout(async () => { delete flashing[id]; await load(true); }, 4000);
   });
   track('plugin-ota:error', (d: any) => {
     const id = idOf(d); if (!id) return;
-    flashing[id] = { percent: 0, message: d.message || 'Update failed' };
+    flashing[id] = { percent: 0, message: d.message || 'Update failed', state: 'error' };
     setTimeout(() => delete flashing[id], 6000);
   });
 });
@@ -880,7 +1018,7 @@ onUnmounted(() => {
 .acc-container { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 
 .acc-sidebar {
-  display: flex; flex-direction: column; flex-shrink: 0; width: 220px;
+  display: flex; flex-direction: column; flex-shrink: 0; width: 256px;
   border-right: 1px solid var(--color-border);
   padding: 18px 12px 14px;
 }
@@ -1016,10 +1154,21 @@ onUnmounted(() => {
 }
 .acc-panel-sub { font-size: 0.85rem; color: var(--color-text-secondary); margin: 0; }
 
-.acc-panel {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 20px;
+.acc-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 22px 8px; }
+.acc-cols { column-count: 2; column-gap: 16px; }
+/* Cards flow down two columns; the settings panel's cards are its own roots. */
+.acc-cols > :deep(*), .acc-panel--loading > * { break-inside: avoid; margin: 0 0 16px; }
+/* A device with one tall card (the dust cover): that card takes the right
+   column and everything else stacks on the left. Rows have no gap, so the
+   empty rows the tall card spans cost nothing. */
+.acc-cols--split:has(.rc-card--tall) { column-count: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; align-items: start; }
+.acc-cols--split:has(.rc-card--tall) > :deep(*) { grid-column: 1; }
+.acc-cols--split > :deep(.rc-card--tall) { grid-column: 2; grid-row: 1 / span 40; }
+@media (max-width: 900px) {
+  .acc-cols { column-count: 1; }
+  .acc-cols--split:has(.rc-card--tall) { display: block; }
 }
+.acc-copy .acc-value--mono { white-space: nowrap; }
 
 .acc-card {
   background: var(--color-surface); border: 1px solid var(--color-border);
@@ -1185,4 +1334,97 @@ onUnmounted(() => {
 .text-input:focus { outline: none; border-color: var(--color-accent); }
 .msg { font-size: 0.82rem; padding: 8px 10px; border-radius: 6px; }
 .msg--error { color: #dc3545; background: rgba(220,53,69,0.1); }
+
+/* ---- Dashboard layout ---- */
+.acc-hero {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 18px 22px; border-bottom: 1px solid var(--color-border);
+}
+.acc-hero-text { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.acc-hero .acc-panel-title { font-size: 1.3rem; }
+.acc-hero-btn { position: relative; overflow: hidden; min-height: 44px; padding: 0 18px; }
+.acc-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.acc-chip {
+  padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, var(--color-text-secondary) 16%, transparent); color: var(--color-text-primary);
+}
+.acc-chip.acc-status--ok { background: rgba(40, 167, 69, 0.18); color: #3ecf8e; }
+.acc-chip.acc-status--warn, .acc-chip--low { background: #e0a03022; color: #e0a030; }
+.acc-chip.acc-status--off { color: var(--color-text-secondary); }
+
+.acc-bring { position: relative; width: 68px; height: 68px; flex-shrink: 0; }
+.acc-bring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.acc-bring circle { fill: none; stroke-width: 6; }
+.acc-bring-track { stroke: color-mix(in srgb, var(--color-text-secondary) 22%, transparent); }
+.acc-bring-arc { stroke: #3ecf8e; stroke-linecap: round; stroke-dasharray: 182.2; transition: stroke-dashoffset 0.6s ease; }
+.acc-bring--low .acc-bring-arc { stroke: #e0a030; }
+.acc-bring-text {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 0.95rem; font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums;
+}
+
+.acc-nav-meta { font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.acc-nav-btn:disabled { opacity: 0.45; cursor: default; }
+.acc-note--flush { margin-top: 0; }
+.acc-grid--device { margin-top: 12px; }
+
+/* ---- Firmware update, the whole panel ---- */
+.acc-update { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.acc-update-head { display: flex; flex-direction: column; gap: 4px; padding: 18px 22px; border-bottom: 1px solid var(--color-border); }
+.acc-update-head .acc-panel-title { font-size: 1.5rem; }
+.acc-update-head .acc-panel-sub { font-size: 1rem; }
+.acc-update-warn .acc-note-dim { opacity: 1; color: var(--color-text-secondary); }
+.acc-update-body {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 32px 44px; flex-wrap: wrap;
+  padding: 28px 22px;
+}
+.acc-uring { position: relative; width: min(340px, 70vw); aspect-ratio: 1; flex-shrink: 0; }
+.acc-uring > svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.acc-uring circle { fill: none; }
+.acc-uring-halo { stroke: var(--color-accent); stroke-width: 2; animation: acc-uring-glow 2.4s ease-in-out infinite; }
+.acc-uring-track { stroke: color-mix(in srgb, var(--color-text-secondary) 22%, transparent); stroke-width: 16; }
+.acc-uring-arc {
+  stroke: var(--color-accent); stroke-width: 16; stroke-linecap: round; stroke-dasharray: 578.05;
+  transition: stroke-dashoffset 0.25s linear, stroke 0.3s ease;
+}
+.acc-update--done .acc-uring-arc, .acc-update--done .acc-uring-halo { stroke: #3ecf8e; }
+.acc-update--error .acc-uring-arc, .acc-update--error .acc-uring-halo { stroke: #dc3545; }
+.acc-update--done .acc-uring-halo, .acc-update--error .acc-uring-halo { animation: none; opacity: 0.6; }
+@keyframes acc-uring-glow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.9; } }
+.acc-uring-text {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.acc-uring-pct { font-size: 4.8rem; font-weight: 700; line-height: 1; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.acc-uring-tick { color: #3ecf8e; }
+.acc-uring-sub { min-height: 1.2em; font-size: 1.1rem; color: var(--color-text-secondary); }
+
+.acc-update-side { flex: 1 1 400px; max-width: 520px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.acc-step {
+  display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: 14px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+}
+.acc-step-mark {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  font-size: 1rem; font-weight: 700;
+  background: color-mix(in srgb, var(--color-text-secondary) 20%, transparent); color: var(--color-text-secondary);
+}
+.acc-step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acc-step-title { font-size: 1.15rem; font-weight: 600; color: var(--color-text-secondary); }
+.acc-step-note { font-size: 0.95rem; color: var(--color-text-secondary); }
+.acc-step--now { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface)); }
+.acc-step--now .acc-step-mark { background: var(--color-accent); color: #fff; }
+.acc-step--now .acc-step-title, .acc-step--done .acc-step-title { color: var(--color-text-primary); }
+.acc-step--done .acc-step-mark { background: rgba(40, 167, 69, 0.2); color: #3ecf8e; }
+.acc-step--error { border-color: #dc3545; }
+.acc-step--error .acc-step-mark { background: rgba(220, 53, 69, 0.2); color: #dc3545; }
+.acc-update-msg { margin: 2px 0 0; font-size: 1rem; color: var(--color-text-secondary); }
+.acc-update-msg--error { color: #dc3545; }
+.acc-update-warn {
+  margin: 0; padding: 16px 18px; border-radius: 14px; font-size: 0.95rem; line-height: 1.45;
+  background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .acc-uring-halo { animation: none; }
+  .acc-uring-arc, .acc-bring-arc { transition: none; }
+}
 </style>

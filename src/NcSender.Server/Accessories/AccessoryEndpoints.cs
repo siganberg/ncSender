@@ -19,6 +19,8 @@ public static class AccessoryEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
+        NcRapidChange.Map(app);
+
         // GET /api/accessories?check=true
         //
         // `check` is opt-in because it reaches out to GitHub for every product.
@@ -145,6 +147,13 @@ public static class AccessoryEndpoints
 
         app.MapGet("/api/accessories/{id}/inputs", async (string id, AccessoryService svc) =>
         {
+            if (AccessoryService.HostInvertedInputs(id))
+            {
+                var host = svc.ReadHostInputs(id);
+                return host is null
+                    ? Results.Json(new ApiError("The device is not connected"), NcSenderJsonContext.Default.ApiError, statusCode: 503)
+                    : Results.Ok(host);
+            }
             if (!string.Equals(id, AccessoryCatalog.WirelessReceiverId, StringComparison.OrdinalIgnoreCase))
                 return Results.NotFound(new ApiError($"'{id}' has no wired inputs"));
             var state = await svc.ReadInputsAsync();
@@ -156,6 +165,18 @@ public static class AccessoryEndpoints
         app.MapPost("/api/accessories/{id}/input-invert",
             async (string id, AccessoryInputInvertRequest req, AccessoryService svc) =>
         {
+            if (AccessoryService.HostInvertedInputs(id))
+            {
+                try
+                {
+                    await svc.SetHostInputInvertedAsync(id, req.Input, req.Inverted);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new ApiError(ex.Message));
+                }
+                return Results.Ok();
+            }
             if (!string.Equals(id, AccessoryCatalog.WirelessReceiverId, StringComparison.OrdinalIgnoreCase))
                 return Results.NotFound(new ApiError($"'{id}' has no wired inputs"));
             try

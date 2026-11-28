@@ -118,8 +118,18 @@
             <td class="col-tlo"><span :class="{ 'search-hit': isHit(tool, 'tlo') }">{{ formatCoordinate(tool.offsets.tlo, appStore.unitsPreference.value) }}</span></td>
             <td class="col-actions">
               <div class="tool-actions">
-                <button class="btn btn-small btn-accent" @click="editTool(tool)">Edit</button>
-                <button class="btn btn-small btn-danger" @click="deleteTool(tool)">Delete</button>
+                <template v-if="loadOffered">
+                  <span v-if="isLoaded(tool)" class="tool-loaded-pill">In spindle</span>
+                  <button
+                    v-else
+                    class="btn btn-primary tool-load-btn"
+                    :disabled="!!loadBlocked(tool)"
+                    :title="loadBlocked(tool) || `Load this tool: M6 T${loadNumber(tool)}`"
+                    @click="askLoadTool(tool)"
+                  >Load</button>
+                </template>
+                <button class="tool-icon-btn" :title="'Edit'" :aria-label="'Edit'" @click="editTool(tool)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"></path><path d="M14 8l3 3"></path></svg></button>
+                <button class="tool-icon-btn tool-icon-btn--danger" :title="'Delete'" :aria-label="'Delete'" @click="deleteTool(tool)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M6.5 7l1 13h9l1-13"></path><path d="M10 11v6M14 11v6"></path></svg></button>
               </div>
             </td>
           </tr>
@@ -372,6 +382,22 @@
       />
     </Dialog>
 
+    <!-- Load Confirmation Dialog -->
+    <Dialog v-if="loadToolRef" @close="loadToolRef = null" :show-header="false" size="small">
+      <ConfirmPanel
+        :title="'Load this tool?'"
+        :subject-id="`T${loadToolNumber}`"
+        :subject-name="loadToolRef.name || `T${loadToolNumber}`"
+        :message="`This sends M6 T${loadToolNumber} and closes Settings. The machine moves to change the tool.`"
+        :show-cancel="true"
+        :confirm-text="`Load T${loadToolNumber}`"
+        :cancel-text="'Cancel'"
+        variant="primary"
+        @confirm="confirmLoadTool"
+        @cancel="loadToolRef = null"
+      />
+    </Dialog>
+
     <!-- Delete Confirmation Dialog -->
     <Dialog v-if="showDeleteConfirmDialog" @close="showDeleteConfirmDialog = false" :show-header="false" size="small">
       <ConfirmPanel
@@ -522,7 +548,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { api } from '../../lib/api.js';
 import Dialog from '../../components/Dialog.vue';
 import ConfirmPanel from '../../components/ConfirmPanel.vue';
@@ -534,6 +560,7 @@ import { formatCoordinate, getDistanceUnitLabel } from '@/lib/units';
 import { useAppStore } from '@/composables/use-app-store';
 import { TOOL_TYPES, toolTypeLabel, neverSpins } from './tool-types';
 import { highlightParts, matchTool, parseToolSearch, type SearchCell, type SearchTerm } from './tool-search';
+import { ensureHomed } from '@/composables/useUnhomedGuard';
 
 const { isKiosk } = useKioskDetection();
 const showDrivePicker = ref(false);
@@ -596,6 +623,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  close: [];
   'update:toolCount': [value: number];
   'update:showManualButton': [value: boolean];
   'update:showTlsButton': [value: boolean];
@@ -617,6 +645,66 @@ const hasSlot = (tool: Tool) =>
   tool.toolNumber !== null
   && (tool.toolNumber === probeSlot.value || tool.toolNumber <= (props.toolCount || 0));
 const slotLabel = (num: number) => (num === probeSlot.value ? 'Probe' : `Slot${num}`);
+
+// What M6 T<n> loads, from the server (Tool Numbering: slot or Tool ID).
+const activeTools = ref<{ id: number; toolId: number | null }[]>([]);
+const loadActiveTools = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${api.baseUrl}/api/tools/active`);
+    if (!response.ok) return false;
+    activeTools.value = await response.json();
+    return true;
+  } catch (error) {
+    console.error('Error loading active tools:', JSON.stringify(String(error)));
+    return false;
+  }
+};
+let offToolsUpdated: (() => void) | null = null;
+const loadOffered = computed(() =>
+  ((props.toolCount || 0) > 0 || !!props.toolSourceName) && activeTools.value.some(a => a.id > 0));
+const loadNumber = (tool: Tool): number | null =>
+  activeTools.value.find(a => a.id === tool.id)?.toolId ?? null;
+const isLoaded = (tool: Tool) => {
+  const n = loadNumber(tool);
+  return n !== null && n > 0 && appStore.status.tool === n;
+};
+const loadBlocked = (tool: Tool): string => {
+  if (!appStore.isConnected.value) return 'Connect to the machine to load a tool';
+  if (!appStore.hasFullControl.value) return 'This screen can\'t control the machine';
+  if (appStore.isJobRunning.value || appStore.serverState.jobLoaded?.status === 'paused') return 'A job is running or paused';
+  const status = appStore.senderStatus.value;
+  if (status !== 'idle' && status !== 'homing-required') return `The machine is busy (${status})`;
+  const n = loadNumber(tool);
+  if (n === null) return 'No T number loads this tool: with Slot numbering, assign it a slot';
+  if (activeTools.value.filter(a => a.toolId === n).length > 1) return `More than one tool has Tool ID ${n}: give each its own`;
+  if (isLoaded(tool)) return 'This tool is in the spindle';
+  return '';
+};
+const loadToolRef = ref<Tool | null>(null);
+const loadToolNumber = ref<number | null>(null);
+const askLoadTool = (tool: Tool) => {
+  if (loadBlocked(tool)) return;
+  loadToolNumber.value = loadNumber(tool);
+  loadToolRef.value = tool;
+};
+// Sends only the T number that was confirmed, and only while it still
+// loads this tool.
+const confirmLoadTool = async () => {
+  const tool = loadToolRef.value;
+  const n = loadToolNumber.value;
+  loadToolRef.value = null;
+  if (!tool || n === null) return;
+  const stillLoads = () => !loadBlocked(tool) && loadNumber(tool) === n;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
+  emit('close');
+  if (!(await ensureHomed('M6'))) return;
+  if (!(await loadActiveTools()) || !stillLoads()) return;
+  try {
+    await api.triggerToolChange(n);
+  } catch (error) {
+    console.error('[ToolsTab] Failed to load tool:', JSON.stringify({ tool: n, error: String(error) }));
+  }
+};
 const diameterPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.2500' : '6.350');
 const tloPlaceholder = computed(() => appStore.unitsPreference.value === 'imperial' ? '0.0000' : '0.000');
 
@@ -911,6 +999,7 @@ const loadTools = async () => {
     const response = await fetch(`${api.baseUrl}/api/tools`);
     if (response.ok) {
       tools.value = await response.json();
+      await loadActiveTools();
     } else {
       console.error('Failed to load tools');
     }
@@ -1388,6 +1477,9 @@ const confirmImportWithConflicts = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  offToolsUpdated = api.on('tools-updated', (list: any) => {
+    if (Array.isArray(list)) activeTools.value = list;
+  });
   await loadTools();
   await loadToolsInfo();
 
@@ -1410,6 +1502,10 @@ onMounted(async () => {
   } catch (error) {
     console.error('Error loading settings:', error);
   }
+});
+
+onUnmounted(() => {
+  offToolsUpdated?.();
 });
 </script>
 
@@ -1833,6 +1929,62 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.tool-actions .tool-load-btn,
+.tool-loaded-pill {
+  box-sizing: border-box;
+  min-width: 84px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-small, 8px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tool-actions .tool-load-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tool-loaded-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+}
+
+.tool-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--radius-small, 8px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.tool-icon-btn:hover {
+  border-color: var(--color-accent);
+}
+
+.tool-icon-btn--danger {
+  border-color: color-mix(in srgb, var(--color-danger, #f87171) 45%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #f87171) 16%, var(--color-surface-muted));
+  color: var(--color-danger, #f87171);
+}
+
+.tool-icon-btn--danger:hover {
+  border-color: var(--color-danger, #f87171);
 }
 
 .tools-footer {
