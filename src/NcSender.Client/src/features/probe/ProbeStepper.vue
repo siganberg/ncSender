@@ -1,15 +1,18 @@
 <!--
   A number for the probe dialog, sized for a touch screen: − [value unit] +.
   A press steps to the next whole step; holding repeats, faster the longer it
-  is held. The value can still be typed, with a unit if it is in another one
-  (1/4", 6mm, 100ipm: see lib/unit-input). `change` fires when a press ends or
-  the field is left: the moment to save.
+  is held. The buttons take no keyboard focus, so Tab goes from field to
+  field; Up / Down step in the field instead (Shift: steps of ten). The value
+  can still be typed, with a unit if it is in another one (1/4", 6mm, 100ipm:
+  see lib/unit-input). `change` fires when a press ends or the field is left: the
+  moment to save.
 -->
 <template>
   <div class="pst" :class="{ 'is-disabled': disabled, 'is-invalid': invalid }">
     <button
       type="button"
       class="pst__btn"
+      tabindex="-1"
       :disabled="disabled || atMin"
       aria-label="−"
       @pointerdown.prevent="hold(-1)"
@@ -38,6 +41,7 @@
     <button
       type="button"
       class="pst__btn"
+      tabindex="-1"
       :disabled="disabled || atMax"
       aria-label="+"
       @pointerdown.prevent="hold(1)"
@@ -82,8 +86,8 @@ watch(shown, (v) => showValue(input.value, v), { flush: 'post' });
 const atMin = computed(() => current.value != null && current.value <= props.min + 1e-9);
 const atMax = computed(() => current.value != null && current.value >= props.max - 1e-9);
 
-const bump = (dir: number) => {
-  const step = props.step;
+const bump = (dir: number, times = 1) => {
+  const step = props.step * times;
   const cur = current.value ?? 0;
   const next = dir > 0 ? Math.floor(cur / step + 1e-6) + 1 : Math.ceil(cur / step - 1e-6) - 1;
   const v = Math.min(props.max, Math.max(props.min, next * step));
@@ -124,7 +128,7 @@ const commit = (e: Event) => {
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
-  bump(e.key === 'ArrowUp' ? 1 : -1);
+  bump(e.key === 'ArrowUp' ? 1 : -1, e.shiftKey ? 10 : 1);
 };
 </script>
 
